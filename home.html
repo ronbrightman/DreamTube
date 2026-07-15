@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Home — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="topbar">
+    <div style="font-family:var(--font-display); font-weight:600; font-size:17px;">DreamTube</div>
+    <div class="icon-btn">🔍</div>
+  </div>
+  <div class="scroll-area">
+    <div class="section-label" style="padding:0 20px; margin-top:2px;">For you</div>
+    <div class="video-grid" id="home-grid"></div>
+  </div>
+  <div class="bottom-nav">
+    <a class="nav-item active" href="home.html"><div class="nav-icon">🏠</div>Home</a>
+    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
+    <a class="nav-item" href="profile.html"><div class="nav-icon">👤</div>Profile</a>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  function vcardHTML(d){
+    var priv = !d.isPublished ? '<div class="priv">Private</div>' : '';
+    var grad = DreamStore.gradientFor(d);
+    return '<a class="vcard" href="explore.html?id='+d.id+'">' +
+      '<div class="vcard-thumb" style="background:'+grad+'">'+priv+'<div class="dur">'+d.dur+'</div></div>' +
+      '<div class="vcard-title">'+esc(d.caption)+'</div>' +
+      '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
+    '</a>';
+  }
+
+  var dreams = DreamStore.getFeed();
+  var grid = document.getElementById('home-grid');
+  grid.innerHTML = dreams.length
+    ? dreams.map(vcardHTML).join('')
+    : '<div class="grid-empty">No dreams here yet. Be the first to publish one.</div>';
+</script>
+</body>
+</html>

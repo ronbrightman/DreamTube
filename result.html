@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Your Dream — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app" class="fill" style="position:relative;">
+  <div class="result-bg" id="result-bg"></div>
+  <div class="result-scrim"></div>
+  <div class="play-badge result-play"></div>
+  <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
+    <a class="icon-btn" href="home.html" style="background:rgba(16,15,38,.5); border-color:rgba(255,255,255,.14);">←</a>
+    <div style="font-weight:700; font-size:14px;">Your Dream</div>
+    <div style="width:36px;"></div>
+  </div>
+  <div class="result-panel">
+    <div class="dream-quote" id="result-quote">""</div>
+    <div class="result-tag-row">
+      <span class="feed-tag" id="result-style-tag">Style: —</span>
+      <span class="feed-tag" id="result-privacy-tag">Private</span>
+    </div>
+    <div class="action-row-2">
+      <button class="btn btn-secondary" id="open-edit-sheet">✏️ Edit Dream</button>
+      <button class="btn btn-secondary" id="open-style-sheet">🎨 Change Style</button>
+    </div>
+    <div class="stack-btns">
+      <button class="btn btn-secondary btn-block">💾 Save</button>
+      <button class="btn btn-secondary btn-block">↗ Share</button>
+      <button class="btn btn-warm btn-block" id="publish-btn">🌐 Publish to Explore</button>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="sheet-edit-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Edit your dream</div>
+      <textarea class="field" id="edit-text"></textarea>
+      <button class="btn btn-primary btn-block" id="edit-generate-again">Generate Again</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="edit-cancel" style="cursor:pointer;">Cancel</span>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="sheet-style-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Choose a new style</div>
+      <div class="style-grid" id="sheet-style-grid">
+        <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎨</div><div class="sc-name">Cartoon</div></div></div>
+        <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎥</div><div class="sc-name">Cinematic</div></div></div>
+        <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🌸</div><div class="sc-name">Anime</div></div></div>
+        <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">📷</div><div class="sc-name">Realistic</div></div></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="style-generate-again">Generate Again</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="style-cancel" style="cursor:pointer;">Cancel</span>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-publish">
+    <div class="modal-card">
+      <div class="modal-title">Publish this dream?</div>
+      <div class="modal-body">It'll be visible to everyone in Explore. You can't undo this from here in the MVP — think of it as sharing, not just saving.</div>
+      <div class="modal-row">
+        <button class="btn btn-ghost" style="flex:1;" id="publish-cancel">Cancel</button>
+        <button class="btn btn-warm" style="flex:1;" id="publish-confirm">Publish</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Published to Explore</div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
+  var dreamId = getParam('id');
+  var dream = dreamId ? DreamStore.getDream(dreamId) : null;
+  if(!dream){ location.href = 'home.html'; }
+
+  function render(){
+    dream = DreamStore.getDream(dreamId);
+    document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
+    document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
+    document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
+    document.getElementById('result-privacy-tag').textContent = dream.isPublished ? 'Published' : 'Private';
+    document.getElementById('edit-text').value = dream.caption;
+    Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
+      c.classList.toggle('selected', c.dataset.style === dream.style);
+    });
+    var pubBtn = document.getElementById('publish-btn');
+    if(dream.isPublished){ pubBtn.textContent = '✓ Published to Explore'; pubBtn.disabled = true; }
+    else { pubBtn.textContent = '🌐 Publish to Explore'; pubBtn.disabled = false; }
+  }
+  render();
+
+  function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }
+  function closeSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.remove('open'); }
+
+  document.getElementById('open-edit-sheet').addEventListener('click', function(){ openSheet('edit'); });
+  document.getElementById('open-style-sheet').addEventListener('click', function(){ openSheet('style'); });
+  document.getElementById('edit-cancel').addEventListener('click', function(){ closeSheet('edit'); });
+  document.getElementById('style-cancel').addEventListener('click', function(){ closeSheet('style'); });
+  document.getElementById('sheet-edit-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-edit-overlay') closeSheet('edit'); });
+  document.getElementById('sheet-style-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-style-overlay') closeSheet('style'); });
+
+  document.getElementById('sheet-style-grid').addEventListener('click', function(e){
+    var card = e.target.closest('.style-card');
+    if(!card) return;
+    Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){ c.classList.remove('selected'); });
+    card.classList.add('selected');
+  });
+
+  document.getElementById('edit-generate-again').addEventListener('click', function(){
+    var text = document.getElementById('edit-text').value.trim();
+    DreamStore.setDraft({ caption: text, style: dream.style, sourceDreamId: dream.id, restore: false });
+    location.href = 'processing.html';
+  });
+  document.getElementById('style-generate-again').addEventListener('click', function(){
+    var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
+    var style = selectedCard ? selectedCard.dataset.style : dream.style;
+    DreamStore.setDraft({ caption: dream.caption, style: style, sourceDreamId: dream.id, restore: false });
+    location.href = 'processing.html';
+  });
+
+  document.getElementById('publish-btn').addEventListener('click', function(){
+    document.getElementById('modal-publish').classList.add('open');
+  });
+  document.getElementById('publish-cancel').addEventListener('click', function(){
+    document.getElementById('modal-publish').classList.remove('open');
+  });
+  document.getElementById('publish-confirm').addEventListener('click', function(){
+    DreamStore.publishDream(dream.id);
+    document.getElementById('modal-publish').classList.remove('open');
+    render();
+    var t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  });
+</script>
+</body>
+</html>

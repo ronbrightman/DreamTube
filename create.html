@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>New Dream — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="topbar"><div class="icon-btn" id="create-back">←</div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div style="width:36px;"></div></div>
+
+  <div class="px" id="create-select" style="flex:1; padding-top:6px;">
+    <div class="section-label" style="margin-top:6px;">Tell us your dream</div>
+    <div class="choice-card" id="choice-write">
+      <div class="choice-icon">✍️</div>
+      <div><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
+    </div>
+    <div class="choice-card" id="choice-record">
+      <div class="choice-icon">🎙️</div>
+      <div><div class="choice-title">Record it</div><div class="choice-sub">Speak your dream out loud</div></div>
+    </div>
+  </div>
+
+  <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px;">
+    <textarea class="field" id="dream-text" placeholder="I was flying over a city made of glass..."></textarea>
+    <div class="char-count" id="char-count">0 characters</div>
+    <div style="flex:1"></div>
+    <button class="btn btn-primary btn-block" id="write-continue" disabled style="margin-bottom:22px;">Continue</button>
+  </div>
+
+  <div class="px rec-panel" id="create-record" style="display:none;">
+    <div class="rec-timer" id="rec-timer">00:00</div>
+    <div class="rec-dot">🎙️</div>
+    <div class="wave"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div style="font-size:12px; color:var(--text-muted);">Speak naturally — we'll transcribe it</div>
+    <div style="width:100%; padding:0 4px 22px;">
+      <button class="btn btn-primary btn-block" id="stop-record">Stop Recording</button>
+    </div>
+  </div>
+
+  <div class="px rec-panel" id="create-review" style="display:none;">
+    <div class="rec-timer" id="review-timer">00:00</div>
+    <div class="wave static" id="review-wave">
+      <span style="height:14px;"></span><span style="height:26px;"></span><span style="height:10px;"></span><span style="height:30px;"></span>
+      <span style="height:18px;"></span><span style="height:8px;"></span><span style="height:24px;"></span><span style="height:16px;"></span>
+    </div>
+    <button class="btn btn-secondary" id="play-btn">▶ Play back</button>
+    <div style="flex:1"></div>
+    <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 4px 22px;">
+      <button class="btn btn-primary btn-block" id="review-continue">Continue</button>
+      <button class="btn btn-ghost btn-block" id="re-record">↺ Re-record</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  // If we arrived here from a failed generation, restore the draft text.
+  // Otherwise start clean — don't let a stale abandoned draft leak into a fresh session.
+  var draft = DreamStore.getDraft();
+  if(!draft.restore){
+    DreamStore.clearDraft();
+    draft = DreamStore.getDraft();
+  }
+  var recInterval;
+
+  var selectEl = document.getElementById('create-select');
+  var writeEl = document.getElementById('create-write');
+  var recordEl = document.getElementById('create-record');
+  var reviewEl = document.getElementById('create-review');
+  var heading = document.getElementById('create-heading');
+  var textArea = document.getElementById('dream-text');
+  var charCount = document.getElementById('char-count');
+  var writeContinue = document.getElementById('write-continue');
+
+  function updateCharCount(){
+    var n = textArea.value.length;
+    charCount.textContent = n + ' character' + (n===1?'':'s');
+    writeContinue.disabled = n < 8;
+  }
+  textArea.addEventListener('input', updateCharCount);
+
+  document.getElementById('choice-write').addEventListener('click', function(){
+    selectEl.style.display = 'none';
+    writeEl.style.display = 'flex';
+    heading.textContent = 'Write your dream';
+    textArea.focus();
+  });
+
+  function startRecordingUI(){
+    selectEl.style.display = 'none';
+    reviewEl.style.display = 'none';
+    recordEl.style.display = 'flex';
+    heading.textContent = 'Record your dream';
+    var secs = 0;
+    document.getElementById('rec-timer').textContent = '00:00';
+    clearInterval(recInterval);
+    recInterval = setInterval(function(){
+      secs++;
+      var m = String(Math.floor(secs/60)).padStart(2,'0');
+      var s = String(secs%60).padStart(2,'0');
+      document.getElementById('rec-timer').textContent = m+':'+s;
+    }, 1000);
+  }
+  document.getElementById('choice-record').addEventListener('click', startRecordingUI);
+
+  document.getElementById('create-back').addEventListener('click', function(){
+    var open = [writeEl, recordEl, reviewEl].some(function(el){ return el.style.display === 'flex'; });
+    if(open){
+      selectEl.style.display = 'block';
+      writeEl.style.display = 'none';
+      recordEl.style.display = 'none';
+      reviewEl.style.display = 'none';
+      heading.textContent = 'New Dream';
+      clearInterval(recInterval);
+    } else {
+      location.href = 'home.html';
+    }
+  });
+
+  writeContinue.addEventListener('click', function(){
+    DreamStore.setDraft({ caption: textArea.value.trim(), sourceDreamId: null });
+    location.href = 'style.html';
+  });
+
+  document.getElementById('stop-record').addEventListener('click', function(){
+    clearInterval(recInterval);
+    recordEl.style.display = 'none';
+    document.getElementById('review-timer').textContent = document.getElementById('rec-timer').textContent;
+    reviewEl.style.display = 'flex';
+    heading.textContent = 'Review your recording';
+  });
+  document.getElementById('re-record').addEventListener('click', startRecordingUI);
+  document.getElementById('play-btn').addEventListener('click', function(){
+    var btn = document.getElementById('play-btn');
+    var playing = btn.classList.toggle('playing');
+    btn.innerHTML = playing ? '⏸ Playing…' : '▶ Play back';
+    if(playing) setTimeout(function(){ btn.classList.remove('playing'); btn.innerHTML = '▶ Play back'; }, 2200);
+  });
+  document.getElementById('review-continue').addEventListener('click', function(){
+    // No real speech-to-text available client-side — simulate the auto-transcription
+    // the spec calls for. Real build: send the recorded audio to a transcription API here.
+    DreamStore.setDraft({ caption: 'I was flying over a city made of glass, and the streets below were made of soft light instead of stone.', sourceDreamId: null });
+    location.href = 'style.html';
+  });
+
+  // If arriving with a restore flag (from a failed generation), pre-fill Write mode.
+  if(draft && draft.restore && draft.caption){
+    document.getElementById('choice-write').click();
+    textArea.value = draft.caption;
+    updateCharCount();
+    DreamStore.setDraft({ restore: false });
+  }
+</script>
+</body>
+</html>

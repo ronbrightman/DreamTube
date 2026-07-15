@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Explore — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="app" class="fill" style="position:relative;">
+  <a class="explore-back" href="home.html">←</a>
+  <div class="feed-scroll" id="feed-scroll"></div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
+
+  function cardHTML(d, isFirst){
+    var grad = DreamStore.gradientFor(d);
+    return '<div class="feed-card" data-id="'+d.id+'">' +
+      '<div class="feed-bg" style="background:'+grad+'"></div>' +
+      '<div class="feed-scrim"></div>' +
+      '<div class="feed-info">' +
+        '<div class="feed-user">'+d.ownerHandle+'</div>' +
+        '<div class="feed-caption">"'+esc(d.caption)+'"</div>' +
+        '<span class="feed-tag">Style: '+d.style+'</span>' +
+      '</div>' +
+      '<div class="feed-actions">' +
+        '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
+          '<div class="fa-circle">'+(d.likedByMe?'♥':'♡')+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
+        '</div>' +
+        '<div class="feed-action"><div class="fa-circle">↗</div><span>Share</span></div>' +
+      '</div>' +
+      (isFirst ? '<div class="feed-swipe-hint">↕ SWIPE FOR NEXT DREAM</div>' : '') +
+    '</div>';
+  }
+
+  var dreams = DreamStore.getFeed();
+  var root = document.getElementById('feed-scroll');
+  root.innerHTML = dreams.length
+    ? dreams.map(function(d,i){ return cardHTML(d, i===0); }).join('')
+    : '<div class="grid-empty" style="color:#fff;">No published dreams yet.</div>';
+
+  Array.prototype.forEach.call(root.querySelectorAll('[data-like]'), function(el){
+    el.addEventListener('click', function(){
+      var d = DreamStore.toggleLike(el.dataset.like);
+      if(!d) return;
+      el.classList.toggle('liked', d.likedByMe);
+      el.querySelector('.fa-circle').textContent = d.likedByMe ? '♥' : '♡';
+      document.querySelector('[data-count="'+d.id+'"]').textContent = formatCount(d.likes);
+    });
+  });
+
+  var targetId = getParam('id');
+  if(targetId){
+    var card = root.querySelector('.feed-card[data-id="'+targetId+'"]');
+    if(card) card.scrollIntoView({ block: 'start' });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Profile — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="topbar">
+    <div style="font-family:var(--font-display); font-weight:600; font-size:17px;">Profile</div>
+    <div class="icon-btn" id="logout-btn" title="Log out">⚙️</div>
+  </div>
+  <div class="scroll-area">
+    <div class="profile-head">
+      <div class="profile-avatar">🌙</div>
+      <div class="profile-name" id="profile-handle">@you</div>
+      <div class="profile-stats"><b id="profile-count">0</b> dreams created · private unless published</div>
+      <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create Dream</a>
+    </div>
+    <div class="section-label" style="padding:0 20px;">My dreams</div>
+    <div class="video-grid" id="profile-grid"></div>
+  </div>
+  <div class="bottom-nav">
+    <a class="nav-item" href="home.html"><div class="nav-icon">🏠</div>Home</a>
+    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
+    <a class="nav-item active" href="profile.html"><div class="nav-icon">👤</div>Profile</a>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  function vcardHTML(d){
+    var priv = !d.isPublished ? '<div class="priv">Private</div>' : '';
+    var grad = DreamStore.gradientFor(d);
+    return '<a class="vcard" href="explore.html?id='+d.id+'">' +
+      '<div class="vcard-thumb" style="background:'+grad+'">'+priv+'<div class="dur">'+d.dur+'</div></div>' +
+      '<div class="vcard-title">'+esc(d.caption)+'</div>' +
+      '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
+    '</a>';
+  }
+
+  var user = DreamStore.getCurrentUser();
+  if(user) document.getElementById('profile-handle').textContent = user.handle;
+
+  var mine = DreamStore.getMyDreams();
+  document.getElementById('profile-count').textContent = mine.length;
+  var grid = document.getElementById('profile-grid');
+  grid.innerHTML = mine.length
+    ? mine.map(vcardHTML).join('')
+    : '<div class="grid-empty">You haven\'t created a dream yet — tap "+ Create Dream" to make your first one.</div>';
+
+  document.getElementById('logout-btn').addEventListener('click', function(){
+    if(confirm('Log out of DreamTube?')){
+      DreamStore.logout();
+      location.href = 'index.html';
+    }
+  });
+</script>
+</body>
+</html>

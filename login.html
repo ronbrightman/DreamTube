@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Log in — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="topbar"><a class="icon-btn" href="index.html">←</a><div></div></div>
+  <div class="px" style="flex:1; display:flex; flex-direction:column;">
+    <div class="auth-head" id="auth-heading">Welcome back</div>
+
+    <button class="oauth-btn" style="margin-bottom:10px;">
+      <span class="oauth-icon-chip">
+        <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+      </span>
+      Continue with Google
+    </button>
+    <button class="oauth-btn">
+      <svg width="15" height="18" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+      Continue with Apple
+    </button>
+    <div class="divider">or</div>
+    <input class="field" id="login-email" placeholder="Email" autocomplete="email">
+    <input class="field" id="login-password" placeholder="Password" type="password" autocomplete="current-password">
+    <div class="err-text" id="login-error"></div>
+    <button class="btn btn-primary btn-block" id="login-submit" style="margin-top:2px;">Continue</button>
+    <div style="flex:1"></div>
+    <span class="link-text" id="auth-toggle" style="margin-bottom:22px; cursor:pointer;">New here? <b>Sign up</b></span>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  var isSignup = false;
+  var heading = document.getElementById('auth-heading');
+  var toggle = document.getElementById('auth-toggle');
+  toggle.addEventListener('click', function(){
+    isSignup = !isSignup;
+    heading.textContent = isSignup ? 'Create your account' : 'Welcome back';
+    toggle.innerHTML = isSignup ? 'Already have an account? <b>Log in</b>' : 'New here? <b>Sign up</b>';
+  });
+
+  document.getElementById('login-submit').addEventListener('click', function(){
+    var email = document.getElementById('login-email').value.trim();
+    var password = document.getElementById('login-password').value;
+    var err = document.getElementById('login-error');
+    if(!email || email.indexOf('@') === -1){ err.textContent = 'Enter a valid email address.'; return; }
+    if(!password){ err.textContent = 'Enter a password.'; return; }
+    err.textContent = '';
+    var btn = document.getElementById('login-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-inline"></span>';
+    setTimeout(function(){
+      DreamStore.login(email);
+      location.href = 'home.html';
+    }, 450);
+  });
+</script>
+</body>
+</html>

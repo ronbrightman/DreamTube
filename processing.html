@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Generating… — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="proc-wrap">
+    <div class="proc-live" id="proc-live">
+      <div class="proc-orb"></div>
+      <div class="proc-title">Turning your dream<br>into a video…</div>
+      <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
+      <div class="proc-pct" id="proc-pct">0%</div>
+      <div class="proc-caption" id="proc-caption">Painting the scene…</div>
+      <a class="btn btn-ghost" href="home.html" style="margin-top:6px;">Notify me when it's ready</a>
+    </div>
+    <div class="proc-fail" id="proc-fail" style="display:none;">
+      <div class="proc-fail-icon">⚠️</div>
+      <div class="proc-title">That dream didn't<br>come through</div>
+      <div class="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
+      <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 6px;">
+        <button class="btn btn-primary btn-block" id="retry-btn">Try Again</button>
+        <button class="btn btn-ghost btn-block" id="fail-edit-btn">Edit Dream</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  var draft = DreamStore.getDraft();
+  if(!draft.caption || !draft.style){ location.href = 'create.html'; }
+
+  var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Almost dreaming…'];
+  var progInterval;
+
+  function startFakeProgress(){
+    var pct = 0, capIdx = 0;
+    document.getElementById('proc-fill').style.width = '0%';
+    document.getElementById('proc-pct').textContent = '0%';
+    document.getElementById('proc-caption').textContent = CAPTIONS[0];
+    clearInterval(progInterval);
+    progInterval = setInterval(function(){
+      pct = Math.min(pct + Math.random()*9 + 3, 92);
+      document.getElementById('proc-fill').style.width = pct + '%';
+      document.getElementById('proc-pct').textContent = Math.floor(pct) + '%';
+      capIdx = (capIdx + 1) % CAPTIONS.length;
+      document.getElementById('proc-caption').textContent = CAPTIONS[capIdx];
+    }, 500);
+  }
+  function finishProgress(){
+    clearInterval(progInterval);
+    document.getElementById('proc-fill').style.width = '100%';
+    document.getElementById('proc-pct').textContent = '100%';
+  }
+
+  function runGeneration(){
+    document.getElementById('proc-live').style.display = 'flex';
+    document.getElementById('proc-fail').style.display = 'none';
+    startFakeProgress();
+    var d = DreamStore.getDraft();
+    var task = d.sourceDreamId
+      ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style })
+      : DreamStore.generateVideo(d.caption, d.style);
+
+    task.then(function(dream){
+      finishProgress();
+      setTimeout(function(){
+        DreamStore.clearDraft();
+        location.href = 'result.html?id=' + dream.id;
+      }, 350);
+    }).catch(function(){
+      clearInterval(progInterval);
+      document.getElementById('proc-live').style.display = 'none';
+      document.getElementById('proc-fail').style.display = 'flex';
+    });
+  }
+
+  document.getElementById('retry-btn').addEventListener('click', runGeneration);
+  document.getElementById('fail-edit-btn').addEventListener('click', function(){
+    DreamStore.setDraft({ restore: true });
+    location.href = 'create.html';
+  });
+
+  runGeneration();
+</script>
+</body>
+</html>

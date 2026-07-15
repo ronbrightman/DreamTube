@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Choose a style — DreamTube</title>
+<meta name="theme-color" content="#1C1A3D">
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
+
+<div id="app">
+  <div class="topbar"><a class="icon-btn" href="create.html">←</a><div style="font-weight:700; font-size:14px;">Choose a style</div><div style="width:36px;"></div></div>
+  <div class="px" style="flex:1; display:flex; flex-direction:column;">
+    <div class="style-grid" id="style-grid">
+      <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎨</div><div class="sc-name">Cartoon</div></div></div>
+      <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎥</div><div class="sc-name">Cinematic</div></div></div>
+      <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🌸</div><div class="sc-name">Anime</div></div></div>
+      <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">📷</div><div class="sc-name">Realistic</div></div></div>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn btn-primary btn-block" id="generate-btn" disabled style="margin-bottom:22px;">Generate Video</button>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script>
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  var draft = DreamStore.getDraft();
+  if(!draft.caption){ location.href = 'create.html'; }
+
+  var selected = null;
+  var grid = document.getElementById('style-grid');
+  var genBtn = document.getElementById('generate-btn');
+  grid.addEventListener('click', function(e){
+    var card = e.target.closest('.style-card');
+    if(!card) return;
+    Array.prototype.forEach.call(grid.querySelectorAll('.style-card'), function(c){ c.classList.remove('selected'); });
+    card.classList.add('selected');
+    selected = card.dataset.style;
+    genBtn.disabled = false;
+  });
+  genBtn.addEventListener('click', function(){
+    DreamStore.setDraft({ style: selected });
+    location.href = 'processing.html';
+  });
+</script>
+</body>
+</html>
