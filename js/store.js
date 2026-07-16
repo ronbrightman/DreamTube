@@ -35,13 +35,37 @@
     };
   }
 
-  // One-time migration: browsers that loaded the app before mock dreams were
-  // removed still have the old seed data (ids "d0".."d5") saved locally.
+  // One-time migration: browsers that used the app before the fal.ai switch
+  // (and before mock dreams were removed) still have stale data saved
+  // locally that the current backend no longer understands:
+  //  - mock seed dreams (ids "d0".."d5")
+  //  - finished dreams whose videoUrl is the old pre-Blobs Veo download
+  //    proxy path (video-status.js no longer serves that route at all)
+  //  - a pendingJob left over from a Veo-era operation (not "fal:"-prefixed)
+  //    — resuming it would route into the dead/zero-quota Veo fallback and
+  //    hijack a fresh generation attempt instead of starting one
   var LEGACY_MOCK_ID = /^d[0-5]$/;
-  function stripLegacyMockDreams(s) {
-    var before = s.dreams.length;
+  var LEGACY_VEO_DOWNLOAD_PREFIX = '/.netlify/functions/video-status?download=';
+  function migrateLegacyState(s) {
+    var changed = false;
+
+    var beforeCount = s.dreams.length;
     s.dreams = s.dreams.filter(function (d) { return !LEGACY_MOCK_ID.test(d.id); });
-    return s.dreams.length !== before;
+    if (s.dreams.length !== beforeCount) changed = true;
+
+    s.dreams.forEach(function (d) {
+      if (d.videoUrl && d.videoUrl.indexOf(LEGACY_VEO_DOWNLOAD_PREFIX) === 0) {
+        delete d.videoUrl;
+        changed = true;
+      }
+    });
+
+    if (s.pendingJob && (!s.pendingJob.operationName || s.pendingJob.operationName.indexOf('fal:') !== 0)) {
+      s.pendingJob = null;
+      changed = true;
+    }
+
+    return changed;
   }
 
   function load() {
@@ -50,7 +74,8 @@
       if (!raw) { var s = seed(); localStorage.setItem(KEY, JSON.stringify(s)); return s; }
       var parsed = JSON.parse(raw);
       if (!parsed.dreams) throw new Error('bad state');
-      if (stripLegacyMockDreams(parsed)) {
+      if (parsed.pendingJob === undefined) parsed.pendingJob = null;
+      if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
       return parsed;
