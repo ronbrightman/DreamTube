@@ -8,11 +8,16 @@
 // own HTTP response: classic Netlify functions cap synchronous response
 // bodies around 6MB, which a real Veo clip can easily exceed.
 
-var { getStore } = require('@netlify/blobs');
+var { connectLambda, getStore } = require('@netlify/blobs');
 
 var API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 exports.handler = async function (event) {
+  // Classic Lambda-compatibility functions don't get Blobs credentials
+  // auto-injected the way the modern function format does — this wires
+  // them up manually from the invocation event.
+  connectLambda(event);
+
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }) };
   }
