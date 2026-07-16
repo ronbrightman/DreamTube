@@ -31,9 +31,21 @@ async function parseJsonSafe(res) {
   }
 }
 
+// fal's queue status/result endpoints route on just the app's "owner/alias"
+// (e.g. "fal-ai/wan"), not the full model id used for submission (e.g.
+// "fal-ai/wan/v2.2-5b/text-to-video") — confirmed against @fal-ai/client's
+// own queue.js, which builds status/result URLs from parseEndpointId(id)
+// .owner + .alias only, discarding any deeper path segments. Using the full
+// model id here 405s.
+function falAppBase(model) {
+  var parts = model.split('/');
+  return parts[0] + '/' + parts[1];
+}
+
 /** Active path. */
 async function checkFalStatus(model, requestId, falKey) {
-  var statusRes = await fetch(FAL_API_BASE + '/' + model + '/requests/' + requestId + '/status', {
+  var appBase = falAppBase(model);
+  var statusRes = await fetch(FAL_API_BASE + '/' + appBase + '/requests/' + requestId + '/status', {
     headers: { 'Authorization': 'Key ' + falKey }
   });
   var parsedStatus = await parseJsonSafe(statusRes);
@@ -54,7 +66,7 @@ async function checkFalStatus(model, requestId, falKey) {
     return { statusCode: 200, done: true, error: 'generation_failed: ' + statusData.status };
   }
 
-  var resultRes = await fetch(FAL_API_BASE + '/' + model + '/requests/' + requestId, {
+  var resultRes = await fetch(FAL_API_BASE + '/' + appBase + '/requests/' + requestId, {
     headers: { 'Authorization': 'Key ' + falKey }
   });
   var parsedResult = await parseJsonSafe(resultRes);
