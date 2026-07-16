@@ -24,7 +24,11 @@
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
       <div class="proc-pct" id="proc-pct">0%</div>
       <div class="proc-caption" id="proc-caption">Painting the scene…</div>
-      <a class="btn btn-ghost" href="home.html" style="margin-top:6px;">Notify me when it's ready</a>
+      <button class="btn btn-ghost" id="notify-btn" style="margin-top:6px;">Notify me when it's ready</button>
+      <div class="proc-preview" id="proc-preview" style="display:none;">
+        <div class="proc-preview-label">While you wait, revisit your dreams</div>
+        <div class="proc-preview-row" id="proc-preview-row"></div>
+      </div>
     </div>
     <div class="proc-fail" id="proc-fail" style="display:none;">
       <div class="proc-fail-icon">⚠️</div>
@@ -42,7 +46,7 @@
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   var draft = DreamStore.getDraft();
-  if(!draft.caption || !draft.style){ location.href = 'create.html'; }
+  if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
 
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
   var progInterval;
@@ -69,14 +73,36 @@
     document.getElementById('proc-pct').textContent = '100%';
   }
 
+  function renderPreview(){
+    var dreams = DreamStore.getMyDreams().concat(DreamStore.getFeed()).slice(0, 10);
+    var section = document.getElementById('proc-preview');
+    var row = document.getElementById('proc-preview-row');
+    if(!dreams.length){ section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    row.innerHTML = dreams.map(function(d){
+      var media = d.videoUrl
+        ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata"></video>'
+        : '<div class="ppt-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
+      return '<div class="proc-preview-thumb">'+media+'</div>';
+    }).join('');
+  }
+
   function runGeneration(){
     document.getElementById('proc-live').style.display = 'flex';
     document.getElementById('proc-fail').style.display = 'none';
     startFakeProgress();
-    var d = DreamStore.getDraft();
-    var task = d.sourceDreamId
-      ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style })
-      : DreamStore.generateVideo(d.caption, d.style);
+    renderPreview();
+
+    var pending = DreamStore.getPendingJob();
+    var task;
+    if(pending){
+      task = DreamStore.resumePendingJob();
+    } else {
+      var d = DreamStore.getDraft();
+      task = d.sourceDreamId
+        ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style })
+        : DreamStore.generateVideo(d.caption, d.style);
+    }
 
     task.then(function(dream){
       finishProgress();
@@ -95,6 +121,13 @@
   document.getElementById('fail-edit-btn').addEventListener('click', function(){
     DreamStore.setDraft({ restore: true });
     location.href = 'create.html';
+  });
+  document.getElementById('notify-btn').addEventListener('click', function(){
+    DreamStore.requestNotifyOnReady();
+    if('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied'){
+      Notification.requestPermission();
+    }
+    location.href = 'home.html';
   });
 
   runGeneration();

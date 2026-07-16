@@ -30,15 +30,18 @@
     return {
       user: null,
       draft: { caption: '', style: null, sourceDreamId: null, restore: false },
-      dreams: [
-        { id: 'd0', ownerHandle: '@dreamer_92', caption: 'Falling through clouds of paint', style: 'Anime', likes: 2300, likedByMe: false, dur: '0:14', mine: false, isPublished: true },
-        { id: 'd1', ownerHandle: '@nightowl', caption: 'A staircase made of static', style: 'Cinematic', likes: 980, likedByMe: false, dur: '0:22', mine: false, isPublished: true },
-        { id: 'd2', ownerHandle: '@you', caption: 'Flying over a city made of glass', style: 'Cinematic', likes: 112, likedByMe: false, dur: '0:18', mine: true, isPublished: true },
-        { id: 'd3', ownerHandle: '@luma', caption: 'A talking cat in the school hallway', style: 'Cartoon', likes: 5100, likedByMe: false, dur: '0:11', mine: false, isPublished: true },
-        { id: 'd4', ownerHandle: '@you', caption: 'Swimming through a library at night', style: 'Realistic', likes: 64, likedByMe: false, dur: '0:20', mine: true, isPublished: false },
-        { id: 'd5', ownerHandle: '@mirage', caption: 'The train that never arrives', style: 'Anime', likes: 1700, likedByMe: false, dur: '0:16', mine: false, isPublished: true }
-      ]
+      dreams: [],
+      pendingJob: null
     };
+  }
+
+  // One-time migration: browsers that loaded the app before mock dreams were
+  // removed still have the old seed data (ids "d0".."d5") saved locally.
+  var LEGACY_MOCK_ID = /^d[0-5]$/;
+  function stripLegacyMockDreams(s) {
+    var before = s.dreams.length;
+    s.dreams = s.dreams.filter(function (d) { return !LEGACY_MOCK_ID.test(d.id); });
+    return s.dreams.length !== before;
   }
 
   function load() {
@@ -47,6 +50,9 @@
       if (!raw) { var s = seed(); localStorage.setItem(KEY, JSON.stringify(s)); return s; }
       var parsed = JSON.parse(raw);
       if (!parsed.dreams) throw new Error('bad state');
+      if (stripLegacyMockDreams(parsed)) {
+        try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
+      }
       return parsed;
     } catch (e) {
       var fresh = seed();
@@ -66,22 +72,10 @@
   }
   function gradientFor(d) { return STYLE_GRADIENTS[d.style] || STYLE_GRADIENTS.Cinematic; }
 
-  /** Starts a Veo generation job and polls until the video is ready (or MAX_POLL_MS elapses). */
-  function startGeneration(caption, style) {
-    return fetch('/.netlify/functions/generate-video', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ caption: caption, style: style })
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        if (!res.ok) throw new Error(data.error || 'generation_failed');
-        return data.operationName;
-      });
-    }).then(pollUntilDone);
-  }
+  function savePendingJob(job) { state.pendingJob = job; persist(); }
+  function clearPendingJob() { state.pendingJob = null; persist(); }
 
-  function pollUntilDone(operationName) {
-    var startedAt = Date.now();
+  function pollUntilDone(operationName, startedAt) {
     return new Promise(function (resolve, reject) {
       function poll() {
         if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('generation_timeout')); return; }
@@ -95,6 +89,69 @@
           .catch(reject);
       }
       poll();
+    });
+  }
+
+  function finalizeDream(videoUrl, caption, style, sourceDreamId) {
+    var dream;
+    if (sourceDreamId) {
+      dream = findDream(sourceDreamId);
+      if (!dream) throw new Error('not_found');
+      Object.assign(dream, { caption: caption, style: style, videoUrl: videoUrl });
+    } else {
+      dream = {
+        id: newId(),
+        ownerHandle: state.user ? state.user.handle : '@you',
+        caption: caption, style: style,
+        likes: 0, likedByMe: false, dur: '0:08', mine: true, isPublished: false,
+        videoUrl: videoUrl
+      };
+      state.dreams.unshift(dream);
+    }
+    clearPendingJob();
+    persist();
+    return dream;
+  }
+
+  /**
+   * Starts (or resumes) a generation job and polls until the video is ready.
+   * The job is persisted as state.pendingJob the moment an operation name
+   * exists, so a navigation or closed tab mid-flight is recoverable — Home
+   * checks for a pending job on load and resumes polling it. opts.resume
+   * carries over the original operationName/startedAt so the MAX_POLL_MS
+   * budget isn't reset by resuming.
+   */
+  function startGeneration(caption, style, opts) {
+    opts = opts || {};
+    var sourceDreamId = opts.sourceDreamId || null;
+    var resume = opts.resume;
+
+    var operationPromise = resume
+      ? Promise.resolve(resume.operationName)
+      : fetch('/.netlify/functions/generate-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caption: caption, style: style })
+        }).then(function (res) {
+          return res.json().then(function (data) {
+            if (!res.ok) throw new Error(data.error || 'generation_failed');
+            return data.operationName;
+          });
+        });
+
+    return operationPromise.then(function (operationName) {
+      var startedAt = resume ? resume.startedAt : Date.now();
+      savePendingJob({
+        operationName: operationName, startedAt: startedAt,
+        caption: caption, style: style, sourceDreamId: sourceDreamId,
+        notify: (resume && state.pendingJob && state.pendingJob.notify) || false
+      });
+      return pollUntilDone(operationName, startedAt);
+    }).then(function (videoUrl) {
+      return finalizeDream(videoUrl, caption, style, sourceDreamId);
+    }).catch(function (err) {
+      clearPendingJob();
+      throw err;
     });
   }
 
@@ -133,30 +190,31 @@
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
     clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false }; persist(); },
 
-    /** Creates a brand new dream via Veo 3.1 Lite. Returns a Promise that resolves once the video is ready. */
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. */
     generateVideo: function (caption, style) {
-      return startGeneration(caption, style).then(function (videoUrl) {
-        var dream = {
-          id: newId(),
-          ownerHandle: state.user ? state.user.handle : '@you',
-          caption: caption, style: style,
-          likes: 0, likedByMe: false, dur: '0:08', mine: true, isPublished: false,
-          videoUrl: videoUrl
-        };
-        state.dreams.unshift(dream);
-        persist();
-        return dream;
-      });
+      return startGeneration(caption, style);
     },
 
     /** Re-runs generation on an existing dream (Edit Dream / Change Style / Try Again). */
     regenerateDream: function (id, patch) {
-      return startGeneration(patch.caption, patch.style).then(function (videoUrl) {
-        var d = findDream(id);
-        if (!d) throw new Error('not_found');
-        Object.assign(d, patch, { videoUrl: videoUrl });
-        persist();
-        return d;
+      return startGeneration(patch.caption, patch.style, { sourceDreamId: id });
+    },
+
+    /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */
+    getPendingJob: function () { return state.pendingJob; },
+
+    /** Marks the pending job so its completion fires a real Notification wherever it resolves. */
+    requestNotifyOnReady: function () {
+      if (state.pendingJob) { state.pendingJob.notify = true; persist(); }
+    },
+
+    /** Resumes polling a pending job left over from a previous page (e.g. the user left Processing). */
+    resumePendingJob: function () {
+      var job = state.pendingJob;
+      if (!job) return Promise.reject(new Error('no_pending_job'));
+      return startGeneration(job.caption, job.style, {
+        sourceDreamId: job.sourceDreamId,
+        resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },
 

@@ -51,6 +51,8 @@ body{
 }
 /* Pages that need to feel like a full-bleed immersive screen (Result, Explore) */
 #app.fill{ height:100dvh; overflow:hidden; }
+/* Pages with an internally-scrolling .scroll-area between a fixed topbar/bottom-nav */
+#app.scroll-shell{ height:100dvh; }
 
 .px{ padding-left:24px; padding-right:24px;}
 .topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 10px; flex:none;}
@@ -59,6 +61,9 @@ body{
   display:flex; align-items:center; justify-content:center; color:var(--text-primary); cursor:pointer; font-size:16px; text-decoration:none;
 }
 .icon-btn:hover{ background:var(--surface-alt);}
+.search-input{ flex:1; margin-right:10px; background:var(--surface); border:1px solid var(--border); border-radius:100px; padding:9px 16px; font-family:var(--font-body); color:var(--text-primary); font-size:14px;}
+.search-input::placeholder{ color:var(--text-faint);}
+.search-input:focus{ outline:2px solid var(--accent); border-color:transparent;}
 .btn{
   font-family:var(--font-body); font-weight:700; font-size:14.5px; border:none; cursor:pointer;
   border-radius:100px; padding:15px 20px; display:flex; align-items:center; justify-content:center; gap:8px;
@@ -77,7 +82,6 @@ body{
 
 /* ===== Welcome ===== */
 .welcome-body{ flex:1; display:flex; flex-direction:column; justify-content:space-between; align-items:center; padding:calc(env(safe-area-inset-top,0px) + 56px) 28px 40px; text-align:center;}
-.wm-logo{ font-family:var(--font-display); font-style:italic; font-weight:500; font-size:30px;}
 .wm-visual{
   width:220px; height:220px; border-radius:38px; margin:18px auto;
   display:block; object-fit:contain;
@@ -100,7 +104,9 @@ body{
 
 /* ===== Home / Profile ===== */
 .section-label{ font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-faint); margin:16px 0 10px;}
-.scroll-area{ flex:1;}
+.gen-banner{ display:flex; align-items:center; gap:10px; margin:14px 20px 0; padding:12px 14px; background:var(--surface); border-radius:14px;}
+.gen-banner-text{ font-size:13px; color:var(--text-muted);}
+.scroll-area{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;}
 .bottom-nav{
   position:sticky; bottom:0; flex:none; height:calc(72px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
   display:flex; align-items:center; justify-content:space-around;
@@ -143,6 +149,7 @@ body{
 textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(--font-body);}
 .char-count{ font-size:11px; color:var(--text-faint); text-align:right; margin-top:-6px; margin-bottom:14px;}
 .rec-panel{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;}
+.rec-error{ font-size:12px; color:var(--accent-warm); text-align:center; padding:0 8px;}
 .rec-timer{ font-family:var(--font-display); font-size:34px; font-weight:500;}
 .rec-dot{ width:120px; height:120px; border-radius:50%; background:radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), transparent 45%), var(--accent-warm); display:flex; align-items:center; justify-content:center; font-size:34px; box-shadow:0 0 0 10px rgba(255,177,153,.14), 0 0 0 22px rgba(255,177,153,.07); animation:pulse 1.6s ease-in-out infinite;}
 @keyframes pulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.05);} }
@@ -181,6 +188,12 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-bar-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent-warm)); border-radius:100px; transition:width .25s linear;}
 .proc-pct{ font-size:12px; color:var(--text-muted); font-weight:700;}
 .proc-caption{ font-size:13px; color:var(--text-muted); font-style:italic; min-height:18px;}
+.proc-preview{ width:100%; margin-top:4px;}
+.proc-preview-label{ font-size:11px; color:var(--text-muted); margin-bottom:8px;}
+.proc-preview-row{ display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; scrollbar-width:none;}
+.proc-preview-row::-webkit-scrollbar{ display:none;}
+.proc-preview-thumb{ position:relative; flex:0 0 auto; width:64px; aspect-ratio:9/14; border-radius:10px; overflow:hidden; background:var(--surface);}
+.ppt-bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
 .proc-fail{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;}
 .proc-fail-icon{ font-size:42px;}
 .proc-fail-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; max-width:260px;}

@@ -28,10 +28,11 @@
       <div class="choice-icon">🎙️</div>
       <div><div class="choice-title">Record it</div><div class="choice-sub">Speak your dream out loud</div></div>
     </div>
+    <div class="rec-error" id="select-error" style="display:none;"></div>
   </div>
 
   <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px;">
-    <textarea class="field" id="dream-text" placeholder="I was flying over a city made of glass..."></textarea>
+    <textarea class="field" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
     <div class="char-count" id="char-count">0 characters</div>
     <div style="flex:1"></div>
     <button class="btn btn-primary btn-block" id="write-continue" disabled style="margin-bottom:22px;">Continue</button>
@@ -54,6 +55,7 @@
       <span style="height:18px;"></span><span style="height:8px;"></span><span style="height:24px;"></span><span style="height:16px;"></span>
     </div>
     <button class="btn btn-secondary" id="play-btn">▶ Play back</button>
+    <div class="rec-error" id="rec-error" style="display:none;"></div>
     <div style="flex:1"></div>
     <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 4px 22px;">
       <button class="btn btn-primary btn-block" id="review-continue">Continue</button>
@@ -74,6 +76,13 @@
     draft = DreamStore.getDraft();
   }
   var recInterval;
+  var mediaStream = null;
+  var mediaRecorder = null;
+  var recordedChunks = [];
+  var recordedBlob = null;
+  var recordedMimeType = '';
+  var playbackAudio = new Audio();
+  var playbackObjectUrl = null;
 
   var selectEl = document.getElementById('create-select');
   var writeEl = document.getElementById('create-write');
@@ -83,6 +92,28 @@
   var textArea = document.getElementById('dream-text');
   var charCount = document.getElementById('char-count');
   var writeContinue = document.getElementById('write-continue');
+  var reviewContinue = document.getElementById('review-continue');
+
+  function showError(elId, msg){
+    var el = document.getElementById(elId);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideError(elId){
+    document.getElementById(elId).style.display = 'none';
+  }
+
+  function stopMediaStream(){
+    if(mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
+  }
+
+  function pickMimeType(){
+    var candidates = ['audio/ogg;codecs=opus', 'audio/mp4', 'audio/wav', 'audio/webm;codecs=opus', 'audio/webm'];
+    for(var i=0; i<candidates.length; i++){
+      if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
+  }
 
   function updateCharCount(){
     var n = textArea.value.length;
@@ -99,19 +130,38 @@
   });
 
   function startRecordingUI(){
-    selectEl.style.display = 'none';
-    reviewEl.style.display = 'none';
-    recordEl.style.display = 'flex';
-    heading.textContent = 'Record your dream';
-    var secs = 0;
-    document.getElementById('rec-timer').textContent = '00:00';
-    clearInterval(recInterval);
-    recInterval = setInterval(function(){
-      secs++;
-      var m = String(Math.floor(secs/60)).padStart(2,'0');
-      var s = String(secs%60).padStart(2,'0');
-      document.getElementById('rec-timer').textContent = m+':'+s;
-    }, 1000);
+    hideError('select-error');
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+      showError('select-error', "Recording isn't supported in this browser — try Write instead.");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+      mediaStream = stream;
+      recordedChunks = [];
+      var mimeType = pickMimeType();
+      mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+      recordedMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      mediaRecorder.addEventListener('dataavailable', function(e){
+        if(e.data && e.data.size > 0) recordedChunks.push(e.data);
+      });
+      mediaRecorder.start();
+
+      selectEl.style.display = 'none';
+      reviewEl.style.display = 'none';
+      recordEl.style.display = 'flex';
+      heading.textContent = 'Record your dream';
+      var secs = 0;
+      document.getElementById('rec-timer').textContent = '00:00';
+      clearInterval(recInterval);
+      recInterval = setInterval(function(){
+        secs++;
+        var m = String(Math.floor(secs/60)).padStart(2,'0');
+        var s = String(secs%60).padStart(2,'0');
+        document.getElementById('rec-timer').textContent = m+':'+s;
+      }, 1000);
+    }).catch(function(){
+      showError('select-error', 'Microphone access was denied — allow it in your browser settings, or use Write instead.');
+    });
   }
   document.getElementById('choice-record').addEventListener('click', startRecordingUI);
 
@@ -124,6 +174,8 @@
       reviewEl.style.display = 'none';
       heading.textContent = 'New Dream';
       clearInterval(recInterval);
+      stopMediaStream();
+      playbackAudio.pause();
     } else {
       location.href = 'home.html';
     }
@@ -136,23 +188,79 @@
 
   document.getElementById('stop-record').addEventListener('click', function(){
     clearInterval(recInterval);
-    recordEl.style.display = 'none';
-    document.getElementById('review-timer').textContent = document.getElementById('rec-timer').textContent;
-    reviewEl.style.display = 'flex';
-    heading.textContent = 'Review your recording';
+    if(!mediaRecorder || mediaRecorder.state === 'inactive'){ return; }
+    mediaRecorder.addEventListener('stop', function(){
+      stopMediaStream();
+      recordedBlob = new Blob(recordedChunks, { type: recordedMimeType });
+      if(playbackObjectUrl) URL.revokeObjectURL(playbackObjectUrl);
+      playbackObjectUrl = URL.createObjectURL(recordedBlob);
+      playbackAudio.src = playbackObjectUrl;
+
+      recordEl.style.display = 'none';
+      document.getElementById('review-timer').textContent = document.getElementById('rec-timer').textContent;
+      hideError('rec-error');
+      reviewContinue.disabled = false;
+      reviewContinue.textContent = 'Continue';
+      reviewEl.style.display = 'flex';
+      heading.textContent = 'Review your recording';
+    }, { once: true });
+    mediaRecorder.stop();
   });
-  document.getElementById('re-record').addEventListener('click', startRecordingUI);
+  document.getElementById('re-record').addEventListener('click', function(){
+    playbackAudio.pause();
+    startRecordingUI();
+  });
   document.getElementById('play-btn').addEventListener('click', function(){
     var btn = document.getElementById('play-btn');
-    var playing = btn.classList.toggle('playing');
-    btn.innerHTML = playing ? '⏸ Playing…' : '▶ Play back';
-    if(playing) setTimeout(function(){ btn.classList.remove('playing'); btn.innerHTML = '▶ Play back'; }, 2200);
+    if(!recordedBlob) return;
+    if(!playbackAudio.paused){
+      playbackAudio.pause();
+      return;
+    }
+    playbackAudio.play();
   });
-  document.getElementById('review-continue').addEventListener('click', function(){
-    // No real speech-to-text available client-side — simulate the auto-transcription
-    // the spec calls for. Real build: send the recorded audio to a transcription API here.
-    DreamStore.setDraft({ caption: 'I was flying over a city made of glass, and the streets below were made of soft light instead of stone.', sourceDreamId: null });
-    location.href = 'style.html';
+  playbackAudio.addEventListener('play', function(){
+    document.getElementById('play-btn').innerHTML = '⏸ Playing…';
+  });
+  playbackAudio.addEventListener('pause', function(){
+    document.getElementById('play-btn').innerHTML = '▶ Play back';
+  });
+  playbackAudio.addEventListener('ended', function(){
+    document.getElementById('play-btn').innerHTML = '▶ Play back';
+  });
+
+  function bufferToBase64(buffer){
+    var bytes = new Uint8Array(buffer);
+    var binary = '';
+    for(var i=0; i<bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  reviewContinue.addEventListener('click', function(){
+    if(!recordedBlob) return;
+    hideError('rec-error');
+    reviewContinue.disabled = true;
+    reviewContinue.textContent = 'Transcribing…';
+
+    recordedBlob.arrayBuffer().then(function(buffer){
+      return fetch('/.netlify/functions/transcribe-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: bufferToBase64(buffer), mimeType: recordedMimeType.split(';')[0] })
+      });
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || result.data.error || !result.data.transcript){
+        throw new Error((result.data && result.data.error) || 'transcription_failed');
+      }
+      DreamStore.setDraft({ caption: result.data.transcript, sourceDreamId: null });
+      location.href = 'style.html';
+    }).catch(function(){
+      reviewContinue.disabled = false;
+      reviewContinue.textContent = 'Continue';
+      showError('rec-error', "Couldn't transcribe that recording — try again, or re-record.");
+    });
   });
 
   // If arriving with a restore flag (from a failed generation), pre-fill Write mode.

@@ -15,7 +15,7 @@
 <body>
 <div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
 
-<div id="app">
+<div id="app" class="scroll-shell">
   <div class="topbar">
     <div style="font-family:var(--font-display); font-weight:600; font-size:17px;">Profile</div>
     <div class="icon-btn" id="logout-btn" title="Log out">⚙️</div>
@@ -46,10 +46,12 @@
 
   function vcardHTML(d){
     var priv = !d.isPublished ? '<div class="priv">Private</div>' : '';
-    var grad = DreamStore.gradientFor(d);
+    var media = d.videoUrl
+      ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
+      : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="vcard" href="explore.html?id='+d.id+'">' +
-      '<div class="vcard-thumb" style="background:'+grad+'">'+priv+'<div class="dur">'+d.dur+'</div></div>' +
-      '<div class="vcard-title">'+esc(d.caption)+'</div>' +
+      '<div class="vcard-thumb">'+media+priv+'<div class="dur">'+d.dur+'</div></div>' +
+      '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
   }

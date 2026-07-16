@@ -15,12 +15,17 @@
 <body>
 <div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
 
-<div id="app">
+<div id="app" class="scroll-shell">
   <div class="topbar">
-    <div style="font-family:var(--font-display); font-weight:600; font-size:17px;">DreamTube</div>
-    <div class="icon-btn">🔍</div>
+    <div style="font-family:var(--font-display); font-weight:600; font-size:17px;" id="home-title">DreamTube</div>
+    <input type="text" id="search-input" class="search-input" placeholder="Search dreams…" dir="auto" style="display:none;">
+    <div class="icon-btn" id="search-toggle">🔍</div>
   </div>
   <div class="scroll-area">
+    <div class="gen-banner" id="gen-banner" style="display:none;">
+      <div class="spinner-inline"></div>
+      <div class="gen-banner-text">Your dream is still generating…</div>
+    </div>
     <div class="section-label" style="padding:0 20px; margin-top:2px;">For you</div>
     <div class="video-grid" id="home-grid"></div>
   </div>
@@ -45,16 +50,66 @@
       : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="vcard" href="explore.html?id='+d.id+'">' +
       '<div class="vcard-thumb">'+media+priv+'<div class="dur">'+d.dur+'</div></div>' +
-      '<div class="vcard-title">'+esc(d.caption)+'</div>' +
+      '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
   }
 
-  var dreams = DreamStore.getFeed();
-  var grid = document.getElementById('home-grid');
-  grid.innerHTML = dreams.length
-    ? dreams.map(vcardHTML).join('')
-    : '<div class="grid-empty">No dreams here yet. Be the first to publish one.</div>';
+  var searchToggle = document.getElementById('search-toggle');
+  var searchInput = document.getElementById('search-input');
+  var homeTitle = document.getElementById('home-title');
+  var searchActive = false;
+
+  function renderGrid(){
+    var q = searchInput.value.trim().toLowerCase();
+    var dreams = DreamStore.getFeed();
+    if(q){
+      dreams = dreams.filter(function(d){
+        return d.caption.toLowerCase().indexOf(q) !== -1 || d.ownerHandle.toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    var grid = document.getElementById('home-grid');
+    grid.innerHTML = dreams.length
+      ? dreams.map(vcardHTML).join('')
+      : q
+        ? '<div class="grid-empty">No dreams match "'+esc(searchInput.value.trim())+'".</div>'
+        : '<div class="grid-empty">No dreams here yet. Be the first to publish one.</div>';
+  }
+  renderGrid();
+
+  searchToggle.addEventListener('click', function(){
+    searchActive = !searchActive;
+    homeTitle.style.display = searchActive ? 'none' : 'block';
+    searchInput.style.display = searchActive ? 'block' : 'none';
+    searchToggle.textContent = searchActive ? '✕' : '🔍';
+    if(searchActive){
+      searchInput.focus();
+    } else {
+      searchInput.value = '';
+      renderGrid();
+    }
+  });
+  searchInput.addEventListener('input', renderGrid);
+
+  function fireNotification(dream){
+    if('Notification' in window && Notification.permission === 'granted'){
+      try{ new Notification('Your dream is ready!', { body: '"' + dream.caption + '" finished generating.', icon: 'assets/logo.jpeg' }); }catch(e){ /* notification unsupported/blocked — banner clearing is enough */ }
+    }
+  }
+
+  var pending = DreamStore.getPendingJob();
+  if(pending){
+    var banner = document.getElementById('gen-banner');
+    banner.style.display = 'flex';
+    var shouldNotify = !!pending.notify;
+    DreamStore.resumePendingJob().then(function(dream){
+      banner.style.display = 'none';
+      renderGrid();
+      if(shouldNotify) fireNotification(dream);
+    }).catch(function(){
+      banner.style.display = 'none';
+    });
+  }
 </script>
 </body>
 </html>

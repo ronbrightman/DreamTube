@@ -16,6 +16,7 @@
 <div id="app" class="fill" style="position:relative;">
   <a class="explore-back" href="home.html">←</a>
   <div class="feed-scroll" id="feed-scroll"></div>
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/store.js"></script>
@@ -35,14 +36,14 @@
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user">'+d.ownerHandle+'</div>' +
-        '<div class="feed-caption">"'+esc(d.caption)+'"</div>' +
+        '<div class="feed-caption" dir="auto">"'+esc(d.caption)+'"</div>' +
         '<span class="feed-tag">Style: '+d.style+'</span>' +
       '</div>' +
       '<div class="feed-actions">' +
         '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
           '<div class="fa-circle">'+(d.likedByMe?'♥':'♡')+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
         '</div>' +
-        '<div class="feed-action"><div class="fa-circle">↗</div><span>Share</span></div>' +
+        '<div class="feed-action" data-share="'+d.id+'"><div class="fa-circle">↗</div><span>Share</span></div>' +
       '</div>' +
       (isFirst ? '<div class="feed-swipe-hint">↕ SWIPE FOR NEXT DREAM</div>' : '') +
     '</div>';
@@ -61,6 +62,32 @@
       el.classList.toggle('liked', d.likedByMe);
       el.querySelector('.fa-circle').textContent = d.likedByMe ? '♥' : '♡';
       document.querySelector('[data-count="'+d.id+'"]').textContent = formatCount(d.likes);
+    });
+  });
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  Array.prototype.forEach.call(root.querySelectorAll('[data-share]'), function(el){
+    el.addEventListener('click', function(){
+      var d = DreamStore.getDream(el.dataset.share);
+      if(!d) return;
+      var shareUrl = location.origin + '/explore.html?id=' + d.id;
+      if(navigator.share){
+        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + d.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
+      } else if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(shareUrl).then(function(){
+          showToast('Link copied to clipboard');
+        }).catch(function(){
+          showToast("Couldn't copy link");
+        });
+      } else {
+        showToast("Sharing isn't supported in this browser");
+      }
     });
   });
 
