@@ -19,6 +19,7 @@
     <div class="proc-live" id="proc-live">
       <div class="proc-orb"></div>
       <div class="proc-title">Turning your dream<br>into a video…</div>
+      <div class="proc-sub" id="proc-sub">Real video generation takes 1–6 minutes.</div>
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
       <div class="proc-pct" id="proc-pct">0%</div>
       <div class="proc-caption" id="proc-caption">Painting the scene…</div>
@@ -42,9 +43,11 @@
   var draft = DreamStore.getDraft();
   if(!draft.caption || !draft.style){ location.href = 'create.html'; }
 
-  var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Almost dreaming…'];
+  var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
   var progInterval;
 
+  // Real Veo generation takes minutes, not seconds — this bar just creeps
+  // toward 92% over roughly the same timespan as MAX_POLL_MS in store.js.
   function startFakeProgress(){
     var pct = 0, capIdx = 0;
     document.getElementById('proc-fill').style.width = '0%';
@@ -52,12 +55,12 @@
     document.getElementById('proc-caption').textContent = CAPTIONS[0];
     clearInterval(progInterval);
     progInterval = setInterval(function(){
-      pct = Math.min(pct + Math.random()*9 + 3, 92);
+      pct = Math.min(pct + Math.random()*1.6 + 0.6, 92);
       document.getElementById('proc-fill').style.width = pct + '%';
       document.getElementById('proc-pct').textContent = Math.floor(pct) + '%';
       capIdx = (capIdx + 1) % CAPTIONS.length;
       document.getElementById('proc-caption').textContent = CAPTIONS[capIdx];
-    }, 500);
+    }, 5000);
   }
   function finishProgress(){
     clearInterval(progInterval);

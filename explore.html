@@ -26,9 +26,11 @@
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
   function cardHTML(d, isFirst){
-    var grad = DreamStore.gradientFor(d);
+    var media = d.videoUrl
+      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'" autoplay muted loop playsinline></video>'
+      : '<div class="feed-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<div class="feed-card" data-id="'+d.id+'">' +
-      '<div class="feed-bg" style="background:'+grad+'"></div>' +
+      media +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user">'+d.ownerHandle+'</div>' +

@@ -16,7 +16,8 @@
 
 (function () {
   var KEY = 'dreamtube_state_v1';
-  var FAIL_RATE = 0.12;
+  var POLL_INTERVAL_MS = 10000;
+  var MAX_POLL_MS = 6 * 60 * 1000;
 
   var STYLE_GRADIENTS = {
     Cartoon:   'linear-gradient(165deg,#FFD68A,#FFB199)',
@@ -65,6 +66,38 @@
   }
   function gradientFor(d) { return STYLE_GRADIENTS[d.style] || STYLE_GRADIENTS.Cinematic; }
 
+  /** Starts a Veo generation job and polls until the video is ready (or MAX_POLL_MS elapses). */
+  function startGeneration(caption, style) {
+    return fetch('/.netlify/functions/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: caption, style: style })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok) throw new Error(data.error || 'generation_failed');
+        return data.operationName;
+      });
+    }).then(pollUntilDone);
+  }
+
+  function pollUntilDone(operationName) {
+    var startedAt = Date.now();
+    return new Promise(function (resolve, reject) {
+      function poll() {
+        if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('generation_timeout')); return; }
+        fetch('/.netlify/functions/video-status?name=' + encodeURIComponent(operationName))
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.error) { reject(new Error(data.error)); return; }
+            if (data.done) { resolve(data.videoUrl); return; }
+            setTimeout(poll, POLL_INTERVAL_MS);
+          })
+          .catch(reject);
+      }
+      poll();
+    });
+  }
+
   var state = load();
 
   window.DreamStore = {
@@ -100,37 +133,30 @@
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
     clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false }; persist(); },
 
-    /** Creates a brand new dream. Returns a Promise; ~12% simulated failure rate, same as a real pipeline. */
+    /** Creates a brand new dream via Veo 3.1 Lite. Returns a Promise that resolves once the video is ready. */
     generateVideo: function (caption, style) {
-      return new Promise(function (resolve, reject) {
-        var delay = 2200 + Math.random() * 1200;
-        setTimeout(function () {
-          if (Math.random() < FAIL_RATE) { reject(new Error('generation_failed')); return; }
-          var dream = {
-            id: newId(),
-            ownerHandle: state.user ? state.user.handle : '@you',
-            caption: caption, style: style,
-            likes: 0, likedByMe: false, dur: '0:15', mine: true, isPublished: false
-          };
-          state.dreams.unshift(dream);
-          persist();
-          resolve(dream);
-        }, delay);
+      return startGeneration(caption, style).then(function (videoUrl) {
+        var dream = {
+          id: newId(),
+          ownerHandle: state.user ? state.user.handle : '@you',
+          caption: caption, style: style,
+          likes: 0, likedByMe: false, dur: '0:08', mine: true, isPublished: false,
+          videoUrl: videoUrl
+        };
+        state.dreams.unshift(dream);
+        persist();
+        return dream;
       });
     },
 
     /** Re-runs generation on an existing dream (Edit Dream / Change Style / Try Again). */
     regenerateDream: function (id, patch) {
-      return new Promise(function (resolve, reject) {
-        var delay = 2000 + Math.random() * 1200;
-        setTimeout(function () {
-          if (Math.random() < FAIL_RATE) { reject(new Error('generation_failed')); return; }
-          var d = findDream(id);
-          if (!d) { reject(new Error('not_found')); return; }
-          Object.assign(d, patch);
-          persist();
-          resolve(d);
-        }, delay);
+      return startGeneration(patch.caption, patch.style).then(function (videoUrl) {
+        var d = findDream(id);
+        if (!d) throw new Error('not_found');
+        Object.assign(d, patch, { videoUrl: videoUrl });
+        persist();
+        return d;
       });
     },
 

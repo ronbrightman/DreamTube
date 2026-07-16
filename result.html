@@ -16,6 +16,7 @@
 
 <div id="app" class="fill" style="position:relative;">
   <div class="result-bg" id="result-bg"></div>
+  <video class="result-video" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
   <div class="result-scrim"></div>
   <div class="play-badge result-play"></div>
   <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
@@ -92,7 +93,16 @@
 
   function render(){
     dream = DreamStore.getDream(dreamId);
-    document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
+    var video = document.getElementById('result-video');
+    if(dream.videoUrl){
+      video.src = dream.videoUrl;
+      video.style.display = 'block';
+      document.getElementById('result-bg').style.background = 'transparent';
+    } else {
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
+    }
     document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
     document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
     document.getElementById('result-privacy-tag').textContent = dream.isPublished ? 'Published' : 'Private';
