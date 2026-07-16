@@ -1,14 +1,14 @@
 // netlify/functions/video-status.js
 //
-// GET ?name=<operation name>  -> checks Veo generation status; once done,
-//   returns { done: true, videoUrl } where videoUrl points back at this same
-//   function in "download" mode, so the browser never sees GEM_API_KEY.
-// GET ?download=<google file uri> -> fetches the finished video from Google
-//   with the server-side key and streams the bytes back as video/mp4.
-//
-// Note: Netlify's classic (Lambda-based) functions cap response bodies around
-// 6MB base64-encoded. An 8s 720p Veo clip normally fits; longer/higher-res
-// clips may not — switch to a streaming/edge function if that becomes a problem.
+// GET ?name=<operation name> -> checks Veo generation status. Once done,
+// downloads the finished video server-side (with GEM_API_KEY) and saves it
+// into Netlify Blobs, then returns a small JSON payload — { done, videoUrl }
+// — where videoUrl points at video-file.mjs, the streaming function that
+// actually serves the blob. The video is never returned as this function's
+// own HTTP response: classic Netlify functions cap synchronous response
+// bodies around 6MB, which a real Veo clip can easily exceed.
+
+var { getStore } = require('@netlify/blobs');
 
 var API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -22,29 +22,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
   }
 
-  var params = event.queryStringParameters || {};
-
-  if (params.download) {
-    try {
-      var fileRes = await fetch(params.download, {
-        headers: { 'x-goog-api-key': apiKey }
-      });
-      if (!fileRes.ok) {
-        return { statusCode: fileRes.status, body: JSON.stringify({ error: 'video_download_failed' }) };
-      }
-      var arrayBuffer = await fileRes.arrayBuffer();
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': fileRes.headers.get('content-type') || 'video/mp4' },
-        body: Buffer.from(arrayBuffer).toString('base64'),
-        isBase64Encoded: true
-      };
-    } catch (e) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'video_download_failed' }) };
-    }
-  }
-
-  var name = params.name;
+  var name = (event.queryStringParameters || {}).name;
   if (!name) {
     return { statusCode: 400, body: JSON.stringify({ error: 'name_required' }) };
   }
@@ -74,7 +52,19 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ done: true, error: 'no_video_in_response' }) };
     }
 
-    var videoUrl = '/.netlify/functions/video-status?download=' + encodeURIComponent(uri);
+    var fileRes = await fetch(uri, { headers: { 'x-goog-api-key': apiKey } });
+    if (!fileRes.ok) {
+      return { statusCode: 200, body: JSON.stringify({ done: true, error: 'video_download_failed' }) };
+    }
+    var arrayBuffer = await fileRes.arrayBuffer();
+
+    var key = 'v-' + name.split('/').pop() + '-' + Date.now().toString(36);
+    var store = getStore('dreamtube-videos');
+    await store.set(key, arrayBuffer, {
+      metadata: { contentType: fileRes.headers.get('content-type') || 'video/mp4' }
+    });
+
+    var videoUrl = '/.netlify/functions/video-file?key=' + encodeURIComponent(key);
     return { statusCode: 200, body: JSON.stringify({ done: true, videoUrl: videoUrl }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'status_check_failed' }) };
