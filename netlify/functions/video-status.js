@@ -67,6 +67,6 @@ exports.handler = async function (event) {
     var videoUrl = '/.netlify/functions/video-file?key=' + encodeURIComponent(key);
     return { statusCode: 200, body: JSON.stringify({ done: true, videoUrl: videoUrl }) };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'status_check_failed' }) };
+    return { statusCode: 500, body: JSON.stringify({ error: 'status_check_failed: ' + (e && e.message) }) };
   }
 };
