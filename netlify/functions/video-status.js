@@ -57,19 +57,25 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ done: true, error: 'no_video_in_response' }) };
     }
 
-    var fileRes = await fetch(uri, { headers: { 'x-goog-api-key': apiKey } });
-    if (!fileRes.ok) {
-      return { statusCode: 200, body: JSON.stringify({ done: true, error: 'video_download_failed' }) };
-    }
-    var arrayBuffer = await fileRes.arrayBuffer();
-
-    var key = 'v-' + name.split('/').pop() + '-' + Date.now().toString(36);
+    // Deterministic key so repeated polls after completion (retries, a
+    // refreshed page before the client stops polling, etc.) reuse the same
+    // blob instead of re-downloading from Google and storing a duplicate.
+    var key = 'v-' + name.split('/').pop();
     var store = getStore('dreamtube-videos');
-    await store.set(key, arrayBuffer, {
-      metadata: { contentType: fileRes.headers.get('content-type') || 'video/mp4' }
-    });
-
     var videoUrl = '/.netlify/functions/video-file?key=' + encodeURIComponent(key);
+
+    var existing = await store.getMetadata(key);
+    if (!existing) {
+      var fileRes = await fetch(uri, { headers: { 'x-goog-api-key': apiKey } });
+      if (!fileRes.ok) {
+        return { statusCode: 200, body: JSON.stringify({ done: true, error: 'video_download_failed' }) };
+      }
+      var arrayBuffer = await fileRes.arrayBuffer();
+      await store.set(key, arrayBuffer, {
+        metadata: { contentType: fileRes.headers.get('content-type') || 'video/mp4' }
+      });
+    }
+
     return { statusCode: 200, body: JSON.stringify({ done: true, videoUrl: videoUrl }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'status_check_failed: ' + (e && e.message) }) };
