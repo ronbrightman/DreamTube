@@ -24,11 +24,16 @@
     <div class="profile-head">
       <div class="profile-avatar">🌙</div>
       <div class="profile-name" id="profile-handle">@you</div>
-      <div class="profile-stats"><b id="profile-count">0</b> dreams created · private unless published</div>
+      <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create Dream</a>
     </div>
-    <div class="section-label" style="padding:0 20px;">My dreams</div>
-    <div class="video-grid" id="profile-grid"></div>
+    <div id="profile-empty" class="grid-empty" style="display:none;">You haven't created a dream yet — tap "+ Create Dream" to make your first one.</div>
+    <div id="profile-lists">
+      <div class="section-label" style="padding:0 20px;">Shared</div>
+      <div class="video-grid" id="shared-grid"></div>
+      <div class="section-label" style="padding:0 20px;">Private</div>
+      <div class="video-grid" id="private-grid"></div>
+    </div>
   </div>
   <div class="bottom-nav">
     <a class="nav-item" href="home.html"><div class="nav-icon">🏠</div>Home</a>
@@ -45,12 +50,13 @@
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
   function vcardHTML(d){
-    var priv = !d.isPublished ? '<div class="priv">Private</div>' : '';
+    // No .priv badge here — Profile already splits into separate Shared/Private
+    // sections, so a per-card badge would just repeat the section header.
     var media = d.videoUrl
       ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
       : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="vcard" href="explore.html?id='+d.id+'">' +
-      '<div class="vcard-thumb">'+media+priv+'<div class="dur">'+d.dur+'</div></div>' +
+      '<div class="vcard-thumb">'+media+'<div class="dur">'+d.dur+'</div></div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
@@ -60,11 +66,23 @@
   if(user) document.getElementById('profile-handle').textContent = user.handle;
 
   var mine = DreamStore.getMyDreams();
-  document.getElementById('profile-count').textContent = mine.length;
-  var grid = document.getElementById('profile-grid');
-  grid.innerHTML = mine.length
-    ? mine.map(vcardHTML).join('')
-    : '<div class="grid-empty">You haven\'t created a dream yet — tap "+ Create Dream" to make your first one.</div>';
+  var shared = mine.filter(function(d){ return d.isPublished; });
+  var privateDreams = mine.filter(function(d){ return !d.isPublished; });
+
+  document.getElementById('stat-created').textContent = mine.length;
+  document.getElementById('stat-shared').textContent = shared.length;
+
+  if(!mine.length){
+    document.getElementById('profile-empty').style.display = 'block';
+    document.getElementById('profile-lists').style.display = 'none';
+  } else {
+    document.getElementById('shared-grid').innerHTML = shared.length
+      ? shared.map(vcardHTML).join('')
+      : '<div class="grid-empty">Nothing shared yet — publish a dream from its result page.</div>';
+    document.getElementById('private-grid').innerHTML = privateDreams.length
+      ? privateDreams.map(vcardHTML).join('')
+      : '<div class="grid-empty">No private dreams — everything you\'ve made is shared.</div>';
+  }
 
   document.getElementById('logout-btn').addEventListener('click', function(){
     if(confirm('Log out of DreamTube?')){
