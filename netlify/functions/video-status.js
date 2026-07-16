@@ -21,12 +21,26 @@ var { connectLambda, getStore } = require('@netlify/blobs');
 var FAL_API_BASE = 'https://queue.fal.run';
 var VEO_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+/** Parses a fetch Response as JSON, tolerating an empty/non-JSON body so callers can report the raw text instead of throwing. */
+async function parseJsonSafe(res) {
+  var text = await res.text();
+  try {
+    return { ok: true, data: text ? JSON.parse(text) : {} };
+  } catch (e) {
+    return { ok: false, rawText: text };
+  }
+}
+
 /** Active path. */
 async function checkFalStatus(model, requestId, falKey) {
   var statusRes = await fetch(FAL_API_BASE + '/' + model + '/requests/' + requestId + '/status', {
     headers: { 'Authorization': 'Key ' + falKey }
   });
-  var statusData = await statusRes.json();
+  var parsedStatus = await parseJsonSafe(statusRes);
+  if (!parsedStatus.ok) {
+    return { statusCode: statusRes.status, error: 'status_check_failed: non-JSON response (http ' + statusRes.status + '): ' + parsedStatus.rawText.slice(0, 300) };
+  }
+  var statusData = parsedStatus.data;
 
   if (!statusRes.ok) {
     return { statusCode: statusRes.status, error: statusData.detail || 'status_check_failed' };
@@ -43,7 +57,11 @@ async function checkFalStatus(model, requestId, falKey) {
   var resultRes = await fetch(FAL_API_BASE + '/' + model + '/requests/' + requestId, {
     headers: { 'Authorization': 'Key ' + falKey }
   });
-  var resultData = await resultRes.json();
+  var parsedResult = await parseJsonSafe(resultRes);
+  if (!parsedResult.ok) {
+    return { statusCode: 200, done: true, error: 'result_fetch_failed: non-JSON response (http ' + resultRes.status + '): ' + parsedResult.rawText.slice(0, 300) };
+  }
+  var resultData = parsedResult.data;
 
   if (!resultRes.ok) {
     return { statusCode: 200, done: true, error: 'result_fetch_failed' };
