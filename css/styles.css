@@ -141,11 +141,20 @@ body{
 .profile-stats b{ color:var(--text-primary);}
 
 /* ===== Create ===== */
-.choice-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:22px; display:flex; align-items:center; gap:16px; cursor:pointer; margin-bottom:14px;}
-.choice-card:hover{ border-color:var(--border-strong);}
-.choice-icon{ width:48px; height:48px; border-radius:14px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:22px; flex:none;}
-.choice-title{ font-weight:700; font-size:15px;}
-.choice-sub{ font-size:12.5px; color:var(--text-muted); margin-top:3px;}
+.choice-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md);
+  padding:20px 20px 20px 18px; display:flex; align-items:center; gap:16px; cursor:pointer; margin-bottom:14px;
+  transition:border-color .18s ease, background-color .18s ease, transform .12s ease;
+}
+.choice-card:hover{ border-color:var(--border-strong); background:var(--surface-alt);}
+.choice-card:active{ transform:scale(0.985);}
+.choice-icon{ width:50px; height:50px; border-radius:15px; display:flex; align-items:center; justify-content:center; font-size:22px; flex:none;}
+.choice-icon-write{ background:linear-gradient(150deg, var(--accent-soft), rgba(159,143,255,.34));}
+.choice-icon-record{ background:linear-gradient(150deg, rgba(255,177,153,.16), rgba(255,177,153,.36));}
+.choice-text{ flex:1; min-width:0;}
+.choice-title{ font-family:var(--font-display); font-weight:600; font-size:16px;}
+.choice-sub{ font-size:12.5px; color:var(--text-muted); margin-top:4px;}
+.choice-chevron{ font-size:20px; color:var(--text-faint); flex:none;}
 textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(--font-body);}
 .char-count{ font-size:11px; color:var(--text-faint); text-align:right; margin-top:-6px; margin-bottom:14px;}
 .rec-panel{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;}
