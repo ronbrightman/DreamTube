@@ -27,7 +27,7 @@ No build command, no environment variables, no server required.
 | `profile.html` | Profile (your own dreams + Create) |
 | `create.html` | Create (Write / Record / Review sub-states) |
 | `style.html` | Choose a style |
-| `processing.html` | Generating… (real async call, ~12% simulated failure) |
+| `processing.html` | Generating… (real async call, shows a failure state on genuine generation errors) |
 | `result.html?id=…` | Result (Edit/Change Style sheets, Publish) |
 | `explore.html?id=…` | Explore (vertical scroll-snap feed) |
 
@@ -42,16 +42,19 @@ There's no in-memory JavaScript state that would get wiped by a page load anymor
 **Real:**
 - Actual multi-page navigation with real URLs.
 - A login gate — visiting any protected page without being "logged in" bounces you to `login.html`.
-- Generation has a **real ~12% randomized failure rate** baked into `store.js` — not a demo toggle.
+- Real username/password accounts: `signup()`/`login()` in `store.js` validate username length, reject duplicate usernames, and check exact password matches — not a "any password works" mock. Credentials are still stored in plaintext in `localStorage` since there's no real backend yet.
+- Real video generation via fal.ai (`fal-ai/wan/v2.2-5b/text-to-video`), called through Netlify Functions. Failures shown on Processing are genuine generation errors from fal.ai, not a simulated rate.
+- Real audio recording (`MediaRecorder`/`getUserMedia`) and real transcription via fal.ai's Whisper model (`transcribe-audio.js`) — Record actually captures and transcribes your voice.
 - Editing a dream's text/style and regenerating actually updates that dream in the shared store.
 - Publishing actually flips a flag; the dream then genuinely shows up in Home/Explore because they read from the same store.
 - Likes persist and update live.
 - A failed generation carries your dream text back into Create instead of losing it.
+- Explore's style tags and usernames are clickable and filter the feed.
+- A generation job in flight survives navigation/refresh and resumes polling instead of being lost.
 
-**Mocked (no real backend, AI video API, or OAuth to connect to):**
-- No real video files — a gradient + duration stand in for the generated clip.
-- No real OAuth — only the email/password form actually logs you in.
-- No real audio recording — Record simulates a timer and hands back a canned transcript.
+**Mocked (no real backend to connect to):**
+- No real user-facing video files management — fal.ai hosts finished clips on its own CDN URL.
+- No real OAuth — only the username/password form logs you in.
 - "Database" is `localStorage`, not a server — private per browser, not a real multi-user backend.
 
 ## Connecting a real backend later
