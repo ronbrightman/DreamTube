@@ -3,11 +3,16 @@
 // POST { caption, style } -> kicks off a video generation job and returns an
 // operationName the client can poll via video-status.js.
 //
-// ACTIVE PATH: fal.ai (fal-ai/wan/v2.2-5b/text-to-video), using FAL_KEY.
-// Switched from calling Google's Veo API directly because the Google Cloud
-// project hit a 2 RPM quota that wouldn't meaningfully increase for 30 days.
-// The original Veo/Gemini path is kept below (callVeo), unused, in case we
-// want to switch back or use it as a fallback later — see callVeo/GEM_API_KEY.
+// ACTIVE PATH: fal.ai's Veo 3.1 Fast (fal-ai/veo3.1/fast), using FAL_KEY.
+// Switched from fal.ai's wan v2.2-5b because its output quality wasn't good
+// enough. Veo 3.1 is the same Google model originally used via direct Google
+// API calls (see callVeoDirect below) — now reached through fal.ai instead,
+// which sidesteps the Google Cloud quota wall that caused the original
+// switch away from it. "/fast" is the cost/quality middle tier (roughly
+// $0.10-0.20/sec) — plain "veo3.1" (no /fast) costs roughly double for
+// higher quality, use only if explicitly requested.
+// The wan v2.2-5b path is kept below (callFalWan), unused, in case we want
+// to switch back or use it as a cheaper fallback later.
 
 var STYLE_MODIFIERS = {
   Cartoon:   'in a colorful hand-drawn cartoon animation style',
@@ -16,15 +21,41 @@ var STYLE_MODIFIERS = {
   Realistic: 'in a photorealistic, lifelike rendering style'
 };
 
-var FAL_MODEL = 'fal-ai/wan/v2.2-5b/text-to-video';
+var FAL_MODEL = 'fal-ai/veo3.1/fast';
 var FAL_API_BASE = 'https://queue.fal.run';
 
-// wan v2.2-5b's defaults (81 frames @ 24fps = ~3.4s) were producing clips far
-// shorter than intended. num_frames maxes out at 161, so 161 frames @ 23fps
-// gives an exact 7.0s video — comfortably inside the target 6-8s range.
 /** Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>". */
 async function callFal(prompt, falKey) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Key ' + falKey
+    },
+    body: JSON.stringify({
+      prompt: prompt,
+      aspect_ratio: '9:16',
+      duration: '8s',
+      resolution: '720p'
+    })
+  });
+
+  var data = await res.json();
+
+  if (!res.ok) {
+    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
+    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+  }
+
+  return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
+}
+
+// Unused fallback path — the previous active integration, fal.ai's wan
+// v2.2-5b. num_frames maxes out at 161, so 161 frames @ 23fps gives an exact
+// 7.0s video if this is ever switched back to.
+var FAL_MODEL_WAN = 'fal-ai/wan/v2.2-5b/text-to-video';
+async function callFalWan(prompt, falKey) {
+  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_WAN, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -45,14 +76,14 @@ async function callFal(prompt, falKey) {
     return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
   }
 
-  return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
+  return { ok: true, operationName: 'fal:' + FAL_MODEL_WAN + ':' + data.request_id };
 }
 
 /** Unused fallback path — the original direct Veo 3.1 Lite integration via the Gemini API. */
 var VEO_MODEL = 'veo-3.1-lite-generate-preview';
 var VEO_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-async function callVeo(prompt, apiKey) {
+async function callVeoDirect(prompt, apiKey) {
   var res = await fetch(VEO_API_BASE + '/models/' + VEO_MODEL + ':predictLongRunning', {
     method: 'POST',
     headers: {
