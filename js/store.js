@@ -5,7 +5,8 @@
 // Every method is written to mirror a real REST call; swap the body for a fetch()
 // when a real backend exists and nothing on any page needs to change.
 //
-//   login(email)              -> POST /api/auth/login
+//   signup(username,password) -> POST /api/auth/signup
+//   login(username,password)  -> POST /api/auth/login
 //   getFeed()                 -> GET  /api/dreams?published=true
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDream(id)                -> GET  /api/dreams/:id
@@ -29,6 +30,9 @@
   function seed() {
     return {
       user: null,
+      accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
+                     // real backend yet, so this is a placeholder auth model, not
+                     // meant to reflect how credentials would be handled for real.
       draft: { caption: '', style: null, sourceDreamId: null, restore: false },
       dreams: [],
       pendingJob: null
@@ -75,6 +79,7 @@
       var parsed = JSON.parse(raw);
       if (!parsed.dreams) throw new Error('bad state');
       if (parsed.pendingJob === undefined) parsed.pendingJob = null;
+      if (!parsed.accounts) parsed.accounts = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -186,11 +191,31 @@
     STYLE_GRADIENTS: STYLE_GRADIENTS,
 
     getCurrentUser: function () { return state.user; },
-    login: function (email) {
-      state.user = { handle: '@you', email: email || 'you@example.com' };
+
+    /** Creates an account. Returns { ok:true, user } or { ok:false, error }. */
+    signup: function (username, password) {
+      username = (username || '').trim();
+      var key = username.toLowerCase();
+      if (username.length < 3) return { ok: false, error: 'Username must be at least 3 characters.' };
+      if (!password) return { ok: false, error: 'Enter a password.' };
+      if (state.accounts[key]) return { ok: false, error: 'That username is already taken.' };
+      state.accounts[key] = password;
+      state.user = { handle: '@' + username, username: username };
       persist();
-      return state.user;
+      return { ok: true, user: state.user };
     },
+
+    /** Logs in with an existing account. Returns { ok:true, user } or { ok:false, error }. */
+    login: function (username, password) {
+      username = (username || '').trim();
+      var key = username.toLowerCase();
+      if (!state.accounts[key]) return { ok: false, error: 'No account found with that username.' };
+      if (state.accounts[key] !== password) return { ok: false, error: 'Incorrect password.' };
+      state.user = { handle: '@' + username, username: username };
+      persist();
+      return { ok: true, user: state.user };
+    },
+
     logout: function () { state.user = null; persist(); },
 
     getFeed: function () {

@@ -31,7 +31,7 @@
       Continue with Apple
     </button>
     <div class="divider">or</div>
-    <input class="field" id="login-email" placeholder="Email" autocomplete="email">
+    <input class="field" id="login-username" placeholder="Username" autocomplete="username" dir="auto">
     <input class="field" id="login-password" placeholder="Password" type="password" autocomplete="current-password">
     <div class="err-text" id="login-error"></div>
     <button class="btn btn-primary btn-block" id="login-submit" style="margin-top:2px;">Continue</button>
@@ -52,18 +52,24 @@
   });
 
   document.getElementById('login-submit').addEventListener('click', function(){
-    var email = document.getElementById('login-email').value.trim();
+    var username = document.getElementById('login-username').value.trim();
     var password = document.getElementById('login-password').value;
     var err = document.getElementById('login-error');
-    if(!email || email.indexOf('@') === -1){ err.textContent = 'Enter a valid email address.'; return; }
+    if(username.length < 3){ err.textContent = 'Username must be at least 3 characters.'; return; }
     if(!password){ err.textContent = 'Enter a password.'; return; }
     err.textContent = '';
     var btn = document.getElementById('login-submit');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-inline"></span>';
     setTimeout(function(){
-      DreamStore.login(email);
-      location.href = 'home.html';
+      var result = isSignup ? DreamStore.signup(username, password) : DreamStore.login(username, password);
+      if(result.ok){
+        location.href = 'home.html';
+      } else {
+        err.textContent = result.error;
+        btn.disabled = false;
+        btn.textContent = 'Continue';
+      }
     }, 450);
   });
 </script>
