@@ -19,6 +19,9 @@ var STYLE_MODIFIERS = {
 var FAL_MODEL = 'fal-ai/wan/v2.2-5b/text-to-video';
 var FAL_API_BASE = 'https://queue.fal.run';
 
+// wan v2.2-5b's defaults (81 frames @ 24fps = ~3.4s) were producing clips far
+// shorter than intended. num_frames maxes out at 161, so 161 frames @ 23fps
+// gives an exact 7.0s video — comfortably inside the target 6-8s range.
 /** Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>". */
 async function callFal(prompt, falKey) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
@@ -29,7 +32,9 @@ async function callFal(prompt, falKey) {
     },
     body: JSON.stringify({
       prompt: prompt,
-      aspect_ratio: '9:16'
+      aspect_ratio: '9:16',
+      num_frames: 161,
+      frames_per_second: 23
     })
   });
 

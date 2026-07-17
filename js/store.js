@@ -133,7 +133,7 @@
         id: newId(),
         ownerHandle: state.user ? state.user.handle : '@you',
         caption: caption, style: style,
-        likes: 0, likedByMe: false, dur: '0:08', mine: true, isPublished: false,
+        likes: 0, likedByMe: false, dur: '0:07', mine: true, isPublished: false,
         videoUrl: videoUrl
       };
       state.dreams.unshift(dream);
