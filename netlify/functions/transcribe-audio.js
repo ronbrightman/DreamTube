@@ -1,28 +1,43 @@
 // netlify/functions/transcribe-audio.js
 //
 // POST { audio: base64, mimeType } -> { transcript }
-// Sends the recorded dream audio to Gemini's generateContent endpoint as
-// inline data and returns the transcribed text. Reuses GEM_API_KEY — no
-// separate signup, same key already used by the unused Veo fallback path.
+// Sends the recorded dream audio to fal.ai's Whisper model and returns the
+// transcribed text. Reuses FAL_KEY — same key already used for video
+// generation, no separate signup.
+//
+// Previously used Gemini (gemini-3.5-flash), but that model was consistently
+// returning 503 "high demand" errors (confirmed by direct testing, including
+// on plain text-only calls with no audio involved) — an upstream Google
+// availability issue, not something fixable in this function. Switched to
+// fal.ai's Whisper, which is already proven reliable via the video pipeline.
+//
+// fal's audio_url data-URL parser validates the declared mime type against
+// an internal whitelist that (confirmed by direct testing against this
+// endpoint) rejects literal "audio/webm" and "audio/wav" labels with a 422
+// "Unsupported data URL", while accepting "audio/mpeg" — but the actual
+// decoding is content-sniffed from the real bytes regardless of the label
+// (verified with both real WAV/PCM audio and a real webm/opus MediaRecorder
+// blob, both transcribed correctly under the "audio/mpeg" label). So every
+// recording is labeled "audio/mpeg" here regardless of what the browser
+// actually recorded.
 
-var MODEL = 'gemini-3.5-flash';
-var API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+var FAL_API_BASE = 'https://fal.run';
+var FAL_MODEL = 'fal-ai/whisper';
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }) };
   }
 
-  var apiKey = process.env.GEM_API_KEY;
-  if (!apiKey) {
+  var falKey = process.env.FAL_KEY;
+  if (!falKey) {
     return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
   }
 
-  var audio, mimeType;
+  var audio;
   try {
     var payload = JSON.parse(event.body || '{}');
     audio = payload.audio;
-    mimeType = payload.mimeType || 'audio/ogg';
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'invalid_json' }) };
   }
@@ -32,37 +47,32 @@ exports.handler = async function (event) {
   }
 
   try {
-    var res = await fetch(API_BASE + '/models/' + MODEL + ':generateContent', {
+    var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
+        'Authorization': 'Key ' + falKey
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: 'Transcribe this audio recording verbatim. Return only the spoken words as plain text — no quotation marks, timestamps, speaker labels, or commentary. If nothing intelligible was said, return an empty string.' },
-            { inlineData: { mimeType: mimeType, data: audio } }
-          ]
-        }]
+        audio_url: 'data:audio/mpeg;base64,' + audio,
+        task: 'transcribe',
+        chunk_level: 'none'
       })
     });
 
     var data = await res.json();
 
     if (!res.ok) {
-      var message = (data && data.error && data.error.message) || 'transcription_failed';
-      return { statusCode: res.status, body: JSON.stringify({ error: message }) };
+      var message = (data && data.detail) || 'transcription_failed';
+      return { statusCode: res.status, body: JSON.stringify({ error: typeof message === 'string' ? message : JSON.stringify(message) }) };
     }
 
-    var candidate = data.candidates && data.candidates[0];
-    var transcript = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
-
-    if (!transcript || !transcript.trim()) {
+    var transcript = data && data.text && data.text.trim();
+    if (!transcript) {
       return { statusCode: 200, body: JSON.stringify({ error: 'no_speech_detected' }) };
     }
 
-    return { statusCode: 200, body: JSON.stringify({ transcript: transcript.trim() }) };
+    return { statusCode: 200, body: JSON.stringify({ transcript: transcript }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'transcription_failed' }) };
   }
