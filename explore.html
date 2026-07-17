@@ -15,6 +15,7 @@
 <body>
 <div id="app" class="fill" style="position:relative;">
   <a class="explore-back" href="home.html">←</a>
+  <div class="explore-filter-chip" id="filter-chip" style="display:none;"></div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
 </div>
@@ -35,9 +36,9 @@
       media +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
-        '<div class="feed-user">'+d.ownerHandle+'</div>' +
+        '<div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div>' +
         '<div class="feed-caption" dir="auto">"'+esc(d.caption)+'"</div>' +
-        '<span class="feed-tag">Style: '+d.style+'</span>' +
+        '<span class="feed-tag" data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' +
       '</div>' +
       '<div class="feed-actions">' +
         '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
@@ -49,20 +50,33 @@
     '</div>';
   }
 
-  var dreams = DreamStore.getFeed();
   var root = document.getElementById('feed-scroll');
-  root.innerHTML = dreams.length
-    ? dreams.map(function(d,i){ return cardHTML(d, i===0); }).join('')
-    : '<div class="grid-empty" style="color:#fff;">No published dreams yet.</div>';
+  var chip = document.getElementById('filter-chip');
+  var filter = null; // { type: 'style'|'user', value: string }
 
-  Array.prototype.forEach.call(root.querySelectorAll('[data-like]'), function(el){
-    el.addEventListener('click', function(){
-      var d = DreamStore.toggleLike(el.dataset.like);
-      if(!d) return;
-      el.classList.toggle('liked', d.likedByMe);
-      el.querySelector('.fa-circle').textContent = d.likedByMe ? '♥' : '♡';
-      document.querySelector('[data-count="'+d.id+'"]').textContent = formatCount(d.likes);
-    });
+  function render(){
+    var dreams = DreamStore.getFeed();
+    if(filter){
+      dreams = dreams.filter(function(d){
+        return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
+      });
+    }
+    root.innerHTML = dreams.length
+      ? dreams.map(function(d,i){ return cardHTML(d, i===0); }).join('')
+      : '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No published dreams yet.') + '</div>';
+
+    if(filter){
+      chip.style.display = 'flex';
+      chip.innerHTML = esc(filter.type === 'style' ? 'Style: ' + filter.value : filter.value) + ' <span class="fc-x">✕</span>';
+    } else {
+      chip.style.display = 'none';
+    }
+  }
+  render();
+
+  chip.addEventListener('click', function(){
+    filter = null;
+    render();
   });
 
   function showToast(msg){
@@ -72,13 +86,37 @@
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
-  Array.prototype.forEach.call(root.querySelectorAll('[data-share]'), function(el){
-    el.addEventListener('click', function(){
-      var d = DreamStore.getDream(el.dataset.share);
+  // Delegated click handling so re-rendering (filtering) never needs to
+  // re-attach per-card listeners.
+  root.addEventListener('click', function(e){
+    var styleTag = e.target.closest('[data-filter-style]');
+    if(styleTag){
+      filter = { type: 'style', value: styleTag.dataset.filterStyle };
+      render();
+      return;
+    }
+    var userTag = e.target.closest('[data-filter-user]');
+    if(userTag){
+      filter = { type: 'user', value: userTag.dataset.filterUser };
+      render();
+      return;
+    }
+    var likeEl = e.target.closest('[data-like]');
+    if(likeEl){
+      var d = DreamStore.toggleLike(likeEl.dataset.like);
       if(!d) return;
-      var shareUrl = location.origin + '/explore.html?id=' + d.id;
+      likeEl.classList.toggle('liked', d.likedByMe);
+      likeEl.querySelector('.fa-circle').textContent = d.likedByMe ? '♥' : '♡';
+      likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+      return;
+    }
+    var shareEl = e.target.closest('[data-share]');
+    if(shareEl){
+      var dream = DreamStore.getDream(shareEl.dataset.share);
+      if(!dream) return;
+      var shareUrl = location.origin + '/explore.html?id=' + dream.id;
       if(navigator.share){
-        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + d.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
+        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + dream.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
       } else if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(shareUrl).then(function(){
           showToast('Link copied to clipboard');
@@ -88,7 +126,7 @@
       } else {
         showToast("Sharing isn't supported in this browser");
       }
-    });
+    }
   });
 
   var targetId = getParam('id');
