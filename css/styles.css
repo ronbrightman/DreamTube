@@ -181,10 +181,44 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .style-card .sc-name{ font-weight:800; font-size:14px; margin-top:2px;}
 .style-card .sc-check{ position:absolute; top:10px; right:10px; width:24px; height:24px; border-radius:50%; background:var(--accent); color:#14122B; font-size:13px; font-weight:900; display:none; align-items:center; justify-content:center; z-index:3;}
 .style-card.selected .sc-check{ display:flex;}
-.sc-cartoon{ background:linear-gradient(135deg,#FFD68A,#FFB199);}
-.sc-cinematic{ background:linear-gradient(135deg,#3E6E8E,#182A44);}
-.sc-anime{ background:linear-gradient(135deg,#FF8FCB,#9F8FFF);}
-.sc-realistic{ background:linear-gradient(135deg,#7C8AAE,#2A2F4A);}
+/* Evocative per-style backgrounds — CSS/SVG only, no image assets. */
+.sc-cartoon{
+  background-image:
+    radial-gradient(circle at 20% 22%, rgba(255,255,255,.55) 0 13px, transparent 14px),
+    radial-gradient(circle at 82% 18%, rgba(255,255,255,.4) 0 9px, transparent 10px),
+    radial-gradient(circle at 68% 72%, rgba(255,255,255,.35) 0 20px, transparent 21px),
+    radial-gradient(circle at 14% 78%, rgba(255,255,255,.3) 0 15px, transparent 16px),
+    linear-gradient(135deg,#FFD68A,#FFB199);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.28);
+}
+.sc-cinematic{
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, rgba(0,0,0,.88) 0 13%, transparent 13% 87%, rgba(0,0,0,.88) 87% 100%),
+    linear-gradient(135deg,#3E6E8E,#182A44);
+  background-blend-mode: overlay, normal, normal;
+  background-size: 100px 100px, cover, cover;
+  background-repeat: repeat, no-repeat, no-repeat;
+}
+.sc-anime{
+  background-image:
+    radial-gradient(circle at 24% 28%, rgba(255,255,255,.95) 0 2px, transparent 3px),
+    radial-gradient(circle at 72% 18%, rgba(255,255,255,.85) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 82% 62%, rgba(255,255,255,.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 38% 78%, rgba(255,255,255,.75) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 55% 45%, rgba(255,255,255,.6) 0 1px, transparent 2px),
+    repeating-linear-gradient(115deg, rgba(255,255,255,.16) 0 2px, transparent 2px 20px),
+    linear-gradient(135deg,#FF8FCB,#9F8FFF);
+}
+.sc-realistic{
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 50% 45%, transparent 30%, rgba(0,0,0,.5) 105%),
+    linear-gradient(135deg,#7C8AAE,#2A2F4A);
+  background-blend-mode: overlay, normal, normal;
+  background-size: 90px 90px, cover, cover;
+  background-repeat: repeat, no-repeat, no-repeat;
+}
 
 /* ===== Processing ===== */
 .proc-wrap{ flex:1; display:flex; flex-direction:column; padding:40px 30px;}
