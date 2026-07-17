@@ -74,7 +74,12 @@
   }
 
   function renderPreview(){
-    var dreams = DreamStore.getMyDreams().concat(DreamStore.getFeed()).slice(0, 10);
+    var seen = {};
+    var dreams = DreamStore.getMyDreams().concat(DreamStore.getFeed()).filter(function(d){
+      if(seen[d.id]) return false;
+      seen[d.id] = true;
+      return true;
+    }).slice(0, 10);
     var section = document.getElementById('proc-preview');
     var row = document.getElementById('proc-preview-row');
     if(!dreams.length){ section.style.display = 'none'; return; }
