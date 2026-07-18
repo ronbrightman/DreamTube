@@ -44,13 +44,20 @@
 <script>
   document.getElementById('login-back').innerHTML = Icons.back;
 
-  var isSignup = false;
+  // "Get Started" on the welcome screen means "sign up", so it links here
+  // with ?mode=signup — the plain "Log in" link leaves it off and gets the
+  // default login mode.
+  var isSignup = /(?:^|[?&])mode=signup(?:&|$)/.test(location.search);
   var heading = document.getElementById('auth-heading');
   var toggle = document.getElementById('auth-toggle');
-  toggle.addEventListener('click', function(){
-    isSignup = !isSignup;
+  function syncAuthUI(){
     heading.textContent = isSignup ? 'Create your account' : 'Welcome back';
     toggle.innerHTML = isSignup ? 'Already have an account? <b>Log in</b>' : 'New here? <b>Sign up</b>';
+  }
+  syncAuthUI();
+  toggle.addEventListener('click', function(){
+    isSignup = !isSignup;
+    syncAuthUI();
   });
 
   document.getElementById('login-submit').addEventListener('click', function(){
