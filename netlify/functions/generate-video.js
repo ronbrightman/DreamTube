@@ -216,14 +216,27 @@ async function callVeoDirect(prompt, apiKey) {
   return { ok: true, operationName: data.name };
 }
 
+// Error codes (E1xx = this function). Each is embedded as a "E1NN: " prefix
+// on the error string returned to the client, so a user hitting a failure
+// can report the number and it maps to exactly one line of code — see
+// js/store.js and processing.html for how the codes flow through to the
+// failure screen, and video-status.js for the E2xx range covering
+// generation-time (as opposed to submission-time) failures.
+//   E101 method_not_allowed        — wrong HTTP verb (shouldn't happen from the app itself)
+//   E102 missing_api_key           — FAL_KEY not configured in this environment
+//   E103 invalid_json              — request body wasn't valid JSON
+//   E104 caption_and_style_required
+//   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
+//   E106 fal rejected the image-to-video submission (same causes, self-photo path)
+//   E107 couldn't reach fal at all (network failure before any response came back)
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }) };
+    return { statusCode: 405, body: JSON.stringify({ error: 'E101: method_not_allowed' }) };
   }
 
   var falKey = process.env.FAL_KEY;
   if (!falKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
+    return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
   var caption, style, characters, cameraView, sceneryTime, sceneryPlace;
@@ -236,11 +249,11 @@ exports.handler = async function (event) {
     sceneryTime = payload.sceneryTime || null;
     sceneryPlace = payload.sceneryPlace || null;
   } catch (e) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'invalid_json' }) };
+    return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
 
   if (!caption || !style) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'caption_and_style_required' }) };
+    return { statusCode: 400, body: JSON.stringify({ error: 'E104: caption_and_style_required' }) };
   }
 
   var prompt = buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
@@ -251,10 +264,11 @@ exports.handler = async function (event) {
       ? await callFalImageToVideo(prompt, selfPhoto.photoDataUrl, falKey)
       : await callFal(prompt, falKey);
     if (!result.ok) {
-      return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: result.error }) };
+      var rejectCode = selfPhoto ? 'E106' : 'E105';
+      return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
     return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'fal_request_failed' }) };
+    return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
   }
 };

@@ -42,6 +42,20 @@ function falAppBase(model) {
   return parts[0] + '/' + parts[1];
 }
 
+// Error codes (E2xx = this function). See generate-video.js for the E1xx
+// (submission-time) range this continues from.
+//   E201 method_not_allowed  E202 name_required
+//   E209 uncaught exception in the handler itself
+//   E210/E211 missing_api_key (fal / legacy Veo path respectively)
+//   E203 non-JSON response from fal's status endpoint (fal outage/hiccup)
+//   E204 fal's status endpoint returned a non-OK HTTP response
+//   E205 fal itself marked the job failed (status other than IN_QUEUE/IN_PROGRESS/COMPLETED —
+//        this is the code to watch for content-moderation rejections, internal model
+//        errors, etc. actually reported by fal, as opposed to a transport-level problem)
+//   E206 non-JSON response from fal's result endpoint
+//   E207 fal's result endpoint returned a non-OK HTTP response
+//   E208 job reported COMPLETED but the result had no video URL in it (unexpected response shape)
+
 /** Active path. */
 async function checkFalStatus(model, requestId, falKey) {
   var appBase = falAppBase(model);
@@ -50,12 +64,12 @@ async function checkFalStatus(model, requestId, falKey) {
   });
   var parsedStatus = await parseJsonSafe(statusRes);
   if (!parsedStatus.ok) {
-    return { statusCode: statusRes.status, error: 'status_check_failed: non-JSON response (http ' + statusRes.status + '): ' + parsedStatus.rawText.slice(0, 300) };
+    return { statusCode: statusRes.status, error: 'E203: status_check_failed: non-JSON response (http ' + statusRes.status + '): ' + parsedStatus.rawText.slice(0, 300) };
   }
   var statusData = parsedStatus.data;
 
   if (!statusRes.ok) {
-    return { statusCode: statusRes.status, error: statusData.detail || 'status_check_failed' };
+    return { statusCode: statusRes.status, error: 'E204: ' + (statusData.detail || 'status_check_failed') };
   }
 
   if (statusData.status === 'IN_QUEUE' || statusData.status === 'IN_PROGRESS') {
@@ -63,7 +77,7 @@ async function checkFalStatus(model, requestId, falKey) {
   }
 
   if (statusData.status !== 'COMPLETED') {
-    return { statusCode: 200, done: true, error: 'generation_failed: ' + statusData.status };
+    return { statusCode: 200, done: true, error: 'E205: generation_failed: ' + statusData.status };
   }
 
   var resultRes = await fetch(FAL_API_BASE + '/' + appBase + '/requests/' + requestId, {
@@ -71,17 +85,17 @@ async function checkFalStatus(model, requestId, falKey) {
   });
   var parsedResult = await parseJsonSafe(resultRes);
   if (!parsedResult.ok) {
-    return { statusCode: 200, done: true, error: 'result_fetch_failed: non-JSON response (http ' + resultRes.status + '): ' + parsedResult.rawText.slice(0, 300) };
+    return { statusCode: 200, done: true, error: 'E206: result_fetch_failed: non-JSON response (http ' + resultRes.status + '): ' + parsedResult.rawText.slice(0, 300) };
   }
   var resultData = parsedResult.data;
 
   if (!resultRes.ok) {
-    return { statusCode: 200, done: true, error: 'result_fetch_failed' };
+    return { statusCode: 200, done: true, error: 'E207: result_fetch_failed' };
   }
 
   var videoUrl = resultData.video && resultData.video.url;
   if (!videoUrl) {
-    return { statusCode: 200, done: true, error: 'no_video_in_response' };
+    return { statusCode: 200, done: true, error: 'E208: no_video_in_response' };
   }
 
   return { statusCode: 200, done: true, videoUrl: videoUrl };
@@ -136,12 +150,12 @@ async function checkVeoStatus(name, apiKey, event) {
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'GET') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }) };
+    return { statusCode: 405, body: JSON.stringify({ error: 'E201: method_not_allowed' }) };
   }
 
   var name = (event.queryStringParameters || {}).name;
   if (!name) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'name_required' }) };
+    return { statusCode: 400, body: JSON.stringify({ error: 'E202: name_required' }) };
   }
 
   try {
@@ -150,14 +164,14 @@ exports.handler = async function (event) {
     if (name.indexOf('fal:') === 0) {
       var falKey = process.env.FAL_KEY;
       if (!falKey) {
-        return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
+        return { statusCode: 500, body: JSON.stringify({ error: 'E210: missing_api_key' }) };
       }
       var parts = name.split(':');
       result = await checkFalStatus(parts[1], parts[2], falKey);
     } else {
       var apiKey = process.env.GEM_API_KEY;
       if (!apiKey) {
-        return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
+        return { statusCode: 500, body: JSON.stringify({ error: 'E211: missing_api_key' }) };
       }
       result = await checkVeoStatus(name, apiKey, event);
     }
@@ -171,6 +185,6 @@ exports.handler = async function (event) {
     if (result.videoUrl) body.videoUrl = result.videoUrl;
     return { statusCode: result.statusCode, body: JSON.stringify(body) };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'status_check_failed: ' + (e && e.message) }) };
+    return { statusCode: 500, body: JSON.stringify({ error: 'E209: status_check_failed: ' + (e && e.message) }) };
   }
 };

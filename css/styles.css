@@ -359,6 +359,7 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-fail{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;}
 .proc-fail-icon{ width:42px; height:42px; color:var(--danger);}
 .proc-fail-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; max-width:260px;}
+.proc-fail-code{ font-size:11px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color:var(--text-faint); background:var(--surface); border-radius:8px; padding:6px 12px; max-width:280px; word-break:break-word; margin-top:-6px;}
 
 /* ===== Result ===== */
 .result-bg{ position:absolute; inset:0; background:var(--surface);}

@@ -21,10 +21,25 @@
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
 
+// Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
+// which come from generate-video.js/video-status.js and already carry their
+// own codes by the time they reach here — those are passed through as-is).
+//   E301 generation_timeout       — gave up polling after MAX_POLL_MS
+//   E302 network error while polling video-status (e.g. connection dropped)
+//   E303 network error submitting the initial generate-video request
+//   E399 server returned an error response with no error text at all (should be unreachable — every
+//        E1xx/E2xx path always sets one — but a code exists in case something upstream changes)
+
 (function () {
   var KEY = 'dreamtube_state_v1';
   var POLL_INTERVAL_MS = 10000;
-  var MAX_POLL_MS = 6 * 60 * 1000;
+  // fal.ai Veo generation is documented (see processing.html's copy) as
+  // "1-6 minutes" — the previous 6-minute ceiling gave that zero margin, so
+  // any generation running even slightly past the high end of its own normal
+  // range surfaced as a false timeout failure to the user despite likely
+  // still completing successfully on fal's side moments later. 10 minutes
+  // gives real headroom while still not leaving a truly stuck job hanging.
+  var MAX_POLL_MS = 10 * 60 * 1000;
 
   var STYLE_GRADIENTS = {
     Cartoon:   'linear-gradient(165deg,#FFD68A,#FFB199)',
@@ -191,7 +206,7 @@
   function pollUntilDone(operationName, startedAt) {
     return new Promise(function (resolve, reject) {
       function poll() {
-        if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('generation_timeout')); return; }
+        if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('E301: generation_timeout')); return; }
         fetch('/.netlify/functions/video-status?name=' + encodeURIComponent(operationName))
           .then(function (res) { return res.json(); })
           .then(function (data) {
@@ -199,7 +214,7 @@
             if (data.done) { resolve(data.videoUrl); return; }
             setTimeout(poll, POLL_INTERVAL_MS);
           })
-          .catch(reject);
+          .catch(function (err) { reject(new Error('E302: network_error_during_status_check' + (err && err.message ? ': ' + err.message : ''))); });
       }
       poll();
     });
@@ -256,9 +271,11 @@
           })
         }).then(function (res) {
           return res.json().then(function (data) {
-            if (!res.ok) throw new Error(data.error || 'generation_failed');
+            if (!res.ok) throw new Error(data.error || 'E399: generation_failed');
             return data.operationName;
           });
+        }, function (err) {
+          throw new Error('E303: network_error_starting_generation' + (err && err.message ? ': ' + err.message : ''));
         });
 
     return operationPromise.then(function (operationName) {

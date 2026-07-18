@@ -45,8 +45,15 @@
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
   function cardHTML(d, isFirst){
+    // No autoplay attribute — every card would otherwise start playing the
+    // instant it's inserted into the DOM regardless of whether it's the
+    // visible one, so by the time you scrolled to card #2 it had already
+    // been running in the background since page load. Playback is instead
+    // driven entirely by the IntersectionObserver set up below, which only
+    // plays whichever card is actually the current scroll-snap target and
+    // restarts it from 0 every time it becomes active.
     var media = d.videoUrl
-      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'" autoplay muted loop playsinline></video>'
+      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
       : '<div class="feed-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<div class="feed-card" data-id="'+d.id+'">' +
       media +
@@ -82,6 +89,32 @@
     return null;
   }
 
+  // Plays only the card that's actually the current scroll-snap target,
+  // restarting it from 0 each time it becomes active, and pauses every
+  // other card's video. threshold 0.6 picks a single "winner" during the
+  // brief moment two cards are both partially visible mid-swipe, instead
+  // of flickering between them. root is the scroll container itself
+  // (.feed-scroll), not the window, since that's the actual scrolling
+  // context for scroll-snap-type cards nested inside #app.
+  var videoObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      var video = entry.target;
+      if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
+        if(video.paused){
+          video.currentTime = 0;
+          video.play().catch(function(){ /* autoplay can be blocked before any user gesture — muted should normally allow it regardless */ });
+        }
+      } else {
+        video.pause();
+      }
+    });
+  }, { root: root, threshold: [0, 0.6, 1] });
+
+  function observeVideos(){
+    videoObserver.disconnect();
+    Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){ videoObserver.observe(v); });
+  }
+
   function render(){
     if(!feedLoaded){
       root.innerHTML = '<div class="grid-empty" style="color:#fff;">Loading dreams…</div>';
@@ -104,6 +137,8 @@
     } else {
       chip.style.display = 'none';
     }
+
+    observeVideos();
   }
   render();
 

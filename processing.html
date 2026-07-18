@@ -33,6 +33,7 @@
       <div class="proc-fail-icon"></div>
       <div class="proc-title">That dream didn't<br>come through</div>
       <div class="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
+      <div class="proc-fail-code" id="proc-fail-code"></div>
       <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 6px;">
         <button class="btn btn-primary btn-block" id="retry-btn">Try Again</button>
         <button class="btn btn-ghost btn-block" id="fail-edit-btn">Edit Dream</button>
@@ -124,10 +125,15 @@
         DreamStore.clearDraft();
         location.href = 'result.html?id=' + dream.id;
       }, 350);
-    }).catch(function(){
+    }).catch(function(err){
       clearInterval(progInterval);
       document.getElementById('proc-live').style.display = 'none';
       document.getElementById('proc-fail').style.display = 'flex';
+      // err.message already carries an ENNN code from wherever it actually
+      // failed (submission, polling, or a client-side timeout/network drop
+      // — see js/store.js, generate-video.js, video-status.js) so it's
+      // shown as-is rather than re-summarized into something generic.
+      document.getElementById('proc-fail-code').textContent = (err && err.message) || 'E399: unknown_error';
     });
   }
 
