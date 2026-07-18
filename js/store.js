@@ -7,7 +7,6 @@
 //
 //   signup(username,password) -> POST /api/auth/signup
 //   login(username,password)  -> POST /api/auth/login
-//   getFeed()                 -> GET  /api/dreams?published=true (local-only; see getSharedFeed)
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
@@ -383,9 +382,6 @@
 
     logout: function () { state.user = null; persist(); },
 
-    getFeed: function () {
-      return state.dreams.filter(function (d) { return d.isPublished; });
-    },
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
     // recomputed against whoever is signed in *now*, not trusted from a
@@ -481,11 +477,9 @@
 
     /**
      * The real, cross-browser shared feed — every published dream from
-     * every user, fetched from Blobs via get-feed.js. Unlike getFeed()
-     * (this browser's own local copy of dreams it happens to know about),
-     * this is genuinely shared. Adds mine/likedByMe per-viewer, computed
-     * locally since the shared record itself carries neither (no real
-     * accounts to know who's asking).
+     * every user, fetched from Blobs via get-feed.js. Adds mine/likedByMe
+     * per-viewer, computed locally since the shared record itself carries
+     * neither (no real accounts to know who's asking).
      */
     getSharedFeed: function () {
       return fetch('/.netlify/functions/get-feed').then(function (res) {
