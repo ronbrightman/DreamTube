@@ -90,7 +90,14 @@ async function checkFalStatus(model, requestId, falKey) {
   var resultData = parsedResult.data;
 
   if (!resultRes.ok) {
-    return { statusCode: 200, done: true, error: 'E207: result_fetch_failed' };
+    // resultData parsed as valid JSON (parsedResult.ok above), so fal sent
+    // a structured reason along with the non-OK status — surface it
+    // instead of a bare "result_fetch_failed" with nothing to go on. This
+    // is the path a content-safety rejection would come through: fal can
+    // mark a job COMPLETED (processing finished) while the actual result
+    // fetch 4xxs with the real reason in the body.
+    var resultMessage = (resultData && (resultData.detail || resultData.error)) || 'result_fetch_failed';
+    return { statusCode: 200, done: true, error: 'E207: ' + (typeof resultMessage === 'string' ? resultMessage : JSON.stringify(resultMessage)) + ' (http ' + resultRes.status + ')' };
   }
 
   var videoUrl = resultData.video && resultData.video.url;
