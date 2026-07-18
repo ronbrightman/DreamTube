@@ -1,14 +1,26 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style, characters? } -> kicks off a video generation job
-// and returns an operationName the client can poll via video-status.js.
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace? }
+// -> kicks off a video generation job and returns an operationName the
+// client can poll via video-status.js.
 //
-// characters (optional) is [{ name, description, isSelf }] — the user's
-// selected Advanced characters, resolved client-side from their private
-// character list (see js/store.js's resolveCharacters). Their descriptions
-// are folded into the prompt sent to the model (see buildPrompt) but never
-// echoed back — the caption the UI displays is whatever the caller passed
-// in and this function never alters or returns it.
+// characters (optional) is [{ name, description, isSelf, photoDataUrl? }] —
+// the user's selected Advanced characters, resolved client-side from their
+// private character list (see js/store.js's resolveCharacters).
+// photoDataUrl can only be present on an isSelf entry (js/store.js strips
+// it from everyone else before it ever reaches here) and is at most one
+// per request, since only "Me" can have a photo.
+//
+// cameraView is one of 'Close-up' | 'Wide shot' | 'Aerial view' | 'POV'.
+// sceneryTime is 'Day' | 'Night'; sceneryPlace is 'Urban' | 'Nature' |
+// 'Inside a house'. All optional/nullable.
+//
+// All of the above are folded into the prompt sent to the model (see
+// buildPrompt) but never echoed back — the caption the UI displays is
+// whatever the caller passed in and this function never alters or
+// returns it. If a self photo is present, generation routes through
+// fal's image-to-video model with that photo as the reference image
+// instead of the plain text-to-video model (see callFalImageToVideo).
 //
 // ACTIVE PATH: fal.ai's Veo 3.1 Fast (fal-ai/veo3.1/fast), using FAL_KEY.
 // Switched from fal.ai's wan v2.2-5b because its output quality wasn't good
@@ -28,25 +40,49 @@ var STYLE_MODIFIERS = {
   Realistic: 'in a photorealistic, lifelike rendering style'
 };
 
+var CAMERA_MODIFIERS = {
+  'Close-up': 'close-up shot',
+  'Wide shot': 'wide shot',
+  'Aerial view': 'aerial view',
+  'POV': 'point-of-view (POV) shot'
+};
+
+var SCENERY_TIME_MODIFIERS = { Day: 'daytime', Night: 'nighttime' };
+var SCENERY_PLACE_MODIFIERS = {
+  Urban: 'an urban setting',
+  Nature: 'a natural landscape',
+  'Inside a house': 'inside a house'
+};
+
 /**
- * Combines the plain caption with style + character enrichment into the
- * prompt actually sent to the video model. This is provider-only
- * enrichment — the caption the UI shows the user is never touched here.
+ * Combines the plain caption with style + character + camera + scenery
+ * enrichment into the prompt actually sent to the video model. This is
+ * provider-only enrichment — the caption the UI shows the user is never
+ * touched here.
+ *
+ * A self character with a photo is described by the reference image
+ * passed alongside the prompt (see callFalImageToVideo), not by text, so
+ * its own description is left out of the character text here — but the
+ * prompt still gets a short pointer tying "the dreamer" to that image.
  */
-function buildPrompt(caption, style, characters) {
+function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
   var parts = [caption];
 
-  var validCharacters = (characters || []).filter(function (c) {
-    return c && typeof c.description === 'string' && c.description.trim();
-  });
-  if (validCharacters.length) {
-    var charText = validCharacters.map(function (c) {
+  var hasPhotoSelf = (characters || []).some(function (c) { return c && c.isSelf && c.photoDataUrl; });
+  var charTextParts = (characters || [])
+    .filter(function (c) { return c && !c.photoDataUrl && typeof c.description === 'string' && c.description.trim(); })
+    .map(function (c) {
       var who = c.isSelf ? 'the dreamer ("me")' : ((c.name || '').trim() || 'a character');
       return who + ': ' + c.description.trim();
-    }).join('; ');
-    parts.push('Characters — ' + charText);
-  }
+    });
+  if (hasPhotoSelf) charTextParts.unshift('the dreamer ("me") appears as shown in the reference photo');
+  if (charTextParts.length) parts.push('Characters — ' + charTextParts.join('; '));
+
+  if (CAMERA_MODIFIERS[cameraView]) parts.push(CAMERA_MODIFIERS[cameraView]);
+
+  var sceneryBits = [SCENERY_TIME_MODIFIERS[sceneryTime], SCENERY_PLACE_MODIFIERS[sceneryPlace]].filter(Boolean);
+  if (sceneryBits.length) parts.push('Setting: ' + sceneryBits.join(', '));
 
   parts.push(modifier);
   return parts.join(', ') + '.';
@@ -79,6 +115,46 @@ async function callFal(prompt, falKey) {
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
+}
+
+var FAL_MODEL_IMAGE_TO_VIDEO = 'fal-ai/veo3.1/fast/image-to-video';
+
+/**
+ * Active path when a self character has an uploaded photo. Same queue
+ * submission shape as callFal, but conditioned on a reference image —
+ * fal.ai accepts a base64 data URI directly for image_url (it decodes the
+ * file for you), so the client's stored photoDataUrl is passed through
+ * as-is, no separate upload step needed.
+ *
+ * video-status.js needs no changes for this: its falAppBase() already
+ * derives the polling path from just the first two model segments
+ * ("fal-ai/veo3.1"), which is identical for this model and the plain
+ * text-to-video one.
+ */
+async function callFalImageToVideo(prompt, imageDataUrl, falKey) {
+  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_TO_VIDEO, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Key ' + falKey
+    },
+    body: JSON.stringify({
+      prompt: prompt,
+      image_url: imageDataUrl,
+      aspect_ratio: '9:16',
+      duration: '8s',
+      resolution: '720p'
+    })
+  });
+
+  var data = await res.json();
+
+  if (!res.ok) {
+    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
+    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+  }
+
+  return { ok: true, operationName: 'fal:' + FAL_MODEL_IMAGE_TO_VIDEO + ':' + data.request_id };
 }
 
 // Unused fallback path — the previous active integration, fal.ai's wan
@@ -150,12 +226,15 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
   }
 
-  var caption, style, characters;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
     style = (payload.style || '').trim();
     characters = Array.isArray(payload.characters) ? payload.characters : [];
+    cameraView = payload.cameraView || null;
+    sceneryTime = payload.sceneryTime || null;
+    sceneryPlace = payload.sceneryPlace || null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'invalid_json' }) };
   }
@@ -164,10 +243,13 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'caption_and_style_required' }) };
   }
 
-  var prompt = buildPrompt(caption, style, characters);
+  var prompt = buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
+  var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
 
   try {
-    var result = await callFal(prompt, falKey);
+    var result = selfPhoto
+      ? await callFalImageToVideo(prompt, selfPhoto.photoDataUrl, falKey)
+      : await callFal(prompt, falKey);
     if (!result.ok) {
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: result.error }) };
     }

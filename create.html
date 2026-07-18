@@ -45,6 +45,25 @@
         <div class="adv-sub-label">Characters</div>
         <div class="adv-hint">Define people in your dream once, reuse them anytime.</div>
         <div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>
+
+        <div class="adv-sub-label">Camera view</div>
+        <div class="opt-chip-row" id="camera-chip-row">
+          <div class="opt-chip" data-camera="Close-up">Close-up</div>
+          <div class="opt-chip" data-camera="Wide shot">Wide shot</div>
+          <div class="opt-chip" data-camera="Aerial view">Aerial view</div>
+          <div class="opt-chip" data-camera="POV">POV</div>
+        </div>
+
+        <div class="adv-sub-label">Scenery</div>
+        <div class="opt-chip-row" id="scenery-time-row" style="margin-bottom:8px;">
+          <div class="opt-chip" data-scenery-time="Day">Day</div>
+          <div class="opt-chip" data-scenery-time="Night">Night</div>
+        </div>
+        <div class="opt-chip-row" id="scenery-place-row">
+          <div class="opt-chip" data-scenery-place="Urban">Urban</div>
+          <div class="opt-chip" data-scenery-place="Nature">Nature</div>
+          <div class="opt-chip" data-scenery-place="Inside a house">Inside a house</div>
+        </div>
       </div>
     </div>
 
@@ -82,7 +101,21 @@
       <div class="sheet-handle"></div>
       <div class="sheet-title" id="char-sheet-title">Add a character</div>
       <input class="field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">
+
+      <div class="char-mode-row" id="char-mode-row" style="display:none;">
+        <div class="char-mode-btn" data-char-mode="describe">Describe</div>
+        <div class="char-mode-btn" data-char-mode="photo">Upload photo</div>
+      </div>
+
       <textarea class="field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>
+
+      <div class="char-photo-area" id="char-photo-area" style="display:none;">
+        <div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>
+        <input type="file" accept="image/*" id="char-photo-input" style="display:none;">
+        <button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>
+        <span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>
+      </div>
+
       <div class="err-text" id="char-error"></div>
       <button class="btn btn-primary btn-block" id="char-save-btn">Save</button>
       <div style="height:10px;"></div>
@@ -111,6 +144,36 @@
   });
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  /**
+   * Downscales/recompresses a picked photo to a JPEG data URL before it
+   * ever touches localStorage or a network request — an unmodified phone
+   * photo can be several MB, comfortably blowing both localStorage's quota
+   * (this character record lives there indefinitely) and the ~6MB request
+   * body cap on the generate-video function. maxDim caps the longer edge;
+   * quality is JPEG compression (0-1).
+   */
+  function resizeImageFile(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error('read_failed')); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error('decode_failed')); };
+        img.onload = function(){
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   function charChipHTML(c, selected){
     return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
@@ -155,7 +218,58 @@
     renderCharacterChips();
   });
 
+  // ===== Self-only Describe/Upload photo picker =====
+  // charSubMode only matters when the sheet is in 'self' mode — for every
+  // other character it's forced to 'describe' and the toggle itself is
+  // hidden, so there's no path to a photo option for anyone but "Me".
   var charEditingId = null;
+  var charSubMode = 'describe';
+  var charPendingPhotoDataUrl = null;
+
+  function renderCharPhotoPreview(){
+    var preview = document.getElementById('char-photo-preview');
+    var removeLink = document.getElementById('char-photo-remove');
+    if(charPendingPhotoDataUrl){
+      preview.innerHTML = '<img src="'+charPendingPhotoDataUrl+'" alt="">';
+      removeLink.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
+      removeLink.style.display = 'none';
+    }
+  }
+  function setCharSubMode(next){
+    charSubMode = next;
+    Array.prototype.forEach.call(document.querySelectorAll('#char-mode-row .char-mode-btn'), function(b){
+      b.classList.toggle('active', b.dataset.charMode === next);
+    });
+    document.getElementById('char-desc-input').style.display = next === 'describe' ? 'block' : 'none';
+    document.getElementById('char-photo-area').style.display = next === 'photo' ? 'block' : 'none';
+    renderCharPhotoPreview();
+  }
+  document.getElementById('char-mode-row').addEventListener('click', function(e){
+    var btn = e.target.closest('.char-mode-btn');
+    if(btn) setCharSubMode(btn.dataset.charMode);
+  });
+  document.getElementById('char-photo-pick-btn').addEventListener('click', function(){
+    document.getElementById('char-photo-input').click();
+  });
+  document.getElementById('char-photo-input').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if(!file) return;
+    document.getElementById('char-error').textContent = '';
+    resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      charPendingPhotoDataUrl = dataUrl;
+      renderCharPhotoPreview();
+    }).catch(function(){
+      document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
+    });
+  });
+  document.getElementById('char-photo-remove').addEventListener('click', function(){
+    charPendingPhotoDataUrl = null;
+    renderCharPhotoPreview();
+  });
+
   function openCharSheet(mode, existing){
     charEditingId = existing ? existing.id : null;
     document.getElementById('char-sheet-title').textContent = mode === 'self'
@@ -164,10 +278,15 @@
     var nameInput = document.getElementById('char-name-input');
     nameInput.style.display = mode === 'self' ? 'none' : 'block';
     nameInput.value = existing ? existing.name : '';
-    document.getElementById('char-desc-input').value = existing ? existing.description : '';
+    document.getElementById('char-desc-input').value = existing ? (existing.description || '') : '';
     document.getElementById('char-desc-input').dataset.mode = mode;
     document.getElementById('char-error').textContent = '';
     document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
+
+    document.getElementById('char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
+    charPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
+    setCharSubMode(mode === 'self' && charPendingPhotoDataUrl ? 'photo' : 'describe');
+
     document.getElementById('sheet-character-overlay').classList.add('open');
   }
   function closeCharSheet(){
@@ -179,11 +298,13 @@
   });
   document.getElementById('char-save-btn').addEventListener('click', function(){
     var mode = document.getElementById('char-desc-input').dataset.mode;
+    var usingPhoto = mode === 'self' && charSubMode === 'photo';
     var result = DreamStore.saveCharacter({
       id: charEditingId,
       isSelf: mode === 'self',
       name: document.getElementById('char-name-input').value,
-      description: document.getElementById('char-desc-input').value
+      description: usingPhoto ? '' : document.getElementById('char-desc-input').value,
+      photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : null
     });
     if(!result.ok){
       document.getElementById('char-error').textContent = result.error;
@@ -204,6 +325,48 @@
     DreamStore.setDraft({ characterIds: selectedIds });
     closeCharSheet();
     renderCharacterChips();
+  });
+
+  // ===== Advanced: camera view + scenery (single-select, independently nullable) =====
+  function renderCameraChips(){
+    var selected = DreamStore.getDraft().cameraView;
+    Array.prototype.forEach.call(document.querySelectorAll('#camera-chip-row .opt-chip'), function(el){
+      el.classList.toggle('selected', el.dataset.camera === selected);
+    });
+  }
+  document.getElementById('camera-chip-row').addEventListener('click', function(e){
+    var chip = e.target.closest('.opt-chip');
+    if(!chip) return;
+    var val = chip.dataset.camera;
+    var current = DreamStore.getDraft().cameraView;
+    DreamStore.setDraft({ cameraView: current === val ? null : val });
+    renderCameraChips();
+  });
+
+  function renderSceneryChips(){
+    var draft = DreamStore.getDraft();
+    Array.prototype.forEach.call(document.querySelectorAll('#scenery-time-row .opt-chip'), function(el){
+      el.classList.toggle('selected', el.dataset.sceneryTime === draft.sceneryTime);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#scenery-place-row .opt-chip'), function(el){
+      el.classList.toggle('selected', el.dataset.sceneryPlace === draft.sceneryPlace);
+    });
+  }
+  document.getElementById('scenery-time-row').addEventListener('click', function(e){
+    var chip = e.target.closest('.opt-chip');
+    if(!chip) return;
+    var val = chip.dataset.sceneryTime;
+    var current = DreamStore.getDraft().sceneryTime;
+    DreamStore.setDraft({ sceneryTime: current === val ? null : val });
+    renderSceneryChips();
+  });
+  document.getElementById('scenery-place-row').addEventListener('click', function(e){
+    var chip = e.target.closest('.opt-chip');
+    if(!chip) return;
+    var val = chip.dataset.sceneryPlace;
+    var current = DreamStore.getDraft().sceneryPlace;
+    DreamStore.setDraft({ sceneryPlace: current === val ? null : val });
+    renderSceneryChips();
   });
 
   function playBtnLabel(playing){
@@ -435,6 +598,8 @@
   });
 
   renderCharacterChips();
+  renderCameraChips();
+  renderSceneryChips();
 
   // If arriving with a restore flag (from a failed generation), pre-fill Write mode.
   if(draft && draft.restore && draft.caption){

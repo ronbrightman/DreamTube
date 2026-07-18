@@ -13,7 +13,7 @@
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
-//   generateVideo(caption,style,characterIds) -> POST /api/dreams/generate
+//   generateVideo(caption,style,opts) -> POST /api/dreams/generate
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
@@ -39,7 +39,7 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] },
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null },
       dreams: [],
       pendingJob: null,
       charactersByUser: {}, // lowercased username -> array of character objects. Private
@@ -95,6 +95,9 @@
       if (!parsed.accounts) parsed.accounts = {};
       if (!parsed.charactersByUser) parsed.charactersByUser = {};
       if (!parsed.draft.characterIds) parsed.draft.characterIds = [];
+      if (parsed.draft.cameraView === undefined) parsed.draft.cameraView = null;
+      if (parsed.draft.sceneryTime === undefined) parsed.draft.sceneryTime = null;
+      if (parsed.draft.sceneryPlace === undefined) parsed.draft.sceneryPlace = null;
       if (!parsed.likedIds) parsed.likedIds = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
@@ -133,14 +136,19 @@
   }
 
   /**
-   * Maps selected character ids to the plain {name, description, isSelf}
-   * shape the generation API needs — ids are meaningless outside this
-   * browser's localStorage, so only the resolved fields cross the network.
+   * Maps selected character ids to the plain {name, description, isSelf,
+   * photoDataUrl?} shape the generation API needs — ids are meaningless
+   * outside this browser's localStorage, so only the resolved fields cross
+   * the network. photoDataUrl is only ever forwarded for isSelf, mirroring
+   * the same restriction saveCharacter enforces at write time — no one but
+   * "Me" can have a photo, so no one else's resolved record carries one.
    */
   function resolveCharacters(ids) {
     if (!ids || !ids.length) return [];
     return ids.map(findCharacter).filter(Boolean).map(function (c) {
-      return { name: c.name, description: c.description, isSelf: !!c.isSelf };
+      var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
+      if (c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
+      return resolved;
     });
   }
 
@@ -240,7 +248,12 @@
       : fetch('/.netlify/functions/generate-video', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ caption: caption, style: style, characters: characters })
+          body: JSON.stringify({
+            caption: caption, style: style, characters: characters,
+            cameraView: opts.cameraView || null,
+            sceneryTime: opts.sceneryTime || null,
+            sceneryPlace: opts.sceneryPlace || null
+          })
         }).then(function (res) {
           return res.json().then(function (data) {
             if (!res.ok) throw new Error(data.error || 'generation_failed');
@@ -318,16 +331,23 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null }; persist(); },
 
-    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. */
-    generateVideo: function (caption, style, characterIds) {
-      return startGeneration(caption, style, { characterIds: characterIds });
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace }. */
+    generateVideo: function (caption, style, opts) {
+      opts = opts || {};
+      return startGeneration(caption, style, {
+        characterIds: opts.characterIds, cameraView: opts.cameraView,
+        sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace
+      });
     },
 
-    /** Re-runs generation on an existing dream (Edit Dream / Try Again), including any selected Advanced characters. */
+    /** Re-runs generation on an existing dream (Edit Dream / Try Again), including any selected Advanced fields. */
     regenerateDream: function (id, patch) {
-      return startGeneration(patch.caption, patch.style, { sourceDreamId: id, characterIds: patch.characterIds });
+      return startGeneration(patch.caption, patch.style, {
+        sourceDreamId: id, characterIds: patch.characterIds,
+        cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace
+      });
     },
 
     /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */
@@ -426,12 +446,18 @@
     },
 
     /**
-     * Creates or updates a character. patch: { id?, name, isSelf, description }.
+     * Creates or updates a character. patch: { id?, name, isSelf, description, photoDataUrl }.
      * Only one isSelf character is allowed per user — saving a second one
      * edits the existing "Me" instead of creating a duplicate, since a
-     * person only needs to define themselves once. Text-only by design:
-     * a photo option only ever appears in the UI for isSelf, and this
-     * method doesn't accept photo data for anyone else either.
+     * person only needs to define themselves once.
+     *
+     * Safety boundary, not just a UI gap: photoDataUrl is only ever stored
+     * when isSelf is true — for every other character it's silently
+     * dropped here, regardless of what the caller passes, so there's no
+     * path (UI bug or otherwise) that ends with a photo attached to
+     * someone other than the user themselves. Non-self characters always
+     * require a text description; a self character needs a description OR
+     * a photo (at least one), matching the "either/or" picker in the UI.
      * Returns { ok:true, character } or { ok:false, error }.
      */
     saveCharacter: function (patch) {
@@ -439,8 +465,10 @@
       var name = (patch.name || '').trim();
       var description = (patch.description || '').trim();
       var isSelf = !!patch.isSelf;
+      var photoDataUrl = (isSelf && patch.photoDataUrl) ? patch.photoDataUrl : null;
+
       if (!isSelf && !name) return { ok: false, error: 'Give this character a name.' };
-      if (!description) return { ok: false, error: 'Add a short description.' };
+      if (!description && !photoDataUrl) return { ok: false, error: isSelf ? 'Add a description or a photo.' : 'Add a short description.' };
 
       var list = myCharacterList();
       var existing = patch.id ? findCharacter(patch.id) : null;
@@ -449,11 +477,13 @@
       if (existing) {
         existing.name = isSelf ? (name || 'Me') : name;
         existing.description = description;
+        if (isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
         persist();
         return { ok: true, character: existing };
       }
 
       var character = { id: newCharId(), name: isSelf ? (name || 'Me') : name, isSelf: isSelf, description: description };
+      if (isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
       list.push(character);
       persist();
       return { ok: true, character: character };

@@ -106,9 +106,10 @@
       task = DreamStore.resumePendingJob();
     } else {
       var d = DreamStore.getDraft();
+      var advancedOpts = { characterIds: d.characterIds, cameraView: d.cameraView, sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace };
       task = d.sourceDreamId
-        ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style, characterIds: d.characterIds })
-        : DreamStore.generateVideo(d.caption, d.style, d.characterIds);
+        ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
+        : DreamStore.generateVideo(d.caption, d.style, advancedOpts);
     }
 
     task.then(function(dream){
