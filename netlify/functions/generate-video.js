@@ -114,7 +114,7 @@ function humanizeFalDetail(detail) {
     if (item.type === 'content_policy_violation') {
       var onPhoto = Array.isArray(item.loc) && item.loc.indexOf('image_urls') !== -1;
       return onPhoto
-        ? 'The reference photo was flagged by the safety system — try a different photo.'
+        ? "The reference photo was flagged by the safety system — this usually happens when the photo appears to show a child or teen. For that character, switch to Describe (text) instead of a photo."
         : 'The description was flagged by the safety system. This usually happens when a real photo is combined with a description of a minor, or another sensitive detail — try removing age or other identifying details, or switch to a non-photorealistic style.';
     }
     return typeof item.msg === 'string' ? item.msg : null;
