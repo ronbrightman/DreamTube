@@ -422,7 +422,7 @@
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
     var pubBtn = document.getElementById('publish-btn');
-    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = true; pubBtn.title = 'Published to Explore'; }
+    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = false; pubBtn.title = 'Click to make private'; }
     else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
   }
   render();
@@ -504,6 +504,12 @@
   }
 
   document.getElementById('publish-btn').addEventListener('click', function(){
+    if(dream.isPublished){
+      DreamStore.unpublishDream(dream.id);
+      render();
+      showToast('Made private');
+      return;
+    }
     shareAfterPublish = false;
     document.getElementById('modal-publish').classList.add('open');
   });

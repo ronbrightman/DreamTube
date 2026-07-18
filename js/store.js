@@ -16,6 +16,7 @@
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
+//   unpublishDream(id)              -> POST /api/dreams/:id/unpublish
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
 //   getCharacters()                   -> GET  /api/users/me/characters
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
@@ -184,6 +185,15 @@
         id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
         style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl
       })
+    }).catch(function () { /* best-effort — see comment above */ });
+  }
+
+  /** Fire-and-forget removal from the shared feed-index blob — same best-effort contract as above. */
+  function removePublishedDreamFromFeed(id) {
+    fetch('/.netlify/functions/unpublish-dream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
     }).catch(function () { /* best-effort — see comment above */ });
   }
 
@@ -446,6 +456,17 @@
       return d;
     },
 
+    /** Takes one of the current user's own dreams back out of Explore. */
+    unpublishDream: function (id) {
+      var d = findDream(id);
+      if (d) {
+        d.isPublished = false;
+        persist();
+        removePublishedDreamFromFeed(id);
+      }
+      return d;
+    },
+
     /** Deletes one of the current user's own dreams. Returns true if a dream was removed. */
     deleteDream: function (id) {
       var d = findDream(id);
@@ -454,13 +475,7 @@
       var wasPublished = d.isPublished;
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();
-      if (wasPublished) {
-        fetch('/.netlify/functions/unpublish-dream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: id })
-        }).catch(function () { /* best-effort, matches syncPublishedDreamToFeed */ });
-      }
+      if (wasPublished) removePublishedDreamFromFeed(id);
       return true;
     },
 
