@@ -61,7 +61,9 @@
       ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
       : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="vcard" href="explore.html?id='+d.id+'">' +
-      '<div class="vcard-thumb">'+media+'<div class="play-indicator icon">'+Icons.play+'</div><div class="dur">'+d.dur+'</div></div>' +
+      '<div class="vcard-thumb">'+media+
+        '<button class="vcard-delete icon" data-delete="'+d.id+'" title="Delete">'+Icons.trash+'</button>' +
+        '<div class="play-indicator icon">'+Icons.play+'</div><div class="dur">'+d.dur+'</div></div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
@@ -70,24 +72,43 @@
   var user = DreamStore.getCurrentUser();
   if(user) document.getElementById('profile-handle').textContent = user.handle;
 
-  var mine = DreamStore.getMyDreams();
-  var shared = mine.filter(function(d){ return d.isPublished; });
-  var privateDreams = mine.filter(function(d){ return !d.isPublished; });
+  function render(){
+    var mine = DreamStore.getMyDreams();
+    var shared = mine.filter(function(d){ return d.isPublished; });
+    var privateDreams = mine.filter(function(d){ return !d.isPublished; });
 
-  document.getElementById('stat-created').textContent = mine.length;
-  document.getElementById('stat-shared').textContent = shared.length;
+    document.getElementById('stat-created').textContent = mine.length;
+    document.getElementById('stat-shared').textContent = shared.length;
 
-  if(!mine.length){
-    document.getElementById('profile-empty').style.display = 'block';
-    document.getElementById('profile-lists').style.display = 'none';
-  } else {
-    document.getElementById('shared-grid').innerHTML = shared.length
-      ? shared.map(vcardHTML).join('')
-      : '<div class="grid-empty">Nothing shared yet — publish a dream from its result page.</div>';
-    document.getElementById('private-grid').innerHTML = privateDreams.length
-      ? privateDreams.map(vcardHTML).join('')
-      : '<div class="grid-empty">No private dreams — everything you\'ve made is shared.</div>';
+    if(!mine.length){
+      document.getElementById('profile-empty').style.display = 'block';
+      document.getElementById('profile-lists').style.display = 'none';
+    } else {
+      document.getElementById('profile-empty').style.display = 'none';
+      document.getElementById('profile-lists').style.display = 'block';
+      document.getElementById('shared-grid').innerHTML = shared.length
+        ? shared.map(vcardHTML).join('')
+        : '<div class="grid-empty">Nothing shared yet — publish a dream from its result page.</div>';
+      document.getElementById('private-grid').innerHTML = privateDreams.length
+        ? privateDreams.map(vcardHTML).join('')
+        : '<div class="grid-empty">No private dreams — everything you\'ve made is shared.</div>';
+    }
   }
+  render();
+
+  // Delegated so re-rendering after a delete never needs to re-attach
+  // per-card listeners. stopPropagation/preventDefault keep the click from
+  // also triggering the enclosing <a class="vcard"> navigation.
+  document.getElementById('profile-lists').addEventListener('click', function(e){
+    var delBtn = e.target.closest('[data-delete]');
+    if(!delBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if(confirm('Delete this dream? This can\'t be undone.')){
+      DreamStore.deleteDream(delBtn.dataset.delete);
+      render();
+    }
+  });
 
   document.getElementById('logout-btn').addEventListener('click', function(){
     if(confirm('Log out of DreamTube?')){

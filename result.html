@@ -36,6 +36,7 @@
     </div>
     <div class="stack-btns">
       <button class="btn btn-warm btn-block" id="publish-btn"><span class="icon" id="publish-icon"></span> Publish to Explore</button>
+      <button class="btn btn-ghost btn-block" id="delete-btn" style="color:var(--danger); border-color:var(--danger);"><span class="icon" id="delete-icon"></span> Delete Dream</button>
     </div>
   </div>
 
@@ -77,6 +78,17 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modal-delete">
+    <div class="modal-card">
+      <div class="modal-title">Delete this dream?</div>
+      <div class="modal-body">This can't be undone — the video and caption will be gone for good.</div>
+      <div class="modal-row">
+        <button class="btn btn-ghost" style="flex:1;" id="delete-cancel">Cancel</button>
+        <button class="btn" style="flex:1; background:var(--danger); color:#fff;" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -89,6 +101,7 @@
   document.getElementById('share-btn').innerHTML = Icons.share;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('style-icon').innerHTML = Icons.palette;
+  document.getElementById('delete-icon').innerHTML = Icons.trash;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-check'), function(el){ el.innerHTML = Icons.check; });
 
@@ -189,6 +202,17 @@
     document.getElementById('modal-publish').classList.remove('open');
     render();
     showToast('Published to Explore');
+  });
+
+  document.getElementById('delete-btn').addEventListener('click', function(){
+    document.getElementById('modal-delete').classList.add('open');
+  });
+  document.getElementById('delete-cancel').addEventListener('click', function(){
+    document.getElementById('modal-delete').classList.remove('open');
+  });
+  document.getElementById('delete-confirm').addEventListener('click', function(){
+    DreamStore.deleteDream(dream.id);
+    location.href = 'profile.html';
   });
 
   document.getElementById('share-btn').addEventListener('click', function(){

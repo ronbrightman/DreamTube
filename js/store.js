@@ -14,6 +14,7 @@
 //   generateVideo(caption,style) -> POST /api/dreams/generate
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
+//   deleteDream(id)                 -> DELETE /api/dreams/:id
 
 (function () {
   var KEY = 'dreamtube_state_v1';
@@ -272,6 +273,15 @@
       var d = findDream(id);
       if (d) { d.isPublished = true; persist(); }
       return d;
+    },
+
+    /** Deletes one of the current user's own dreams. Returns true if a dream was removed. */
+    deleteDream: function (id) {
+      var d = findDream(id);
+      if (!d || !d.mine) return false;
+      state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
+      persist();
+      return true;
     },
 
     reset: function () { state = seed(); persist(); }
