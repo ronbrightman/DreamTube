@@ -55,8 +55,6 @@
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
   function vcardHTML(d){
-    // No .priv badge here — Profile already splits into separate Shared/Private
-    // sections, so a per-card badge would just repeat the section header.
     // Links to result.html (the owner detail/edit view, reads local state),
     // never explore.html — that's the shared feed and won't have private dreams.
     var media = d.videoUrl
@@ -65,6 +63,7 @@
     return '<a class="vcard" href="result.html?id='+d.id+'">' +
       '<div class="vcard-thumb">'+media+
         '<button class="vcard-delete icon" data-delete="'+d.id+'" title="Delete">'+Icons.trash+'</button>' +
+        '<div class="priv'+(d.isPublished?' pub':'')+'">'+(d.isPublished?'Public':'Private')+'</div>' +
         '<div class="play-indicator icon">'+Icons.play+'</div><div class="dur">'+d.dur+'</div></div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +

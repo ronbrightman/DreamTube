@@ -156,7 +156,9 @@ body{
 .vcard-thumb-bg{ position:absolute; inset:0;}
 .vcard-video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
 .vcard-thumb .dur{ position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.6); color:#fff; font-size:10px; font-weight:700; padding:2px 6px; border-radius:6px;}
-.vcard-thumb .priv{ position:absolute; left:6px; top:6px; background:rgba(0,0,0,.6); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:6px;}
+/* Bottom-left, not top-left — top-left is .vcard-delete's spot (Profile-only). */
+.vcard-thumb .priv{ position:absolute; left:6px; bottom:6px; background:rgba(0,0,0,.65); color:#fff; font-size:9px; font-weight:700; padding:2px 6px; border-radius:6px; letter-spacing:.02em;}
+.vcard-thumb .priv.pub{ background:rgba(255,255,255,.92); color:#000;}
 .vcard-thumb .play-indicator{ position:absolute; top:8px; right:8px; color:#fff; width:13px; height:13px; opacity:.9;}
 .vcard-delete{
   position:absolute; top:6px; left:6px; z-index:2; width:26px; height:26px; border-radius:50%;
@@ -340,6 +342,8 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-panel{ position:absolute; left:0; right:0; bottom:0; padding:18px 22px calc(24px + env(safe-area-inset-bottom,0px)); z-index:2;}
 .dream-quote{ font-size:18px; font-weight:600; margin-bottom:8px; line-height:1.4;}
 .result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.result-tag-row .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
+.result-tag-row .feed-tag.pub{ background:rgba(255,255,255,.92); color:#000;}
 .action-row-compact{ display:flex; gap:8px; margin:16px 0 10px;}
 .action-row-compact .btn{ flex:1; padding:10px 6px; font-size:11.5px; font-weight:700; gap:5px;}
 .action-row-compact .btn .icon{ width:15px; height:15px;}

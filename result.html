@@ -257,7 +257,9 @@
     }
     document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
     document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
-    document.getElementById('result-privacy-tag').textContent = dream.isPublished ? 'Published' : 'Private';
+    var privacyTag = document.getElementById('result-privacy-tag');
+    privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
+    privacyTag.classList.toggle('pub', !!dream.isPublished);
     document.getElementById('edit-text').value = dream.caption;
     Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
       c.classList.toggle('selected', c.dataset.style === dream.style);
