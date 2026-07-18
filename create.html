@@ -32,10 +32,23 @@
     <div class="rec-error" id="select-error" style="display:none;"></div>
   </div>
 
-  <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px;">
+  <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto;">
     <textarea class="field" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
     <div class="char-count" id="char-count">0 characters</div>
-    <div style="flex:1"></div>
+
+    <div class="adv-section" id="adv-section">
+      <div class="adv-toggle" id="adv-toggle">
+        <span>Advanced</span>
+        <span class="icon" id="adv-chevron"></span>
+      </div>
+      <div class="adv-content">
+        <div class="adv-sub-label">Characters</div>
+        <div class="adv-hint">Define people in your dream once, reuse them anytime.</div>
+        <div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <div style="flex:1; min-height:16px;"></div>
     <button class="btn btn-primary btn-block" id="write-continue" disabled style="margin-bottom:22px;">Continue</button>
   </div>
 
@@ -63,6 +76,21 @@
       <button class="btn btn-ghost btn-block" id="re-record"></button>
     </div>
   </div>
+
+  <div class="sheet-overlay" id="sheet-character-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title" id="char-sheet-title">Add a character</div>
+      <input class="field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">
+      <textarea class="field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>
+      <div class="err-text" id="char-error"></div>
+      <button class="btn btn-primary btn-block" id="char-save-btn">Save</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="char-cancel" style="cursor:pointer;">Cancel</span>
+      <div style="height:8px;"></div>
+      <span class="link-text" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
+    </div>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -75,6 +103,108 @@
   document.querySelector('.choice-icon-record').innerHTML = Icons.mic;
   document.querySelector('.rec-dot').innerHTML = Icons.mic;
   document.getElementById('re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
+  document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
+
+  // ===== Advanced: characters =====
+  document.getElementById('adv-toggle').addEventListener('click', function(){
+    document.getElementById('adv-section').classList.toggle('open');
+  });
+
+  function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  function charChipHTML(c, selected){
+    return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
+      '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
+      '<span data-char-edit="'+c.id+'">'+esc(c.name)+'</span>' +
+      '<span class="chip-edit icon" data-char-edit="'+c.id+'">'+Icons.pencil+'</span>' +
+    '</div>';
+  }
+
+  function renderCharacterChips(){
+    var row = document.getElementById('char-chip-row');
+    if(!row) return;
+    var characters = DreamStore.getCharacters();
+    var selectedIds = DreamStore.getDraft().characterIds || [];
+    var hasSelf = characters.some(function(c){ return c.isSelf; });
+    var html = characters.map(function(c){ return charChipHTML(c, selectedIds.indexOf(c.id) !== -1); }).join('');
+    if(!hasSelf){
+      html += '<div class="char-chip-add" id="char-add-self"><span class="icon">'+Icons.userPlus+'</span> Add yourself</div>';
+    }
+    html += '<div class="char-chip-add" id="char-add-other"><span class="icon">'+Icons.plus+'</span> Add a character</div>';
+    row.innerHTML = html;
+
+    var addSelfBtn = document.getElementById('char-add-self');
+    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openCharSheet('self', null); });
+    document.getElementById('char-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
+  }
+
+  document.getElementById('char-chip-row').addEventListener('click', function(e){
+    var editTarget = e.target.closest('[data-char-edit]');
+    if(editTarget){
+      var c = DreamStore.getCharacters().filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
+      if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
+      return;
+    }
+    var chip = e.target.closest('[data-char-select]');
+    if(!chip) return;
+    var id = chip.dataset.charSelect;
+    var selectedIds = (DreamStore.getDraft().characterIds || []).slice();
+    var idx = selectedIds.indexOf(id);
+    if(idx === -1) selectedIds.push(id); else selectedIds.splice(idx, 1);
+    DreamStore.setDraft({ characterIds: selectedIds });
+    renderCharacterChips();
+  });
+
+  var charEditingId = null;
+  function openCharSheet(mode, existing){
+    charEditingId = existing ? existing.id : null;
+    document.getElementById('char-sheet-title').textContent = mode === 'self'
+      ? (existing ? 'Edit yourself' : 'Add yourself')
+      : (existing ? 'Edit character' : 'Add a character');
+    var nameInput = document.getElementById('char-name-input');
+    nameInput.style.display = mode === 'self' ? 'none' : 'block';
+    nameInput.value = existing ? existing.name : '';
+    document.getElementById('char-desc-input').value = existing ? existing.description : '';
+    document.getElementById('char-desc-input').dataset.mode = mode;
+    document.getElementById('char-error').textContent = '';
+    document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
+    document.getElementById('sheet-character-overlay').classList.add('open');
+  }
+  function closeCharSheet(){
+    document.getElementById('sheet-character-overlay').classList.remove('open');
+  }
+  document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
+  document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
+    if(e.target.id === 'sheet-character-overlay') closeCharSheet();
+  });
+  document.getElementById('char-save-btn').addEventListener('click', function(){
+    var mode = document.getElementById('char-desc-input').dataset.mode;
+    var result = DreamStore.saveCharacter({
+      id: charEditingId,
+      isSelf: mode === 'self',
+      name: document.getElementById('char-name-input').value,
+      description: document.getElementById('char-desc-input').value
+    });
+    if(!result.ok){
+      document.getElementById('char-error').textContent = result.error;
+      return;
+    }
+    if(mode !== 'self'){
+      var selectedIds = (DreamStore.getDraft().characterIds || []).slice();
+      if(selectedIds.indexOf(result.character.id) === -1){ selectedIds.push(result.character.id); DreamStore.setDraft({ characterIds: selectedIds }); }
+    }
+    closeCharSheet();
+    renderCharacterChips();
+  });
+  document.getElementById('char-delete-link').addEventListener('click', function(){
+    if(!charEditingId) return;
+    if(!confirm('Delete this character?')) return;
+    DreamStore.deleteCharacter(charEditingId);
+    var selectedIds = (DreamStore.getDraft().characterIds || []).filter(function(id){ return id !== charEditingId; });
+    DreamStore.setDraft({ characterIds: selectedIds });
+    closeCharSheet();
+    renderCharacterChips();
+  });
 
   function playBtnLabel(playing){
     return '<span class="icon" style="width:14px;height:14px;">' + (playing ? Icons.pause : Icons.play) + '</span> ' + (playing ? 'Playing…' : 'Play back');
@@ -303,6 +433,8 @@
       showError('rec-error', "Couldn't transcribe that recording — try again, or re-record.");
     });
   });
+
+  renderCharacterChips();
 
   // If arriving with a restore flag (from a failed generation), pre-fill Write mode.
   if(draft && draft.restore && draft.caption){

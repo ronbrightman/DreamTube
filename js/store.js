@@ -15,6 +15,9 @@
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
+//   getCharacters()                   -> GET  /api/users/me/characters
+//   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
+//   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
 
 (function () {
   var KEY = 'dreamtube_state_v1';
@@ -34,9 +37,11 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false },
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] },
       dreams: [],
-      pendingJob: null
+      pendingJob: null,
+      charactersByUser: {} // lowercased username -> array of character objects. Private
+                            // per-user and reusable across dreams, same key scheme as accounts.
     };
   }
 
@@ -81,6 +86,8 @@
       if (!parsed.dreams) throw new Error('bad state');
       if (parsed.pendingJob === undefined) parsed.pendingJob = null;
       if (!parsed.accounts) parsed.accounts = {};
+      if (!parsed.charactersByUser) parsed.charactersByUser = {};
+      if (!parsed.draft.characterIds) parsed.draft.characterIds = [];
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -102,6 +109,20 @@
     return null;
   }
   function gradientFor(d) { return STYLE_GRADIENTS[d.style] || STYLE_GRADIENTS.Cinematic; }
+
+  function newCharId() { return 'c' + Math.random().toString(36).slice(2, 9); }
+  /** Characters are private per-user — every accessor is scoped to the logged-in account, never global. */
+  function myCharacterList() {
+    if (!state.user) return [];
+    var key = state.user.username.toLowerCase();
+    if (!state.charactersByUser[key]) state.charactersByUser[key] = [];
+    return state.charactersByUser[key];
+  }
+  function findCharacter(id) {
+    var list = myCharacterList();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
 
   function savePendingJob(job) { state.pendingJob = job; persist(); }
   function clearPendingJob() { state.pendingJob = null; persist(); }
@@ -239,7 +260,7 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. */
     generateVideo: function (caption, style) {
@@ -284,6 +305,58 @@
       return true;
     },
 
-    reset: function () { state = seed(); persist(); }
+    reset: function () { state = seed(); persist(); },
+
+    /** This user's saved characters, self first. */
+    getCharacters: function () {
+      var list = myCharacterList().slice();
+      list.sort(function (a, b) { return (b.isSelf ? 1 : 0) - (a.isSelf ? 1 : 0); });
+      return list;
+    },
+
+    /**
+     * Creates or updates a character. patch: { id?, name, isSelf, description }.
+     * Only one isSelf character is allowed per user — saving a second one
+     * edits the existing "Me" instead of creating a duplicate, since a
+     * person only needs to define themselves once. Text-only by design:
+     * a photo option only ever appears in the UI for isSelf, and this
+     * method doesn't accept photo data for anyone else either.
+     * Returns { ok:true, character } or { ok:false, error }.
+     */
+    saveCharacter: function (patch) {
+      if (!state.user) return { ok: false, error: 'not_logged_in' };
+      var name = (patch.name || '').trim();
+      var description = (patch.description || '').trim();
+      var isSelf = !!patch.isSelf;
+      if (!isSelf && !name) return { ok: false, error: 'Give this character a name.' };
+      if (!description) return { ok: false, error: 'Add a short description.' };
+
+      var list = myCharacterList();
+      var existing = patch.id ? findCharacter(patch.id) : null;
+      if (!existing && isSelf) existing = list.filter(function (c) { return c.isSelf; })[0] || null;
+
+      if (existing) {
+        existing.name = isSelf ? (name || 'Me') : name;
+        existing.description = description;
+        persist();
+        return { ok: true, character: existing };
+      }
+
+      var character = { id: newCharId(), name: isSelf ? (name || 'Me') : name, isSelf: isSelf, description: description };
+      list.push(character);
+      persist();
+      return { ok: true, character: character };
+    },
+
+    /** Deletes one of the current user's own characters. Returns true if a character was removed. */
+    deleteCharacter: function (id) {
+      var list = myCharacterList();
+      var before = list.length;
+      var filtered = list.filter(function (c) { return c.id !== id; });
+      if (filtered.length === before) return false;
+      state.charactersByUser[state.user.username.toLowerCase()] = filtered;
+      persist();
+      return true;
+    }
   };
 })();

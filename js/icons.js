@@ -59,6 +59,12 @@
 
     pause: svg('<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>'),
 
-    trash: svg('<path d="M3 6h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M19 6l-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M10 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    trash: svg('<path d="M3 6h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M19 6l-1 14a1 1 0 01-1 1H7a1 1 0 01-1-1L5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M10 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    chevronDown: svg('<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
+    plus: svg('<path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
+
+    userPlus: svg('<circle cx="9" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M2 20c0-4 3.1-6 7-6s7 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 8v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 11h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
   };
 })();
