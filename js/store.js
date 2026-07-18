@@ -152,6 +152,22 @@
     }).catch(function () { /* best-effort — see comment above */ });
   }
 
+  // One-time catch-up for browsers that published dreams before the shared
+  // feed existed — those dreams were marked isPublished locally but never
+  // pushed to the Blobs-backed feed-index, since that sync didn't exist
+  // yet. Runs once per browser (localStorage flag below); safe to run
+  // again since publish-dream.js upserts by id.
+  var FEED_BACKFILL_KEY = 'dreamtube_feed_backfill_v1_done';
+  function backfillSharedFeed() {
+    var already;
+    try { already = localStorage.getItem(FEED_BACKFILL_KEY); } catch (e) { return; }
+    if (already) return;
+    state.dreams.forEach(function (d) {
+      if (d.isPublished && d.videoUrl) syncPublishedDreamToFeed(d);
+    });
+    try { localStorage.setItem(FEED_BACKFILL_KEY, '1'); } catch (e) { /* storage unavailable — will just retry next load */ }
+  }
+
   function pollUntilDone(operationName, startedAt) {
     return new Promise(function (resolve, reject) {
       function poll() {
@@ -236,6 +252,7 @@
   }
 
   var state = load();
+  backfillSharedFeed();
 
   window.DreamStore = {
     STYLE_GRADIENTS: STYLE_GRADIENTS,
