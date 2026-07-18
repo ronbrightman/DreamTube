@@ -23,7 +23,9 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
-  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // Deliberately no login gate here, unlike every other page — Explore is
+  // the real shared feed now (see js/store.js's getSharedFeed), and a
+  // shared dream link needs to work for whoever opens it, logged in or not.
   document.querySelector('.feed-back').innerHTML = Icons.back;
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }

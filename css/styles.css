@@ -340,9 +340,9 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-panel{ position:absolute; left:0; right:0; bottom:0; padding:18px 22px calc(24px + env(safe-area-inset-bottom,0px)); z-index:2;}
 .dream-quote{ font-size:18px; font-weight:600; margin-bottom:8px; line-height:1.4;}
 .result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-.action-row-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0 10px;}
-.action-row-2 .icon, .stack-btns .icon{ width:16px; height:16px;}
-.stack-btns{ display:flex; flex-direction:column; gap:10px;}
+.action-row-compact{ display:flex; gap:8px; margin:16px 0 10px;}
+.action-row-compact .btn{ flex:1; padding:10px 6px; font-size:11.5px; font-weight:700; gap:5px;}
+.action-row-compact .btn .icon{ width:15px; height:15px;}
 
 /* bottom sheet + modal + toast (used on Result) */
 .sheet-overlay{ position:absolute; inset:0; background:rgba(0,0,0,.6); z-index:10; opacity:0; pointer-events:none; transition:opacity .25s;}

@@ -30,13 +30,11 @@
       <span class="feed-tag" id="result-style-tag">Style: —</span>
       <span class="feed-tag" id="result-privacy-tag">Private</span>
     </div>
-    <div class="action-row-2">
-      <button class="btn btn-secondary" id="open-edit-sheet"><span class="icon" id="edit-icon"></span> Edit Dream</button>
-      <button class="btn btn-secondary" id="open-style-sheet"><span class="icon" id="style-icon"></span> Change Style</button>
-    </div>
-    <div class="stack-btns">
-      <button class="btn btn-warm btn-block" id="publish-btn"><span class="icon" id="publish-icon"></span> Publish to Explore</button>
-      <button class="btn btn-ghost btn-block" id="delete-btn" style="color:var(--danger); border-color:var(--danger);"><span class="icon" id="delete-icon"></span> Delete Dream</button>
+    <div class="action-row-compact">
+      <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
+      <button class="btn btn-secondary" id="open-style-sheet" title="Change Style"><span class="icon" id="style-icon"></span>Style</button>
+      <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+      <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
   </div>
 
@@ -265,8 +263,8 @@
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
     var pubBtn = document.getElementById('publish-btn');
-    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span> Published to Explore'; pubBtn.disabled = true; }
-    else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span> Publish to Explore'; pubBtn.disabled = false; }
+    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = true; pubBtn.title = 'Published to Explore'; }
+    else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
   }
   render();
 
