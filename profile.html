@@ -48,7 +48,7 @@
 
   document.getElementById('logout-btn').innerHTML = Icons.settings;
   var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.search;
+  navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
@@ -57,17 +57,43 @@
   function vcardHTML(d){
     // Links to result.html (the owner detail/edit view, reads local state),
     // never explore.html — that's the shared feed and won't have private dreams.
+    // No autoplay here — actual play/pause is driven by the
+    // IntersectionObserver below (see observeVideos), which is what
+    // actually renders a visible preview frame instead of a blank box:
+    // preload="metadata" alone doesn't guarantee a decoded frame to show
+    // until something has actually asked the video to play.
     var media = d.videoUrl
       ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
       : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="vcard" href="result.html?id='+d.id+'">' +
       '<div class="vcard-thumb">'+media+
-        '<button class="vcard-delete icon" data-delete="'+d.id+'" title="Delete">'+Icons.trash+'</button>' +
         '<div class="priv'+(d.isPublished?' pub':'')+'">'+(d.isPublished?'Public':'Private')+'</div>' +
         '<div class="play-indicator icon">'+Icons.play+'</div><div class="dur">'+d.dur+'</div></div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
+  }
+
+  // Plays a muted preview of whichever grid thumbnails are actually on
+  // screen (multiple can be visible at once, unlike Explore's one-at-a-time
+  // swipe feed) and pauses the rest — both fixes the blank-thumbnail issue
+  // (a <video> with only preload="metadata" often never renders a visible
+  // frame until it's asked to play) and avoids every thumbnail decoding
+  // and playing at once regardless of visibility.
+  var vcardVideoObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      var video = entry.target;
+      if(entry.isIntersecting){
+        if(video.paused) video.play().catch(function(){ /* autoplay can be blocked before any user gesture — muted should normally allow it regardless */ });
+      } else {
+        video.pause();
+      }
+    });
+  }, { threshold: 0.2 });
+
+  function observeVideos(){
+    vcardVideoObserver.disconnect();
+    Array.prototype.forEach.call(document.querySelectorAll('.vcard-video'), function(v){ vcardVideoObserver.observe(v); });
   }
 
   var user = DreamStore.getCurrentUser();
@@ -94,22 +120,10 @@
         ? privateDreams.map(vcardHTML).join('')
         : '<div class="grid-empty">No private dreams — everything you\'ve made is shared.</div>';
     }
+
+    observeVideos();
   }
   render();
-
-  // Delegated so re-rendering after a delete never needs to re-attach
-  // per-card listeners. stopPropagation/preventDefault keep the click from
-  // also triggering the enclosing <a class="vcard"> navigation.
-  document.getElementById('profile-lists').addEventListener('click', function(e){
-    var delBtn = e.target.closest('[data-delete]');
-    if(!delBtn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if(confirm('Delete this dream? This can\'t be undone.')){
-      DreamStore.deleteDream(delBtn.dataset.delete);
-      render();
-    }
-  });
 
   document.getElementById('logout-btn').addEventListener('click', function(){
     if(confirm('Log out of DreamTube?')){
