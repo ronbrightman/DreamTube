@@ -6,7 +6,7 @@
 <title>Home — DreamTube</title>
 <meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -119,7 +119,7 @@
 
   function fireNotification(dream){
     if('Notification' in window && Notification.permission === 'granted'){
-      try{ new Notification('Your dream is ready!', { body: '"' + dream.caption + '" finished generating.', icon: 'assets/logo.jpeg' }); }catch(e){ /* notification unsupported/blocked — banner clearing is enough */ }
+      try{ new Notification('Your dream is ready!', { body: '"' + dream.caption + '" finished generating.', icon: 'assets/logo-v2.png' }); }catch(e){ /* notification unsupported/blocked — banner clearing is enough */ }
     }
   }
 
