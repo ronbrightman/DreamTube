@@ -196,8 +196,10 @@
   function charChipHTML(c, selected){
     return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
       '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
-      '<span data-char-edit="'+c.id+'">'+esc(c.name)+'</span>' +
-      '<span class="chip-edit icon" data-char-edit="'+c.id+'">'+Icons.pencil+'</span>' +
+      '<span class="chip-edit-area" data-char-edit="'+c.id+'">' +
+        '<span>'+esc(c.name)+'</span>' +
+        '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
+      '</span>' +
     '</div>';
   }
 

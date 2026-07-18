@@ -254,6 +254,10 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .char-chip.selected{ background:#fff; color:#000; border-color:#fff;}
 .char-chip.selected .chip-check{ background:#000; border-color:#000;}
 .char-chip.selected .chip-check .icon{ opacity:1; color:#fff;}
+/* Padding + matching negative margin grows the tap target around the name
+   + pencil icon without changing the chip's visual size or its gap to the
+   checkmark — the pencil alone was too small a target on a phone. */
+.char-chip .chip-edit-area{ display:flex; align-items:center; gap:7px; padding:8px 8px 8px 0; margin:-8px -8px -8px 0;}
 .char-chip .chip-edit{ color:var(--text-faint); width:13px; height:13px; flex:none;}
 .char-chip.selected .chip-edit{ color:#000; opacity:.5;}
 .char-chip-add{
