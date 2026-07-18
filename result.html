@@ -476,17 +476,48 @@
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
+  // Sharing produces an explore.html?id= link, and Explore only ever shows
+  // published dreams — sharing a private one would hand out a dead link.
+  // So Share on an unpublished dream routes through the same publish
+  // warning modal as the Publish button, and only actually shares once
+  // the user has confirmed making it public. shareAfterPublish tracks
+  // which trigger opened the modal so publish-confirm knows whether to
+  // just publish (Publish button) or publish-then-share (Share button).
+  var shareAfterPublish = false;
+
+  function doShare(){
+    var shareUrl = location.origin + '/explore.html?id=' + dream.id;
+    if(navigator.share){
+      navigator.share({ title: 'DreamTube', text: 'Check out my dream: "' + dream.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
+    } else if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(shareUrl).then(function(){
+        showToast('Link copied to clipboard');
+      }).catch(function(){
+        showToast("Couldn't copy link");
+      });
+    } else {
+      showToast("Sharing isn't supported in this browser");
+    }
+  }
+
   document.getElementById('publish-btn').addEventListener('click', function(){
+    shareAfterPublish = false;
     document.getElementById('modal-publish').classList.add('open');
   });
   document.getElementById('publish-cancel').addEventListener('click', function(){
+    shareAfterPublish = false;
     document.getElementById('modal-publish').classList.remove('open');
   });
   document.getElementById('publish-confirm').addEventListener('click', function(){
     DreamStore.publishDream(dream.id);
     document.getElementById('modal-publish').classList.remove('open');
     render();
-    showToast('Published to Explore');
+    if(shareAfterPublish){
+      shareAfterPublish = false;
+      doShare();
+    } else {
+      showToast('Published to Explore');
+    }
   });
 
   document.getElementById('delete-btn').addEventListener('click', function(){
@@ -501,18 +532,12 @@
   });
 
   document.getElementById('share-btn').addEventListener('click', function(){
-    var shareUrl = location.origin + '/explore.html?id=' + dream.id;
-    if(navigator.share){
-      navigator.share({ title: 'DreamTube', text: 'Check out my dream: "' + dream.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
-    } else if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(shareUrl).then(function(){
-        showToast('Link copied to clipboard');
-      }).catch(function(){
-        showToast("Couldn't copy link");
-      });
-    } else {
-      showToast("Sharing isn't supported in this browser");
+    if(!dream.isPublished){
+      shareAfterPublish = true;
+      document.getElementById('modal-publish').classList.add('open');
+      return;
     }
+    doShare();
   });
 </script>
 </body>
