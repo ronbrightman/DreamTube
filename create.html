@@ -18,7 +18,7 @@
   <div class="topbar"><div class="icon-btn" id="create-back"></div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div style="width:36px;"></div></div>
 
   <div class="px" id="create-select" style="flex:1; padding-top:6px;">
-    <div class="section-label" style="margin-top:10px;">Tell us your dream</div>
+    <div class="section-label" style="margin-top:10px;">Describe a dream</div>
     <div class="choice-card" id="choice-write">
       <div class="choice-icon choice-icon-write"></div>
       <div class="choice-text"><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
@@ -249,6 +249,32 @@
     return btoa(binary);
   }
 
+  var TRANSCRIBE_POLL_MS = 2500;
+  var TRANSCRIBE_MAX_MS = 90 * 1000;
+
+  // The submission itself is fast (just queues the job with fal.ai); actual
+  // transcription time varies with fal's queue load, so this polls
+  // transcribe-status.js rather than waiting on one long request — a single
+  // blocking call previously hit Netlify's own gateway timeout on real
+  // (longer-queued) recordings even though the transcription itself
+  // typically finishes in under a second once a worker picks it up.
+  function pollTranscribeStatus(operationName, startedAt){
+    return new Promise(function(resolve, reject){
+      function poll(){
+        if(Date.now() - startedAt > TRANSCRIBE_MAX_MS){ reject(new Error('transcription_timeout')); return; }
+        fetch('/.netlify/functions/transcribe-status?name=' + encodeURIComponent(operationName))
+          .then(function(res){ return res.json(); })
+          .then(function(data){
+            if(data.error){ reject(new Error(data.error)); return; }
+            if(data.done){ resolve(data.transcript); return; }
+            setTimeout(poll, TRANSCRIBE_POLL_MS);
+          })
+          .catch(reject);
+      }
+      poll();
+    });
+  }
+
   reviewContinue.addEventListener('click', function(){
     if(!recordedBlob) return;
     hideError('rec-error');
@@ -264,10 +290,12 @@
     }).then(function(res){
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
-      if(!result.ok || result.data.error || !result.data.transcript){
+      if(!result.ok || result.data.error || !result.data.operationName){
         throw new Error((result.data && result.data.error) || 'transcription_failed');
       }
-      DreamStore.setDraft({ caption: result.data.transcript, sourceDreamId: null });
+      return pollTranscribeStatus(result.data.operationName, Date.now());
+    }).then(function(transcript){
+      DreamStore.setDraft({ caption: transcript, sourceDreamId: null });
       location.href = 'style.html';
     }).catch(function(){
       reviewContinue.disabled = false;
