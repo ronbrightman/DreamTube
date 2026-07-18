@@ -67,15 +67,22 @@
   var homeTitle = document.getElementById('home-title');
   var searchActive = false;
 
+  // Fetched once from the real shared feed (see js/store.js's
+  // getSharedFeed) and filtered client-side on every keystroke, rather than
+  // re-fetching per keystroke.
+  var allDreams = [];
+  var feedLoaded = false;
+
   function renderGrid(){
+    var grid = document.getElementById('home-grid');
+    if(!feedLoaded){ grid.innerHTML = '<div class="grid-empty">Loading dreams…</div>'; return; }
     var q = searchInput.value.trim().toLowerCase();
-    var dreams = DreamStore.getFeed();
+    var dreams = allDreams;
     if(q){
       dreams = dreams.filter(function(d){
         return d.caption.toLowerCase().indexOf(q) !== -1 || d.ownerHandle.toLowerCase().indexOf(q) !== -1;
       });
     }
-    var grid = document.getElementById('home-grid');
     grid.innerHTML = dreams.length
       ? dreams.map(cardHTML).join('')
       : q
@@ -83,6 +90,18 @@
         : '<div class="grid-empty">No dreams here yet. Be the first to publish one.</div>';
   }
   renderGrid();
+
+  function loadFeed(){
+    DreamStore.getSharedFeed().then(function(dreams){
+      allDreams = dreams;
+      feedLoaded = true;
+      renderGrid();
+    }).catch(function(){
+      feedLoaded = true;
+      document.getElementById('home-grid').innerHTML = '<div class="grid-empty">Couldn\'t load the feed — check your connection and try again.</div>';
+    });
+  }
+  loadFeed();
 
   searchToggle.addEventListener('click', function(){
     searchActive = !searchActive;

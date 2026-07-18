@@ -58,8 +58,23 @@
   var chip = document.getElementById('filter-chip');
   var filter = null; // { type: 'style'|'user', value: string }
 
+  // Fetched once from the real shared feed (see js/store.js's
+  // getSharedFeed) and filtered client-side, rather than re-fetching per
+  // filter click.
+  var allDreams = [];
+  var feedLoaded = false;
+  function findLoadedDream(id){
+    for(var i=0; i<allDreams.length; i++) if(allDreams[i].id === id) return allDreams[i];
+    return null;
+  }
+
   function render(){
-    var dreams = DreamStore.getFeed();
+    if(!feedLoaded){
+      root.innerHTML = '<div class="grid-empty" style="color:#fff;">Loading dreams…</div>';
+      chip.style.display = 'none';
+      return;
+    }
+    var dreams = allDreams;
     if(filter){
       dreams = dreams.filter(function(d){
         return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
@@ -77,6 +92,23 @@
     }
   }
   render();
+
+  function loadFeed(){
+    DreamStore.getSharedFeed().then(function(dreams){
+      allDreams = dreams;
+      feedLoaded = true;
+      render();
+      var targetId = getParam('id');
+      if(targetId){
+        var card = root.querySelector('.feed-card[data-id="'+targetId+'"]');
+        if(card) card.scrollIntoView({ block: 'start' });
+      }
+    }).catch(function(){
+      feedLoaded = true;
+      root.innerHTML = '<div class="grid-empty" style="color:#fff;">Couldn\'t load the feed — check your connection and try again.</div>';
+    });
+  }
+  loadFeed();
 
   chip.addEventListener('click', function(){
     filter = null;
@@ -107,16 +139,40 @@
     }
     var likeEl = e.target.closest('[data-like]');
     if(likeEl){
-      var d = DreamStore.toggleLike(likeEl.dataset.like);
-      if(!d) return;
+      var id = likeEl.dataset.like;
+      var d = findLoadedDream(id);
+      if(!d || likeEl.dataset.pending) return;
+      var wasLiked = d.likedByMe;
+      // Optimistic update — flip immediately, reconcile (or roll back) once
+      // the real shared count comes back.
+      likeEl.dataset.pending = '1';
+      d.likedByMe = !wasLiked;
+      d.likes += wasLiked ? -1 : 1;
       likeEl.classList.toggle('liked', d.likedByMe);
       likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
       likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+      DreamStore.toggleSharedLike(id, wasLiked).then(function(result){
+        d.likes = result.likes;
+        d.likedByMe = result.likedByMe;
+        delete likeEl.dataset.pending;
+        likeEl.classList.toggle('liked', d.likedByMe);
+        likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
+        likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+      }).catch(function(){
+        // Roll back the optimistic flip.
+        d.likedByMe = wasLiked;
+        d.likes += wasLiked ? 1 : -1;
+        delete likeEl.dataset.pending;
+        likeEl.classList.toggle('liked', d.likedByMe);
+        likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
+        likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+        showToast("Couldn't update like — try again.");
+      });
       return;
     }
     var shareEl = e.target.closest('[data-share]');
     if(shareEl){
-      var dream = DreamStore.getDream(shareEl.dataset.share);
+      var dream = findLoadedDream(shareEl.dataset.share);
       if(!dream) return;
       var shareUrl = location.origin + '/explore.html?id=' + dream.id;
       if(navigator.share){
@@ -132,12 +188,6 @@
       }
     }
   });
-
-  var targetId = getParam('id');
-  if(targetId){
-    var card = root.querySelector('.feed-card[data-id="'+targetId+'"]');
-    if(card) card.scrollIntoView({ block: 'start' });
-  }
 </script>
 </body>
 </html>

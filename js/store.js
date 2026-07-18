@@ -7,7 +7,9 @@
 //
 //   signup(username,password) -> POST /api/auth/signup
 //   login(username,password)  -> POST /api/auth/login
-//   getFeed()                 -> GET  /api/dreams?published=true
+//   getFeed()                 -> GET  /api/dreams?published=true (local-only; see getSharedFeed)
+//   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
+//   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
@@ -40,8 +42,13 @@
       draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] },
       dreams: [],
       pendingJob: null,
-      charactersByUser: {} // lowercased username -> array of character objects. Private
-                            // per-user and reusable across dreams, same key scheme as accounts.
+      charactersByUser: {}, // lowercased username -> array of character objects. Private
+                             // per-user and reusable across dreams, same key scheme as accounts.
+      likedIds: {} // dream id -> true. Purely local "have I liked this" state for the shared
+                    // feed's heart icon — the real aggregate like count lives server-side in
+                    // Blobs (see getSharedFeed/toggleSharedLike), this just decides +1 vs -1
+                    // and which browsers see a filled heart. Not deduped across devices/users;
+                    // there's no real account system to dedupe against, same as everywhere else.
     };
   }
 
@@ -88,6 +95,7 @@
       if (!parsed.accounts) parsed.accounts = {};
       if (!parsed.charactersByUser) parsed.charactersByUser = {};
       if (!parsed.draft.characterIds) parsed.draft.characterIds = [];
+      if (!parsed.likedIds) parsed.likedIds = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -127,6 +135,23 @@
   function savePendingJob(job) { state.pendingJob = job; persist(); }
   function clearPendingJob() { state.pendingJob = null; persist(); }
 
+  /**
+   * Fire-and-forget upsert into the shared feed-index blob. Local state is
+   * always the source of truth for the owner's own view (Profile) — if this
+   * fails, the dream still shows as published locally, it just might not
+   * (yet) appear in others' Explore/Home until the next successful sync.
+   */
+  function syncPublishedDreamToFeed(dream) {
+    fetch('/.netlify/functions/publish-dream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
+        style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl
+      })
+    }).catch(function () { /* best-effort — see comment above */ });
+  }
+
   function pollUntilDone(operationName, startedAt) {
     return new Promise(function (resolve, reject) {
       function poll() {
@@ -162,6 +187,9 @@
     }
     clearPendingJob();
     persist();
+    // Edit Dream / Change Style can regenerate a dream that's already
+    // published — keep the shared feed's copy from going stale.
+    if (dream.isPublished) syncPublishedDreamToFeed(dream);
     return dream;
   }
 
@@ -292,7 +320,11 @@
 
     publishDream: function (id) {
       var d = findDream(id);
-      if (d) { d.isPublished = true; persist(); }
+      if (d) {
+        d.isPublished = true;
+        persist();
+        syncPublishedDreamToFeed(d);
+      }
       return d;
     },
 
@@ -300,9 +332,58 @@
     deleteDream: function (id) {
       var d = findDream(id);
       if (!d || !d.mine) return false;
+      var wasPublished = d.isPublished;
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();
+      if (wasPublished) {
+        fetch('/.netlify/functions/unpublish-dream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id })
+        }).catch(function () { /* best-effort, matches syncPublishedDreamToFeed */ });
+      }
       return true;
+    },
+
+    /**
+     * The real, cross-browser shared feed — every published dream from
+     * every user, fetched from Blobs via get-feed.js. Unlike getFeed()
+     * (this browser's own local copy of dreams it happens to know about),
+     * this is genuinely shared. Adds mine/likedByMe per-viewer, computed
+     * locally since the shared record itself carries neither (no real
+     * accounts to know who's asking).
+     */
+    getSharedFeed: function () {
+      return fetch('/.netlify/functions/get-feed').then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (data.error) throw new Error(data.error);
+        var likedIds = state.likedIds || {};
+        var myHandle = state.user ? state.user.handle : null;
+        return (data.feed || []).map(function (d) {
+          return Object.assign({}, d, {
+            likedByMe: !!likedIds[d.id],
+            mine: !!myHandle && d.ownerHandle === myHandle
+          });
+        });
+      });
+    },
+
+    /** Toggles a like against the real shared count. Returns a Promise of { likes, likedByMe }. */
+    toggleSharedLike: function (id, currentlyLiked) {
+      return fetch('/.netlify/functions/like-dream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id, delta: currentlyLiked ? -1 : 1 })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (data.error) throw new Error(data.error);
+        if (!state.likedIds) state.likedIds = {};
+        if (currentlyLiked) delete state.likedIds[id]; else state.likedIds[id] = true;
+        persist();
+        return { likes: data.likes, likedByMe: !currentlyLiked };
+      });
     },
 
     reset: function () { state = seed(); persist(); },
