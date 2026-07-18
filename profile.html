@@ -57,10 +57,12 @@
   function vcardHTML(d){
     // No .priv badge here — Profile already splits into separate Shared/Private
     // sections, so a per-card badge would just repeat the section header.
+    // Links to result.html (the owner detail/edit view, reads local state),
+    // never explore.html — that's the shared feed and won't have private dreams.
     var media = d.videoUrl
       ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
       : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
-    return '<a class="vcard" href="explore.html?id='+d.id+'">' +
+    return '<a class="vcard" href="result.html?id='+d.id+'">' +
       '<div class="vcard-thumb">'+media+
         '<button class="vcard-delete icon" data-delete="'+d.id+'" title="Delete">'+Icons.trash+'</button>' +
         '<div class="play-indicator icon">'+Icons.play+'</div><div class="dur">'+d.dur+'</div></div>' +
