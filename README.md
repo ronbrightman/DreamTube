@@ -23,13 +23,14 @@ No build command, no environment variables, no server required.
 |---|---|
 | `index.html` | Welcome |
 | `login.html` | Login / Sign up |
-| `home.html` | Home (YouTube-style feed + bottom nav) |
+| `explore.html?id=…` | Explore (vertical scroll-snap feed) — the main landing/browsing tab |
 | `profile.html` | Profile (your own dreams + Create) |
 | `create.html` | Create (Write / Record / Review sub-states) |
 | `style.html` | Choose a style |
 | `processing.html` | Generating… (real async call, shows a failure state on genuine generation errors) |
 | `result.html?id=…` | Result (Edit/Change Style sheets, Publish) |
-| `explore.html?id=…` | Explore (vertical scroll-snap feed) |
+
+`home.html` (the old YouTube-style feed) has been retired — nothing in the live app links to it anymore, but the file is still present on disk. Bottom nav is now just Explore / + Create / Profile.
 
 Navigation between pages is real browser navigation — back/forward buttons work, every URL is shareable/bookmarkable, and each page can be understood and debugged on its own.
 
@@ -46,7 +47,7 @@ There's no in-memory JavaScript state that would get wiped by a page load anymor
 - Real video generation via fal.ai (`fal-ai/wan/v2.2-5b/text-to-video`), called through Netlify Functions. Failures shown on Processing are genuine generation errors from fal.ai, not a simulated rate.
 - Real audio recording (`MediaRecorder`/`getUserMedia`) and real transcription via fal.ai's Whisper model (`transcribe-audio.js`) — Record actually captures and transcribes your voice.
 - Editing a dream's text/style and regenerating actually updates that dream in the shared store.
-- Publishing actually flips a flag; the dream then genuinely shows up in Home/Explore because they read from the same store.
+- Publishing actually flips a flag; the dream then genuinely shows up in Explore because it reads from the same shared feed store.
 - Likes persist and update live.
 - A failed generation carries your dream text back into Create instead of losing it.
 - Explore's style tags and usernames are clickable and filter the feed.
@@ -66,16 +67,17 @@ There's no in-memory JavaScript state that would get wiped by a page load anymor
 ```
 index.html         Welcome
 login.html          Login / Sign up
-home.html            Home feed
+explore.html         Vertical feed — main landing/browsing tab
 profile.html          Profile
 create.html            Create (write/record/review)
 style.html               Choose a style
 processing.html            Generating (+ failure state)
 result.html                  Result (edit/style sheets, publish)
-explore.html                   Vertical feed
-css/styles.css                   all styling
-js/store.js                        localStorage-backed data layer (the backend seam)
-manifest.json                        basic PWA manifest
+css/styles.css                 all styling
+js/store.js                      localStorage-backed data layer (the backend seam)
+manifest.json                      basic PWA manifest
+
+home.html (retired, unreferenced — kept on disk, not linked from anywhere live)
 ```
 
 ## Known gaps (by design, not bugs)

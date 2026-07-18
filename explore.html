@@ -14,10 +14,18 @@
 </head>
 <body>
 <div id="app" class="fill" style="position:relative;">
-  <a class="feed-back" href="home.html"></a>
+  <div class="gen-banner" id="gen-banner" style="display:none;">
+    <div class="spinner-inline"></div>
+    <div class="gen-banner-text">Your dream is still generating…</div>
+  </div>
   <div class="explore-filter-chip" id="filter-chip" style="display:none;"></div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
+  <div class="bottom-nav">
+    <a class="nav-item active" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
+    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
+    <a class="nav-item" href="profile.html"><div class="nav-icon icon"></div>Profile</a>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -26,7 +34,11 @@
   // Deliberately no login gate here, unlike every other page — Explore is
   // the real shared feed now (see js/store.js's getSharedFeed), and a
   // shared dream link needs to work for whoever opens it, logged in or not.
-  document.querySelector('.feed-back').innerHTML = Icons.back;
+  // (Tapping +Create or Profile while logged out still hits their own
+  // login gates, same as everywhere else in the app.)
+  var navIcons = document.querySelectorAll('.nav-icon');
+  navIcons[0].innerHTML = Icons.search;
+  navIcons[1].innerHTML = Icons.person;
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
@@ -111,6 +123,25 @@
     });
   }
   loadFeed();
+
+  // Picks back up a generation left running when the user navigated away
+  // from Processing (browser back, closed tab, etc.) instead of waiting
+  // for it to finish there — this used to live on the now-removed Home
+  // page, ported here since Explore is the landing surface a resumed
+  // generation would complete on now. Harmless no-op for a logged-out
+  // visitor or anyone with nothing in flight (getPendingJob() is null).
+  var pending = DreamStore.getPendingJob();
+  if(pending){
+    var banner = document.getElementById('gen-banner');
+    banner.style.display = 'flex';
+    DreamStore.resumePendingJob().then(function(){
+      banner.style.display = 'none';
+      loadFeed();
+      showToast('Your dream is ready!');
+    }).catch(function(){
+      banner.style.display = 'none';
+    });
+  }
 
   chip.addEventListener('click', function(){
     filter = null;

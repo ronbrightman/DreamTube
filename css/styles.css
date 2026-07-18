@@ -81,6 +81,8 @@ body{
 }
 .btn:active{ transform:scale(.96);}
 .btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px;}
+.btn:disabled{ opacity:.4; cursor:not-allowed; transform:none;}
+.btn:disabled:hover, .btn:disabled:active{ transform:none;}
 /* Plain white-fill / black-text — the app's one "solid" button look. */
 .btn-primary{ background:#fff; color:#000; box-shadow:0 4px 14px -6px rgba(0,0,0,.5);}
 .btn-primary:hover{ background:#f0f0f0;}
@@ -119,6 +121,8 @@ body{
 .oauth-btn{ display:flex; align-items:center; justify-content:center; gap:10px; background:var(--surface); border:1px solid var(--border-strong); color:var(--text-primary); border-radius:100px; padding:14px; font-weight:600; font-size:14px; cursor:pointer; width:100%; transition:background .18s ease, border-color .18s ease, transform .15s cubic-bezier(.34,1.56,.64,1);}
 .oauth-btn:hover{ background:var(--surface-alt); border-color:var(--border-strong);}
 .oauth-btn:active{ transform:scale(.97);}
+.oauth-btn:disabled{ opacity:.4; cursor:not-allowed; transform:none;}
+.oauth-btn:disabled:hover{ background:var(--surface);}
 .oauth-icon-chip{ width:22px; height:22px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; flex:none;}
 .divider{ display:flex; align-items:center; gap:12px; color:var(--text-faint); font-size:12px; margin:18px 0;}
 .divider::before,.divider::after{ content:""; flex:1; height:1px; background:var(--border);}

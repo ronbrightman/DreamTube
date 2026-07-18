@@ -2,7 +2,7 @@
 //
 // POST { id } -> removes a dream from the shared feed-index blob (see
 // get-feed.js). Called when a published dream is deleted, so it doesn't
-// linger in everyone else's Explore/Home feed once the owner has removed it.
+// linger in everyone else's Explore feed once the owner has removed it.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 

@@ -159,7 +159,7 @@
    * Fire-and-forget upsert into the shared feed-index blob. Local state is
    * always the source of truth for the owner's own view (Profile) — if this
    * fails, the dream still shows as published locally, it just might not
-   * (yet) appear in others' Explore/Home until the next successful sync.
+   * (yet) appear in others' Explore until the next successful sync.
    */
   function syncPublishedDreamToFeed(dream) {
     fetch('/.netlify/functions/publish-dream', {

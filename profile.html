@@ -35,7 +35,7 @@
     </div>
   </div>
   <div class="bottom-nav">
-    <a class="nav-item" href="home.html"><div class="nav-icon icon"></div>Home</a>
+    <a class="nav-item" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
     <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
     <a class="nav-item active" href="profile.html"><div class="nav-icon icon"></div>Profile</a>
   </div>
@@ -48,7 +48,7 @@
 
   document.getElementById('logout-btn').innerHTML = Icons.settings;
   var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.home;
+  navIcons[0].innerHTML = Icons.search;
   navIcons[1].innerHTML = Icons.person;
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
