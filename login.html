@@ -4,19 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Log in — DreamTube</title>
-<meta name="theme-color" content="#1C1A3D">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
 
 <div id="app">
-  <div class="topbar"><a class="icon-btn" href="index.html">←</a><div></div></div>
+  <div class="topbar"><a class="icon-btn" href="index.html" id="login-back"></a><div></div></div>
   <div class="px" style="flex:1; display:flex; flex-direction:column;">
     <div class="auth-head" id="auth-heading">Welcome back</div>
 
@@ -40,8 +39,11 @@
   </div>
 </div>
 
+<script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
+  document.getElementById('login-back').innerHTML = Icons.back;
+
   var isSignup = false;
   var heading = document.getElementById('auth-heading');
   var toggle = document.getElementById('auth-toggle');

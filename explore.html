@@ -9,20 +9,22 @@
 <link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 <div id="app" class="fill" style="position:relative;">
-  <a class="explore-back" href="home.html">←</a>
+  <a class="feed-back" href="home.html"></a>
   <div class="explore-filter-chip" id="filter-chip" style="display:none;"></div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
 </div>
 
+<script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  document.querySelector('.feed-back').innerHTML = Icons.back;
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
@@ -36,15 +38,17 @@
       media +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
-        '<div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div>' +
-        '<div class="feed-caption" dir="auto">"'+esc(d.caption)+'"</div>' +
-        '<span class="feed-tag" data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' +
+        '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div></div>' +
+        '<div class="feed-caption" dir="auto">'+esc(d.caption)+'</div>' +
+        '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span><span class="dot"></span><span>'+esc(d.dur)+'</span></div>' +
       '</div>' +
       '<div class="feed-actions">' +
         '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
-          '<div class="fa-circle">'+(d.likedByMe?'♥':'♡')+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
+          '<div class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
         '</div>' +
-        '<div class="feed-action" data-share="'+d.id+'"><div class="fa-circle">↗</div><span>Share</span></div>' +
+        '<div class="feed-action"><div class="icon">'+Icons.comment+'</div><span>0</span></div>' +
+        '<div class="feed-action" data-share="'+d.id+'"><div class="icon">'+Icons.share+'</div><span>Share</span></div>' +
+        '<div class="feed-action"><div class="icon">'+Icons.repost+'</div><span>Repost</span></div>' +
       '</div>' +
       (isFirst ? '<div class="feed-swipe-hint">↕ SWIPE FOR NEXT DREAM</div>' : '') +
     '</div>';
@@ -106,7 +110,7 @@
       var d = DreamStore.toggleLike(likeEl.dataset.like);
       if(!d) return;
       likeEl.classList.toggle('liked', d.likedByMe);
-      likeEl.querySelector('.fa-circle').textContent = d.likedByMe ? '♥' : '♡';
+      likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
       likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
       return;
     }

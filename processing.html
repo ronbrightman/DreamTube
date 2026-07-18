@@ -4,16 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Generating… — DreamTube</title>
-<meta name="theme-color" content="#1C1A3D">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
 
 <div id="app">
   <div class="proc-wrap">
@@ -24,14 +23,14 @@
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
       <div class="proc-pct" id="proc-pct">0%</div>
       <div class="proc-caption" id="proc-caption">Painting the scene…</div>
-      <button class="btn btn-ghost" id="notify-btn" style="margin-top:6px;">Notify me when it's ready</button>
+      <button class="btn btn-ghost" id="notify-btn" style="margin-top:6px;"></button>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
       </div>
     </div>
     <div class="proc-fail" id="proc-fail" style="display:none;">
-      <div class="proc-fail-icon">⚠️</div>
+      <div class="proc-fail-icon"></div>
       <div class="proc-title">That dream didn't<br>come through</div>
       <div class="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
       <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 6px;">
@@ -42,9 +41,12 @@
   </div>
 </div>
 
+<script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  document.querySelector('.proc-fail-icon').innerHTML = Icons.warning;
+  document.getElementById('notify-btn').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.bell + '</span> Notify me when it\'s ready';
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
 

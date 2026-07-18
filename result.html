@@ -4,26 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Your Dream — DreamTube</title>
-<meta name="theme-color" content="#1C1A3D">
+<meta name="theme-color" content="#000000">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/jpeg" href="assets/logo.jpeg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<div class="ink-field" aria-hidden="true"><div class="ink-blob b1"></div><div class="ink-blob b2"></div></div>
 
 <div id="app" class="fill" style="position:relative;">
   <div class="result-bg" id="result-bg"></div>
   <video class="result-video" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
   <div class="result-scrim"></div>
-  <div class="play-badge result-play" id="result-play-badge"></div>
+  <div class="play-badge result-play" id="result-play-badge"><div class="badge-circle"><span class="icon" id="result-play-icon"></span></div></div>
   <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
-    <a class="icon-btn" href="home.html" style="background:rgba(16,15,38,.5); border-color:rgba(255,255,255,.14);">←</a>
+    <a class="icon-btn" href="home.html" id="result-back" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
     <div style="font-weight:700; font-size:14px;">Your Dream</div>
-    <button class="icon-btn" id="share-btn" style="background:rgba(16,15,38,.5); border-color:rgba(255,255,255,.14);">↗</button>
+    <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
   </div>
   <div class="result-panel">
     <div class="dream-quote" id="result-quote" dir="auto">""</div>
@@ -32,11 +31,11 @@
       <span class="feed-tag" id="result-privacy-tag">Private</span>
     </div>
     <div class="action-row-2">
-      <button class="btn btn-secondary" id="open-edit-sheet">✏️ Edit Dream</button>
-      <button class="btn btn-secondary" id="open-style-sheet">🎨 Change Style</button>
+      <button class="btn btn-secondary" id="open-edit-sheet"><span class="icon" id="edit-icon"></span> Edit Dream</button>
+      <button class="btn btn-secondary" id="open-style-sheet"><span class="icon" id="style-icon"></span> Change Style</button>
     </div>
     <div class="stack-btns">
-      <button class="btn btn-warm btn-block" id="publish-btn">🌐 Publish to Explore</button>
+      <button class="btn btn-warm btn-block" id="publish-btn"><span class="icon" id="publish-icon"></span> Publish to Explore</button>
     </div>
   </div>
 
@@ -56,10 +55,10 @@
       <div class="sheet-handle"></div>
       <div class="sheet-title">Choose a new style</div>
       <div class="style-grid" id="sheet-style-grid">
-        <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎨</div><div class="sc-name">Cartoon</div></div></div>
-        <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🎥</div><div class="sc-name">Cinematic</div></div></div>
-        <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">🌸</div><div class="sc-name">Anime</div></div></div>
-        <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check">✓</div><div class="sc-content"><div class="sc-icon">📷</div><div class="sc-name">Realistic</div></div></div>
+        <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cartoon</div></div></div>
+        <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cinematic</div></div></div>
+        <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Anime</div></div></div>
+        <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Realistic</div></div></div>
       </div>
       <button class="btn btn-primary btn-block" id="style-generate-again">Generate Again</button>
       <div style="height:10px;"></div>
@@ -81,9 +80,17 @@
   <div class="toast" id="toast"></div>
 </div>
 
+<script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  document.getElementById('result-back').innerHTML = Icons.back;
+  document.getElementById('share-btn').innerHTML = Icons.share;
+  document.getElementById('edit-icon').innerHTML = Icons.pencil;
+  document.getElementById('style-icon').innerHTML = Icons.palette;
+  Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
+  Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-check'), function(el){ el.innerHTML = Icons.check; });
 
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
   var dreamId = getParam('id');
@@ -113,8 +120,8 @@
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
     var pubBtn = document.getElementById('publish-btn');
-    if(dream.isPublished){ pubBtn.textContent = '✓ Published to Explore'; pubBtn.disabled = true; }
-    else { pubBtn.textContent = '🌐 Publish to Explore'; pubBtn.disabled = false; }
+    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span> Published to Explore'; pubBtn.disabled = true; }
+    else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span> Publish to Explore'; pubBtn.disabled = false; }
   }
   render();
 
@@ -125,6 +132,8 @@
   (function(){
     var video = document.getElementById('result-video');
     var playBadge = document.getElementById('result-play-badge');
+    var playIcon = document.getElementById('result-play-icon');
+    playIcon.innerHTML = Icons.play;
     function syncBadge(){ playBadge.classList.toggle('hidden', !video.paused); }
     function toggle(){ if(!dream.videoUrl) return; if(video.paused) video.play(); else video.pause(); }
     video.addEventListener('play', syncBadge);
