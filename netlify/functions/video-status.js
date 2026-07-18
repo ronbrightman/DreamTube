@@ -42,6 +42,38 @@ function falAppBase(model) {
   return parts[0] + '/' + parts[1];
 }
 
+/**
+ * fal's validation-error responses are FastAPI-style: `detail` is an array
+ * of { loc, msg, type, input, ... } objects. `input` echoes the entire
+ * request back — including, for a self-photo generation, the whole
+ * base64-encoded reference photo — so the raw structure must never reach
+ * the user. Extracts just the short msg text from each item, and for a
+ * content_policy_violation specifically, replaces it with a short,
+ * actionable explanation instead of fal's own (unhelpful-to-the-user) msg.
+ * Duplicated from generate-video.js rather than shared — matches this
+ * codebase's convention of each Netlify function being self-contained.
+ */
+function humanizeFalDetail(detail) {
+  if (!Array.isArray(detail)) return null;
+  var messages = detail.map(function (item) {
+    if (!item) return null;
+    if (item.type === 'content_policy_violation') {
+      var onPhoto = Array.isArray(item.loc) && item.loc.indexOf('image_urls') !== -1;
+      return onPhoto
+        ? 'The reference photo was flagged by the safety system — try a different photo.'
+        : 'The description was flagged by the safety system. This usually happens when a real photo is combined with a description of a minor, or another sensitive detail — try removing age or other identifying details, or switch to a non-photorealistic style.';
+    }
+    return typeof item.msg === 'string' ? item.msg : null;
+  }).filter(Boolean);
+  return messages.length ? messages.join(' ') : null;
+}
+
+/** Extracts a safe, human-readable message from a fal error response — never the raw detail/input structure. */
+function falErrorMessage(data) {
+  var rawDetail = data && (data.detail || data.error);
+  return humanizeFalDetail(rawDetail) || (typeof rawDetail === 'string' ? rawDetail : null) || null;
+}
+
 // Error codes (E2xx = this function). See generate-video.js for the E1xx
 // (submission-time) range this continues from.
 //   E201 method_not_allowed  E202 name_required
@@ -69,7 +101,7 @@ async function checkFalStatus(model, requestId, falKey) {
   var statusData = parsedStatus.data;
 
   if (!statusRes.ok) {
-    return { statusCode: statusRes.status, error: 'E204: ' + (statusData.detail || 'status_check_failed') };
+    return { statusCode: statusRes.status, error: 'E204: ' + (falErrorMessage(statusData) || 'status_check_failed') };
   }
 
   if (statusData.status === 'IN_QUEUE' || statusData.status === 'IN_PROGRESS') {
@@ -93,11 +125,12 @@ async function checkFalStatus(model, requestId, falKey) {
     // resultData parsed as valid JSON (parsedResult.ok above), so fal sent
     // a structured reason along with the non-OK status — surface it
     // instead of a bare "result_fetch_failed" with nothing to go on. This
-    // is the path a content-safety rejection would come through: fal can
-    // mark a job COMPLETED (processing finished) while the actual result
-    // fetch 4xxs with the real reason in the body.
-    var resultMessage = (resultData && (resultData.detail || resultData.error)) || 'result_fetch_failed';
-    return { statusCode: 200, done: true, error: 'E207: ' + (typeof resultMessage === 'string' ? resultMessage : JSON.stringify(resultMessage)) + ' (http ' + resultRes.status + ')' };
+    // is the path a content-safety rejection comes through: fal can mark a
+    // job COMPLETED (processing finished) while the actual result fetch
+    // 4xxs with the real reason in the body — falErrorMessage turns that
+    // into a short, human explanation (never the raw detail/input, which
+    // would otherwise leak the full base64 reference photo into this text).
+    return { statusCode: 200, done: true, error: 'E207: ' + (falErrorMessage(resultData) || 'result_fetch_failed') };
   }
 
   var videoUrl = resultData.video && resultData.video.url;

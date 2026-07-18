@@ -96,6 +96,38 @@ function buildPrompt(caption, style, characters, cameraView, sceneryTime, scener
   return parts.join(', ') + '.';
 }
 
+/**
+ * fal's validation-error responses are FastAPI-style: `detail` is an array
+ * of { loc, msg, type, input, ... } objects. `input` echoes the entire
+ * request back — including, for a self-photo generation, the whole
+ * base64-encoded reference photo — so the raw structure must never reach
+ * the user (it used to: JSON.stringify(message) dumped all of it into the
+ * failure screen). This extracts just the short msg text from each item,
+ * and for a content_policy_violation specifically — the case that matters
+ * most, since fal's own msg text doesn't explain what to change — replaces
+ * it with a short, actionable explanation instead.
+ */
+function humanizeFalDetail(detail) {
+  if (!Array.isArray(detail)) return null;
+  var messages = detail.map(function (item) {
+    if (!item) return null;
+    if (item.type === 'content_policy_violation') {
+      var onPhoto = Array.isArray(item.loc) && item.loc.indexOf('image_urls') !== -1;
+      return onPhoto
+        ? 'The reference photo was flagged by the safety system — try a different photo.'
+        : 'The description was flagged by the safety system. This usually happens when a real photo is combined with a description of a minor, or another sensitive detail — try removing age or other identifying details, or switch to a non-photorealistic style.';
+    }
+    return typeof item.msg === 'string' ? item.msg : null;
+  }).filter(Boolean);
+  return messages.length ? messages.join(' ') : null;
+}
+
+/** Extracts a safe, human-readable message from a fal error response — never the raw detail/input structure. */
+function falErrorMessage(data) {
+  var rawDetail = data && (data.detail || data.error);
+  return humanizeFalDetail(rawDetail) || (typeof rawDetail === 'string' ? rawDetail : null) || 'fal_request_failed';
+}
+
 var FAL_MODEL = 'fal-ai/veo3.1/fast';
 var FAL_API_BASE = 'https://queue.fal.run';
 
@@ -118,8 +150,7 @@ async function callFal(prompt, falKey) {
   var data = await res.json();
 
   if (!res.ok) {
-    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
-    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+    return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
@@ -160,8 +191,7 @@ async function callFalReferenceToVideo(prompt, imageDataUrl, falKey) {
   var data = await res.json();
 
   if (!res.ok) {
-    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
-    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+    return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL_REFERENCE_TO_VIDEO + ':' + data.request_id };
@@ -192,8 +222,7 @@ async function callFalImageToVideo(prompt, imageDataUrl, falKey) {
   var data = await res.json();
 
   if (!res.ok) {
-    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
-    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+    return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL_IMAGE_TO_VIDEO + ':' + data.request_id };
@@ -221,8 +250,7 @@ async function callFalWan(prompt, falKey) {
   var data = await res.json();
 
   if (!res.ok) {
-    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
-    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+    return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL_WAN + ':' + data.request_id };

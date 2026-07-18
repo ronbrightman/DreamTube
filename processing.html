@@ -33,6 +33,7 @@
       <div class="proc-fail-icon"></div>
       <div class="proc-title">That dream didn't<br>come through</div>
       <div class="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
+      <div class="proc-fail-reason" id="proc-fail-reason" style="display:none;"></div>
       <div class="proc-fail-code" id="proc-fail-code"></div>
       <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 6px;">
         <button class="btn btn-primary btn-block" id="retry-btn">Try Again</button>
@@ -129,11 +130,25 @@
       clearInterval(progInterval);
       document.getElementById('proc-live').style.display = 'none';
       document.getElementById('proc-fail').style.display = 'flex';
-      // err.message already carries an ENNN code from wherever it actually
-      // failed (submission, polling, or a client-side timeout/network drop
-      // — see js/store.js, generate-video.js, video-status.js) so it's
-      // shown as-is rather than re-summarized into something generic.
-      document.getElementById('proc-fail-code').textContent = (err && err.message) || 'E399: unknown_error';
+      // err.message carries an "ENNN: reason" string from wherever it
+      // actually failed (submission, polling, or a client-side
+      // timeout/network drop — see js/store.js, generate-video.js,
+      // video-status.js). Split the code from the reason so a full
+      // human-readable explanation (e.g. a content-policy rejection) reads
+      // as a sentence, with the code itself kept small underneath purely
+      // for support reference — not the whole thing crammed into one tiny
+      // monospace chip.
+      var raw = (err && err.message) || 'E399: unknown_error';
+      var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      var reasonEl = document.getElementById('proc-fail-reason');
+      if(match && match[2]){
+        document.getElementById('proc-fail-code').textContent = match[1];
+        reasonEl.textContent = match[2];
+        reasonEl.style.display = 'block';
+      } else {
+        document.getElementById('proc-fail-code').textContent = raw;
+        reasonEl.style.display = 'none';
+      }
     });
   }
 
