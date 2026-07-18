@@ -220,6 +220,43 @@
     });
   }
 
+  function formatDuration(totalSeconds) {
+    var s = Math.max(0, Math.round(totalSeconds));
+    var m = Math.floor(s / 60);
+    var sec = s % 60;
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  /**
+   * Reads the real duration off the finished video itself — there's no
+   * server-side metadata endpoint, so this loads it into an off-DOM <video>
+   * just far enough to fire loadedmetadata. Falls back to null (caller
+   * keeps whatever duration it already had) rather than blocking dream
+   * creation if the probe is slow or the browser can't read it.
+   */
+  function probeVideoDuration(url) {
+    return new Promise(function (resolve) {
+      var video = document.createElement('video');
+      var settled = false;
+      var timeoutId = setTimeout(function () { finish(null); }, 8000);
+      function finish(dur) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        video.removeAttribute('src');
+        video.load();
+        resolve(dur);
+      }
+      video.preload = 'metadata';
+      video.muted = true;
+      video.onloadedmetadata = function () {
+        finish(isFinite(video.duration) && video.duration > 0 ? formatDuration(video.duration) : null);
+      };
+      video.onerror = function () { finish(null); };
+      video.src = url;
+    });
+  }
+
   function finalizeDream(videoUrl, caption, style, sourceDreamId) {
     var dream;
     if (sourceDreamId) {
@@ -231,7 +268,7 @@
         id: newId(),
         ownerHandle: state.user ? state.user.handle : '@you',
         caption: caption, style: style,
-        likes: 0, likedByMe: false, dur: '0:08', mine: true, isPublished: false,
+        likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
         videoUrl: videoUrl
       };
       state.dreams.unshift(dream);
@@ -287,7 +324,15 @@
       });
       return pollUntilDone(operationName, startedAt);
     }).then(function (videoUrl) {
-      return finalizeDream(videoUrl, caption, style, sourceDreamId);
+      var dream = finalizeDream(videoUrl, caption, style, sourceDreamId);
+      // Don't make the user wait on this — probing needs a real network
+      // round trip to the video itself and can be slow (or time out) for
+      // reasons that have nothing to do with generation being done. Patch
+      // the duration in once it's known instead of blocking completion.
+      probeVideoDuration(videoUrl).then(function (dur) {
+        if (dur) { dream.dur = dur; persist(); }
+      });
+      return dream;
     }).catch(function (err) {
       clearPendingJob();
       throw err;
@@ -331,8 +376,14 @@
     getFeed: function () {
       return state.dreams.filter(function (d) { return d.isPublished; });
     },
+    // state.dreams isn't cleared on logout/login — it's the same array for
+    // every account that's ever used this browser — so "mine" has to be
+    // recomputed against whoever is signed in *now*, not trusted from a
+    // flag written back when the dream was created under a possibly
+    // different account.
     getMyDreams: function () {
-      return state.dreams.filter(function (d) { return d.mine; });
+      var myHandle = state.user ? state.user.handle : null;
+      return state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; });
     },
     getDream: function (id) { return findDream(id); },
     gradientFor: gradientFor,
@@ -398,7 +449,8 @@
     /** Deletes one of the current user's own dreams. Returns true if a dream was removed. */
     deleteDream: function (id) {
       var d = findDream(id);
-      if (!d || !d.mine) return false;
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return false;
       var wasPublished = d.isPublished;
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();

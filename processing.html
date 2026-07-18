@@ -61,8 +61,12 @@
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
   var progInterval;
 
-  // Real Veo generation takes minutes, not seconds — this bar just creeps
-  // toward 92% over roughly the same timespan as MAX_POLL_MS in store.js.
+  // Real Veo generation takes minutes, not seconds. Each tick closes a
+  // fraction of the remaining gap to the 92% cap, so progress moves fast
+  // while there's a lot of headroom and smoothly decelerates as it nears
+  // the cap — instead of a constant-rate crawl that stays low the whole
+  // time and then jumps straight to 100% the moment the real result lands.
+  var PROGRESS_CAP = 92;
   function startFakeProgress(){
     var pct = 0, capIdx = 0;
     document.getElementById('proc-fill').style.width = '0%';
@@ -70,7 +74,8 @@
     document.getElementById('proc-caption').textContent = CAPTIONS[0];
     clearInterval(progInterval);
     progInterval = setInterval(function(){
-      pct = Math.min(pct + Math.random()*1.6 + 0.6, 92);
+      var closeFraction = 0.14 + Math.random() * 0.08;
+      pct = pct + (PROGRESS_CAP - pct) * closeFraction;
       document.getElementById('proc-fill').style.width = pct + '%';
       document.getElementById('proc-pct').textContent = Math.floor(pct) + '%';
       capIdx = (capIdx + 1) % CAPTIONS.length;
