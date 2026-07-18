@@ -1,7 +1,14 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style } -> kicks off a video generation job and returns an
-// operationName the client can poll via video-status.js.
+// POST { caption, style, characters? } -> kicks off a video generation job
+// and returns an operationName the client can poll via video-status.js.
+//
+// characters (optional) is [{ name, description, isSelf }] — the user's
+// selected Advanced characters, resolved client-side from their private
+// character list (see js/store.js's resolveCharacters). Their descriptions
+// are folded into the prompt sent to the model (see buildPrompt) but never
+// echoed back — the caption the UI displays is whatever the caller passed
+// in and this function never alters or returns it.
 //
 // ACTIVE PATH: fal.ai's Veo 3.1 Fast (fal-ai/veo3.1/fast), using FAL_KEY.
 // Switched from fal.ai's wan v2.2-5b because its output quality wasn't good
@@ -20,6 +27,30 @@ var STYLE_MODIFIERS = {
   Anime:     'in a vibrant Japanese anime animation style',
   Realistic: 'in a photorealistic, lifelike rendering style'
 };
+
+/**
+ * Combines the plain caption with style + character enrichment into the
+ * prompt actually sent to the video model. This is provider-only
+ * enrichment — the caption the UI shows the user is never touched here.
+ */
+function buildPrompt(caption, style, characters) {
+  var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
+  var parts = [caption];
+
+  var validCharacters = (characters || []).filter(function (c) {
+    return c && typeof c.description === 'string' && c.description.trim();
+  });
+  if (validCharacters.length) {
+    var charText = validCharacters.map(function (c) {
+      var who = c.isSelf ? 'the dreamer ("me")' : ((c.name || '').trim() || 'a character');
+      return who + ': ' + c.description.trim();
+    }).join('; ');
+    parts.push('Characters — ' + charText);
+  }
+
+  parts.push(modifier);
+  return parts.join(', ') + '.';
+}
 
 var FAL_MODEL = 'fal-ai/veo3.1/fast';
 var FAL_API_BASE = 'https://queue.fal.run';
@@ -119,11 +150,12 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'missing_api_key' }) };
   }
 
-  var caption, style;
+  var caption, style, characters;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
     style = (payload.style || '').trim();
+    characters = Array.isArray(payload.characters) ? payload.characters : [];
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'invalid_json' }) };
   }
@@ -132,8 +164,7 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'caption_and_style_required' }) };
   }
 
-  var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
-  var prompt = caption + ', ' + modifier + '.';
+  var prompt = buildPrompt(caption, style, characters);
 
   try {
     var result = await callFal(prompt, falKey);

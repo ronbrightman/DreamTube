@@ -13,7 +13,7 @@
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
-//   generateVideo(caption,style) -> POST /api/dreams/generate
+//   generateVideo(caption,style,characterIds) -> POST /api/dreams/generate
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
@@ -132,6 +132,18 @@
     return null;
   }
 
+  /**
+   * Maps selected character ids to the plain {name, description, isSelf}
+   * shape the generation API needs — ids are meaningless outside this
+   * browser's localStorage, so only the resolved fields cross the network.
+   */
+  function resolveCharacters(ids) {
+    if (!ids || !ids.length) return [];
+    return ids.map(findCharacter).filter(Boolean).map(function (c) {
+      return { name: c.name, description: c.description, isSelf: !!c.isSelf };
+    });
+  }
+
   function savePendingJob(job) { state.pendingJob = job; persist(); }
   function clearPendingJob() { state.pendingJob = null; persist(); }
 
@@ -221,13 +233,14 @@
     opts = opts || {};
     var sourceDreamId = opts.sourceDreamId || null;
     var resume = opts.resume;
+    var characters = resolveCharacters(opts.characterIds);
 
     var operationPromise = resume
       ? Promise.resolve(resume.operationName)
       : fetch('/.netlify/functions/generate-video', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ caption: caption, style: style })
+          body: JSON.stringify({ caption: caption, style: style, characters: characters })
         }).then(function (res) {
           return res.json().then(function (data) {
             if (!res.ok) throw new Error(data.error || 'generation_failed');
@@ -308,13 +321,13 @@
     clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [] }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. */
-    generateVideo: function (caption, style) {
-      return startGeneration(caption, style);
+    generateVideo: function (caption, style, characterIds) {
+      return startGeneration(caption, style, { characterIds: characterIds });
     },
 
-    /** Re-runs generation on an existing dream (Edit Dream / Change Style / Try Again). */
+    /** Re-runs generation on an existing dream (Edit Dream / Try Again), including any selected Advanced characters. */
     regenerateDream: function (id, patch) {
-      return startGeneration(patch.caption, patch.style, { sourceDreamId: id });
+      return startGeneration(patch.caption, patch.style, { sourceDreamId: id, characterIds: patch.characterIds });
     },
 
     /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */

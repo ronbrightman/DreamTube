@@ -107,8 +107,8 @@
     } else {
       var d = DreamStore.getDraft();
       task = d.sourceDreamId
-        ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style })
-        : DreamStore.generateVideo(d.caption, d.style);
+        ? DreamStore.regenerateDream(d.sourceDreamId, { caption: d.caption, style: d.style, characterIds: d.characterIds })
+        : DreamStore.generateVideo(d.caption, d.style, d.characterIds);
     }
 
     task.then(function(dream){
