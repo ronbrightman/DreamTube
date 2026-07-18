@@ -67,7 +67,7 @@
       </div>
     </div>
 
-    <div style="flex:1; min-height:16px;"></div>
+    <div style="flex:1; min-height:16px;" id="write-spacer"></div>
     <button class="btn btn-primary btn-block" id="write-continue" disabled style="margin-bottom:22px;">Continue</button>
   </div>
 
@@ -89,7 +89,7 @@
     </div>
     <button class="btn btn-secondary" id="play-btn"></button>
     <div class="rec-error" id="rec-error" style="display:none;"></div>
-    <div style="flex:1"></div>
+    <div style="flex:1" id="review-spacer"></div>
     <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 4px 22px;">
       <button class="btn btn-primary btn-block" id="review-continue">Continue</button>
       <button class="btn btn-ghost btn-block" id="re-record"></button>
@@ -142,6 +142,17 @@
   document.getElementById('adv-toggle').addEventListener('click', function(){
     document.getElementById('adv-section').classList.toggle('open');
   });
+
+  // The Advanced block (Characters/Camera/Scenery) is a single DOM node
+  // reused by both the Write and Record flows — its children have fixed
+  // IDs, so it's reparented rather than duplicated. This just repositions
+  // the existing node (and its listeners); it never re-renders it.
+  function moveAdvSectionTo(containerId, beforeId){
+    var section = document.getElementById('adv-section');
+    var container = document.getElementById(containerId);
+    var before = beforeId ? document.getElementById(beforeId) : null;
+    container.insertBefore(section, before);
+  }
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
@@ -429,6 +440,7 @@
   textArea.addEventListener('input', updateCharCount);
 
   document.getElementById('choice-write').addEventListener('click', function(){
+    moveAdvSectionTo('create-write', 'write-spacer');
     selectEl.style.display = 'none';
     writeEl.style.display = 'flex';
     heading.textContent = 'Write your dream';
@@ -502,6 +514,7 @@
       playbackObjectUrl = URL.createObjectURL(recordedBlob);
       playbackAudio.src = playbackObjectUrl;
 
+      moveAdvSectionTo('create-review', 'review-spacer');
       recordEl.style.display = 'none';
       document.getElementById('review-timer').textContent = document.getElementById('rec-timer').textContent;
       hideError('rec-error');
