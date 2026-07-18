@@ -19,8 +19,16 @@
 // buildPrompt) but never echoed back — the caption the UI displays is
 // whatever the caller passed in and this function never alters or
 // returns it. If a self photo is present, generation routes through
-// fal's image-to-video model with that photo as the reference image
-// instead of the plain text-to-video model (see callFalImageToVideo).
+// fal's *reference-to-video* model (see callFalReferenceToVideo) with
+// that photo as a subject-identity reference, instead of the plain
+// text-to-video model — NOT image-to-video, which was the original
+// (wrong) choice here: image-to-video treats the photo as the video's
+// literal starting frame and just adds motion to it, so the output was
+// a near-static animated photo that then cut to an unrelated generated
+// scene matching the caption, instead of showing that person within the
+// described dream. reference-to-video blends the reference image's
+// subject into a scene described independently by the prompt, which is
+// what "use my photo as this character in the dream" actually means.
 //
 // ACTIVE PATH: fal.ai's Veo 3.1 Fast (fal-ai/veo3.1/fast), using FAL_KEY.
 // Switched from fal.ai's wan v2.2-5b because its output quality wasn't good
@@ -61,9 +69,9 @@ var SCENERY_PLACE_MODIFIERS = {
  * touched here.
  *
  * A self character with a photo is described by the reference image
- * passed alongside the prompt (see callFalImageToVideo), not by text, so
- * its own description is left out of the character text here — but the
- * prompt still gets a short pointer tying "the dreamer" to that image.
+ * passed alongside the prompt (see callFalReferenceToVideo), not by text,
+ * so its own description is left out of the character text here — but
+ * the prompt still gets a short pointer tying "the dreamer" to that image.
  */
 function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
@@ -117,20 +125,54 @@ async function callFal(prompt, falKey) {
   return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
 }
 
-var FAL_MODEL_IMAGE_TO_VIDEO = 'fal-ai/veo3.1/fast/image-to-video';
+var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
 
 /**
- * Active path when a self character has an uploaded photo. Same queue
- * submission shape as callFal, but conditioned on a reference image —
- * fal.ai accepts a base64 data URI directly for image_url (it decodes the
- * file for you), so the client's stored photoDataUrl is passed through
- * as-is, no separate upload step needed.
+ * Active path when a self character has an uploaded photo. image_urls is a
+ * *list* of subject-identity references (fal blends the referenced
+ * person's appearance into whatever the text prompt describes) — not a
+ * single starting frame, so this is deliberately image_urls: [photo], not
+ * the image_url singular that image-to-video takes. fal.ai accepts a
+ * base64 data URI directly (it decodes the file for you), so the client's
+ * stored photoDataUrl is passed through as-is, no separate upload step
+ * needed.
  *
  * video-status.js needs no changes for this: its falAppBase() already
  * derives the polling path from just the first two model segments
- * ("fal-ai/veo3.1"), which is identical for this model and the plain
- * text-to-video one.
+ * ("fal-ai/veo3.1"), which is identical across every veo3.1 variant.
  */
+async function callFalReferenceToVideo(prompt, imageDataUrl, falKey) {
+  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Key ' + falKey
+    },
+    body: JSON.stringify({
+      prompt: prompt,
+      image_urls: [imageDataUrl],
+      aspect_ratio: '9:16',
+      duration: '8s',
+      resolution: '720p'
+    })
+  });
+
+  var data = await res.json();
+
+  if (!res.ok) {
+    var message = (data && data.detail) || (data && data.error) || 'fal_request_failed';
+    return { ok: false, statusCode: res.status, error: typeof message === 'string' ? message : JSON.stringify(message) };
+  }
+
+  return { ok: true, operationName: 'fal:' + FAL_MODEL_REFERENCE_TO_VIDEO + ':' + data.request_id };
+}
+
+// Unused fallback path — kept in case a future feature wants literal photo
+// animation (e.g. "bring this exact photo to life") rather than using a
+// photo's subject within an independently-described scene, which is what
+// the self-photo character feature actually needs (see
+// callFalReferenceToVideo above, the active path for that).
+var FAL_MODEL_IMAGE_TO_VIDEO = 'fal-ai/veo3.1/fast/image-to-video';
 async function callFalImageToVideo(prompt, imageDataUrl, falKey) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_TO_VIDEO, {
     method: 'POST',
@@ -227,7 +269,7 @@ async function callVeoDirect(prompt, apiKey) {
 //   E103 invalid_json              — request body wasn't valid JSON
 //   E104 caption_and_style_required
 //   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
-//   E106 fal rejected the image-to-video submission (same causes, self-photo path)
+//   E106 fal rejected the reference-to-video submission (same causes, self-photo path)
 //   E107 couldn't reach fal at all (network failure before any response came back)
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -261,7 +303,7 @@ exports.handler = async function (event) {
 
   try {
     var result = selfPhoto
-      ? await callFalImageToVideo(prompt, selfPhoto.photoDataUrl, falKey)
+      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey)
       : await callFal(prompt, falKey);
     if (!result.ok) {
       var rejectCode = selfPhoto ? 'E106' : 'E105';
