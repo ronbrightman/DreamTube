@@ -32,7 +32,6 @@
     </div>
     <div class="action-row-compact">
       <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
-      <button class="btn btn-secondary" id="open-style-sheet" title="Change Style"><span class="icon" id="style-icon"></span>Style</button>
       <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
@@ -43,6 +42,14 @@
       <div class="sheet-handle"></div>
       <div class="sheet-title">Edit your dream</div>
       <textarea class="field" id="edit-text" dir="auto"></textarea>
+
+      <div class="adv-sub-label">Style</div>
+      <div class="style-grid" id="sheet-style-grid">
+        <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cartoon</div></div></div>
+        <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cinematic</div></div></div>
+        <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Anime</div></div></div>
+        <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Realistic</div></div></div>
+      </div>
 
       <div class="adv-section" id="adv-section">
         <div class="adv-toggle" id="adv-toggle">
@@ -75,22 +82,6 @@
       <span class="link-text" id="char-cancel" style="cursor:pointer;">Cancel</span>
       <div style="height:8px;"></div>
       <span class="link-text" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
-    </div>
-  </div>
-
-  <div class="sheet-overlay" id="sheet-style-overlay">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-title">Choose a new style</div>
-      <div class="style-grid" id="sheet-style-grid">
-        <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cartoon</div></div></div>
-        <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cinematic</div></div></div>
-        <div class="style-card" data-style="Anime"><div class="sc-bg sc-anime"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Anime</div></div></div>
-        <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Realistic</div></div></div>
-      </div>
-      <button class="btn btn-primary btn-block" id="style-generate-again">Generate Again</button>
-      <div style="height:10px;"></div>
-      <span class="link-text" id="style-cancel" style="cursor:pointer;">Cancel</span>
     </div>
   </div>
 
@@ -127,7 +118,6 @@
   document.getElementById('result-back').innerHTML = Icons.back;
   document.getElementById('share-btn').innerHTML = Icons.share;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
-  document.getElementById('style-icon').innerHTML = Icons.palette;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
@@ -295,11 +285,8 @@
     renderCharacterChips();
     openSheet('edit');
   });
-  document.getElementById('open-style-sheet').addEventListener('click', function(){ openSheet('style'); });
   document.getElementById('edit-cancel').addEventListener('click', function(){ closeSheet('edit'); });
-  document.getElementById('style-cancel').addEventListener('click', function(){ closeSheet('style'); });
   document.getElementById('sheet-edit-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-edit-overlay') closeSheet('edit'); });
-  document.getElementById('sheet-style-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-style-overlay') closeSheet('style'); });
 
   document.getElementById('sheet-style-grid').addEventListener('click', function(e){
     var card = e.target.closest('.style-card');
@@ -310,13 +297,9 @@
 
   document.getElementById('edit-generate-again').addEventListener('click', function(){
     var text = document.getElementById('edit-text').value.trim();
-    DreamStore.setDraft({ caption: text, style: dream.style, sourceDreamId: dream.id, restore: false });
-    location.href = 'processing.html';
-  });
-  document.getElementById('style-generate-again').addEventListener('click', function(){
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
-    DreamStore.setDraft({ caption: dream.caption, style: style, sourceDreamId: dream.id, restore: false });
+    DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false });
     location.href = 'processing.html';
   });
 
