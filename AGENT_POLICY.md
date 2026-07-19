@@ -15,13 +15,29 @@ agent picks this up automatically at the start of a session in this repo.
 | evaluation | user-level (portable) | `~/.claude/agents/evaluation.md` | Scores and ranks ideas using RICE |
 | design | user-level (portable) | `~/.claude/agents/design.md` | Turns an approved idea into a spec + UX options |
 | build | **project-level** | `.claude/agents/build.md` | Implements an approved idea + design, on a branch |
-| review | user-level (portable) | `~/.claude/agents/review.md` | Independently checks build's finished work |
+| review | **project-level** | `.claude/agents/review.md` | Independently checks build's finished work |
 
-research, evaluation, design, and review are generic and portable — they
-aren't DreamTube-specific and are available in any project. `build` is
-the one agent tied to this repo specifically, because doing its job
-requires knowing this codebase's actual structure and conventions, not
+research, evaluation, and design are generic and portable — they aren't
+DreamTube-specific, are available in any project, and are distributed
+via the `agent-library` Claude Code plugin marketplace (see below) so
+they're easy to bring into a new environment. `build` and `review` are
+both tied to this repo specifically: doing either job well requires
+knowing this codebase's actual structure and conventions (its account-
+scoping gotchas, its error-code scheme, its testing patterns), not
 generic engineering knowledge.
+
+## Getting research / evaluation / design in a new environment
+
+These three are published as a plugin in the `agent-library` GitHub
+repo (`ronbrightman/agent-library`), structured as a proper Claude Code
+plugin marketplace. In any new environment:
+
+```
+claude plugin marketplace add ronbrightman/agent-library
+claude plugin install product-agents@agent-library
+```
+
+That's it — no manual file copying. See that repo's README for details.
 
 ## Workflow
 
