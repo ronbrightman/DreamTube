@@ -11,6 +11,58 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+
+<!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
+     (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
+     load, no network call, no console error — until real keys are set in
+     js/analytics-config.js. See docs/ANALYTICS_SETUP.md for the full setup story,
+     including why GA4 is deliberately not installed yet (no Google Ads channel yet). -->
+<script src="js/analytics-config.js"></script>
+<script>
+  // PostHog web snippet — https://posthog.com/docs/getting-started/install
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, {
+      api_host: POSTHOG_HOST,
+      defaults: '2026-05-30',
+      session_recording: {
+        // PostHog already masks every input/textarea's typed value by default in session
+        // replay (maskAllInputs defaults to true) — pinned explicitly here so a future
+        // edit to this config can't silently start capturing plaintext keystrokes
+        // (passwords, and — the reason this matters most for DreamTube — the personal,
+        // sometimes vulnerable dream text people type into #dream-text and future
+        // free-text quiz-funnel screens) in session replays without anyone noticing.
+        // See also the `ph-no-capture` class on #dream-text in create.html, a second,
+        // independent layer of the same protection for that specific field. DO NOT
+        // REMOVE either of these without a deliberate privacy decision.
+        maskAllInputs: true
+      }
+    });
+  }
+</script>
+<script>
+  // Meta Pixel base code — https://developers.facebook.com/docs/meta-pixel/get-started
+  // The <noscript> fallback pixel <img> from Meta's standard snippet is deliberately
+  // left out: it can't be gated behind the same placeholder check (a <noscript> tag only
+  // renders when JS is off, so no JS-side check can stop it firing with a placeholder ID),
+  // and this app requires JavaScript to function at all (js/store.js is the entire
+  // client-side "backend"), so a no-JS visitor already has a non-functional app either
+  // way. Add it back once META_PIXEL_ID is a real value, if desired:
+  //   <noscript><img height="1" width="1" style="display:none"
+  //     src="https://www.facebook.com/tr?id=REAL_ID&ev=PageView&noscript=1" /></noscript>
+  if (typeof META_PIXEL_ID !== 'undefined' && META_PIXEL_ID !== 'REPLACE_WITH_REAL_PIXEL_ID') {
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', META_PIXEL_ID);
+    fbq('track', 'PageView');
+  }
+</script>
 </head>
 <body>
 
@@ -33,7 +85,12 @@
   </div>
 
   <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto; min-height:0;">
-    <textarea class="field" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
+    <!-- ph-no-capture: PostHog's documented class marker (see js/analytics-config.js's
+         session_recording comment) for "never include this element's content in a session
+         replay, at all". People type genuinely personal, sometimes vulnerable dream content
+         here — this app's whole premise. Do not remove this class thinking it's unused/dead;
+         removing it would let raw dream text into replay recordings by default. -->
+    <textarea class="field ph-no-capture" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
     <div class="char-count" id="char-count">0 characters</div>
 
     <div class="adv-section" id="adv-section">
