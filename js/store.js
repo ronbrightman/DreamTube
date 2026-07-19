@@ -379,6 +379,25 @@
   var state = load();
   backfillSharedFeed();
 
+  /**
+   * Tells PostHog "this browser is now this account" right after a real
+   * signup/login succeeds, so behavior before/after auth stitches into one
+   * person and cross-session identity works for whatever real accounts
+   * exist today — and keeps working unchanged once a real backend/session
+   * system replaces this localStorage one, since this is called from the
+   * same signup()/login() seam a real implementation would use too.
+   *
+   * No-ops safely if PostHog was never initialized (POSTHOG_KEY is still
+   * the placeholder in js/analytics-config.js — see that file), since
+   * window.posthog simply won't exist in that case. Never lets an
+   * analytics failure break auth.
+   */
+  function identifyForAnalytics(usernameOrEmail) {
+    if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.identify === 'function') {
+      try { window.posthog.identify(usernameOrEmail); } catch (e) { /* analytics must never break auth */ }
+    }
+  }
+
   window.DreamStore = {
     STYLE_GRADIENTS: STYLE_GRADIENTS,
 
@@ -397,6 +416,7 @@
       state.accounts[key] = { password: password, email: email.toLowerCase() };
       state.user = { handle: '@' + username, username: username };
       persist();
+      identifyForAnalytics(username);
       return { ok: true, user: state.user };
     },
 
@@ -418,6 +438,7 @@
       var username = loggedInViaEmail ? key : usernameOrEmail;
       state.user = { handle: '@' + username, username: username };
       persist();
+      identifyForAnalytics(username);
       return { ok: true, user: state.user };
     },
 
