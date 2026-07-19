@@ -447,12 +447,33 @@
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }
   function closeSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.remove('open'); }
 
+  // Whenever the dream text refers to the dreamer in first person, make sure
+  // the saved "Me" character (if one exists) is actually included, rather
+  // than relying on remembering to tap its chip every time — otherwise "I"/
+  // "me" in the caption has no guaranteed link to the same self-character
+  // across different dreams, defeating the point of saving one. Matters
+  // especially here since opening Edit always resets characterIds to [].
+  var FIRST_PERSON_RE = /\b(i|me)\b/i;
+  function autoSelectSelfIfMentioned(captionText){
+    if(!FIRST_PERSON_RE.test(captionText)) return;
+    var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
+    if(!self) return;
+    var selectedIds = DreamStore.getDraft().characterIds || [];
+    if(selectedIds.indexOf(self.id) !== -1) return;
+    DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });
+    renderCharacterChips();
+  }
+
   document.getElementById('open-edit-sheet').addEventListener('click', function(){
     DreamStore.setDraft({ characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null });
     renderCharacterChips();
     renderCameraChips();
     renderSceneryChips();
+    autoSelectSelfIfMentioned(document.getElementById('edit-text').value);
     openSheet('edit');
+  });
+  document.getElementById('edit-text').addEventListener('input', function(){
+    autoSelectSelfIfMentioned(this.value);
   });
   document.getElementById('edit-cancel').addEventListener('click', function(){ closeSheet('edit'); });
   document.getElementById('sheet-edit-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-edit-overlay') closeSheet('edit'); });
