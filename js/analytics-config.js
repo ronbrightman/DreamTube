@@ -21,7 +21,7 @@
 // Manager > Pixel > Settings page. That is the ONLY edit needed anywhere in
 // the codebase to turn analytics on — every page reads from this one file.
 
-var POSTHOG_KEY = 'REPLACE_WITH_REAL_POSTHOG_KEY';
+var POSTHOG_KEY = 'phc_qNfAvjah7yJCsMvzDETpCWxj3wzhdRFemfdVZkFGbS7o';
 
 // Region of the founder's PostHog project. PostHog Cloud is region-locked at
 // signup time (US or EU) — https://us.i.posthog.com is correct for a US
