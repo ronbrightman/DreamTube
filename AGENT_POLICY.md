@@ -1,13 +1,15 @@
 # Agent Policy — DreamTube Product-Improvement Workflow
 
-This repo uses a five-agent pipeline for ongoing product improvement:
-**research → evaluation → design → build → review**. This document is
-the single source of truth for (1) what that pipeline looks like end to
-end, and (2) exactly when a human has to approve something versus when
-an agent can just proceed on its own. `CLAUDE.md` points here so every
-agent picks this up automatically at the start of a session in this repo.
+This repo uses a six-agent pipeline for ongoing product improvement:
+**research → evaluation → design → build → review**, plus a standing
+**ab-test-creator** agent that closes the loop on live experiments after
+launch. This document is the single source of truth for (1) what that
+pipeline looks like end to end, and (2) exactly when a human has to
+approve something versus when an agent can just proceed on its own.
+`CLAUDE.md` points here so every agent picks this up automatically at
+the start of a session in this repo.
 
-## The five agents
+## The six agents
 
 | Agent | Scope | Location | Job |
 |---|---|---|---|
@@ -16,6 +18,7 @@ agent picks this up automatically at the start of a session in this repo.
 | design | user-level (portable) | `~/.claude/agents/design.md` | Turns an approved idea into a spec + UX options |
 | build | **project-level** | `.claude/agents/build.md` | Implements an approved idea + design, on a branch |
 | review | **project-level** | `.claude/agents/review.md` | Independently checks build's finished work |
+| ab-test-creator | **project-level** | `.claude/agents/ab-test-creator.md` | Reads concluded PostHog experiments, builds the next challenger variant on a branch |
 
 research, evaluation, and design are generic and portable — they aren't
 DreamTube-specific, are available in any project, and are distributed
@@ -55,6 +58,21 @@ of this pipeline (yet).
    Repeat until review passes. **This build ↔ review loop is fully autonomous —
    no human needed in between.**
 9. **Human approves the final merge to `main` / anything going live.** ← approval gate
+
+## Post-launch: the ab-test-creator loop
+
+Once the onboarding funnel is live and PostHog experiments are running,
+`ab-test-creator` closes a separate, ongoing loop: check whether a live
+experiment has concluded with a declared winner, and if so, build the
+next challenger variant to test against it, on a branch, grounded in the
+onboarding-funnel research doc's already-identified A/B candidates.
+
+**Currently requires per-variant human approval before anything it builds
+goes live** — the founder has said they may grant it standing autonomy
+later, but hasn't yet. Don't treat a later invocation as blanket
+permission unless it explicitly says so. This isn't scheduled/automatic
+yet either — it needs a live PostHog account with real experiment data
+before a recurring check is worth running at all.
 
 ## Escalation policy — when a human has to approve something
 
