@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>DreamTube — Turn your dreams into videos</title>
+<meta name="description" content="Turn your dreams into videos.">
+<meta name="theme-color" content="#FBEFEA">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
+     (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
+     load, no network call, no console error — until real keys are set in
+     js/analytics-config.js. See docs/ANALYTICS_SETUP.md for the full setup story,
+     including why GA4 is deliberately not installed yet (no Google Ads channel yet). -->
+<script src="js/analytics-config.js"></script>
+<script>
+  // PostHog web snippet — https://posthog.com/docs/getting-started/install
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, {
+      api_host: POSTHOG_HOST,
+      defaults: '2026-05-30',
+      session_recording: {
+        // PostHog already masks every input/textarea's typed value by default in session
+        // replay (maskAllInputs defaults to true) — pinned explicitly here so a future
+        // edit to this config can't silently start capturing plaintext keystrokes
+        // (passwords, and — the reason this matters most for DreamTube — the personal,
+        // sometimes vulnerable dream text people type into #dream-text and future
+        // free-text quiz-funnel screens) in session replays without anyone noticing.
+        // See also the `ph-no-capture` class on #dream-text in create.html, a second,
+        // independent layer of the same protection for that specific field. DO NOT
+        // REMOVE either of these without a deliberate privacy decision.
+        maskAllInputs: true
+      }
+    });
+  }
+</script>
+<script>
+  // Meta Pixel base code — https://developers.facebook.com/docs/meta-pixel/get-started
+  // The <noscript> fallback pixel <img> from Meta's standard snippet is deliberately
+  // left out: it can't be gated behind the same placeholder check (a <noscript> tag only
+  // renders when JS is off, so no JS-side check can stop it firing with a placeholder ID),
+  // and this app requires JavaScript to function at all (js/store.js is the entire
+  // client-side "backend"), so a no-JS visitor already has a non-functional app either
+  // way. Add it back once META_PIXEL_ID is a real value, if desired:
+  //   <noscript><img height="1" width="1" style="display:none"
+  //     src="https://www.facebook.com/tr?id=REAL_ID&ev=PageView&noscript=1" /></noscript>
+  if (typeof META_PIXEL_ID !== 'undefined' && META_PIXEL_ID !== 'REPLACE_WITH_REAL_PIXEL_ID') {
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', META_PIXEL_ID);
+    fbq('track', 'PageView');
+  }
+</script>
+
+<!--
+  DreamTube onboarding funnel — 15 screens, one page, JS-driven step
+  navigation. Ported from the approved mockup at
+  scratchpad/funnel-mockup.html (v3.1) — see that file and
+  scratchpad/research/onboarding-funnel.md for the full design rationale.
+  Do not reorder or redesign screens here; this is an implementation of an
+  already-approved spec, not a place to make new design calls.
+
+  Architecture mirrors the mockup: a small array of screen-render functions
+  (SCREEN_RENDERERS), a phase->CSS-custom-property color system that blends
+  from pastel dawn to night across the 15 screens (PHASES/PHASE_BY_STEP),
+  and next()/prev() step navigation with progress dots.
+
+  Real-integration notes (see AGENT_POLICY.md / CLAUDE.md task spec for the
+  full brief this implements):
+   - Screens 1-7 are pure client-side quiz state (the `quiz` object below) —
+     nothing is persisted to DreamStore until it's actually needed.
+   - Screen 8 (dream capture) and screen 10 (style) call DreamStore.setDraft
+     exactly like create.html/style.html do — setDraft works before login,
+     so no special-casing needed there.
+   - Screen 9 (Advanced: characters/camera/scenery) is a real functional
+     port of create.html's Advanced section. Camera/scenery chips call
+     DreamStore.setDraft directly (also login-independent). Characters are
+     the one exception: DreamStore.saveCharacter() requires a logged-in
+     user, but signup doesn't happen until screen 13 — by design, per the
+     approved funnel order (dream input + Advanced moved early, paywall
+     late). So characters are staged locally (the `staged` object) with the
+     same validation rules as DreamStore.saveCharacter, and flushed into
+     real DreamStore characters via flushStagedCharactersToStore() the
+     moment signup succeeds on screen 13, before the funnel continues.
+   - Screen 13 derives a username from the email's local part automatically
+     (per the task spec — visitor never picks a username) and calls the
+     real DreamStore.signup(username, password, email).
+   - Screen 14 (pricing) has a deliberate, clearly-marked payment bypass —
+     see the big comment above proceedPastPricing() below. There is no
+     payment provider integrated yet; do not "finish" this without a human
+     vendor decision (see AGENT_POLICY.md escalation policy).
+   - Screen 15 hands off to the real, unmodified processing.html, which
+     reads the now-fully-populated draft and starts real generation.
+-->
+</head>
+<body>
+
+<div id="app" class="funnel-app">
+  <div class="fn-topbar">
+    <button class="fn-back" id="fnBack" aria-label="Back" type="button"></button>
+    <div class="fn-progress" id="fnProgress"></div>
+    <div class="fn-topbar-spacer"></div>
+  </div>
+  <div class="fn-screen" id="fnScreen"></div>
+</div>
+
+<style>
+  /* ===================================================================
+     Funnel-specific styles. Every class here is prefixed "fn-" (or, for
+     screen 9 and screen 10's style cards, deliberately NOT prefixed —
+     those two reuse the real app's own classes from css/styles.css
+     verbatim: .adv-sub-label/.char-chip/.opt-chip/.field/.sheet/.btn for
+     screen 9, .style-grid/.style-card/.sc-cartoon etc. for screen 10 —
+     so they inherit the actual app look with zero risk of this file's
+     pastel rules bleeding onto them, and vice versa.
+     Colors/values ported from scratchpad/funnel-mockup.html.
+     =================================================================== */
+  #app.funnel-app{
+    --dawn-1:#FBEFEA; --dawn-2:#F3E4EF; --dawn-3:#E8E6F7;
+    --fn-ink:#3A3350; --fn-ink-soft:#6E6480; --fn-ink-faint:#9C93AC;
+    --fn-card:#FFFFFF; --fn-line:rgba(58,51,80,0.10);
+    --fn-accent-grad:linear-gradient(135deg,#B99BD9,#E8A0B4 55%,#F3C08C);
+    --fn-accent-solid:#8D6FB8;
+    --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
+    --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+    background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3));
+    font-family:var(--fn-font-body);
+    transition:background .4s ease;
+  }
+  #app.funnel-app.fn-phase-night .fn-btn-primary{ background:#fff; color:#221d2c; box-shadow:none;}
+
+  .fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
+  .fn-back{
+    width:34px; height:34px; border-radius:50%; flex:none; cursor:pointer;
+    background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line));
+    color:var(--phase-ink, var(--fn-ink)); display:flex; align-items:center; justify-content:center;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .fn-back .icon, .fn-back svg{ width:15px; height:15px;}
+  .fn-topbar-spacer{ width:34px; flex:none;}
+  .fn-progress{ flex:1; display:flex; gap:4px;}
+  .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--phase-line, var(--fn-line)); display:block;}
+  .fn-progress i.done{ background:var(--phase-ink, var(--fn-ink)); opacity:.55;}
+  .fn-progress i.now{ background:var(--phase-ink, var(--fn-ink));}
+  #app.funnel-app.fn-dark-mode .fn-back{ background:var(--surface); border-color:var(--border); color:var(--text-primary);}
+  #app.funnel-app.fn-dark-mode .fn-progress i{ background:rgba(255,255,255,.14);}
+  #app.funnel-app.fn-dark-mode .fn-progress i.done, #app.funnel-app.fn-dark-mode .fn-progress i.now{ background:#fff; opacity:.75;}
+
+  .fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); position:relative; overflow-y:auto; min-height:0; color:var(--phase-ink, var(--fn-ink));}
+
+  .fn-eyebrow{ font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--phase-faint, var(--fn-ink-faint)); margin-bottom:10px;}
+  .fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; margin-bottom:10px; color:var(--phase-ink, var(--fn-ink));}
+  .fn-body-copy{ font-size:14.5px; color:var(--phase-soft, var(--fn-ink-soft)); line-height:1.55; margin-bottom:18px;}
+  .fn-spacer{ flex:1;}
+  #app.funnel-app.fn-dark-mode .fn-headline{ font-family:var(--font-body); color:var(--text-primary);}
+  #app.funnel-app.fn-dark-mode .fn-eyebrow{ color:var(--text-faint);}
+  #app.funnel-app.fn-dark-mode .fn-body-copy{ color:var(--text-muted);}
+
+  .fn-opt{ display:flex; align-items:center; justify-content:space-between; padding:15px 17px; border-radius:17px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:14.5px; font-weight:600; margin-bottom:10px; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-opt.sel{ border-color:var(--fn-accent-solid); box-shadow:0 0 0 1.5px var(--fn-accent-solid) inset;}
+  .fn-dot{ width:10px; height:10px; border-radius:50%; border:1.5px solid var(--phase-faint, var(--fn-ink-faint)); flex-shrink:0; margin-left:10px;}
+  .fn-opt.sel .fn-dot{ background:var(--fn-accent-solid); border-color:var(--fn-accent-solid);}
+  .fn-dot.box{ width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; font-weight:800;}
+
+  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
+  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+
+  textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
+  textarea.fn-field{ resize:none; line-height:1.5;}
+  textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
+  textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
+
+  .fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
+  .fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
+  .fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--fn-ink-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .fn-field-pw-toggle svg, .fn-field-pw-toggle .icon{ width:18px; height:18px;}
+
+  .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
+
+  /* Carousels — screens 1 and 7 */
+  .fn-carousel{ display:flex; gap:10px; overflow-x:auto; margin:0 -24px 14px; padding:0 24px 4px; scroll-snap-type:x mandatory;}
+  .fn-carousel::-webkit-scrollbar{ display:none;}
+  .fn-carousel-card{ position:relative; flex:0 0 74%; max-width:300px; aspect-ratio:9/13; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; align-items:flex-end;}
+  .fn-carousel-card .fn-heart-badge{ position:absolute; top:10px; right:10px; z-index:2; display:flex; align-items:center; gap:4px; background:rgba(0,0,0,.3); backdrop-filter:blur(3px); color:#fff; font-size:11px; font-weight:800; padding:5px 10px; border-radius:100px;}
+  .fn-carousel-card .fn-most-loved{ position:absolute; top:10px; left:10px; z-index:2; background:#fff; color:var(--fn-accent-solid); font-size:10.5px; font-weight:800; padding:5px 11px; border-radius:100px; letter-spacing:.02em;}
+  .fn-media-caption{ position:relative; z-index:2; padding:14px; font-size:13px; font-weight:700; color:#fff; line-height:1.35;}
+  .fn-carousel-dots{ display:flex; gap:5px; justify-content:center; margin-bottom:14px;}
+  .fn-carousel-dots i{ width:6px; height:6px; border-radius:50%; background:var(--phase-line, var(--fn-line)); display:block;}
+  .fn-carousel-dots i:first-child{ background:var(--fn-accent-solid); width:16px; border-radius:3px;}
+  .fn-dream-1{ background:linear-gradient(160deg,#F6DDE6,#E4CFF0 45%,#CFE0F2 100%);}
+  .fn-dream-2{ background:linear-gradient(160deg,#FCE7D6,#F2D3E4 45%,#DCCCF0 100%);}
+  .fn-dream-3{ background:linear-gradient(160deg,#E1D9F5,#CFE3F0 45%,#F3E0D9 100%);}
+  .fn-dream-4{ background:linear-gradient(160deg,#D9F0E6,#CFE0F5 45%,#E8D9F5 100%);}
+  .fn-dream-5{ background:linear-gradient(160deg,#F5E0D0,#F0CFE0 45%,#D0E4F0 100%);}
+  .fn-dream-6{ background:linear-gradient(160deg,#E6D4F5,#F5D9E4 45%,#D4E8F0 100%);}
+
+  /* Promise screen (2) */
+  .fn-promise-row{ display:flex; gap:13px; align-items:flex-start; padding:12px 0;}
+  .fn-p-icon{ width:38px; height:38px; border-radius:12px; background:var(--fn-accent-grad); flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px;}
+  .fn-p-text{ font-size:14px; line-height:1.5; color:#2C2846; padding-top:7px;}
+  .fn-p-text b{ font-weight:800;}
+
+  /* Reactive reveal message (screen 3) */
+  .fn-reveal-msg{ margin-top:14px; padding:15px 17px; border-radius:16px; background:var(--fn-accent-grad); color:#fff; font-size:13.5px; font-weight:700; line-height:1.45; text-wrap:balance;}
+
+  .fn-avatar-ring{ width:52px; height:52px; border-radius:50%; background:var(--fn-accent-grad); padding:2px; display:flex; align-items:center; justify-content:center;}
+  .fn-avatar-ring i{ width:100%; height:100%; border-radius:50%; background:var(--phase-card, var(--fn-card)); display:block;}
+
+  .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
+  .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
+  .fn-btn-ghost{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); color:#2C2846; font-weight:700; font-size:13px; text-align:center; padding:12px; width:100%; border-radius:100px;}
+  .fn-btn-ghost.disabled{ opacity:.5; cursor:not-allowed; pointer-events:none;}
+  .fn-btn-row{ display:flex; flex-direction:column; gap:9px;}
+  .fn-small-link{ background:none; border:none; color:var(--phase-soft, var(--fn-ink-soft)); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
+
+  /* Style pick (10) reuses the real .style-grid/.style-card/.sc-* from
+     css/styles.css unmodified — nothing here to override. */
+
+  /* Dream Profile recap (12) */
+  .fn-recap-card{ border-radius:22px; padding:3px; background:var(--fn-accent-grad); margin-bottom:16px;}
+  .fn-recap-card-inner{ background:var(--phase-card, var(--fn-card)); border-radius:19px; padding:18px;}
+  .fn-recap-item{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px solid rgba(58,51,80,0.08);}
+  .fn-recap-item:last-child{ border-bottom:none;}
+  .fn-recap-item .k{ font-size:12px; color:#6E6480; font-weight:600; flex:none;}
+  .fn-recap-item .v{ font-size:13.5px; color:#2C2846; font-weight:800; text-align:right;}
+
+  .fn-proof-strip{ display:flex; align-items:center; gap:9px; padding:11px 13px; border-radius:100px; background:#fff; border:1px solid rgba(58,51,80,0.1); margin-bottom:16px;}
+  .fn-proof-strip .avatars{ display:flex;}
+  .fn-proof-strip .avatars i{ width:23px; height:23px; border-radius:50%; background:var(--fn-accent-grad); border:2px solid #fff; margin-left:-9px; display:block;}
+  .fn-proof-strip .avatars i:first-child{ margin-left:0;}
+  .fn-proof-strip span{ font-size:11.5px; font-weight:700; color:#6E6480;}
+
+  .fn-price-card{ border:1.5px solid rgba(58,51,80,0.14); border-radius:19px; padding:16px; margin-bottom:11px; position:relative; background:#fff; color:#2C2846;}
+  .fn-price-card.best{ border-color:var(--fn-accent-solid);}
+  .fn-price-card .tag{ position:absolute; top:-10px; right:13px; background:var(--fn-accent-grad); color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
+  .fn-price-card .row{ display:flex; justify-content:space-between; align-items:baseline;}
+  .fn-price-card .plan{ font-weight:800; font-size:14.5px; color:#2C2846;}
+  .fn-price-card .amt{ font-weight:800; font-size:17px; color:#2C2846;}
+  .fn-price-card .sub{ font-size:12px; color:#6E6480; margin-top:3px;}
+  .fn-pricing-close{ position:absolute; top:2px; right:0; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:10;}
+  .fn-pricing-close .icon, .fn-pricing-close svg{ width:15px; height:15px;}
+
+  .fn-check-badge{ width:72px; height:72px; border-radius:50%; background:rgba(255,255,255,.12); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; font-size:30px; margin:0 auto 18px; color:#fff;}
+
+  .fn-spin{ width:48px; height:48px; border-radius:50%; border:3px solid var(--phase-line, var(--fn-line)); border-top-color:var(--fn-accent-solid); margin:0 auto 20px; animation:fnspin 1s linear infinite;}
+  @keyframes fnspin{ to{ transform:rotate(360deg);} }
+  @media (prefers-reduced-motion: reduce){ .fn-spin{ animation:none;} }
+  .fn-loading-line{ font-size:13px; color:var(--phase-soft, var(--fn-ink-soft)); text-align:center; margin-bottom:6px;}
+</style>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ===== Analytics helper — guarded the same way every other page in this
+  // app checks for a real PostHog key (see js/analytics-config.js). =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the funnel */ }
+    }
+  }
+
+  function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+  /**
+   * Downscales/recompresses a picked photo to a JPEG data URL — copied
+   * verbatim from create.html's identical helper (same reasons apply: an
+   * unmodified phone photo can blow both localStorage's quota and the
+   * generate-video request body cap).
+   */
+  function resizeImageFile(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error('read_failed')); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error('decode_failed')); };
+        img.onload = function(){
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ===== Funnel-local state (screens 1-7 personalization signals, plus
+  // pre-signup character staging — see the head-of-file comment for why
+  // characters can't just call DreamStore.saveCharacter directly yet). =====
+  var quiz = { recall: null, dreamTypes: [], motivations: [] };
+  var chosenStyle = null;
+  var staged = { characters: [], selectedIds: [] };
+  var cur = 0;
+
+  var TAGS = ['hook','promise','recall','dream_type','motivation','reassurance','see_in_action','dream_capture','advanced','style','preparing','recap','email_capture','pricing','confirmation'];
+
+  // Phase color system — ported verbatim from funnel-mockup.html's PHASES
+  // map. 'app-dark' (screen 9 only) is a special case handled in
+  // applyPhase(): it clears all pastel overrides so that screen falls back
+  // to the app's real dark theme from css/styles.css, per the task spec's
+  // explicit allowance for that one screen to look like the real app
+  // rather than a pastel reskin (it's a direct functional port).
+  var PHASES = {
+    'dawn-hero': { grad:'linear-gradient(160deg,#FBEFEA,#F3E4EF 55%,#E8E6F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
+    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#F5E7EE 55%,#ECE8F6)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
+    'dawn-warm': { grad:'linear-gradient(160deg,#FCE9DA,#F3DDE6 55%,#E6DFF3)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFDFB', line:'rgba(58,51,80,0.12)' },
+    'transition':{ grad:'linear-gradient(160deg,#EADCEB,#D9D3EE 55%,#C9D3EA)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
+    'mid-dusk':  { grad:'linear-gradient(160deg,#C6C2E6,#A6B4DD 55%,#94A6D2)', ink:'#221F3D', soft:'#4C4A6B', faint:'#767497', card:'#FFFFFF', line:'rgba(34,31,61,0.16)' },
+    'dusk':      { grad:'linear-gradient(160deg,#9B95CE,#7B8CC0 55%,#6478AE)', ink:'#191735', soft:'#EDEBF7', faint:'#C6C2E3', card:'#FFFFFF', line:'rgba(255,255,255,0.22)' },
+    'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
+    'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
+  };
+  var PHASE_BY_STEP = ['dawn-hero','dawn','dawn','dawn','dawn','dawn','dawn','dawn','app-dark','dawn-warm','transition','mid-dusk','dusk','dusk-deep','night'];
+
+  var appEl = document.getElementById('app');
+  var screenEl = document.getElementById('fnScreen');
+  var progressEl = document.getElementById('fnProgress');
+  var backBtn = document.getElementById('fnBack');
+  backBtn.innerHTML = Icons.back;
+
+  // ===================================================================
+  // Screen 1 — Hook carousel
+  // ===================================================================
+  function renderScreen1(el){
+    el.innerHTML =
+      '<div class="fn-carousel">' +
+        '<div class="fn-carousel-card fn-dream-1"><span class="fn-most-loved">Most loved</span><span class="fn-heart-badge">&#9829; 2.4k</span></div>' +
+        '<div class="fn-carousel-card fn-dream-2"><span class="fn-heart-badge">&#9829; 1.8k</span></div>' +
+        '<div class="fn-carousel-card fn-dream-3"><span class="fn-heart-badge">&#9829; 1.2k</span></div>' +
+      '</div>' +
+      '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
+      '<div class="fn-headline">Turn your dreams into videos.</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s1-continue" type="button">Start</button>';
+    document.getElementById('fn-s1-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 2 — The promise
+  // ===================================================================
+  function promiseRow(icon, bold, rest){
+    return '<div class="fn-promise-row"><span class="fn-p-icon">' + icon + '</span><span class="fn-p-text"><b>' + bold + '</b> — ' + rest + '</span></div>';
+  }
+  function renderScreen2(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">What DreamTube is</div>' +
+      '<div class="fn-headline">A place to keep your dreams — not just remember them.</div>' +
+      promiseRow('&#9998;', 'Keep a living dream journal', 'every dream saved, ready to revisit anytime.') +
+      promiseRow('&#9654;', 'Watch each one as a video', 'not just words on a page.') +
+      promiseRow('&#9680;', 'Private or public, dream by dream', 'share what you want, keep the rest just yours.') +
+      promiseRow('&#10022;', 'Explore dreams from others', "see what other people's minds come up with.") +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s2-continue" type="button">Continue</button>';
+    document.getElementById('fn-s2-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 3 — Recall question (reactive)
+  // ===================================================================
+  var RECALL_OPTIONS = [
+    { key:'never', label:'Never — they slip away fast' },
+    { key:'sometimes', label:'Sometimes, in flashes' },
+    { key:'vividly', label:'Vividly, most nights' }
+  ];
+  var RECALL_MESSAGES = {
+    never: "Great! So now you'll be able to capture them and keep them alive forever.",
+    sometimes: "Great! So now you'll be able to capture them and keep them alive forever.",
+    vividly: "Great, so you'll easily make them come alive."
+  };
+  function renderScreen3(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Question 1 of 4</div>' +
+      '<div class="fn-headline">Do you remember your dreams often?</div>' +
+      '<div id="fn-recall-opts">' + RECALL_OPTIONS.map(function(o){
+        return '<div class="fn-opt' + (quiz.recall === o.key ? ' sel' : '') + '" data-recall="' + o.key + '"><span>' + o.label + '</span><span class="fn-dot"></span></div>';
+      }).join('') + '</div>' +
+      (quiz.recall ? '<div class="fn-reveal-msg">' + RECALL_MESSAGES[quiz.recall] + '</div>' : '') +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s3-continue" type="button"' + (quiz.recall ? '' : ' disabled') + '>Continue</button>';
+
+    document.getElementById('fn-recall-opts').addEventListener('click', function(e){
+      var opt = e.target.closest('[data-recall]');
+      if(!opt) return;
+      quiz.recall = opt.dataset.recall;
+      renderScreen3(el);
+    });
+    document.getElementById('fn-s3-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 4 — Content/type (multi-select)
+  // ===================================================================
+  var DREAM_TYPE_OPTIONS = ['Flying', 'Being chased', 'Falling', "Someone I've lost", 'Recurring dreams', 'Adventure / fantasy', 'Nightmares', 'Lucid dreams'];
+  function renderScreen4(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Question 2 of 4</div>' +
+      '<div class="fn-headline">What kind of dreams do you have most?</div>' +
+      '<div class="fn-body-copy">Pick as many as fit.</div>' +
+      '<div class="fn-chip-row" id="fn-dreamtype-chips">' + DREAM_TYPE_OPTIONS.map(function(t){
+        return '<span class="fn-chip' + (quiz.dreamTypes.indexOf(t) !== -1 ? ' sel' : '') + '" data-type="' + esc(t) + '">' + esc(t) + '</span>';
+      }).join('') + '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s4-continue" type="button">Continue</button>';
+
+    document.getElementById('fn-dreamtype-chips').addEventListener('click', function(e){
+      var chip = e.target.closest('[data-type]');
+      if(!chip) return;
+      var t = chip.dataset.type;
+      var idx = quiz.dreamTypes.indexOf(t);
+      if(idx === -1) quiz.dreamTypes.push(t); else quiz.dreamTypes.splice(idx, 1);
+      chip.classList.toggle('sel');
+    });
+    document.getElementById('fn-s4-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 5 — Motivation (multi-select, per the v3.1 founder revision)
+  // ===================================================================
+  var MOTIVATION_OPTIONS = ['Capture dreams before they fade', 'Turn them into videos', 'Process a recurring dream', 'Keep them forever', 'Watch dreams of other people', 'Share with friends'];
+  function renderScreen5(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Question 3 of 4 &middot; pick all that apply</div>' +
+      '<div class="fn-headline" style="font-size:21px;">Why are you here?</div>' +
+      '<div id="fn-motivation-opts">' + MOTIVATION_OPTIONS.map(function(m){
+        var sel = quiz.motivations.indexOf(m) !== -1;
+        return '<div class="fn-opt' + (sel ? ' sel' : '') + '" data-motivation="' + esc(m) + '"><span>' + esc(m) + '</span><span class="fn-dot box">' + (sel ? '&#10003;' : '') + '</span></div>';
+      }).join('') + '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s5-continue" type="button">Continue</button>';
+
+    document.getElementById('fn-motivation-opts').addEventListener('click', function(e){
+      var opt = e.target.closest('[data-motivation]');
+      if(!opt) return;
+      var m = opt.dataset.motivation;
+      var idx = quiz.motivations.indexOf(m);
+      if(idx === -1) quiz.motivations.push(m); else quiz.motivations.splice(idx, 1);
+      renderScreen5(el);
+    });
+    document.getElementById('fn-s5-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 6 — Reassurance
+  // ===================================================================
+  function renderScreen6(el){
+    el.innerHTML =
+      '<div class="fn-spacer"></div>' +
+      '<div class="fn-avatar-ring" style="margin:0 auto 20px;"><i></i></div>' +
+      '<div class="fn-headline" style="text-align:center;">' + "There's no wrong dream — that's what makes yours worth seeing." + '</div>' +
+      '<div class="fn-body-copy" style="text-align:center;">Your dreams stay private until you choose to publish them.</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s6-continue" type="button">Okay</button>';
+    document.getElementById('fn-s6-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 7 — See it in action (carousel, different clips than screen 1)
+  // ===================================================================
+  function renderScreen7(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">See it in action</div>' +
+      '<div class="fn-carousel">' +
+        '<div class="fn-carousel-card fn-dream-4"><span class="fn-media-caption">"a city made of glass..."</span></div>' +
+        '<div class="fn-carousel-card fn-dream-5"><span class="fn-media-caption">"my childhood house, underwater..."</span></div>' +
+        '<div class="fn-carousel-card fn-dream-6"><span class="fn-media-caption">"running through a field of stars..."</span></div>' +
+      '</div>' +
+      '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
+      '<div class="fn-body-copy">Real dreams, typed by real people — and the videos they became.</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s7-continue" type="button">Continue</button>';
+    document.getElementById('fn-s7-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 8 — Dream capture (real: DreamStore.setDraft, matching
+  // create.html's exact pattern)
+  // ===================================================================
+  function renderScreen8(el){
+    var existing = DreamStore.getDraft().caption || '';
+    el.innerHTML =
+      '<div class="fn-eyebrow">Let’s start your dream</div>' +
+      '<div class="fn-headline">Type a bit of a dream you remember — even a fragment.</div>' +
+      '<textarea class="fn-field ph-no-capture" id="fn-dream-text" dir="auto" style="min-height:140px; margin-top:8px;" placeholder="I was standing on a beach that turned into...">' + esc(existing) + '</textarea>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s8-continue" type="button" disabled>Continue</button>';
+
+    var ta = document.getElementById('fn-dream-text');
+    var btn = document.getElementById('fn-s8-continue');
+    function sync(){ btn.disabled = ta.value.trim().length < 8; }
+    ta.addEventListener('input', sync);
+    sync();
+    btn.addEventListener('click', function(){
+      DreamStore.setDraft({ caption: ta.value.trim(), sourceDreamId: null });
+      next();
+    });
+  }
+
+  // ===================================================================
+  // Screen 9 — Advanced (characters/camera/scenery), ported from
+  // create.html. See head-of-file comment for the character-staging
+  // rationale (saveCharacter requires login; login doesn't happen until
+  // screen 13).
+  // ===================================================================
+  var charEditingId = null;
+  var charSubMode = 'describe';
+  var charPendingPhotoDataUrl = null;
+
+  function charChipHTML(c, selected){
+    return '<div class="char-chip' + (selected ? ' selected' : '') + '" data-char-select="' + c.id + '">' +
+      '<span class="chip-check"><span class="icon">' + Icons.check + '</span></span>' +
+      '<span class="chip-edit-area" data-char-edit="' + c.id + '">' +
+        '<span>' + esc(c.name) + '</span>' +
+        '<span class="chip-edit icon">' + Icons.pencil + '</span>' +
+      '</span>' +
+    '</div>';
+  }
+  function renderStagedCharacterChips(){
+    var row = document.getElementById('char-chip-row');
+    if(!row) return;
+    var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
+    var html = staged.characters.map(function(c){ return charChipHTML(c, staged.selectedIds.indexOf(c.id) !== -1); }).join('');
+    if(!hasSelf) html += '<div class="char-chip-add" id="char-add-self"><span class="icon">' + Icons.userPlus + '</span> Add yourself</div>';
+    html += '<div class="char-chip-add" id="char-add-other"><span class="icon">' + Icons.plus + '</span> Add a character</div>';
+    row.innerHTML = html;
+    var addSelfBtn = document.getElementById('char-add-self');
+    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openCharSheet('self', null); });
+    document.getElementById('char-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
+  }
+
+  /** Mirrors DreamStore.saveCharacter's validation/upsert rules exactly, against the local staging array instead of the real store. */
+  function localSaveCharacter(patch){
+    var name = (patch.name || '').trim();
+    var description = (patch.description || '').trim();
+    var isSelf = !!patch.isSelf;
+    var photoDataUrl = (isSelf && patch.photoDataUrl) ? patch.photoDataUrl : null;
+    if(!isSelf && !name) return { ok:false, error:'Give this character a name.' };
+    if(!description && !photoDataUrl) return { ok:false, error: isSelf ? 'Add a description or a photo.' : 'Add a short description.' };
+    var existing = patch.id ? staged.characters.filter(function(c){ return c.id === patch.id; })[0] : null;
+    if(!existing && isSelf) existing = staged.characters.filter(function(c){ return c.isSelf; })[0] || null;
+    if(existing){
+      existing.name = isSelf ? (name || 'Me') : name;
+      existing.description = description;
+      if(isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
+      return { ok:true, character: existing };
+    }
+    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: isSelf ? (name || 'Me') : name, isSelf: isSelf, description: description };
+    if(isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
+    staged.characters.push(character);
+    return { ok:true, character: character };
+  }
+  function localDeleteCharacter(id){
+    var before = staged.characters.length;
+    staged.characters = staged.characters.filter(function(c){ return c.id !== id; });
+    staged.selectedIds = staged.selectedIds.filter(function(x){ return x !== id; });
+    return staged.characters.length !== before;
+  }
+
+  /** Called once, right after real signup succeeds on screen 13 — turns staged local characters into real DreamStore characters and remaps selection onto their real ids. */
+  function flushStagedCharactersToStore(){
+    var idMap = {};
+    staged.characters.forEach(function(c){
+      var result = DreamStore.saveCharacter({ isSelf: c.isSelf, name: c.name, description: c.description, photoDataUrl: c.photoDataUrl || null });
+      if(result.ok) idMap[c.id] = result.character.id;
+    });
+    var realSelected = staged.selectedIds.map(function(localId){ return idMap[localId]; }).filter(Boolean);
+    if(realSelected.length) DreamStore.setDraft({ characterIds: realSelected });
+  }
+
+  function openCharSheet(mode, existing){
+    charEditingId = existing ? existing.id : null;
+    document.getElementById('char-sheet-title').textContent = mode === 'self'
+      ? (existing ? 'Edit yourself' : 'Add yourself')
+      : (existing ? 'Edit character' : 'Add a character');
+    var nameInput = document.getElementById('char-name-input');
+    nameInput.style.display = mode === 'self' ? 'none' : 'block';
+    nameInput.value = existing ? existing.name : '';
+    document.getElementById('char-desc-input').value = existing ? (existing.description || '') : '';
+    document.getElementById('char-desc-input').dataset.mode = mode;
+    document.getElementById('char-error').textContent = '';
+    document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
+    document.getElementById('char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
+    charPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
+    setCharSubMode(mode === 'self' && charPendingPhotoDataUrl ? 'photo' : 'describe');
+    document.getElementById('sheet-character-overlay').classList.add('open');
+  }
+  function closeCharSheet(){
+    document.getElementById('sheet-character-overlay').classList.remove('open');
+  }
+  function renderCharPhotoPreview(){
+    var preview = document.getElementById('char-photo-preview');
+    var removeLink = document.getElementById('char-photo-remove');
+    if(charPendingPhotoDataUrl){
+      preview.innerHTML = '<img src="' + charPendingPhotoDataUrl + '" alt="">';
+      removeLink.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
+      removeLink.style.display = 'none';
+    }
+  }
+  function setCharSubMode(mode){
+    charSubMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#char-mode-row .char-mode-btn'), function(b){
+      b.classList.toggle('active', b.dataset.charMode === mode);
+    });
+    document.getElementById('char-desc-input').style.display = mode === 'describe' ? 'block' : 'none';
+    document.getElementById('char-photo-area').style.display = mode === 'photo' ? 'block' : 'none';
+    renderCharPhotoPreview();
+  }
+
+  function renderScreen9(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Optional</div>' +
+      '<div class="fn-headline" style="font-size:21px;">Add detail — characters, camera, scenery.</div>' +
+      '<div class="adv-sub-label" style="margin-top:6px;">Characters</div>' +
+      '<div class="adv-hint">Define people in your dream once, reuse them anytime.</div>' +
+      '<div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>' +
+      '<div class="adv-sub-label">Camera view</div>' +
+      '<div class="opt-chip-row" id="camera-chip-row">' +
+        '<div class="opt-chip" data-camera="Close-up">Close-up</div>' +
+        '<div class="opt-chip" data-camera="Wide shot">Wide shot</div>' +
+        '<div class="opt-chip" data-camera="Aerial view">Aerial view</div>' +
+        '<div class="opt-chip" data-camera="POV">POV</div>' +
+      '</div>' +
+      '<div class="adv-sub-label">Scenery</div>' +
+      '<div class="opt-chip-row" id="scenery-time-row" style="margin-bottom:8px;">' +
+        '<div class="opt-chip" data-scenery-time="Day">Day</div>' +
+        '<div class="opt-chip" data-scenery-time="Night">Night</div>' +
+      '</div>' +
+      '<div class="opt-chip-row" id="scenery-place-row">' +
+        '<div class="opt-chip" data-scenery-place="Urban">Urban</div>' +
+        '<div class="opt-chip" data-scenery-place="Nature">Nature</div>' +
+        '<div class="opt-chip" data-scenery-place="Inside a house">Inside a house</div>' +
+      '</div>' +
+      '<div style="min-height:20px; flex:1;"></div>' +
+      '<button class="btn btn-primary btn-block" id="fn-s9-continue" type="button">Continue</button>' +
+      '<span class="link-text" id="fn-s9-skip" style="display:block; margin-top:12px; cursor:pointer;">Skip — keep it simple</span>' +
+      '<div class="sheet-overlay" id="sheet-character-overlay">' +
+        '<div class="sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
+          '<input class="field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
+          '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
+            '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
+            '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
+          '</div>' +
+          '<textarea class="field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
+          '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
+            '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
+            '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
+            '<input type="file" accept="image/*" id="char-photo-input" style="display:none;">' +
+            '<button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>' +
+            '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
+          '</div>' +
+          '<div class="err-text" id="char-error"></div>' +
+          '<button class="btn btn-primary btn-block" id="char-save-btn" type="button">Save</button>' +
+          '<div style="height:10px;"></div>' +
+          '<span class="link-text" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
+          '<div style="height:8px;"></div>' +
+          '<span class="link-text" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('char-chip-row').addEventListener('click', function(e){
+      var editTarget = e.target.closest('[data-char-edit]');
+      if(editTarget){
+        var c = staged.characters.filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
+        if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
+        return;
+      }
+      var chip = e.target.closest('[data-char-select]');
+      if(!chip) return;
+      var id = chip.dataset.charSelect;
+      var idx = staged.selectedIds.indexOf(id);
+      if(idx === -1) staged.selectedIds.push(id); else staged.selectedIds.splice(idx, 1);
+      renderStagedCharacterChips();
+    });
+
+    document.getElementById('char-mode-row').addEventListener('click', function(e){
+      var btn = e.target.closest('.char-mode-btn');
+      if(btn) setCharSubMode(btn.dataset.charMode);
+    });
+    document.getElementById('char-photo-pick-btn').addEventListener('click', function(){
+      document.getElementById('char-photo-input').click();
+    });
+    document.getElementById('char-photo-input').addEventListener('change', function(e){
+      var file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if(!file) return;
+      document.getElementById('char-error').textContent = '';
+      resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+        charPendingPhotoDataUrl = dataUrl;
+        renderCharPhotoPreview();
+      }).catch(function(){
+        document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
+      });
+    });
+    document.getElementById('char-photo-remove').addEventListener('click', function(){
+      charPendingPhotoDataUrl = null;
+      renderCharPhotoPreview();
+    });
+
+    document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
+    document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
+      if(e.target.id === 'sheet-character-overlay') closeCharSheet();
+    });
+    document.getElementById('char-save-btn').addEventListener('click', function(){
+      var mode = document.getElementById('char-desc-input').dataset.mode;
+      var usingPhoto = mode === 'self' && charSubMode === 'photo';
+      var result = localSaveCharacter({
+        id: charEditingId,
+        isSelf: mode === 'self',
+        name: document.getElementById('char-name-input').value,
+        description: usingPhoto ? '' : document.getElementById('char-desc-input').value,
+        photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : null
+      });
+      if(!result.ok){
+        document.getElementById('char-error').textContent = result.error;
+        return;
+      }
+      if(mode !== 'self' && staged.selectedIds.indexOf(result.character.id) === -1){
+        staged.selectedIds.push(result.character.id);
+      }
+      // Same intent as create.html's autoSelectSelfIfMentioned, just
+      // triggered here at save time — "Me" doesn't exist as a character
+      // until this screen, unlike create.html where it may already exist.
+      if(mode === 'self' && /\b(i|me)\b/i.test(DreamStore.getDraft().caption || '') && staged.selectedIds.indexOf(result.character.id) === -1){
+        staged.selectedIds.push(result.character.id);
+      }
+      closeCharSheet();
+      renderStagedCharacterChips();
+    });
+    document.getElementById('char-delete-link').addEventListener('click', function(){
+      if(!charEditingId) return;
+      if(!confirm('Delete this character?')) return;
+      localDeleteCharacter(charEditingId);
+      closeCharSheet();
+      renderStagedCharacterChips();
+    });
+
+    function renderCameraChips(){
+      var selected = DreamStore.getDraft().cameraView;
+      Array.prototype.forEach.call(document.querySelectorAll('#camera-chip-row .opt-chip'), function(chipEl){
+        chipEl.classList.toggle('selected', chipEl.dataset.camera === selected);
+      });
+    }
+    document.getElementById('camera-chip-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      var val = chip.dataset.camera;
+      var current = DreamStore.getDraft().cameraView;
+      DreamStore.setDraft({ cameraView: current === val ? null : val });
+      renderCameraChips();
+    });
+
+    function renderSceneryChips(){
+      var draft = DreamStore.getDraft();
+      Array.prototype.forEach.call(document.querySelectorAll('#scenery-time-row .opt-chip'), function(chipEl){
+        chipEl.classList.toggle('selected', chipEl.dataset.sceneryTime === draft.sceneryTime);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#scenery-place-row .opt-chip'), function(chipEl){
+        chipEl.classList.toggle('selected', chipEl.dataset.sceneryPlace === draft.sceneryPlace);
+      });
+    }
+    document.getElementById('scenery-time-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      var val = chip.dataset.sceneryTime;
+      var current = DreamStore.getDraft().sceneryTime;
+      DreamStore.setDraft({ sceneryTime: current === val ? null : val });
+      renderSceneryChips();
+    });
+    document.getElementById('scenery-place-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      var val = chip.dataset.sceneryPlace;
+      var current = DreamStore.getDraft().sceneryPlace;
+      DreamStore.setDraft({ sceneryPlace: current === val ? null : val });
+      renderSceneryChips();
+    });
+
+    renderStagedCharacterChips();
+    renderCameraChips();
+    renderSceneryChips();
+
+    document.getElementById('fn-s9-continue').addEventListener('click', next);
+    document.getElementById('fn-s9-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 10 — Style pick (real 4 styles/backgrounds, matching
+  // style.html's DreamStore.setDraft pattern)
+  // ===================================================================
+  var STYLE_OPTIONS = ['Cartoon', 'Cinematic', 'Anime', 'Realistic'];
+  function renderScreen10(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Almost ready</div>' +
+      '<div class="fn-headline">Choose a visual style.</div>' +
+      '<div class="style-grid" id="fn-style-grid">' + STYLE_OPTIONS.map(function(s){
+        var sel = chosenStyle === s;
+        return '<div class="style-card' + (sel ? ' selected' : '') + '" data-style="' + s + '">' +
+          '<div class="sc-bg sc-' + s.toLowerCase() + '"></div>' +
+          '<div class="sc-overlay"></div>' +
+          '<div class="sc-check">' + Icons.check + '</div>' +
+          '<div class="sc-content"><div class="sc-icon">' + Icons.palette + '</div><div class="sc-name">' + s + '</div></div>' +
+        '</div>';
+      }).join('') + '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s10-continue" type="button"' + (chosenStyle ? '' : ' disabled') + '>Continue</button>';
+
+    document.getElementById('fn-style-grid').addEventListener('click', function(e){
+      var card = e.target.closest('.style-card');
+      if(!card) return;
+      chosenStyle = card.dataset.style;
+      renderScreen10(el);
+    });
+    document.getElementById('fn-s10-continue').addEventListener('click', function(){
+      DreamStore.setDraft({ style: chosenStyle });
+      next();
+    });
+  }
+
+  // ===================================================================
+  // Screen 11 — Preparing / transition. Copy deliberately stops short of
+  // claiming generation has started — nothing has been generated yet.
+  // ===================================================================
+  var prepTimer = null;
+  function renderScreen11(el){
+    el.innerHTML =
+      '<div class="fn-spacer"></div>' +
+      '<div class="fn-spin"></div>' +
+      '<div class="fn-loading-line" style="color:var(--phase-ink, var(--fn-ink)); font-weight:700;">Your dream is coming together&hellip;</div>' +
+      '<div class="fn-loading-line">We’ll bring it to life the moment you’re set up.</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s11-continue" type="button">Continue</button>';
+    var thisStep = cur;
+    document.getElementById('fn-s11-continue').addEventListener('click', function(){
+      clearTimeout(prepTimer);
+      next();
+    });
+    clearTimeout(prepTimer);
+    prepTimer = setTimeout(function(){ if(cur === thisStep) next(); }, 2200);
+  }
+
+  // ===================================================================
+  // Screen 12 — Dream Profile recap
+  // ===================================================================
+  var RECALL_LABELS = { never:'Never — they slip away fast', sometimes:'Sometimes, in flashes', vividly:'Vividly, most nights' };
+  function recapItem(k, v){
+    return '<div class="fn-recap-item"><span class="k">' + esc(k) + '</span><span class="v">' + esc(v) + '</span></div>';
+  }
+  function formatList(arr, fallback){ return arr.length ? arr.join(', ') : fallback; }
+  function renderScreen12(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Your Dream Profile</div>' +
+      '<div class="fn-headline" style="font-size:21px;">Here’s what we’ll build your first dream around.</div>' +
+      '<div class="fn-recap-card" style="margin-top:10px;">' +
+        '<div class="fn-recap-card-inner">' +
+          recapItem('Recall', quiz.recall ? RECALL_LABELS[quiz.recall] : 'Not sure yet') +
+          recapItem('Common themes', formatList(quiz.dreamTypes, 'Still exploring')) +
+          recapItem("Why you're here", formatList(quiz.motivations, 'Just curious')) +
+          recapItem('Style', chosenStyle || 'Not chosen yet') +
+        '</div>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s12-continue" type="button">Continue</button>';
+    document.getElementById('fn-s12-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Screen 13 — Email capture. Username is derived automatically from the
+  // email's local part (never asked of the visitor) per the task spec.
+  // ===================================================================
+  function deriveUsernameBase(email){
+    var local = (email.split('@')[0] || '').toLowerCase();
+    var sanitized = local.replace(/[^a-z0-9]/g, '');
+    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
+    return sanitized.slice(0, 20) || 'dreamer';
+  }
+  function attemptSignup(email, password, cb){
+    var base = deriveUsernameBase(email);
+    var attempts = 0;
+    var MAX_ATTEMPTS = 8;
+    function tryUsername(username){
+      var result = DreamStore.signup(username, password, email);
+      if(result.ok){ cb(true, null); return; }
+      if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
+        attempts++;
+        var suffix = Math.floor(1000 + Math.random() * 9000);
+        tryUsername(base + suffix);
+        return;
+      }
+      cb(false, result.error);
+    }
+    tryUsername(base);
+  }
+  function renderScreen13(el){
+    el.innerHTML =
+      '<div class="fn-headline">Where should we send your first dream?</div>' +
+      '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:14px;">' +
+      '<div class="fn-field-pw-wrap">' +
+        '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
+        '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
+      '</div>' +
+      '<div class="fn-err-text" id="fn-signup-error"></div>' +
+      '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
+      '<div class="fn-btn-row">' +
+        '<div class="fn-btn-ghost disabled" aria-disabled="true">Continue with Apple &middot; coming soon</div>' +
+        '<div class="fn-btn-ghost disabled" aria-disabled="true">Continue with Google &middot; coming soon</div>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>';
+
+    var pwToggle = document.getElementById('fn-pw-toggle');
+    var pwInput = document.getElementById('fn-password');
+    pwToggle.innerHTML = Icons.eye;
+    pwToggle.addEventListener('click', function(){
+      var showing = pwInput.type === 'text';
+      pwInput.type = showing ? 'password' : 'text';
+      pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+      pwToggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    });
+
+    var continueBtn = document.getElementById('fn-s13-continue');
+    var errEl = document.getElementById('fn-signup-error');
+    continueBtn.addEventListener('click', function(){
+      var email = document.getElementById('fn-email').value.trim();
+      var password = pwInput.value;
+      errEl.textContent = '';
+      if(!email){ errEl.textContent = 'Enter your email address.'; return; }
+      if(!password){ errEl.textContent = 'Enter a password.'; return; }
+      continueBtn.disabled = true;
+      continueBtn.textContent = 'Creating your account…';
+      // Yields to a frame so the disabled/label state above actually paints
+      // before signup (synchronous) runs — same 0ms-defer trick, applied
+      // here instead of login.html's setTimeout(...,450) since there's no
+      // artificial delay to justify here (signup is instant, local-only).
+      setTimeout(function(){
+        attemptSignup(email, password, function(ok, err){
+          if(!ok){
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue';
+            errEl.textContent = err;
+            return;
+          }
+          flushStagedCharactersToStore();
+          next();
+        });
+      }, 0);
+    });
+  }
+
+  // ===================================================================
+  // Screen 14 — Pricing / paywall
+  // ===================================================================
+  var MOTIVATION_HEADLINES = {
+    'Capture dreams before they fade': 'Never lose a dream again.',
+    'Turn them into videos': 'See your dreams, not just remember them.',
+    'Process a recurring dream': 'Finally make sense of the dream that keeps coming back.',
+    'Keep them forever': 'Every dream, kept forever.',
+    'Watch dreams of other people': "Yours — and everyone else's — waiting to be seen.",
+    'Share with friends': 'Dreams worth sharing.'
+  };
+  function renderScreen14(el){
+    var primaryMotivation = quiz.motivations[0] || null;
+    var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
+    el.innerHTML =
+      '<button class="fn-pricing-close" id="fn-pricing-close" type="button" aria-label="Close">' + Icons.close + '</button>' +
+      '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
+      '<div class="fn-headline" style="font-size:21px;">' + esc(headline) + '</div>' +
+      '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>12,400+ dreams brought to life this month</span></div>' +
+      '<div class="fn-price-card best"><span class="tag">Best value</span>' +
+        '<div class="row"><span class="plan">Yearly</span><span class="amt">$5.00/mo</span></div>' +
+        '<div class="sub">billed as $59.99/year</div>' +
+      '</div>' +
+      '<div class="fn-price-card">' +
+        '<div class="row"><span class="plan">Monthly</span><span class="amt">$9.99/mo</span></div>' +
+        '<div class="sub">billed monthly, cancel anytime</div>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue to payment</button>';
+
+    document.getElementById('fn-pricing-close').addEventListener('click', proceedPastPricing);
+    document.getElementById('fn-s14-continue').addEventListener('click', proceedPastPricing);
+  }
+
+  // ============================================================================
+  // TEMPORARY PAYWALL BYPASS — READ BEFORE TOUCHING
+  // ----------------------------------------------------------------------------
+  // No payment provider has been chosen yet (still under discussion — see
+  // payment-providers-israel.md / rapyd-vs-payoneer.md in the research folder;
+  // that's a human/vendor decision, not something a build pass makes). Both the
+  // X (dismiss) button and "Continue to payment" call this SAME function, which
+  // just advances to the confirmation screen with no charge — mirroring
+  // generate-video.js's own PAYWALL_ENABLED=false default. This is NOT a
+  // finished checkout integration. Replace this function's body with a real
+  // netlify/functions/create-checkout-session.js call the moment a provider is
+  // picked. Do not mistake this for done, and do not build the real checkout
+  // call here without that human decision having happened first.
+  // ============================================================================
+  function proceedPastPricing(){
+    track('funnel_pricing_bypassed', { step: 14 });
+    next();
+  }
+
+  // ===================================================================
+  // Screen 15 — Confirmation, then real handoff to processing.html
+  // ===================================================================
+  function renderScreen15(el){
+    el.innerHTML =
+      '<div class="fn-spacer"></div>' +
+      '<div class="fn-check-badge">&#10003;</div>' +
+      '<div class="fn-headline" style="text-align:center; color:#fff; font-size:23px;">' + "You're in. Building your first dream now." + '</div>' +
+      '<div class="fn-body-copy" style="text-align:center; color:rgba(255,255,255,.7);">This is DreamTube — quiet and dark, like the room you just woke up in.</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-s15-continue" type="button">Watch it happen</button>';
+    document.getElementById('fn-s15-continue').addEventListener('click', completeFunnel);
+  }
+  function completeFunnel(){
+    track('funnel_completed', {
+      style: chosenStyle,
+      recall: quiz.recall,
+      dream_types: quiz.dreamTypes,
+      motivations: quiz.motivations
+    });
+    location.href = 'processing.html';
+  }
+
+  // ===================================================================
+  // Navigation / phase engine
+  // ===================================================================
+  var SCREEN_RENDERERS = [renderScreen1, renderScreen2, renderScreen3, renderScreen4, renderScreen5, renderScreen6, renderScreen7, renderScreen8, renderScreen9, renderScreen10, renderScreen11, renderScreen12, renderScreen13, renderScreen14, renderScreen15];
+
+  function renderProgress(){
+    var dots = '';
+    for(var i = 0; i < SCREEN_RENDERERS.length; i++){
+      dots += '<i class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '"></i>';
+    }
+    progressEl.innerHTML = dots;
+  }
+
+  function applyPhase(stepIndex){
+    var key = PHASE_BY_STEP[stepIndex];
+    if(key === 'app-dark'){
+      appEl.style.background = '';
+      ['--phase-ink', '--phase-soft', '--phase-faint', '--phase-card', '--phase-line'].forEach(function(v){ appEl.style.removeProperty(v); });
+      appEl.classList.add('fn-dark-mode');
+      appEl.classList.remove('fn-phase-night');
+      return;
+    }
+    appEl.classList.remove('fn-dark-mode');
+    appEl.classList.toggle('fn-phase-night', key === 'night');
+    var p = PHASES[key];
+    appEl.style.background = p.grad;
+    appEl.style.setProperty('--phase-ink', p.ink);
+    appEl.style.setProperty('--phase-soft', p.soft);
+    appEl.style.setProperty('--phase-faint', p.faint);
+    appEl.style.setProperty('--phase-card', p.card);
+    appEl.style.setProperty('--phase-line', p.line);
+  }
+
+  function render(){
+    SCREEN_RENDERERS[cur](screenEl);
+    applyPhase(cur);
+    renderProgress();
+    screenEl.scrollTop = 0;
+    window.scrollTo(0, 0);
+    track('funnel_step_viewed', { step: cur + 1, screen: TAGS[cur] });
+  }
+
+  function goToStep(n){
+    if(n < 0 || n >= SCREEN_RENDERERS.length) return;
+    cur = n;
+    render();
+  }
+  function next(){ goToStep(cur + 1); }
+  function prev(){
+    if(cur > 0) goToStep(cur - 1);
+    else location.href = 'index.html';
+  }
+  backBtn.addEventListener('click', prev);
+
+  // Fresh entry point for brand-new visitors — make sure no stale draft
+  // from a previous/abandoned session leaks into this one (mirrors
+  // create.html's own clean-slate behavior for non-restore visits).
+  DreamStore.clearDraft();
+  render();
+})();
+</script>
+</body>
+</html>
