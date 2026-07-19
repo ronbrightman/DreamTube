@@ -67,6 +67,14 @@
 
     plus: svg('<path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'),
 
-    userPlus: svg('<circle cx="9" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M2 20c0-4 3.1-6 7-6s7 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 8v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 11h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    userPlus: svg('<circle cx="9" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M2 20c0-4 3.1-6 7-6s7 2 7 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 8v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 11h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    eye: svg('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" fill="none"/>'),
+
+    eyeOff: svg('<path d="M17.94 17.94A10.94 10.94 0 0112 20c-7 0-11-8-11-8a20.3 20.3 0 015.06-5.94M9.9 4.24A10.4 10.4 0 0112 4c7 0 11 8 11 8a20.3 20.3 0 01-3.22 4.44" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M14.12 14.12a3 3 0 11-4.24-4.24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M1 1l22 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    lock: svg('<rect x="4" y="11" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M7 11V7a5 5 0 0110 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'),
+
+    mail: svg('<rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M2 6l10 7 10-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
   };
 })();

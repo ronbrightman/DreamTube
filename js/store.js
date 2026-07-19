@@ -5,8 +5,10 @@
 // Every method is written to mirror a real REST call; swap the body for a fetch()
 // when a real backend exists and nothing on any page needs to change.
 //
-//   signup(username,password) -> POST /api/auth/signup
-//   login(username,password)  -> POST /api/auth/login
+//   signup(username,password,email) -> POST /api/auth/signup
+//   login(usernameOrEmail,password)  -> POST /api/auth/login
+//   findAccountByEmail(email)  -> local-only lookup, backs the forgot-password flow
+//   resetPasswordLocally(username,newPassword) -> applies a server-verified reset locally
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
@@ -97,6 +99,19 @@
       changed = true;
     }
 
+    // Accounts used to be `{ key: password }`. Password reset needs an
+    // email on file, so accounts are now `{ key: { password, email } }` —
+    // upgrade any old plain-string entries in place (email starts unset;
+    // there's no way to recover it, the account just can't use reset until
+    // the user knows to... there's no re-entry path for that today, but it
+    // doesn't break login/signup for existing accounts either way).
+    Object.keys(s.accounts || {}).forEach(function (key) {
+      if (typeof s.accounts[key] === 'string') {
+        s.accounts[key] = { password: s.accounts[key], email: null };
+        changed = true;
+      }
+    });
+
     return changed;
   }
 
@@ -127,6 +142,18 @@
 
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable, e.g. private mode — state still works for this page load */ }
+  }
+
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function findAccountKeyByEmail(email) {
+    var target = (email || '').trim().toLowerCase();
+    if (!target) return null;
+    var keys = Object.keys(state.accounts);
+    for (var i = 0; i < keys.length; i++) {
+      var acct = state.accounts[keys[i]];
+      if (acct && acct.email && acct.email.toLowerCase() === target) return keys[i];
+    }
+    return null;
   }
 
   function newId() { return 'd' + Math.random().toString(36).slice(2, 9); }
@@ -357,27 +384,67 @@
     getCurrentUser: function () { return state.user; },
 
     /** Creates an account. Returns { ok:true, user } or { ok:false, error }. */
-    signup: function (username, password) {
+    signup: function (username, password, email) {
       username = (username || '').trim();
       var key = username.toLowerCase();
+      email = (email || '').trim();
       if (username.length < 3) return { ok: false, error: 'Username must be at least 3 characters.' };
       if (!password) return { ok: false, error: 'Enter a password.' };
+      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
       if (state.accounts[key]) return { ok: false, error: 'That username is already taken.' };
-      state.accounts[key] = password;
+      if (findAccountKeyByEmail(email)) return { ok: false, error: 'An account with that email already exists.' };
+      state.accounts[key] = { password: password, email: email.toLowerCase() };
       state.user = { handle: '@' + username, username: username };
       persist();
       return { ok: true, user: state.user };
     },
 
-    /** Logs in with an existing account. Returns { ok:true, user } or { ok:false, error }. */
-    login: function (username, password) {
-      username = (username || '').trim();
-      var key = username.toLowerCase();
-      if (!state.accounts[key]) return { ok: false, error: 'No account found with that username.' };
-      if (state.accounts[key] !== password) return { ok: false, error: 'Incorrect password.' };
+    /** Logs in with an existing account, identified by username OR email. Returns { ok:true, user } or { ok:false, error }. */
+    login: function (usernameOrEmail, password) {
+      usernameOrEmail = (usernameOrEmail || '').trim();
+      var key = usernameOrEmail.toLowerCase();
+      var loggedInViaEmail = false;
+      if (!state.accounts[key]) {
+        var emailKey = findAccountKeyByEmail(usernameOrEmail);
+        if (emailKey) { key = emailKey; loggedInViaEmail = true; }
+      }
+      var account = state.accounts[key];
+      if (!account) return { ok: false, error: 'No account found with that username or email.' };
+      if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
+      // Accounts don't store a canonical-case username, only the lowercase
+      // key — when matched via email there's no original casing to recover,
+      // so the key itself is used as the display name in that case.
+      var username = loggedInViaEmail ? key : usernameOrEmail;
       state.user = { handle: '@' + username, username: username };
       persist();
       return { ok: true, user: state.user };
+    },
+
+    /**
+     * True if this browser has a locally-stored account for the given
+     * email — used client-side to decide whether a password-reset request
+     * is even worth sending, since the server has no account store of its
+     * own to check against (accounts live only in localStorage).
+     */
+    findAccountByEmail: function (email) {
+      var key = findAccountKeyByEmail(email);
+      return key ? { username: key, email: state.accounts[key].email } : null;
+    },
+
+    /**
+     * Applies a new password to a locally-known account after its reset
+     * token has been verified server-side (see request/verify-password-reset
+     * functions). Only succeeds on the same browser the account was created
+     * in — there's no server-side account record to fall back to for a
+     * cross-device reset. Returns { ok:true } or { ok:false, error }.
+     */
+    resetPasswordLocally: function (username, newPassword) {
+      var key = (username || '').trim().toLowerCase();
+      if (!state.accounts[key]) return { ok: false, error: 'account_not_found_on_this_device' };
+      if (!newPassword) return { ok: false, error: 'Enter a new password.' };
+      state.accounts[key].password = newPassword;
+      persist();
+      return { ok: true };
     },
 
     logout: function () { state.user = null; persist(); },
