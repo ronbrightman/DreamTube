@@ -307,22 +307,52 @@ async function callVeoDirect(prompt, apiKey) {
 //   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
 //   E106 fal rejected the reference-to-video submission (same causes, self-photo path)
 //   E107 couldn't reach fal at all (network failure before any response came back)
-//   E108 payment_required          — PAYWALL_ENABLED==="true" and the request's email has no
-//                                     active entitlement (or no email at all). See
-//                                     docs/PAYWALL_SETUP.md — PAYWALL_ENABLED defaults to unset/
-//                                     off, so this never fires until a human explicitly turns the
-//                                     paywall on after standing up real Stripe checkout in front
-//                                     of users. THIS MUST STAY DEFAULT-OFF: flipping it on without
-//                                     a checkout funnel in place blocks every user from generating.
+//   E108 payment_required          — the effective paywall state (see "Paywall on/off" below) is
+//                                     enabled and the request's email has no active entitlement
+//                                     (or no email at all) — and the request isn't the owner (see
+//                                     "Owner bypass" below). See docs/PAYWALL_SETUP.md —
+//                                     PAYWALL_ENABLED defaults to unset/off, so this never fires
+//                                     until a human explicitly turns the paywall on (via the env
+//                                     var or the in-product admin toggle) after standing up real
+//                                     Stripe checkout in front of users. THIS MUST STAY DEFAULT-OFF:
+//                                     flipping it on without a checkout funnel in place blocks every
+//                                     user from generating.
 //   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
-//                                     exceeded for today. Active regardless of PAYWALL_ENABLED —
-//                                     this endpoint had zero abuse protection before this existed.
+//                                     exceeded for today. Active regardless of paywall state,
+//                                     including for the owner — this endpoint had zero abuse
+//                                     protection before this existed, and these are cost/abuse
+//                                     safety nets, not payment gating.
 //   E110 daily_spend_cap_exceeded  — DAILY_SPEND_CAP_USD circuit breaker tripped for today.
-//                                     Active regardless of PAYWALL_ENABLED — a backstop against
-//                                     runaway cost, not a replacement for E109's rate limiting.
+//                                     Active regardless of paywall state, including for the owner —
+//                                     a backstop against runaway cost, not a replacement for E109's
+//                                     rate limiting or something the paywall toggle should ever gate.
+//
+// Paywall on/off — two ways it can be controlled, checked in this order:
+//   1. An in-product override, written via admin-paywall-toggle.js into the
+//      "dreamtube-settings" Blobs store (see lib/paywall-settings.js) —
+//      lets the founder flip the paywall from inside the product itself,
+//      without touching Netlify's dashboard or redeploying. If this has
+//      ever been set in this environment, it wins outright (true or
+//      false), regardless of PAYWALL_ENABLED below.
+//   2. If no override has ever been written, falls back to the
+//      PAYWALL_ENABLED==="true" env var exactly as before the override
+//      existed (default unset/off — see docs/PAYWALL_SETUP.md).
+//
+// Owner bypass — regardless of the paywall state above, a request whose
+// (normalized) email matches OWNER_EMAIL skips the entitlement check
+// entirely, so the founder can always test the live product without
+// needing an active Stripe subscription of their own. This is intentional,
+// not a bug to "fix" by removing it: OWNER_EMAIL is a single, founder-
+// controlled env var (not client-writable — a request merely *claims* an
+// email, same as every other identity check in this codebase, e.g.
+// js/store.js's account model), and the bypass only ever skips the
+// *entitlement* check — E109's rate limit and E110's spend cap above still
+// apply to the owner exactly like everyone else, since those exist to cap
+// real infra cost, not to gate payment.
 var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
+var paywallSettings = require('./lib/paywall-settings');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -371,13 +401,19 @@ exports.handler = async function (event) {
     }
   }
 
-  if (process.env.PAYWALL_ENABLED === 'true') {
-    if (!email) {
-      return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: sign in with the email you subscribed with' }) };
-    }
-    var entitled = await entitlements.isEntitled(event, email);
-    if (!entitled) {
-      return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: an active subscription is required to generate videos' }) };
+  var ownerEmail = entitlements.normalizeEmail(process.env.OWNER_EMAIL);
+  var isOwner = !!(ownerEmail && email && email === ownerEmail);
+
+  if (!isOwner) {
+    var paywallState = await paywallSettings.isPaywallEnabled(event);
+    if (paywallState.enabled) {
+      if (!email) {
+        return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: sign in with the email you subscribed with' }) };
+      }
+      var entitled = await entitlements.isEntitled(event, email);
+      if (!entitled) {
+        return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: an active subscription is required to generate videos' }) };
+      }
     }
   }
 

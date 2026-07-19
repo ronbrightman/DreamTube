@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Admin — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <a class="icon-btn" id="admin-back" href="profile.html"></a>
+    <div class="topbar-logo" style="font-size:16px;">Admin</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <div class="px" style="flex:1;">
+    <!-- Shown while the current account's email hasn't been confirmed as
+         OWNER_EMAIL yet, and left showing (in place of the controls below)
+         if it never matches. This is a client-side UX check only — real
+         enforcement is server-side in admin-paywall-toggle.js, which
+         independently re-verifies the email on every write. -->
+    <div id="admin-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+      <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="admin-unauthorized-icon"></div>
+      <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+    </div>
+
+    <div id="admin-content" style="display:none;">
+      <div class="section-label" style="padding:0;">Paywall</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px;">
+        <div class="choice-icon" id="admin-paywall-icon"></div>
+        <div class="choice-text">
+          <div class="choice-title" id="admin-paywall-title">Paywall</div>
+          <div class="admin-row-sub" id="admin-paywall-sub">Checking current state…</div>
+          <div class="admin-source-tag" id="admin-paywall-source"></div>
+        </div>
+        <div class="toggle-switch disabled" id="admin-paywall-toggle" role="switch" aria-checked="false" aria-label="Paywall enabled"></div>
+      </div>
+      <div class="err-text" id="admin-error" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script>
+  document.getElementById('admin-back').innerHTML = Icons.back;
+  document.getElementById('admin-unauthorized-icon').innerHTML = Icons.lock;
+  document.getElementById('admin-paywall-icon').innerHTML = Icons.lock;
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=admin.html'; }
+
+  var email = DreamStore.getAccountEmail();
+  var unauthorizedEl = document.getElementById('admin-unauthorized');
+  var contentEl = document.getElementById('admin-content');
+  var toggleEl = document.getElementById('admin-paywall-toggle');
+  var subEl = document.getElementById('admin-paywall-sub');
+  var sourceEl = document.getElementById('admin-paywall-source');
+  var errorEl = document.getElementById('admin-error');
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    contentEl.style.display = 'none';
+  }
+
+  function renderState(state) {
+    var enabled = !!state.enabled;
+    toggleEl.classList.toggle('on', enabled);
+    toggleEl.setAttribute('aria-checked', String(enabled));
+    subEl.textContent = enabled
+      ? 'On — generation requires an active subscription (except the owner).'
+      : 'Off — generation is open to everyone, same as before the paywall existed.';
+    sourceEl.textContent = state.source === 'override'
+      ? 'Set from this page (overrides the PAYWALL_ENABLED env var).'
+      : 'Following PAYWALL_ENABLED env var (no in-product override set yet).';
+  }
+
+  if (!email) {
+    // Logged in, but this account has no email on file at all — can never
+    // match OWNER_EMAIL, so there's no point calling the function.
+    showUnauthorized();
+  } else {
+    fetch('/.netlify/functions/admin-paywall-toggle?email=' + encodeURIComponent(email))
+      .then(function (res) { return res.json(); })
+      .then(function (state) {
+        if (!state.isOwner) { showUnauthorized(); return; }
+        contentEl.style.display = 'block';
+        toggleEl.classList.remove('disabled');
+        renderState(state);
+      })
+      .catch(function () {
+        // Fails closed — same visible result as not being the owner,
+        // rather than a broken half-rendered admin page.
+        showUnauthorized();
+      });
+  }
+
+  toggleEl.addEventListener('click', function () {
+    if (toggleEl.classList.contains('disabled')) return;
+    var next = !toggleEl.classList.contains('on');
+    toggleEl.classList.add('disabled');
+    errorEl.textContent = '';
+
+    fetch('/.netlify/functions/admin-paywall-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next, email: email })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        toggleEl.classList.remove('disabled');
+        if (!result.ok) {
+          errorEl.textContent = "Couldn't update the paywall — try again.";
+          return;
+        }
+        renderState(result.data);
+      })
+      .catch(function () {
+        toggleEl.classList.remove('disabled');
+        errorEl.textContent = "Couldn't reach the server — check your connection and try again.";
+      });
+  });
+</script>
+</body>
+</html>
