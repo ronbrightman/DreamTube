@@ -1,7 +1,11 @@
 {
   "name": "dreamtube-mpa",
   "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "dependencies": {
-    "@netlify/blobs": "^8.1.0"
+    "@netlify/blobs": "^8.1.0",
+    "stripe": "^22.3.2"
   }
 }
