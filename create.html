@@ -32,7 +32,7 @@
     <div class="rec-error" id="select-error" style="display:none;"></div>
   </div>
 
-  <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto;">
+  <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto; min-height:0;">
     <textarea class="field" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
     <div class="char-count" id="char-count">0 characters</div>
 
@@ -141,7 +141,13 @@
 
   // ===== Advanced: characters =====
   document.getElementById('adv-toggle').addEventListener('click', function(){
-    document.getElementById('adv-section').classList.toggle('open');
+    var open = document.getElementById('adv-section').classList.toggle('open');
+    // Shrinks the dream textarea to reclaim vertical space while Advanced
+    // is expanded — see the matching CSS rule for why this matters on
+    // desktop specifically (the "phone card" layout there caps #app's
+    // height with overflow:hidden, so without freeing up room the
+    // Continue button can end up clipped below the visible area).
+    writeEl.classList.toggle('adv-open', open);
   });
 
   // The Advanced block (Characters/Camera/Scenery) is a single DOM node
