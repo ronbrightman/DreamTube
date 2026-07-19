@@ -440,7 +440,27 @@
     charCount.textContent = n + ' character' + (n===1?'':'s');
     writeContinue.disabled = n < 8;
   }
-  textArea.addEventListener('input', updateCharCount);
+
+  // Whenever the dream text refers to the dreamer in first person, make sure
+  // the saved "Me" character (if one exists) is actually included, rather
+  // than relying on remembering to tap its chip every time — otherwise "I"/
+  // "me" in the caption has no guaranteed link to the same self-character
+  // across different dreams, defeating the point of saving one.
+  var FIRST_PERSON_RE = /\b(i|me)\b/i;
+  function autoSelectSelfIfMentioned(captionText){
+    if(!FIRST_PERSON_RE.test(captionText)) return;
+    var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
+    if(!self) return;
+    var selectedIds = DreamStore.getDraft().characterIds || [];
+    if(selectedIds.indexOf(self.id) !== -1) return;
+    DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });
+    renderCharacterChips();
+  }
+
+  textArea.addEventListener('input', function(){
+    updateCharCount();
+    autoSelectSelfIfMentioned(textArea.value);
+  });
 
   document.getElementById('choice-write').addEventListener('click', function(){
     moveAdvSectionTo('create-write', 'write-spacer');
@@ -605,6 +625,10 @@
       return pollTranscribeStatus(result.data.operationName, Date.now());
     }).then(function(transcript){
       DreamStore.setDraft({ caption: transcript, sourceDreamId: null });
+      // Record skips the Write panel entirely, so this is the only chance to
+      // link a first-person transcript ("I flew over...") to the saved self
+      // character before generation — same check as the Write textarea.
+      autoSelectSelfIfMentioned(transcript);
       location.href = 'style.html';
     }).catch(function(){
       reviewContinue.disabled = false;
