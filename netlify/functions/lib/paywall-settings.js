@@ -9,10 +9,12 @@
 // ("paywall_enabled") whose value is a plain boolean, written via
 // setJSON/read via get(..., {type:'json'}) — same small-record pattern as
 // entitlements.js / rate-limit.js / spend-guard.js, just a single
-// singleton key instead of one-per-identifier. Strong consistency is used
-// for reads (same reasoning as entitlements.js: a founder who just flipped
-// the toggle must see it take effect immediately, not up to ~60s later on
-// Blobs' default eventual-consistency edge propagation).
+// singleton key instead of one-per-identifier. Uses Blobs' default
+// eventual consistency (edge propagation up to ~60s) — strong consistency
+// was tried first (a founder flipping the toggle ideally sees it take
+// effect immediately) but threw BlobsConsistencyError unconditionally in
+// this deploy environment, taking generate-video.js down entirely; see
+// entitlements.js's comment for the same story in more detail.
 //
 // Precedence (see generate-video.js's gate for where this is consumed):
 //   1. If an override has been written here, it wins outright — true or
@@ -30,8 +32,11 @@ var { getStore, connectLambda } = require('@netlify/blobs');
 var STORE_NAME = 'dreamtube-settings';
 var KEY = 'paywall_enabled';
 
+// Eventual consistency, not strong — see entitlements.js's comment on why:
+// strong consistency threw BlobsConsistencyError unconditionally in this
+// deploy environment, taking generate-video.js down entirely.
 function store() {
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+  return getStore({ name: STORE_NAME });
 }
 
 /**

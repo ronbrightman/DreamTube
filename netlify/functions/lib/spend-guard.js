@@ -47,7 +47,10 @@ function todayKey() {
 async function checkAndReserve(event, capUsd) {
   var key = todayKey();
   connectLambda(event);
-  var store = getStore({ name: STORE_NAME, consistency: 'strong' });
+  // Eventual consistency, not strong — see entitlements.js's comment on
+  // why: strong consistency threw BlobsConsistencyError unconditionally
+  // in this deploy environment, taking generate-video.js down entirely.
+  var store = getStore({ name: STORE_NAME });
   var spent = (await store.get(key, { type: 'json' })) || 0;
 
   if (spent >= capUsd) {

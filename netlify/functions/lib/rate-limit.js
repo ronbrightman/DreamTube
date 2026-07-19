@@ -53,7 +53,10 @@ function clientIp(event) {
 async function checkAndIncrement(event, scope, identifier, limit) {
   var key = scope + ':' + todayUtc() + ':' + identifier;
   connectLambda(event);
-  var store = getStore({ name: STORE_NAME, consistency: 'strong' });
+  // Eventual consistency, not strong — see entitlements.js's comment on
+  // why: strong consistency threw BlobsConsistencyError unconditionally
+  // in this deploy environment, taking generate-video.js down entirely.
+  var store = getStore({ name: STORE_NAME });
   var count = (await store.get(key, { type: 'json' })) || 0;
 
   if (count >= limit) {

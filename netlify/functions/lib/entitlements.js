@@ -33,9 +33,16 @@
 // idempotent status (not a counter/array append), writing "active"
 // twice in either order lands on the same correct end state.
 //
-// Reads use Blobs' strong-consistency mode (Blobs defaults to eventual
-// consistency, with edge propagation up to ~60s) — a paying user must
-// never be told "not entitled" for up to a minute right after paying.
+// Reads were originally requested with Blobs' strong-consistency mode (a
+// paying user must never be told "not entitled" for up to a minute right
+// after paying) but that mode threw BlobsConsistencyError ("the
+// environment has not been configured with a 'uncachedEdgeURL' property")
+// on every single call in this deployment, taking down generate-video.js
+// entirely — not a graceful degrade, an unconditional 502 for every
+// request. Reverted to Blobs' default eventual consistency (edge
+// propagation up to ~60s) as the only thing that actually works here;
+// revisit strong consistency only after confirming it's supported in the
+// real target deploy environment, not before.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -47,7 +54,7 @@ function normalizeEmail(email) {
 }
 
 function store() {
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+  return getStore({ name: STORE_NAME });
 }
 
 /**
