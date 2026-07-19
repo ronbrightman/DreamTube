@@ -124,6 +124,11 @@
   // with ?mode=signup — the plain "Log in" link leaves it off and gets the
   // default login mode.
   var isSignup = /(?:^|[?&])mode=signup(?:&|$)/.test(location.search);
+  // Wherever the user was actually trying to go before getting bounced
+  // here (e.g. Explore's "sign up to create" nudge carries ?next=create.html)
+  // — falls back to Explore, same as before this existed.
+  var nextParam = (new RegExp('[?&]next=([^&]*)').exec(location.search) || [])[1];
+  var nextUrl = nextParam ? decodeURIComponent(nextParam) : 'explore.html';
   var heading = document.getElementById('auth-heading');
   var sub = document.getElementById('auth-sub');
   var toggle = document.getElementById('auth-toggle');
@@ -162,7 +167,7 @@
     setTimeout(function(){
       var result = isSignup ? DreamStore.signup(username, password, email) : DreamStore.login(username, password);
       if(result.ok){
-        location.href = 'explore.html';
+        location.href = nextUrl;
       } else {
         err.textContent = result.error;
         btn.disabled = false;
@@ -279,7 +284,7 @@
           return;
         }
         DreamStore.login(data.username, newPassword);
-        location.href = 'explore.html';
+        location.href = nextUrl;
       }).catch(function(){
         err.textContent = "Couldn't reset your password — check your connection and try again.";
         btn.disabled = false;

@@ -23,8 +23,19 @@
   <div class="toast" id="toast"></div>
   <div class="bottom-nav">
     <a class="nav-item active" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
-    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item" href="profile.html"><div class="nav-icon icon"></div>Profile</a>
+    <a class="nav-create" href="create.html" id="nav-create" title="Turn Your Dream Into a Video">+</a>
+    <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon icon"></div>Profile</a>
+  </div>
+
+  <div class="modal-overlay" id="modal-signup-nudge">
+    <div class="modal-card">
+      <div class="modal-title">Turn your own dreams into videos</div>
+      <div class="modal-body">Sign up free and describe (or record) a dream — DreamTube turns it into a video in minutes. Takes less than a minute to get started.</div>
+      <div class="modal-row">
+        <a class="btn btn-ghost" style="flex:1;" href="login.html" id="login-nudge-cta">Log in</a>
+        <a class="btn btn-primary" style="flex:1;" href="login.html?mode=signup" id="signup-nudge-cta">Sign up</a>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -33,12 +44,33 @@
 <script>
   // Deliberately no login gate here, unlike every other page — Explore is
   // the real shared feed now (see js/store.js's getSharedFeed), and a
-  // shared dream link needs to work for whoever opens it, logged in or not.
-  // (Tapping +Create or Profile while logged out still hits their own
-  // login gates, same as everywhere else in the app.)
+  // shared dream link needs to work for whoever opens it, logged in or not,
+  // scrolling into the rest of the feed exactly like any other visitor.
+  // Tapping +Create or Profile while logged out still needs an account
+  // (those pages' own login gates would just bounce to a bare login screen
+  // with no context), so intercept those taps here with a proper pitch for
+  // signing up instead of a silent, unexplained redirect.
   var navIcons = document.querySelectorAll('.nav-icon');
   navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
+
+  var signupNudge = document.getElementById('modal-signup-nudge');
+  var signupCta = document.getElementById('signup-nudge-cta');
+  function gateNavLink(id, dest){
+    document.getElementById(id).addEventListener('click', function(e){
+      if(DreamStore.getCurrentUser()) return;
+      e.preventDefault();
+      // Carries through to login.html so signing up from here lands back
+      // on whatever they were actually trying to do, not just Explore.
+      signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent(dest);
+      signupNudge.classList.add('open');
+    });
+  }
+  gateNavLink('nav-create', 'create.html');
+  gateNavLink('nav-profile', 'profile.html');
+  signupNudge.addEventListener('click', function(e){
+    if(e.target.id === 'modal-signup-nudge') signupNudge.classList.remove('open');
+  });
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
