@@ -1,6 +1,6 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace? }
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email? }
 // -> kicks off a video generation job and returns an operationName the
 // client can poll via video-status.js.
 //
@@ -14,6 +14,14 @@
 // cameraView is one of 'Close-up' | 'Wide shot' | 'Aerial view' | 'POV'.
 // sceneryTime is 'Day' | 'Night'; sceneryPlace is 'Urban' | 'Nature' |
 // 'Inside a house'. All optional/nullable.
+//
+// email (optional) is the logged-in account's email, if any (see
+// js/store.js's startGeneration) — sent opportunistically today. It's used
+// for two things, both gated/no-ops until explicitly turned on: a per-email
+// rate-limit bucket alongside the always-on per-IP one (see
+// netlify/functions/lib/rate-limit.js), and — only when
+// PAYWALL_ENABLED==="true" — the entitlement check itself (see
+// netlify/functions/lib/entitlements.js and docs/PAYWALL_SETUP.md).
 //
 // All of the above are folded into the prompt sent to the model (see
 // buildPrompt) but never echoed back — the caption the UI displays is
@@ -299,6 +307,23 @@ async function callVeoDirect(prompt, apiKey) {
 //   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
 //   E106 fal rejected the reference-to-video submission (same causes, self-photo path)
 //   E107 couldn't reach fal at all (network failure before any response came back)
+//   E108 payment_required          — PAYWALL_ENABLED==="true" and the request's email has no
+//                                     active entitlement (or no email at all). See
+//                                     docs/PAYWALL_SETUP.md — PAYWALL_ENABLED defaults to unset/
+//                                     off, so this never fires until a human explicitly turns the
+//                                     paywall on after standing up real Stripe checkout in front
+//                                     of users. THIS MUST STAY DEFAULT-OFF: flipping it on without
+//                                     a checkout funnel in place blocks every user from generating.
+//   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
+//                                     exceeded for today. Active regardless of PAYWALL_ENABLED —
+//                                     this endpoint had zero abuse protection before this existed.
+//   E110 daily_spend_cap_exceeded  — DAILY_SPEND_CAP_USD circuit breaker tripped for today.
+//                                     Active regardless of PAYWALL_ENABLED — a backstop against
+//                                     runaway cost, not a replacement for E109's rate limiting.
+var rateLimit = require('./lib/rate-limit');
+var spendGuard = require('./lib/spend-guard');
+var entitlements = require('./lib/entitlements');
+
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'E101: method_not_allowed' }) };
@@ -309,7 +334,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -318,12 +343,50 @@ exports.handler = async function (event) {
     cameraView = payload.cameraView || null;
     sceneryTime = payload.sceneryTime || null;
     sceneryPlace = payload.sceneryPlace || null;
+    email = entitlements.normalizeEmail(payload.email);
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
 
   if (!caption || !style) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E104: caption_and_style_required' }) };
+  }
+
+  // --- Guardrails below run regardless of PAYWALL_ENABLED (rate limiting +
+  // spend circuit breaker) or are gated by it (entitlement check) — see the
+  // E108/E109/E110 doc block above and docs/PAYWALL_SETUP.md.
+
+  var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
+
+  var ip = rateLimit.clientIp(event);
+  var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
+  if (!ipLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this network today, try again tomorrow' }) };
+  }
+  if (email) {
+    var emailLimit = await rateLimit.checkAndIncrement(event, 'email', email, maxPerDay);
+    if (!emailLimit.allowed) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this account today, try again tomorrow' }) };
+    }
+  }
+
+  if (process.env.PAYWALL_ENABLED === 'true') {
+    if (!email) {
+      return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: sign in with the email you subscribed with' }) };
+    }
+    var entitled = await entitlements.isEntitled(event, email);
+    if (!entitled) {
+      return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: an active subscription is required to generate videos' }) };
+    }
+  }
+
+  var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);
+  if (!dailyCapUsd || dailyCapUsd <= 0) dailyCapUsd = 50;
+
+  var spendCheck = await spendGuard.checkAndReserve(event, dailyCapUsd);
+  if (!spendCheck.allowed) {
+    return { statusCode: 503, body: JSON.stringify({ error: 'E110: daily_spend_cap_exceeded: generation is paused for today, try again tomorrow' }) };
   }
 
   var prompt = buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);

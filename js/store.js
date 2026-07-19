@@ -146,6 +146,14 @@
   }
 
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  /** The current user's email on file, or null — shared by getAccountEmail() and startGeneration's opportunistic email on the generate-video request (see that function for why). */
+  function currentAccountEmail() {
+    if (!state.user) return null;
+    var key = state.user.username.toLowerCase();
+    return state.accounts[key] ? state.accounts[key].email : null;
+  }
+
   function findAccountKeyByEmail(email) {
     var target = (email || '').trim().toLowerCase();
     if (!target) return null;
@@ -341,7 +349,14 @@
             caption: caption, style: style, characters: characters,
             cameraView: opts.cameraView || null,
             sceneryTime: opts.sceneryTime || null,
-            sceneryPlace: opts.sceneryPlace || null
+            sceneryPlace: opts.sceneryPlace || null,
+            // Sent opportunistically whenever the browser knows it (logged-in
+            // account with an email on file) — a no-op today (the server-side
+            // entitlement gate is off by default, see PAYWALL_ENABLED in
+            // generate-video.js), but means this call already carries what
+            // that gate needs once it's turned on, with no client change
+            // required at that point.
+            email: currentAccountEmail()
           })
         }).then(function (res) {
           return res.json().then(function (data) {
@@ -450,9 +465,7 @@
 
     /** The current user's email on file, or null — accounts created before email was required migrated with no email at all. */
     getAccountEmail: function () {
-      if (!state.user) return null;
-      var key = state.user.username.toLowerCase();
-      return state.accounts[key] ? state.accounts[key].email : null;
+      return currentAccountEmail();
     },
 
     /**
