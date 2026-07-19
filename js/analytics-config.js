@@ -29,4 +29,4 @@ var POSTHOG_KEY = 'phc_qNfAvjah7yJCsMvzDETpCWxj3wzhdRFemfdVZkFGbS7o';
 // This only matters once POSTHOG_KEY above is a real key.
 var POSTHOG_HOST = 'https://us.i.posthog.com';
 
-var META_PIXEL_ID = 'REPLACE_WITH_REAL_PIXEL_ID';
+var META_PIXEL_ID = '2464464964036457';
