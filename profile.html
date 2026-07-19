@@ -39,6 +39,26 @@
     <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
     <a class="nav-item active" href="profile.html"><div class="nav-icon icon"></div>Profile</a>
   </div>
+
+  <div class="sheet-overlay" id="sheet-account-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Account</div>
+      <input class="field" id="account-username" disabled dir="auto">
+      <input class="field" id="account-email-input" placeholder="Email" type="email" autocomplete="email" dir="auto">
+      <div class="auth-sub" id="account-email-hint" style="margin:-4px 0 14px;">Add your email so you can reset your password if you ever forget it.</div>
+      <div class="err-text" id="account-error"></div>
+      <div class="auth-notice" id="account-success" style="display:none;">
+        <span class="icon" id="account-success-icon"></span>
+        <span>Email saved.</span>
+      </div>
+      <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
+      <div style="height:8px;"></div>
+      <span class="link-text" id="account-logout-link" style="cursor:pointer; color:var(--danger);">Log out</span>
+    </div>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -125,7 +145,38 @@
   }
   render();
 
-  document.getElementById('logout-btn').addEventListener('click', function(){
+  document.getElementById('account-success-icon').innerHTML = Icons.mail;
+  var accountOverlay = document.getElementById('sheet-account-overlay');
+  function openAccountSheet(){
+    var user = DreamStore.getCurrentUser();
+    document.getElementById('account-username').value = user ? user.username : '';
+    document.getElementById('account-email-input').value = DreamStore.getAccountEmail() || '';
+    document.getElementById('account-error').textContent = '';
+    document.getElementById('account-success').style.display = 'none';
+    accountOverlay.classList.add('open');
+  }
+  function closeAccountSheet(){ accountOverlay.classList.remove('open'); }
+
+  document.getElementById('logout-btn').addEventListener('click', openAccountSheet);
+  document.getElementById('account-cancel').addEventListener('click', closeAccountSheet);
+  accountOverlay.addEventListener('click', function(e){
+    if(e.target.id === 'sheet-account-overlay') closeAccountSheet();
+  });
+
+  document.getElementById('account-save-btn').addEventListener('click', function(){
+    var email = document.getElementById('account-email-input').value;
+    var result = DreamStore.updateEmail(email);
+    var err = document.getElementById('account-error');
+    if(!result.ok){
+      err.textContent = result.error;
+      document.getElementById('account-success').style.display = 'none';
+      return;
+    }
+    err.textContent = '';
+    document.getElementById('account-success').style.display = 'flex';
+  });
+
+  document.getElementById('account-logout-link').addEventListener('click', function(){
     if(confirm('Log out of DreamTube?')){
       DreamStore.logout();
       location.href = 'index.html';

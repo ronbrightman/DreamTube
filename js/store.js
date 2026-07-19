@@ -9,6 +9,7 @@
 //   login(usernameOrEmail,password)  -> POST /api/auth/login
 //   findAccountByEmail(email)  -> local-only lookup, backs the forgot-password flow
 //   resetPasswordLocally(username,newPassword) -> applies a server-verified reset locally
+//   getAccountEmail() / updateEmail(email) -> local-only, lets an existing account gain/change its email
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
@@ -443,6 +444,31 @@
       if (!state.accounts[key]) return { ok: false, error: 'account_not_found_on_this_device' };
       if (!newPassword) return { ok: false, error: 'Enter a new password.' };
       state.accounts[key].password = newPassword;
+      persist();
+      return { ok: true };
+    },
+
+    /** The current user's email on file, or null — accounts created before email was required migrated with no email at all. */
+    getAccountEmail: function () {
+      if (!state.user) return null;
+      var key = state.user.username.toLowerCase();
+      return state.accounts[key] ? state.accounts[key].email : null;
+    },
+
+    /**
+     * Sets/changes the email on the current user's account — the only way
+     * an account that predates email (or wants to change it) can start
+     * using forgot-password, since findAccountByEmail has nothing to match
+     * without one on file. Returns { ok:true } or { ok:false, error }.
+     */
+    updateEmail: function (email) {
+      if (!state.user) return { ok: false, error: 'not_logged_in' };
+      email = (email || '').trim();
+      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
+      var key = state.user.username.toLowerCase();
+      var existingKey = findAccountKeyByEmail(email);
+      if (existingKey && existingKey !== key) return { ok: false, error: 'Another account already uses that email.' };
+      state.accounts[key].email = email.toLowerCase();
       persist();
       return { ok: true };
     },
