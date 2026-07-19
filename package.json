@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
+    "dodopayments": "^2.42.2",
     "stripe": "^22.3.2"
   }
 }

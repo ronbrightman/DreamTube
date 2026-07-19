@@ -1,13 +1,33 @@
 # Paywall setup
 
-This document covers the Stripe subscription paywall backend added in this
-branch: what it is, every new environment variable it introduces, and
-exactly what a human still has to do before any of it can go live. Read
-`AGENT_POLICY.md` for why this is written this way — creating accounts and
-choosing vendors are both human-approval items this work deliberately did
-not do.
+This document covers the subscription paywall backend: what it is, every
+environment variable it introduces, and exactly what a human still has to
+do before any of it can go live. Read `AGENT_POLICY.md` for why this is
+written this way — creating accounts and choosing vendors are both
+human-approval items this work deliberately did not do.
 
-## What this branch does and does not do
+**Two payment-provider integrations exist in this codebase side by side:**
+Stripe (added first) and Dodo Payments (added later, once the founder
+learned Israel isn't one of Stripe's supported "country of operation"
+markets for an individual/non-incorporated seller — see the founder's
+payment-provider research docs). **Dodo Payments is the currently-intended
+provider.** Its own account/underwriting approval for DreamTube's specific
+content (AI-generated video from user dream descriptions) is a separate
+step the founder is pursuing directly with Dodo — as of this writing that
+pre-approval has **not** happened yet, so neither integration is live-ready
+regardless of code completeness. The Stripe integration below remains in
+the codebase exactly as built: dormant, untouched, and not deleted, in
+case Stripe ever becomes viable again (e.g. if the founder incorporates
+elsewhere later). Both integrations write into the exact same
+`dreamtube-entitlements` Blobs store via the same `lib/entitlements.js`
+helper and the same gate in `generate-video.js` — that gate has no idea
+which provider granted an entitlement and doesn't need to.
+
+This document keeps the original Stripe section below as-is, then adds a
+parallel Dodo Payments section. Skip to "Dodo Payments setup" if that's
+what you're configuring.
+
+## Stripe: what this branch does and does not do
 
 **Does:**
 - `netlify/functions/create-checkout-session.js` — creates a Stripe
@@ -207,3 +227,153 @@ exist here. Once a human has done the setup above:
   `OWNER_EMAIL` set, confirm a `generate-video` request whose `email`
   matches `OWNER_EMAIL` succeeds with no entitlement record at all, while
   still being subject to `E109`/`E110` if those limits are hit.
+
+---
+
+## Dodo Payments setup
+
+**Dodo Payments is the currently-intended provider** (see the note at the
+top of this document for why Stripe isn't usable here). This section
+covers the Dodo-specific integration, added alongside — not in place of —
+everything above.
+
+### What this integration does and does not do
+
+**Does:**
+- `netlify/functions/create-checkout-session-dodo.js` — creates a Dodo
+  Payments Checkout Session for a subscription (`monthly` or `yearly`) and
+  returns its URL for the client to redirect to. Same request/response
+  contract as `create-checkout-session.js` (Stripe's), so a future
+  pricing/checkout UI can call whichever function is actually wired up
+  without changing its own code.
+- `netlify/functions/dodo-webhook.js` — verifies Dodo's webhook signature
+  (Standard Webhooks spec) and writes/updates an entitlement record (keyed
+  by normalized email) for every `subscription.*` lifecycle event Dodo
+  sends (`subscription.active`, `subscription.renewed`,
+  `subscription.updated`, `subscription.plan_changed`,
+  `subscription.update_payment_method`, `subscription.on_hold`,
+  `subscription.cancelled`, `subscription.expired`,
+  `subscription.failed`).
+- Both write into the **same** `dreamtube-entitlements` Blobs store via
+  the **same** `netlify/functions/lib/entitlements.js` helper Stripe's
+  integration uses — no changes were made to that file, to the
+  `generate-video.js` gate, to `rate-limit.js`, `spend-guard.js`,
+  `paywall-settings.js`, `admin-paywall-toggle.js`, or `admin.html`. All of
+  that infrastructure is provider-agnostic by design (it only asks "does
+  this normalized email have an active record in the entitlements store,"
+  never which provider wrote it) and is reused as-is.
+
+**Does not do** (explicitly out of scope, same reasoning as the Stripe
+section above):
+- Create a Dodo Payments account, product, price, or webhook endpoint. All
+  of the above is driven entirely by environment variables that **do not
+  exist yet** in any environment — this code cannot run end-to-end until a
+  human creates them (see "What a human still needs to do" below).
+- Build the pricing/checkout page UI — still not part of either
+  provider's branch.
+- Get Dodo's underwriting pre-approval for DreamTube's actual content (AI-
+  generated video from user dream descriptions). **This has not happened
+  yet.** The founder is pursuing it directly with Dodo, outside of any
+  agent's scope — per `AGENT_POLICY.md`, creating/approving vendor
+  relationships is a human action, not something a build task does. Do
+  not set `PAYWALL_ENABLED=true` (or flip the in-product toggle) against
+  real Dodo credentials until that conversation has concluded favorably.
+
+### Why the code looks slightly different from the Stripe integration
+
+Dodo's API differs from Stripe's in a few terminology/shape ways worth
+knowing before reading the code:
+- **No "Price ID" concept.** A checkout session's `product_cart`
+  references a `product_id` directly — Dodo prices live on the product
+  itself, not a separate price object.
+- **Bearer token auth**, not a Stripe-style secret key.
+- **`environment` is an explicit client option** (`'live_mode'` /
+  `'test_mode'`), not implied by a key prefix the way Stripe's is.
+- **Every `subscription.*` webhook event carries the full current
+  Subscription object** (including its own `status` field) as `data`,
+  regardless of which specific event fired. Stripe's checkout-completion
+  and subscription-update events have different shapes and have to be
+  handled as separate cases; Dodo's webhook handler instead reads
+  `data.status` directly off whichever `subscription.*` event arrived and
+  maps that status to `active`/inactive — simpler, and driven by the
+  authoritative current status rather than an event-name assumption. See
+  the header comment in `dodo-webhook.js` for the full reasoning.
+- **Signature verification follows the Standard Webhooks spec** (the same
+  spec Svix/Resend/Polar.sh use) via three headers — `webhook-id`,
+  `webhook-timestamp`, `webhook-signature` — verified here using the
+  official `dodopayments` npm SDK's `client.webhooks.unwrap()`, the direct
+  analog of Stripe's `stripe.webhooks.constructEvent()`.
+
+This was written correct-by-inspection against Dodo Payments' current
+public API docs (docs.dodopayments.com) and the current `dodopayments`
+npm package (its TypeScript source, generated from Dodo's own OpenAPI
+spec, is the most authoritative and precise source available for exact
+field names) — it could not be exercised end-to-end in this environment
+since no real Dodo credentials exist here.
+
+### Environment variables introduced by the Dodo integration
+
+| Variable | Required for | Default if unset | What it does |
+|---|---|---|---|
+| `DODO_API_KEY` | `create-checkout-session-dodo.js` (also passed to the client `dodo-webhook.js` constructs, though not required for signature verification itself) | none — function returns a clear error | Dodo's bearer-token API key. Used to create Checkout Sessions. |
+| `DODO_WEBHOOK_SECRET` | `dodo-webhook.js` | none — function returns a clear error | The signing key Dodo gives you when you register the webhook endpoint in the dashboard (`whsec_...`). Used to verify that an incoming webhook payload genuinely came from Dodo (never trust an unverified payload). |
+| `DODO_PRODUCT_MONTHLY` | `create-checkout-session-dodo.js`, `dodo-webhook.js` (to resolve which plan a subscription event is for) | none — checkout-session function returns a clear error if a `monthly` checkout is requested; webhook falls back to metadata, then leaves `plan` unresolved | The Dodo product ID (`pdt_...`) for the monthly subscription product. No amount or product ID is hardcoded anywhere in this code. |
+| `DODO_PRODUCT_YEARLY` | same as above | same as above | Same, for the yearly plan. |
+| `DODO_ENVIRONMENT` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | `live_mode` (the `dodopayments` SDK's own default) | Set to `test_mode` to point at Dodo's test environment while integrating/testing. **Deliberately defaults to `live_mode`, not `test_mode`** — same reasoning as `PAYWALL_ENABLED` defaulting off: an unset var should never silently mean "test," it should behave like production and fail loudly (missing API key, etc.) until someone deliberately configures it. |
+
+`PAYWALL_ENABLED`, `OWNER_EMAIL`, `MAX_GENERATIONS_PER_IP_PER_DAY`, and
+`DAILY_SPEND_CAP_USD` are all shared with the Stripe integration (see the
+table above) — nothing provider-specific about any of them, no new
+variables needed on that side.
+
+### What a human still needs to do (not something this branch does)
+
+Per `AGENT_POLICY.md`, creating any account or signing up for any service
+is a human-approval action an agent should not take autonomously.
+Concretely, before any of this can be turned on:
+
+1. **Complete Dodo's underwriting/pre-approval conversation for
+   DreamTube's actual content.** This is the founder's own step, already
+   in progress separately from this build task, and had not concluded as
+   of when this integration was written. Nothing below should happen
+   before it does.
+2. **Create a Dodo Payments account** (or use an existing one) for
+   DreamTube. Vendor choice was already made — see the founder's
+   payment-provider research docs — this step is just the actual account
+   creation, which nobody but the founder can do.
+3. **Create the subscription products** (monthly, yearly) in the Dodo
+   dashboard, and copy their product IDs into `DODO_PRODUCT_MONTHLY` /
+   `DODO_PRODUCT_YEARLY`.
+4. **Copy the Dodo API key** into `DODO_API_KEY`.
+5. **Register the webhook endpoint** in the Dodo dashboard, pointing at
+   `https://<your-site>/.netlify/functions/dodo-webhook`, subscribed to at
+   minimum the `subscription.*` events listed above. Copy the signing key
+   Dodo generates for that endpoint into `DODO_WEBHOOK_SECRET`.
+6. **Build the actual pricing/checkout page UI** (separate, later work —
+   not part of either provider's branch) that calls
+   `create-checkout-session-dodo.js` and redirects the browser to the
+   returned Checkout URL.
+7. Only after 1-6 are done and verified working: **set
+   `PAYWALL_ENABLED=true`**, or (once live) flip the toggle on
+   `admin.html` — exactly as described in the Stripe section above; the
+   gate doesn't distinguish providers.
+8. **Set `OWNER_EMAIL`**, if not already set from the Stripe integration —
+   it's shared, not provider-specific.
+
+### How to test this once the above exists (nothing here can be tested without it)
+
+- **Checkout session creation**: `POST` `{ email, plan: "monthly" }` (or
+  `"yearly"`) to `/.netlify/functions/create-checkout-session-dodo` and
+  confirm it returns a `url` that opens a real Dodo Checkout page for the
+  correct product.
+- **Webhook flow**: use Dodo's dashboard test-webhook feature (or a real
+  test-mode subscription against `netlify dev`) to fire a
+  `subscription.active` event and confirm a record appears in the
+  `dreamtube-entitlements` Blobs store for that email with `active: true`.
+- **Subscription sync**: cancel a test subscription and confirm
+  `subscription.cancelled` flips that email's record to `active: false`.
+- **The gate itself**: identical to the Stripe section above — the gate
+  in `generate-video.js` doesn't know or care which provider wrote the
+  entitlement record.
+- **Rate limit / spend cap / in-product toggle / owner bypass**: all
+  shared with Stripe's integration, nothing provider-specific to retest.
