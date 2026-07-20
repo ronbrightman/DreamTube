@@ -26,7 +26,19 @@
 // All of the above are folded into the prompt sent to the model (see
 // buildPrompt) but never echoed back — the caption the UI displays is
 // whatever the caller passed in and this function never alters or
-// returns it. If a self photo is present, generation routes through
+// returns it. A caption long enough that it wouldn't plausibly play out
+// within the model's fixed ~8s clip gets condensed to its strongest
+// visual moment before being folded into the prompt (see
+// lib/prompt-condenser.js's condenseIfNeeded, called just before
+// buildPrompt below) — this is the *prompt-facing* text only, same "never
+// echoed back" rule as everything else above. Narration/audio
+// (fal's `generate_audio` param — confirmed via fal.ai's model API docs,
+// not guessed) is disabled specifically when condensing actually
+// happened, since narrating a condensed version would voice words the
+// user never wrote; a short caption sent as-is (the common case) keeps
+// audio on unchanged from before this existed.
+//
+// If a self photo is present, generation routes through
 // fal's *reference-to-video* model (see callFalReferenceToVideo) with
 // that photo as a subject-identity reference, instead of the plain
 // text-to-video model — NOT image-to-video, which was the original
@@ -154,8 +166,18 @@ function resolveDuration() {
   return VALID_TEST_DURATIONS.indexOf(override) !== -1 ? override : DEFAULT_DURATION;
 }
 
-/** Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>". */
-async function callFal(prompt, falKey, duration) {
+/**
+ * Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>".
+ * generateAudio maps straight to fal's own `generate_audio` boolean
+ * (confirmed via fal.ai's model API docs, 2026-07-20 — not guessed; same
+ * param name and default (true) on both this model and the reference-to-
+ * video variant below). Defaults true (fal's own default) when the caller
+ * doesn't pass one — only generate-video.js's handler ever passes false,
+ * and only when the prompt caption was condensed (see
+ * lib/prompt-condenser.js) — narrating a condensed version would voice
+ * words the user never actually wrote.
+ */
+async function callFal(prompt, falKey, duration, generateAudio) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
     method: 'POST',
     headers: {
@@ -166,7 +188,8 @@ async function callFal(prompt, falKey, duration) {
       prompt: prompt,
       aspect_ratio: '9:16',
       duration: duration || DEFAULT_DURATION,
-      resolution: '720p'
+      resolution: '720p',
+      generate_audio: generateAudio !== false
     })
   });
 
@@ -195,7 +218,7 @@ var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
  * derives the polling path from just the first two model segments
  * ("fal-ai/veo3.1"), which is identical across every veo3.1 variant.
  */
-async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration) {
+async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, {
     method: 'POST',
     headers: {
@@ -207,7 +230,8 @@ async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration) {
       image_urls: [imageDataUrl],
       aspect_ratio: '9:16',
       duration: duration || DEFAULT_DURATION,
-      resolution: '720p'
+      resolution: '720p',
+      generate_audio: generateAudio !== false
     })
   });
 
@@ -399,6 +423,7 @@ var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var paywallSettings = require('./lib/paywall-settings');
+var promptCondenser = require('./lib/prompt-condenser');
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above. The embedded timestamp lets video-status.js resolve "done" purely from elapsed wall-clock time, with no server-side memory needed (see that file's checkMockStatus). */
 function mockOperationName() {
@@ -491,14 +516,43 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
   }
 
-  var prompt = buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
+  // Long captions get cut off mid-narrative otherwise: the model only has
+  // a fixed ~8s clip to work with (see resolveDuration above) and just
+  // renders as far as it gets before running out of time, rather than
+  // covering the whole description. condenseIfNeeded (see
+  // lib/prompt-condenser.js) leaves short captions untouched — this is a
+  // no-op, no extra cost, for the common case — and only replaces long
+  // ones with a condensed version *for the fal.ai prompt specifically*.
+  // The `caption` variable itself (and everything derived from it that
+  // isn't `prompt`) is never touched, so what the UI displays back to the
+  // user (result.html, Explore, everywhere) always stays exactly what
+  // they typed — same rule this app already applies to the Advanced/
+  // character fields never leaking into the visible caption.
+  var condensed = await promptCondenser.condenseIfNeeded(caption, process.env.GEM_API_KEY);
+  if (condensed.error) {
+    // Never fatal — falls back to the original (long) caption, same as if
+    // it had been short enough already. Logged only for operational
+    // visibility into how often this path is failing.
+    console.warn('prompt-condenser: ' + condensed.error);
+  }
+  // Narration would voice whatever the video's audio track says, and for
+  // a condensed prompt that's no longer the user's own words verbatim —
+  // there is no honest way to narrate a version of the text they didn't
+  // actually write. Only disabled when text was actually replaced
+  // (condensed.wasCondensed) — a short caption sent as-is, or a long one
+  // that failed to condense and fell back to the untouched original, both
+  // narrate the user's real words, so audio stays on for those exactly
+  // like before this change.
+  var generateAudio = !condensed.wasCondensed;
+
+  var prompt = buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace);
   var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
   var duration = resolveDuration();
 
   try {
     var result = selfPhoto
-      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration)
-      : await callFal(prompt, falKey, duration);
+      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
+      : await callFal(prompt, falKey, duration, generateAudio);
     if (!result.ok) {
       var rejectCode = selfPhoto ? 'E106' : 'E105';
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
