@@ -246,10 +246,23 @@
     // retry and loop forever, hammering the network. After that, the play
     // badge above is the fallback: a real tap that calls play() again, not
     // an automatic retry loop.
+    //
+    // load() alone doesn't resume playback here -- unlike result.html/
+    // processing.html, these videos deliberately have no autoplay
+    // attribute (see cardHTML's comment: only the IntersectionObserver
+    // above is allowed to start them, so a card never plays before it's
+    // actually the visible one). Without an explicit play() after the
+    // reload, a single transient error left the card sitting loaded-but-
+    // paused indefinitely, since the observer only calls play() again when
+    // the intersection ratio actually crosses a threshold -- which might
+    // not happen again until the visitor scrolls away and back. This was a
+    // real regression: it silently killed autoplay on any card that hit
+    // so much as a momentary network hiccup.
     v.addEventListener('error', function(){
       if(v.dataset.retried) return;
       v.dataset.retried = '1';
       v.load();
+      v.play().catch(function(){});
     });
   }
 
