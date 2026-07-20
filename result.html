@@ -240,6 +240,23 @@
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
   document.getElementById('result-back').innerHTML = Icons.back;
+  // The back button is a hardcoded link to explore.html by default, which
+  // is right for the "just finished generating" flow (processing.html
+  // redirects here directly, and there's nothing meaningful to go back
+  // to). But Profile also links into this same page for each of a user's
+  // own dreams -- and from there, "back" landing on Explore instead of
+  // Profile is a real regression from where the visitor actually came
+  // from. Redirect the button to profile.html specifically when the
+  // referrer confirms that's genuinely where this page was opened from,
+  // rather than guessing.
+  (function(){
+    try {
+      var refPath = document.referrer && new URL(document.referrer).pathname;
+      if(refPath && /\/profile\.html$/.test(refPath)) {
+        document.getElementById('result-back').href = 'profile.html';
+      }
+    } catch (e) { /* malformed/absent referrer -- keep the explore.html default */ }
+  })();
   document.getElementById('share-btn').innerHTML = Icons.share;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
@@ -586,10 +603,16 @@
     // once on error too, so a flaky connection can self-heal instead of
     // needing a tap. Only once: a permanently broken URL would otherwise
     // re-fire 'error' immediately on every retry and loop forever.
+    //
+    // Explicit play() after load(), not just relying on the autoplay
+    // attribute to retrigger on its own -- it should per spec, but making
+    // it explicit here removes any dependence on that being implemented
+    // consistently everywhere.
     video.addEventListener('error', function(){
       if(video.dataset.retried) return;
       video.dataset.retried = '1';
       video.load();
+      video.play().catch(function(){});
     });
   })();
 
