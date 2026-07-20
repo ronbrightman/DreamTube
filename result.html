@@ -520,6 +520,7 @@
     var muteBtn = document.getElementById('mute-btn');
     if(dream.videoUrl){
       video.src = dream.videoUrl;
+      delete video.dataset.retried; // new src — the one-retry-on-error budget resets
       video.style.display = 'block';
       playBadge.style.display = 'flex';
       muteBtn.style.display = 'flex';
@@ -564,12 +565,32 @@
     var playBadge = document.getElementById('result-play-badge');
     var playIcon = document.getElementById('result-play-icon');
     playIcon.innerHTML = Icons.play;
-    function syncBadge(){ playBadge.classList.toggle('hidden', !video.paused); }
     function toggle(){ if(!dream.videoUrl) return; if(video.paused) video.play(); else video.pause(); }
-    video.addEventListener('play', syncBadge);
-    video.addEventListener('pause', syncBadge);
+    // 'play' fires the instant .play() is CALLED, not once playback has
+    // actually started -- a video that's still buffering, or about to fail
+    // with a network/decode error, fires 'play' immediately, and then
+    // never fires a matching 'pause' (the silent internal reset inside
+    // load() after an error doesn't dispatch one). Syncing off 'play' hid
+    // the play badge -- the only recovery affordance -- at exactly the
+    // moment playback had actually stalled or failed, leaving the video
+    // frozen with nothing on screen to tap. 'playing' only fires once
+    // real playback has begun; 'error' explicitly un-hides the badge too,
+    // rather than relying on an event that may never come.
+    video.addEventListener('playing', function(){ playBadge.classList.add('hidden'); });
+    video.addEventListener('pause', function(){ playBadge.classList.remove('hidden'); });
+    video.addEventListener('error', function(){ playBadge.classList.remove('hidden'); });
     video.addEventListener('click', toggle);
     playBadge.addEventListener('click', toggle);
+    // A transient network/decode error leaves the element stuck — the play
+    // badge above still gives a manual way to retry, but reload the source
+    // once on error too, so a flaky connection can self-heal instead of
+    // needing a tap. Only once: a permanently broken URL would otherwise
+    // re-fire 'error' immediately on every retry and loop forever.
+    video.addEventListener('error', function(){
+      if(video.dataset.retried) return;
+      video.dataset.retried = '1';
+      video.load();
+    });
   })();
 
   // Videos generate WITH audio (Veo 3.1 renders a soundtrack), but every

@@ -147,6 +147,23 @@
     return '<div class="proc-preview-thumb">'+media+'</div>';
   }
 
+  // These are decorative background loops (no play/pause control makes
+  // sense on a 64px thumbnail) -- so instead of a control to recover a
+  // stalled video, a load/decode error just swaps it for the same gradient
+  // fallback already used when there's no videoUrl at all, rather than
+  // leaving a frozen/broken video sitting there while waiting.
+  function wirePreviewErrorFallback(row, dreams){
+    Array.prototype.forEach.call(row.querySelectorAll('.ppt-bg'), function(el, i){
+      if(el.tagName !== 'VIDEO') return;
+      el.addEventListener('error', function(){
+        var bg = document.createElement('div');
+        bg.className = 'ppt-bg';
+        bg.style.background = DreamStore.gradientFor(dreams[i]);
+        el.replaceWith(bg);
+      });
+    });
+  }
+
   // A brand-new user has no dreams of their own yet, so this section used
   // to just hide itself entirely while they wait — showing nothing where
   // there's screen real estate to fill. Falls back to the general shared
@@ -160,6 +177,7 @@
       section.style.display = 'block';
       label.textContent = 'While you wait, revisit your dreams';
       row.innerHTML = mine.map(previewThumbHTML).join('');
+      wirePreviewErrorFallback(row, mine);
       return;
     }
     DreamStore.getSharedFeed().then(function(dreams){
@@ -168,6 +186,7 @@
       section.style.display = 'block';
       label.textContent = 'While you wait, explore other dreams';
       row.innerHTML = pick.map(previewThumbHTML).join('');
+      wirePreviewErrorFallback(row, pick);
     }).catch(function(){ section.style.display = 'none'; });
   }
 
