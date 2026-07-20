@@ -84,6 +84,40 @@ permission unless it explicitly says so. This isn't scheduled/automatic
 yet either — it needs a live PostHog account with real experiment data
 before a recurring check is worth running at all.
 
+## The self-improving-agent loop
+
+A frozen, project-level skill at `.claude/skills/self-improving-agent/`
+(adapted from `alirezarezvani/claude-skills`, MIT) runs a periodic
+reflection pass over recent DreamTube sessions and writes real
+corrections/preferences back into the six frozen skill files above
+(research/evaluation/design/build/review/marketing) — not just generic
+project memory. It's currently scheduled daily via a Routine
+(`DreamTube self-improving-agent reflection`).
+
+Two things worth knowing about how it's built, both covered in full in
+the skill's own `SKILL.md`:
+
+- **Claude Code's native auto-memory is off in this account**
+  (`tengu_session_memory: false`), so this loop does its own lightweight
+  capture from session transcripts rather than relying on a `MEMORY.md`
+  that would otherwise populate itself.
+- **Every real change it makes is a small, single-purpose git commit**
+  (in this repo for build/review/CLAUDE.md/rules, in the
+  `agent-library` repo for research/evaluation/design/marketing) —
+  never a silent edit. It has no human-approval gate before committing
+  (these are reversible edits to files this project already owns
+  locally, not one of the five categories below), but every change is
+  visible in normal git history for review after the fact, the same way
+  any other commit is.
+
+**`AGENT_POLICY.md` (this file) is permanently excluded from this loop —
+enforced in code, not just by instruction.** The commit script it's
+required to use for every change
+(`.claude/skills/self-improving-agent/scripts/self_improve_commit.sh`)
+hard-refuses to stage or commit this file under any name, path, or
+case, independent of anything a prompt says. This file only changes
+when the founder explicitly asks for a change.
+
 ## Keep generation-testing cost low, but don't block on it
 
 `generate-video.js`'s default path is a real, full-price fal.ai Veo 3.1
