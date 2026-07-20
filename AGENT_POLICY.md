@@ -74,6 +74,26 @@ permission unless it explicitly says so. This isn't scheduled/automatic
 yet either — it needs a live PostHog account with real experiment data
 before a recurring check is worth running at all.
 
+## Never spend real generation cost on testing
+
+`generate-video.js` has no cheap path — every call is a real, full-price
+fal.ai Veo 3.1 Fast generation (~$0.80-1.60/call, hardcoded 8s duration,
+no test-mode discount). This was hit for real during this pipeline's own
+work: verifying a production fix required one real paid call, and repeat
+testing (human and agent) across a session adds up fast against a
+personal fal.ai balance.
+
+**No agent (build, review, ab-test-creator, or the orchestrating session
+itself) may trigger a real call to `generate-video.js` — on production or
+locally with real `FAL_KEY` credentials — for testing or verification
+purposes, without explicit human confirmation first.** Once a mock/stub
+generation mode exists (see the codebase for `GENERATION_MOCK_MODE` or
+equivalent), use that for all flow/UI/integration testing instead. If a
+change genuinely can't be verified without a real generation (e.g.
+confirming fal.ai's actual API contract hasn't changed), stop and ask
+before spending the money, don't assume it's fine because it's "just
+verification."
+
 ## Escalation policy — when a human has to approve something
 
 Everything else in the pipeline runs without stopping to ask. These five
