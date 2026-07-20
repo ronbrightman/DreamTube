@@ -780,6 +780,22 @@
       state.charactersByUser[state.user.username.toLowerCase()] = filtered;
       persist();
       return true;
+    },
+
+    /**
+     * Device-level video sound preference (not account-scoped — like a
+     * volume setting, it should stick regardless of who's signed in).
+     * Every <video> in the app starts muted (required for autoplay to
+     * work at all), but once a user explicitly unmutes one, later videos
+     * they open should stay unmuted too rather than silently re-muting.
+     */
+    getSoundPref: function () {
+      try { return localStorage.getItem('dreamtube_sound_on') === '1'; }
+      catch (e) { return false; }
+    },
+    setSoundPref: function (on) {
+      try { localStorage.setItem('dreamtube_sound_on', on ? '1' : '0'); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
     }
   };
 })();

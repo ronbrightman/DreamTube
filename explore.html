@@ -136,11 +136,16 @@
     // driven entirely by the IntersectionObserver set up below, which only
     // plays whichever card is actually the current scroll-snap target and
     // restarts it from 0 every time it becomes active.
+    var soundOn = DreamStore.getSoundPref();
     var media = d.videoUrl
-      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
+      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="metadata"></video>'
       : '<div class="feed-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
+    var muteBtn = d.videoUrl
+      ? '<button class="icon-btn feed-mute-btn" data-mute="'+d.id+'" title="'+(soundOn?'Mute':'Unmute')+'" style="position:absolute; right:14px; top:calc(env(safe-area-inset-top,0px) + 16px); z-index:50; background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);">'+(soundOn?Icons.volumeOn:Icons.volumeMuted)+'</button>'
+      : '';
     return '<div class="feed-card" data-id="'+d.id+'">' +
       media +
+      muteBtn +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div></div>' +
@@ -289,6 +294,20 @@
       render();
       return;
     }
+    var muteEl = e.target.closest('[data-mute]');
+    if(muteEl){
+      // Sound preference is global (not per-video), matching the standard
+      // feed-app pattern — unmuting one card keeps the rest unmuted too,
+      // including the ones you scroll to next. See DreamStore.setSoundPref.
+      var soundOn = !DreamStore.getSoundPref();
+      DreamStore.setSoundPref(soundOn);
+      Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){ v.muted = !soundOn; });
+      Array.prototype.forEach.call(root.querySelectorAll('.feed-mute-btn'), function(btn){
+        btn.innerHTML = soundOn ? Icons.volumeOn : Icons.volumeMuted;
+        btn.title = soundOn ? 'Mute' : 'Unmute';
+      });
+      return;
+    }
     var likeEl = e.target.closest('[data-like]');
     if(likeEl){
       var id = likeEl.dataset.like;
@@ -328,7 +347,7 @@
       if(!dream) return;
       var shareUrl = location.origin + '/explore.html?id=' + dream.id;
       if(navigator.share){
-        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + dream.caption + '"', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
+        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
       } else if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(shareUrl).then(function(){
           showToast('Link copied to clipboard');
