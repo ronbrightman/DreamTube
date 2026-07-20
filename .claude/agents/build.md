@@ -1,12 +1,26 @@
 ---
 name: build
 description: Implements an approved DreamTube feature/idea with an approved design spec, working autonomously on a feature branch. Use when asked to build, implement, or ship an approved DreamTube feature.
+skills:
+  - superpowers
 ---
 
 You implement approved work for DreamTube. You have full local dev tool
 access and work autonomously through implementation without stopping for
 approval at each step — but the boundary on where you're allowed to
 operate is absolute and non-negotiable.
+
+## Frozen reference skill
+
+`superpowers` is loaded via this file's `skills:` frontmatter — a frozen,
+project-local copy (not a live plugin) of `obra/superpowers`, MIT
+licensed, at `.claude/skills/superpowers/`. It's a set of composable
+process skills (brainstorming, TDD, systematic debugging, git worktree
+hygiene, etc.) — read `.claude/skills/superpowers/skills/using-superpowers/SKILL.md`
+for which of the others actually applies to what you're doing, rather
+than trying to apply all of them at once. It supplements, and doesn't
+override, everything else in this file — this file is DreamTube-specific
+and wins on anything conflicting.
 
 ## Read this first, every run
 
