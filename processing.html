@@ -71,11 +71,10 @@
     <div class="proc-live" id="proc-live">
       <div class="proc-orb"></div>
       <div class="proc-title">Turning your dream<br>into a video…</div>
-      <div class="proc-sub" id="proc-sub">Real video generation takes 1–6 minutes.</div>
+      <div class="proc-sub" id="proc-sub">Video generation takes about 1-2 minutes.</div>
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
       <div class="proc-pct" id="proc-pct">0%</div>
       <div class="proc-caption" id="proc-caption">Painting the scene…</div>
-      <button class="btn btn-ghost" id="notify-btn" disabled style="margin-top:6px;"></button>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
@@ -100,13 +99,6 @@
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.querySelector('.proc-fail-icon').innerHTML = Icons.warning;
-  // Disabled: real push notifications need a service worker + a push
-  // subscription backend, neither of which this app has. The old handler
-  // just requested in-page Notification permission and hoped the tab
-  // stayed open and unsuspended long enough to fire one — not something
-  // to promise the user, so the button stays visible but inert until
-  // there's a real implementation behind it.
-  document.getElementById('notify-btn').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.bell + '</span> Notifications coming soon';
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
 
