@@ -76,23 +76,29 @@ before a recurring check is worth running at all.
 
 ## Never spend real generation cost on testing
 
-`generate-video.js` has no cheap path — every call is a real, full-price
-fal.ai Veo 3.1 Fast generation (~$0.80-1.60/call, hardcoded 8s duration,
-no test-mode discount). This was hit for real during this pipeline's own
-work: verifying a production fix required one real paid call, and repeat
-testing (human and agent) across a session adds up fast against a
-personal fal.ai balance.
+By default `generate-video.js` has no cheap path — every call that reaches
+fal.ai is a real, full-price fal.ai Veo 3.1 Fast generation (~$0.80-1.60/
+call at the hardcoded 8s duration). This was hit for real during this
+pipeline's own work: verifying a production fix required one real paid
+call, and repeat testing (human and agent) across a session adds up fast
+against a personal fal.ai balance.
 
 **No agent (build, review, ab-test-creator, or the orchestrating session
 itself) may trigger a real call to `generate-video.js` — on production or
 locally with real `FAL_KEY` credentials — for testing or verification
-purposes, without explicit human confirmation first.** Once a mock/stub
-generation mode exists (see the codebase for `GENERATION_MOCK_MODE` or
-equivalent), use that for all flow/UI/integration testing instead. If a
-change genuinely can't be verified without a real generation (e.g.
-confirming fal.ai's actual API contract hasn't changed), stop and ask
-before spending the money, don't assume it's fine because it's "just
-verification."
+purposes, without explicit human confirmation first.** A free, zero-cost
+mock/stub generation mode now exists for exactly this — see
+`GENERATION_MOCK_MODE` and `docs/TESTING.md` — and should be the default for
+all routine flow/UI/integration testing; no approval is needed to use it,
+since it never touches fal.ai at all. If a change genuinely can't be
+verified without a real generation (e.g. confirming fal.ai's actual API
+contract hasn't changed), stop and ask before spending the money — don't
+assume it's fine because it's "just verification." Once approved,
+`GENERATION_TEST_DURATION` (also documented in `docs/TESTING.md`) lets that
+approved real call run at the shortest duration fal actually supports
+(4s) rather than the full 8s, cutting the approved spend roughly in half —
+it is not a substitute for asking first, only a way to reduce the cost of
+a real call that's already been approved.
 
 ## Escalation policy — when a human has to approve something
 
