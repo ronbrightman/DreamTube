@@ -345,43 +345,58 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 /* Style preview thumbnails stay colorful on purpose — they represent the
    four distinct visual output styles a dream can be generated in, same as
    filter previews in any camera app; only the app's own UI chrome went
-   black/white/gray. */
+   black/white/gray. No image assets (no fal.ai key available to generate
+   real preview stills from this environment, and a static asset would go
+   stale the moment the underlying model's look changes) — each is a small
+   pure-CSS scene with one signature idea, not just a flat gradient. */
 .sc-cartoon{
+  /* Signature: a flat-shaded storybook sunrise — sun glow, rolling hill,
+     two cloud puffs. Warm and bold, matching cartoon's flat cel-shaded
+     output. */
   background-image:
-    radial-gradient(circle at 20% 22%, rgba(255,255,255,.55) 0 13px, transparent 14px),
-    radial-gradient(circle at 82% 18%, rgba(255,255,255,.4) 0 9px, transparent 10px),
-    radial-gradient(circle at 68% 72%, rgba(255,255,255,.35) 0 20px, transparent 21px),
-    radial-gradient(circle at 14% 78%, rgba(255,255,255,.3) 0 15px, transparent 16px),
-    linear-gradient(135deg,#FFD68A,#FFB199);
+    radial-gradient(circle 22px at 78% 24%, #FFF7DC 0 62%, rgba(255,247,220,.32) 63% 100%),
+    radial-gradient(circle 26px at 30% 56%, rgba(255,255,255,.82) 0 62%, transparent 68%),
+    radial-gradient(circle 18px at 58% 50%, rgba(255,255,255,.7) 0 62%, transparent 68%),
+    radial-gradient(ellipse 92% 52% at 50% 120%, #3FAE64 0 96%, transparent 100%),
+    linear-gradient(180deg,#FFEAB0 0%,#FFC98F 58%,#FF9E76 100%);
   box-shadow: inset 0 0 0 3px rgba(255,255,255,.28);
 }
 .sc-cinematic{
+  /* Signature: a teal-orange color-graded horizon glow behind the
+     letterbox bars, the classic "film still" grade — plus grain. */
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
     linear-gradient(to bottom, rgba(0,0,0,.88) 0 13%, transparent 13% 87%, rgba(0,0,0,.88) 87% 100%),
-    linear-gradient(135deg,#3E6E8E,#182A44);
-  background-blend-mode: overlay, normal, normal;
-  background-size: 100px 100px, cover, cover;
-  background-repeat: repeat, no-repeat, no-repeat;
+    radial-gradient(ellipse 100% 40% at 50% 82%, rgba(255,181,110,.5) 0%, transparent 72%),
+    linear-gradient(180deg, #15303F 0%, #2C5654 46%, #74593F 82%, #C08247 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  background-size: 100px 100px, cover, cover, cover;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
 }
 .sc-anime{
+  /* Signature: a radiating light-burst behind a bold sun disc, the
+     dramatic-moment background anime keys on, plus a scatter of sparkles. */
   background-image:
-    radial-gradient(circle at 24% 28%, rgba(255,255,255,.95) 0 2px, transparent 3px),
-    radial-gradient(circle at 72% 18%, rgba(255,255,255,.85) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 82% 62%, rgba(255,255,255,.9) 0 2px, transparent 3px),
-    radial-gradient(circle at 38% 78%, rgba(255,255,255,.75) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 55% 45%, rgba(255,255,255,.6) 0 1px, transparent 2px),
-    repeating-linear-gradient(115deg, rgba(255,255,255,.16) 0 2px, transparent 2px 20px),
-    linear-gradient(135deg,#FF8FCB,#9F8FFF);
+    radial-gradient(circle 18px at 70% 30%, #FFF8EA 0 90%, transparent 100%),
+    repeating-conic-gradient(from 0deg at 70% 30%, rgba(255,255,255,.24) 0deg 3deg, transparent 3deg 12deg),
+    radial-gradient(circle at 20% 82%, rgba(255,255,255,.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 40% 18%, rgba(255,255,255,.8) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 86% 66%, rgba(255,255,255,.85) 0 2px, transparent 3px),
+    linear-gradient(150deg,#FF8FCB,#9F8FFF);
 }
 .sc-realistic{
+  /* Signature: shallow depth-of-field bokeh over a golden-hour gradient —
+     the photographic look, not a flat backdrop. */
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n2)'/%3E%3C/svg%3E"),
-    radial-gradient(circle at 50% 45%, transparent 30%, rgba(0,0,0,.5) 105%),
-    linear-gradient(135deg,#7C8AAE,#2A2F4A);
-  background-blend-mode: overlay, normal, normal;
-  background-size: 90px 90px, cover, cover;
-  background-repeat: repeat, no-repeat, no-repeat;
+    radial-gradient(circle 22px at 24% 28%, rgba(255,222,176,.6) 0%, transparent 75%),
+    radial-gradient(circle 15px at 72% 62%, rgba(255,255,255,.4) 0%, transparent 75%),
+    radial-gradient(circle 10px at 84% 22%, rgba(255,222,176,.45) 0%, transparent 75%),
+    radial-gradient(circle at 50% 45%, transparent 25%, rgba(0,0,0,.48) 105%),
+    linear-gradient(150deg,#E8B98A,#8C7A9E 55%,#33334D);
+  background-blend-mode: overlay, screen, screen, screen, normal, normal;
+  background-size: 90px 90px, cover, cover, cover, cover, cover;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
 }
 
 /* ===== Processing ===== */
