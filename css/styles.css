@@ -487,6 +487,20 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .explore-filter-chip .fc-x{ opacity:.65; font-weight:900; margin-left:2px;}
 
+/* Idea #3 — "Dream of the Week". Not a new page, just a badge on top of
+   the current highest-liked published dream (see explore.html's
+   pickDreamOfWeek). pointer-events:none so it never blocks the like/
+   share/mute controls or the tap-to-scroll gesture underneath it. */
+.dow-badge{
+  position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); left:14px; right:64px; z-index:6;
+  border-radius:14px; overflow:hidden; padding:10px 13px; pointer-events:none;
+  background:linear-gradient(135deg, rgba(131,58,180,.4), rgba(253,29,29,.28), rgba(252,176,69,.22)), rgba(20,20,22,.6);
+  backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.18);
+}
+.dow-badge .dow-eyebrow{ font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#fff; opacity:.9; margin-bottom:3px;}
+.dow-badge .dow-title{ font-size:12.5px; font-weight:800; line-height:1.3; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+.dow-badge .dow-sub{ font-size:10.5px; color:#e8e8e8; margin-top:2px;}
+
 /* ===== Admin (admin.html) ===== */
 /* A single settings row — reuses .choice-card's card shell, no new
    container pattern needed for "one setting, one switch". */
