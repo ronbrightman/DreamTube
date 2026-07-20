@@ -223,7 +223,7 @@
   <div class="modal-overlay" id="modal-delete">
     <div class="modal-card">
       <div class="modal-title">Delete this dream?</div>
-      <div class="modal-body">This can't be undone — the video and caption will be gone for good.</div>
+      <div class="modal-body" id="delete-modal-body">This can't be undone — the video and caption will be gone for good.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="delete-cancel">Cancel</button>
         <button class="btn" style="flex:1; background:var(--danger); color:#fff;" id="delete-confirm">Delete</button>
@@ -742,6 +742,14 @@
   });
 
   document.getElementById('delete-btn').addEventListener('click', function(){
+    // Deleting a published dream also unpublishes it (DreamStore.deleteDream
+    // calls removePublishedDreamFromFeed) -- that's real, existing behavior,
+    // but the generic delete warning never said so. A published dream gets
+    // an extended, explicit warning about the Explore-removal side effect
+    // instead of just the generic "can't be undone" copy.
+    document.getElementById('delete-modal-body').textContent = dream.isPublished
+      ? "This can't be undone — the video and caption will be gone for good, and since this dream is public, it'll also be removed from Explore immediately."
+      : "This can't be undone — the video and caption will be gone for good.";
     document.getElementById('modal-delete').classList.add('open');
   });
   document.getElementById('delete-cancel').addEventListener('click', function(){
