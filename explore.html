@@ -143,6 +143,14 @@
     var muteBtn = d.videoUrl
       ? '<button class="icon-btn feed-mute-btn" data-mute="'+d.id+'" title="'+(soundOn?'Mute':'Unmute')+'" style="position:absolute; right:14px; top:calc(env(safe-area-inset-top,0px) + 16px); z-index:50; background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);">'+(soundOn?Icons.volumeOn:Icons.volumeMuted)+'</button>'
       : '';
+    // Manual recovery control for when autoplay doesn't kick in (blocked,
+    // slow network, a decode/load error) — otherwise the card just sits on
+    // a frozen frame forever with nothing to tap. See observeVideos() for
+    // the play/pause listeners that keep this synced, and the click
+    // handler below for the actual toggle.
+    var playBadge = d.videoUrl
+      ? '<div class="play-badge feed-play" data-play="'+d.id+'"><div class="badge-circle"><span class="icon">'+Icons.play+'</span></div></div>'
+      : '';
     // Idea #3 — "Dream of the Week": not a separate page or section, just
     // a badge overlaid on whichever card is currently the most-liked
     // published dream (see pickDreamOfWeek below). Only shown in the
@@ -154,6 +162,7 @@
     return '<div class="feed-card" data-id="'+d.id+'">' +
       media +
       muteBtn +
+      playBadge +
       dowBadge +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
@@ -224,9 +233,44 @@
     });
   }, { root: root, threshold: [0, 0.6, 1] });
 
+  // Keeps each card's play badge (see cardHTML) in sync with its video's
+  // actual state, and gives a stalled video one chance to recover on its
+  // own by reloading the source once on error, on top of the manual play
+  // badge fallback (this is the primary content here, not a decorative
+  // thumbnail, so unlike processing.html's preview row there's no gradient
+  // to fall back to -- the badge is the recovery path).
+  function wireVideoRecovery(v){
+    var badge = v.closest('.feed-card').querySelector('.feed-play');
+    if(badge){
+      // 'play' fires the instant .play() is CALLED, not when playback
+      // actually starts -- a video that's still buffering, or about to
+      // fail with a network/decode error, fires 'play' immediately and
+      // then never fires 'pause' to match (load()'s internal reset after
+      // an error is silent, no event). Hiding on 'play' hid the only
+      // recovery control exactly when it was needed most. 'playing' only
+      // fires once real playback has actually begun.
+      v.addEventListener('playing', function(){ badge.classList.add('hidden'); });
+      v.addEventListener('pause', function(){ badge.classList.remove('hidden'); });
+      v.addEventListener('error', function(){ badge.classList.remove('hidden'); });
+    }
+    // One retry only -- a permanently broken URL (not just a transient
+    // network blip) would otherwise re-trigger 'error' immediately on every
+    // retry and loop forever, hammering the network. After that, the play
+    // badge above is the fallback: a real tap that calls play() again, not
+    // an automatic retry loop.
+    v.addEventListener('error', function(){
+      if(v.dataset.retried) return;
+      v.dataset.retried = '1';
+      v.load();
+    });
+  }
+
   function observeVideos(){
     videoObserver.disconnect();
-    Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){ videoObserver.observe(v); });
+    Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){
+      videoObserver.observe(v);
+      wireVideoRecovery(v);
+    });
   }
 
   function render(){
@@ -345,6 +389,17 @@
         btn.innerHTML = soundOn ? Icons.volumeOn : Icons.volumeMuted;
         btn.title = soundOn ? 'Mute' : 'Unmute';
       });
+      return;
+    }
+    // Tapping the video itself, or the play badge that sits on top of it
+    // (see cardHTML/wireVideoRecovery), manually toggles playback -- the
+    // fallback for whenever autoplay didn't actually start (blocked, slow
+    // network, a load error) and the card would otherwise just be stuck.
+    var videoEl = e.target.closest('.feed-video');
+    var playEl = e.target.closest('[data-play]');
+    if(videoEl || playEl){
+      var vid = videoEl || playEl.closest('.feed-card').querySelector('.feed-video');
+      if(vid){ vid.paused ? vid.play().catch(function(){}) : vid.pause(); }
       return;
     }
     var likeEl = e.target.closest('[data-like]');

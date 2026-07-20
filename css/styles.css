@@ -456,6 +456,16 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .feed-action.liked .icon{ color:var(--danger);}
 .feed-action-disabled{ opacity:.4; cursor:default; pointer-events:none;}
 .feed-swipe-hint{ position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,.5); z-index:5; letter-spacing:.05em;}
+/* Recovery affordance for when autoplay silently fails to start (or the
+   video errors out mid-load) — without this, a card with a stuck video had
+   no way at all to get it going, since the feed otherwise only auto-plays/
+   pauses via IntersectionObserver with no manual control. Uses the same
+   .play-badge/.badge-circle pattern as result.html's play toggle. Visible
+   by default (no .hidden class in the markup) so it's already there as a
+   fallback the instant a card renders, then hides itself once the
+   'playing' event actually fires (not 'play' — see explore.html's
+   wireVideoRecovery for why that distinction matters here). */
+.feed-play{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:5;}
 .explore-filter-chip{
   position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); left:50%; transform:translateX(-50%); z-index:50;
   align-items:center; gap:8px; background:rgba(0,0,0,.72); backdrop-filter:blur(6px);
