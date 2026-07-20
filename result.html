@@ -614,6 +614,22 @@
       video.load();
       video.play().catch(function(){});
     });
+
+    // Switching to a different tab/app doesn't pause anything on its own —
+    // left alone, the video (and its audio, if unmuted via the mute
+    // button below) just kept playing in the background tab, unlike e.g.
+    // YouTube pausing when you tab away. Only resume automatically if the
+    // tab itself is what paused it — not if the visitor had already
+    // manually paused before switching away, which this shouldn't undo.
+    var pausedByVisibility = false;
+    document.addEventListener('visibilitychange', function(){
+      if(document.hidden){
+        if(!video.paused){ video.pause(); pausedByVisibility = true; }
+      } else if(pausedByVisibility){
+        pausedByVisibility = false;
+        video.play().catch(function(){});
+      }
+    });
   })();
 
   // Videos generate WITH audio (Veo 3.1 renders a soundtrack), but every
