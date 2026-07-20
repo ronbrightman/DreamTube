@@ -84,6 +84,7 @@
     </div>
     <div class="action-row-compact">
       <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
+      <button class="btn btn-secondary" id="save-video-btn" title="Save or share the video file"><span class="icon" id="save-video-icon"></span>Save</button>
       <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
@@ -204,6 +205,7 @@
   document.getElementById('result-back').innerHTML = Icons.back;
   document.getElementById('share-btn').innerHTML = Icons.share;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
+  document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
@@ -476,6 +478,13 @@
     var pubBtn = document.getElementById('publish-btn');
     if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = false; pubBtn.title = 'Click to make private'; }
     else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
+
+    // No videoUrl means there's nothing to save/share yet (e.g. a legacy
+    // dream whose old Veo-era download link was scrubbed by migrateLegacyState
+    // in js/store.js) — disable rather than let a tap silently no-op.
+    var saveBtn = document.getElementById('save-video-btn');
+    saveBtn.disabled = !dream.videoUrl;
+    saveBtn.title = dream.videoUrl ? 'Save or share the video file' : "No video file to save for this dream";
   }
   render();
 
@@ -621,6 +630,78 @@
     }
     doShare();
   });
+
+  // ===== Save/share the actual video file =====
+  // Separate from and non-destructive to doShare()/share-btn above, which
+  // shares an explore.html link, not the file. This is the finished MP4
+  // itself, purely client-side: dream.videoUrl already points at a public
+  // fal.ai CDN URL (see netlify/functions/video-status.js, checkFalStatus)
+  // that serves an `access-control-allow-origin: *` header, confirmed by
+  // hand against v3.fal.media on both the preflight and a real GET, so a
+  // client-side fetch->Blob works without a server-side proxy. No new
+  // Netlify function, no watermark/compositing — both explicitly out of
+  // scope for this build.
+  //
+  // Tries the Web Share API with the real file first (drops the video
+  // straight into Instagram/TikTok/iMessage's share sheet); falls back to a
+  // same-origin blob: object URL + <a download> wherever share-with-files
+  // isn't supported (most desktop browsers, some iOS Safari versions).
+  // Support is feature-detected via navigator.canShare({ files }) — not a
+  // blind try/catch — since canShare needs the actual File object to give a
+  // real answer, the fetch always happens first either way.
+  function sanitizedVideoFileName(){
+    var base = 'dreamtube-' + (dream.id || 'dream');
+    return base.replace(/[^a-z0-9-]/gi, '') + '.mp4';
+  }
+
+  function triggerBlobDownload(blob, fileName){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function saveOrShareVideo(){
+    if(!dream.videoUrl) return;
+    var btn = document.getElementById('save-video-btn');
+    var originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="icon">' + Icons.download + '</span>Saving…';
+
+    fetch(dream.videoUrl).then(function(res){
+      if(!res.ok) throw new Error('fetch_failed');
+      return res.blob();
+    }).then(function(blob){
+      var fileName = sanitizedVideoFileName();
+      var file = null;
+      try { file = new File([blob], fileName, { type: blob.type || 'video/mp4' }); } catch(e){ /* no File support — fall through to download */ }
+
+      if(file && navigator.canShare && navigator.canShare({ files: [file] })){
+        return navigator.share({
+          files: [file],
+          title: 'DreamTube',
+          text: 'Check out my dream: "' + dream.caption + '"'
+        }).catch(function(err){
+          if(err && err.name === 'AbortError') return; // user cancelled the share sheet
+          triggerBlobDownload(blob, fileName);
+          showToast('Video saved');
+        });
+      }
+      triggerBlobDownload(blob, fileName);
+      showToast('Video saved');
+    }).catch(function(){
+      showToast("Couldn't save the video — try again");
+    }).then(function(){
+      btn.disabled = !dream.videoUrl;
+      btn.innerHTML = originalHTML;
+    });
+  }
+
+  document.getElementById('save-video-btn').addEventListener('click', saveOrShareVideo);
 </script>
 </body>
 </html>
