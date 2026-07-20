@@ -74,25 +74,31 @@ permission unless it explicitly says so. This isn't scheduled/automatic
 yet either — it needs a live PostHog account with real experiment data
 before a recurring check is worth running at all.
 
-## Never spend real generation cost on testing
+## Keep generation-testing cost low, but don't block on it
 
-`generate-video.js` has no cheap path — every call is a real, full-price
-fal.ai Veo 3.1 Fast generation (~$0.80-1.60/call, hardcoded 8s duration,
-no test-mode discount). This was hit for real during this pipeline's own
-work: verifying a production fix required one real paid call, and repeat
-testing (human and agent) across a session adds up fast against a
-personal fal.ai balance.
+`generate-video.js`'s default path is a real, full-price fal.ai Veo 3.1
+Fast generation (~$0.80-1.60/call, hardcoded 8s duration). Testing this
+codebase's generation flow has a real, non-zero cost — that's fine, and
+agents should not stop to ask permission every time, but should default
+to the cheapest option that actually verifies what's being tested:
 
-**No agent (build, review, ab-test-creator, or the orchestrating session
-itself) may trigger a real call to `generate-video.js` — on production or
-locally with real `FAL_KEY` credentials — for testing or verification
-purposes, without explicit human confirmation first.** Once a mock/stub
-generation mode exists (see the codebase for `GENERATION_MOCK_MODE` or
-equivalent), use that for all flow/UI/integration testing instead. If a
-change genuinely can't be verified without a real generation (e.g.
-confirming fal.ai's actual API contract hasn't changed), stop and ask
-before spending the money, don't assume it's fine because it's "just
-verification."
+1. **Prefer `GENERATION_MOCK_MODE`** (zero cost) for anything that
+   doesn't need a real model call — UI states, request/response
+   plumbing, error handling, most integration tests.
+2. **When a real generation genuinely is needed**, use the cheapest real
+   option available — a short test duration (`GENERATION_TEST_DURATION`
+   or equivalent) and/or a cheaper model variant — rather than the
+   default 8-second Veo 3.1 Fast call. No need to ask first for this;
+   just use the cheap path by default.
+3. **Only the full-price default path** (full duration, most expensive
+   model) is worth pausing for — reach for it only when the cheaper
+   options genuinely can't verify what's being tested, and prefer
+   flagging that reasoning in the work's summary over asking mid-task.
+
+This replaces an earlier, stricter version of this rule that required
+asking before any real call — the founder found that too disruptive.
+The goal is keeping the personal fal.ai balance from draining on
+routine testing, not gatekeeping every real call.
 
 ## Escalation policy — when a human has to approve something
 
