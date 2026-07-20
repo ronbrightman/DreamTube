@@ -129,11 +129,11 @@
      Colors/values ported from scratchpad/funnel-mockup.html.
      =================================================================== */
   #app.funnel-app{
-    --dawn-1:#FBEFEA; --dawn-2:#F3E4EF; --dawn-3:#E8E6F7;
+    --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
     --fn-ink:#3A3350; --fn-ink-soft:#6E6480; --fn-ink-faint:#9C93AC;
     --fn-card:#FFFFFF; --fn-line:rgba(58,51,80,0.10);
-    --fn-accent-grad:linear-gradient(135deg,#B99BD9,#E8A0B4 55%,#F3C08C);
-    --fn-accent-solid:#8D6FB8;
+    --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
+    --fn-accent-solid:#7C82C4;
     --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
     --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
     background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3));
@@ -209,12 +209,12 @@
   .fn-carousel-dots{ display:flex; gap:5px; justify-content:center; margin-bottom:14px;}
   .fn-carousel-dots i{ width:6px; height:6px; border-radius:50%; background:var(--phase-line, var(--fn-line)); display:block;}
   .fn-carousel-dots i:first-child{ background:var(--fn-accent-solid); width:16px; border-radius:3px;}
-  .fn-dream-1{ background:linear-gradient(160deg,#F6DDE6,#E4CFF0 45%,#CFE0F2 100%);}
-  .fn-dream-2{ background:linear-gradient(160deg,#FCE7D6,#F2D3E4 45%,#DCCCF0 100%);}
+  .fn-dream-1{ background:linear-gradient(160deg,#E3E6F4,#D8CFF0 45%,#CFE0F2 100%);}
+  .fn-dream-2{ background:linear-gradient(160deg,#FCE7D6,#DCD3EE 45%,#CCD4F0 100%);}
   .fn-dream-3{ background:linear-gradient(160deg,#E1D9F5,#CFE3F0 45%,#F3E0D9 100%);}
   .fn-dream-4{ background:linear-gradient(160deg,#D9F0E6,#CFE0F5 45%,#E8D9F5 100%);}
-  .fn-dream-5{ background:linear-gradient(160deg,#F5E0D0,#F0CFE0 45%,#D0E4F0 100%);}
-  .fn-dream-6{ background:linear-gradient(160deg,#E6D4F5,#F5D9E4 45%,#D4E8F0 100%);}
+  .fn-dream-5{ background:linear-gradient(160deg,#F5E0D0,#DCD0EE 45%,#D0E4F0 100%);}
+  .fn-dream-6{ background:linear-gradient(160deg,#E6D4F5,#DCD8F0 45%,#D4E8F0 100%);}
 
   /* Promise screen (2) */
   .fn-promise-row{ display:flex; gap:13px; align-items:flex-start; padding:12px 0;}
@@ -352,10 +352,10 @@
   // explicit allowance for that one screen to look like the real app
   // rather than a pastel reskin (it's a direct functional port).
   var PHASES = {
-    'dawn-hero': { grad:'linear-gradient(160deg,#FBEFEA,#F3E4EF 55%,#E8E6F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
-    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#F5E7EE 55%,#ECE8F6)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
-    'dawn-warm': { grad:'linear-gradient(160deg,#FCE9DA,#F3DDE6 55%,#E6DFF3)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFDFB', line:'rgba(58,51,80,0.12)' },
-    'transition':{ grad:'linear-gradient(160deg,#EADCEB,#D9D3EE 55%,#C9D3EA)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
+    'dawn-hero': { grad:'linear-gradient(160deg,#FBEFEA,#E9EAF5 55%,#E3E9F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
+    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#EAEBF6 55%,#E7EBF7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
+    'dawn-warm': { grad:'linear-gradient(160deg,#FCE9DA,#E5E3F2 55%,#DEE3F5)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFDFB', line:'rgba(58,51,80,0.12)' },
+    'transition':{ grad:'linear-gradient(160deg,#DCDCF0,#D0D5EE 55%,#C2D3EC)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
     'mid-dusk':  { grad:'linear-gradient(160deg,#C6C2E6,#A6B4DD 55%,#94A6D2)', ink:'#221F3D', soft:'#4C4A6B', faint:'#767497', card:'#FFFFFF', line:'rgba(34,31,61,0.16)' },
     'dusk':      { grad:'linear-gradient(160deg,#9B95CE,#7B8CC0 55%,#6478AE)', ink:'#191735', soft:'#EDEBF7', faint:'#C6C2E3', card:'#FFFFFF', line:'rgba(255,255,255,0.22)' },
     'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
@@ -460,7 +460,7 @@
   // ===================================================================
   // Screen 4 — Content/type (multi-select)
   // ===================================================================
-  var DREAM_TYPE_OPTIONS = ['Flying', 'Being chased', 'Falling', "Someone I've lost", 'Recurring dreams', 'Adventure / fantasy', 'Nightmares', 'Lucid dreams'];
+  var DREAM_TYPE_OPTIONS = ['Flying', 'Being chased', 'Falling', "Someone I've lost", 'People I know', 'Recurring dreams', 'Adventure / fantasy', 'Nightmares', 'Lucid dreams'];
   function renderScreen4(el){
     el.innerHTML =
       '<div class="fn-eyebrow">Question 2 of 4</div>' +
