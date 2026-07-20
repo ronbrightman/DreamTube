@@ -968,6 +968,25 @@
     setSoundPref: function (on) {
       try { localStorage.setItem('dreamtube_sound_on', on ? '1' : '0'); }
       catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
+     * Device-level "have I already been shown this Dream of the Week
+     * pinned to the top of Explore" marker (see explore.html's
+     * pickDreamOfWeek). Without this, the same card got forced back to
+     * position 0 of the feed on every single visit -- not just the first
+     * -- since the pick itself rarely changes between sessions, making it
+     * feel permanently stuck rather than a one-time highlight. Device-level
+     * (not account-scoped) for the same reason as getSoundPref: Explore is
+     * browsable while logged out too.
+     */
+    getSeenDreamOfWeekId: function () {
+      try { return localStorage.getItem('dreamtube_dow_seen_id'); }
+      catch (e) { return null; }
+    },
+    markDreamOfWeekSeen: function (id) {
+      try { localStorage.setItem('dreamtube_dow_seen_id', id); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
     }
   };
 })();

@@ -304,10 +304,20 @@
     DreamStore.getSharedFeed().then(function(dreams){
       allDreams = dreams;
       var dow = pickDreamOfWeek(allDreams);
-      if(dow){
+      // Only pin-to-top + badge the first time this browser sees this
+      // particular Dream of the Week — the pick rarely changes between
+      // sessions, so without this check it got forced back to the top of
+      // the feed (and the badge kept reappearing) on every single visit,
+      // not just the first. Once seen, it just sits in its normal feed
+      // position like any other dream until a new one actually overtakes
+      // it in likes. See DreamStore.getSeenDreamOfWeekId/markDreamOfWeekSeen.
+      if(dow && DreamStore.getSeenDreamOfWeekId() !== dow.id){
         dreamOfWeekId = dow.id;
         var idx = allDreams.indexOf(dow);
         if(idx > 0){ allDreams.splice(idx, 1); allDreams.unshift(dow); }
+        DreamStore.markDreamOfWeekSeen(dow.id);
+      } else {
+        dreamOfWeekId = null;
       }
       feedLoaded = true;
       render();
