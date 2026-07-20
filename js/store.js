@@ -23,6 +23,8 @@
 //   getCharacters()                   -> GET  /api/users/me/characters
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
+//   getInterpretation(id)                -> local read of a dream's saved "what this might mean" reflection
+//   generateInterpretation(id)            -> POST /.netlify/functions/interpret-dream (see that file)
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -32,6 +34,16 @@
 //   E303 network error submitting the initial generate-video request
 //   E399 server returned an error response with no error text at all (should be unreachable — every
 //        E1xx/E2xx path always sets one — but a code exists in case something upstream changes)
+//
+// generateInterpretation() below passes through whatever "E4NN: reason"
+// string interpret-dream.js's response carries as-is (same pattern as
+// E1xx/E2xx above) — see that file's own header comment for the E4xx list.
+// A plain network failure reaching the function at all (no response to read
+// a code from) surfaces as an uncoded "network_error_requesting_interpretation"
+// message instead — result.html's error state doesn't display the raw
+// message either way (see its Direction B error copy), so no dedicated code
+// was reserved for that case the way E303 exists for generate-video's
+// equivalent client-side network failure.
 
 (function () {
   var KEY = 'dreamtube_state_v1';
@@ -307,7 +319,15 @@
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
       if (!dream) throw new Error('not_found');
-      Object.assign(dream, { caption: caption, style: style, videoUrl: videoUrl });
+      // Regenerating (Edit Dream -> Generate Again, or Try Again after a
+      // failure) changes the dream's actual content, so any previously
+      // generated interpretation was reflecting on content that no longer
+      // exists — clear it here rather than silently leaving a stale
+      // reflection attached to the new caption/style. This puts the dream
+      // back in the "never generated" state, so result.html shows the
+      // plain CTA again and a fresh opt-in tap is required, per the design
+      // spec's privacy/data-model section.
+      Object.assign(dream, { caption: caption, style: style, videoUrl: videoUrl, interpretationText: null, interpretationAt: null });
     } else {
       dream = {
         id: newId(),
@@ -600,6 +620,61 @@
       persist();
       if (wasPublished) removePublishedDreamFromFeed(id);
       return true;
+    },
+
+    /**
+     * Reads a dream's saved "what this might mean" reflection, if any —
+     * purely local, no network call. Returns null if the dream doesn't
+     * exist; otherwise { interpretationText, interpretationAt }, both null
+     * if one has never been generated (or was cleared by a regenerate, see
+     * finalizeDream above).
+     */
+    getInterpretation: function (id) {
+      var d = findDream(id);
+      if (!d) return null;
+      return { interpretationText: d.interpretationText || null, interpretationAt: d.interpretationAt || null };
+    },
+
+    /**
+     * Generates (or regenerates) the dream's "what this might mean"
+     * reflection via interpret-dream.js, POSTing { caption, style } from
+     * the current dream record. Always opt-in — result.html only ever
+     * calls this from a direct user tap (the initial CTA, or the sheet's
+     * Regenerate affordance), never automatically. On success, writes
+     * interpretationText/interpretationAt onto the dream and persists,
+     * then resolves with the saved { interpretationText, interpretationAt }.
+     * On failure, rejects with an Error whose message is the function's own
+     * "E4NN: reason" string (see interpret-dream.js's header comment for
+     * the code list) — result.html treats every rejection here uniformly
+     * as its Direction B error state, isolated from the rest of the Result
+     * screen (video playback, Edit, Publish, Delete are all unaffected).
+     *
+     * This is a private, local-only write: nothing here calls
+     * syncPublishedDreamToFeed, and interpretationText/interpretationAt are
+     * never part of that function's payload (see it above) — so this stays
+     * off the shared feed even for a dream that's already published.
+     */
+    generateInterpretation: function (id) {
+      var d = findDream(id);
+      if (!d) return Promise.reject(new Error('not_found'));
+      return fetch('/.netlify/functions/interpret-dream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: d.caption, style: d.style })
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
+          var dream = findDream(id);
+          if (dream) {
+            dream.interpretationText = data.interpretation;
+            dream.interpretationAt = Date.now();
+            persist();
+          }
+          return { interpretationText: data.interpretation, interpretationAt: dream ? dream.interpretationAt : null };
+        });
+      }, function (err) {
+        throw new Error('network_error_requesting_interpretation' + (err && err.message ? ': ' + err.message : ''));
+      });
     },
 
     /**

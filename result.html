@@ -88,6 +88,39 @@
       <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
+    <button class="btn btn-secondary interp-cta" id="interp-cta-btn" title="See an AI reflection on what this dream might mean">
+      <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> See what this might mean</span>
+      <span class="feed-tag" id="interp-private-pill">Private</span>
+    </button>
+  </div>
+
+  <div class="sheet-overlay" id="sheet-interp-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Your reflection</div>
+
+      <div id="interp-loading">
+        <div class="interp-loading-row"><span class="spinner-inline"></span><span>Reflecting on your dream…</span></div>
+      </div>
+
+      <div id="interp-ready" style="display:none;">
+        <div class="interp-text" id="interp-text-body" dir="auto"></div>
+        <div class="auth-trust">
+          <span class="icon" id="interp-lock-icon"></span>
+          <span>Private to you. This reflection is never shown on Explore or shared — even when this dream itself is public.</span>
+        </div>
+        <div class="interp-disclosure">A reflective, symbol-aware take — not professional advice.</div>
+        <span class="link-text" id="interp-regenerate-btn">Regenerate</span>
+      </div>
+
+      <div id="interp-error" style="display:none;">
+        <div class="interp-error-copy">Couldn't put this into words right now.</div>
+        <button class="btn btn-primary btn-block" id="interp-retry-btn">Retry</button>
+      </div>
+
+      <div style="height:10px;"></div>
+      <span class="link-text" id="interp-close-btn">Close</span>
+    </div>
   </div>
 
   <div class="sheet-overlay" id="sheet-edit-overlay">
@@ -207,6 +240,7 @@
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
+  document.getElementById('interp-lock-icon').innerHTML = Icons.lock;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-check'), function(el){ el.innerHTML = Icons.check; });
@@ -507,6 +541,47 @@
 
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }
   function closeSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.remove('open'); }
+
+  // ===== "What this dream might mean" — Direction B (bottom sheet reveal) =====
+  // Always opt-in: nothing here ever fires except from a direct tap on the
+  // CTA or the sheet's own Regenerate/Retry affordances — never on page
+  // load, never automatically. See js/store.js's getInterpretation/
+  // generateInterpretation and the design spec for the full rationale.
+  function showInterpState(state){
+    document.getElementById('interp-loading').style.display = state === 'loading' ? 'block' : 'none';
+    document.getElementById('interp-ready').style.display = state === 'ready' ? 'block' : 'none';
+    document.getElementById('interp-error').style.display = state === 'error' ? 'block' : 'none';
+  }
+  function renderInterpReady(text){
+    document.getElementById('interp-text-body').textContent = text;
+    showInterpState('ready');
+  }
+  // Always hits the network — used for a first-ever generation and for the
+  // sheet's own Regenerate/Retry. The CTA tap handler below is what decides
+  // whether to call this at all, or just show the already-saved text.
+  function requestInterpretation(){
+    showInterpState('loading');
+    DreamStore.generateInterpretation(dream.id).then(function(result){
+      renderInterpReady(result.interpretationText);
+    }).catch(function(){
+      showInterpState('error');
+    });
+  }
+  document.getElementById('interp-cta-btn').addEventListener('click', function(){
+    openSheet('interp');
+    var existing = DreamStore.getInterpretation(dream.id);
+    if(existing && existing.interpretationText){
+      // Revisit case — tapping re-expands the already-saved text, no new
+      // network call (per the design spec's explicit state machine).
+      renderInterpReady(existing.interpretationText);
+    } else {
+      requestInterpretation();
+    }
+  });
+  document.getElementById('interp-retry-btn').addEventListener('click', requestInterpretation);
+  document.getElementById('interp-regenerate-btn').addEventListener('click', requestInterpretation);
+  document.getElementById('interp-close-btn').addEventListener('click', function(){ closeSheet('interp'); });
+  document.getElementById('sheet-interp-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-interp-overlay') closeSheet('interp'); });
 
   // Whenever the dream text refers to the dreamer in first person, make sure
   // the saved "Me" character (if one exists) is actually included, rather
