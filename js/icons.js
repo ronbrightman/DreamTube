@@ -81,6 +81,8 @@
 
     volumeOn: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16.5 8.5a5 5 0 010 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 6a9 9 0 010 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'),
 
-    volumeMuted: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    volumeMuted: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    award: svg('<circle cx="12" cy="8" r="6" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8.5 13.2L7 21l5-2.5 5 2.5-1.5-7.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
   };
 })();

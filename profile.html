@@ -78,6 +78,15 @@
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
     </div>
+    <div id="profile-insights" style="display:none;">
+      <div class="profile-milestone-row" id="milestone-row"></div>
+      <div class="profile-insight-card" id="insight-card" style="display:none;">
+        <div class="pi-inner">
+          <div class="pi-label">You keep dreaming about</div>
+          <p id="insight-text"></p>
+        </div>
+      </div>
+    </div>
     <div id="profile-empty" class="grid-empty" style="display:none;">You haven't created a dream yet — tap "+ Create dream" to make your first one.</div>
     <div id="profile-lists">
       <div class="section-label" style="padding:0 20px;">Shared</div>
@@ -171,6 +180,34 @@
   var user = DreamStore.getCurrentUser();
   if(user) document.getElementById('profile-handle').textContent = user.handle;
 
+  // Ideas #4 (recurring-theme insight) & #5 (milestone counter) — both
+  // read data already saved on the signed-in user's own dreams (no new
+  // AI call, no new backend). Both sit above the video grid, right below
+  // the avatar header, and hide entirely (not an empty placeholder) once
+  // there's nothing worth showing.
+  function themeLabel(theme){ return theme.charAt(0).toUpperCase() + theme.slice(1); }
+  function renderInsights(hasAnyDreams){
+    var container = document.getElementById('profile-insights');
+    if(!hasAnyDreams){ container.style.display = 'none'; return; }
+    container.style.display = 'block';
+
+    var milestone = DreamStore.getDreamMilestone();
+    document.getElementById('milestone-row').innerHTML = milestone
+      ? '<div class="profile-milestone-chip"><div class="pm-num">'+milestone.count+'</div><div class="pm-label">dreams captured</div></div>' +
+        '<div class="profile-milestone-chip"><div class="pm-icon icon">'+Icons.award+'</div><div class="pm-label">'+milestone.label+' badge</div></div>'
+      : '';
+
+    var insight = DreamStore.getDreamInsight();
+    var insightCard = document.getElementById('insight-card');
+    if(insight){
+      document.getElementById('insight-text').innerHTML =
+        '<b>'+themeLabel(insight.theme)+'</b> has shown up in '+insight.count+' of your last '+insight.total+' dreams.';
+      insightCard.style.display = 'block';
+    } else {
+      insightCard.style.display = 'none';
+    }
+  }
+
   function render(){
     var mine = DreamStore.getMyDreams();
     var shared = mine.filter(function(d){ return d.isPublished; });
@@ -178,6 +215,7 @@
 
     document.getElementById('stat-created').textContent = mine.length;
     document.getElementById('stat-shared').textContent = shared.length;
+    renderInsights(!!mine.length);
 
     if(!mine.length){
       document.getElementById('profile-empty').style.display = 'block';
