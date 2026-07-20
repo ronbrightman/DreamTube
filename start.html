@@ -198,6 +198,14 @@
   .fn-carousel-card .fn-heart-badge{ position:absolute; top:10px; right:10px; z-index:2; display:flex; align-items:center; gap:4px; background:rgba(0,0,0,.3); backdrop-filter:blur(3px); color:#fff; font-size:11px; font-weight:800; padding:5px 10px; border-radius:100px;}
   .fn-carousel-card .fn-most-loved{ position:absolute; top:10px; left:10px; z-index:2; background:#fff; color:var(--fn-accent-solid); font-size:10.5px; font-weight:800; padding:5px 11px; border-radius:100px; letter-spacing:.02em;}
   .fn-media-caption{ position:relative; z-index:2; padding:14px; font-size:13px; font-weight:700; color:#fff; line-height:1.35;}
+  /* Real published-dream videos, once socialProofDreams loads (see below) --
+     the hardcoded pastel gradients (.fn-dream-1..6) are the fallback for
+     when there simply aren't enough real published dreams yet, not the
+     default. Unlike the curated gradients, a real video's brightness is
+     unpredictable, so the caption/badges need a real scrim behind them
+     rather than relying on white text alone. */
+  .fn-carousel-video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+  .fn-carousel-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.65) 0%, rgba(0,0,0,.05) 45%, rgba(0,0,0,.25) 100%); z-index:1;}
   .fn-carousel-dots{ display:flex; gap:5px; justify-content:center; margin-bottom:14px;}
   .fn-carousel-dots i{ width:6px; height:6px; border-radius:50%; background:var(--phase-line, var(--fn-line)); display:block;}
   .fn-carousel-dots i:first-child{ background:var(--fn-accent-solid); width:16px; border-radius:3px;}
@@ -277,6 +285,11 @@
   }
 
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  function truncateCaption(str, maxLen){
+    var s = (str || '').trim();
+    return s.length > maxLen ? s.slice(0, maxLen).trim() + '...' : s;
+  }
 
   /**
    * Downscales/recompresses a picked photo to a JPEG data URL — copied
@@ -312,6 +325,22 @@
   var quiz = { recall: null, dreamTypes: [], motivations: [] };
   var chosenStyle = null;
   var staged = { characters: [], selectedIds: [] };
+
+  // Screens 1 and 7's carousels are social proof ("look what other people
+  // dreamed up") -- they used to be pure hardcoded pastel-gradient
+  // placeholders with made-up like counts and captions, which is exactly
+  // the kind of thing a first-time visitor can tell is fake. Real
+  // published dreams from the shared feed, highest-liked first, get used
+  // instead wherever there are enough of them; the gradients remain the
+  // fallback for whichever slot doesn't have a real dream to show (a very
+  // early/empty install, most likely). Fetched once, before either screen
+  // is likely to have been reached yet, and re-rendered in place if the
+  // visitor is already sitting on screen 1 or 7 when it resolves.
+  var socialProofDreams = [];
+  DreamStore.getSharedFeed().then(function(dreams){
+    socialProofDreams = dreams.slice().sort(function(a, b){ return (b.likes || 0) - (a.likes || 0); });
+    if(cur === 0 || cur === 6) render();
+  }).catch(function(){ /* keep the gradient/text fallback silently */ });
   var cur = 0;
 
   var TAGS = ['hook','promise','recall','dream_type','motivation','reassurance','see_in_action','dream_capture','advanced','style','preparing','recap','email_capture','pricing','confirmation'];
@@ -340,16 +369,35 @@
   var backBtn = document.getElementById('fnBack');
   backBtn.innerHTML = Icons.back;
 
+  // Builds one carousel card: a real published dream's video when one is
+  // available for this slot, falling back to the original hardcoded
+  // pastel-gradient placeholder (identified by fallbackClass/fallbackHTML)
+  // when there simply isn't one yet. overlayHTML is whatever sits on top
+  // (heart badge, caption, etc.) -- built by the caller since screens 1
+  // and 7 want different overlays over the same underlying media.
+  function carouselCardHTML(dream, fallbackClass, overlayHTML){
+    if(dream && dream.videoUrl){
+      return '<div class="fn-carousel-card">' +
+        '<video class="fn-carousel-video" src="' + esc(dream.videoUrl) + '" muted loop playsinline autoplay preload="metadata"></video>' +
+        '<div class="fn-carousel-scrim"></div>' +
+        overlayHTML +
+      '</div>';
+    }
+    return '<div class="fn-carousel-card ' + fallbackClass + '">' + overlayHTML + '</div>';
+  }
+
   // ===================================================================
   // Screen 1 — Hook carousel
   // ===================================================================
   function renderScreen1(el){
+    var real = socialProofDreams.slice(0, 3);
+    var cards = [
+      carouselCardHTML(real[0], 'fn-dream-1', '<span class="fn-most-loved">Most loved</span><span class="fn-heart-badge">&#9829; ' + (real[0] ? formatCount(real[0].likes || 0) : '2.4k') + '</span>'),
+      carouselCardHTML(real[1], 'fn-dream-2', '<span class="fn-heart-badge">&#9829; ' + (real[1] ? formatCount(real[1].likes || 0) : '1.8k') + '</span>'),
+      carouselCardHTML(real[2], 'fn-dream-3', '<span class="fn-heart-badge">&#9829; ' + (real[2] ? formatCount(real[2].likes || 0) : '1.2k') + '</span>')
+    ];
     el.innerHTML =
-      '<div class="fn-carousel">' +
-        '<div class="fn-carousel-card fn-dream-1"><span class="fn-most-loved">Most loved</span><span class="fn-heart-badge">&#9829; 2.4k</span></div>' +
-        '<div class="fn-carousel-card fn-dream-2"><span class="fn-heart-badge">&#9829; 1.8k</span></div>' +
-        '<div class="fn-carousel-card fn-dream-3"><span class="fn-heart-badge">&#9829; 1.2k</span></div>' +
-      '</div>' +
+      '<div class="fn-carousel">' + cards.join('') + '</div>' +
       '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
       '<div class="fn-headline">Turn your dreams into videos.</div>' +
       '<div class="fn-spacer"></div>' +
@@ -479,13 +527,18 @@
   // Screen 7 — See it in action (carousel, different clips than screen 1)
   // ===================================================================
   function renderScreen7(el){
+    // Different dreams than screen 1's (that one already claimed the top 3
+    // by likes) -- next 3 down the list, still real, just not repeats.
+    var real = socialProofDreams.slice(3, 6);
+    var fallbackCaptions = ['"a city made of glass..."', '"my childhood house, underwater..."', '"running through a field of stars..."'];
+    var fallbackClasses = ['fn-dream-4', 'fn-dream-5', 'fn-dream-6'];
+    var cards = [0, 1, 2].map(function(i){
+      var caption = real[i] ? '"' + esc(truncateCaption(real[i].caption, 42)) + '"' : fallbackCaptions[i];
+      return carouselCardHTML(real[i], fallbackClasses[i], '<span class="fn-media-caption">' + caption + '</span>');
+    });
     el.innerHTML =
       '<div class="fn-eyebrow">See it in action</div>' +
-      '<div class="fn-carousel">' +
-        '<div class="fn-carousel-card fn-dream-4"><span class="fn-media-caption">"a city made of glass..."</span></div>' +
-        '<div class="fn-carousel-card fn-dream-5"><span class="fn-media-caption">"my childhood house, underwater..."</span></div>' +
-        '<div class="fn-carousel-card fn-dream-6"><span class="fn-media-caption">"running through a field of stars..."</span></div>' +
-      '</div>' +
+      '<div class="fn-carousel">' + cards.join('') + '</div>' +
       '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
       '<div class="fn-body-copy">Real dreams, typed by real people — and the videos they became.</div>' +
       '<div class="fn-spacer"></div>' +
