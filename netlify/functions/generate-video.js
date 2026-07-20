@@ -139,8 +139,23 @@ function falErrorMessage(data) {
 var FAL_MODEL = 'fal-ai/veo3.1/fast';
 var FAL_API_BASE = 'https://queue.fal.run';
 
+// GENERATION_TEST_DURATION (see the "Mock mode & test-duration override" doc
+// block below and docs/TESTING.md): lets a human deliberately trade video
+// length for cost on a genuinely *real* fal.ai call. fal's Veo 3.1 Fast
+// (and its reference-to-video variant, same underlying model) only accept
+// these three duration presets — confirmed against fal's current API docs
+// (2026-07) — not arbitrary values like "1s", so an unset or invalid
+// override silently falls back to the untouched default ("8s") rather than
+// risk sending fal a value it would reject.
+var VALID_TEST_DURATIONS = ['4s', '6s', '8s'];
+var DEFAULT_DURATION = '8s';
+function resolveDuration() {
+  var override = (process.env.GENERATION_TEST_DURATION || '').trim();
+  return VALID_TEST_DURATIONS.indexOf(override) !== -1 ? override : DEFAULT_DURATION;
+}
+
 /** Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>". */
-async function callFal(prompt, falKey) {
+async function callFal(prompt, falKey, duration) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
     method: 'POST',
     headers: {
@@ -150,7 +165,7 @@ async function callFal(prompt, falKey) {
     body: JSON.stringify({
       prompt: prompt,
       aspect_ratio: '9:16',
-      duration: '8s',
+      duration: duration || DEFAULT_DURATION,
       resolution: '720p'
     })
   });
@@ -180,7 +195,7 @@ var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
  * derives the polling path from just the first two model segments
  * ("fal-ai/veo3.1"), which is identical across every veo3.1 variant.
  */
-async function callFalReferenceToVideo(prompt, imageDataUrl, falKey) {
+async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, {
     method: 'POST',
     headers: {
@@ -191,7 +206,7 @@ async function callFalReferenceToVideo(prompt, imageDataUrl, falKey) {
       prompt: prompt,
       image_urls: [imageDataUrl],
       aspect_ratio: '9:16',
-      duration: '8s',
+      duration: duration || DEFAULT_DURATION,
       resolution: '720p'
     })
   });
@@ -349,18 +364,61 @@ async function callVeoDirect(prompt, apiKey) {
 // *entitlement* check — E109's rate limit and E110's spend cap above still
 // apply to the owner exactly like everyone else, since those exist to cap
 // real infra cost, not to gate payment.
+//
+// Mock mode & test-duration override — see docs/TESTING.md for the full
+// writeup and AGENT_POLICY.md's "Never spend real generation cost on
+// testing" standing rule this exists to make achievable. Two independent
+// dev/test-only env vars, deliberately different in both cost and how they
+// behave:
+//   - GENERATION_MOCK_MODE==="true": every real fal.ai call is skipped
+//     entirely (no FAL_KEY read, no network call to fal at all — zero
+//     cost). All the checks above this point (validation, rate limit,
+//     entitlement, spend guard) still run unchanged, so mock mode is only
+//     ever a stand-in for the model call itself, never a way to bypass the
+//     guardrails those checks exist to test. Produces a fake
+//     "mock:<startedAtMs>:<id>" operationName in the same response shape
+//     the real path returns, which video-status.js (see that file)
+//     recognizes and resolves to a real, working sample video after a
+//     short simulated delay — so the rest of the app's flow (polling UI,
+//     finalizeDream, duration probing, Explore/Profile rendering) gets
+//     exercised end-to-end against a real video URL, at zero fal.ai cost.
+//   - GENERATION_TEST_DURATION="4s"|"6s"|"8s": makes a genuinely *real*
+//     fal.ai call (still spends real money — per AGENT_POLICY.md this
+//     still needs explicit human confirmation before use), just at a
+//     shorter, cheaper duration than the hardcoded 8s default. fal bills
+//     Veo 3.1 Fast per second, so "4s" is roughly half the cost of the
+//     default. See resolveDuration() above.
+// If both are somehow set at once, GENERATION_MOCK_MODE always wins —
+// structurally, not by extra precedence logic: the mock branch below
+// returns before GENERATION_TEST_DURATION (or falKey, or any real fal
+// call) is ever read. THIS MUST STAY DEFAULT-OFF/UNSET IN PRODUCTION:
+// GENERATION_MOCK_MODE=true would silently stop every real user's
+// generation from producing a real video.
+var crypto = require('crypto');
 var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var paywallSettings = require('./lib/paywall-settings');
+
+/** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above. The embedded timestamp lets video-status.js resolve "done" purely from elapsed wall-clock time, with no server-side memory needed (see that file's checkMockStatus). */
+function mockOperationName() {
+  return 'mock:' + Date.now() + ':' + crypto.randomUUID();
+}
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'E101: method_not_allowed' }) };
   }
 
+  // GENERATION_MOCK_MODE (see the doc block above and docs/TESTING.md) skips
+  // every real fal.ai call, so FAL_KEY isn't required at all in that mode —
+  // deliberately checked with the exact string "true" (never a truthy-ish
+  // value) to match this codebase's other boolean-flag env vars
+  // (PAYWALL_ENABLED, etc.), so nothing flips this on by accident.
+  var mockMode = process.env.GENERATION_MOCK_MODE === 'true';
+
   var falKey = process.env.FAL_KEY;
-  if (!falKey) {
+  if (!mockMode && !falKey) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
@@ -425,13 +483,22 @@ exports.handler = async function (event) {
     return { statusCode: 503, body: JSON.stringify({ error: 'E110: daily_spend_cap_exceeded: generation is paused for today, try again tomorrow' }) };
   }
 
+  // Mock mode returns here, after every guardrail above has already run
+  // exactly as it does on the real path — see the doc block above. Nothing
+  // below this point (buildPrompt, the self-photo check, FAL_MODEL,
+  // GENERATION_TEST_DURATION, the actual fal.ai call) is ever reached.
+  if (mockMode) {
+    return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
+  }
+
   var prompt = buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
   var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
+  var duration = resolveDuration();
 
   try {
     var result = selfPhoto
-      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey)
-      : await callFal(prompt, falKey);
+      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration)
+      : await callFal(prompt, falKey, duration);
     if (!result.ok) {
       var rejectCode = selfPhoto ? 'E106' : 'E105';
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };

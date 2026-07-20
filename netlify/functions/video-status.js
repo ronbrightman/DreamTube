@@ -9,6 +9,12 @@
 // Google/Veo path — there's no Blobs download/store step: we just hand back
 // fal's own video URL.
 //
+// MOCK PATH: see generate-video.js's GENERATION_MOCK_MODE doc block and
+// docs/TESTING.md. An operationName shaped "mock:<startedAtMs>:<id>" (see
+// checkMockStatus) never touches fal at all — it resolves to "done" purely
+// from elapsed wall-clock time against the timestamp embedded in the name
+// itself, and hands back a small, stable, publicly-hosted sample video URL.
+//
 // FALLBACK PATH (unused): the original Google/Veo integration is kept as
 // checkVeoStatus, reached if `name` looks like a raw Google operation name
 // (e.g. a Veo job started before this switch) instead of a "fal:" one. It
@@ -87,6 +93,45 @@ function falErrorMessage(data) {
 //   E206 non-JSON response from fal's result endpoint
 //   E207 fal's result endpoint returned a non-OK HTTP response
 //   E208 job reported COMPLETED but the result had no video URL in it (unexpected response shape)
+//
+// The mock path (checkMockStatus below) has no error codes of its own — a
+// mock operation can't fail the way a real fal call can, by design (see
+// generate-video.js's GENERATION_MOCK_MODE doc block).
+
+// MOCK_DELAY_MS is deliberately a couple of the client's own poll cycles
+// (js/store.js's POLL_INTERVAL_MS is 10000ms) rather than instant — part of
+// the value of mock mode is still exercising the real "Generating..."
+// polling/loading UI states, not skipping straight to done.
+var MOCK_DELAY_MS = 20000;
+
+// A tiny (~770KB), stable, publicly-hosted sample MP4 — W3Schools' standard
+// HTML5-video-tutorial sample clip (itself an excerpt of Blender
+// Foundation's Big Buck Bunny, CC-BY 3.0), used here purely so the rest of
+// the app's flow (finalizeDream, duration probing, Explore/Profile
+// rendering) has a real, working video to render against in tests — never
+// shown to a real user. Verified reachable (200, video/mp4,
+// long-lived cache-control) as of 2026-07; if this URL ever goes stale,
+// swap it for another small, stable, publicly-hosted sample clip — nothing
+// else in this file depends on its specific content.
+var MOCK_SAMPLE_VIDEO_URL = 'https://www.w3schools.com/html/mov_bbb.mp4';
+
+/**
+ * Mock path. A mock operationName is "mock:<startedAtMs>:<id>" (see
+ * generate-video.js's mockOperationName) — the start timestamp is embedded
+ * in the name itself, rather than kept in any server-side memory or Blobs
+ * store, because Netlify Functions give no guarantee that repeated polls
+ * for the same job land on the same warm instance. Comparing "now" against
+ * that embedded timestamp keeps "is it done yet" correct regardless of
+ * which instance handles which poll.
+ */
+function checkMockStatus(operationName) {
+  var startedAt = parseInt(operationName.split(':')[1], 10);
+  var elapsedMs = Date.now() - (isFinite(startedAt) ? startedAt : 0);
+  if (elapsedMs < MOCK_DELAY_MS) {
+    return { statusCode: 200, done: false };
+  }
+  return { statusCode: 200, done: true, videoUrl: MOCK_SAMPLE_VIDEO_URL };
+}
 
 /** Active path. */
 async function checkFalStatus(model, requestId, falKey) {
@@ -201,7 +246,9 @@ exports.handler = async function (event) {
   try {
     var result;
 
-    if (name.indexOf('fal:') === 0) {
+    if (name.indexOf('mock:') === 0) {
+      result = checkMockStatus(name);
+    } else if (name.indexOf('fal:') === 0) {
       var falKey = process.env.FAL_KEY;
       if (!falKey) {
         return { statusCode: 500, body: JSON.stringify({ error: 'E210: missing_api_key' }) };

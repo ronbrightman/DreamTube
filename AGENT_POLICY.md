@@ -82,14 +82,15 @@ codebase's generation flow has a real, non-zero cost — that's fine, and
 agents should not stop to ask permission every time, but should default
 to the cheapest option that actually verifies what's being tested:
 
-1. **Prefer `GENERATION_MOCK_MODE`** (zero cost) for anything that
-   doesn't need a real model call — UI states, request/response
-   plumbing, error handling, most integration tests.
-2. **When a real generation genuinely is needed**, use the cheapest real
-   option available — a short test duration (`GENERATION_TEST_DURATION`
-   or equivalent) and/or a cheaper model variant — rather than the
-   default 8-second Veo 3.1 Fast call. No need to ask first for this;
-   just use the cheap path by default.
+1. **Prefer `GENERATION_MOCK_MODE`** (zero cost, no fal.ai call at all —
+   see `docs/TESTING.md`) for anything that doesn't need a real model
+   call — UI states, request/response plumbing, error handling, most
+   integration tests. No approval needed, it never touches fal.ai.
+2. **When a real generation genuinely is needed**, use
+   `GENERATION_TEST_DURATION` (the shortest duration fal actually
+   supports, 4s — see `docs/TESTING.md`) and/or a cheaper model variant,
+   rather than the default 8-second Veo 3.1 Fast call. No need to ask
+   first for this either; just use the cheap path by default.
 3. **Only the full-price default path** (full duration, most expensive
    model) is worth pausing for — reach for it only when the cheaper
    options genuinely can't verify what's being tested, and prefer

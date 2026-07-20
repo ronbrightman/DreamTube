@@ -88,9 +88,11 @@
   //  - mock seed dreams (ids "d0".."d5")
   //  - finished dreams whose videoUrl is the old pre-Blobs Veo download
   //    proxy path (video-status.js no longer serves that route at all)
-  //  - a pendingJob left over from a Veo-era operation (not "fal:"-prefixed)
-  //    — resuming it would route into the dead/zero-quota Veo fallback and
-  //    hijack a fresh generation attempt instead of starting one
+  //  - a pendingJob left over from a Veo-era operation (not "fal:"- or
+  //    "mock:"-prefixed — see netlify/functions/generate-video.js's
+  //    GENERATION_MOCK_MODE for the latter) — resuming it would route into
+  //    the dead/zero-quota Veo fallback and hijack a fresh generation
+  //    attempt instead of starting one
   var LEGACY_MOCK_ID = /^d[0-5]$/;
   var LEGACY_VEO_DOWNLOAD_PREFIX = '/.netlify/functions/video-status?download=';
   function migrateLegacyState(s) {
@@ -107,7 +109,7 @@
       }
     });
 
-    if (s.pendingJob && (!s.pendingJob.operationName || s.pendingJob.operationName.indexOf('fal:') !== 0)) {
+    if (s.pendingJob && (!s.pendingJob.operationName || (s.pendingJob.operationName.indexOf('fal:') !== 0 && s.pendingJob.operationName.indexOf('mock:') !== 0))) {
       s.pendingJob = null;
       changed = true;
     }
