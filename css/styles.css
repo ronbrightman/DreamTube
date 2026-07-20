@@ -474,10 +474,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .explore-filter-chip .fc-x{ opacity:.65; font-weight:900; margin-left:2px;}
 
-/* Idea #3 — "Dream of the Week". Not a new page, just a badge on top of
-   the current highest-liked published dream (see explore.html's
-   pickDreamOfWeek). pointer-events:none so it never blocks the like/
-   share/mute controls or the tap-to-scroll gesture underneath it. */
+/* Idea #3 — "Dream of the Day". Not a new page, just a badge on top of
+   whichever dream the server picked as today's highlight (see
+   get-feed.js's resolveDreamOfDay). pointer-events:none so it never
+   blocks the like/share/mute controls or the tap-to-scroll gesture
+   underneath it. */
 .dow-badge{
   position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); left:14px; right:64px; z-index:6;
   border-radius:14px; overflow:hidden; padding:10px 13px; pointer-events:none;

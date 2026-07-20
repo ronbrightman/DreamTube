@@ -470,6 +470,12 @@
   var state = load();
   backfillSharedFeed();
 
+  // Set by getSharedFeed on every fetch, read by explore.html right after
+  // via getLastDreamOfDayId — a side-channel rather than changing
+  // getSharedFeed's own resolved value (still just the dreams array),
+  // since home.html/processing.html also call it and only care about that.
+  var lastDreamOfDayId = null;
+
   /**
    * Best-effort request for persistent (eviction-resistant) storage — part
    * of the client-only mitigation for accounts/dreams living only in
@@ -862,6 +868,7 @@
         return res.json();
       }).then(function (data) {
         if (data.error) throw new Error(data.error);
+        lastDreamOfDayId = data.dreamOfDayId || null;
         var likedIds = state.likedIds || {};
         var myHandle = state.user ? state.user.handle : null;
         return (data.feed || []).map(function (d) {
@@ -871,6 +878,17 @@
           });
         });
       });
+    },
+
+    /**
+     * The shared Dream of the Day pick's id, as of the most recent
+     * getSharedFeed() call — server-computed (see get-feed.js's
+     * resolveDreamOfDay), same for every visitor on a given calendar day,
+     * and excludes dreams that have already had a previous day's turn.
+     * null if getSharedFeed hasn't resolved yet, or there's nothing to pick.
+     */
+    getLastDreamOfDayId: function () {
+      return lastDreamOfDayId;
     },
 
     /** Toggles a like against the real shared count. Returns a Promise of { likes, likedByMe }. */
@@ -971,21 +989,23 @@
     },
 
     /**
-     * Device-level "have I already been shown this Dream of the Week
-     * pinned to the top of Explore" marker (see explore.html's
-     * pickDreamOfWeek). Without this, the same card got forced back to
-     * position 0 of the feed on every single visit -- not just the first
-     * -- since the pick itself rarely changes between sessions, making it
-     * feel permanently stuck rather than a one-time highlight. Device-level
-     * (not account-scoped) for the same reason as getSoundPref: Explore is
-     * browsable while logged out too.
+     * Device-level "have I already been shown today's Dream of the Day
+     * pinned to the top of Explore" marker (see explore.html's render/
+     * loadFeed). Without this, the same card got forced back to position 0
+     * of the feed on every single visit within the same day, not just the
+     * first. Since the id itself now changes daily (see get-feed.js's
+     * resolveDreamOfDay), comparing against this naturally re-triggers the
+     * pin+badge exactly once per new day's pick, with no extra date
+     * bookkeeping needed here. Device-level (not account-scoped) for the
+     * same reason as getSoundPref: Explore is browsable while logged out
+     * too.
      */
-    getSeenDreamOfWeekId: function () {
-      try { return localStorage.getItem('dreamtube_dow_seen_id'); }
+    getSeenDreamOfDayId: function () {
+      try { return localStorage.getItem('dreamtube_dod_seen_id'); }
       catch (e) { return null; }
     },
-    markDreamOfWeekSeen: function (id) {
-      try { localStorage.setItem('dreamtube_dow_seen_id', id); }
+    markDreamOfDaySeen: function (id) {
+      try { localStorage.setItem('dreamtube_dod_seen_id', id); }
       catch (e) { /* ignore (private browsing / storage disabled) */ }
     }
   };
