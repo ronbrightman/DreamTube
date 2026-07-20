@@ -81,6 +81,7 @@
   </div>
   <div class="result-panel">
     <div class="dream-quote" id="result-quote" dir="auto">""</div>
+    <div class="quote-more-hint" id="result-quote-hint" style="display:none;">Show more</div>
     <div class="result-tag-row">
       <span class="feed-tag" id="result-style-tag">Style: —</span>
       <span class="feed-tag" id="result-privacy-tag">Private</span>
@@ -487,6 +488,30 @@
   var dream = dreamId ? DreamStore.getDream(dreamId) : null;
   if(!dream){ location.href = 'explore.html'; }
 
+  // A long dream caption used to grow this panel unbounded (it's an
+  // absolutely-positioned overlay anchored to the bottom, so nothing
+  // capped its height) -- long enough text could push it up over the
+  // topbar and hide the entire screen. Now it clamps to 3 lines by
+  // default with a tap-to-expand affordance, only shown when the text
+  // actually overflows.
+  var quoteExpanded = false;
+  function setupExpandableQuote(){
+    var quote = document.getElementById('result-quote');
+    var hint = document.getElementById('result-quote-hint');
+    quote.classList.toggle('clamped', !quoteExpanded);
+    var overflowing = quote.scrollHeight > quote.clientHeight + 1;
+    hint.style.display = (overflowing || quoteExpanded) ? 'block' : 'none';
+    hint.textContent = quoteExpanded ? 'Show less' : 'Show more';
+  }
+  document.getElementById('result-quote').addEventListener('click', function(){
+    quoteExpanded = !quoteExpanded;
+    setupExpandableQuote();
+  });
+  document.getElementById('result-quote-hint').addEventListener('click', function(){
+    quoteExpanded = !quoteExpanded;
+    setupExpandableQuote();
+  });
+
   function render(){
     dream = DreamStore.getDream(dreamId);
     if(!dream) return; // not found — the guard above is already redirecting to explore.html
@@ -507,6 +532,8 @@
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
     document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
+    quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
+    setupExpandableQuote();
     document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
     var privacyTag = document.getElementById('result-privacy-tag');
     privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
