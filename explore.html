@@ -221,6 +221,27 @@
     });
   }, { root: root, threshold: [0, 0.6, 1] });
 
+  // Switching away to a different tab/app doesn't change anything about
+  // scroll position or intersection ratio, so the observer above has no
+  // reason to pause anything on its own -- left alone, a video (and its
+  // audio, if unmuted) just kept playing in the background tab, unlike
+  // e.g. YouTube pausing when you tab away. Page Visibility API fixes
+  // this directly: pause whichever card is actually playing when the tab
+  // is hidden, and resume that same one (not just re-evaluate the
+  // observer, which wouldn't fire again on its own here) when it's
+  // visible again.
+  var pausedByVisibility = null;
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){
+      Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){
+        if(!v.paused){ v.pause(); pausedByVisibility = v; }
+      });
+    } else if(pausedByVisibility){
+      if(root.contains(pausedByVisibility)) pausedByVisibility.play().catch(function(){});
+      pausedByVisibility = null;
+    }
+  });
+
   // Keeps each card's play badge (see cardHTML) in sync with its video's
   // actual state, and gives a stalled video one chance to recover on its
   // own by reloading the source once on error, on top of the manual play
