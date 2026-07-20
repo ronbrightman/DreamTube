@@ -15,6 +15,8 @@
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
 //   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
+//   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
+//   importAccountBackup(backup) -> local write, restores a backup exported above into this browser
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
@@ -469,6 +471,34 @@
   backfillSharedFeed();
 
   /**
+   * Best-effort request for persistent (eviction-resistant) storage — part
+   * of the client-only mitigation for accounts/dreams living only in
+   * localStorage (see AGENT_POLICY.md's server-options section; this is
+   * "Option 4" from that evaluation). navigator.storage.persist() is a
+   * heuristic, not a guarantee — it does not fully prevent a browser like
+   * mobile Safari from evicting storage under pressure or long inactivity
+   * — but it's real, it costs nothing, and it lowers the odds. Asked once
+   * per browser (guarded by a flag, itself in the same storage this is
+   * trying to protect — if that gets evicted too, the flag resets and
+   * this simply asks again next time, which is harmless), and only when
+   * there's an actual account worth protecting.
+   */
+  var PERSIST_ASKED_KEY = 'dreamtube_persist_asked_v1';
+  function maybeRequestPersistentStorage() {
+    if (!state.user) return;
+    try {
+      if (localStorage.getItem(PERSIST_ASKED_KEY)) return;
+      localStorage.setItem(PERSIST_ASKED_KEY, '1');
+    } catch (e) { return; }
+    try {
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().catch(function () { /* denied or unsupported — silently fine, this is best-effort */ });
+      }
+    } catch (e) { /* not supported in this browser — silently skip */ }
+  }
+  maybeRequestPersistentStorage();
+
+  /**
    * Tells PostHog "this browser is now this account" right after a real
    * signup/login succeeds, so behavior before/after auth stitches into one
    * person and cross-session identity works for whatever real accounts
@@ -618,6 +648,68 @@
       var latest = DREAM_MILESTONES[0];
       DREAM_MILESTONES.forEach(function (m) { if (count >= m) latest = m; });
       return { count: count, latestMilestone: latest, label: ordinal(latest) + ' dream' };
+    },
+
+    /**
+     * Exports the signed-in user's account + dreams + characters as a
+     * plain JSON-serializable object — the other half of the client-only
+     * mitigation alongside maybeRequestPersistentStorage above. This
+     * browser's storage is the only copy of this data today, so this is
+     * the only way to survive it being cleared/evicted: download it, keep
+     * the file somewhere safe, restore via importAccountBackup below.
+     * Returns null if not logged in. Includes the account password in
+     * plain text — same as how it's already stored locally (see the
+     * signup/login comments on that being a known, documented limitation
+     * of this pre-real-backend app) — so the exported file itself is
+     * sensitive and the UI prompting a download should say so.
+     */
+    getAccountBackup: function () {
+      if (!state.user) return null;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return null;
+      var myHandle = state.user.handle;
+      return {
+        dreamtubeBackupVersion: 1,
+        exportedAt: new Date().toISOString(),
+        username: state.user.username,
+        account: { password: account.password, email: account.email || null },
+        dreams: state.dreams.filter(function (d) { return d.ownerHandle === myHandle; }),
+        characters: state.charactersByUser[key] || []
+      };
+    },
+
+    /**
+     * Restores a backup produced by getAccountBackup() into this browser
+     * and logs in as that account. Refuses to overwrite an existing local
+     * account under the same username — that's either the same account
+     * (nothing to import) or a genuine collision, and silently picking a
+     * winner in either case would be the wrong call; the user is told to
+     * log in normally or resolve it themselves instead. Dreams are merged
+     * by id (skips any already present locally) rather than replacing the
+     * whole array, so this is safe to run even if some of the backed-up
+     * dreams somehow already exist on this device. Returns { ok:true,
+     * user } or { ok:false, error }.
+     */
+    importAccountBackup: function (backup) {
+      if (!backup || typeof backup !== 'object' || backup.dreamtubeBackupVersion !== 1 || !backup.username || !backup.account) {
+        return { ok: false, error: "That file doesn't look like a DreamTube backup." };
+      }
+      var key = backup.username.toLowerCase();
+      if (state.accounts[key]) {
+        return { ok: false, error: 'An account with that username already exists on this device — log in normally instead.' };
+      }
+      state.accounts[key] = { password: backup.account.password, email: backup.account.email || null };
+      var existingIds = {};
+      state.dreams.forEach(function (d) { existingIds[d.id] = true; });
+      (backup.dreams || []).forEach(function (d) {
+        if (!existingIds[d.id]) state.dreams.push(d);
+      });
+      state.charactersByUser[key] = backup.characters || [];
+      state.user = { handle: '@' + backup.username, username: backup.username };
+      persist();
+      identifyForAnalytics(backup.username);
+      return { ok: true, user: state.user };
     },
 
     getDream: function (id) { return findDream(id); },
