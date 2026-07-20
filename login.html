@@ -88,8 +88,12 @@
       <span class="icon" id="auth-trust-icon"></span>
       <span>Your dreams stay private until you choose to share them.</span>
     </div>
+    <div class="auth-sub" id="local-only-note" style="margin-top:10px; display:none;">Heads up — your account and dreams currently live only on this device. Export a backup anytime from Profile → the settings icon, in case this browser's storage ever gets cleared.</div>
 
     <div style="flex:1"></div>
+    <span class="link-text" id="restore-backup-link" style="cursor:pointer; margin-bottom:14px;">Have a backup file? <b>Restore it</b></span>
+    <div class="err-text" id="restore-error"></div>
+    <input type="file" accept="application/json,.json" id="restore-backup-input" style="display:none;">
     <span class="link-text" id="auth-toggle" style="margin-bottom:22px; cursor:pointer;">New here? <b>Sign up</b></span>
   </div>
 
@@ -197,6 +201,7 @@
     emailField.style.display = isSignup ? 'block' : 'none';
     usernameField.placeholder = isSignup ? 'Username' : 'Username or email';
     forgotLink.style.display = isSignup ? 'none' : 'block';
+    document.getElementById('local-only-note').style.display = isSignup ? 'block' : 'none';
     document.getElementById('login-error').textContent = '';
   }
   syncAuthUI();
@@ -226,6 +231,37 @@
         btn.textContent = 'Continue';
       }
     }, 450);
+  });
+
+  // ===== Restore from backup file =====
+  // Import half of the client-only mitigation for accounts/dreams living
+  // only in localStorage (see AGENT_POLICY.md's server-options section
+  // and profile.html's export button, DreamStore.getAccountBackup). This
+  // is the recovery path for exactly the failure mode that started that
+  // conversation: this browser's storage got cleared/evicted and normal
+  // login fails with "no account found" even though the username/password
+  // are correct.
+  document.getElementById('restore-backup-link').addEventListener('click', function(){
+    document.getElementById('restore-error').textContent = '';
+    document.getElementById('restore-backup-input').click();
+  });
+  document.getElementById('restore-backup-input').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if(!file) return;
+    var errEl = document.getElementById('restore-error');
+    errEl.textContent = '';
+    var reader = new FileReader();
+    reader.onload = function(){
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch(parseErr){ errEl.textContent = "That doesn't look like a valid backup file."; return; }
+      var result = DreamStore.importAccountBackup(parsed);
+      if(!result.ok){ errEl.textContent = result.error; return; }
+      location.href = nextUrl;
+    };
+    reader.onerror = function(){ errEl.textContent = "Couldn't read that file — try again."; };
+    reader.readAsText(file);
   });
 
   // ===== Forgot password =====

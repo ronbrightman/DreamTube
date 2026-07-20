@@ -114,12 +114,19 @@
         <span>Email saved.</span>
       </div>
       <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
+
+      <div style="height:20px;"></div>
+      <div class="auth-sub" style="margin-bottom:10px;">Your account and dreams currently live only on this device — export a backup so you can restore access if this browser's storage is ever cleared.</div>
+      <button class="btn btn-secondary btn-block" id="export-backup-btn"><span class="icon" id="export-backup-icon"></span> Export backup</button>
+
       <div style="height:10px;"></div>
       <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
       <div style="height:8px;"></div>
       <span class="link-text" id="account-logout-link" style="cursor:pointer; color:var(--danger);">Log out</span>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -271,6 +278,37 @@
       DreamStore.logout();
       location.href = 'index.html';
     }
+  });
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // Client-only mitigation for accounts/dreams living only in this
+  // browser's localStorage (see AGENT_POLICY.md's server-options
+  // section) -- downloads everything DreamStore.getAccountBackup()
+  // returns as a JSON file the user can restore from later via
+  // login.html's "Restore from backup" flow. The file contains the
+  // account password in plain text (same as how it's stored locally
+  // today), so it's treated as sensitive -- the button copy above this
+  // already says to keep it safe.
+  document.getElementById('export-backup-icon').innerHTML = Icons.download;
+  document.getElementById('export-backup-btn').addEventListener('click', function(){
+    var backup = DreamStore.getAccountBackup();
+    if(!backup) return;
+    var blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'dreamtube-backup-' + backup.username + '-' + backup.exportedAt.slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    showToast('Backup downloaded — keep it somewhere safe');
   });
 
   // Swipe right -> Explore. Explore sits to Profile's left in the bottom
