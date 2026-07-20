@@ -1,37 +1,46 @@
 # Agent Policy — DreamTube Product-Improvement Workflow
 
-This repo uses a six-agent pipeline for ongoing product improvement:
-**research → evaluation → design → build → review**, plus a standing
-**ab-test-creator** agent that closes the loop on live experiments after
-launch. This document is the single source of truth for (1) what that
-pipeline looks like end to end, and (2) exactly when a human has to
-approve something versus when an agent can just proceed on its own.
-`CLAUDE.md` points here so every agent picks this up automatically at
-the start of a session in this repo.
+This repo uses a seven-agent pipeline for ongoing product improvement:
+**research + marketing → evaluation → design → build → review**, plus a
+standing **ab-test-creator** agent that closes the loop on live
+experiments after launch. This document is the single source of truth
+for (1) what that pipeline looks like end to end, and (2) exactly when a
+human has to approve something versus when an agent can just proceed on
+its own. `CLAUDE.md` points here so every agent picks this up
+automatically at the start of a session in this repo.
 
-## The six agents
+## The seven agents
 
 | Agent | Scope | Location | Job |
 |---|---|---|---|
-| research | user-level (portable) | `~/.claude/agents/research.md` | Generates and researches feature/marketing ideas |
+| research | user-level (portable) | `~/.claude/agents/research.md` | Generates and researches feature ideas |
+| marketing | user-level (portable) | `~/.claude/agents/marketing.md` | Generates and refines marketing/growth/launch/pricing ideas, feeding the same evaluation flow as research |
 | evaluation | user-level (portable) | `~/.claude/agents/evaluation.md` | Scores and ranks ideas using RICE |
 | design | user-level (portable) | `~/.claude/agents/design.md` | Turns an approved idea into a spec + UX options |
 | build | **project-level** | `.claude/agents/build.md` | Implements an approved idea + design, on a branch |
 | review | **project-level** | `.claude/agents/review.md` | Independently checks build's finished work |
 | ab-test-creator | **project-level** | `.claude/agents/ab-test-creator.md` | Reads concluded PostHog experiments, builds the next challenger variant on a branch |
 
-research, evaluation, and design are generic and portable — they aren't
-DreamTube-specific, are available in any project, and are distributed
-via the `agent-library` Claude Code plugin marketplace (see below) so
-they're easy to bring into a new environment. `build` and `review` are
-both tied to this repo specifically: doing either job well requires
-knowing this codebase's actual structure and conventions (its account-
-scoping gotchas, its error-code scheme, its testing patterns), not
-generic engineering knowledge.
+research, marketing, evaluation, and design are generic and portable —
+they aren't DreamTube-specific, are available in any project, and are
+distributed via the `agent-library` Claude Code plugin marketplace (see
+below) so they're easy to bring into a new environment. `build` and
+`review` are both tied to this repo specifically: doing either job well
+requires knowing this codebase's actual structure and conventions (its
+account-scoping gotchas, its error-code scheme, its testing patterns),
+not generic engineering knowledge.
 
-## Getting research / evaluation / design in a new environment
+Each of research, marketing, evaluation, and design also loads a small
+set of frozen (locally-owned, not live-plugin) third-party skills via
+its own `skills:` frontmatter — see the `NOTICE.md` next to each copied
+skill folder under `~/.claude/skills/` for source/license details. `build`
+and `review` do the same at project level, under
+`.claude/skills/superpowers/` and `.claude/skills/skill-security-auditor/`
+respectively.
 
-These three are published as a plugin in the `agent-library` GitHub
+## Getting research / marketing / evaluation / design in a new environment
+
+These four are published as a plugin in the `agent-library` GitHub
 repo (`ronbrightman/agent-library`), structured as a proper Claude Code
 plugin marketplace. In any new environment:
 
@@ -47,7 +56,8 @@ That's it — no manual file copying. See that repo's README for details.
 Run manually, on demand — there is no scheduled or automatic triggering
 of this pipeline (yet).
 
-1. **research** generates feature/marketing ideas.
+1. **research** generates feature ideas; **marketing** generates
+   marketing/growth ideas — both feed the same next step.
 2. **evaluation** scores and ranks them (RICE-based — see its own instructions).
 3. **Human reviews the ranked list and picks what to pursue.** ← approval gate
 4. **design** produces a product spec plus 1-2 visual/UX directions for the chosen idea.
@@ -127,7 +137,7 @@ cycle autonomously without pausing for a human in between.
 
 ## For agents reading this
 
-If you're research, evaluation, design, or review and you're running
+If you're research, marketing, evaluation, design, or review and you're running
 inside a project that has this file: follow it. If you're running in a
 project that doesn't have an `AGENT_POLICY.md`, apply the same
 principles by default — implementation can proceed autonomously on a
