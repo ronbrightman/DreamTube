@@ -128,7 +128,7 @@
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
-  function cardHTML(d, isFirst, isDreamOfWeek){
+  function cardHTML(d, isFirst, isDreamOfDay){
     // No autoplay attribute — every card would otherwise start playing the
     // instant it's inserted into the DOM regardless of whether it's the
     // visible one, so by the time you scrolled to card #2 it had already
@@ -151,13 +151,15 @@
     var playBadge = d.videoUrl
       ? '<div class="play-badge feed-play" data-play="'+d.id+'"><div class="badge-circle"><span class="icon">'+Icons.play+'</span></div></div>'
       : '';
-    // Idea #3 — "Dream of the Week": not a separate page or section, just
-    // a badge overlaid on whichever card is currently the most-liked
-    // published dream (see pickDreamOfWeek below). Only shown in the
-    // unfiltered feed — a filtered view (one style/user) is an
-    // intentional subset, not "the first thing anyone sees."
-    var dowBadge = isDreamOfWeek
-      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the week</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
+    // Idea #3 — "Dream of the Day": not a separate page or section, just a
+    // badge overlaid on whichever card the server picked as today's
+    // highlight (see get-feed.js's resolveDreamOfDay — most-liked among
+    // dreams that haven't already had a previous day's turn, same pick for
+    // every visitor). Only shown in the unfiltered feed — a filtered view
+    // (one style/user) is an intentional subset, not "the first thing
+    // anyone sees."
+    var dowBadge = isDreamOfDay
+      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
       : '';
     return '<div class="feed-card" data-id="'+d.id+'">' +
       media +
@@ -191,21 +193,7 @@
   // filter click.
   var allDreams = [];
   var feedLoaded = false;
-  var dreamOfWeekId = null;
-
-  // Idea #3 — currently just the most-liked published dream, computed
-  // once when the feed loads (not live-recomputed as likes change during
-  // a session, to avoid it jumping around under someone mid-scroll).
-  // Ties go to whichever comes first in the feed's own order. A future
-  // pass could make this a manual admin pick instead, same as the
-  // paywall toggle — not needed for this version.
-  function pickDreamOfWeek(dreams){
-    var best = null;
-    dreams.forEach(function(d){
-      if(!best || d.likes > best.likes) best = d;
-    });
-    return best;
-  }
+  var dreamOfDayId = null;
 
   function findLoadedDream(id){
     for(var i=0; i<allDreams.length; i++) if(allDreams[i].id === id) return allDreams[i];
@@ -286,7 +274,7 @@
       });
     }
     root.innerHTML = dreams.length
-      ? dreams.map(function(d,i){ return cardHTML(d, i===0, !filter && d.id === dreamOfWeekId); }).join('')
+      ? dreams.map(function(d,i){ return cardHTML(d, i===0, !filter && d.id === dreamOfDayId); }).join('')
       : '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No published dreams yet.') + '</div>';
 
     if(filter){
@@ -303,21 +291,25 @@
   function loadFeed(){
     DreamStore.getSharedFeed().then(function(dreams){
       allDreams = dreams;
-      var dow = pickDreamOfWeek(allDreams);
-      // Only pin-to-top + badge the first time this browser sees this
-      // particular Dream of the Week — the pick rarely changes between
-      // sessions, so without this check it got forced back to the top of
-      // the feed (and the badge kept reappearing) on every single visit,
-      // not just the first. Once seen, it just sits in its normal feed
-      // position like any other dream until a new one actually overtakes
-      // it in likes. See DreamStore.getSeenDreamOfWeekId/markDreamOfWeekSeen.
-      if(dow && DreamStore.getSeenDreamOfWeekId() !== dow.id){
-        dreamOfWeekId = dow.id;
+      // The pick itself is the server's job now (get-feed.js's
+      // resolveDreamOfDay — same dream for every visitor on a given
+      // calendar day, excluding ones that already had a previous day's
+      // turn). This only decides whether THIS browser still needs the
+      // pin-to-top + badge treatment for today's pick: without that check,
+      // it'd get forced back to the top of the feed on every single visit
+      // within the same day, not just the first. Once seen, it just sits
+      // in its normal feed position like any other dream until tomorrow's
+      // pick changes the id and the comparison trips again. See
+      // DreamStore.getSeenDreamOfDayId/markDreamOfDaySeen.
+      var dowId = DreamStore.getLastDreamOfDayId();
+      var dow = dowId ? findLoadedDream(dowId) : null;
+      if(dow && DreamStore.getSeenDreamOfDayId() !== dow.id){
+        dreamOfDayId = dow.id;
         var idx = allDreams.indexOf(dow);
         if(idx > 0){ allDreams.splice(idx, 1); allDreams.unshift(dow); }
-        DreamStore.markDreamOfWeekSeen(dow.id);
+        DreamStore.markDreamOfDaySeen(dow.id);
       } else {
-        dreamOfWeekId = null;
+        dreamOfDayId = null;
       }
       feedLoaded = true;
       render();
