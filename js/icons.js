@@ -77,6 +77,10 @@
 
     mail: svg('<rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M2 6l10 7 10-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
 
-    download: svg('<path d="M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    download: svg('<path d="M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    volumeOn: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16.5 8.5a5 5 0 010 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 6a9 9 0 010 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'),
+
+    volumeMuted: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
   };
 })();
