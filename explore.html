@@ -158,7 +158,7 @@
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div></div>' +
-        '<div class="feed-caption" dir="auto">'+esc(d.caption)+'</div>' +
+        '<div class="feed-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
         '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span><span class="dot"></span><span>'+esc(d.dur)+'</span></div>' +
       '</div>' +
       '<div class="feed-actions">' +
@@ -313,6 +313,14 @@
   // Delegated click handling so re-rendering (filtering) never needs to
   // re-attach per-card listeners.
   root.addEventListener('click', function(e){
+    // A long caption used to grow unbounded and push into the video/
+    // controls above it — same underlying issue as result.html's quote,
+    // fixed the same way: clamp to 3 lines by default, tap to expand.
+    var captionEl = e.target.closest('.feed-caption');
+    if(captionEl){
+      captionEl.classList.toggle('clamped');
+      return;
+    }
     var styleTag = e.target.closest('[data-filter-style]');
     if(styleTag){
       filter = { type: 'style', value: styleTag.dataset.filterStyle };

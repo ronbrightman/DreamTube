@@ -77,7 +77,7 @@
       <div class="proc-caption" id="proc-caption">Painting the scene…</div>
       <button class="btn btn-ghost" id="notify-btn" disabled style="margin-top:6px;"></button>
       <div class="proc-preview" id="proc-preview" style="display:none;">
-        <div class="proc-preview-label">While you wait, revisit your dreams</div>
+        <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
       </div>
     </div>
@@ -140,18 +140,35 @@
     document.getElementById('proc-pct').textContent = '100%';
   }
 
+  function previewThumbHTML(d){
+    var media = d.videoUrl
+      ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata"></video>'
+      : '<div class="ppt-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
+    return '<div class="proc-preview-thumb">'+media+'</div>';
+  }
+
+  // A brand-new user has no dreams of their own yet, so this section used
+  // to just hide itself entirely while they wait — showing nothing where
+  // there's screen real estate to fill. Falls back to the general shared
+  // Explore feed in that case instead, same visual treatment either way.
   function renderPreview(){
-    var dreams = DreamStore.getMyDreams().filter(function(d){ return d.isPublished; }).slice(0, 10);
     var section = document.getElementById('proc-preview');
     var row = document.getElementById('proc-preview-row');
-    if(!dreams.length){ section.style.display = 'none'; return; }
-    section.style.display = 'block';
-    row.innerHTML = dreams.map(function(d){
-      var media = d.videoUrl
-        ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata"></video>'
-        : '<div class="ppt-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
-      return '<div class="proc-preview-thumb">'+media+'</div>';
-    }).join('');
+    var label = document.getElementById('proc-preview-label');
+    var mine = DreamStore.getMyDreams().filter(function(d){ return d.isPublished; }).slice(0, 10);
+    if(mine.length){
+      section.style.display = 'block';
+      label.textContent = 'While you wait, revisit your dreams';
+      row.innerHTML = mine.map(previewThumbHTML).join('');
+      return;
+    }
+    DreamStore.getSharedFeed().then(function(dreams){
+      var pick = dreams.slice(0, 10);
+      if(!pick.length){ section.style.display = 'none'; return; }
+      section.style.display = 'block';
+      label.textContent = 'While you wait, explore other dreams';
+      row.innerHTML = pick.map(previewThumbHTML).join('');
+    }).catch(function(){ section.style.display = 'none'; });
   }
 
   function runGeneration(){

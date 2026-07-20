@@ -272,6 +272,38 @@
       location.href = 'index.html';
     }
   });
+
+  // Swipe right -> Explore. Explore sits to Profile's left in the bottom
+  // nav, so this mirrors the standard "swipe right to go back/over"
+  // pattern. Decided purely on the start/end touch points at touchend
+  // (never preventDefault on touchmove), so normal vertical scrolling
+  // through the dream grid is never interfered with — a fast, mostly-
+  // horizontal, rightward drag triggers the nav; anything else (a tap, a
+  // vertical scroll, a slow drag) does nothing.
+  (function(){
+    var startX = 0, startY = 0, startT = 0, tracking = false;
+    var MIN_DX = 70, MAX_DY = 60, MAX_MS = 700;
+    var appEl = document.getElementById('app');
+    appEl.addEventListener('touchstart', function(e){
+      if(e.touches.length !== 1 || accountOverlay.classList.contains('open')){ tracking = false; return; }
+      tracking = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      startT = Date.now();
+    }, { passive: true });
+    appEl.addEventListener('touchend', function(e){
+      if(!tracking) return;
+      tracking = false;
+      var touch = e.changedTouches[0];
+      if(!touch) return;
+      var dx = touch.clientX - startX;
+      var dy = touch.clientY - startY;
+      var dt = Date.now() - startT;
+      if(dt <= MAX_MS && dx >= MIN_DX && Math.abs(dy) <= MAX_DY){
+        location.href = 'explore.html';
+      }
+    }, { passive: true });
+  })();
 </script>
 </body>
 </html>
