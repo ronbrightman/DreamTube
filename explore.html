@@ -128,7 +128,7 @@
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
-  function cardHTML(d, isFirst){
+  function cardHTML(d, isFirst, isDreamOfWeek){
     // No autoplay attribute — every card would otherwise start playing the
     // instant it's inserted into the DOM regardless of whether it's the
     // visible one, so by the time you scrolled to card #2 it had already
@@ -143,9 +143,18 @@
     var muteBtn = d.videoUrl
       ? '<button class="icon-btn feed-mute-btn" data-mute="'+d.id+'" title="'+(soundOn?'Mute':'Unmute')+'" style="position:absolute; right:14px; top:calc(env(safe-area-inset-top,0px) + 16px); z-index:50; background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);">'+(soundOn?Icons.volumeOn:Icons.volumeMuted)+'</button>'
       : '';
+    // Idea #3 — "Dream of the Week": not a separate page or section, just
+    // a badge overlaid on whichever card is currently the most-liked
+    // published dream (see pickDreamOfWeek below). Only shown in the
+    // unfiltered feed — a filtered view (one style/user) is an
+    // intentional subset, not "the first thing anyone sees."
+    var dowBadge = isDreamOfWeek
+      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the week</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
+      : '';
     return '<div class="feed-card" data-id="'+d.id+'">' +
       media +
       muteBtn +
+      dowBadge +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div></div>' +
@@ -173,6 +182,22 @@
   // filter click.
   var allDreams = [];
   var feedLoaded = false;
+  var dreamOfWeekId = null;
+
+  // Idea #3 — currently just the most-liked published dream, computed
+  // once when the feed loads (not live-recomputed as likes change during
+  // a session, to avoid it jumping around under someone mid-scroll).
+  // Ties go to whichever comes first in the feed's own order. A future
+  // pass could make this a manual admin pick instead, same as the
+  // paywall toggle — not needed for this version.
+  function pickDreamOfWeek(dreams){
+    var best = null;
+    dreams.forEach(function(d){
+      if(!best || d.likes > best.likes) best = d;
+    });
+    return best;
+  }
+
   function findLoadedDream(id){
     for(var i=0; i<allDreams.length; i++) if(allDreams[i].id === id) return allDreams[i];
     return null;
@@ -217,7 +242,7 @@
       });
     }
     root.innerHTML = dreams.length
-      ? dreams.map(function(d,i){ return cardHTML(d, i===0); }).join('')
+      ? dreams.map(function(d,i){ return cardHTML(d, i===0, !filter && d.id === dreamOfWeekId); }).join('')
       : '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No published dreams yet.') + '</div>';
 
     if(filter){
@@ -234,6 +259,12 @@
   function loadFeed(){
     DreamStore.getSharedFeed().then(function(dreams){
       allDreams = dreams;
+      var dow = pickDreamOfWeek(allDreams);
+      if(dow){
+        dreamOfWeekId = dow.id;
+        var idx = allDreams.indexOf(dow);
+        if(idx > 0){ allDreams.splice(idx, 1); allDreams.unshift(dow); }
+      }
       feedLoaded = true;
       render();
       var targetId = getParam('id');
