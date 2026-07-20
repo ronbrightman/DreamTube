@@ -211,6 +211,23 @@ body{
 .profile-stats{ font-size:12.5px; color:var(--text-muted); margin-top:5px; max-width:240px; line-height:1.4;}
 .profile-stats b{ color:var(--text-primary);}
 
+/* Idea #4/#5 — pattern insight + milestone counter. Both read data
+   already saved on the signed-in user's own dreams (see
+   DreamStore.getDreamInsight/getDreamMilestone) and only ever render on
+   the account's own profile page — there is no "view someone else's
+   profile" route in this app, so no extra owner-check is needed here. */
+.profile-milestone-row{ display:flex; gap:8px; padding:0 20px; margin-bottom:12px;}
+.profile-milestone-chip{ flex:1; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 8px; text-align:center;}
+.profile-milestone-chip .pm-num{ font-size:19px; font-weight:800;}
+.profile-milestone-chip .pm-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px;}
+.profile-milestone-chip .pm-icon{ width:18px; height:18px; margin:0 auto 2px;}
+.profile-insight-card{ margin:0 20px 16px; padding:14px 16px; border-radius:16px; background:var(--gradient-ig); position:relative;}
+.profile-insight-card::before{ content:""; position:absolute; inset:1px; border-radius:15px; background:var(--surface); opacity:.88;}
+.profile-insight-card .pi-inner{ position:relative;}
+.profile-insight-card .pi-label{ font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#c9a8f0; margin-bottom:5px;}
+.profile-insight-card p{ font-size:12.5px; line-height:1.5; color:#eee;}
+.profile-insight-card b{ color:#fff;}
+
 /* ===== Create ===== */
 .choice-card{
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md);

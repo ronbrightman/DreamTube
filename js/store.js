@@ -13,6 +13,8 @@
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
+//   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
+//   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
@@ -185,6 +187,56 @@
     return null;
   }
   function gradientFor(d) { return STYLE_GRADIENTS[d.style] || STYLE_GRADIENTS.Cinematic; }
+
+  /**
+   * Keyword-based recurring-theme detector for the Profile "pattern
+   * insight" card (idea #4). Deliberately simple client-side substring
+   * matching against captions already saved on each dream — no new AI
+   * call, per the approved design. A theme counts at most once per dream
+   * even if several of its keywords appear in the same caption.
+   */
+  var DREAM_THEMES = {
+    flying: ['fly', 'flying', 'flew', 'soar', 'soaring', 'float', 'floating'],
+    falling: ['fall', 'falling', 'fell', 'plummet'],
+    water: ['ocean', 'sea', 'water', 'swim', 'swimming', 'wave', 'waves', 'river', 'flood', 'drown', 'drowning', 'rain'],
+    chasing: ['chase', 'chasing', 'chased', 'pursued', 'pursuit'],
+    teeth: ['teeth', 'tooth'],
+    lost: ['lost', 'maze', 'labyrinth', 'wander', 'wandering'],
+    animals: ['dog', 'cat', 'wolf', 'wolves', 'bird', 'birds', 'snake', 'snakes', 'lion', 'tiger', 'horse'],
+    fire: ['fire', 'burning', 'flame', 'flames'],
+    home: ['house', 'home'],
+    school: ['school', 'exam', 'classroom'],
+    death: ['death', 'dying', 'funeral'],
+    city: ['city', 'skyline', 'building', 'buildings']
+  };
+  var THEME_MIN_COUNT = 3;  // a theme must recur at least this many times...
+  var THEME_MIN_TOTAL = 4;  // ...across at least this many recent dreams...
+  var THEME_WINDOW = 9;     // ...looking only at the most recent N (mine is already newest-first)
+  function detectDreamTheme(dreams) {
+    var recent = dreams.slice(0, THEME_WINDOW);
+    if (recent.length < THEME_MIN_TOTAL) return null;
+    var counts = {};
+    recent.forEach(function (d) {
+      var text = (d.caption || '').toLowerCase();
+      Object.keys(DREAM_THEMES).forEach(function (theme) {
+        var hit = DREAM_THEMES[theme].some(function (kw) { return text.indexOf(kw) !== -1; });
+        if (hit) counts[theme] = (counts[theme] || 0) + 1;
+      });
+    });
+    var best = null;
+    Object.keys(counts).forEach(function (theme) {
+      if (!best || counts[theme] > counts[best]) best = theme;
+    });
+    if (!best || counts[best] < THEME_MIN_COUNT) return null;
+    return { theme: best, count: counts[best], total: recent.length };
+  }
+
+  /** Milestone thresholds for idea #5 — a count that only ever goes up, no streak to break. */
+  var DREAM_MILESTONES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
+  function ordinal(n) {
+    var suffixes = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+  }
 
   function newCharId() { return 'c' + Math.random().toString(36).slice(2, 9); }
   /** Characters are private per-user — every accessor is scoped to the logged-in account, never global. */
@@ -540,6 +592,34 @@
       var myHandle = state.user ? state.user.handle : null;
       return state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; });
     },
+
+    /**
+     * Recurring dream-theme pattern for the Profile insight card (idea #4).
+     * Returns { theme, count, total } or null if no real pattern exists
+     * yet — callers must hide the card entirely on null, never show an
+     * empty/placeholder state.
+     */
+    getDreamInsight: function () {
+      var myHandle = state.user ? state.user.handle : null;
+      var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; });
+      return detectDreamTheme(mine);
+    },
+
+    /**
+     * Dream-count milestone for the Profile milestone chip (idea #5).
+     * Returns { count, latestMilestone, label } or null if the user has
+     * no dreams yet. A plain count that only ever goes up — no streak
+     * that can break if a day is skipped.
+     */
+    getDreamMilestone: function () {
+      var myHandle = state.user ? state.user.handle : null;
+      var count = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; }).length;
+      if (!count) return null;
+      var latest = DREAM_MILESTONES[0];
+      DREAM_MILESTONES.forEach(function (m) { if (count >= m) latest = m; });
+      return { count: count, latestMilestone: latest, label: ordinal(latest) + ' dream' };
+    },
+
     getDream: function (id) { return findDream(id); },
     gradientFor: gradientFor,
 
