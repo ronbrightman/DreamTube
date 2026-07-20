@@ -66,30 +66,48 @@
 </script>
 
 <!--
-  DreamTube onboarding funnel — 15 screens, one page, JS-driven step
-  navigation. Ported from the approved mockup at
+  DreamTube onboarding funnel — originally 15 screens in one page, JS-driven
+  step navigation, ported from the approved mockup at
   scratchpad/funnel-mockup.html (v3.1) — see that file and
-  scratchpad/research/onboarding-funnel.md for the full design rationale.
-  Do not reorder or redesign screens here; this is an implementation of an
-  already-approved spec, not a place to make new design calls.
+  scratchpad/research/onboarding-funnel.md for the full original design
+  rationale. Do not reorder or redesign the remaining screens here; this is
+  an implementation of an already-approved spec, not a place to make new
+  design calls.
 
-  Architecture mirrors the mockup: a small array of screen-render functions
-  (SCREEN_RENDERERS), a phase->CSS-custom-property color system that blends
-  from pastel dawn to night across the 15 screens (PHASES/PHASE_BY_STEP),
-  and next()/prev() step navigation with progress dots.
+  ARCHITECTURE SPLIT (see the dreamtube-growth repo's AGENT_POLICY.md for
+  the full story): the ad-facing, iterate-often screens — hook carousel,
+  the 3-question quiz, reassurance, social proof, dream-text capture, style
+  picker, and the Dream Profile recap (originally screens 1-8, 10, 12) —
+  now live in the separate dreamtube-growth marketing repo, with their own
+  PostHog/Pixel/CAPI tracking and A/B testing. This file keeps only what
+  structurally has to run in DreamTube's own origin: Advanced (characters/
+  camera/scenery — screen 9), the "coming together" transition (screen 11),
+  signup, pricing, and confirmation (screens 13-15). Two reasons those
+  couldn't move:
+   1. Signup is NOT a network call — DreamStore.signup() writes straight
+      into this origin's own localStorage. There is no account to create
+      from a different origin.
+   2. Character photos are staged in-memory as base64 data URLs (the
+      `staged` object below) until signup — arbitrarily large, and every
+      other Advanced field (camera/scenery chips) writes directly into
+      DreamStore.setDraft(), which only exists in this origin.
 
-  Real-integration notes (see AGENT_POLICY.md / CLAUDE.md task spec for the
-  full brief this implements):
-   - Screens 1-7 are pure client-side quiz state (the `quiz` object below) —
-     nothing is persisted to DreamStore until it's actually needed.
-   - Screen 8 (dream capture) and screen 10 (style) call DreamStore.setDraft
-     exactly like create.html/style.html do — setDraft works before login,
-     so no special-casing needed there.
+  A visitor lands here one of two ways:
+   - Organic, in-app "Get Started" (no ?resume=1 param): the full original
+     15-screen experience, completely unchanged from before this split.
+   - From the marketing funnel (?resume=1 plus recall/types/motivations/
+     style/caption as URL params): skips straight to Advanced, with those
+     values hydrated into `quiz`/`chosenStyle`/the real draft first. See
+     the "Resume-from-marketing entry point" block below for exactly what's
+     parsed, and SCREEN_RENDERERS/PHASE_BY_STEP/TAGS further down for how
+     the shorter resume-mode screen sequence is built.
+
+  Real-integration notes still relevant to what's left here:
    - Screen 9 (Advanced: characters/camera/scenery) is a real functional
      port of create.html's Advanced section. Camera/scenery chips call
-     DreamStore.setDraft directly (also login-independent). Characters are
-     the one exception: DreamStore.saveCharacter() requires a logged-in
-     user, but signup doesn't happen until screen 13 — by design, per the
+     DreamStore.setDraft directly (login-independent). Characters are the
+     one exception: DreamStore.saveCharacter() requires a logged-in user,
+     but signup doesn't happen until screen 13 — by design, per the
      approved funnel order (dream input + Advanced moved early, paywall
      late). So characters are staged locally (the `staged` object) with the
      same validation rules as DreamStore.saveCharacter, and flushed into
@@ -285,6 +303,7 @@
   }
 
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function truncateCaption(str, maxLen){
     var s = (str || '').trim();
@@ -326,6 +345,25 @@
   var chosenStyle = null;
   var staged = { characters: [], selectedIds: [] };
 
+  // ===== Resume-from-marketing entry point =====
+  // The ad-facing hook/quiz/style/recap screens (formerly screens 1-8, 10,
+  // 12 here) now live in the separate dreamtube-growth marketing repo. That
+  // funnel collects the same quiz/style/caption signals this file used to
+  // collect itself, then redirects here with ?resume=1 plus those values as
+  // URL params, landing directly on Advanced (screen 9) instead of
+  // restarting from the hook carousel. A visitor with no ?resume=1 (organic
+  // in-app "Get Started" clicks) gets the exact same full 15-screen
+  // experience as before this split — this is additive, not a replacement
+  // of the organic path. See head-of-file comment for the full picture.
+  var isResume = getParam('resume') === '1';
+  if(isResume){
+    quiz.recall = getParam('recall') || null;
+    quiz.dreamTypes = (getParam('types') || '').split(',').filter(Boolean);
+    quiz.motivations = (getParam('motivations') || '').split(',').filter(Boolean);
+    chosenStyle = getParam('style') || null;
+    track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
+  }
+
   // Screens 1 and 7's carousels are social proof ("look what other people
   // dreamed up") -- they used to be pure hardcoded pastel-gradient
   // placeholders with made-up like counts and captions, which is exactly
@@ -335,15 +373,20 @@
   // fallback for whichever slot doesn't have a real dream to show (a very
   // early/empty install, most likely). Fetched once, before either screen
   // is likely to have been reached yet, and re-rendered in place if the
-  // visitor is already sitting on screen 1 or 7 when it resolves.
+  // visitor is already sitting on screen 1 or 7 when it resolves. Skipped
+  // entirely in resume mode — those two screens never render there.
   var socialProofDreams = [];
-  DreamStore.getSharedFeed().then(function(dreams){
-    socialProofDreams = dreams.slice().sort(function(a, b){ return (b.likes || 0) - (a.likes || 0); });
-    if(cur === 0 || cur === 6) render();
-  }).catch(function(){ /* keep the gradient/text fallback silently */ });
+  if(!isResume){
+    DreamStore.getSharedFeed().then(function(dreams){
+      socialProofDreams = dreams.slice().sort(function(a, b){ return (b.likes || 0) - (a.likes || 0); });
+      if(cur === 0 || cur === 6) render();
+    }).catch(function(){ /* keep the gradient/text fallback silently */ });
+  }
   var cur = 0;
 
-  var TAGS = ['hook','promise','recall','dream_type','motivation','reassurance','see_in_action','dream_capture','advanced','style','preparing','recap','email_capture','pricing','confirmation'];
+  var TAGS = isResume
+    ? ['advanced', 'preparing', 'email_capture', 'pricing', 'confirmation']
+    : ['hook','promise','recall','dream_type','motivation','reassurance','see_in_action','dream_capture','advanced','style','preparing','recap','email_capture','pricing','confirmation'];
 
   // Phase color system — ported verbatim from funnel-mockup.html's PHASES
   // map. 'app-dark' (screen 9 only) is a special case handled in
@@ -361,7 +404,9 @@
     'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
     'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
-  var PHASE_BY_STEP = ['dawn-hero','dawn','dawn','dawn','dawn','dawn','dawn','dawn','app-dark','dawn-warm','transition','mid-dusk','dusk','dusk-deep','night'];
+  var PHASE_BY_STEP = isResume
+    ? ['app-dark', 'transition', 'dusk', 'dusk-deep', 'night']
+    : ['dawn-hero','dawn','dawn','dawn','dawn','dawn','dawn','dawn','app-dark','dawn-warm','transition','mid-dusk','dusk','dusk-deep','night'];
 
   var appEl = document.getElementById('app');
   var screenEl = document.getElementById('fnScreen');
@@ -1102,7 +1147,9 @@
   // ===================================================================
   // Navigation / phase engine
   // ===================================================================
-  var SCREEN_RENDERERS = [renderScreen1, renderScreen2, renderScreen3, renderScreen4, renderScreen5, renderScreen6, renderScreen7, renderScreen8, renderScreen9, renderScreen10, renderScreen11, renderScreen12, renderScreen13, renderScreen14, renderScreen15];
+  var SCREEN_RENDERERS = isResume
+    ? [renderScreen9, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
+    : [renderScreen1, renderScreen2, renderScreen3, renderScreen4, renderScreen5, renderScreen6, renderScreen7, renderScreen8, renderScreen9, renderScreen10, renderScreen11, renderScreen12, renderScreen13, renderScreen14, renderScreen15];
 
   function renderProgress(){
     var dots = '';
@@ -1148,15 +1195,34 @@
   }
   function next(){ goToStep(cur + 1); }
   function prev(){
-    if(cur > 0) goToStep(cur - 1);
-    else location.href = 'index.html';
+    if(cur > 0){ goToStep(cur - 1); return; }
+    // Resume mode's first screen has nothing before it in THIS origin to
+    // step back to — the visitor arrived from the marketing funnel, so
+    // "back" should return them there, not to DreamTube's own index.html.
+    // document.referrer confirms that's genuinely where they came from
+    // before trusting history.back() with it (same pattern as result.html's
+    // back button).
+    if(isResume && document.referrer){ history.back(); return; }
+    location.href = 'index.html';
   }
   backBtn.addEventListener('click', prev);
 
   // Fresh entry point for brand-new visitors — make sure no stale draft
   // from a previous/abandoned session leaks into this one (mirrors
-  // create.html's own clean-slate behavior for non-restore visits).
+  // create.html's own clean-slate behavior for non-restore visits). This
+  // must run BEFORE the resume-mode hydration below, not after — otherwise
+  // it would wipe out the caption/style this visitor already gave the
+  // marketing funnel.
   DreamStore.clearDraft();
+  if(isResume){
+    // Screens 8 (dream capture) and 10 (style) used to call
+    // DreamStore.setDraft() directly when they lived in this file — now
+    // that they run in the marketing repo (a different origin, with no
+    // DreamStore at all), the marketing funnel carries their answers here
+    // as URL params instead, and this is where they finally land in the
+    // real draft, exactly like those two screens used to do themselves.
+    DreamStore.setDraft({ caption: getParam('caption') || '', style: chosenStyle, sourceDreamId: null });
+  }
   render();
 })();
 </script>

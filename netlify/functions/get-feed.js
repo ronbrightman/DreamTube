@@ -7,8 +7,17 @@
 // whole-array read-modify-write (see publish-dream.js/like-dream.js), which
 // is fine at this app's scale but would race under real concurrent traffic.
 // That tradeoff is deliberate — see the request that added this file.
+//
+// CORS: open (Access-Control-Allow-Origin: *). This is already-public,
+// read-only data — every dream in it is something its owner explicitly
+// published to Explore, no auth/cookies involved — so there's no
+// confidentiality reason to restrict the origin. Needed so the separate
+// dreamtube-growth marketing repo can fetch it cross-origin for its own
+// social-proof carousels (see that repo's funnel).
 
 var { connectLambda, getStore } = require('@netlify/blobs');
+
+var CORS_HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS' };
 
 var DOD_KEY = 'dream-of-day';
 
@@ -59,8 +68,11 @@ async function resolveDreamOfDay(store, feed) {
 }
 
 exports.handler = async function (event) {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+  }
   if (event.httpMethod !== 'GET') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'method_not_allowed' }) };
+    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ error: 'method_not_allowed' }) };
   }
 
   try {
@@ -73,8 +85,8 @@ exports.handler = async function (event) {
     var dreamOfDayId = null;
     try { dreamOfDayId = await resolveDreamOfDay(store, feed); }
     catch (e) { /* feed still returns below without a Dream of the Day */ }
-    return { statusCode: 200, body: JSON.stringify({ feed: feed, dreamOfDayId: dreamOfDayId }) };
+    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ feed: feed, dreamOfDayId: dreamOfDayId }) };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'feed_fetch_failed: ' + (e && e.message) }) };
+    return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'feed_fetch_failed: ' + (e && e.message) }) };
   }
 };
