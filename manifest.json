@@ -1,7 +1,7 @@
 {
   "name": "DreamTube",
   "short_name": "DreamTube",
-  "description": "Turn your dreams into videos.",
+  "description": "Your dreams come alive.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#000000",

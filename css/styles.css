@@ -113,6 +113,7 @@ body{
 }
 .wm-copy{ font-weight:800; font-size:24px; line-height:1.3;}
 .wm-copy i{ font-style:normal;}
+.wm-subcopy{ font-size:14px; color:var(--text-muted); margin-top:8px;}
 @keyframes spin{ to{ transform:rotate(360deg);} }
 .wm-foot{ width:100%; display:flex; flex-direction:column; gap:14px;}
 
