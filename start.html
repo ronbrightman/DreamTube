@@ -82,9 +82,10 @@
   marketing repo (https://dreamtubeapp.netlify.app/), with their own
   PostHog/Pixel/CAPI tracking and A/B testing. This file now only covers
   what structurally has to run in DreamTube's own origin: Advanced
-  (characters/camera/scenery — screen 9), the "coming together" transition
-  (screen 11), signup, pricing, and confirmation (screens 13-15). Two
-  reasons those couldn't move:
+  (characters/camera/scenery — formerly one screen 9, now split into three
+  separate funnel screens, one per section — see below), the "coming
+  together" transition (screen 11), signup, pricing, and confirmation
+  (screens 13-15). Two reasons those couldn't move:
    1. Signup is NOT a network call — DreamStore.signup() writes straight
       into this origin's own localStorage. There is no account to create
       from a different origin.
@@ -103,8 +104,13 @@
   links to the marketing funnel directly.
 
   Real-integration notes still relevant to what's left here:
-   - Screen 9 (Advanced: characters/camera/scenery) is a real functional
-     port of create.html's Advanced section. Camera/scenery chips call
+   - Advanced (characters/camera/scenery) is a real functional port of
+     create.html's Advanced section, now split into three separate funnel
+     screens — one per section (renderScreenAdvChars/AdvCamera/AdvScenery)
+     — instead of the one crowded screen 9 used to be. Continue on each
+     advances one step; Skip on any of the three jumps straight past all
+     three, to the transition screen (goToStep(3)) — "skip" means "stop
+     customizing", not "skip this one section". Camera/scenery chips call
      DreamStore.setDraft directly (login-independent). Characters are the
      one exception: DreamStore.saveCharacter() requires a logged-in user,
      but signup doesn't happen until screen 13 — by design, per the
@@ -137,28 +143,17 @@
 
 <style>
   /* ===================================================================
-     Funnel-specific styles. Every class here is prefixed "fn-" (or, for
-     screen 9 and screen 10's style cards, deliberately NOT prefixed —
-     those two reuse the real app's own classes from css/styles.css
-     verbatim: .adv-sub-label/.char-chip/.opt-chip/.field/.sheet/.btn for
-     screen 9, .style-grid/.style-card/.sc-cartoon etc. for screen 10 —
-     so they inherit the actual app look with zero risk of this file's
-     pastel rules bleeding onto them, and vice versa.
-     Colors/values ported from scratchpad/funnel-mockup.html.
-     =================================================================== */
-
-  /* Screen 9 (Advanced) step structure — new for this file only, no
-     equivalent in css/styles.css / create.html, since create.html's
-     Advanced section is a single collapsible accordion rather than a
-     sequence. Wraps each of the 3 existing .adv-sub-label sections
-     (Characters / Camera view / Scenery) in a numbered, visually
-     separated card so the screen reads as a short 3-step sequence
-     instead of one continuous "wall" of chips. */
-  .adv-step{ border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px 16px; margin-top:14px;}
-  .adv-step:first-of-type{ margin-top:4px;}
-  .adv-step-head{ display:flex; align-items:center; gap:9px;}
-  .adv-step-num{ width:20px; height:20px; border-radius:50%; background:var(--surface-alt); border:1px solid var(--border-strong); color:var(--text-primary); font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none;}
-  .adv-step-head .adv-sub-label{ margin:0;}
+     Funnel-specific styles. Every class here is prefixed "fn-", except
+     the Advanced screens' character chips/add-tiles and character sheet
+     (.char-chip/.char-chip-add/.sheet-overlay/.sheet/.char-mode-row/
+     .char-mode-btn/.char-photo-*), which deliberately reuse create.html's
+     real classes from css/styles.css verbatim (same markup, same click
+     handlers, zero JS duplicated) rather than being reimplemented under
+     fn- names. Since those classes are shared with create.html's own
+     (dark-themed) Advanced accordion, every light-theme override for them
+     below is scoped under "#app.funnel-app ..." so it can never reach
+     create.html's plain "#app" — see each override for why.
+     Colors/values ported from scratchpad/funnel-mockup.html. */
 
   #app.funnel-app{
     --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
@@ -187,28 +182,45 @@
   .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--phase-line, var(--fn-line)); display:block;}
   .fn-progress i.done{ background:var(--phase-ink, var(--fn-ink)); opacity:.55;}
   .fn-progress i.now{ background:var(--phase-ink, var(--fn-ink));}
-  /* Root cause of the screen-9 contrast bug: applyPhase('app-dark') clears
-     the inline --phase-* / background overrides and adds this class, but
-     with no background rule of its own, the element fell back to
-     #app.funnel-app's base pastel gradient rule above (which beats plain
-     #app{background:var(--bg-app)} from css/styles.css on specificity) --
-     so text went white (via the child-element dark-mode overrides below)
-     while the background stayed light pastel. This rule gives dark mode
-     its own real black background, matching every other app screen. */
-  #app.funnel-app.fn-dark-mode{ background:var(--bg-app);}
-  #app.funnel-app.fn-dark-mode .fn-back{ background:var(--surface); border-color:var(--border); color:var(--text-primary);}
-  #app.funnel-app.fn-dark-mode .fn-progress i{ background:rgba(255,255,255,.14);}
-  #app.funnel-app.fn-dark-mode .fn-progress i.done, #app.funnel-app.fn-dark-mode .fn-progress i.now{ background:#fff; opacity:.75;}
 
   .fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); position:relative; overflow-y:auto; min-height:0; color:var(--phase-ink, var(--fn-ink));}
 
   .fn-eyebrow{ font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--phase-faint, var(--fn-ink-faint)); margin-bottom:10px;}
   .fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; margin-bottom:10px; color:var(--phase-ink, var(--fn-ink));}
   .fn-body-copy{ font-size:14.5px; color:var(--phase-soft, var(--fn-ink-soft)); line-height:1.55; margin-bottom:18px;}
+  .fn-mini-label{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--phase-faint, var(--fn-ink-faint)); margin:14px 0 8px;}
+  .fn-mini-label:first-child{ margin-top:0;}
   .fn-spacer{ flex:1;}
-  #app.funnel-app.fn-dark-mode .fn-headline{ font-family:var(--font-body); color:var(--text-primary);}
-  #app.funnel-app.fn-dark-mode .fn-eyebrow{ color:var(--text-faint);}
-  #app.funnel-app.fn-dark-mode .fn-body-copy{ color:var(--text-muted);}
+
+  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
+  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+
+  /* ----- Advanced/characters: shared create.html classes, light-themed
+     overrides scoped to the funnel only (see the file-level comment
+     above this <style> block for why these aren't fn- classes). ----- */
+  #app.funnel-app .char-chip{ background:var(--phase-card, var(--fn-card)); border-color:var(--phase-line, var(--fn-line)); color:#2C2846;}
+  #app.funnel-app .char-chip .chip-check{ border-color:var(--phase-faint, var(--fn-ink-faint));}
+  #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
+  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:var(--fn-accent-solid);}
+  #app.funnel-app .char-chip .chip-edit{ color:var(--phase-faint, var(--fn-ink-faint));}
+  #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
+  #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--phase-line, var(--fn-line)); color:var(--phase-soft, var(--fn-ink-soft));}
+  #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--phase-ink, var(--fn-ink));}
+
+  /* Character add/edit sheet — light card over the now-light Advanced
+     screens, instead of create.html's dark bottom sheet. */
+  #app.funnel-app .sheet{ background:var(--fn-card); color:#2C2846; border-top-color:var(--fn-line); box-shadow:0 -20px 50px rgba(58,51,80,.18);}
+  #app.funnel-app .sheet-handle{ background:var(--fn-line);}
+  #app.funnel-app .sheet-title{ color:#2C2846;}
+  #app.funnel-app .char-mode-row .char-mode-btn{ background:#F3F1FA; border-color:var(--fn-line); color:var(--fn-ink-soft);}
+  #app.funnel-app .char-mode-row .char-mode-btn.active{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  #app.funnel-app .char-photo-preview{ background:#F3F1FA; border-color:var(--fn-line);}
+  #app.funnel-app .char-photo-empty{ color:var(--fn-ink-faint);}
+  #app.funnel-app .char-photo-hint{ color:var(--fn-ink-soft);}
+  #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
+  #app.funnel-app .btn-secondary:hover{ background:#F3F1FA; border-color:var(--fn-ink-faint);}
 
   textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
@@ -361,21 +373,25 @@
 
   var cur = 0;
 
-  var TAGS = ['advanced', 'preparing', 'email_capture', 'pricing', 'confirmation'];
+  var TAGS = ['advanced_characters', 'advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation'];
 
   // Phase color system — ported verbatim from funnel-mockup.html's PHASES
-  // map. 'app-dark' (screen 9 only) is a special case handled in
-  // applyPhase(): it clears all pastel overrides so that screen falls back
-  // to the app's real dark theme from css/styles.css, per the task spec's
-  // explicit allowance for that one screen to look like the real app
-  // rather than a pastel reskin (it's a direct functional port).
+  // map, plus 'dawn' (the base #app.funnel-app pastel gradient/ink tokens
+  // above, promoted to a real named phase). The 3 Advanced screens used to
+  // force a special-cased 'app-dark' branch in applyPhase() instead of
+  // going through this map at all — the founder has since decided that
+  // direction was wrong (Advanced should never have gone dark; the earlier
+  // fix corrected a real contrast bug, but by giving the app-dark path its
+  // own background rather than removing it) — so 'dawn' now runs through
+  // the exact same explicit phase-application path as every other screen.
   var PHASES = {
+    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#E9EAF5 55%,#E3E9F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
     'transition':{ grad:'linear-gradient(160deg,#DCDCF0,#D0D5EE 55%,#C2D3EC)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
     'dusk':      { grad:'linear-gradient(160deg,#9B95CE,#7B8CC0 55%,#6478AE)', ink:'#191735', soft:'#EDEBF7', faint:'#C6C2E3', card:'#FFFFFF', line:'rgba(255,255,255,0.22)' },
     'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
     'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
-  var PHASE_BY_STEP = ['app-dark', 'transition', 'dusk', 'dusk-deep', 'night'];
+  var PHASE_BY_STEP = ['dawn', 'dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night'];
 
   var appEl = document.getElementById('app');
   var screenEl = document.getElementById('fnScreen');
@@ -384,10 +400,14 @@
   backBtn.innerHTML = Icons.back;
 
   // ===================================================================
-  // Screen 9 — Advanced (characters/camera/scenery), ported from
-  // create.html. See head-of-file comment for the character-staging
-  // rationale (saveCharacter requires login; login doesn't happen until
-  // screen 13).
+  // Advanced (characters/camera/scenery) — formerly one screen 9, now
+  // three separate funnel screens (renderScreenAdvChars/AdvCamera/
+  // AdvScenery below), ported from create.html. See head-of-file comment
+  // for the character-staging rationale (saveCharacter requires login;
+  // login doesn't happen until screen 13). Helpers in this section are
+  // shared across all three of the split screens (well, just the chars
+  // one for the character-specific helpers) exactly as they were shared
+  // across the one combined screen before.
   // ===================================================================
   var charEditingId = null;
   var charSubMode = 'describe';
@@ -495,49 +515,25 @@
     renderCharPhotoPreview();
   }
 
-  function renderScreen9(el){
+  function renderScreenAdvChars(el){
     el.innerHTML =
-      '<div class="fn-eyebrow">Optional</div>' +
-      '<div class="fn-headline" style="font-size:21px;">Add detail — characters, camera, scenery.</div>' +
-      '<div class="adv-step">' +
-        '<div class="adv-step-head"><span class="adv-step-num">1</span><span class="adv-sub-label">Characters</span></div>' +
-        '<div class="adv-hint">Define people in your dream once, reuse them anytime.</div>' +
-        '<div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>' +
-      '</div>' +
-      '<div class="adv-step">' +
-        '<div class="adv-step-head"><span class="adv-step-num">2</span><span class="adv-sub-label">Camera view</span></div>' +
-        '<div class="opt-chip-row" id="camera-chip-row" style="margin-top:10px;">' +
-          '<div class="opt-chip" data-camera="Close-up">Close-up</div>' +
-          '<div class="opt-chip" data-camera="Wide shot">Wide shot</div>' +
-          '<div class="opt-chip" data-camera="Aerial view">Aerial view</div>' +
-          '<div class="opt-chip" data-camera="POV">POV</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="adv-step">' +
-        '<div class="adv-step-head"><span class="adv-step-num">3</span><span class="adv-sub-label">Scenery</span></div>' +
-        '<div class="opt-chip-row" id="scenery-time-row" style="margin-top:10px; margin-bottom:8px;">' +
-          '<div class="opt-chip" data-scenery-time="Day">Day</div>' +
-          '<div class="opt-chip" data-scenery-time="Night">Night</div>' +
-        '</div>' +
-        '<div class="opt-chip-row" id="scenery-place-row">' +
-          '<div class="opt-chip" data-scenery-place="Urban">Urban</div>' +
-          '<div class="opt-chip" data-scenery-place="Nature">Nature</div>' +
-          '<div class="opt-chip" data-scenery-place="Inside a house">Inside a house</div>' +
-        '</div>' +
-      '</div>' +
-      '<div style="min-height:20px; flex:1;"></div>' +
-      '<button class="btn btn-primary btn-block" id="fn-s9-continue" type="button">Continue</button>' +
-      '<span class="link-text" id="fn-s9-skip" style="display:block; margin-top:12px; cursor:pointer;">Skip — keep it simple</span>' +
+      '<div class="fn-eyebrow">Optional &middot; 1 of 3</div>' +
+      '<div class="fn-headline">Add the people in your dream.</div>' +
+      '<div class="fn-body-copy">Define characters once, reuse them anytime.</div>' +
+      '<div class="char-chip-row" id="char-chip-row"></div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-adv-chars-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-adv-chars-skip" style="cursor:pointer;">Skip — keep it simple</span>' +
       '<div class="sheet-overlay" id="sheet-character-overlay">' +
         '<div class="sheet">' +
           '<div class="sheet-handle"></div>' +
           '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
-          '<input class="field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
+          '<input class="fn-field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
           '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
             '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
             '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
           '</div>' +
-          '<textarea class="field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
+          '<textarea class="fn-field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
           '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
             '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
             '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
@@ -546,11 +542,11 @@
             '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
           '</div>' +
           '<div class="err-text" id="char-error"></div>' +
-          '<button class="btn btn-primary btn-block" id="char-save-btn" type="button">Save</button>' +
+          '<button class="fn-btn-primary" id="char-save-btn" type="button">Save</button>' +
           '<div style="height:10px;"></div>' +
-          '<span class="link-text" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
+          '<span class="fn-small-link" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
           '<div style="height:8px;"></div>' +
-          '<span class="link-text" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
+          '<span class="fn-small-link" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
         '</div>' +
       '</div>';
 
@@ -631,32 +627,76 @@
       renderStagedCharacterChips();
     });
 
+    renderStagedCharacterChips();
+
+    document.getElementById('fn-adv-chars-continue').addEventListener('click', next);
+    document.getElementById('fn-adv-chars-skip').addEventListener('click', function(){ goToStep(3); });
+  }
+
+  function renderScreenAdvCamera(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Optional &middot; 2 of 3</div>' +
+      '<div class="fn-headline">Pick a camera view.</div>' +
+      '<div class="fn-chip-row" id="camera-chip-row">' +
+        '<span class="fn-chip" data-camera="Close-up">Close-up</span>' +
+        '<span class="fn-chip" data-camera="Wide shot">Wide shot</span>' +
+        '<span class="fn-chip" data-camera="Aerial view">Aerial view</span>' +
+        '<span class="fn-chip" data-camera="POV">POV</span>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-adv-camera-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-adv-camera-skip" style="cursor:pointer;">Skip — keep it simple</span>';
+
     function renderCameraChips(){
       var selected = DreamStore.getDraft().cameraView;
-      Array.prototype.forEach.call(document.querySelectorAll('#camera-chip-row .opt-chip'), function(chipEl){
-        chipEl.classList.toggle('selected', chipEl.dataset.camera === selected);
+      Array.prototype.forEach.call(document.querySelectorAll('#camera-chip-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.camera === selected);
       });
     }
     document.getElementById('camera-chip-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       var val = chip.dataset.camera;
       var current = DreamStore.getDraft().cameraView;
       DreamStore.setDraft({ cameraView: current === val ? null : val });
       renderCameraChips();
     });
+    renderCameraChips();
+
+    document.getElementById('fn-adv-camera-continue').addEventListener('click', next);
+    document.getElementById('fn-adv-camera-skip').addEventListener('click', function(){ goToStep(3); });
+  }
+
+  function renderScreenAdvScenery(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Optional &middot; 3 of 3</div>' +
+      '<div class="fn-headline">Set the scene.</div>' +
+      '<div class="fn-mini-label">Time of day</div>' +
+      '<div class="fn-chip-row" id="scenery-time-row">' +
+        '<span class="fn-chip" data-scenery-time="Day">Day</span>' +
+        '<span class="fn-chip" data-scenery-time="Night">Night</span>' +
+      '</div>' +
+      '<div class="fn-mini-label">Place</div>' +
+      '<div class="fn-chip-row" id="scenery-place-row">' +
+        '<span class="fn-chip" data-scenery-place="Urban">Urban</span>' +
+        '<span class="fn-chip" data-scenery-place="Nature">Nature</span>' +
+        '<span class="fn-chip" data-scenery-place="Inside a house">Inside a house</span>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-adv-scenery-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-adv-scenery-skip" style="cursor:pointer;">Skip — keep it simple</span>';
 
     function renderSceneryChips(){
       var draft = DreamStore.getDraft();
-      Array.prototype.forEach.call(document.querySelectorAll('#scenery-time-row .opt-chip'), function(chipEl){
-        chipEl.classList.toggle('selected', chipEl.dataset.sceneryTime === draft.sceneryTime);
+      Array.prototype.forEach.call(document.querySelectorAll('#scenery-time-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.sceneryTime === draft.sceneryTime);
       });
-      Array.prototype.forEach.call(document.querySelectorAll('#scenery-place-row .opt-chip'), function(chipEl){
-        chipEl.classList.toggle('selected', chipEl.dataset.sceneryPlace === draft.sceneryPlace);
+      Array.prototype.forEach.call(document.querySelectorAll('#scenery-place-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.sceneryPlace === draft.sceneryPlace);
       });
     }
     document.getElementById('scenery-time-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       var val = chip.dataset.sceneryTime;
       var current = DreamStore.getDraft().sceneryTime;
@@ -664,20 +704,17 @@
       renderSceneryChips();
     });
     document.getElementById('scenery-place-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       var val = chip.dataset.sceneryPlace;
       var current = DreamStore.getDraft().sceneryPlace;
       DreamStore.setDraft({ sceneryPlace: current === val ? null : val });
       renderSceneryChips();
     });
-
-    renderStagedCharacterChips();
-    renderCameraChips();
     renderSceneryChips();
 
-    document.getElementById('fn-s9-continue').addEventListener('click', next);
-    document.getElementById('fn-s9-skip').addEventListener('click', next);
+    document.getElementById('fn-adv-scenery-continue').addEventListener('click', next);
+    document.getElementById('fn-adv-scenery-skip').addEventListener('click', function(){ goToStep(3); });
   }
 
   // ===================================================================
@@ -951,7 +988,7 @@
   // ===================================================================
   // Navigation / phase engine
   // ===================================================================
-  var SCREEN_RENDERERS = [renderScreen9, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
+  var SCREEN_RENDERERS = [renderScreenAdvChars, renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
 
   function renderProgress(){
     var dots = '';
@@ -963,14 +1000,6 @@
 
   function applyPhase(stepIndex){
     var key = PHASE_BY_STEP[stepIndex];
-    if(key === 'app-dark'){
-      appEl.style.background = '';
-      ['--phase-ink', '--phase-soft', '--phase-faint', '--phase-card', '--phase-line'].forEach(function(v){ appEl.style.removeProperty(v); });
-      appEl.classList.add('fn-dark-mode');
-      appEl.classList.remove('fn-phase-night');
-      return;
-    }
-    appEl.classList.remove('fn-dark-mode');
     appEl.classList.toggle('fn-phase-night', key === 'night');
     var p = PHASES[key];
     appEl.style.background = p.grad;
