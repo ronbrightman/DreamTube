@@ -13,13 +13,18 @@
 // require()" pattern (entitlements.js, rate-limit.js, etc.) rather than
 // introducing a build step.
 //
-// The Pixel ID (2464464964036457) is the same public constant already
-// client-side in js/analytics-config.js — Pixel IDs aren't secret, only
-// the access token is. That token is read here exclusively from
-// process.env.META_CAPI_ACCESS_TOKEN, set directly in Netlify's
-// environment variables by the founder (never hardcoded, never sent to
-// the client) — same convention as FAL_KEY/STRIPE_SECRET_KEY elsewhere in
-// this directory.
+// The Pixel ID is required directly from js/analytics-config.js — the
+// same public constant already client-side there — rather than
+// hardcoded again here as a second copy of the literal, so there's
+// exactly one place it lives (previously both files hardcoded
+// '2464464964036457' independently, a silent-drift risk if the Pixel is
+// ever rotated and only one copy gets updated; see that file's own
+// comment on the UMD-lite guard that makes the require() below safe).
+// Pixel IDs aren't secret, only the access token is. That token is read
+// here exclusively from process.env.META_CAPI_ACCESS_TOKEN, set directly
+// in Netlify's environment variables by the founder (never hardcoded,
+// never sent to the client) — same convention as
+// FAL_KEY/STRIPE_SECRET_KEY elsewhere in this directory.
 //
 // PII hashing, per Meta's CAPI spec for user_data
 // (https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters):
@@ -46,7 +51,7 @@
 
 var crypto = require('crypto');
 
-var PIXEL_ID = '2464464964036457';
+var PIXEL_ID = require('../../../js/analytics-config').META_PIXEL_ID;
 var CAPI_BASE = 'https://graph.facebook.com/v21.0';
 
 /** Lowercase + trim + SHA-256 hex digest, per Meta's hashing spec for user_data fields (em, external_id). Returns null for empty/missing input so callers can omit the field entirely rather than hash an empty string. */

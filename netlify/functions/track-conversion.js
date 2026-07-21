@@ -27,6 +27,20 @@
 // generate-video.js's rate limiting already uses — see
 // lib/rate-limit.js's clientIp().
 //
+// Rate limiting: this is a public, unauthenticated endpoint that accepts
+// caller-supplied email/external_id/custom_data (including value/currency
+// on Purchase/Subscribe) and forwards it to Meta under DreamTube's real
+// Pixel ID — with no cap at all, anyone could curl it directly to spam
+// fake conversion events and corrupt ad-optimization data. Uses the same
+// lib/rate-limit.js checkAndIncrement() helper generate-video.js already
+// uses, per-IP only (no per-email bucket — unlike generate-video.js this
+// endpoint's email is unauthenticated free text, not worth a second
+// bucket keyed on it). MAX_CONVERSIONS_PER_IP_PER_DAY mirrors
+// generate-video.js's MAX_GENERATIONS_PER_IP_PER_DAY pattern (env-
+// overridable, defaults to a coarse-but-sufficient cap — conversion
+// events are far more numerous than generations per real user in a day,
+// so the default here is higher than generate-video.js's 20).
+//
 // Error codes (local to this function — a new, standalone function, same
 // reasoning as create-checkout-session.js/stripe-webhook.js for why this
 // isn't part of the generate-video.js/video-status.js E1xx/E2xx chain):
@@ -38,6 +52,7 @@
 //   E6 meta_capi_request_failed   — Meta rejected the event, or the request otherwise failed
 //                                    (see lib/meta-capi.js — the underlying error text is
 //                                    already redacted of the access token before it reaches here)
+//   E7 rate_limited                — MAX_CONVERSIONS_PER_IP_PER_DAY exceeded for today
 
 var metaCapi = require('./lib/meta-capi');
 var rateLimit = require('./lib/rate-limit');
@@ -74,6 +89,14 @@ exports.handler = async function (event) {
   var headers = event.headers || {};
   var clientIp = rateLimit.clientIp(event);
   var clientUserAgent = headers['user-agent'] || headers['User-Agent'] || '';
+
+  var maxPerDay = parseInt(process.env.MAX_CONVERSIONS_PER_IP_PER_DAY, 10);
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 200;
+
+  var ipLimit = await rateLimit.checkAndIncrement(event, 'conversion-ip', clientIp, maxPerDay);
+  if (!ipLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ error: 'E7: rate_limited: too many conversion events from this network today' }) };
+  }
 
   var result = await metaCapi.sendCapiEvent({
     event_name: eventName,

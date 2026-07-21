@@ -19,13 +19,32 @@
 //   - track-conversion.js never leaks META_CAPI_ACCESS_TOKEN in any
 //     response body, including on a Meta-side failure or a network
 //     failure.
+//   - track-conversion.js's per-IP daily rate limit (E7) — this is a
+//     public, unauthenticated endpoint, so the cap is the actual defense
+//     against someone curling it directly to spam fake conversions; see
+//     that file's own header comment. Same mock-blobs convention as
+//     test/generate-video-gate.test.js for exercising a Blobs-backed
+//     counter without a real store.
 // Run with: node --test test/
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var crypto = require('crypto');
 
+var mockBlobs = require('./helpers/mock-blobs');
+mockBlobs.install();
+
 var { fakeEvent } = require('./helpers/fake-event');
+
+function todayUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+var ipCounter = 0;
+function nextIp() {
+  ipCounter += 1;
+  return '10.1.0.' + ipCounter;
+}
 
 var realFetch = global.fetch;
 var REAL_TOKEN = 'EAAtest-super-secret-capi-token-12345';
@@ -63,6 +82,8 @@ function installFetchSpy(responseBody, ok, status) {
 
 test.beforeEach(function () {
   global.fetch = realFetch;
+  mockBlobs.reset();
+  delete process.env.MAX_CONVERSIONS_PER_IP_PER_DAY;
 });
 test.after(function () {
   global.fetch = realFetch;
@@ -210,14 +231,19 @@ test('sendCapiEvent(): the access token never appears in an error message, even 
 // ----- track-conversion.js -----
 
 function convEvent(overrides) {
+  overrides = overrides || {};
+  var ip = overrides.ip || nextIp(); // unique IP per call by default so tests don't share a rate-limit bucket
+  var bodyOverrides = Object.assign({}, overrides);
+  delete bodyOverrides.ip;
   return fakeEvent({
     method: 'POST',
+    ip: ip,
     body: Object.assign({
       event_name: 'CompleteRegistration',
       event_id: 'evt-abc',
       event_source_url: 'https://example.com/start.html',
       email: 'someone@example.com'
-    }, overrides)
+    }, bodyOverrides)
   });
 }
 
@@ -313,6 +339,82 @@ test('track-conversion.js: never leaks the access token when Meta itself rejects
     assert.equal(res.statusCode, 401);
     assert.equal(res.body.indexOf(REAL_TOKEN), -1);
     assert.equal(res.body.indexOf(encodeURIComponent(REAL_TOKEN)), -1);
+  });
+});
+
+// ----- track-conversion.js: per-IP rate limit (E7) -----
+//
+// This is the fix for the blocking review finding: a public,
+// unauthenticated endpoint accepting caller-supplied conversion data with
+// no cap at all could be used to spam fake Purchase/Subscribe events into
+// Meta under DreamTube's real Pixel ID. Mirrors the shape of
+// test/generate-video-gate.test.js's rate-limit coverage for the same
+// lib/rate-limit.js helper.
+
+test('track-conversion.js: a request under the per-IP daily cap is allowed through to Meta', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
+    var calls = installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    var res = await handler(convEvent({}));
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+  });
+});
+
+test('track-conversion.js: a request at/over the per-IP daily cap is rejected E7, with no call made to Meta', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
+    var ip = nextIp();
+    // Pre-seed today's counter at the default cap (200) so the very next
+    // request from this IP is over the limit.
+    mockBlobs.seed('dreamtube-rate-limits', 'conversion-ip:' + todayUtc() + ':' + ip, 200);
+    var calls = installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    var res = await handler(convEvent({ ip: ip }));
+    assert.equal(res.statusCode, 429);
+    assert.match(JSON.parse(res.body).error, /^E7: rate_limited/);
+    assert.equal(calls.length, 0, 'no request should reach Meta once the cap is exceeded');
+  });
+});
+
+test('track-conversion.js: MAX_CONVERSIONS_PER_IP_PER_DAY overrides the default cap', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN, MAX_CONVERSIONS_PER_IP_PER_DAY: '2' }, async function () {
+    var ip = nextIp();
+    installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    var first = await handler(convEvent({ ip: ip, event_id: 'evt-cap-1' }));
+    var second = await handler(convEvent({ ip: ip, event_id: 'evt-cap-2' }));
+    var third = await handler(convEvent({ ip: ip, event_id: 'evt-cap-3' }));
+    assert.equal(first.statusCode, 200);
+    assert.equal(second.statusCode, 200);
+    assert.equal(third.statusCode, 429);
+    assert.match(JSON.parse(third.body).error, /^E7: rate_limited/);
+  });
+});
+
+test('track-conversion.js: two different IPs each get their own independent daily bucket', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN, MAX_CONVERSIONS_PER_IP_PER_DAY: '1' }, async function () {
+    var ipA = nextIp();
+    var ipB = nextIp();
+    installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    var resA1 = await handler(convEvent({ ip: ipA, event_id: 'evt-a1' }));
+    var resB1 = await handler(convEvent({ ip: ipB, event_id: 'evt-b1' }));
+    var resA2 = await handler(convEvent({ ip: ipA, event_id: 'evt-a2' }));
+    assert.equal(resA1.statusCode, 200);
+    assert.equal(resB1.statusCode, 200, 'a different IP should not be blocked by ipA\'s bucket');
+    assert.equal(resA2.statusCode, 429, 'ipA\'s second request within the same day should hit its own cap');
+  });
+});
+
+test('track-conversion.js: the rate-limit check runs before the call to Meta, so a blocked request never leaks the access token', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN, MAX_CONVERSIONS_PER_IP_PER_DAY: '1' }, async function () {
+    var ip = nextIp();
+    installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    await handler(convEvent({ ip: ip, event_id: 'evt-first' }));
+    var res = await handler(convEvent({ ip: ip, event_id: 'evt-second' }));
+    assert.equal(res.statusCode, 429);
+    assert.equal(res.body.indexOf(REAL_TOKEN), -1);
   });
 });
 

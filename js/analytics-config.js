@@ -31,6 +31,23 @@ var POSTHOG_HOST = 'https://us.i.posthog.com';
 
 var META_PIXEL_ID = '2464464964036457';
 
+// This is also the single source of truth for the server side of Meta
+// tracking: netlify/functions/lib/meta-capi.js require()s this exact
+// META_PIXEL_ID rather than hardcoding its own copy of the literal above,
+// so there's exactly one place this ID lives — previously it was
+// duplicated independently in both files, a silent-drift risk if the
+// Pixel is ever rotated and only one copy gets updated. The guard below
+// is a UMD-lite pattern (not full UMD — this codebase has no bundler/ES
+// modules, see CLAUDE.md): `typeof module` is `'undefined'` in every
+// browser, so this block is a safe no-op there (this file stays a plain
+// global-defining <script>, exactly as before); it's `'object'` under
+// Node, where a plain `var` alone wouldn't be visible to a require()
+// caller at all. Pixel IDs aren't secret (see meta-capi.js's own header),
+// so there's no concern about this constant being require()-able.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { META_PIXEL_ID: META_PIXEL_ID };
+}
+
 // ---------------------------------------------------------------------
 // Meta Conversions API (CAPI) — server-side event tracking that
 // complements the client-side Pixel above. See
