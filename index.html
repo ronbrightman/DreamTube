@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>DreamTube — Your dreams come alive</title>
 <meta name="description" content="Your dreams come alive. Turn your dreams into videos with DreamTube.">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#FBEFEA">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="DreamTube">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="assets/logo-v2.png">
@@ -15,6 +15,36 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+<style>
+  /* Welcome screen: page-scoped light "dawn" theme, matching the marketing
+     funnel (start.html's Advanced/pricing screens, and the separate
+     dreamtube-growth repo's funnel) that "Get Started" below hands off to.
+     Founder feedback: this screen was black and clashed with that light
+     pastel funnel one tap later. Token values are copied verbatim from
+     start.html's #app.funnel-app --dawn-1/2/3 / --fn-* variables (search
+     "--dawn-1" there) so the two screens match exactly. This is scoped to
+     this one file only — css/styles.css's shared dark theme (--void,
+     --bg-app, --text-primary, etc.) used by every other page is untouched. */
+  :root{
+    --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
+    --fn-ink:#3A3350; --fn-ink-soft:#6E6480;
+    --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
+    --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+  }
+  body{ background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3)); }
+  #app{ background:transparent; }
+  /* Headline uses the funnel's serif display font (like .fn-headline in
+     start.html); subline stays on the app's regular sans-serif body font
+     (like .fn-body-copy), just recolored for the light background. */
+  .wm-copy{ font-family:var(--fn-font-display); color:var(--fn-ink); }
+  .wm-subcopy{ color:var(--fn-ink-soft); }
+  /* Matches the funnel's own .fn-btn-primary treatment exactly, so the
+     button looks the same one tap before and one tap after this screen. */
+  .welcome-body .btn-primary{ background:var(--fn-accent-grad); color:#fff; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); }
+  .welcome-body .btn-primary:hover{ filter:brightness(1.04); }
+  .welcome-body .btn-primary:active{ filter:brightness(0.96); }
+  .welcome-body .link-text{ color:var(--fn-ink-soft); }
+</style>
 
 <!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
      (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
@@ -77,7 +107,7 @@
     <div class="wm-subcopy">Turn your dreams into videos.</div>
     <div class="wm-foot">
       <a class="btn btn-primary btn-block" href="https://dreamtubeapp.netlify.app/">Get Started</a>
-      <span class="link-text">Already have an account? <a href="login.html" style="color:#fff; text-decoration:underline;">Log in</a></span>
+      <span class="link-text">Already have an account? <a href="login.html" style="color:var(--fn-ink); text-decoration:underline;">Log in</a></span>
     </div>
   </div>
 </div>
