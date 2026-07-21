@@ -133,21 +133,26 @@ what you can with what you have:
 
 - **Before reviewing**, if `/workspace/dreamtube-signals` already exists
   on disk (it may, if `build` or another prior run set it up), skim
-  `signals/build_outcome/` and `signals/escalation/` (Read/Glob/Grep) for
-  anything recent and relevant to this feature area — a past gotcha, a
-  prior review finding in similar code. If it's not present or not
-  readable, don't try to work around your lack of Bash/write tools — just
-  proceed without it and note in your output that you weren't able to
-  check it.
-- **When you reach a verdict**, include a schema-compliant `build_outcome`
-  signal as an appendix to your output — full JSON, ready to be written
-  verbatim to `signals/build_outcome/<ISO-timestamp>_dreamtube_review_<short-id>.json`
-  — with `review_verdict` set to your actual PASS/FAIL and `issues_found`
-  listing what you flagged. You are not persisting this yourself (you
-  have no tool for it); whoever invoked you (a human, or the session
-  driving this pipeline) commits and pushes it. Say plainly in your
-  output that this is a draft for them to persist, not something you've
-  already written to the repo.
+  `signals/recurring-QA-issue/` and `signals/build-effort-actual-vs-estimate/`
+  (Read/Glob/Grep) for anything recent and relevant to this feature area
+  — a named class of mistake to check for specifically, a past gotcha in
+  similar code. If it's not present or not readable, don't try to work
+  around your lack of Bash/write tools — just proceed without it and note
+  in your output that you weren't able to check it.
+- **When you reach a verdict, only if you caught something recurring** —
+  a bug/gap review has now flagged more than once, or a class of mistake
+  worth naming so it stops coming back — include a schema-compliant
+  `recurring-QA-issue` signal as an appendix to your output: full JSON,
+  ready to be written verbatim to
+  `signals/recurring-QA-issue/<ISO-timestamp>_dreamtube_review_<short-id>.json`
+  per `dreamtube-signals/SCHEMA.md`, `description` naming the recurring
+  pattern plainly. A plain PASS, or a FAIL whose issues are ordinary
+  one-off bugs, isn't itself a signal — per `SCHEMA.md`'s own convention,
+  write one file per meaningful factual finding, not one per review. You
+  are not persisting this yourself (you have no tool for it); whoever
+  invoked you (a human, or the session driving this pipeline) commits and
+  pushes it. Say plainly in your output that this is a draft for them to
+  persist, not something you've already written to the repo.
 
 ## Boundaries — from AGENT_POLICY.md
 

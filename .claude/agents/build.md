@@ -112,24 +112,23 @@ full tool access, so do both halves yourself:
   `/workspace/dreamtube-signals` first; if it's not there or
   `git -C /workspace/dreamtube-signals rev-parse HEAD` fails, `git clone
   https://github.com/ronbrightman/dreamtube-signals /workspace/dreamtube-signals`),
-  then skim `signals/build_outcome/`, `signals/design_decision/`, and
-  `signals/escalation/` for anything recent and relevant to what you're
-  about to build — past gotchas in the same area, a design decision this
-  work should already reflect, an escalation whose resolution changes
-  what you should do. Treat this as grounding context, the same way you'd
-  read this repo's own code before proposing a change; it's fine to find
-  nothing relevant and move on.
+  then skim `signals/build-effort-actual-vs-estimate/` and
+  `signals/recurring-QA-issue/` for anything recent and relevant to what
+  you're about to build — past gotchas in the same area, a known class of
+  mistake review has flagged before. Treat this as grounding context, the
+  same way you'd read this repo's own code before proposing a change;
+  it's fine to find nothing relevant and move on.
 - **When your implementation is done and pushed**, write one new
-  `build_outcome` signal (`signals/build_outcome/<ISO-timestamp>_dreamtube_build_<short-id>.json`,
+  `build-effort-actual-vs-estimate` signal
+  (`signals/build-effort-actual-vs-estimate/<ISO-timestamp>_dreamtube_build_<short-id>.json`,
   exact format in `dreamtube-signals/SCHEMA.md`) describing what you
-  built, the branch, and anything a future build/design pass in either
-  repo should know (gotchas, non-obvious constraints you hit). Set
-  `merged: false` — you never merge, so this always reflects the
-  pre-merge state at write time; a later signal (or review's own) can
-  update the picture once merge/review status is known. `git add` the one
-  new file, commit, and push directly to `dreamtube-signals`'s `main` —
-  per-signal-file writes essentially never conflict, but if a push is
-  rejected, `pull --rebase` and retry rather than force-pushing.
+  built, how the actual effort/complexity compared to what the task
+  looked like going in, and anything non-obvious a future build/design
+  pass should know. Put the branch name and any structured detail in the
+  optional `detail` field. `git add` the one new file, commit, and push
+  directly to `dreamtube-signals`'s `main` — per-signal-file writes
+  essentially never conflict, but if a push is rejected, `pull --rebase`
+  and retry rather than force-pushing.
 
 This is a lightweight addition to your existing workflow, not a new gate
 — don't stop to ask permission for either step, and don't let it block

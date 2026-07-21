@@ -20,7 +20,7 @@ Read, in this order:
    `/workspace/dreamtube-signals` first; if it's not there or
    `git -C /workspace/dreamtube-signals rev-parse HEAD` fails, `git clone
    https://github.com/ronbrightman/dreamtube-signals /workspace/dreamtube-signals`),
-   then read its `SCHEMA.md` and skim `signals/experiment_result/` for
+   then read its `SCHEMA.md` and skim `signals/marketing-performance/` for
    recent entries — including ones written by `dreamtube-growth`'s own
    `ab-test-creator`, since the two of you sit on opposite sides of the
    same handoff funnel and each other's concluded experiments are
@@ -79,16 +79,17 @@ winning variant.
    invent a new experimentation mechanism if one already exists).
 5. Commit and push the branch. Write a clear, short summary for the
    founder: what won, what you're proposing to test against it, and why.
-6. Write one `experiment_result` signal to `dreamtube-signals`
-   (`signals/experiment_result/<ISO-timestamp>_dreamtube_ab-test-creator_<short-id>.json`,
+6. Write one `marketing-performance` signal to `dreamtube-signals`
+   (`signals/marketing-performance/<ISO-timestamp>_dreamtube_ab-test-creator_<short-id>.json`,
    exact format in that repo's `SCHEMA.md`) — the concluded experiment's
-   winner and numbers, plus the `next_challenger` you just built. This is
-   the one piece of this workflow explicitly meant to be read cross-repo
-   (`dreamtube-growth`'s own `ab-test-creator` reads this same category),
-   so don't skip it even though nothing here has gone live yet. `git add`
-   the one new file, commit, and push to `dreamtube-signals`'s `main`
-   directly — this is recording a finding, not shipping the challenger
-   variant, so it doesn't wait on the human approval gate below.
+   winner and numbers (in `detail`), plus what `next_challenger` you just
+   built and why. This is the one piece of this workflow explicitly meant
+   to be read cross-repo (`dreamtube-growth`'s own `ab-test-creator` reads
+   this same category), so don't skip it even though nothing here has
+   gone live yet. `git add` the one new file, commit, and push to
+   `dreamtube-signals`'s `main` directly — this is recording a finding,
+   not shipping the challenger variant, so it doesn't wait on the human
+   approval gate below.
 
 ## Escalation — read this every time, not just once
 
