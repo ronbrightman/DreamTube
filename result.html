@@ -92,6 +92,7 @@
       <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
+    <button class="btn btn-primary btn-block" id="make-another-btn" style="margin-bottom:10px;"><span class="icon" id="make-another-icon"></span>Make another dream</button>
     <button class="btn btn-secondary interp-cta" id="interp-cta-btn" title="See an AI reflection on what this dream might mean">
       <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> See what this might mean</span>
       <span class="feed-tag" id="interp-private-pill">Private</span>
@@ -261,6 +262,7 @@
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
+  document.getElementById('make-another-icon').innerHTML = Icons.plus;
   document.getElementById('interp-lock-icon').innerHTML = Icons.lock;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
@@ -682,6 +684,13 @@
       showInterpState('error');
     });
   }
+  // Starts a genuinely blank draft (not a regeneration of this dream) —
+  // deliberately does not reuse the sourceDreamId pattern from the Edit
+  // sheet's "Generate Again" handler below.
+  document.getElementById('make-another-btn').addEventListener('click', function(){
+    DreamStore.clearDraft();
+    location.href = 'create.html';
+  });
   document.getElementById('interp-cta-btn').addEventListener('click', function(){
     openSheet('interp');
     var existing = DreamStore.getInterpretation(dream.id);

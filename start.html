@@ -201,9 +201,6 @@
 
   .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
   .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
-  .fn-btn-ghost{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); color:#2C2846; font-weight:700; font-size:13px; text-align:center; padding:12px; width:100%; border-radius:100px;}
-  .fn-btn-ghost.disabled{ opacity:.5; cursor:not-allowed; pointer-events:none;}
-  .fn-btn-row{ display:flex; flex-direction:column; gap:9px;}
   .fn-small-link{ background:none; border:none; color:var(--phase-soft, var(--fn-ink-soft)); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
 
   .fn-proof-strip{ display:flex; align-items:center; gap:9px; padding:11px 13px; border-radius:100px; background:#fff; border:1px solid rgba(58,51,80,0.1); margin-bottom:16px;}
@@ -669,6 +666,7 @@
   function renderScreen13(el){
     el.innerHTML =
       '<div class="fn-headline">Where should we send your first dream?</div>' +
+      '<div class="fn-body-copy">' + "Free to start — plans from $5/mo when you're ready." + '</div>' +
       '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:14px;">' +
       '<div class="fn-field-pw-wrap">' +
         '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
@@ -676,10 +674,6 @@
       '</div>' +
       '<div class="fn-err-text" id="fn-signup-error"></div>' +
       '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
-      '<div class="fn-btn-row">' +
-        '<div class="fn-btn-ghost disabled" aria-disabled="true">Continue with Apple &middot; coming soon</div>' +
-        '<div class="fn-btn-ghost disabled" aria-disabled="true">Continue with Google &middot; coming soon</div>' +
-      '</div>' +
       '<div class="fn-spacer"></div>';
 
     var pwToggle = document.getElementById('fn-pw-toggle');
@@ -732,19 +726,44 @@
     'Watch dreams of other people': "Yours — and everyone else's — waiting to be seen.",
     'Share with friends': 'Dreams worth sharing.'
   };
+  // Which plan card the "Recommended for you" tag should attach to, based on
+  // the visitor's primary motivation from the earlier quiz step. No match
+  // (or no motivation data at all) falls back to Yearly with today's
+  // unchanged "Best value" copy — zero regression for the no-data case.
+  var MOTIVATION_PLAN = {
+    'Capture dreams before they fade': 'Yearly',
+    'Turn them into videos': 'Yearly',
+    'Process a recurring dream': 'Yearly',
+    'Keep them forever': 'Yearly',
+    'Watch dreams of other people': 'Monthly',
+    'Share with friends': 'Monthly'
+  };
   function renderScreen14(el){
     var primaryMotivation = quiz.motivations[0] || null;
     var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
+    var matchedPlan = primaryMotivation ? MOTIVATION_PLAN[primaryMotivation] : null;
+    var recommendedPlan = matchedPlan || 'Yearly';
+
+    var yearlyTag = '';
+    var yearlySub = 'billed as $59.99/year';
+    var monthlyTag = '';
+    if(recommendedPlan === 'Monthly'){
+      monthlyTag = '<span class="tag">Recommended for you</span>';
+      yearlySub = 'billed as $59.99/year &middot; best value';
+    } else {
+      yearlyTag = '<span class="tag">' + (matchedPlan ? 'Recommended for you' : 'Best value') + '</span>';
+    }
+
     el.innerHTML =
       '<button class="fn-pricing-close" id="fn-pricing-close" type="button" aria-label="Close">' + Icons.close + '</button>' +
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
       '<div class="fn-headline" style="font-size:21px;">' + esc(headline) + '</div>' +
       '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>12,400+ dreams brought to life this month</span></div>' +
-      '<div class="fn-price-card best"><span class="tag">Best value</span>' +
+      '<div class="fn-price-card best">' + yearlyTag +
         '<div class="row"><span class="plan">Yearly</span><span class="amt">$5.00/mo</span></div>' +
-        '<div class="sub">billed as $59.99/year</div>' +
+        '<div class="sub">' + yearlySub + '</div>' +
       '</div>' +
-      '<div class="fn-price-card">' +
+      '<div class="fn-price-card">' + monthlyTag +
         '<div class="row"><span class="plan">Monthly</span><span class="amt">$9.99/mo</span></div>' +
         '<div class="sub">billed monthly, cancel anytime</div>' +
       '</div>' +
