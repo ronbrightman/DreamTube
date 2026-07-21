@@ -7,9 +7,11 @@
 // wraps it (.icon-btn, .nav-icon, .ig-icon, etc.) instead of needing a
 // separate sizing rule per usage site.
 //
-// back/heart/comment/share/repost/home/search/person/settings are reused
-// verbatim from the design-reference.html mockup so Explore/Home/Profile
-// match it exactly.
+// back/heart/share/home/search/person/settings are reused verbatim from
+// the design-reference.html mockup so Explore/Home/Profile match it
+// exactly. (Comment/repost were part of that same set but were removed
+// once the permanently-disabled Comment/Repost icons were dropped from
+// every Explore card — see explore.html/css/styles.css.)
 
 (function () {
   function svg(inner, attrs) {
@@ -33,11 +35,7 @@
 
     heartFilled: svg('<path d="M12 21s-7.5-4.6-10.1-9.1C.3 8.8 1.4 5 5 4.2c2-.5 4 .3 5.2 2 .3.4.6.9.8 1.3.2-.4.5-.9.8-1.3 1.2-1.7 3.2-2.5 5.2-2 3.6.8 4.7 4.6 3.1 7.7C19.5 16.4 12 21 12 21z" fill="#FF3040"/>'),
 
-    comment: svg('<path d="M21 11.5a8.4 8.4 0 01-4.7 7.6 8.5 8.5 0 01-9.4-1L3 19l1-3.8a8.4 8.4 0 01-1-4 8.5 8.5 0 018.5-8.5A8.5 8.5 0 0121 11.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>'),
-
     share: svg('<path d="M22 2L11 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
-
-    repost: svg('<path d="M17 2l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M3 11V9a4 4 0 014-4h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M7 22l-4-4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M21 13v2a4 4 0 01-4 4H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
 
     pencil: svg('<path d="M12 20h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
 

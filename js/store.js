@@ -590,6 +590,7 @@
       var key = (username || '').trim().toLowerCase();
       if (!state.accounts[key]) return { ok: false, error: 'account_not_found_on_this_device' };
       if (!newPassword) return { ok: false, error: 'Enter a new password.' };
+      if (newPassword.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
       state.accounts[key].password = newPassword;
       persist();
       return { ok: true };

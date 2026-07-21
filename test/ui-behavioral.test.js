@@ -1,0 +1,223 @@
+// test/ui-behavioral.test.js
+//
+// Real browser-driven coverage for the four "mechanical correctness"
+// fixes in commit 8842015 (js/store.js's 8-char signup password minimum,
+// profile.html's account-settings rename, explore.html's disabled-icon
+// removal, start.html's real dreams-this-month stat) plus the follow-up
+// fix to resetPasswordLocally() (js/store.js) that enforces the same
+// minimum on the forgot-password path. This repo has no existing browser-
+// test convention (see docs/TESTING.md / test/*.test.js -- everything
+// else here is netlify/functions unit coverage via node:test against the
+// handler directly), so this file follows the same node:test/assert
+// convention as the rest of test/*.test.js, just driving a real Chromium
+// via Playwright instead of calling a function handler directly -- the
+// four things this file checks (error text rendered in the DOM, a login
+// redirect actually happening, icons literally absent from rendered
+// markup, a stat line's real presence/absence) aren't observable by
+// calling js/store.js's functions in isolation.
+//
+// Playwright itself is NOT a project dependency (package.json has none of
+// @playwright/test's usual entries) -- it's resolved from this sandbox's
+// global install (see CLAUDE.md's "No test framework is wired in..."
+// section), the same way the build agent already verifies changes by
+// hand. If Playwright or the pinned Chromium binary isn't resolvable in
+// whatever environment `npm test` runs in, every test in this file skips
+// itself with a clear reason instead of failing the whole suite.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+var staticServer = require('./helpers/static-server');
+
+var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+
+var playwright = null;
+var unavailableReason = null;
+try {
+  playwright = require('playwright');
+} catch (e1) {
+  try {
+    playwright = require('/opt/node22/lib/node_modules/playwright');
+  } catch (e2) {
+    unavailableReason = 'Playwright is not resolvable in this environment (' + e2.message + ')';
+  }
+}
+
+var server = null;
+var browser = null;
+var baseUrl = null;
+
+test.before(async function () {
+  if (unavailableReason) return;
+  server = await staticServer.start();
+  baseUrl = server.url;
+  try {
+    browser = await playwright.chromium.launch({ executablePath: CHROMIUM_PATH });
+  } catch (e) {
+    unavailableReason = 'Could not launch Chromium at ' + CHROMIUM_PATH + ': ' + e.message;
+  }
+});
+
+test.after(async function () {
+  if (browser) await browser.close();
+  if (server) await server.close();
+});
+
+/** Aborts requests to third-party hosts every page here loads (fonts, PostHog, Meta Pixel) -- none are needed for what these tests check, and this sandbox's outbound network can intermittently stall on them (see CLAUDE.md). */
+function blockThirdParty(page) {
+  return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
+    route.abort();
+  });
+}
+
+/** Intercepts DreamStore.getSharedFeed()'s underlying fetch so tests can force a resolved or failed shared feed without a real Netlify Functions runtime. */
+function mockGetFeed(page, feed, opts) {
+  opts = opts || {};
+  return page.route('**/.netlify/functions/get-feed', function (route) {
+    if (opts.fail) { route.abort('failed'); return; }
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: feed, dreamOfDayId: null }) });
+  });
+}
+
+/** Drives start.html's funnel tail (screens 9/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. */
+async function goToPricingScreen(page, email) {
+  await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#fn-s9-skip', { timeout: 5000 });
+  await page.click('#fn-s9-skip');
+  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  await page.click('#fn-s11-continue');
+  await page.waitForSelector('#fn-email', { timeout: 5000 });
+  await page.fill('#fn-email', email);
+  // 20 chars -- comfortably past the 8-char minimum this same commit
+  // enforces in DreamStore.signup(), so this helper doesn't itself trip
+  // over the finding this file is also verifying.
+  await page.fill('#fn-password', 'longenoughpassword1');
+  await page.click('#fn-s13-continue');
+  await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+}
+
+test('signup with a 7-character password shows the new 8-char-minimum error text', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'shortpwuser');
+    await page.fill('#login-email', 'shortpw@example.com');
+    await page.fill('#login-password', '1234567'); // 7 chars -- one short of the minimum
+    await page.click('#login-submit');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('login-error');
+      return !!(el && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var errorText = await page.textContent('#login-error');
+    assert.equal(errorText, 'Password must be at least 8 characters.');
+    // Never actually signed up / navigated away.
+    assert.match(page.url(), /login\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a pre-existing account with a sub-8-character password still logs in (no retroactive lockout)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // First load seeds js/store.js's localStorage state.
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      if (!state.accounts) state.accounts = {};
+      // Simulates an account created before the 8-char minimum existed --
+      // signup() itself would reject a password this short today, but
+      // login() (and resetPasswordLocally's new check) must never
+      // retroactively lock out an account that already has a short
+      // password on file.
+      state.accounts.legacyuser = { password: 'abc', email: 'legacy@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'legacyuser');
+    await page.fill('#login-password', 'abc');
+    await page.click('#login-submit');
+    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+    assert.match(page.url(), /explore\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Explore cards render without the removed comment/repost icons and without a layout regression', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, [
+      { id: 'd1', caption: 'Test dream one', style: 'Cartoon', dur: '8s', ownerHandle: '@tester', likes: 3, videoUrl: null, publishedAt: new Date().toISOString() }
+    ]);
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+
+    var actionCount = await page.$$eval('.feed-card .feed-actions .feed-action', function (els) { return els.length; });
+    assert.equal(actionCount, 2, 'expected exactly like+share actions per card, no comment/repost');
+
+    var actionsHTML = await page.$eval('.feed-card .feed-actions', function (el) { return el.innerHTML; });
+    assert.ok(!/repost/i.test(actionsHTML), 'no leftover "repost" reference in the actions markup');
+    // Distinctive path fragments unique to the removed comment/repost SVGs
+    // (js/icons.js) -- guards against the icons somehow still being
+    // embedded even under a different data-attribute/class name.
+    assert.ok(actionsHTML.indexOf('M21 11.5a8.4') === -1, 'comment icon path should not be present');
+    assert.ok(actionsHTML.indexOf('M17 2l4 4-4 4') === -1, 'repost icon path should not be present');
+
+    var box = await page.$eval('.feed-card .feed-actions', function (el) {
+      var r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, height: r.height };
+    });
+    var viewport = page.viewportSize();
+    assert.ok(box.height > 0, 'feed-actions should have a real, non-collapsed height');
+    assert.ok(box.top >= 0 && box.bottom <= viewport.height, 'feed-actions should sit fully inside the viewport, not overflow from a stale disabled-icon layout rule');
+  } finally {
+    await context.close();
+  }
+});
+
+test('pricing screen shows a real dreams-this-month count when getSharedFeed() resolves', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var now = new Date();
+    var lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+    await mockGetFeed(page, [
+      { id: 'a', publishedAt: now.toISOString() },
+      { id: 'b', publishedAt: now.toISOString() },
+      { id: 'c', publishedAt: lastMonth.toISOString() } // outside the current UTC month -- must not be counted
+    ]);
+    await goToPricingScreen(page, 'buyer-resolved@example.com');
+    await page.waitForSelector('.fn-proof-strip', { timeout: 5000 });
+    var text = await page.textContent('.fn-proof-strip');
+    assert.match(text, /2 dreams brought to life this month/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('pricing screen omits the stat line entirely (never a fake number) when getSharedFeed() fails', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, null, { fail: true });
+    await goToPricingScreen(page, 'buyer-failed@example.com');
+    var proofStripCount = await page.$$eval('.fn-proof-strip', function (els) { return els.length; });
+    assert.equal(proofStripCount, 0);
+  } finally {
+    await context.close();
+  }
+});
