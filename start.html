@@ -655,7 +655,14 @@
     var MAX_ATTEMPTS = 8;
     function tryUsername(username){
       var result = DreamStore.signup(username, password, email);
-      if(result.ok){ cb(true, null); return; }
+      if(result.ok){
+        // Shared event_id pairs this with the Pixel's own
+        // CompleteRegistration call — see js/analytics-config.js's
+        // fireMetaConversion for why. login.html's own ?mode=signup path
+        // fires the equivalent call for its own signup case.
+        fireMetaConversion('CompleteRegistration', { email: email });
+        cb(true, null); return;
+      }
       if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
         attempts++;
         var suffix = Math.floor(1000 + Math.random() * 9000);
@@ -750,6 +757,14 @@
       '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue to payment</button>';
+
+    // Paywall-reached moment — fires every time this screen renders,
+    // including a return visit via the back button, same as this file's
+    // existing track('funnel_step_viewed', ...) in render() below (no
+    // dedup guard there either). Shared event_id pairs this with the
+    // Pixel's own InitiateCheckout call — see js/analytics-config.js's
+    // fireMetaConversion.
+    fireMetaConversion('InitiateCheckout', {});
 
     document.getElementById('fn-pricing-close').addEventListener('click', proceedPastPricing);
     document.getElementById('fn-s14-continue').addEventListener('click', proceedPastPricing);

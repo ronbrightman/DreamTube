@@ -30,3 +30,87 @@ var POSTHOG_KEY = 'phc_qNfAvjah7yJCsMvzDETpCWxj3wzhdRFemfdVZkFGbS7o';
 var POSTHOG_HOST = 'https://us.i.posthog.com';
 
 var META_PIXEL_ID = '2464464964036457';
+
+// ---------------------------------------------------------------------
+// Meta Conversions API (CAPI) — server-side event tracking that
+// complements the client-side Pixel above. See
+// netlify/functions/track-conversion.js and
+// netlify/functions/lib/meta-capi.js for the server side of this; the
+// access token itself never appears anywhere client-side, including here
+// — this file only knows the (non-secret) Pixel ID.
+//
+// Every conversion DreamTube tracks pairs a client-side Pixel call with a
+// server-side CAPI call, sharing the SAME event_id between them, so
+// Meta's Pixel+CAPI deduplication (matches on event_id + event_name)
+// collapses the two into a single counted conversion instead of
+// double-counting — this is exactly why Event ID was selected as a
+// parameter when CAPI access was set up. fireMetaConversion() below is
+// the one place that pairing happens; every page that fires one of these
+// four events (CompleteRegistration, InitiateCheckout, Purchase,
+// Subscribe) should call this instead of calling fbq('track', ...)
+// directly for those events. (Purchase/Subscribe are currently only
+// fired server-side, from stripe-webhook.js's real payment-confirmation
+// path — see that file's comment — so this function's Purchase/Subscribe
+// branches exist for when a client-side moment for them exists too, e.g.
+// a checkout-return page; nothing in this codebase calls them yet.)
+// ---------------------------------------------------------------------
+
+/** New v4 UUID via the browser's crypto API, with a low-tech fallback for the rare browser without crypto.randomUUID. */
+function generateEventId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  return 'evt-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+/** Reads Meta's own first-party click/browser cookies (_fbc/_fbp), set automatically by the Pixel snippet once it loads. Either can be null (Pixel not loaded yet, an ad blocker, or META_PIXEL_ID still the placeholder above). */
+function getMetaCookies() {
+  function readCookie(name) {
+    var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  return { fbc: readCookie('_fbc'), fbp: readCookie('_fbp') };
+}
+
+/**
+ * Fires both halves of one conversion: the client-side Pixel call
+ * (fbq('track', eventName, {}, {eventID: ...})) and the server-side CAPI
+ * call (POSTs to netlify/functions/track-conversion.js), sharing one
+ * generated event_id between them — see the header comment above for why.
+ *
+ * eventName must be one of the four names track-conversion.js allows —
+ * CompleteRegistration, InitiateCheckout, Purchase, Subscribe. `extra` can
+ * carry { email, external_id, custom_data }; anything else is ignored by
+ * the server function.
+ *
+ * Fire-and-forget: analytics must never block or break the actual user
+ * flow (same rule every page's existing `track()` PostHog helper
+ * already follows), so every failure mode here — fbq not defined yet,
+ * the fetch itself rejecting, a non-2xx from the server — is swallowed
+ * rather than surfaced.
+ */
+function fireMetaConversion(eventName, extra) {
+  extra = extra || {};
+  var eventId = generateEventId();
+
+  if (typeof window.fbq === 'function') {
+    try { window.fbq('track', eventName, {}, { eventID: eventId }); } catch (e) { /* analytics must never break the app */ }
+  }
+
+  try {
+    var cookies = getMetaCookies();
+    var body = {
+      event_name: eventName,
+      event_id: eventId,
+      event_source_url: location.href,
+      fbc: cookies.fbc,
+      fbp: cookies.fbp,
+      email: extra.email,
+      external_id: extra.external_id,
+      custom_data: extra.custom_data
+    };
+    fetch('/.netlify/functions/track-conversion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).catch(function () { /* analytics must never break the app — network failure here is a no-op */ });
+  } catch (e) { /* analytics must never break the app */ }
+}

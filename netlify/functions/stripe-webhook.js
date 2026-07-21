@@ -38,8 +38,10 @@
 //                                 returns 500 deliberately so Stripe retries delivery, since our own
 //                                 Blobs write is what failed, not the event itself being invalid
 
+var crypto = require('crypto');
 var Stripe = require('stripe');
 var { setEntitlement } = require('./lib/entitlements');
+var metaCapi = require('./lib/meta-capi');
 
 /** Best-effort: Netlify may base64-encode the body depending on how the request arrived; Stripe's signature check needs the exact raw bytes either way. */
 function rawBody(event) {
@@ -106,6 +108,70 @@ exports.handler = async function (event) {
           stripeCustomerId: session.customer || undefined,
           stripeSubscriptionId: session.subscription || undefined
         });
+
+        // ====================================================================
+        // Meta CAPI Purchase/Subscribe — genuinely wired, currently dormant
+        // ----------------------------------------------------------------------
+        // This is the correct, one-and-only place these two events should ever
+        // fire: checkout.session.completed is Stripe's own confirmation that a
+        // real charge/subscription was created — signature-verified above, not
+        // a client-side "I just paid" claim. Compare this to start.html's
+        // proceedPastPricing() (see the big "TEMPORARY PAYWALL BYPASS" comment
+        // block there), which deliberately does NOT fire these two events:
+        // that function advances the funnel past pricing with zero real
+        // charge, so firing Purchase/Subscribe from there would tell Meta's ad
+        // system every visitor paid, corrupting ad-optimization signal — worse
+        // than not tracking at all.
+        //
+        // In today's deployment this code is simply never reached: no
+        // checkout/pricing UI calls create-checkout-session.js yet (see that
+        // file's own header), so Stripe has nothing to send this webhook a
+        // checkout.session.completed event for. That's correct, not a gap —
+        // the moment a real checkout flow goes live (PAYWALL_ENABLED flips on,
+        // per docs/PAYWALL_SETUP.md), this starts firing automatically with no
+        // further build pass needed.
+        //
+        // No client-side Pixel call to pair this with: unlike
+        // fireMetaConversion() (js/analytics-config.js) firing an event_id the
+        // page's own fbq('track', ...) call shares, this webhook is
+        // server-to-server and asynchronous — there's no live browser tab to
+        // pair with by the time Stripe delivers it, so this calls
+        // lib/meta-capi.js directly instead of going through
+        // track-conversion.js (that endpoint exists for the client-initiated
+        // case). Each event gets its own freshly generated event_id; there is
+        // nothing else for Meta to deduplicate these two against.
+        //
+        // Deliberately best-effort: sendCapiEvent() never throws (see that
+        // file), so a Meta-side failure here can't turn into a 500 that makes
+        // Stripe retry a webhook whose entitlement write already succeeded —
+        // logged for operational visibility only.
+        // ====================================================================
+        var checkoutValue = typeof session.amount_total === 'number' ? session.amount_total / 100 : undefined;
+        var checkoutCurrency = session.currency ? session.currency.toUpperCase() : undefined;
+        var checkoutCustomData = {
+          value: checkoutValue,
+          currency: checkoutCurrency,
+          plan: (session.metadata && session.metadata.dreamtube_plan) || undefined
+        };
+        var checkoutSourceUrl = session.success_url || undefined;
+
+        var purchaseResult = await metaCapi.sendCapiEvent({
+          event_name: 'Purchase',
+          event_id: crypto.randomUUID(),
+          event_source_url: checkoutSourceUrl,
+          email: sessionEmail,
+          custom_data: checkoutCustomData
+        });
+        if (!purchaseResult.ok) console.warn('meta-capi Purchase failed: ' + purchaseResult.error);
+
+        var subscribeResult = await metaCapi.sendCapiEvent({
+          event_name: 'Subscribe',
+          event_id: crypto.randomUUID(),
+          event_source_url: checkoutSourceUrl,
+          email: sessionEmail,
+          custom_data: checkoutCustomData
+        });
+        if (!subscribeResult.ok) console.warn('meta-capi Subscribe failed: ' + subscribeResult.error);
       }
     } else if (stripeEvent.type === 'customer.subscription.updated' || stripeEvent.type === 'customer.subscription.deleted') {
       var subscription = stripeEvent.data.object;

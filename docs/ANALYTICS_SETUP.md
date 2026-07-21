@@ -66,17 +66,45 @@ and deployed in the meantime.
 
 ## Meta Conversions API (CAPI)
 
-The code here only installs the base Meta Pixel `<script>` tag (browser-side
-tracking). **One-click Conversions API activation is a dashboard action**,
-not something to implement in code: once the Pixel above exists and has
-received some traffic, go to **Events Manager > \[your Pixel\] > Overview
-> "Activate Conversions API"** and turn it on. Meta hosts the server-side
-relay itself and dedupes automatically against the browser Pixel — no
-Netlify Function or other server code is needed for this basic setup. (If a
-custom event parameter beyond Meta's standard set is ever needed in CAPI —
-e.g. which A/B variant a converting user saw — that requires a real
-server-side forward via a Netlify Function, which is more work and is not
-part of this setup.)
+**This is now implemented in code**, superseding the one-click-dashboard
+approach originally described here. The founder generated a real CAPI
+access token in Meta Events Manager and added it to Netlify's environment
+variables as `META_CAPI_ACCESS_TOKEN` on the DreamTube site — that account
+setup was the only manual step; everything else is code, already wired:
+
+- `netlify/functions/lib/meta-capi.js` — shared `sendCapiEvent()` helper.
+  Builds Meta's documented CAPI payload, hashes PII (`email`/`external_id`
+  → SHA-256, lowercased+trimmed first) before sending, and reads
+  `META_CAPI_ACCESS_TOKEN` server-side only — the token never reaches the
+  client, including in error messages (redacted defensively even from
+  network-layer error text).
+- `netlify/functions/track-conversion.js` — the client-facing endpoint.
+  `POST { event_name, event_id, event_source_url, email?, external_id?,
+  fbc?, fbp?, custom_data? }`. `event_name` is restricted to exactly
+  `CompleteRegistration`, `InitiateCheckout`, `Purchase`, `Subscribe` —
+  not a general-purpose event-forwarding proxy.
+- `js/analytics-config.js`'s `fireMetaConversion(eventName, extra)` — the
+  one place a page fires one of the four tracked events. Generates one
+  `event_id` and fires BOTH the client-side `fbq('track', ...)` Pixel call
+  and the server-side `track-conversion.js` POST with that same id, so
+  Meta's Pixel+CAPI dedup (matches on event_id + event_name) collapses
+  them into a single counted conversion — this is why Event ID was
+  selected as a parameter when the access token was set up. Also reads
+  the `_fbc`/`_fbp` first-party cookies Meta's Pixel snippet sets, and
+  includes them in the CAPI payload.
+- Wired call sites: `start.html`'s `attemptSignup()` and `login.html`'s
+  `?mode=signup` path (both → `CompleteRegistration`), `start.html`'s
+  `renderScreen14()` pricing screen (→ `InitiateCheckout`), and
+  `netlify/functions/stripe-webhook.js`'s `checkout.session.completed`
+  handler (→ `Purchase` + `Subscribe`, currently dormant — see that
+  file's comment — because no real checkout flow calls
+  `create-checkout-session.js` yet; nothing fires these two events from
+  `start.html`'s temporary payment bypass, deliberately).
+
+If a custom event parameter beyond Meta's standard set is ever needed
+(e.g. which A/B variant a converting user saw), add it to the
+`custom_data` object at the relevant call site — the plumbing already
+supports arbitrary `custom_data`.
 
 ## Session-replay privacy: why `#dream-text` is masked
 
@@ -111,3 +139,15 @@ screens, etc.), add the same `ph-no-capture` class to that element.
 - `create.html` — `ph-no-capture` class added to `#dream-text`
 - `js/store.js` — `identifyForAnalytics()` helper, called from `signup()`
   and `login()`
+
+**Files touched by the Meta CAPI addition above:**
+
+- `netlify/functions/lib/meta-capi.js` — new, shared `sendCapiEvent()` helper
+- `netlify/functions/track-conversion.js` — new, client-facing CAPI endpoint
+- `js/analytics-config.js` — `fireMetaConversion()`, `getMetaCookies()`,
+  `generateEventId()` helpers
+- `start.html` — `attemptSignup()` (CompleteRegistration) and
+  `renderScreen14()` (InitiateCheckout)
+- `login.html` — `?mode=signup` submit handler (CompleteRegistration)
+- `netlify/functions/stripe-webhook.js` — `checkout.session.completed`
+  handler (Purchase + Subscribe, dormant until real payment goes live)

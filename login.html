@@ -224,6 +224,11 @@
     setTimeout(function(){
       var result = isSignup ? DreamStore.signup(username, password, email) : DreamStore.login(username, password);
       if(result.ok){
+        // Direct-signup path (?mode=signup) — start.html's screen 13 fires
+        // the equivalent call for the post-quiz funnel signup. Shared
+        // event_id pairs this with the Pixel's own CompleteRegistration
+        // call — see js/analytics-config.js's fireMetaConversion.
+        if(isSignup){ fireMetaConversion('CompleteRegistration', { email: email }); }
         location.href = nextUrl;
       } else {
         err.textContent = result.error;
