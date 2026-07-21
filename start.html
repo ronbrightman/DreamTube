@@ -77,13 +77,14 @@
   ARCHITECTURE SPLIT (see the dreamtube-growth repo's AGENT_POLICY.md for
   the full story): the ad-facing, iterate-often screens — hook carousel,
   the 3-question quiz, reassurance, social proof, dream-text capture, style
-  picker, and the Dream Profile recap (originally screens 1-8, 10, 12) —
-  now live in the separate dreamtube-growth marketing repo, with their own
-  PostHog/Pixel/CAPI tracking and A/B testing. This file keeps only what
-  structurally has to run in DreamTube's own origin: Advanced (characters/
-  camera/scenery — screen 9), the "coming together" transition (screen 11),
-  signup, pricing, and confirmation (screens 13-15). Two reasons those
-  couldn't move:
+  picker, and the Dream Profile recap (formerly screens 1-8, 10, 12 in
+  this file) have moved entirely to the separate dreamtube-growth
+  marketing repo (https://dreamtubeapp.netlify.app/), with their own
+  PostHog/Pixel/CAPI tracking and A/B testing. This file now only covers
+  what structurally has to run in DreamTube's own origin: Advanced
+  (characters/camera/scenery — screen 9), the "coming together" transition
+  (screen 11), signup, pricing, and confirmation (screens 13-15). Two
+  reasons those couldn't move:
    1. Signup is NOT a network call — DreamStore.signup() writes straight
       into this origin's own localStorage. There is no account to create
       from a different origin.
@@ -92,15 +93,14 @@
       other Advanced field (camera/scenery chips) writes directly into
       DreamStore.setDraft(), which only exists in this origin.
 
-  A visitor lands here one of two ways:
-   - Organic, in-app "Get Started" (no ?resume=1 param): the full original
-     15-screen experience, completely unchanged from before this split.
-   - From the marketing funnel (?resume=1 plus recall/types/motivations/
-     style/caption as URL params): skips straight to Advanced, with those
-     values hydrated into `quiz`/`chosenStyle`/the real draft first. See
-     the "Resume-from-marketing entry point" block below for exactly what's
-     parsed, and SCREEN_RENDERERS/PHASE_BY_STEP/TAGS further down for how
-     the shorter resume-mode screen sequence is built.
+  Every visitor now arrives here from the marketing funnel, via
+  ?resume=1 plus recall/types/motivations/style/caption as URL params —
+  landing directly on Advanced, with those values hydrated into
+  `quiz`/`chosenStyle`/the real draft first. A bare visit with no
+  ?resume=1 (stale bookmark, old link) redirects straight back to the
+  funnel — see the "Entry guard" block below. There is no organic
+  in-app entry point into this file anymore; index.html's "Get Started"
+  links to the marketing funnel directly.
 
   Real-integration notes still relevant to what's left here:
    - Screen 9 (Advanced: characters/camera/scenery) is a real functional
@@ -187,16 +187,6 @@
   #app.funnel-app.fn-dark-mode .fn-eyebrow{ color:var(--text-faint);}
   #app.funnel-app.fn-dark-mode .fn-body-copy{ color:var(--text-muted);}
 
-  .fn-opt{ display:flex; align-items:center; justify-content:space-between; padding:15px 17px; border-radius:17px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:14.5px; font-weight:600; margin-bottom:10px; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
-  .fn-opt.sel{ border-color:var(--fn-accent-solid); box-shadow:0 0 0 1.5px var(--fn-accent-solid) inset;}
-  .fn-dot{ width:10px; height:10px; border-radius:50%; border:1.5px solid var(--phase-faint, var(--fn-ink-faint)); flex-shrink:0; margin-left:10px;}
-  .fn-opt.sel .fn-dot{ background:var(--fn-accent-solid); border-color:var(--fn-accent-solid);}
-  .fn-dot.box{ width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; font-weight:800;}
-
-  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
-  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
-  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-
   textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
   textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
@@ -209,60 +199,12 @@
 
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
 
-  /* Carousels — screens 1 and 7 */
-  .fn-carousel{ display:flex; gap:10px; overflow-x:auto; margin:0 -24px 14px; padding:0 24px 4px; scroll-snap-type:x mandatory;}
-  .fn-carousel::-webkit-scrollbar{ display:none;}
-  .fn-carousel-card{ position:relative; flex:0 0 74%; max-width:300px; aspect-ratio:9/13; border-radius:20px; overflow:hidden; scroll-snap-align:start; display:flex; align-items:flex-end;}
-  .fn-carousel-card .fn-heart-badge{ position:absolute; top:10px; right:10px; z-index:2; display:flex; align-items:center; gap:4px; background:rgba(0,0,0,.3); backdrop-filter:blur(3px); color:#fff; font-size:11px; font-weight:800; padding:5px 10px; border-radius:100px;}
-  .fn-carousel-card .fn-most-loved{ position:absolute; top:10px; left:10px; z-index:2; background:#fff; color:var(--fn-accent-solid); font-size:10.5px; font-weight:800; padding:5px 11px; border-radius:100px; letter-spacing:.02em;}
-  .fn-media-caption{ position:relative; z-index:2; padding:14px; font-size:13px; font-weight:700; color:#fff; line-height:1.35;}
-  /* Real published-dream videos, once socialProofDreams loads (see below) --
-     the hardcoded pastel gradients (.fn-dream-1..6) are the fallback for
-     when there simply aren't enough real published dreams yet, not the
-     default. Unlike the curated gradients, a real video's brightness is
-     unpredictable, so the caption/badges need a real scrim behind them
-     rather than relying on white text alone. */
-  .fn-carousel-video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
-  .fn-carousel-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.65) 0%, rgba(0,0,0,.05) 45%, rgba(0,0,0,.25) 100%); z-index:1;}
-  .fn-carousel-dots{ display:flex; gap:5px; justify-content:center; margin-bottom:14px;}
-  .fn-carousel-dots i{ width:6px; height:6px; border-radius:50%; background:var(--phase-line, var(--fn-line)); display:block;}
-  .fn-carousel-dots i:first-child{ background:var(--fn-accent-solid); width:16px; border-radius:3px;}
-  .fn-dream-1{ background:linear-gradient(160deg,#E3E6F4,#D8CFF0 45%,#CFE0F2 100%);}
-  .fn-dream-2{ background:linear-gradient(160deg,#FCE7D6,#DCD3EE 45%,#CCD4F0 100%);}
-  .fn-dream-3{ background:linear-gradient(160deg,#E1D9F5,#CFE3F0 45%,#F3E0D9 100%);}
-  .fn-dream-4{ background:linear-gradient(160deg,#D9F0E6,#CFE0F5 45%,#E8D9F5 100%);}
-  .fn-dream-5{ background:linear-gradient(160deg,#F5E0D0,#DCD0EE 45%,#D0E4F0 100%);}
-  .fn-dream-6{ background:linear-gradient(160deg,#E6D4F5,#DCD8F0 45%,#D4E8F0 100%);}
-
-  /* Promise screen (2) */
-  .fn-promise-row{ display:flex; gap:13px; align-items:flex-start; padding:12px 0;}
-  .fn-p-icon{ width:38px; height:38px; border-radius:12px; background:var(--fn-accent-grad); flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px;}
-  .fn-p-text{ font-size:14px; line-height:1.5; color:#2C2846; padding-top:7px;}
-  .fn-p-text b{ font-weight:800;}
-
-  /* Reactive reveal message (screen 3) */
-  .fn-reveal-msg{ margin-top:14px; padding:15px 17px; border-radius:16px; background:var(--fn-accent-grad); color:#fff; font-size:13.5px; font-weight:700; line-height:1.45; text-wrap:balance;}
-
-  .fn-avatar-ring{ width:52px; height:52px; border-radius:50%; background:var(--fn-accent-grad); padding:2px; display:flex; align-items:center; justify-content:center;}
-  .fn-avatar-ring i{ width:100%; height:100%; border-radius:50%; background:var(--phase-card, var(--fn-card)); display:block;}
-
   .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
   .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
   .fn-btn-ghost{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); color:#2C2846; font-weight:700; font-size:13px; text-align:center; padding:12px; width:100%; border-radius:100px;}
   .fn-btn-ghost.disabled{ opacity:.5; cursor:not-allowed; pointer-events:none;}
   .fn-btn-row{ display:flex; flex-direction:column; gap:9px;}
   .fn-small-link{ background:none; border:none; color:var(--phase-soft, var(--fn-ink-soft)); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
-
-  /* Style pick (10) reuses the real .style-grid/.style-card/.sc-* from
-     css/styles.css unmodified — nothing here to override. */
-
-  /* Dream Profile recap (12) */
-  .fn-recap-card{ border-radius:22px; padding:3px; background:var(--fn-accent-grad); margin-bottom:16px;}
-  .fn-recap-card-inner{ background:var(--phase-card, var(--fn-card)); border-radius:19px; padding:18px;}
-  .fn-recap-item{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px solid rgba(58,51,80,0.08);}
-  .fn-recap-item:last-child{ border-bottom:none;}
-  .fn-recap-item .k{ font-size:12px; color:#6E6480; font-weight:600; flex:none;}
-  .fn-recap-item .v{ font-size:13.5px; color:#2C2846; font-weight:800; text-align:right;}
 
   .fn-proof-strip{ display:flex; align-items:center; gap:9px; padding:11px 13px; border-radius:100px; background:#fff; border:1px solid rgba(58,51,80,0.1); margin-bottom:16px;}
   .fn-proof-strip .avatars{ display:flex;}
@@ -304,11 +246,6 @@
 
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
-  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
-  function truncateCaption(str, maxLen){
-    var s = (str || '').trim();
-    return s.length > maxLen ? s.slice(0, maxLen).trim() + '...' : s;
-  }
 
   /**
    * Downscales/recompresses a picked photo to a JPEG data URL — copied
@@ -338,55 +275,36 @@
     });
   }
 
-  // ===== Funnel-local state (screens 1-7 personalization signals, plus
-  // pre-signup character staging — see the head-of-file comment for why
-  // characters can't just call DreamStore.saveCharacter directly yet). =====
-  var quiz = { recall: null, dreamTypes: [], motivations: [] };
-  var chosenStyle = null;
+  // ===== Entry guard =====
+  // The ad-facing hook/quiz/style/recap screens (formerly screens 1-8,
+  // 10, 12 in this file) now live entirely in the separate
+  // dreamtube-growth marketing repo (https://dreamtubeapp.netlify.app/).
+  // This file only ever runs as the tail end of that funnel now — a
+  // direct/bare visit here (no ?resume=1, e.g. a stale bookmark or old
+  // link) has no quiz/style/caption context to build a dream around, so
+  // it redirects to the real starting point instead of rendering a
+  // broken/empty Advanced screen.
+  if(getParam('resume') !== '1'){
+    location.href = 'https://dreamtubeapp.netlify.app/';
+    return;
+  }
+
+  // ===== Funnel-local state, hydrated from the marketing funnel's
+  // handoff URL params, plus pre-signup character staging — see the
+  // head-of-file comment for why characters can't just call
+  // DreamStore.saveCharacter directly yet. =====
+  var quiz = {
+    recall: getParam('recall') || null,
+    dreamTypes: (getParam('types') || '').split(',').filter(Boolean),
+    motivations: (getParam('motivations') || '').split(',').filter(Boolean)
+  };
+  var chosenStyle = getParam('style') || null;
   var staged = { characters: [], selectedIds: [] };
+  track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
 
-  // ===== Resume-from-marketing entry point =====
-  // The ad-facing hook/quiz/style/recap screens (formerly screens 1-8, 10,
-  // 12 here) now live in the separate dreamtube-growth marketing repo. That
-  // funnel collects the same quiz/style/caption signals this file used to
-  // collect itself, then redirects here with ?resume=1 plus those values as
-  // URL params, landing directly on Advanced (screen 9) instead of
-  // restarting from the hook carousel. A visitor with no ?resume=1 (organic
-  // in-app "Get Started" clicks) gets the exact same full 15-screen
-  // experience as before this split — this is additive, not a replacement
-  // of the organic path. See head-of-file comment for the full picture.
-  var isResume = getParam('resume') === '1';
-  if(isResume){
-    quiz.recall = getParam('recall') || null;
-    quiz.dreamTypes = (getParam('types') || '').split(',').filter(Boolean);
-    quiz.motivations = (getParam('motivations') || '').split(',').filter(Boolean);
-    chosenStyle = getParam('style') || null;
-    track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
-  }
-
-  // Screens 1 and 7's carousels are social proof ("look what other people
-  // dreamed up") -- they used to be pure hardcoded pastel-gradient
-  // placeholders with made-up like counts and captions, which is exactly
-  // the kind of thing a first-time visitor can tell is fake. Real
-  // published dreams from the shared feed, highest-liked first, get used
-  // instead wherever there are enough of them; the gradients remain the
-  // fallback for whichever slot doesn't have a real dream to show (a very
-  // early/empty install, most likely). Fetched once, before either screen
-  // is likely to have been reached yet, and re-rendered in place if the
-  // visitor is already sitting on screen 1 or 7 when it resolves. Skipped
-  // entirely in resume mode — those two screens never render there.
-  var socialProofDreams = [];
-  if(!isResume){
-    DreamStore.getSharedFeed().then(function(dreams){
-      socialProofDreams = dreams.slice().sort(function(a, b){ return (b.likes || 0) - (a.likes || 0); });
-      if(cur === 0 || cur === 6) render();
-    }).catch(function(){ /* keep the gradient/text fallback silently */ });
-  }
   var cur = 0;
 
-  var TAGS = isResume
-    ? ['advanced', 'preparing', 'email_capture', 'pricing', 'confirmation']
-    : ['hook','promise','recall','dream_type','motivation','reassurance','see_in_action','dream_capture','advanced','style','preparing','recap','email_capture','pricing','confirmation'];
+  var TAGS = ['advanced', 'preparing', 'email_capture', 'pricing', 'confirmation'];
 
   // Phase color system — ported verbatim from funnel-mockup.html's PHASES
   // map. 'app-dark' (screen 9 only) is a special case handled in
@@ -395,225 +313,18 @@
   // explicit allowance for that one screen to look like the real app
   // rather than a pastel reskin (it's a direct functional port).
   var PHASES = {
-    'dawn-hero': { grad:'linear-gradient(160deg,#FBEFEA,#E9EAF5 55%,#E3E9F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
-    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#EAEBF6 55%,#E7EBF7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
-    'dawn-warm': { grad:'linear-gradient(160deg,#FCE9DA,#E5E3F2 55%,#DEE3F5)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFDFB', line:'rgba(58,51,80,0.12)' },
     'transition':{ grad:'linear-gradient(160deg,#DCDCF0,#D0D5EE 55%,#C2D3EC)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
-    'mid-dusk':  { grad:'linear-gradient(160deg,#C6C2E6,#A6B4DD 55%,#94A6D2)', ink:'#221F3D', soft:'#4C4A6B', faint:'#767497', card:'#FFFFFF', line:'rgba(34,31,61,0.16)' },
     'dusk':      { grad:'linear-gradient(160deg,#9B95CE,#7B8CC0 55%,#6478AE)', ink:'#191735', soft:'#EDEBF7', faint:'#C6C2E3', card:'#FFFFFF', line:'rgba(255,255,255,0.22)' },
     'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
     'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
-  var PHASE_BY_STEP = isResume
-    ? ['app-dark', 'transition', 'dusk', 'dusk-deep', 'night']
-    : ['dawn-hero','dawn','dawn','dawn','dawn','dawn','dawn','dawn','app-dark','dawn-warm','transition','mid-dusk','dusk','dusk-deep','night'];
+  var PHASE_BY_STEP = ['app-dark', 'transition', 'dusk', 'dusk-deep', 'night'];
 
   var appEl = document.getElementById('app');
   var screenEl = document.getElementById('fnScreen');
   var progressEl = document.getElementById('fnProgress');
   var backBtn = document.getElementById('fnBack');
   backBtn.innerHTML = Icons.back;
-
-  // Builds one carousel card: a real published dream's video when one is
-  // available for this slot, falling back to the original hardcoded
-  // pastel-gradient placeholder (identified by fallbackClass/fallbackHTML)
-  // when there simply isn't one yet. overlayHTML is whatever sits on top
-  // (heart badge, caption, etc.) -- built by the caller since screens 1
-  // and 7 want different overlays over the same underlying media.
-  function carouselCardHTML(dream, fallbackClass, overlayHTML){
-    if(dream && dream.videoUrl){
-      return '<div class="fn-carousel-card">' +
-        '<video class="fn-carousel-video" src="' + esc(dream.videoUrl) + '" muted loop playsinline autoplay preload="metadata"></video>' +
-        '<div class="fn-carousel-scrim"></div>' +
-        overlayHTML +
-      '</div>';
-    }
-    return '<div class="fn-carousel-card ' + fallbackClass + '">' + overlayHTML + '</div>';
-  }
-
-  // ===================================================================
-  // Screen 1 — Hook carousel
-  // ===================================================================
-  function renderScreen1(el){
-    var real = socialProofDreams.slice(0, 3);
-    var cards = [
-      carouselCardHTML(real[0], 'fn-dream-1', '<span class="fn-most-loved">Most loved</span><span class="fn-heart-badge">&#9829; ' + (real[0] ? formatCount(real[0].likes || 0) : '2.4k') + '</span>'),
-      carouselCardHTML(real[1], 'fn-dream-2', '<span class="fn-heart-badge">&#9829; ' + (real[1] ? formatCount(real[1].likes || 0) : '1.8k') + '</span>'),
-      carouselCardHTML(real[2], 'fn-dream-3', '<span class="fn-heart-badge">&#9829; ' + (real[2] ? formatCount(real[2].likes || 0) : '1.2k') + '</span>')
-    ];
-    el.innerHTML =
-      '<div class="fn-carousel">' + cards.join('') + '</div>' +
-      '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
-      '<div class="fn-headline">Turn your dreams into videos.</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s1-continue" type="button">Start</button>';
-    document.getElementById('fn-s1-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 2 — The promise
-  // ===================================================================
-  function promiseRow(icon, bold, rest){
-    return '<div class="fn-promise-row"><span class="fn-p-icon">' + icon + '</span><span class="fn-p-text"><b>' + bold + '</b> — ' + rest + '</span></div>';
-  }
-  function renderScreen2(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">What DreamTube is</div>' +
-      '<div class="fn-headline">A place to keep your dreams — not just remember them.</div>' +
-      promiseRow('&#9998;', 'Keep a living dream journal', 'every dream saved, ready to revisit anytime.') +
-      promiseRow('&#9654;', 'Watch each one as a video', 'not just words on a page.') +
-      promiseRow('&#9680;', 'Private or public, dream by dream', 'share what you want, keep the rest just yours.') +
-      promiseRow('&#10022;', 'Explore dreams from others', "see what other people's minds come up with.") +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s2-continue" type="button">Continue</button>';
-    document.getElementById('fn-s2-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 3 — Recall question (reactive)
-  // ===================================================================
-  var RECALL_OPTIONS = [
-    { key:'never', label:'Never — they slip away fast' },
-    { key:'sometimes', label:'Sometimes, in flashes' },
-    { key:'vividly', label:'Vividly, most nights' }
-  ];
-  var RECALL_MESSAGES = {
-    never: "Great! So now you'll be able to capture them and keep them alive forever.",
-    sometimes: "Great! So now you'll be able to capture them and keep them alive forever.",
-    vividly: "Great, so you'll easily make them come alive."
-  };
-  function renderScreen3(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Question 1 of 4</div>' +
-      '<div class="fn-headline">Do you remember your dreams often?</div>' +
-      '<div id="fn-recall-opts">' + RECALL_OPTIONS.map(function(o){
-        return '<div class="fn-opt' + (quiz.recall === o.key ? ' sel' : '') + '" data-recall="' + o.key + '"><span>' + o.label + '</span><span class="fn-dot"></span></div>';
-      }).join('') + '</div>' +
-      (quiz.recall ? '<div class="fn-reveal-msg">' + RECALL_MESSAGES[quiz.recall] + '</div>' : '') +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s3-continue" type="button"' + (quiz.recall ? '' : ' disabled') + '>Continue</button>';
-
-    document.getElementById('fn-recall-opts').addEventListener('click', function(e){
-      var opt = e.target.closest('[data-recall]');
-      if(!opt) return;
-      quiz.recall = opt.dataset.recall;
-      renderScreen3(el);
-    });
-    document.getElementById('fn-s3-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 4 — Content/type (multi-select)
-  // ===================================================================
-  var DREAM_TYPE_OPTIONS = ['Flying', 'Being chased', 'Falling', "Someone I've lost", 'People I know', 'Recurring dreams', 'Adventure / fantasy', 'Nightmares', 'Lucid dreams'];
-  function renderScreen4(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Question 2 of 4</div>' +
-      '<div class="fn-headline">What kind of dreams do you have most?</div>' +
-      '<div class="fn-body-copy">Pick as many as fit.</div>' +
-      '<div class="fn-chip-row" id="fn-dreamtype-chips">' + DREAM_TYPE_OPTIONS.map(function(t){
-        return '<span class="fn-chip' + (quiz.dreamTypes.indexOf(t) !== -1 ? ' sel' : '') + '" data-type="' + esc(t) + '">' + esc(t) + '</span>';
-      }).join('') + '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s4-continue" type="button">Continue</button>';
-
-    document.getElementById('fn-dreamtype-chips').addEventListener('click', function(e){
-      var chip = e.target.closest('[data-type]');
-      if(!chip) return;
-      var t = chip.dataset.type;
-      var idx = quiz.dreamTypes.indexOf(t);
-      if(idx === -1) quiz.dreamTypes.push(t); else quiz.dreamTypes.splice(idx, 1);
-      chip.classList.toggle('sel');
-    });
-    document.getElementById('fn-s4-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 5 — Motivation (multi-select, per the v3.1 founder revision)
-  // ===================================================================
-  var MOTIVATION_OPTIONS = ['Capture dreams before they fade', 'Turn them into videos', 'Process a recurring dream', 'Keep them forever', 'Watch dreams of other people', 'Share with friends'];
-  function renderScreen5(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Question 3 of 4 &middot; pick all that apply</div>' +
-      '<div class="fn-headline" style="font-size:21px;">Why are you here?</div>' +
-      '<div id="fn-motivation-opts">' + MOTIVATION_OPTIONS.map(function(m){
-        var sel = quiz.motivations.indexOf(m) !== -1;
-        return '<div class="fn-opt' + (sel ? ' sel' : '') + '" data-motivation="' + esc(m) + '"><span>' + esc(m) + '</span><span class="fn-dot box">' + (sel ? '&#10003;' : '') + '</span></div>';
-      }).join('') + '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s5-continue" type="button">Continue</button>';
-
-    document.getElementById('fn-motivation-opts').addEventListener('click', function(e){
-      var opt = e.target.closest('[data-motivation]');
-      if(!opt) return;
-      var m = opt.dataset.motivation;
-      var idx = quiz.motivations.indexOf(m);
-      if(idx === -1) quiz.motivations.push(m); else quiz.motivations.splice(idx, 1);
-      renderScreen5(el);
-    });
-    document.getElementById('fn-s5-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 6 — Reassurance
-  // ===================================================================
-  function renderScreen6(el){
-    el.innerHTML =
-      '<div class="fn-spacer"></div>' +
-      '<div class="fn-avatar-ring" style="margin:0 auto 20px;"><i></i></div>' +
-      '<div class="fn-headline" style="text-align:center;">' + "There's no wrong dream — that's what makes yours worth seeing." + '</div>' +
-      '<div class="fn-body-copy" style="text-align:center;">Your dreams stay private until you choose to publish them.</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s6-continue" type="button">Okay</button>';
-    document.getElementById('fn-s6-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 7 — See it in action (carousel, different clips than screen 1)
-  // ===================================================================
-  function renderScreen7(el){
-    // Different dreams than screen 1's (that one already claimed the top 3
-    // by likes) -- next 3 down the list, still real, just not repeats.
-    var real = socialProofDreams.slice(3, 6);
-    var fallbackCaptions = ['"a city made of glass..."', '"my childhood house, underwater..."', '"running through a field of stars..."'];
-    var fallbackClasses = ['fn-dream-4', 'fn-dream-5', 'fn-dream-6'];
-    var cards = [0, 1, 2].map(function(i){
-      var caption = real[i] ? '"' + esc(truncateCaption(real[i].caption, 42)) + '"' : fallbackCaptions[i];
-      return carouselCardHTML(real[i], fallbackClasses[i], '<span class="fn-media-caption">' + caption + '</span>');
-    });
-    el.innerHTML =
-      '<div class="fn-eyebrow">See it in action</div>' +
-      '<div class="fn-carousel">' + cards.join('') + '</div>' +
-      '<div class="fn-carousel-dots"><i></i><i></i><i></i></div>' +
-      '<div class="fn-body-copy">Real dreams, typed by real people — and the videos they became.</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s7-continue" type="button">Continue</button>';
-    document.getElementById('fn-s7-continue').addEventListener('click', next);
-  }
-
-  // ===================================================================
-  // Screen 8 — Dream capture (real: DreamStore.setDraft, matching
-  // create.html's exact pattern)
-  // ===================================================================
-  function renderScreen8(el){
-    var existing = DreamStore.getDraft().caption || '';
-    el.innerHTML =
-      '<div class="fn-eyebrow">Let’s start your dream</div>' +
-      '<div class="fn-headline">Type a bit of a dream you remember — even a fragment.</div>' +
-      '<textarea class="fn-field ph-no-capture" id="fn-dream-text" dir="auto" style="min-height:140px; margin-top:8px;" placeholder="I was standing on a beach that turned into...">' + esc(existing) + '</textarea>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s8-continue" type="button" disabled>Continue</button>';
-
-    var ta = document.getElementById('fn-dream-text');
-    var btn = document.getElementById('fn-s8-continue');
-    function sync(){ btn.disabled = ta.value.trim().length < 8; }
-    ta.addEventListener('input', sync);
-    sync();
-    btn.addEventListener('click', function(){
-      DreamStore.setDraft({ caption: ta.value.trim(), sourceDreamId: null });
-      next();
-    });
-  }
 
   // ===================================================================
   // Screen 9 — Advanced (characters/camera/scenery), ported from
@@ -907,39 +618,6 @@
   }
 
   // ===================================================================
-  // Screen 10 — Style pick (real 4 styles/backgrounds, matching
-  // style.html's DreamStore.setDraft pattern)
-  // ===================================================================
-  var STYLE_OPTIONS = ['Cartoon', 'Cinematic', 'Anime', 'Realistic'];
-  function renderScreen10(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Almost ready</div>' +
-      '<div class="fn-headline">Choose a visual style.</div>' +
-      '<div class="style-grid" id="fn-style-grid">' + STYLE_OPTIONS.map(function(s){
-        var sel = chosenStyle === s;
-        return '<div class="style-card' + (sel ? ' selected' : '') + '" data-style="' + s + '">' +
-          '<div class="sc-bg sc-' + s.toLowerCase() + '"></div>' +
-          '<div class="sc-overlay"></div>' +
-          '<div class="sc-check">' + Icons.check + '</div>' +
-          '<div class="sc-content"><div class="sc-icon">' + Icons.palette + '</div><div class="sc-name">' + s + '</div></div>' +
-        '</div>';
-      }).join('') + '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s10-continue" type="button"' + (chosenStyle ? '' : ' disabled') + '>Continue</button>';
-
-    document.getElementById('fn-style-grid').addEventListener('click', function(e){
-      var card = e.target.closest('.style-card');
-      if(!card) return;
-      chosenStyle = card.dataset.style;
-      renderScreen10(el);
-    });
-    document.getElementById('fn-s10-continue').addEventListener('click', function(){
-      DreamStore.setDraft({ style: chosenStyle });
-      next();
-    });
-  }
-
-  // ===================================================================
   // Screen 11 — Preparing / transition. Copy deliberately stops short of
   // claiming generation has started — nothing has been generated yet.
   // ===================================================================
@@ -959,31 +637,6 @@
     });
     clearTimeout(prepTimer);
     prepTimer = setTimeout(function(){ if(cur === thisStep) next(); }, 2200);
-  }
-
-  // ===================================================================
-  // Screen 12 — Dream Profile recap
-  // ===================================================================
-  var RECALL_LABELS = { never:'Never — they slip away fast', sometimes:'Sometimes, in flashes', vividly:'Vividly, most nights' };
-  function recapItem(k, v){
-    return '<div class="fn-recap-item"><span class="k">' + esc(k) + '</span><span class="v">' + esc(v) + '</span></div>';
-  }
-  function formatList(arr, fallback){ return arr.length ? arr.join(', ') : fallback; }
-  function renderScreen12(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Your Dream Profile</div>' +
-      '<div class="fn-headline" style="font-size:21px;">Here’s what we’ll build your first dream around.</div>' +
-      '<div class="fn-recap-card" style="margin-top:10px;">' +
-        '<div class="fn-recap-card-inner">' +
-          recapItem('Recall', quiz.recall ? RECALL_LABELS[quiz.recall] : 'Not decided yet') +
-          recapItem('Common themes', formatList(quiz.dreamTypes, 'Not decided yet')) +
-          recapItem("Why you're here", formatList(quiz.motivations, 'Not decided yet')) +
-          recapItem('Style', chosenStyle || 'Not chosen yet') +
-        '</div>' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s12-continue" type="button">Continue</button>';
-    document.getElementById('fn-s12-continue').addEventListener('click', next);
   }
 
   // ===================================================================
@@ -1147,9 +800,7 @@
   // ===================================================================
   // Navigation / phase engine
   // ===================================================================
-  var SCREEN_RENDERERS = isResume
-    ? [renderScreen9, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
-    : [renderScreen1, renderScreen2, renderScreen3, renderScreen4, renderScreen5, renderScreen6, renderScreen7, renderScreen8, renderScreen9, renderScreen10, renderScreen11, renderScreen12, renderScreen13, renderScreen14, renderScreen15];
+  var SCREEN_RENDERERS = [renderScreen9, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
 
   function renderProgress(){
     var dots = '';
@@ -1196,33 +847,29 @@
   function next(){ goToStep(cur + 1); }
   function prev(){
     if(cur > 0){ goToStep(cur - 1); return; }
-    // Resume mode's first screen has nothing before it in THIS origin to
-    // step back to — the visitor arrived from the marketing funnel, so
-    // "back" should return them there, not to DreamTube's own index.html.
-    // document.referrer confirms that's genuinely where they came from
-    // before trusting history.back() with it (same pattern as result.html's
-    // back button).
-    if(isResume && document.referrer){ history.back(); return; }
-    location.href = 'index.html';
+    // The first screen here has nothing before it in this origin to step
+    // back to — the visitor always arrives from the marketing funnel now,
+    // so "back" should return them there. document.referrer confirms
+    // that's genuinely where they came from before trusting history.back()
+    // with it (same pattern as result.html's back button); falls back to
+    // the funnel's URL directly if there's no referrer to check.
+    if(document.referrer){ history.back(); return; }
+    location.href = 'https://dreamtubeapp.netlify.app/';
   }
   backBtn.addEventListener('click', prev);
 
-  // Fresh entry point for brand-new visitors — make sure no stale draft
-  // from a previous/abandoned session leaks into this one (mirrors
-  // create.html's own clean-slate behavior for non-restore visits). This
-  // must run BEFORE the resume-mode hydration below, not after — otherwise
-  // it would wipe out the caption/style this visitor already gave the
-  // marketing funnel.
+  // Make sure no stale draft from a previous/abandoned session leaks into
+  // this one (mirrors create.html's own clean-slate behavior for
+  // non-restore visits) — must run BEFORE the hydration below, not after,
+  // otherwise it would wipe out the caption/style the visitor already
+  // gave the marketing funnel.
   DreamStore.clearDraft();
-  if(isResume){
-    // Screens 8 (dream capture) and 10 (style) used to call
-    // DreamStore.setDraft() directly when they lived in this file — now
-    // that they run in the marketing repo (a different origin, with no
-    // DreamStore at all), the marketing funnel carries their answers here
-    // as URL params instead, and this is where they finally land in the
-    // real draft, exactly like those two screens used to do themselves.
-    DreamStore.setDraft({ caption: getParam('caption') || '', style: chosenStyle, sourceDreamId: null });
-  }
+  // The marketing funnel's screens 8 (dream capture) and 9 (style) used
+  // to call DreamStore.setDraft() directly when they lived in this file
+  // — now that they run in a different origin with no DreamStore at all,
+  // the funnel carries their answers here as URL params instead, and
+  // this is where they finally land in the real draft.
+  DreamStore.setDraft({ caption: getParam('caption') || '', style: chosenStyle, sourceDreamId: null });
   render();
 })();
 </script>
