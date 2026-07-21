@@ -161,13 +161,25 @@ of which agent hits them:
 - **(d) Anything flagged as a security or meaningful cost risk** — e.g. a
   change touching auth/secrets, a new recurring paid API dependency,
   anything that could expose user data or spend real money at scale.
-- **(e) Merging any branch into `main`, or anything going live** — build
-  and review never merge. That is always the last, human-triggered step.
+- **(e) Anything actually going live in the real world** — spending real
+  money, launching or scaling an ad campaign, anything a real user would
+  be affected by outside of this repo's own deploy. Always requires
+  explicit sign-off, no exceptions.
 
 **Implementation itself does not require approval** as long as it stays
 confined to a feature branch and is reversible — writing code, running
 it, testing it, committing it, pushing it to a branch. build and review
 cycle autonomously without pausing for a human in between.
+
+**Merging a reviewed, passing branch into `main` now happens
+automatically by default** — no need to wait for a "go ahead" once
+review has passed. build and review still never merge their own
+work; whoever is driving the pipeline (the session, not a subagent)
+merges once review passes. The one exception: pause and ask first if
+the change is genuinely high-risk — touches real payments/billing,
+a security-sensitive auth/secrets path, or has some other major,
+hard-to-reverse consequence at scale. Routine feature/bugfix/UI work,
+even a large batch of it, does not need to wait.
 
 ## For agents reading this
 
