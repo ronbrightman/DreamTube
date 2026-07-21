@@ -92,6 +92,7 @@
          removing it would let raw dream text into replay recordings by default. -->
     <textarea class="field ph-no-capture" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
     <div class="char-count" id="char-count">0 characters</div>
+    <div class="err-text" id="dream-text-error" style="display:none;"></div>
 
     <div class="adv-section" id="adv-section">
       <div class="adv-toggle" id="adv-toggle">
@@ -498,10 +499,44 @@
     return '';
   }
 
+  // Real dream text sometimes reads as gibberish to a bare length check (e.g.
+  // someone mashing a keyboard) -- this catches that specific case: mostly-
+  // unpronounceable Latin text with almost no vowels. Only applies when the
+  // text is itself mostly Latin script -- skipped entirely for non-Latin input
+  // (Hebrew, Arabic, Cyrillic, CJK, etc.), since a vowel check has no meaning
+  // there and would otherwise incorrectly block real dream descriptions
+  // written in those languages.
+  function looksLikeGibberish(text){
+    var totalNonSpace = text.replace(/\s/g, '').length;
+    if(totalNonSpace === 0) return false;
+    var letters = text.replace(/[^a-zA-Z]/g, '');
+    if(letters.length / totalNonSpace < 0.5) return false; // not primarily Latin script -- skip
+    var words = text.trim().split(/\s+/).filter(Boolean);
+    if(!words.length) return false;
+    var plausible = words.filter(function(w){
+      var wLetters = w.replace(/[^a-zA-Z]/g, '');
+      if(wLetters.length < 3) return true; // short words (a, I, in, of...) always fine
+      var vowels = (wLetters.match(/[aeiouAEIOU]/g) || []).length;
+      return (vowels / wLetters.length) >= 0.15;
+    });
+    return (plausible.length / words.length) < 0.5;
+  }
+
   function updateCharCount(){
     var n = textArea.value.length;
     charCount.textContent = n + ' character' + (n===1?'':'s');
-    writeContinue.disabled = n < 8;
+    if(n < 8){
+      writeContinue.disabled = true;
+      hideError('dream-text-error');
+      return;
+    }
+    if(looksLikeGibberish(textArea.value.trim())){
+      writeContinue.disabled = true;
+      showError('dream-text-error', "That doesn't look like a real dream description yet — try describing what happened.");
+    } else {
+      writeContinue.disabled = false;
+      hideError('dream-text-error');
+    }
   }
 
   // Whenever the dream text refers to the dreamer in first person, make sure
@@ -687,6 +722,16 @@
       }
       return pollTranscribeStatus(result.data.operationName, Date.now());
     }).then(function(transcript){
+      // No looksLikeGibberish() check here, deliberately: unlike the Write
+      // textarea (a bare length check with zero content-quality validation),
+      // this path is already gated by a real AI model -- fal-ai/whisper maps
+      // actual spoken audio to real words in whatever language was spoken, and
+      // transcribe-status.js already rejects silence/no-speech upstream
+      // (`no_speech_detected`). Keyboard-mash-style consonant salad isn't
+      // something Whisper produces from real speech, so the Write-panel
+      // heuristic wouldn't meaningfully fire here and risks flagging real
+      // short transcripts instead. Same length gate isn't present here either
+      // (there never was one) -- Whisper's own output is the gate.
       DreamStore.setDraft({ caption: transcript, sourceDreamId: null });
       // Record skips the Write panel entirely, so this is the only chance to
       // link a first-person transcript ("I flew over...") to the saved self

@@ -681,6 +681,80 @@ test('create.html: Advanced accordion chips render with the new lighter --surfac
   }
 });
 
+test('create.html: keyboard-mash gibberish in the Write textarea is blocked with an inline error, but real text (including non-Latin scripts) and the existing length gate are unaffected', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'gibberishtester');
+    await page.fill('#login-email', 'gibberishtester@example.com');
+    await page.fill('#login-password', 'longenoughpassword1');
+    await page.click('#login-submit');
+    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+
+    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
+    await page.click('#choice-write');
+    await page.waitForSelector('#dream-text', { timeout: 5000 });
+
+    // 1. The exact reported string -- pure keyboard mashing, well past the
+    // 8-char minimum, mostly-Latin, essentially no vowels.
+    await page.fill('#dream-text', 'qdqwdwqwdqqwdqwd');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('dream-text-error');
+      return !!(el && el.style.display !== 'none' && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var gibberishDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(gibberishDisabled, true, 'Continue must stay disabled for gibberish input');
+    var errorText = await page.textContent('#dream-text-error');
+    assert.match(errorText, /doesn't look like a real dream description/i);
+
+    // 2. A real English dream description -- should clear the error and
+    // enable Continue.
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', 'I was flying over a city made of glass');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('write-continue');
+      return el && !el.disabled;
+    }, null, { timeout: 5000 });
+    var realTextErrorVisible = await page.$eval('#dream-text-error', function (el) { return el.style.display !== 'none'; });
+    assert.equal(realTextErrorVisible, false, 'no gibberish error for a normal real dream description');
+
+    // 3. A short real Hebrew dream description ("I dreamed I was flying over
+    // the city") -- non-Latin script, must NOT be flagged even though it has
+    // zero Latin vowels, since the vowel heuristic only applies to
+    // mostly-Latin text.
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', 'חלמתי שאני עף מעל העיר');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('char-count');
+      return el && /character/.test(el.textContent);
+    }, null, { timeout: 5000 });
+    var hebrewDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(hebrewDisabled, false, 'Continue must enable for real non-Latin (Hebrew) dream text');
+    var hebrewErrorVisible = await page.$eval('#dream-text-error', function (el) { return el.style.display !== 'none'; });
+    assert.equal(hebrewErrorVisible, false, 'no gibberish error for real Hebrew dream text');
+
+    // 4. The pre-existing length-only gate still works independently of the
+    // new gibberish check -- short real text stays disabled with no
+    // gibberish error shown (it never gets that far).
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', 'short');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('char-count');
+      return el && el.textContent.indexOf('5 characters') !== -1;
+    }, null, { timeout: 5000 });
+    var shortDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(shortDisabled, true, 'Continue must stay disabled below the 8-char minimum');
+    var shortErrorVisible = await page.$eval('#dream-text-error', function (el) { return el.style.display !== 'none'; });
+    assert.equal(shortErrorVisible, false, 'length gate alone should not show the gibberish error text');
+  } finally {
+    await context.close();
+  }
+});
+
 test('pricing screen (14): clicking a non-default plan card updates its selected state, and that clicked plan (not the original default) is what gets tracked when continuing past pricing', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
