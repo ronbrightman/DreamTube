@@ -73,8 +73,7 @@
       <div class="proc-title">Turning your dream<br>into a video…</div>
       <div class="proc-sub" id="proc-sub">Video generation takes about 1-2 minutes.</div>
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
-      <div class="proc-pct" id="proc-pct">0%</div>
-      <div class="proc-caption" id="proc-caption">Painting the scene…</div>
+      <div class="proc-checklist" id="proc-checklist"></div>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
@@ -105,31 +104,47 @@
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
   var progInterval;
 
-  // Real Veo generation takes minutes, not seconds. Each tick closes a
-  // fraction of the remaining gap to the 92% cap, so progress moves fast
-  // while there's a lot of headroom and smoothly decelerates as it nears
-  // the cap — instead of a constant-rate crawl that stays low the whole
-  // time and then jumps straight to 100% the moment the real result lands.
-  var PROGRESS_CAP = 92;
+  // Real Veo generation takes minutes, not seconds, and there's no real
+  // percentage to report — the bar itself is a purely indeterminate CSS
+  // sweep (see .proc-bar-fill/.proc-bar-sweep in css/styles.css), and this
+  // renders the same CAPTIONS list as a growing checklist instead of a
+  // single rotating line: everything before the current step gets a
+  // checkmark and stays on screen, the current step gets a small spinner.
+  // Once the list itself runs out (generation takes longer than 6 ticks),
+  // the last two steps alternate being "current" forever rather than
+  // resetting back to step 1 — so it keeps visibly moving no matter how
+  // long the real call takes.
+  function renderChecklist(currentIdx, maxReached){
+    var html = '';
+    for(var i = 0; i <= maxReached; i++){
+      if(i === currentIdx){
+        html += '<div class="proc-check-item current"><span class="spinner-inline"></span><span class="proc-check-label">' + CAPTIONS[i] + '</span></div>';
+      } else {
+        html += '<div class="proc-check-item done"><span class="proc-check-mark">' + Icons.check + '</span><span class="proc-check-label">' + CAPTIONS[i] + '</span></div>';
+      }
+    }
+    document.getElementById('proc-checklist').innerHTML = html;
+  }
   function startFakeProgress(){
-    var pct = 0, capIdx = 0;
-    document.getElementById('proc-fill').style.width = '0%';
-    document.getElementById('proc-pct').textContent = '0%';
-    document.getElementById('proc-caption').textContent = CAPTIONS[0];
+    var tickCount = 0, maxReached = 0;
     clearInterval(progInterval);
+    renderChecklist(0, 0);
     progInterval = setInterval(function(){
-      var closeFraction = 0.14 + Math.random() * 0.08;
-      pct = pct + (PROGRESS_CAP - pct) * closeFraction;
-      document.getElementById('proc-fill').style.width = pct + '%';
-      document.getElementById('proc-pct').textContent = Math.floor(pct) + '%';
-      capIdx = (capIdx + 1) % CAPTIONS.length;
-      document.getElementById('proc-caption').textContent = CAPTIONS[capIdx];
+      tickCount++;
+      var currentIdx;
+      if(tickCount < CAPTIONS.length){
+        currentIdx = tickCount;
+      } else {
+        var overflow = tickCount - CAPTIONS.length;
+        var lastTwo = [CAPTIONS.length - 2, CAPTIONS.length - 1];
+        currentIdx = lastTwo[overflow % 2];
+      }
+      maxReached = Math.max(maxReached, currentIdx);
+      renderChecklist(currentIdx, maxReached);
     }, 5000);
   }
   function finishProgress(){
     clearInterval(progInterval);
-    document.getElementById('proc-fill').style.width = '100%';
-    document.getElementById('proc-pct').textContent = '100%';
   }
 
   function previewThumbHTML(d){
