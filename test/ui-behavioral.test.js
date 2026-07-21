@@ -18,11 +18,18 @@
 //
 // Also covers result.html's Save-button/OS-share-sheet fix and its new
 // Explore/Profile topbar nav links (title-wrap fix included), plus the 5
-// Advanced-screen/pricing fixes from commit ae7da62 (start.html screen 9's
-// dark-mode contrast bug, its restructure into 3 numbered .adv-step
-// sections, the lighter --surface chip color shared with create.html's
-// Advanced accordion, screen 14's genuinely-selectable pricing cards, and
-// screen 14's new paywall content).
+// Advanced-screen/pricing fixes from commit ae7da62 (the lighter --surface
+// chip color shared with create.html's Advanced accordion, screen 14's
+// genuinely-selectable pricing cards, and screen 14's new paywall content).
+//
+// The Advanced-screen dark-mode contrast test from that same commit has
+// since been REPLACED, not just updated: the founder reversed that round's
+// direction entirely (Advanced should never have gone dark theme at all --
+// the earlier fix corrected a real contrast bug, but by giving the dark
+// special case its own background instead of removing it). Advanced (the
+// former single screen 9) is now three separate light "dawn"-phase funnel
+// screens -- characters, camera, scenery -- covered by the tests below this
+// comment's own section header.
 //
 // Playwright itself is NOT a project dependency (package.json has none of
 // @playwright/test's usual entries) -- it's resolved from this sandbox's
@@ -110,11 +117,11 @@ async function seedResultPage(page, baseUrl, dreamId) {
   await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
 }
 
-/** Drives start.html's funnel tail (screens 9/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. */
+/** Drives start.html's funnel tail (Advanced screens/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. Skipping on the first Advanced screen (characters) jumps straight past camera/scenery too -- see the "Skip on any of the 3 screens" test below -- so one skip click is enough to reach the transition screen from here. */
 async function goToPricingScreen(page, email) {
   await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#fn-s9-skip', { timeout: 5000 });
-  await page.click('#fn-s9-skip');
+  await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+  await page.click('#fn-adv-chars-skip');
   await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
@@ -450,63 +457,127 @@ test('result.html topbar title stays on one line and does not overlap the back b
 // Advanced screen (9) / pricing screen (14) fixes -- commit ae7da62.
 // ===========================================================================
 
-test('Advanced screen (9): dark-mode contrast fix -- #app gets a real black background, and the headline renders in a light, readable color', async function (t) {
+test('Advanced screens (characters/camera/scenery): all three render the light "dawn" phase -- light background, dark readable ink text -- never the removed dark-mode special case', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-s9-skip', { timeout: 5000 });
+    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
-    var appClasses = await page.$eval('#app', function (el) { return el.className; });
-    assert.match(appClasses, /\bfunnel-app\b/);
-    assert.match(appClasses, /\bfn-dark-mode\b/);
+    async function assertLightDawnScreen() {
+      var appClasses = await page.$eval('#app', function (el) { return el.className; });
+      assert.match(appClasses, /\bfunnel-app\b/);
+      assert.ok(!/\bfn-dark-mode\b/.test(appClasses), 'the removed dark-mode special case must never apply to an Advanced screen');
 
-    // --bg-app is #000 (css/styles.css) -- the bug this fixes was #app
-    // falling back to the light pastel gradient instead of this rule.
-    // #app.funnel-app has `transition:background .4s ease`, so the very
-    // first read right after load can catch mid-transition (an intermediate
-    // rgba, not the settled color) -- wait for the transition to actually
-    // finish landing on black before asserting, instead of a blind sleep.
-    await page.waitForFunction(function () {
-      var el = document.getElementById('app');
-      return getComputedStyle(el).backgroundColor === 'rgb(0, 0, 0)';
-    }, null, { timeout: 5000 });
-    var appBg = await page.$eval('#app', function (el) { return getComputedStyle(el).backgroundColor; });
-    assert.equal(appBg, 'rgb(0, 0, 0)', 'expected the real dark-mode background (--bg-app), not the light pastel gradient');
+      // #FBEFEA (the dawn gradient's first stop, same value as the base
+      // --dawn-1 token) as rgb -- confirms the real light gradient is
+      // applied via applyPhase(), not just "isn't black".
+      var bgImage = await page.$eval('#app', function (el) { return getComputedStyle(el).backgroundImage; });
+      assert.match(bgImage, /251,\s*239,\s*234/, 'expected the dawn gradient (#FBEFEA) as the background');
 
-    // --text-primary is #fff -- must NOT be the light-phase ink color
-    // (#3A3350 / rgb(58, 51, 80)), which is what produced dark-on-dark
-    // (near-invisible) text against the black background pre-fix.
-    var headlineColor = await page.$eval('.fn-headline', function (el) { return getComputedStyle(el).color; });
-    assert.equal(headlineColor, 'rgb(255, 255, 255)', 'expected the light dark-mode ink color (--text-primary)');
-    assert.notEqual(headlineColor, 'rgb(58, 51, 80)', 'must not still be the light-phase fn-ink color -- that combined with the black background is dark-on-dark');
-    assert.notEqual(headlineColor, appBg, 'headline color and background must differ -- guards against a white-on-white or dark-on-dark regression either direction');
+      // #3A3350 / rgb(58, 51, 80) -- the light-phase --fn-ink color. Must
+      // NOT be the real app's white --text-primary (the old fn-dark-mode
+      // headline override), which combined with the light background here
+      // would be a near-invisible white-on-white regression.
+      var headlineColor = await page.$eval('.fn-headline', function (el) { return getComputedStyle(el).color; });
+      assert.equal(headlineColor, 'rgb(58, 51, 80)', 'expected the dawn-phase --fn-ink color');
+      assert.notEqual(headlineColor, 'rgb(255, 255, 255)', 'must not still be the removed dark-mode --text-primary override');
+    }
+
+    await assertLightDawnScreen();
+    await page.click('#fn-adv-chars-continue');
+    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    await assertLightDawnScreen();
+    await page.click('#fn-adv-camera-continue');
+    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
+    await assertLightDawnScreen();
   } finally {
     await context.close();
   }
 });
 
-test('Advanced screen (9): restructured into 3 numbered steps, and the character/camera/scenery interactions inside them still work', async function (t) {
+test('Advanced screens (characters/camera/scenery): 7-dot progress bar, and Continue advances one step at a time through all three screens into the transition screen', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-s9-skip', { timeout: 5000 });
+    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
-    var steps = await page.$$eval('.adv-step', function (els) {
-      return els.map(function (el) {
-        var num = el.querySelector('.adv-step-num');
-        var label = el.querySelector('.adv-sub-label');
-        return { num: num ? num.textContent.trim() : null, label: label ? label.textContent.trim() : null };
-      });
-    });
-    assert.equal(steps.length, 3, 'expected exactly 3 .adv-step sections');
-    assert.deepEqual(steps.map(function (s) { return s.num; }), ['1', '2', '3']);
-    assert.deepEqual(steps.map(function (s) { return s.label; }), ['Characters', 'Camera view', 'Scenery']);
+    var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
+    assert.equal(dotCount, 7, 'expected 7 progress dots -- characters/camera/scenery + transition + email + pricing + confirmation');
+
+    await page.click('#fn-adv-chars-continue');
+    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    await page.click('#fn-adv-camera-continue');
+    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
+    await page.click('#fn-adv-scenery-continue');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('Advanced screens (characters/camera/scenery): Skip on any of the 3 screens jumps straight to the transition screen, not just past that one screen', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  // Skip from Characters (1 of 3) -- straight to the transition screen.
+  var contextA = await browser.newContext();
+  try {
+    var pageA = await contextA.newPage();
+    await blockThirdParty(pageA);
+    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageA.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await pageA.click('#fn-adv-chars-skip');
+    await pageA.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  } finally {
+    await contextA.close();
+  }
+
+  // Skip from Camera (2 of 3) -- straight to the transition screen, not to Scenery.
+  var contextB = await browser.newContext();
+  try {
+    var pageB = await contextB.newPage();
+    await blockThirdParty(pageB);
+    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageB.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
+    await pageB.click('#fn-adv-chars-continue');
+    await pageB.waitForSelector('#fn-adv-camera-skip', { timeout: 5000 });
+    await pageB.click('#fn-adv-camera-skip');
+    await pageB.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  } finally {
+    await contextB.close();
+  }
+
+  // Skip from Scenery (3 of 3) -- straight to the transition screen.
+  var contextC = await browser.newContext();
+  try {
+    var pageC = await contextC.newPage();
+    await blockThirdParty(pageC);
+    await pageC.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageC.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
+    await pageC.click('#fn-adv-chars-continue');
+    await pageC.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    await pageC.click('#fn-adv-camera-continue');
+    await pageC.waitForSelector('#fn-adv-scenery-skip', { timeout: 5000 });
+    await pageC.click('#fn-adv-scenery-skip');
+    await pageC.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  } finally {
+    await contextC.close();
+  }
+});
+
+test('Advanced screens (characters/camera/scenery): the character add/select/edit, camera selection, and scenery selection interactions on each screen still write into DreamStore/staged state exactly as before', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     // --- Characters: add a character via the sheet, confirm it's rendered
     // selected by default, then toggle it off by clicking the chip itself
@@ -523,19 +594,26 @@ test('Advanced screen (9): restructured into 3 numbered steps, and the character
     var buddySelectedAfterToggle = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
     assert.equal(buddySelectedAfterToggle, false, 'clicking the chip (outside the edit area) should toggle its selection off');
 
-    // --- Camera view: single-select chip row, writes straight into
-    // DreamStore's draft. ---
+    await page.click('#fn-adv-chars-continue');
+    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+
+    // --- Camera view: single-select .fn-chip row on its own screen, writes
+    // straight into DreamStore's draft. ---
     await page.click('#camera-chip-row [data-camera="Wide shot"]');
-    var cameraSelected = await page.$eval('#camera-chip-row [data-camera="Wide shot"]', function (el) { return el.classList.contains('selected'); });
+    var cameraSelected = await page.$eval('#camera-chip-row [data-camera="Wide shot"]', function (el) { return el.classList.contains('sel'); });
     assert.equal(cameraSelected, true);
     var cameraDraftValue = await page.evaluate(function () { return DreamStore.getDraft().cameraView; });
     assert.equal(cameraDraftValue, 'Wide shot');
 
-    // --- Scenery: two independent single-select rows (time, place). ---
+    await page.click('#fn-adv-camera-continue');
+    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
+
+    // --- Scenery: two independent single-select .fn-chip rows (time, place)
+    // on its own screen. ---
     await page.click('#scenery-time-row [data-scenery-time="Night"]');
     await page.click('#scenery-place-row [data-scenery-place="Nature"]');
-    var sceneryTimeSelected = await page.$eval('#scenery-time-row [data-scenery-time="Night"]', function (el) { return el.classList.contains('selected'); });
-    var sceneryPlaceSelected = await page.$eval('#scenery-place-row [data-scenery-place="Nature"]', function (el) { return el.classList.contains('selected'); });
+    var sceneryTimeSelected = await page.$eval('#scenery-time-row [data-scenery-time="Night"]', function (el) { return el.classList.contains('sel'); });
+    var sceneryPlaceSelected = await page.$eval('#scenery-place-row [data-scenery-place="Nature"]', function (el) { return el.classList.contains('sel'); });
     assert.equal(sceneryTimeSelected, true);
     assert.equal(sceneryPlaceSelected, true);
     var draft = await page.evaluate(function () { return DreamStore.getDraft(); });

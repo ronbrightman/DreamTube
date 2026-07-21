@@ -142,8 +142,8 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#fn-s9-skip', { timeout: 5000 });
-    await page.click('#fn-s9-skip');
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
