@@ -750,6 +750,48 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
     assert.equal(shortDisabled, true, 'Continue must stay disabled below the 8-char minimum');
     var shortErrorVisible = await page.$eval('#dream-text-error', function (el) { return el.style.display !== 'none'; });
     assert.equal(shortErrorVisible, false, 'length gate alone should not show the gibberish error text');
+
+    // 5. Digit-only input, past the 8-char minimum -- zero letters at all,
+    // so it must NOT be able to masquerade as "non-Latin script" and skip
+    // the check. This is the confirmed blocking bug: digit-only text used
+    // to divide out to "not primarily Latin" and sail through as real.
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', '12345678');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('dream-text-error');
+      return !!(el && el.style.display !== 'none' && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var digitsDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(digitsDisabled, true, 'Continue must stay disabled for digit-only input');
+    var digitsErrorText = await page.textContent('#dream-text-error');
+    assert.match(digitsErrorText, /doesn't look like a real dream description/i);
+
+    // 6. Punctuation-only input, past the 8-char minimum -- same zero-letter
+    // case as digits, must also be blocked rather than skipped.
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', '........');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('dream-text-error');
+      return !!(el && el.style.display !== 'none' && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var punctDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(punctDisabled, true, 'Continue must stay disabled for punctuation-only input');
+    var punctErrorText = await page.textContent('#dream-text-error');
+    assert.match(punctErrorText, /doesn't look like a real dream description/i);
+
+    // 7. All-whitespace input that trims to "" -- passes the raw-length gate
+    // (8 raw characters, so n < 8 does not fire) but must still be blocked
+    // once trimmed, rather than slipping through as an empty "description".
+    await page.fill('#dream-text', '');
+    await page.fill('#dream-text', '        ');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('dream-text-error');
+      return !!(el && el.style.display !== 'none' && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var whitespaceDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
+    assert.equal(whitespaceDisabled, true, 'Continue must stay disabled for all-whitespace input that trims to empty');
+    var whitespaceErrorText = await page.textContent('#dream-text-error');
+    assert.match(whitespaceErrorText, /doesn't look like a real dream description/i);
   } finally {
     await context.close();
   }

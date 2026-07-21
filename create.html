@@ -506,12 +506,31 @@
   // (Hebrew, Arabic, Cyrillic, CJK, etc.), since a vowel check has no meaning
   // there and would otherwise incorrectly block real dream descriptions
   // written in those languages.
+  //
+  // "Mostly Latin script" is measured against the any-script letter count
+  // (\p{L}), not raw non-space characters -- otherwise digit-only or
+  // punctuation-only input (zero letters at all) divides out to "not
+  // primarily Latin" and incorrectly skips the check, sailing straight
+  // through as "not gibberish". Zero letters is never a real description in
+  // any language, so it's caught explicitly before that ratio is computed.
+  //
+  // Accented Latin letters (é, ö, ü, ş, ğ, ě, etc.) are normalized to their
+  // base letter first via NFD + combining-mark stripping, so diacritic-heavy
+  // Latin-script languages (Turkish, Vietnamese, Czech, Polish...) keep their
+  // real vowels instead of losing them to the plain [^a-zA-Z] strip below.
   function looksLikeGibberish(text){
     var totalNonSpace = text.replace(/\s/g, '').length;
-    if(totalNonSpace === 0) return false;
-    var letters = text.replace(/[^a-zA-Z]/g, '');
-    if(letters.length / totalNonSpace < 0.5) return false; // not primarily Latin script -- skip
-    var words = text.trim().split(/\s+/).filter(Boolean);
+    if(totalNonSpace === 0) return true; // nothing real here -- not a description in any language
+
+    var normalized = text.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    var allLetters = (normalized.match(/\p{L}/gu) || []).length;
+    if(allLetters === 0) return true; // digits/punctuation only -- not a real description
+
+    var latinLetters = normalized.replace(/[^a-zA-Z]/g, '').length;
+    if(latinLetters / allLetters < 0.5) return false; // primarily non-Latin script -- skip the vowel check
+
+    var words = normalized.trim().split(/\s+/).filter(Boolean);
     if(!words.length) return false;
     var plausible = words.filter(function(w){
       var wLetters = w.replace(/[^a-zA-Z]/g, '');
