@@ -77,6 +77,8 @@
     <div style="display:flex; align-items:center; gap:8px;">
       <button class="icon-btn" id="mute-btn" title="Unmute" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
       <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
+      <a class="icon-btn" href="explore.html" id="result-nav-explore" title="Explore" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
+      <a class="icon-btn" href="profile.html" id="result-nav-profile" title="Profile" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
     </div>
   </div>
   <div class="result-panel">
@@ -88,7 +90,7 @@
     </div>
     <div class="action-row-compact">
       <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
-      <button class="btn btn-secondary" id="save-video-btn" title="Save or share the video file"><span class="icon" id="save-video-icon"></span>Save</button>
+      <button class="btn btn-secondary" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
       <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
@@ -259,6 +261,8 @@
     } catch (e) { /* malformed/absent referrer -- keep the explore.html default */ }
   })();
   document.getElementById('share-btn').innerHTML = Icons.share;
+  document.getElementById('result-nav-explore').innerHTML = Icons.compass;
+  document.getElementById('result-nav-profile').innerHTML = Icons.person;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
@@ -571,7 +575,7 @@
     // in js/store.js) — disable rather than let a tap silently no-op.
     var saveBtn = document.getElementById('save-video-btn');
     saveBtn.disabled = !dream.videoUrl;
-    saveBtn.title = dream.videoUrl ? 'Save or share the video file' : "No video file to save for this dream";
+    saveBtn.title = dream.videoUrl ? 'Save the video file to your device' : "No video file to save for this dream";
   }
   render();
 
@@ -838,7 +842,7 @@
     doShare();
   });
 
-  // ===== Save/share the actual video file =====
+  // ===== Save the actual video file =====
   // Separate from and non-destructive to doShare()/share-btn above, which
   // shares an explore.html link, not the file. This is the finished MP4
   // itself, purely client-side: dream.videoUrl already points at a public
@@ -849,13 +853,14 @@
   // Netlify function, no watermark/compositing — both explicitly out of
   // scope for this build.
   //
-  // Tries the Web Share API with the real file first (drops the video
-  // straight into Instagram/TikTok/iMessage's share sheet); falls back to a
-  // same-origin blob: object URL + <a download> wherever share-with-files
-  // isn't supported (most desktop browsers, some iOS Safari versions).
-  // Support is feature-detected via navigator.canShare({ files }) — not a
-  // blind try/catch — since canShare needs the actual File object to give a
-  // real answer, the fetch always happens first either way.
+  // Deliberately always a real file download (blob: object URL + <a
+  // download>), never navigator.share. This used to route through the Web
+  // Share API whenever navigator.canShare({files}) was true (iOS Safari,
+  // notably) -- which meant tapping a button labeled "Save" opened the OS
+  // share sheet instead of actually saving anything, which read as broken/
+  // confusing rather than as a save. Sharing the video file itself isn't a
+  // feature this app is dropping -- doShare()/share-btn above already
+  // covers sharing (an explore.html link) and is untouched by this change.
   function sanitizedVideoFileName(){
     var base = 'dreamtube-' + (dream.id || 'dream');
     return base.replace(/[^a-z0-9-]/gi, '') + '.mp4';
@@ -872,7 +877,7 @@
     setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
   }
 
-  function saveOrShareVideo(){
+  function saveVideo(){
     if(!dream.videoUrl) return;
     var btn = document.getElementById('save-video-btn');
     var originalHTML = btn.innerHTML;
@@ -883,22 +888,7 @@
       if(!res.ok) throw new Error('fetch_failed');
       return res.blob();
     }).then(function(blob){
-      var fileName = sanitizedVideoFileName();
-      var file = null;
-      try { file = new File([blob], fileName, { type: blob.type || 'video/mp4' }); } catch(e){ /* no File support — fall through to download */ }
-
-      if(file && navigator.canShare && navigator.canShare({ files: [file] })){
-        return navigator.share({
-          files: [file],
-          title: 'DreamTube',
-          text: 'Check out my dream: "' + dream.caption + '" — create your own on DreamTube: ' + location.origin
-        }).catch(function(err){
-          if(err && err.name === 'AbortError') return; // user cancelled the share sheet
-          triggerBlobDownload(blob, fileName);
-          showToast('Video saved');
-        });
-      }
-      triggerBlobDownload(blob, fileName);
+      triggerBlobDownload(blob, sanitizedVideoFileName());
       showToast('Video saved');
     }).catch(function(){
       showToast("Couldn't save the video — try again");
@@ -908,7 +898,7 @@
     });
   }
 
-  document.getElementById('save-video-btn').addEventListener('click', saveOrShareVideo);
+  document.getElementById('save-video-btn').addEventListener('click', saveVideo);
 </script>
 </body>
 </html>
