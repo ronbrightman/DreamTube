@@ -365,6 +365,18 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     Active regardless of paywall state, including for the owner —
 //                                     a backstop against runaway cost, not a replacement for E109's
 //                                     rate limiting or something the paywall toggle should ever gate.
+//   E111 quota_exceeded            — the effective paywall state is enabled, the request's email IS
+//                                     entitled (passed E108 above), but its usage-quota/credits
+//                                     balance (see netlify/functions/lib/entitlements.js's
+//                                     getQuotaStatus — 10 included generations/month on every plan,
+//                                     plus any never-expiring top-up bonusCredits) is exhausted for
+//                                     this UTC month. Same gating as E108: only checked inside the
+//                                     PAYWALL_ENABLED-and-not-owner scope below, so like E108 this
+//                                     stays default-off/inert until the founder turns the paywall on.
+//                                     Applies uniformly to a brand-new generation, an edit/regenerate,
+//                                     and a style change — all three funnel through this same handler
+//                                     via processing.html's runGeneration(), so there's exactly one
+//                                     enforcement point.
 //
 // Paywall on/off — two ways it can be controlled, checked in this order:
 //   1. An in-product override, written via admin-paywall-toggle.js into the
@@ -497,6 +509,14 @@ exports.handler = async function (event) {
       if (!entitled) {
         return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: an active subscription is required to generate videos' }) };
       }
+      // Same scope as the entitlement check above (not isOwner, paywall
+      // enabled) — see the E111 doc block above and
+      // netlify/functions/lib/entitlements.js's getQuotaStatus for the
+      // lazy-monthly-reset mechanism this reads.
+      var quotaStatus = await entitlements.getQuotaStatus(event, email);
+      if (quotaStatus.effectiveRemaining <= 0) {
+        return { statusCode: 402, body: JSON.stringify({ error: 'E111: quota_exceeded: you have used all of your included generations this month' }) };
+      }
     }
   }
 
@@ -513,6 +533,10 @@ exports.handler = async function (event) {
   // below this point (buildPrompt, the self-photo check, FAL_MODEL,
   // GENERATION_TEST_DURATION, the actual fal.ai call) is ever reached.
   if (mockMode) {
+    // Counts against quota exactly like a real submission — see
+    // recordGenerationUsage's own doc comment for why a rejection (E105-
+    // E107) never reaches this point but every 200 does, mock or real.
+    await entitlements.recordGenerationUsage(event, email);
     return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
   }
 
@@ -554,9 +578,13 @@ exports.handler = async function (event) {
       ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
       : await callFal(prompt, falKey, duration, generateAudio);
     if (!result.ok) {
+      // No real spend happened — a rejected submission must NOT count
+      // against quota, so recordGenerationUsage is deliberately not called
+      // on this path (see the E111 doc block above).
       var rejectCode = selfPhoto ? 'E106' : 'E105';
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
+    await entitlements.recordGenerationUsage(event, email);
     return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
