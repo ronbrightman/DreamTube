@@ -247,6 +247,27 @@
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
+  // ===== Real social-proof count for screen 14 (pricing) =====
+  // Replaces a hardcoded "12,400+ dreams brought to life this month" with
+  // an actual count, computed client-side from the same real shared feed
+  // Explore uses (DreamStore.getSharedFeed -> get-feed.js -> Blobs), since
+  // there's no dedicated "dreams this month" endpoint. Kicked off here, at
+  // script load, rather than when screen 14 first renders, so the fetch has
+  // the whole rest of the funnel (screens 9, 11, 13) to resolve before
+  // anyone actually reaches pricing. Stays null (and the proof strip is
+  // omitted entirely, never a fake number) if the fetch hasn't resolved in
+  // time or fails outright.
+  var dreamsThisMonthCount = null;
+  DreamStore.getSharedFeed().then(function(feed){
+    var now = new Date();
+    var y = now.getUTCFullYear(), m = now.getUTCMonth();
+    dreamsThisMonthCount = feed.filter(function(d){
+      if(!d.publishedAt) return false;
+      var pd = new Date(d.publishedAt);
+      return pd.getUTCFullYear() === y && pd.getUTCMonth() === m;
+    }).length;
+  }).catch(function(){ /* leave dreamsThisMonthCount null -> proof strip omitted */ });
+
   /**
    * Downscales/recompresses a picked photo to a JPEG data URL — copied
    * verbatim from create.html's identical helper (same reasons apply: an
@@ -739,7 +760,9 @@
       '<button class="fn-pricing-close" id="fn-pricing-close" type="button" aria-label="Close">' + Icons.close + '</button>' +
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
       '<div class="fn-headline" style="font-size:21px;">' + esc(headline) + '</div>' +
-      '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>12,400+ dreams brought to life this month</span></div>' +
+      (dreamsThisMonthCount !== null ?
+        '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>' :
+        '') +
       '<div class="fn-price-card best"><span class="tag">Best value</span>' +
         '<div class="row"><span class="plan">Yearly</span><span class="amt">$5.00/mo</span></div>' +
         '<div class="sub">billed as $59.99/year</div>' +

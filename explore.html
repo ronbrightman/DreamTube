@@ -176,9 +176,7 @@
         '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
           '<div class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
         '</div>' +
-        '<div class="feed-action feed-action-disabled" title="Comments aren\'t available yet"><div class="icon">'+Icons.comment+'</div><span>0</span></div>' +
         '<div class="feed-action" data-share="'+d.id+'"><div class="icon">'+Icons.share+'</div><span>Share</span></div>' +
-        '<div class="feed-action feed-action-disabled" title="Reposting isn\'t available yet"><div class="icon">'+Icons.repost+'</div><span>Repost</span></div>' +
       '</div>' +
       (isFirst ? '<div class="feed-swipe-hint">↕ SWIPE FOR NEXT DREAM</div>' : '') +
     '</div>';
