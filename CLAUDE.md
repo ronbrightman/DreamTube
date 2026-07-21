@@ -44,3 +44,7 @@ scheduled or automatically triggered.
   just add new stuff on top.
 - Keep unrelated projects/contexts cleanly separated.
 - Prefer real, working examples over descriptions when possible.
+- When Ron uses the word "always" in a message, treat it as a standing
+  rule — durable across sessions, not just for the current task —
+  until he says otherwise. This bullet exists because of exactly that
+  kind of instruction.
