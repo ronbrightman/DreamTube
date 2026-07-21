@@ -1,19 +1,19 @@
 // test/helpers/static-server.js
 //
-// Minimal static file server for test/ui-behavioral.test.js. This repo is
-// a static multi-page site with no bundler/dev-server of its own (see
-// CLAUDE.md) — exercising a real page over http:// (rather than file://,
-// which breaks fetch()-based calls like DreamStore.getSharedFeed, since
-// fetch() on file:// has no origin to resolve a relative URL against)
-// needs *something* serving the repo root. No new dependency: just
-// node:http + node:fs, scoped to the handful of MIME types this app
+// Minimal static file server shared by this repo's browser-driven tests
+// (test/ui-behavioral.test.js, test/meta-capi-behavioral.test.js). This
+// repo is a static multi-page site with no bundler/dev-server of its own
+// (see CLAUDE.md) — exercising a real page over http:// (rather than
+// file://, which breaks fetch()-based calls like DreamStore.getSharedFeed,
+// since fetch() on file:// has no origin to resolve a relative URL
+// against) needs *something* serving the repo root. No new dependency:
+// just node:http + node:fs, scoped to the handful of MIME types this app
 // actually uses.
 //
 // This deliberately does NOT serve netlify/functions/* — those are real
 // Netlify Functions with no local runtime available here. Tests that need
-// DreamStore.getSharedFeed()'s underlying fetch('/.netlify/functions/get-feed')
-// to resolve/fail in a controlled way use Playwright's page.route() to
-// intercept it instead (see ui-behavioral.test.js).
+// a function endpoint (e.g. get-feed, track-conversion) to resolve/fail in
+// a controlled way use Playwright's page.route() to intercept it instead.
 
 var http = require('node:http');
 var fs = require('node:fs');
