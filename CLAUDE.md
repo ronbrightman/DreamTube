@@ -24,3 +24,23 @@ knowing this specific codebase.
 
 This pipeline is run manually / on demand for now — nothing about it is
 scheduled or automatically triggered.
+
+## Working with Ron
+
+- Keep replies short and plain — no long technical dumps or internal
+  reasoning shown. Give exact step-by-step instructions when something
+  needs to happen on his end (account setup, deployments).
+- Move forward autonomously on execution — don't ask permission for
+  implementation details. In most cases don't even wait for a "go
+  ahead" reply; only pause when it's really needed.
+- Still flag real decisions clearly: money, vendors, legal/compliance,
+  anything hard to reverse.
+- Progress multiple fronts in parallel rather than waiting on one
+  blocker.
+- No going live (spending money, launching campaigns) until he
+  explicitly says so.
+- Check licenses/permissions before installing third-party tools.
+- No dead code or broken links left behind — clean up fully, don't
+  just add new stuff on top.
+- Keep unrelated projects/contexts cleanly separated.
+- Prefer real, working examples over descriptions when possible.
