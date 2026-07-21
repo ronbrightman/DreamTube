@@ -35,9 +35,27 @@
   #app{ background:transparent; }
   /* Headline uses the funnel's serif display font (like .fn-headline in
      start.html); subline stays on the app's regular sans-serif body font
-     (like .fn-body-copy), just recolored for the light background. */
-  .wm-copy{ font-family:var(--fn-font-display); color:var(--fn-ink); }
-  .wm-subcopy{ color:var(--fn-ink-soft); }
+     (like .fn-body-copy), just recolored for the light background.
+     Scoped under .welcome-body (not bare .wm-copy/.wm-subcopy) so this
+     rule is always more specific than the base .wm-copy/.wm-subcopy
+     rules in css/styles.css, regardless of <head> cascade order. */
+  .welcome-body .wm-copy{ font-family:var(--fn-font-display); color:var(--fn-ink); }
+  .welcome-body .wm-subcopy{ color:var(--fn-ink-soft); }
+  /* logo-v2.png has an opaque black background baked into the PNG itself
+     (it was designed for the old all-black theme). On this light dawn
+     background that black rounded square would otherwise look like a
+     broken leftover from the old theme, so it's framed as a deliberate
+     "badge" — a light card behind it with generous padding and its own
+     shadow, the same way an app icon keeps its own background color
+     regardless of the home-screen wallpaper behind it. The image itself
+     (size/border-radius) is untouched; only this wrapper is new. */
+  .welcome-body .wm-badge{
+    display:flex; align-items:center; justify-content:center;
+    margin:18px auto; padding:24px;
+    background:#FFFFFF; border-radius:48px;
+    box-shadow:0 16px 40px -14px rgba(58,51,80,.32);
+  }
+  .welcome-body .wm-badge .wm-visual{ margin:0; }
   /* Matches the funnel's own .fn-btn-primary treatment exactly, so the
      button looks the same one tap before and one tap after this screen. */
   .welcome-body .btn-primary{ background:var(--fn-accent-grad); color:#fff; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); }
@@ -102,7 +120,7 @@
 
 <div id="app">
   <div class="welcome-body">
-    <img class="wm-visual" src="assets/logo-v2.png" alt="DreamTube logo">
+    <div class="wm-badge"><img class="wm-visual" src="assets/logo-v2.png" alt="DreamTube logo"></div>
     <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
     <div class="wm-subcopy">Turn your dreams into videos.</div>
     <div class="wm-foot">
