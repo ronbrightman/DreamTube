@@ -100,6 +100,41 @@ proceed without stopping to ask, as long as it stays on the branch.
   under real interaction (stale in-memory state after navigation,
   timing races, tap-target sizing) — don't skip this step.
 
+## Reading and writing dreamtube-signals
+
+`ronbrightman/dreamtube-signals` is a shared, git-tracked signal log read
+and written by agents across DreamTube, `dreamtube-growth`, and
+`agent-library` — see `AGENT_POLICY.md`'s "Companion signals repo"
+section and that repo's own `SCHEMA.md` for the full format. You have
+full tool access, so do both halves yourself:
+
+- **Before starting**, make sure a local clone exists (check
+  `/workspace/dreamtube-signals` first; if it's not there or
+  `git -C /workspace/dreamtube-signals rev-parse HEAD` fails, `git clone
+  https://github.com/ronbrightman/dreamtube-signals /workspace/dreamtube-signals`),
+  then skim `signals/build_outcome/`, `signals/design_decision/`, and
+  `signals/escalation/` for anything recent and relevant to what you're
+  about to build — past gotchas in the same area, a design decision this
+  work should already reflect, an escalation whose resolution changes
+  what you should do. Treat this as grounding context, the same way you'd
+  read this repo's own code before proposing a change; it's fine to find
+  nothing relevant and move on.
+- **When your implementation is done and pushed**, write one new
+  `build_outcome` signal (`signals/build_outcome/<ISO-timestamp>_dreamtube_build_<short-id>.json`,
+  exact format in `dreamtube-signals/SCHEMA.md`) describing what you
+  built, the branch, and anything a future build/design pass in either
+  repo should know (gotchas, non-obvious constraints you hit). Set
+  `merged: false` — you never merge, so this always reflects the
+  pre-merge state at write time; a later signal (or review's own) can
+  update the picture once merge/review status is known. `git add` the one
+  new file, commit, and push directly to `dreamtube-signals`'s `main` —
+  per-signal-file writes essentially never conflict, but if a push is
+  rejected, `pull --rebase` and retry rather than force-pushing.
+
+This is a lightweight addition to your existing workflow, not a new gate
+— don't stop to ask permission for either step, and don't let it block
+or meaningfully slow down the actual implementation work.
+
 ## Handling review feedback
 
 If review sends work back with a FAIL, fix exactly what's flagged,

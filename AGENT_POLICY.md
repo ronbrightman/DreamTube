@@ -38,6 +38,26 @@ and `review` do the same at project level, under
 `.claude/skills/superpowers/` and `.claude/skills/skill-security-auditor/`
 respectively.
 
+## Companion signals repo
+
+`ronbrightman/dreamtube-signals` is a shared, git-tracked signal log this
+project's agents read and write, alongside `ronbrightman/dreamtube-growth`
+(marketing, retrofitted separately by that repo's own session) and
+`ronbrightman/agent-library` (the portable research/evaluation/design/
+marketing agents used here). See its own `SCHEMA.md` for the entry
+format — every signal is one JSON file under `signals/<category>/`,
+never edited after it's written.
+
+`build`, `review`, and `ab-test-creator` here are retrofitted to read
+relevant signals before starting and write new ones when they finish
+(see each agent's own file for exactly how, given their different tool
+access). research/evaluation/design/marketing are portable agents used
+across projects, not DreamTube-specific — they resolve this repo via
+their own generic "check for a project's companion signals repo, named
+in its `AGENT_POLICY.md`" instruction rather than hardcoding this repo's
+name, so this same retrofit doesn't break when they run for a different
+project with no signals repo at all.
+
 ## Getting research / marketing / evaluation / design in a new environment
 
 These four are published as a plugin in the `agent-library` GitHub
