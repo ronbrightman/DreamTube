@@ -352,3 +352,88 @@ test('result.html topbar has working Explore and Profile nav links that do not o
     await context.close();
   }
 });
+
+test('result.html topbar title stays on one line and does not overlap the back button or icon cluster at 320px', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // 320px is the narrowest realistic phone viewport (e.g. iPhone SE 1st
+  // gen / older Android) -- the tightest width the five-icon-button
+  // topbar (back + mute + share + explore + profile) has to share with
+  // the "Your Dream" title. The 375px test above doesn't include the
+  // title element in its layout assertions at all, so it could not have
+  // caught the title wrapping to two lines at this narrower width.
+  var context = await browser.newContext({ viewport: { width: 320, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-nav-320-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('#result-topbar-title', { timeout: 5000 });
+
+    // Single-line check via Range.getClientRects(): the title <div> is a
+    // block box, so its own bounding rect is always a single rect whether
+    // or not the text inside it wraps -- that's why the 375px test's
+    // per-element overlap check alone can't catch a wrap regression. A
+    // Range over the text content yields one client rect per visual
+    // *fragment* -- note this is fragments, not strictly lines: an
+    // overflow:hidden + text-overflow:ellipsis element legitimately
+    // produces more than one rect for genuinely single-line text (a rect
+    // for the visible portion and one for the clipped remainder), so
+    // rect *count* alone can't distinguish "single line, ellipsis-clipped"
+    // from "wrapped to two lines" -- confirmed by hand against this exact
+    // element. What does distinguish them is vertical position: a real
+    // line-wrap puts fragments at different `top` offsets, while
+    // same-line ellipsis fragments all share one `top`.
+    var lineInfo = await page.$eval('#result-topbar-title', function (el) {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var rects = Array.from(range.getClientRects());
+      var tops = rects.map(function (r) { return Math.round(r.top); });
+      var distinctLines = tops.filter(function (t, i) { return tops.indexOf(t) === i; }).length;
+      return { distinctLines: distinctLines, text: el.textContent };
+    });
+    assert.equal(lineInfo.text, 'Your Dream', 'title text should render un-truncated at 320px since "Your Dream" is short enough to fit');
+    assert.equal(lineInfo.distinctLines, 1, 'title text should render on a single visual line (one distinct top offset among its rects), not wrap to two lines');
+
+    // Redundant height-based check for the same regression: a wrapped
+    // two-line title would roughly double the box's height past one
+    // line-height; this stays comfortably under that even allowing for
+    // rounding/font-metric slop.
+    var heightInfo = await page.$eval('#result-topbar-title', function (el) {
+      var cs = getComputedStyle(el);
+      var lineHeight = parseFloat(cs.lineHeight);
+      if (isNaN(lineHeight)) lineHeight = parseFloat(cs.fontSize) * 1.2;
+      return { height: el.getBoundingClientRect().height, lineHeight: lineHeight };
+    });
+    assert.ok(
+      heightInfo.height <= heightInfo.lineHeight * 1.5,
+      'title box height (' + heightInfo.height + 'px) should stay at single-line height (~' + heightInfo.lineHeight + 'px), not double from wrapping'
+    );
+
+    // Full overlap sweep including the title this time -- guards against
+    // both the wrap itself and any future crowding that makes the title
+    // physically collide with the back button or the icon-button cluster.
+    var boxes = await page.$$eval(
+      '.topbar #result-back, .topbar #result-topbar-title, .topbar #mute-btn, .topbar #share-btn, .topbar #result-nav-explore, .topbar #result-nav-profile',
+      function (els) {
+        return els.map(function (el) {
+          var r = el.getBoundingClientRect();
+          return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+        });
+      }
+    );
+    assert.equal(boxes.length, 6, 'expected back + title + mute + share + explore + profile all present');
+    boxes.forEach(function (b) {
+      assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
+    });
+    for (var i = 0; i < boxes.length; i++) {
+      for (var j = i + 1; j < boxes.length; j++) {
+        var a = boxes[i], b = boxes[j];
+        var overlapsHorizontally = a.left < b.right && b.left < a.right;
+        var overlapsVertically = a.top < b.bottom && b.top < a.bottom;
+        assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
+      }
+    }
+  } finally {
+    await context.close();
+  }
+});
