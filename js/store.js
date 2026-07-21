@@ -29,6 +29,8 @@
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
 //   getInterpretation(id)                -> local read of a dream's saved "what this might mean" reflection
 //   generateInterpretation(id)            -> POST /.netlify/functions/interpret-dream (see that file)
+//   getQuotaStatus()                      -> GET  /.netlify/functions/get-quota-status
+//   grantTopUpBonus(bundleSize)           -> POST /.netlify/functions/grant-topup-bonus (TEMPORARY BYPASS — see that file's header)
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -1007,6 +1009,53 @@
     markDreamOfDaySeen: function (id) {
       try { localStorage.setItem('dreamtube_dod_seen_id', id); }
       catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
+     * Reads the signed-in account's current generation-quota status —
+     * monthly included generations used/remaining plus any never-expiring
+     * top-up bonusCredits (see netlify/functions/lib/entitlements.js).
+     * Resolves to { active:false } with no network call at all when
+     * there's no logged-in account or no email on file, since the server
+     * side can't be entitled without an email either way — callers should
+     * treat active:false as "hide the quota UI entirely" (see profile.html),
+     * the same convention this app already uses for #profile-insights.
+     * Used both for profile.html's indicator and as a fail-open convenience
+     * pre-check on style.html/result.html before navigating to
+     * processing.html — the real enforcement is generate-video.js's
+     * server-side E111 check, this is never the security boundary.
+     */
+    getQuotaStatus: function () {
+      var email = currentAccountEmail();
+      if (!email) return Promise.resolve({ active: false });
+      return fetch('/.netlify/functions/get-quota-status?email=' + encodeURIComponent(email))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          return data;
+        });
+    },
+
+    /**
+     * TEMPORARY PAYWALL BYPASS — grants bundleSize bonus generations with no
+     * real charge (see netlify/functions/grant-topup-bonus.js's own header
+     * for the full "replace before going live" story). Resolves with the
+     * account's refreshed quota status (same shape getQuotaStatus above
+     * returns), so a caller can redraw its quota UI from this one response.
+     */
+    grantTopUpBonus: function (bundleSize) {
+      var email = currentAccountEmail();
+      if (!email) return Promise.reject(new Error('not_logged_in_or_no_email_on_file'));
+      return fetch('/.netlify/functions/grant-topup-bonus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, bundleSize: bundleSize })
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'grant_topup_failed');
+          return data;
+        });
+      });
     }
   };
 })();

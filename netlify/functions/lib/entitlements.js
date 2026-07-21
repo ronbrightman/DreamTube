@@ -9,7 +9,27 @@
 //
 // Backed by a single Netlify Blobs store ("dreamtube-entitlements"),
 // ONE RECORD PER NORMALIZED EMAIL:
-//   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt }
+//   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
+//     quota: { includedPerMonth, used, periodKey }, bonusCredits }
+//
+// quota/bonusCredits (usage-quota/credits system, generate-video.js's E111
+// gate) are additive to the shape above, not new top-level concepts: same
+// one-record-per-email store, same setEntitlement idempotent-merge upsert.
+//   - quota.includedPerMonth: generations included per calendar month —
+//     10 on every plan today (Monthly and Yearly both include the same
+//     cap; see docs on the founder-approved parameters).
+//   - quota.used: how many of those this email has spent so far in
+//     quota.periodKey.
+//   - quota.periodKey: "YYYY-MM" in UTC — the month this `used` count is
+//     for. There is no scheduled/background job that resets this on the
+//     1st of the month (this codebase has no scheduled functions at all,
+//     see AGENT_POLICY.md) — instead getQuotaStatus below lazily resets
+//     `used` to 0 the first time it's read in a new UTC month. This is
+//     the entire reset mechanism, not a stopgap for one.
+//   - bonusCredits: extra generations bought as a top-up (see
+//     grant-topup-bonus.js). Never expires, never reset by the monthly
+//     rollover above — spent only after the monthly included quota is
+//     exhausted (see recordGenerationUsage).
 //
 // Why keyed by normalized (trimmed, lowercased) email, not a new
 // proprietary user-id: this project's only other "account" concept
@@ -104,4 +124,87 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-module.exports = { STORE_NAME, normalizeEmail, getEntitlement, isEntitled, setEntitlement };
+var DEFAULT_INCLUDED_PER_MONTH = 10;
+
+/** "YYYY-MM" in UTC — the quota period key for "right now". See the quota doc block above for why this (not a scheduled job) is the entire monthly-reset mechanism. */
+function currentPeriodKeyUtc() {
+  var now = new Date();
+  var month = now.getUTCMonth() + 1;
+  return now.getUTCFullYear() + '-' + (month < 10 ? '0' : '') + month;
+}
+
+/**
+ * Reads this email's generation-quota status, lazily resetting `used` to 0
+ * the moment it notices `quota.periodKey` no longer matches the current UTC
+ * "YYYY-MM" (a new month has started since this was last read) — the whole
+ * reset mechanism for this feature, see the doc block above. The reset is
+ * persisted back via the existing idempotent setEntitlement merge, but only
+ * when a record already exists for this email — an email with no
+ * entitlement record at all (never subscribed) has nothing worth writing,
+ * and gets sensible defaults (`active:false`, a full month of quota) without
+ * ever creating a phantom record purely from being read.
+ *
+ * Returns { active, plan, includedPerMonth, used, remaining, bonusCredits,
+ * effectiveRemaining }. `remaining` is the monthly-included balance only;
+ * `effectiveRemaining` folds in bonusCredits too — that's the number
+ * generate-video.js's E111 gate actually checks against.
+ */
+async function getQuotaStatus(event, email) {
+  var record = await getEntitlement(event, email);
+  var active = !!(record && record.active === true);
+  var periodKey = currentPeriodKeyUtc();
+  var includedPerMonth = (record && record.quota && typeof record.quota.includedPerMonth === 'number')
+    ? record.quota.includedPerMonth
+    : DEFAULT_INCLUDED_PER_MONTH;
+  var used = 0;
+
+  if (record && record.quota && record.quota.periodKey === periodKey) {
+    used = record.quota.used || 0;
+  } else if (record) {
+    record = await setEntitlement(event, email, {
+      quota: { includedPerMonth: includedPerMonth, used: 0, periodKey: periodKey }
+    });
+    used = 0;
+  }
+
+  var bonusCredits = (record && typeof record.bonusCredits === 'number') ? record.bonusCredits : 0;
+  var remaining = Math.max(0, includedPerMonth - used);
+
+  return {
+    active: active,
+    plan: (record && record.plan) || null,
+    includedPerMonth: includedPerMonth,
+    used: used,
+    remaining: remaining,
+    bonusCredits: bonusCredits,
+    effectiveRemaining: remaining + bonusCredits
+  };
+}
+
+/**
+ * Records one spent generation against this email, called only from
+ * generate-video.js's successful (200) paths — a fal submission rejection
+ * must never reach this, since no real spend happened (see that file's
+ * E105/E106/E107 handling). Spends the monthly included quota first, then
+ * falls back to bonusCredits once the month's included amount is used up —
+ * matching the order generate-video.js's E111 check itself reads them in
+ * (remaining, then bonusCredits, via effectiveRemaining).
+ *
+ * No-ops (returns null, writes nothing) for an empty/missing email — most
+ * commonly a logged-in account that hasn't added an email yet, which is a
+ * normal, common state in this app (see js/store.js's account model), not
+ * an error worth surfacing from a 200 response.
+ */
+async function recordGenerationUsage(event, email) {
+  var key = normalizeEmail(email);
+  if (!key) return null;
+  var status = await getQuotaStatus(event, key);
+  if (status.used < status.includedPerMonth) {
+    return setEntitlement(event, key, {
+      quota: { includedPerMonth: status.includedPerMonth, used: status.used + 1, periodKey: currentPeriodKeyUtc() }
+    });
+  }
+  return setEntitlement(event, key, { bonusCredits: Math.max(0, status.bonusCredits - 1) });
+}
+
+module.exports = { STORE_NAME, normalizeEmail, getEntitlement, isEntitled, setEntitlement, getQuotaStatus, recordGenerationUsage };

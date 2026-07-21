@@ -231,6 +231,28 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modal-quota">
+    <div class="modal-card">
+      <div class="modal-title">You're out of dreams for this month</div>
+      <div class="modal-body">You've used all 10 dream generations included in your plan this month. Buy more to keep creating, or wait for next month's reset.</div>
+      <div class="modal-row">
+        <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
+        <button class="btn btn-warm" style="flex:1;" id="quota-buy">Get more dreams</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-overlay" id="sheet-topup-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Get more dreams</div>
+      <div class="auth-sub" style="margin-bottom:14px;">Add 10 more generations to keep creating this month.</div>
+      <button class="btn btn-primary btn-block" id="topup-confirm-btn">Get 10 more dreams</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="topup-cancel" style="cursor:pointer;">Not now</span>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -736,12 +758,57 @@
     card.classList.add('selected');
   });
 
-  document.getElementById('edit-generate-again').addEventListener('click', function(){
+  // ===== Usage-quota/credits pre-check =====
+  // Convenience-only, client-side pre-check (see js/store.js's
+  // getQuotaStatus doc comment) — fetched once on load, never awaited at
+  // click time, so a slow/failed/never-resolving fetch simply leaves
+  // quotaStatus null and Generate Again behaves exactly as it does today
+  // (fail open). The real enforcement is generate-video.js's server-side
+  // E111 check — it applies uniformly here (edit/regenerate) and on
+  // style.html's fresh-generation path, since both funnel through the same
+  // generate-video.js call site via processing.html's runGeneration().
+  var quotaStatus = null;
+  DreamStore.getQuotaStatus().then(function(status){ quotaStatus = status; }).catch(function(){ quotaStatus = null; });
+
+  function quotaBlocksGeneration(){
+    return !!(quotaStatus && quotaStatus.active === true && quotaStatus.effectiveRemaining <= 0);
+  }
+
+  var quotaModal = document.getElementById('modal-quota');
+  var topupOverlay = document.getElementById('sheet-topup-overlay');
+  function openTopupSheet(){ topupOverlay.classList.add('open'); }
+  function closeTopupSheet(){ topupOverlay.classList.remove('open'); }
+
+  function proceedWithGenerateAgain(){
     var text = document.getElementById('edit-text').value.trim();
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
     DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false });
     location.href = 'processing.html';
+  }
+
+  document.getElementById('edit-generate-again').addEventListener('click', function(){
+    if(quotaBlocksGeneration()){ quotaModal.classList.add('open'); return; }
+    proceedWithGenerateAgain();
+  });
+  document.getElementById('quota-cancel').addEventListener('click', function(){
+    quotaModal.classList.remove('open');
+  });
+  document.getElementById('quota-buy').addEventListener('click', function(){
+    quotaModal.classList.remove('open');
+    openTopupSheet();
+  });
+  document.getElementById('topup-cancel').addEventListener('click', closeTopupSheet);
+  topupOverlay.addEventListener('click', function(e){
+    if(e.target.id === 'sheet-topup-overlay') closeTopupSheet();
+  });
+  document.getElementById('topup-confirm-btn').addEventListener('click', function(){
+    var btn = document.getElementById('topup-confirm-btn');
+    btn.disabled = true;
+    DreamStore.grantTopUpBonus(10).then(function(status){
+      quotaStatus = status;
+      closeTopupSheet();
+    }).catch(function(){ /* leave the sheet open — the user can retry */ }).then(function(){ btn.disabled = false; });
   });
 
   function showToast(msg){
