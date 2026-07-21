@@ -365,10 +365,21 @@
         }
         var applied = DreamStore.resetPasswordLocally(data.username, newPassword);
         if(!applied.ok){
-          resetForm.style.display = 'none';
-          resetSub.textContent = "Your link checked out, but this account isn't set up on this device — DreamTube accounts currently live on the device where they were created. Open this link on that device to finish resetting the password.";
-          resetBack.textContent = 'Back to log in';
-          resetBack.style.display = 'block';
+          // Only the account-not-found-on-this-device case replaces the whole
+          // form with the "wrong device" explanation — any other failure
+          // (e.g. resetPasswordLocally's own 8-character minimum) is a normal,
+          // fixable form error, so it's shown the same way signup()'s errors
+          // are: inline, with the form left in place to retry.
+          if(applied.error === 'account_not_found_on_this_device'){
+            resetForm.style.display = 'none';
+            resetSub.textContent = "Your link checked out, but this account isn't set up on this device — DreamTube accounts currently live on the device where they were created. Open this link on that device to finish resetting the password.";
+            resetBack.textContent = 'Back to log in';
+            resetBack.style.display = 'block';
+            return;
+          }
+          err.textContent = applied.error;
+          btn.disabled = false;
+          btn.textContent = 'Set new password';
           return;
         }
         DreamStore.login(data.username, newPassword);

@@ -535,6 +535,7 @@
       email = (email || '').trim();
       if (username.length < 3) return { ok: false, error: 'Username must be at least 3 characters.' };
       if (!password) return { ok: false, error: 'Enter a password.' };
+      if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
       if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
       if (state.accounts[key]) return { ok: false, error: 'That username is already taken.' };
       if (findAccountKeyByEmail(email)) return { ok: false, error: 'An account with that email already exists.' };
@@ -589,6 +590,7 @@
       var key = (username || '').trim().toLowerCase();
       if (!state.accounts[key]) return { ok: false, error: 'account_not_found_on_this_device' };
       if (!newPassword) return { ok: false, error: 'Enter a new password.' };
+      if (newPassword.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
       state.accounts[key].password = newPassword;
       persist();
       return { ok: true };

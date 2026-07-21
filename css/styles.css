@@ -454,7 +454,6 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .feed-action .icon{ width:27px; height:27px;}
 .feed-action span{ font-size:12px; font-weight:600;}
 .feed-action.liked .icon{ color:var(--danger);}
-.feed-action-disabled{ opacity:.4; cursor:default; pointer-events:none;}
 .feed-swipe-hint{ position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,.5); z-index:5; letter-spacing:.05em;}
 /* Recovery affordance for when autoplay silently fails to start (or the
    video errors out mid-load) — without this, a card with a stuck video had

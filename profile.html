@@ -69,7 +69,7 @@
 <div id="app" class="scroll-shell">
   <div class="topbar">
     <div class="topbar-logo" style="font-size:16px;">Profile</div>
-    <div class="icon-btn" id="logout-btn" title="Log out"></div>
+    <div class="icon-btn" id="account-btn" title="Account settings"></div>
   </div>
   <div class="scroll-area">
     <div class="profile-head">
@@ -134,7 +134,7 @@
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
-  document.getElementById('logout-btn').innerHTML = Icons.settings;
+  document.getElementById('account-btn').innerHTML = Icons.settings;
   var navIcons = document.querySelectorAll('.nav-icon');
   navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
@@ -254,7 +254,7 @@
   }
   function closeAccountSheet(){ accountOverlay.classList.remove('open'); }
 
-  document.getElementById('logout-btn').addEventListener('click', openAccountSheet);
+  document.getElementById('account-btn').addEventListener('click', openAccountSheet);
   document.getElementById('account-cancel').addEventListener('click', closeAccountSheet);
   accountOverlay.addEventListener('click', function(e){
     if(e.target.id === 'sheet-account-overlay') closeAccountSheet();
