@@ -146,6 +146,20 @@
      pastel rules bleeding onto them, and vice versa.
      Colors/values ported from scratchpad/funnel-mockup.html.
      =================================================================== */
+
+  /* Screen 9 (Advanced) step structure — new for this file only, no
+     equivalent in css/styles.css / create.html, since create.html's
+     Advanced section is a single collapsible accordion rather than a
+     sequence. Wraps each of the 3 existing .adv-sub-label sections
+     (Characters / Camera view / Scenery) in a numbered, visually
+     separated card so the screen reads as a short 3-step sequence
+     instead of one continuous "wall" of chips. */
+  .adv-step{ border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px 16px; margin-top:14px;}
+  .adv-step:first-of-type{ margin-top:4px;}
+  .adv-step-head{ display:flex; align-items:center; gap:9px;}
+  .adv-step-num{ width:20px; height:20px; border-radius:50%; background:var(--surface-alt); border:1px solid var(--border-strong); color:var(--text-primary); font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none;}
+  .adv-step-head .adv-sub-label{ margin:0;}
+
   #app.funnel-app{
     --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
     --fn-ink:#3A3350; --fn-ink-soft:#6E6480; --fn-ink-faint:#9C93AC;
@@ -173,6 +187,15 @@
   .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--phase-line, var(--fn-line)); display:block;}
   .fn-progress i.done{ background:var(--phase-ink, var(--fn-ink)); opacity:.55;}
   .fn-progress i.now{ background:var(--phase-ink, var(--fn-ink));}
+  /* Root cause of the screen-9 contrast bug: applyPhase('app-dark') clears
+     the inline --phase-* / background overrides and adds this class, but
+     with no background rule of its own, the element fell back to
+     #app.funnel-app's base pastel gradient rule above (which beats plain
+     #app{background:var(--bg-app)} from css/styles.css on specificity) --
+     so text went white (via the child-element dark-mode overrides below)
+     while the background stayed light pastel. This rule gives dark mode
+     its own real black background, matching every other app screen. */
+  #app.funnel-app.fn-dark-mode{ background:var(--bg-app);}
   #app.funnel-app.fn-dark-mode .fn-back{ background:var(--surface); border-color:var(--border); color:var(--text-primary);}
   #app.funnel-app.fn-dark-mode .fn-progress i{ background:rgba(255,255,255,.14);}
   #app.funnel-app.fn-dark-mode .fn-progress i.done, #app.funnel-app.fn-dark-mode .fn-progress i.now{ background:#fff; opacity:.75;}
@@ -209,13 +232,29 @@
   .fn-proof-strip .avatars i:first-child{ margin-left:0;}
   .fn-proof-strip span{ font-size:11.5px; font-weight:700; color:#6E6480;}
 
-  .fn-price-card{ border:1.5px solid rgba(58,51,80,0.14); border-radius:19px; padding:16px; margin-bottom:11px; position:relative; background:#fff; color:#2C2846;}
+  .fn-price-card{ border:1.5px solid rgba(58,51,80,0.14); border-radius:19px; padding:16px; margin-bottom:11px; position:relative; background:#fff; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:box-shadow .15s ease, border-color .15s ease;}
   .fn-price-card.best{ border-color:var(--fn-accent-solid);}
   .fn-price-card .tag{ position:absolute; top:-10px; right:13px; background:var(--fn-accent-grad); color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
   .fn-price-card .row{ display:flex; justify-content:space-between; align-items:baseline;}
   .fn-price-card .plan{ font-weight:800; font-size:14.5px; color:#2C2846;}
   .fn-price-card .amt{ font-weight:800; font-size:17px; color:#2C2846;}
   .fn-price-card .sub{ font-size:12px; color:#6E6480; margin-top:3px;}
+  /* Selected-plan indicator — a light card on a light-themed screen, so
+     this deliberately does NOT reuse .opt-chip.selected's dark-theme
+     white-fill/black-text pattern. Instead: an accent-colored ring
+     (box-shadow, not just border-color, so it reads distinctly from
+     .best's plain accent border above) plus a small checkmark badge. */
+  .fn-price-card.selected{ border-color:var(--fn-accent-solid); box-shadow:0 0 0 2.5px var(--fn-accent-solid), 0 14px 28px -16px rgba(124,130,196,.6);}
+  .fn-price-card .plan-check{ position:absolute; top:-9px; left:13px; width:21px; height:21px; border-radius:50%; background:var(--fn-accent-grad); color:#fff; display:flex; align-items:center; justify-content:center; opacity:0; transform:scale(.5); transition:opacity .15s ease, transform .15s ease;}
+  .fn-price-card .plan-check .icon, .fn-price-card .plan-check svg{ width:12px; height:12px;}
+  .fn-price-card.selected .plan-check{ opacity:1; transform:scale(1);}
+
+  .fn-value-card{ background:#fff; border-radius:16px; padding:13px 15px 9px; margin-bottom:14px; border:1px solid rgba(58,51,80,0.1);}
+  .fn-value-item{ display:flex; align-items:flex-start; gap:9px; font-size:13px; font-weight:600; color:#3A3350; padding-bottom:9px;}
+  .fn-value-item .icon{ width:14px; height:14px; flex:none; margin-top:2px; color:var(--fn-accent-solid);}
+  .fn-value-foot{ font-size:11.5px; color:var(--phase-soft, var(--fn-ink-soft)); margin-bottom:12px; line-height:1.6;}
+  .fn-value-foot .lock-line{ display:flex; align-items:center; gap:6px; margin-top:2px;}
+  .fn-value-foot .lock-line .icon{ width:11px; height:11px; flex:none;}
   .fn-pricing-close{ position:absolute; top:2px; right:0; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:10;}
   .fn-pricing-close .icon, .fn-pricing-close svg{ width:15px; height:15px;}
 
@@ -460,25 +499,31 @@
     el.innerHTML =
       '<div class="fn-eyebrow">Optional</div>' +
       '<div class="fn-headline" style="font-size:21px;">Add detail — characters, camera, scenery.</div>' +
-      '<div class="adv-sub-label" style="margin-top:6px;">Characters</div>' +
-      '<div class="adv-hint">Define people in your dream once, reuse them anytime.</div>' +
-      '<div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>' +
-      '<div class="adv-sub-label">Camera view</div>' +
-      '<div class="opt-chip-row" id="camera-chip-row">' +
-        '<div class="opt-chip" data-camera="Close-up">Close-up</div>' +
-        '<div class="opt-chip" data-camera="Wide shot">Wide shot</div>' +
-        '<div class="opt-chip" data-camera="Aerial view">Aerial view</div>' +
-        '<div class="opt-chip" data-camera="POV">POV</div>' +
+      '<div class="adv-step">' +
+        '<div class="adv-step-head"><span class="adv-step-num">1</span><span class="adv-sub-label">Characters</span></div>' +
+        '<div class="adv-hint">Define people in your dream once, reuse them anytime.</div>' +
+        '<div class="char-chip-row" id="char-chip-row" style="margin-top:10px;"></div>' +
       '</div>' +
-      '<div class="adv-sub-label">Scenery</div>' +
-      '<div class="opt-chip-row" id="scenery-time-row" style="margin-bottom:8px;">' +
-        '<div class="opt-chip" data-scenery-time="Day">Day</div>' +
-        '<div class="opt-chip" data-scenery-time="Night">Night</div>' +
+      '<div class="adv-step">' +
+        '<div class="adv-step-head"><span class="adv-step-num">2</span><span class="adv-sub-label">Camera view</span></div>' +
+        '<div class="opt-chip-row" id="camera-chip-row" style="margin-top:10px;">' +
+          '<div class="opt-chip" data-camera="Close-up">Close-up</div>' +
+          '<div class="opt-chip" data-camera="Wide shot">Wide shot</div>' +
+          '<div class="opt-chip" data-camera="Aerial view">Aerial view</div>' +
+          '<div class="opt-chip" data-camera="POV">POV</div>' +
+        '</div>' +
       '</div>' +
-      '<div class="opt-chip-row" id="scenery-place-row">' +
-        '<div class="opt-chip" data-scenery-place="Urban">Urban</div>' +
-        '<div class="opt-chip" data-scenery-place="Nature">Nature</div>' +
-        '<div class="opt-chip" data-scenery-place="Inside a house">Inside a house</div>' +
+      '<div class="adv-step">' +
+        '<div class="adv-step-head"><span class="adv-step-num">3</span><span class="adv-sub-label">Scenery</span></div>' +
+        '<div class="opt-chip-row" id="scenery-time-row" style="margin-top:10px; margin-bottom:8px;">' +
+          '<div class="opt-chip" data-scenery-time="Day">Day</div>' +
+          '<div class="opt-chip" data-scenery-time="Night">Night</div>' +
+        '</div>' +
+        '<div class="opt-chip-row" id="scenery-place-row">' +
+          '<div class="opt-chip" data-scenery-place="Urban">Urban</div>' +
+          '<div class="opt-chip" data-scenery-place="Nature">Nature</div>' +
+          '<div class="opt-chip" data-scenery-place="Inside a house">Inside a house</div>' +
+        '</div>' +
       '</div>' +
       '<div style="min-height:20px; flex:1;"></div>' +
       '<button class="btn btn-primary btn-block" id="fn-s9-continue" type="button">Continue</button>' +
@@ -766,11 +811,20 @@
     'Watch dreams of other people': 'Monthly',
     'Share with friends': 'Monthly'
   };
+  // Which plan is currently selected on the pricing cards — module-level
+  // (not local to renderScreen14) so a selection survives a re-render of
+  // this same screen (e.g. the visitor goes back then forward again).
+  // Left null until the first render, at which point it defaults to
+  // whichever plan MOTIVATION_PLAN/recommendedPlan already recommends, so
+  // there's always a real selection (never an implicit/undefined one)
+  // even before the visitor taps a card.
+  var selectedPlan = null;
   function renderScreen14(el){
     var primaryMotivation = quiz.motivations[0] || null;
     var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
     var matchedPlan = primaryMotivation ? MOTIVATION_PLAN[primaryMotivation] : null;
     var recommendedPlan = matchedPlan || 'Yearly';
+    if(selectedPlan !== 'Yearly' && selectedPlan !== 'Monthly') selectedPlan = recommendedPlan;
 
     var yearlyTag = '';
     var yearlySub = 'billed as $59.99/year';
@@ -782,6 +836,8 @@
       yearlyTag = '<span class="tag">' + (matchedPlan ? 'Recommended for you' : 'Best value') + '</span>';
     }
 
+    function planCheckHTML(){ return '<span class="plan-check"><span class="icon">' + Icons.check + '</span></span>'; }
+
     el.innerHTML =
       '<button class="fn-pricing-close" id="fn-pricing-close" type="button" aria-label="Close">' + Icons.close + '</button>' +
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
@@ -789,13 +845,25 @@
       (dreamsThisMonthCount !== null ?
         '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>' :
         '') +
-      '<div class="fn-price-card best">' + yearlyTag +
+      // Real, current capabilities only — no invented generation-count
+      // limits, since there's no live usage cap yet (see AGENT_POLICY.md /
+      // task spec: describe what DreamTube actually does today).
+      '<div class="fn-value-card">' +
+        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Turn your dream descriptions into AI-generated videos</span></div>' +
+        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Personalize with your own style and characters</span></div>' +
+        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Save your dreams and publish them to Explore</span></div>' +
+      '</div>' +
+      '<div class="fn-price-card best' + (selectedPlan === 'Yearly' ? ' selected' : '') + '" data-plan="Yearly">' + planCheckHTML() + yearlyTag +
         '<div class="row"><span class="plan">Yearly</span><span class="amt">$5.00/mo</span></div>' +
         '<div class="sub">' + yearlySub + '</div>' +
       '</div>' +
-      '<div class="fn-price-card">' + monthlyTag +
+      '<div class="fn-price-card' + (selectedPlan === 'Monthly' ? ' selected' : '') + '" data-plan="Monthly">' + planCheckHTML() + monthlyTag +
         '<div class="row"><span class="plan">Monthly</span><span class="amt">$9.99/mo</span></div>' +
         '<div class="sub">billed monthly, cancel anytime</div>' +
+      '</div>' +
+      '<div class="fn-value-foot">' +
+        '<div>Cancel anytime — no long-term commitment.</div>' +
+        '<div class="lock-line"><span class="icon">' + Icons.lock + '</span><span>Secure checkout. Your payment details are never stored on our servers.</span></div>' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue to payment</button>';
@@ -807,6 +875,27 @@
     // Pixel's own InitiateCheckout call — see js/analytics-config.js's
     // fireMetaConversion.
     fireMetaConversion('InitiateCheckout', {});
+
+    function selectPlan(plan){
+      if(plan !== 'Yearly' && plan !== 'Monthly') return;
+      if(selectedPlan === plan) return;
+      selectedPlan = plan;
+      Array.prototype.forEach.call(el.querySelectorAll('.fn-price-card'), function(cardEl){
+        var isSel = cardEl.dataset.plan === plan;
+        cardEl.classList.toggle('selected', isSel);
+        cardEl.setAttribute('aria-pressed', isSel ? 'true' : 'false');
+      });
+      track('funnel_plan_selected', { step: 14, plan: plan });
+    }
+    Array.prototype.forEach.call(el.querySelectorAll('.fn-price-card'), function(cardEl){
+      cardEl.setAttribute('role', 'button');
+      cardEl.setAttribute('tabindex', '0');
+      cardEl.setAttribute('aria-pressed', cardEl.dataset.plan === selectedPlan ? 'true' : 'false');
+      cardEl.addEventListener('click', function(){ selectPlan(cardEl.dataset.plan); });
+      cardEl.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectPlan(cardEl.dataset.plan); }
+      });
+    });
 
     document.getElementById('fn-pricing-close').addEventListener('click', proceedPastPricing);
     document.getElementById('fn-s14-continue').addEventListener('click', proceedPastPricing);
@@ -827,7 +916,12 @@
   // call here without that human decision having happened first.
   // ============================================================================
   function proceedPastPricing(){
-    track('funnel_pricing_bypassed', { step: 14 });
+    // Records the plan actually selected on the cards above (defaulted to
+    // recommendedPlan if the visitor never tapped one) rather than an
+    // implicit/undefined choice — this is the one place that value flows
+    // out of screen 14, and the checkout call this gets replaced with
+    // once a payment provider is chosen will need it too.
+    track('funnel_pricing_bypassed', { step: 14, plan: selectedPlan });
     next();
   }
 

@@ -283,7 +283,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .char-chip-row{ display:flex; flex-wrap:wrap; gap:8px;}
 .char-chip{
   display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:100px;
-  background:var(--surface-alt); border:1px solid var(--border-strong); cursor:pointer; font-size:13px; font-weight:600;
+  /* Per founder feedback the old --surface-alt (#242424) fill + 1px
+     --border-strong edge read as "solid-black pills" that felt heavy.
+     Note: void(#000) < surface(#1a1a1a) < surface-alt(#242424) in actual
+     luminance, so --surface is technically darker than --surface-alt, not
+     brighter — but against this screen's black (--bg-app) background it
+     sits closer to the backdrop and reads as a subtler, lower-contrast
+     pill rather than a stark block, which is the "lighter/less heavy"
+     effect being asked for here (confirmed by eye against the real
+     rendered page, not assumed). Paired with the softer --border (not
+     --border-strong) for the same reason. */
+  background:var(--surface); border:1px solid var(--border); cursor:pointer; font-size:13px; font-weight:600;
   transition:background .15s ease, border-color .15s ease;
 }
 .char-chip .chip-check{ width:15px; height:15px; border-radius:50%; border:1.5px solid var(--text-faint); display:flex; align-items:center; justify-content:center; flex:none;}
@@ -309,7 +319,8 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    circle, since only one option in a group can ever be active. */
 .opt-chip-row{ display:flex; flex-wrap:wrap; gap:8px;}
 .opt-chip{
-  padding:8px 14px; border-radius:100px; background:var(--surface-alt); border:1px solid var(--border-strong);
+  /* Lighter/less-heavy treatment — same reasoning as .char-chip above. */
+  padding:8px 14px; border-radius:100px; background:var(--surface); border:1px solid var(--border);
   color:var(--text-primary); cursor:pointer; font-size:13px; font-weight:600; transition:background .15s ease, border-color .15s ease;
 }
 .opt-chip.selected{ background:#fff; color:#000; border-color:#fff;}
