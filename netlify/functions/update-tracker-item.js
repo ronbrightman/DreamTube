@@ -1,12 +1,20 @@
 // netlify/functions/update-tracker-item.js
 //
-// Owner-only write for tracker.html: updates one item's `priority` and/or
-// `done` fields by id. Deliberately does NOT allow editing title/detail/
-// category through this endpoint — that's seed-authored-or-added content
-// (see tracker-store.js's SEED_ITEMS and addItem()), not something this
-// endpoint should let anyone accidentally mutate. Adding/removing whole
-// items is add-tracker-item.js/delete-tracker-item.js's job now, not a
-// hypothetical this endpoint is expected to grow into.
+// Owner-only write for tracker.html: updates one item's `priority`, `done`,
+// and/or `comment` fields by id. Deliberately does NOT allow editing
+// title/detail/category through this endpoint — that's seed-authored-or-
+// added content (see tracker-store.js's SEED_ITEMS and addItem()), not
+// something this endpoint should let anyone accidentally mutate. Adding/
+// removing whole items is add-tracker-item.js/delete-tracker-item.js's job
+// now, not a hypothetical this endpoint is expected to grow into.
+//
+// `comment` is the one owner-writable field that isn't a status flag — a
+// free-text note the founder leaves on an item ("actually this is lower
+// priority", extra context, etc.) for whoever maintains this tracker's
+// content to read and act on later (adjusting that item's title/detail to
+// reflect it), then clear once addressed. An empty string is a fully valid
+// value — that's exactly how a comment gets cleared, not treated as
+// "missing".
 //
 // Same owner-check-and-403 pattern as admin-paywall-toggle.js's POST:
 // trusts client-supplied identity (an `email` field, checked against
@@ -19,30 +27,38 @@
 // malformed request is rejected on its own terms regardless of who sent
 // it, before authorization even becomes the question.
 //
-// POST { id, email, priority?, done? } -> { item } (the full updated item)
-//   At least one of priority/done must be present. priority must be one
-//   of "high"/"medium"/"low" if present; done must be a real boolean if
-//   present.
+// POST { id, email, priority?, done?, comment? } -> { item } (the full
+//   updated item)
+//   At least one of priority/done/comment must be present. priority must
+//   be one of "high"/"medium"/"low" if present; done must be a real
+//   boolean if present; comment must be a string of at most
+//   MAX_COMMENT_LENGTH characters if present (an empty string is valid and
+//   is how a comment gets cleared).
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as admin-paywall-toggle.js — a new, standalone function, not part of
 // generate-video.js/video-status.js's E1xx/E2xx generation-flow chain):
-//   E1 method_not_allowed  — verb other than POST
-//   E2 missing_owner_email — OWNER_EMAIL not configured in this environment,
-//                             so no request could ever be authorized
-//   E3 invalid_json        — POST body wasn't valid JSON
-//   E4 missing_id          — POST body had no `id`
-//   E5 no_fields_to_update — neither `priority` nor `done` was present
-//   E6 invalid_priority    — `priority` present but not high/medium/low
-//   E7 invalid_done        — `done` present but not a real boolean
-//   E8 forbidden           — POST body's `email` (normalized) didn't match
-//                             OWNER_EMAIL (normalized)
-//   E9 item_not_found      — no item with that id exists
+//   E1  method_not_allowed  — verb other than POST
+//   E2  missing_owner_email — OWNER_EMAIL not configured in this
+//                              environment, so no request could ever be
+//                              authorized
+//   E3  invalid_json        — POST body wasn't valid JSON
+//   E4  missing_id          — POST body had no `id`
+//   E5  no_fields_to_update — none of `priority`/`done`/`comment` was
+//                              present
+//   E6  invalid_priority    — `priority` present but not high/medium/low
+//   E7  invalid_done        — `done` present but not a real boolean
+//   E8  forbidden           — POST body's `email` (normalized) didn't
+//                              match OWNER_EMAIL (normalized)
+//   E9  item_not_found      — no item with that id exists
+//   E10 invalid_comment     — `comment` present but not a string, or
+//                              longer than MAX_COMMENT_LENGTH characters
 
 var { normalizeEmail } = require('./lib/entitlements');
 var trackerStore = require('./lib/tracker-store');
 
 var VALID_PRIORITIES = ['high', 'medium', 'low'];
+var MAX_COMMENT_LENGTH = 2000;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -67,7 +83,8 @@ exports.handler = async function (event) {
 
   var hasPriority = Object.prototype.hasOwnProperty.call(payload, 'priority');
   var hasDone = Object.prototype.hasOwnProperty.call(payload, 'done');
-  if (!hasPriority && !hasDone) {
+  var hasComment = Object.prototype.hasOwnProperty.call(payload, 'comment');
+  if (!hasPriority && !hasDone && !hasComment) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: no_fields_to_update' }) };
   }
   if (hasPriority && VALID_PRIORITIES.indexOf(payload.priority) === -1) {
@@ -75,6 +92,12 @@ exports.handler = async function (event) {
   }
   if (hasDone && typeof payload.done !== 'boolean') {
     return { statusCode: 400, body: JSON.stringify({ error: 'E7: invalid_done' }) };
+  }
+  // Empty string is a deliberately valid comment — it's how a comment gets
+  // cleared once addressed — so this only rejects non-strings and
+  // over-length strings, never an empty one.
+  if (hasComment && (typeof payload.comment !== 'string' || payload.comment.length > MAX_COMMENT_LENGTH)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E10: invalid_comment' }) };
   }
 
   var requestEmail = normalizeEmail(payload.email);
@@ -85,6 +108,7 @@ exports.handler = async function (event) {
   var patch = {};
   if (hasPriority) patch.priority = payload.priority;
   if (hasDone) patch.done = payload.done;
+  if (hasComment) patch.comment = payload.comment;
 
   var updated = await trackerStore.updateItem(event, payload.id, patch);
   if (!updated) {
