@@ -392,29 +392,94 @@
     if(e.target.id === 'sheet-identity-overlay') closeIdentitySheet();
   });
 
+  /**
+   * Calls netlify/functions/generate-avatar.js to turn a typed description
+   * into a real avatar image — a separate, tokenless endpoint from
+   * generate-video.js (see that file's own header for why). Never rejects
+   * — always resolves to { ok:true, photoDataUrl } or { ok:false, error },
+   * so callers can chain a single .then() with no separate .catch().
+   */
+  function generateAvatarFromDescription(description){
+    return fetch('/.netlify/functions/generate-avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: description })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || !result.data || !result.data.photoDataUrl){
+        var raw = result.data && result.data.error;
+        // Strips the leading "E5: "-style code this function's errors carry
+        // (see generate-avatar.js's own error-code doc block) — those exist
+        // for someone reporting a bug, not as user-facing copy.
+        var message = raw ? raw.replace(/^E\d+:\s*/, '') : "Couldn't generate an avatar — try again.";
+        return { ok: false, error: message };
+      }
+      return { ok: true, photoDataUrl: result.data.photoDataUrl };
+    }).catch(function(){
+      return { ok: false, error: "Couldn't generate an avatar — check your connection and try again." };
+    });
+  }
+
   document.getElementById('identity-save-btn').addEventListener('click', function(){
     var me = getMeCharacter();
     var usingPhoto = identitySubMode === 'photo';
+    var descText = document.getElementById('identity-desc-input').value.trim();
+    var errorEl = document.getElementById('identity-error');
+    var saveBtn = document.getElementById('identity-save-btn');
+    errorEl.textContent = '';
+
     // Profile's edit sheet only exposes name+description/photo, not a
     // separate default — if neither a description nor a photo end up set
     // (first-time save, describe mode left blank), saveCharacter's own
     // isSelf validation ("Add a description or a photo") is surfaced as-is
     // rather than silently inventing filler text that would otherwise leak
     // into the video-generation prompt (see generate-video.js's buildPrompt).
-    var result = DreamStore.saveCharacter({
-      id: me ? me.id : null,
-      isSelf: true,
-      name: document.getElementById('identity-name-input').value,
-      description: usingPhoto ? '' : document.getElementById('identity-desc-input').value,
-      photoDataUrl: usingPhoto ? identityPendingPhotoDataUrl : null
-    });
-    if(!result.ok){
-      document.getElementById('identity-error').textContent = result.error;
+    function finishSave(generatedPhotoDataUrl){
+      var result = DreamStore.saveCharacter({
+        id: me ? me.id : null,
+        isSelf: true,
+        name: document.getElementById('identity-name-input').value,
+        description: usingPhoto ? '' : descText,
+        photoDataUrl: usingPhoto ? identityPendingPhotoDataUrl : generatedPhotoDataUrl
+      });
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      closeIdentitySheet();
+      renderIdentity();
+      showToast('Profile updated');
+    }
+
+    // Describe mode left blank skips the generation call entirely (no
+    // wasted API call for text that doesn't exist yet) and falls straight
+    // through to finishSave, so the "Add a description or a photo" error
+    // above still surfaces exactly as before.
+    if(usingPhoto || !descText){
+      finishSave(null);
       return;
     }
-    closeIdentitySheet();
-    renderIdentity();
-    showToast('Profile updated');
+
+    // Describe mode with real text: generate a real avatar image from it
+    // (see netlify/functions/generate-avatar.js) instead of leaving the
+    // avatar blank. This is a real network call, so show a loading state
+    // and never lose the typed description on failure — the textarea and
+    // identitySubMode are both untouched here, so a failed generation
+    // leaves the sheet exactly as the user left it, just with an error
+    // message and the button re-enabled.
+    saveBtn.disabled = true;
+    var originalLabel = saveBtn.textContent;
+    saveBtn.textContent = 'Generating avatar…';
+    generateAvatarFromDescription(descText).then(function(result){
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      finishSave(result.photoDataUrl);
+    });
   });
 
   // Ideas #4 (recurring-theme insight) & #5 (milestone counter) — both

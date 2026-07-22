@@ -8,6 +8,18 @@ testing"), no agent may trigger a real call for testing/verification without
 explicit human confirmation first. This doc covers the two dev/test-only env
 vars that make that rule actually achievable, and how to use each.
 
+`netlify/functions/generate-avatar.js` (the "Me" character's Describe ->
+real-avatar-image path, see that file's own header) shares `GENERATION_MOCK_MODE`
+below with generate-video.js — same flag, same "true" (exact string) trigger,
+same all-guardrails-still-run behavior — just returning a small placeholder
+`photoDataUrl` instead of a fake video `operationName`. It has no equivalent
+of `GENERATION_TEST_DURATION` (nothing to shorten — a single flux/schnell
+image has no duration parameter); at ~$0.003/image its real cost is low
+enough that a real (non-mocked) test call is a non-issue either way, but
+mock mode is still the default per the same "cheapest option that verifies
+what's being tested" preference above. See test/generate-avatar*.test.js
+for its own coverage.
+
 ## The two flags, and how they differ
 
 | | `GENERATION_MOCK_MODE` | `GENERATION_TEST_DURATION` |

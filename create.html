@@ -382,26 +382,94 @@
   document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
     if(e.target.id === 'sheet-character-overlay') closeCharSheet();
   });
+  /**
+   * Calls netlify/functions/generate-avatar.js to turn a typed description
+   * into a real avatar image — a separate, tokenless endpoint from
+   * generate-video.js (see that file's own header for why). Never rejects
+   * — always resolves to { ok:true, photoDataUrl } or { ok:false, error },
+   * so callers can chain a single .then() with no separate .catch(). Only
+   * ever called for the self-mode sheet (see the save handler below) — a
+   * non-self character's Describe option stays plain text, unchanged.
+   */
+  function generateAvatarFromDescription(description){
+    return fetch('/.netlify/functions/generate-avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: description })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || !result.data || !result.data.photoDataUrl){
+        var raw = result.data && result.data.error;
+        // Strips the leading "E5: "-style code this function's errors carry
+        // (see generate-avatar.js's own error-code doc block) — those exist
+        // for someone reporting a bug, not as user-facing copy.
+        var message = raw ? raw.replace(/^E\d+:\s*/, '') : "Couldn't generate an avatar — try again.";
+        return { ok: false, error: message };
+      }
+      return { ok: true, photoDataUrl: result.data.photoDataUrl };
+    }).catch(function(){
+      return { ok: false, error: "Couldn't generate an avatar — check your connection and try again." };
+    });
+  }
+
   document.getElementById('char-save-btn').addEventListener('click', function(){
     var mode = document.getElementById('char-desc-input').dataset.mode;
-    var usingPhoto = mode === 'self' && charSubMode === 'photo';
-    var result = DreamStore.saveCharacter({
-      id: charEditingId,
-      isSelf: mode === 'self',
-      name: document.getElementById('char-name-input').value,
-      description: usingPhoto ? '' : document.getElementById('char-desc-input').value,
-      photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : null
-    });
-    if(!result.ok){
-      document.getElementById('char-error').textContent = result.error;
+    var isSelf = mode === 'self';
+    var usingPhoto = isSelf && charSubMode === 'photo';
+    var descText = document.getElementById('char-desc-input').value.trim();
+    var errorEl = document.getElementById('char-error');
+    var saveBtn = document.getElementById('char-save-btn');
+    errorEl.textContent = '';
+
+    function finishSave(generatedPhotoDataUrl){
+      var result = DreamStore.saveCharacter({
+        id: charEditingId,
+        isSelf: isSelf,
+        name: document.getElementById('char-name-input').value,
+        description: usingPhoto ? '' : descText,
+        photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : generatedPhotoDataUrl
+      });
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      if(mode !== 'self'){
+        var selectedIds = (DreamStore.getDraft().characterIds || []).slice();
+        if(selectedIds.indexOf(result.character.id) === -1){ selectedIds.push(result.character.id); DreamStore.setDraft({ characterIds: selectedIds }); }
+      }
+      closeCharSheet();
+      renderCharacterChips();
+    }
+
+    // Real avatar generation only ever applies to the self (isSelf) sheet's
+    // Describe mode with real text typed — a non-self character's Describe
+    // option stays exactly as it was (plain stored text, no image), and
+    // Describe left blank on the self sheet skips the generation call
+    // entirely (no wasted API call) and falls straight through to
+    // finishSave, so saveCharacter's own "Add a description or a photo"
+    // validation still surfaces exactly as before.
+    if(!isSelf || usingPhoto || !descText){
+      finishSave(null);
       return;
     }
-    if(mode !== 'self'){
-      var selectedIds = (DreamStore.getDraft().characterIds || []).slice();
-      if(selectedIds.indexOf(result.character.id) === -1){ selectedIds.push(result.character.id); DreamStore.setDraft({ characterIds: selectedIds }); }
-    }
-    closeCharSheet();
-    renderCharacterChips();
+
+    // Self + Describe + real text: generate a real avatar image from it
+    // (see netlify/functions/generate-avatar.js) instead of leaving the
+    // avatar blank. This is a real network call, so show a loading state
+    // and never lose the typed description on failure.
+    saveBtn.disabled = true;
+    var originalLabel = saveBtn.textContent;
+    saveBtn.textContent = 'Generating avatar…';
+    generateAvatarFromDescription(descText).then(function(result){
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      finishSave(result.photoDataUrl);
+    });
   });
   document.getElementById('char-delete-link').addEventListener('click', function(){
     if(!charEditingId) return;
