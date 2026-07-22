@@ -310,7 +310,16 @@
       item.comment = previous;
       // On failure this id must revert to the previous saved value, not
       // whatever's still sitting in its live textarea (the just-rejected
-      // edit) -- so it stays excluded here too, same as above.
+      // edit) -- so it stays excluded here too, same as above. It also must
+      // not display a STALE unsavedComments[id] entry: while this save was
+      // in flight, an unrelated render() (triggered by another item's
+      // done/priority toggle, or another item's own comment save) could
+      // have run captureDrafts() and written this id's now-superseded live
+      // textarea value back into the map. excludeId on captureDrafts only
+      // stops US from re-capturing it here -- it doesn't clear whatever a
+      // *different* render already wrote, so that has to be deleted
+      // explicitly, exactly like the optimistic-save branch above does.
+      delete unsavedComments[id];
       captureDrafts(id);
       render();
       showToast("Couldn't save — try again.");

@@ -216,3 +216,62 @@ test('a failed comment save still reverts to the previous value and toasts an er
     await context.close();
   }
 });
+
+test('a failed comment save on item A reverts correctly even when an unrelated render (item B\'s done-toggle) interleaves while A\'s save is still in flight (regression: stale unsavedComments[id] surviving the failure-revert)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var resolveARequestSeen = null;
+    var aRequestSeen = new Promise(function (resolve) { resolveARequestSeen = resolve; });
+
+    // Item A's update is held open (simulating an in-flight request) long
+    // enough for the test to trigger an unrelated render via item B, then
+    // resolves as a failure -- this is the exact window in which the bug's
+    // interleaved captureDrafts() call used to write a stale entry into
+    // unsavedComments['task-a'] that the revert never explicitly cleared.
+    // Item B's own update resolves immediately and successfully; it's only
+    // there to drive the unrelated render(), not to fail itself.
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        resolveARequestSeen();
+        setTimeout(function () {
+          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+        }, 200);
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+
+    await openItem(page, 'task-a');
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'A save that will fail while B interleaves');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    // Wait until A's save request has actually gone out (still pending),
+    // then fire an unrelated render by toggling B's done checkbox -- B's
+    // own handleDoneChange calls captureDrafts() (no excludeId), which
+    // snapshots A's still-open, just-rejected-but-not-yet-reverted textarea
+    // value into unsavedComments['task-a'] before A's revert ever runs.
+    await aRequestSeen;
+    await page.click('.tracker-item[data-id="task-b"] .tracker-check');
+    await page.waitForTimeout(50);
+
+    // Now let A's save actually fail and revert.
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    assert.equal(aValue, 'saved comment A', "after B's interleaved render, A's failed save must still show the correctly-reverted item.comment, not the stale draft B's render captured mid-flight");
+
+    // Sanity check B's unrelated action actually took effect.
+    var bChecked = await page.$eval('.tracker-item[data-id="task-b"] .tracker-check', function (el) { return el.checked; });
+    assert.equal(bChecked, true);
+  } finally {
+    await context.close();
+  }
+});
