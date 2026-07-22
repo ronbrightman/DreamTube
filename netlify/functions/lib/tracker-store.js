@@ -266,8 +266,16 @@ var SEED_ITEMS = [
     category: 'task',
     priority: 'high',
     done: false,
-    title: 'Accounts (including "forgot password") only work on the device/browser where they were created',
-    detail: "js/store.js's whole account model is localStorage-only, per browser — there is no real account database. Password reset (request-password-reset.js/verify-password-reset.js) is built and does send a real email via Resend, but login.html's own client-side guard (findAccountByEmail) only even attempts it if a matching account already exists in the CURRENT browser's storage — if you're on a different device/browser than the one an account was created on, forgot-password silently does nothing (same generic success message either way, by design, so it can't be used to probe which emails have accounts). Hit this directly trying to log into the owner account on a new device. Immediate workaround: just sign up fresh (not log in) with the owner email on whichever browser needs access — no conflict, since storage is per-browser. Real fix (a proper server-side account system) is a bigger architecture decision, not something to do reflexively."
+    title: 'IN PROGRESS: server-side account/password check, so login + forgot-password work across devices',
+    detail: "DECIDED: build the scoped fix now — move just the account check (username/email/password match) to a small server-side Blobs store, reusing the same lightweight keyed-lookup pattern already used by entitlements.js/paywall-settings.js/tracker-store.js (no sessions, no hashing infra, no new auth framework). This fixes login and forgot-password from any device. It deliberately does NOT sync dreams/characters themselves — see sync-private-dreams-videos-later for that, explicitly deferred and scoped separately. Being built now; mark done once merged."
+  },
+  {
+    id: 'sync-private-dreams-videos-later',
+    category: 'task',
+    priority: 'low',
+    done: false,
+    title: 'Later: sync private dreams/characters/videos across devices (deferred)',
+    detail: "Bigger, separate project from the login fix above — deliberately deferred, not being built now. Real dependency: this cannot ship before (or without) the server-side account/password fix above, since syncing private data keyed by email without real password verification would let anyone who knows/guesses an email pull down that account's private dreams — a real security hole, worse than today's device-only status quo. Also a real new cost line to weigh, not just engineering: unclear whether generated videos are already stored durably anywhere, or only cached transiently during generation — if the latter, this means paying to store every user's private videos indefinitely, an ongoing cost that scales with usage, worth its own explicit sign-off before building. Founder's call: no need to migrate already-created dreams/videos when this eventually gets built — the product is still private/pre-launch, so starting the sync from whenever it ships (not backfilling everything that came before) is fine."
   }
 ];
 
