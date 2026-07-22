@@ -373,6 +373,7 @@
     var amountInput = document.getElementById('owner-topup-amount');
     var amount = parseInt(amountInput.value, 10);
     if(!amount || amount <= 0){ showToast('Enter a valid amount'); return; }
+    if(amount > 5000){ showToast('Max 5000 per top-up'); return; }
     var email = DreamStore.getAccountEmail();
     btn.disabled = true;
     fetch('/.netlify/functions/owner-topup-tokens', {
