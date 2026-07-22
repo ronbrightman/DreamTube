@@ -244,6 +244,38 @@ var SEED_ITEMS = [
       "A: You can delete any dream you've created any time. [FLAGGED: account-deletion flow doesn't appear to exist yet — confirm/build before publishing this answer.]\n\n" +
       "Q: Something's wrong / I have another question\n" +
       "A: Use the contact form below — we read every message."
+  },
+  {
+    id: 'confirm-account-deletion-flow',
+    category: 'task',
+    priority: 'medium',
+    done: false,
+    title: 'Confirm whether account deletion actually exists before publishing the FAQ answer',
+    detail: 'The draft FAQ (idea-faq-section) answers "can I delete my account?" with "yes," but this doesn\'t appear to be a real, built flow yet — flagged when the FAQ draft was written. Confirm it exists (and works) before publishing that answer, or build it, or change the answer to be accurate.'
+  },
+  {
+    id: 'confirm-fal-credit-balance',
+    category: 'task',
+    priority: 'medium',
+    done: false,
+    title: "Check fal.ai account's real credit balance and auto-lock threshold before real ad spend",
+    detail: "fal.ai bills on prepaid credits with an automatic account lock once the balance drops below a threshold — this is DreamTube's actual worst-case cost ceiling today, more fundamental than any of the app's own rate limits (E109/E110/E112). Flagged during the launch-safeguards discussion and never confirmed: what the current loaded balance and lock threshold actually are, especially before pointing real Meta ad traffic at the funnel."
+  },
+  {
+    id: 'decide-blobs-lazy-seed-race',
+    category: 'task',
+    priority: 'low',
+    done: false,
+    title: 'Decide: accept or fix the lazy-seed race shared by entitlements.js/paywall-settings.js/tracker-store.js',
+    detail: "Review found this while checking tracker-page: the 'materialize a default on first read' pattern used in three separate lib files has no atomic/conditional-write primitive available in the installed @netlify/blobs SDK, so a genuinely concurrent first-ever read+write can race and one write can silently clobber the other. Low real-world likelihood so far (single-owner tools, low write frequency) — decide whether to just document this explicitly in each file (cheaper) or build a real fix (a separately-checked 'seeded' marker key) before a fourth place reuses the same pattern for something with higher write concurrency."
+  },
+  {
+    id: 'tracker-needs-real-add-delete',
+    category: 'task',
+    priority: 'medium',
+    done: false,
+    title: "Give tracker.html real add/delete endpoints instead of source-edited seed data",
+    detail: "Right now every new tracker item (including this one) is added by editing SEED_ITEMS in the repo and pushing to main — which only has any effect on the LIVE page before its very first real read; tracker-store.js's lazy-seed only ever fires once, so once the live Blobs store has actually been seeded, further edits to SEED_ITEMS in source do nothing at all. Standing instruction now is to keep adding flagged items here and deleting resolved ones going forward, so this needs real owner-gated add-item/delete-item endpoints (matching update-tracker-item.js's existing owner-check pattern) rather than continuing to rely on source edits, which will silently stop working the moment the page is first visited live."
   }
 ];
 

@@ -40,6 +40,12 @@ scheduled or automatically triggered.
 - No going live (spending money, launching campaigns) until he
   explicitly says so.
 - Check licenses/permissions before installing third-party tools.
+- Whenever a reply flags something as "worth checking," "worth
+  confirming," or "I can build this if you want" — anything left open
+  pending his answer — always also add it to `tracker.html` (owner-only
+  page, Open Tasks/Ideas) in the same turn, not just in chat. Once he
+  answers and the underlying thing is actually done (not just decided —
+  built/shipped), delete it from there. Standing rule, not a one-off.
 - No dead code or broken links left behind — clean up fully, don't
   just add new stuff on top.
 - Keep unrelated projects/contexts cleanly separated.
