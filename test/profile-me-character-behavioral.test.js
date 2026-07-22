@@ -320,3 +320,45 @@ test('create.html: a common word matching part of the Me character\'s name auto-
     await page2.close();
   }
 });
+
+test('profile.html: a Me character created via create.html\'s actual "Add yourself" flow (no name field to fill) displays @handle, not the literal "Me"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await seedUser(page, null); // no self character yet -- must go through the real "Add yourself" sheet
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-write');
+    await page.click('#adv-toggle');
+
+    // The only first-party path to a Me character before this branch existed:
+    // create.html's own "Add yourself" chip. Its sheet has no name-entry UI
+    // at all for isSelf characters (char-name-input is hidden), so a real
+    // user here can only ever set a photo and/or description -- never a name.
+    await page.click('#char-add-self');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    assert.equal(await page.locator('#char-sheet-title').textContent(), 'Add yourself');
+    assert.equal(await page.locator('#char-name-input').isVisible(), false, 'self-mode sheet must not expose a name field');
+
+    await page.click('#char-mode-row [data-char-mode="photo"]');
+    await page.setInputFiles('#char-photo-input', PHOTO_FIXTURE);
+    await page.waitForSelector('#char-photo-preview img');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    // The character was created with no real name -- js/store.js must not
+    // have silently defaulted it to the literal string 'Me'.
+    var state = await readState(page);
+    var chars = state.charactersByUser.tester;
+    assert.equal(chars.length, 1);
+    assert.equal(chars[0].isSelf, true);
+    assert.ok(!chars[0].name, 'a name-less "Add yourself" flow must not store a "Me" placeholder name, got: ' + JSON.stringify(chars[0].name));
+
+    // The exact regression: profile.html's identity display must fall back
+    // to the account handle here, not show the literal string "Me".
+    await safeGoto(page, baseUrl + '/profile.html');
+    assert.equal(await page.locator('#profile-handle').textContent(), '@tester');
+  } finally {
+    await page.close();
+  }
+});

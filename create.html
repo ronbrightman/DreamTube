@@ -251,11 +251,19 @@
     });
   }
 
+  // A self character's name is genuinely optional (create.html's self-mode
+  // sheet never shows a name field) and is stored as-is, including empty —
+  // js/store.js's saveCharacter does not invent a placeholder. "Me" here is
+  // purely a display-time fallback for the chip label, applied fresh each
+  // render, not a value that ever gets written back to the character.
+  function charChipDisplayName(c){
+    return c.name || (c.isSelf ? 'Me' : '');
+  }
   function charChipHTML(c, selected){
     return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
       '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
       '<span class="chip-edit-area" data-char-edit="'+c.id+'">' +
-        '<span>'+esc(c.name)+'</span>' +
+        '<span>'+esc(charChipDisplayName(c))+'</span>' +
         '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
       '</span>' +
     '</div>';
@@ -580,6 +588,9 @@
    * convenience, not a security boundary, so a name that's also a common
    * English word can still cause a match; that's an accepted tradeoff, the
    * same one "I"/"me" above already makes by matching such common words.
+   * Known limitation: \b is ASCII-only, so accented names (e.g. "José")
+   * can have inconsistent word-boundary behavior at the accented
+   * character. Not worth a unicode-aware rewrite for this low-stakes case.
    */
   function buildNameRegex(name){
     var trimmed = (name || '').trim();

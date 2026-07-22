@@ -939,6 +939,16 @@
      * edits the existing "Me" instead of creating a duplicate, since a
      * person only needs to define themselves once.
      *
+     * A self character's name is genuinely optional and stored as-is
+     * (including empty) — create.html's self-mode sheet has no name field
+     * at all, so most self characters never get one. This function does
+     * NOT invent a placeholder name (previously defaulted a blank self name
+     * to the literal string 'Me', which then got displayed verbatim as a
+     * real chosen name in places like profile.html). Any display-time
+     * fallback (a generic chip label, the account's @handle, etc.) is each
+     * consumer's own responsibility, applied against the real empty value
+     * — never baked into the stored data here.
+     *
      * Safety boundary, not just a UI gap: photoDataUrl is only ever stored
      * when isSelf is true — for every other character it's silently
      * dropped here, regardless of what the caller passes, so there's no
@@ -963,14 +973,14 @@
       if (!existing && isSelf) existing = list.filter(function (c) { return c.isSelf; })[0] || null;
 
       if (existing) {
-        existing.name = isSelf ? (name || 'Me') : name;
+        existing.name = name;
         existing.description = description;
         if (isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
         persist();
         return { ok: true, character: existing };
       }
 
-      var character = { id: newCharId(), name: isSelf ? (name || 'Me') : name, isSelf: isSelf, description: description };
+      var character = { id: newCharId(), name: name, isSelf: isSelf, description: description };
       if (isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
       list.push(character);
       persist();
