@@ -356,7 +356,15 @@
     if(!email) return;
     fetch('/.netlify/functions/admin-paywall-toggle?email=' + encodeURIComponent(email))
       .then(function(res){ return res.json(); })
-      .then(function(state){ isOwnerAccount = !!state.isOwner; })
+      .then(function(state){
+        isOwnerAccount = !!state.isOwner;
+        // This check is async and fires once on page load — if the sheet
+        // is already open by the time it resolves (a real possibility on
+        // a slow connection), re-apply visibility immediately rather than
+        // leaving the owner needing to close and reopen the sheet once for
+        // the control to appear.
+        if(accountOverlay.classList.contains('open')) ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
+      })
       .catch(function(){ /* stays hidden -- fails closed, same as admin.html */ });
   })();
 
