@@ -271,7 +271,7 @@ test('a failed generation shows a clear error, re-enables Save, and never loses 
   }
 });
 
-test('profile.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved, no toast, once it resolves', async function (t) {
+test('profile.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved, no toast, once it resolves, and reopening the sheet immediately shows a ready Save button', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -290,20 +290,37 @@ test('profile.html: clicking Cancel while a generate-avatar.js call is still pen
     await page.click('#identity-cancel');
     await page.waitForSelector('#sheet-identity-overlay:not(.open)');
 
+    // Reopen immediately -- before the stale call (300ms delay) has had any
+    // chance to resolve. The Save button must already be back to its normal
+    // ready state on open, not stuck disabled/showing "Generating avatar…"
+    // from the abandoned first attempt (this is the round-2/round-3 bug:
+    // the .then() callback's own button reset ran unconditionally, but only
+    // once that stale call actually resolved -- reopening the sheet must
+    // not have to wait for that).
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    assert.equal(await page.locator('#identity-save-btn').isDisabled(), false, 'Save button must not still be disabled after immediately reopening the sheet');
+    assert.equal(await page.locator('#identity-save-btn').textContent(), 'Save', 'Save button must show its normal ready label after reopening, not "Generating avatar…"');
+
     // Give the mocked call (300ms delay) time to resolve after the sheet
-    // was already dismissed.
+    // was already dismissed once.
     await new Promise(function (r) { setTimeout(r, 500); });
 
     var state = await readState(page);
     assert.equal((state.charactersByUser.tester || []).length, 0, 'no character should be created after Cancel, even once the pending generation resolves');
     var toastClass = await page.locator('#toast').getAttribute('class');
     assert.equal(/\bshow\b/.test(toastClass), false, '"Profile updated" toast must never appear for a cancelled save');
+
+    // The reopened sheet's Save button must still read ready even after the
+    // stale call has now resolved in the background.
+    assert.equal(await page.locator('#identity-save-btn').isDisabled(), false);
+    assert.equal(await page.locator('#identity-save-btn').textContent(), 'Save');
   } finally {
     await page.close();
   }
 });
 
-test('create.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved once it resolves', async function (t) {
+test('create.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved once it resolves, and reopening the sheet immediately shows a ready Save button', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -324,12 +341,72 @@ test('create.html: clicking Cancel while a generate-avatar.js call is still pend
     await page.click('#char-cancel');
     await page.waitForSelector('#sheet-character-overlay:not(.open)');
 
+    // Reopen immediately -- before the stale call (300ms delay) has had any
+    // chance to resolve. Same round-2/round-3 bug coverage as the
+    // profile.html test above: the Save button must be ready on open, not
+    // waiting on the abandoned first call's own (unconditional) reset.
+    await page.click('#char-add-self');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    assert.equal(await page.locator('#char-save-btn').isDisabled(), false, 'Save button must not still be disabled after immediately reopening the sheet');
+    assert.equal(await page.locator('#char-save-btn').textContent(), 'Save', 'Save button must show its normal ready label after reopening, not "Generating avatar…"');
+
+    // Give the mocked call (300ms delay) time to resolve after the sheet
+    // was already dismissed once.
+    await new Promise(function (r) { setTimeout(r, 500); });
+
+    var state = await readState(page);
+    assert.equal((state.charactersByUser.tester || []).length, 0, 'no character should be created after Cancel, even once the pending generation resolves');
+
+    // The reopened sheet's Save button must still read ready even after the
+    // stale call has now resolved in the background.
+    assert.equal(await page.locator('#char-save-btn').isDisabled(), false);
+    assert.equal(await page.locator('#char-save-btn').textContent(), 'Save');
+  } finally {
+    await page.close();
+  }
+});
+
+test('profile.html: cancelling a pending regeneration when editing an existing self character (with pre-existing photo/description) leaves that character untouched', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  var EXISTING_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAA=';
+  var existing = { id: 'me-existing-1', isSelf: true, name: 'Ron', description: 'the original description', photoDataUrl: EXISTING_PHOTO };
+  try {
+    await seedUser(page, existing);
+    await mockGenerateAvatar(page);
+    await safeGoto(page, baseUrl + '/profile.html');
+
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    // The existing character has a photo, so the sheet opens in photo mode
+    // -- switch to Describe and type a new description to trigger a real
+    // regeneration call, same as the brand-new-character path.
+    await page.click('[data-identity-mode="describe"]');
+    await page.fill('#identity-desc-input', 'a new description for the regeneration attempt');
+    await page.click('#identity-save-btn');
+    await page.waitForSelector('#identity-save-btn:has-text("Generating avatar")');
+
+    // Back out while the (mocked) regeneration call is still in flight.
+    await page.click('#identity-cancel');
+    await page.waitForSelector('#sheet-identity-overlay:not(.open)');
+
+    // Reopen immediately -- same reopen-during-pending-call coverage as the
+    // brand-new-character tests above, but for the edit-existing path.
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    assert.equal(await page.locator('#identity-save-btn').isDisabled(), false, 'Save button must not still be disabled after immediately reopening the sheet');
+    assert.equal(await page.locator('#identity-save-btn').textContent(), 'Save', 'Save button must show its normal ready label after reopening, not "Generating avatar…"');
+    await page.click('#identity-cancel');
+
     // Give the mocked call (300ms delay) time to resolve after the sheet
     // was already dismissed.
     await new Promise(function (r) { setTimeout(r, 500); });
 
     var state = await readState(page);
-    assert.equal((state.charactersByUser.tester || []).length, 0, 'no character should be created after Cancel, even once the pending generation resolves');
+    var me = state.charactersByUser.tester.filter(function (c) { return c.isSelf; })[0];
+    assert.equal(me.description, 'the original description', 'the existing character must be untouched by the cancelled regeneration');
+    assert.equal(me.photoDataUrl, EXISTING_PHOTO, 'the existing photo must not be overwritten by the cancelled regeneration');
   } finally {
     await page.close();
   }

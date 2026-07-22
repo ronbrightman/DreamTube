@@ -382,6 +382,18 @@
     charPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
     setCharSubMode(mode === 'self' && charPendingPhotoDataUrl ? 'photo' : 'describe');
 
+    // Unconditionally reset the Save button to its ready state on every
+    // open, regardless of whether a stale generateAvatarFromDescription
+    // call from a previously-cancelled instance of this sheet might still
+    // be outstanding — that call's own .then() re-enables the button too,
+    // but only once it resolves, which can be well after this reopen. Not
+    // gating this on charSheetToken is deliberate: reopening should always
+    // show a ready button immediately, never a leftover "Generating
+    // avatar…" from an instance the user already backed out of.
+    var saveBtnOnOpen = document.getElementById('char-save-btn');
+    saveBtnOnOpen.disabled = false;
+    saveBtnOnOpen.textContent = 'Save';
+
     document.getElementById('sheet-character-overlay').classList.add('open');
   }
   function closeCharSheet(){
@@ -478,8 +490,14 @@
     // See charSheetToken's own comment above.
     var tokenAtSave = charSheetToken;
     generateAvatarFromDescription(descText).then(function(result){
-      saveBtn.disabled = false;
-      saveBtn.textContent = originalLabel;
+      // Redundant with openCharSheet's own unconditional reset (the real
+      // fix for reopen-during-pending-call), but gated here too so this
+      // callback never touches a Save button that belongs to a sheet
+      // instance the user has already moved on from.
+      if(tokenAtSave === charSheetToken){
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalLabel;
+      }
       if(tokenAtSave !== charSheetToken) return;
       if(!result.ok){
         errorEl.textContent = result.error;

@@ -169,6 +169,18 @@ function falAvatarErrorMessage(data) {
   return humanizeFalAvatarDetail(rawDetail) || (typeof rawDetail === 'string' ? rawDetail : null) || 'fal_request_failed';
 }
 
+// Whitelist for fal's own image.content_type field before it's used to
+// build the data: URI below. Unlike the upload path (profile.html/
+// create.html's canvas.toDataURL()), where the content-type segment is
+// always the literal 'image/jpeg' the browser itself produced, this value
+// comes verbatim from fal's JSON response and flows straight into an
+// innerHTML-built <img src="..."> on both pages — so a malformed or
+// unexpected value here shouldn't be trusted as-is. Only the image types
+// this endpoint's model actually returns are allowed; anything else falls
+// back to the same safe default the code already used when content_type
+// was missing entirely.
+var SAFE_IMAGE_CONTENT_TYPE = /^image\/(jpeg|png|webp)$/;
+
 /**
  * Downloads a fal-hosted image URL and re-encodes it as a data: URI, so
  * this handler's response always carries the same photoDataUrl shape the
@@ -183,7 +195,10 @@ async function downloadAsDataUrl(url, contentType) {
     if (!res.ok) return null;
     var buffer = await res.arrayBuffer();
     var base64 = Buffer.from(buffer).toString('base64');
-    return 'data:' + (contentType || 'image/jpeg') + ';base64,' + base64;
+    var safeContentType = (typeof contentType === 'string' && SAFE_IMAGE_CONTENT_TYPE.test(contentType))
+      ? contentType
+      : 'image/jpeg';
+    return 'data:' + safeContentType + ';base64,' + base64;
   } catch (e) {
     return null;
   }

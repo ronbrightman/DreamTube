@@ -322,6 +322,48 @@ test('a normal description succeeds and is returned as { photoDataUrl } built fr
   assert.equal(body.photoDataUrl, 'data:image/jpeg;base64,' + Buffer.from(Uint8Array.from([1, 2, 3, 4])).toString('base64'));
 });
 
+// ----- content_type whitelist (downloadAsDataUrl) -----
+//
+// image.content_type comes verbatim from fal's own JSON response and flows
+// straight into the data: URI this handler returns, which both profile.html
+// and create.html then use as an innerHTML-built <img src="...">. It must
+// be whitelisted before use, unlike the canvas.toDataURL() upload path
+// where that segment is always the literal 'image/jpeg' the browser itself
+// produced.
+
+test('an allowed content_type (png) from fal is used as-is in the returned data: URI', async function () {
+  stubFullSuccess({ images: [{ url: 'https://fal.media/files/fake/avatar.png', width: 512, height: 512, content_type: 'image/png' }] });
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.photoDataUrl.indexOf('data:image/png;base64,'), 0);
+});
+
+test('an allowed content_type (webp) from fal is used as-is in the returned data: URI', async function () {
+  stubFullSuccess({ images: [{ url: 'https://fal.media/files/fake/avatar.webp', width: 512, height: 512, content_type: 'image/webp' }] });
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.photoDataUrl.indexOf('data:image/webp;base64,'), 0);
+});
+
+test('a malformed/unexpected content_type from fal falls back to the safe default (image/jpeg) rather than being trusted verbatim', async function () {
+  stubFullSuccess({ images: [{ url: 'https://fal.media/files/fake/avatar', width: 512, height: 512, content_type: 'text/html"><script>alert(1)</script>' } ] });
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.photoDataUrl.indexOf('data:image/jpeg;base64,'), 0, 'an unwhitelisted content_type must never reach the returned data: URI verbatim');
+  assert.equal(body.photoDataUrl.indexOf('script'), -1);
+});
+
+test('a missing content_type from fal still falls back to the safe default (image/jpeg), same as before', async function () {
+  stubFullSuccess({ images: [{ url: 'https://fal.media/files/fake/avatar', width: 512, height: 512 }] });
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.photoDataUrl.indexOf('data:image/jpeg;base64,'), 0);
+});
+
 test('the request sent to fal uses the synchronous direct endpoint (fal.run, not queue.fal.run) and carries the description text in the prompt', async function () {
   var capturedUrl = null;
   var capturedBody = null;
