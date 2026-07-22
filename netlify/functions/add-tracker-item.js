@@ -27,7 +27,12 @@
 //   The created item always starts at done: false, comment: '' — its id
 //   is generated server-side (see tracker-store.js's generateId), never
 //   trusted from the client, so a caller can't collide with or silently
-//   overwrite an existing item by choosing its id.
+//   overwrite an existing item by choosing its id. title/detail are
+//   validated against the raw string (so pure-whitespace input is
+//   correctly rejected as empty) but trimmed before being persisted —
+//   the length caps above are checked pre-trim, so a title/detail that's
+//   exactly at a cap plus surrounding whitespace is rejected rather than
+//   silently trimmed down to fit.
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as update-tracker-item.js/admin-paywall-toggle.js — a new, standalone
@@ -96,8 +101,8 @@ exports.handler = async function (event) {
 
   var created = await trackerStore.addItem(event, {
     category: payload.category,
-    title: payload.title,
-    detail: payload.detail,
+    title: payload.title.trim(),
+    detail: payload.detail.trim(),
     priority: hasPriority ? payload.priority : 'medium'
   });
 

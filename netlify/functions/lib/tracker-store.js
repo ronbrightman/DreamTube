@@ -263,6 +263,14 @@ var SEED_ITEMS = [
     detail: "Review found this while checking tracker-page: the 'materialize a default on first read' pattern used in three separate lib files has no atomic/conditional-write primitive available in the installed @netlify/blobs SDK, so a genuinely concurrent first-ever read+write can race and one write can silently clobber the other. Low real-world likelihood so far (single-owner tools, low write frequency) — decide whether to just document this explicitly in each file (cheaper) or build a real fix (a separately-checked 'seeded' marker key) before a fourth place reuses the same pattern for something with higher write concurrency."
   },
   {
+    id: 'tracker-store-concurrent-write-race',
+    category: 'task',
+    priority: 'medium',
+    done: false,
+    title: 'Accept or further harden the tracker Blobs store\'s concurrent-write race in addItem/deleteItem',
+    detail: "Flagged in review of the add/delete-endpoints branch: addItem/deleteItem do a read-full-list -> mutate -> write cycle, and the installed @netlify/blobs SDK (8.2.0) exposes no compare-and-swap/conditional write (set/setJSON take only a metadata option) — two genuinely concurrent callers (this page's own JS, and dreamtube-growth writing directly via these same two endpoints, which is exactly what this branch was built to allow) can each read the same base list and the second write silently clobbers the first, no error to either side. Worse version of decide-blobs-lazy-seed-race above (that one's a one-time low-frequency bootstrap race; this is the steady-state write path with a second real concurrent writer by design). Mitigation shipped alongside this item: a bounded read-mutate-write-then-verify retry loop in tracker-store.js (see its own CONCURRENT-WRITE RACE comment above addItem/deleteItem) that narrows but does not eliminate the window. Revisit if item loss/duplication is ever actually observed in practice, or before a third concurrent writer gets added on top of these two."
+  },
+  {
     id: 'tracker-needs-real-add-delete',
     category: 'task',
     priority: 'medium',
@@ -365,18 +373,106 @@ async function updateItem(event, id, patch) {
   return updated;
 }
 
+// ---------------------------------------------------------------------
+// CONCURRENT-WRITE RACE — addItem()/deleteItem() below
+//
+// Both do a read-the-full-array -> mutate -> setJSON-the-full-array-back
+// cycle. The installed @netlify/blobs SDK (8.2.0 as of this writing — see
+// node_modules/@netlify/blobs/dist/main.d.ts) has no compare-and-swap or
+// conditional-write primitive: `set`/`setJSON` accept only a `metadata`
+// option, and `getWithMetadata`'s `etag` option is a *read*-side
+// If-None-Match hint (skip re-fetching unchanged data), not something a
+// write can be conditioned on. So two genuinely concurrent callers — this
+// page's own JS via add-tracker-item.js/delete-tracker-item.js, and
+// dreamtube-growth calling those same two endpoints directly, which is
+// exactly what this add/delete-endpoints branch was built to allow — can
+// each read the same base array, and the second setJSON silently
+// clobbers the first caller's add/delete, with no error to either side.
+//
+// This is a worse version of the lazy-seed race already tracked as the
+// decide-blobs-lazy-seed-race item in SEED_ITEMS below: that one is a
+// one-time bootstrap race in a low-frequency single-owner tool; this is
+// the steady-state write path with a second real concurrent writer by
+// design (see the tracker-store-concurrent-write-race item below, added
+// alongside this fix).
+//
+// Mitigation actually in place: writeItemsWithRetry() immediately below
+// does a bounded (MAX_WRITE_ATTEMPTS) read -> mutate -> write ->
+// read-back-and-verify loop, retrying against a freshly-read base
+// whenever the verify read doesn't show the expected end state (i.e.
+// something else won the race). This NARROWS the race window — a clobber
+// landing between our write and our own verify-read gets caught and
+// retried against the newer state — but does NOT ELIMINATE it: the
+// verify read itself only ever uses this store's eventual consistency
+// (strong consistency throws BlobsConsistencyError unconditionally in
+// this deploy environment, same reasoning as the rest of this file), so
+// it can lag behind the very write it's checking regardless of any other
+// writer, and a clobber landing in the gap between our verify-read
+// succeeding and us actually returning is still possible in principle.
+// Bounded (not infinite) retries were chosen so a genuinely stuck store,
+// or a still-propagating eventually-consistent read, fails open (falls
+// through and returns the last attempt's result anyway) rather than
+// hanging the request indefinitely.
+// ---------------------------------------------------------------------
+
+var MAX_WRITE_ATTEMPTS = 3;
+
+/**
+ * Shared read -> mutate -> write -> verify retry loop for addItem/
+ * deleteItem. See the CONCURRENT-WRITE RACE comment above for exactly
+ * what this does and doesn't protect against.
+ *
+ * `mutate(items)` takes the latest full array and returns the full new
+ * array to persist. It's called again from scratch (against a fresh
+ * read) on every retry, so it must be idempotent against its own target
+ * end state — safe to call against an array where that end state is
+ * already present (a retry can be triggered by a false-negative verify,
+ * e.g. our own just-written data not yet visible to an eventually
+ * consistent read, not just a real clobber) — so it must not double-add
+ * or otherwise misbehave if called again after already "succeeding".
+ *
+ * `verify(items)` is checked against a fresh read taken right after the
+ * write; if it returns false the whole cycle (fresh read, mutate, write)
+ * retries, up to MAX_WRITE_ATTEMPTS times total.
+ *
+ * Returns whatever was persisted on the attempt whose verify passed, or
+ * — if every attempt's verify failed — the last attempt's array anyway
+ * (see the comment above for why this fails open instead of throwing).
+ */
+async function writeItemsWithRetry(event, mutate, verify) {
+  var result = null;
+  for (var attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+    var items = await getItems(event);
+    var mutated = mutate(items);
+    result = mutated;
+
+    connectLambda(event);
+    await store().setJSON(KEY, mutated);
+
+    connectLambda(event);
+    var verifyItems = await store().get(KEY, { type: 'json' });
+    if (verify(verifyItems || [])) return mutated;
+  }
+  return result;
+}
+
 /**
  * Appends a brand-new item built from `patch` ({ category, title, detail,
  * priority }) — shape/value validation is the caller's job (see
  * add-tracker-item.js), this trusts what it's given. Generates the id
- * server-side (see generateId above) and always starts the item at
- * done: false, comment: ''. Returns the created item. A pure append —
- * never reorders or otherwise touches any existing item.
+ * server-side (see generateId above, from a first, non-retried read —
+ * good enough since this only needs to be unique against whatever set of
+ * ids the id-collision check inside generateId actually saw, not a
+ * perfectly current one) and always starts the item at done: false,
+ * comment: ''. Returns the created item. A pure append — never reorders
+ * or otherwise touches any existing item. Goes through
+ * writeItemsWithRetry above — see the CONCURRENT-WRITE RACE comment
+ * above that for what is and isn't protected against.
  */
 async function addItem(event, patch) {
-  var items = await getItems(event);
+  var initialItems = await getItems(event);
   var created = {
-    id: generateId(items, patch.title),
+    id: generateId(initialItems, patch.title),
     category: patch.category,
     title: patch.title,
     detail: patch.detail,
@@ -384,31 +480,39 @@ async function addItem(event, patch) {
     done: false,
     comment: ''
   };
-  items = items.concat([created]);
 
-  connectLambda(event);
-  await store().setJSON(KEY, items);
+  await writeItemsWithRetry(
+    event,
+    function (items) {
+      var alreadyPresent = items.some(function (item) { return item.id === created.id; });
+      return alreadyPresent ? items : items.concat([created]);
+    },
+    function (items) { return items.some(function (item) { return item.id === created.id; }); }
+  );
+
   return created;
 }
 
 /**
  * Removes one item by id and persists the resulting list. Returns `true`
- * if an item was actually found and removed, `false` if no item with
- * that id existed (store is left untouched in that case — never
- * partially written, same not-found handling as updateItem above).
+ * if an item was actually found and removed at the time this was called,
+ * `false` if no item with that id existed then (store is left untouched
+ * in that case — never partially written, same not-found handling as
+ * updateItem above). Goes through writeItemsWithRetry above — see the
+ * CONCURRENT-WRITE RACE comment above that for what is and isn't
+ * protected against.
  */
 async function deleteItem(event, id) {
-  var items = await getItems(event);
-  var idx = -1;
-  for (var i = 0; i < items.length; i++) {
-    if (items[i].id === id) { idx = i; break; }
-  }
-  if (idx === -1) return false;
+  var initialItems = await getItems(event);
+  var existed = initialItems.some(function (item) { return item.id === id; });
+  if (!existed) return false;
 
-  items = items.slice(0, idx).concat(items.slice(idx + 1));
+  await writeItemsWithRetry(
+    event,
+    function (items) { return items.filter(function (item) { return item.id !== id; }); },
+    function (items) { return !items.some(function (item) { return item.id === id; }); }
+  );
 
-  connectLambda(event);
-  await store().setJSON(KEY, items);
   return true;
 }
 

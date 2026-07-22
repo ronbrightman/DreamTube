@@ -10,8 +10,9 @@
 // whether to show its own owner-gated UI. Real gating happens client-side
 // (tracker.html hides its whole content behind an isOwner check against
 // admin-paywall-toggle.js's existing owner-check GET, mirroring
-// admin.html exactly) plus server-side on the one write endpoint
-// (update-tracker-item.js) — this endpoint is read-only, so there's
+// admin.html exactly) plus server-side on each of the three write
+// endpoints (update-tracker-item.js, add-tracker-item.js,
+// delete-tracker-item.js) — this endpoint is read-only, so there's
 // nothing here for a non-owner to actually mutate even if they called it
 // directly.
 //

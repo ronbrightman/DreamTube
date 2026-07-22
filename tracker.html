@@ -332,18 +332,35 @@
     });
   }
 
-  /** Removes an item after a native confirm(), matching this codebase's existing delete-confirmation pattern (see e.g. create.html/result.html/start.html's "Delete this character?"). Optimistic: removes from `items`/render() immediately, re-inserts at its original index and toasts on failure — same revert-on-failure shape as handleDoneChange/handlePriorityChange, just for a removal instead of a field patch. */
+  /**
+   * Removes an item after a native confirm(), matching this codebase's
+   * existing delete-confirmation pattern (see e.g. create.html/
+   * result.html/start.html's "Delete this character?"). Optimistic:
+   * removes from `items`/render() immediately, re-inserts on failure and
+   * toasts — same revert-on-failure shape as handleDoneChange/
+   * handlePriorityChange, just for a removal instead of a field patch.
+   *
+   * Reverts by id/reference, not by the array index captured before the
+   * async round-trip: if another add/delete completes while this one is
+   * still in flight, a captured index can point at the wrong position
+   * (or no longer be this item's position at all) by the time the
+   * revert runs. Filtering `items` by id on removal, and re-appending the
+   * captured `removed` object on revert (only if it isn't already back
+   * in the array — e.g. re-added by hand while this delete was still in
+   * flight), sidesteps that entirely; render()'s own sortItems() puts it
+   * back in the right priority/done group regardless of array position,
+   * so the only thing an id-based revert can't preserve is exact tie
+   * order among same-priority items, which is cosmetic only.
+   */
   function handleDelete(id) {
-    var idx = -1;
-    for (var i = 0; i < items.length; i++) { if (items[i].id === id) { idx = i; break; } }
-    if (idx === -1) return;
+    var removed = findItem(id);
+    if (!removed) return;
     if (!confirm('Delete this item?')) return;
 
-    var removed = items[idx];
-    items.splice(idx, 1);
+    items = items.filter(function (i) { return i.id !== id; });
     render();
     postDelete(id).catch(function () {
-      items.splice(idx, 0, removed);
+      if (!findItem(id)) items.push(removed);
       render();
       showToast("Couldn't delete — try again.");
     });

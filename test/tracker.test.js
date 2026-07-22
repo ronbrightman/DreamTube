@@ -513,6 +513,34 @@ test('add-tracker-item is rejected with 500 when OWNER_EMAIL is not configured a
   });
 });
 
+test('POST with leading/trailing whitespace around title/detail persists them trimmed, not verbatim', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var addHandler = require('../netlify/functions/add-tracker-item').handler;
+    var res = await addHandler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, category: 'task', title: '  Padded title  ', detail: '  Padded detail.  ' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.title, 'Padded title');
+    assert.equal(body.item.detail, 'Padded detail.');
+  });
+});
+
+test('a whitespace-padded title still rejected for exceeding the cap pre-trim (validated against the raw string, not the trimmed one)', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var addHandler = require('../netlify/functions/add-tracker-item').handler;
+    // 200 real chars plus padding — over the cap before trimming, even
+    // though the trimmed content alone would fit.
+    var res = await addHandler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, category: 'task', title: '  ' + 'x'.repeat(200) + '  ', detail: 'Detail.' }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E5: invalid_title/);
+  });
+});
+
 // ===== delete-tracker-item.js =====
 
 test('POST from the owner deletes an existing item, and it is gone from a later GET', function () {
@@ -620,4 +648,54 @@ test('delete-tracker-item is rejected with 500 when OWNER_EMAIL is not configure
     assert.equal(res.statusCode, 500);
     assert.match(JSON.parse(res.body).error, /^E2: missing_owner_email/);
   });
+});
+
+// ===== Concurrent-write race (see tracker-store.js's own CONCURRENT-WRITE
+// RACE comment above addItem/deleteItem) =====
+//
+// These call trackerStore.addItem/deleteItem directly (not through the
+// HTTP handlers) since what's under test is the store's own read-mutate-
+// write-then-verify retry loop, not endpoint auth/validation — the same
+// race exists regardless of which of add-tracker-item.js/
+// delete-tracker-item.js/tracker.html's own JS a given caller is. The
+// mock store's get/setJSON are plain resolved-Promise stand-ins with no
+// real network latency, but they still interleave via the microtask
+// queue exactly the way two genuinely concurrent Lambda invocations
+// would race over the real store — enough to reproduce (and confirm the
+// fix for) the underlying clobber.
+
+test('two concurrent addItem calls both survive — the second does not silently clobber the first', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  await trackerStore.getItems(fakeEvent({ method: 'GET' })); // trigger the seed first, same starting point as a real request
+
+  var results = await Promise.all([
+    trackerStore.addItem(fakeEvent({ method: 'POST' }), { category: 'task', title: 'Race A', detail: 'Detail A.', priority: 'medium' }),
+    trackerStore.addItem(fakeEvent({ method: 'POST' }), { category: 'task', title: 'Race B', detail: 'Detail B.', priority: 'medium' })
+  ]);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var ids = results.map(function (r) { return r.id; });
+  assert.notEqual(ids[0], ids[1], 'the two concurrently created items must still get distinct ids');
+  ids.forEach(function (id) {
+    var count = finalItems.filter(function (i) { return i.id === id; }).length;
+    assert.equal(count, 1, 'item ' + id + ' must be present exactly once in the final store — neither lost nor duplicated by the race');
+  });
+});
+
+test('an addItem racing a deleteItem on a different item: the add survives and the delete survives', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var idToDelete = seeded[0].id;
+
+  var results = await Promise.all([
+    trackerStore.addItem(fakeEvent({ method: 'POST' }), { category: 'idea', title: 'Race idea', detail: 'Detail.', priority: 'low' }),
+    trackerStore.deleteItem(fakeEvent({ method: 'POST' }), idToDelete)
+  ]);
+  var created = results[0];
+  var deleted = results[1];
+  assert.equal(deleted, true);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  assert.ok(finalItems.find(function (i) { return i.id === created.id; }), 'the item added mid-race must survive');
+  assert.equal(finalItems.find(function (i) { return i.id === idToDelete; }), undefined, 'the item deleted mid-race must stay deleted');
 });
