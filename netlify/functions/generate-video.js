@@ -17,11 +17,10 @@
 //
 // email (optional) is the logged-in account's email, if any (see
 // js/store.js's startGeneration) — sent opportunistically today. It's used
-// for two things, both gated/no-ops until explicitly turned on: a per-email
-// rate-limit bucket alongside the always-on per-IP one (see
-// netlify/functions/lib/rate-limit.js), and — only when
-// PAYWALL_ENABLED==="true" — the entitlement check itself (see
-// netlify/functions/lib/entitlements.js and docs/PAYWALL_SETUP.md).
+// for two things: a per-email rate-limit bucket alongside the always-on
+// per-IP one (see netlify/functions/lib/rate-limit.js), and the token-
+// balance check/spend (see netlify/functions/lib/entitlements.js and the
+// E112 doc block below) — both always-on, not gated behind any flag.
 //
 // All of the above are folded into the prompt sent to the model (see
 // buildPrompt) but never echoed back — the caption the UI displays is
@@ -346,60 +345,33 @@ async function callVeoDirect(prompt, apiKey) {
 //   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
 //   E106 fal rejected the reference-to-video submission (same causes, self-photo path)
 //   E107 couldn't reach fal at all (network failure before any response came back)
-//   E108 payment_required          — the effective paywall state (see "Paywall on/off" below) is
-//                                     enabled and the request's email has no active entitlement
-//                                     (or no email at all) — and the request isn't the owner (see
-//                                     "Owner bypass" below). See docs/PAYWALL_SETUP.md —
-//                                     PAYWALL_ENABLED defaults to unset/off, so this never fires
-//                                     until a human explicitly turns the paywall on (via the env
-//                                     var or the in-product admin toggle) after standing up real
-//                                     Stripe checkout in front of users. THIS MUST STAY DEFAULT-OFF:
-//                                     flipping it on without a checkout funnel in place blocks every
-//                                     user from generating.
 //   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
-//                                     exceeded for today. Active regardless of paywall state,
-//                                     including for the owner — this endpoint had zero abuse
-//                                     protection before this existed, and these are cost/abuse
-//                                     safety nets, not payment gating.
-//   E110 daily_spend_cap_exceeded  — DAILY_SPEND_CAP_USD circuit breaker tripped for today.
-//                                     Active regardless of paywall state, including for the owner —
-//                                     a backstop against runaway cost, not a replacement for E109's
-//                                     rate limiting or something the paywall toggle should ever gate.
-//   E111 quota_exceeded            — the effective paywall state is enabled, the request's email IS
-//                                     entitled (passed E108 above), but its usage-quota/credits
-//                                     balance (see netlify/functions/lib/entitlements.js's
-//                                     getQuotaStatus — 10 included generations/month on every plan,
-//                                     plus any never-expiring top-up bonusCredits) is exhausted for
-//                                     this UTC month. Same gating as E108: only checked inside the
-//                                     PAYWALL_ENABLED-and-not-owner scope below, so like E108 this
-//                                     stays default-off/inert until the founder turns the paywall on.
-//                                     Applies uniformly to a brand-new generation, an edit/regenerate,
-//                                     and a style change — all three funnel through this same handler
-//                                     via processing.html's runGeneration(), so there's exactly one
-//                                     enforcement point.
-//
-// Paywall on/off — two ways it can be controlled, checked in this order:
-//   1. An in-product override, written via admin-paywall-toggle.js into the
-//      "dreamtube-settings" Blobs store (see lib/paywall-settings.js) —
-//      lets the founder flip the paywall from inside the product itself,
-//      without touching Netlify's dashboard or redeploying. If this has
-//      ever been set in this environment, it wins outright (true or
-//      false), regardless of PAYWALL_ENABLED below.
-//   2. If no override has ever been written, falls back to the
-//      PAYWALL_ENABLED==="true" env var exactly as before the override
-//      existed (default unset/off — see docs/PAYWALL_SETUP.md).
-//
-// Owner bypass — regardless of the paywall state above, a request whose
-// (normalized) email matches OWNER_EMAIL skips the entitlement check
-// entirely, so the founder can always test the live product without
-// needing an active Stripe subscription of their own. This is intentional,
-// not a bug to "fix" by removing it: OWNER_EMAIL is a single, founder-
-// controlled env var (not client-writable — a request merely *claims* an
-// email, same as every other identity check in this codebase, e.g.
-// js/store.js's account model), and the bypass only ever skips the
-// *entitlement* check — E109's rate limit and E110's spend cap above still
-// apply to the owner exactly like everyone else, since those exist to cap
-// real infra cost, not to gate payment.
+//                                     exceeded for today. Cost/abuse safety net, unrelated to E112's
+//                                     token balance below — see lib/rate-limit.js.
+//   E110 daily_spend_cap_exceeded  — DAILY_SPEND_CAP_USD circuit breaker tripped for today. A
+//                                     backstop against runaway cost, not a replacement for E109's
+//                                     rate limiting or E112's token gate — see lib/spend-guard.js.
+//   E112 insufficient_tokens       — the request's email (see lib/entitlements.js's getTokenStatus)
+//                                     has fewer than 100 tokens (the flat cost of one generation,
+//                                     uniformly for a brand-new generation, an edit/regenerate, and a
+//                                     style change — all three funnel through this same handler via
+//                                     processing.html's runGeneration(), so there's exactly one
+//                                     enforcement point). UNCONDITIONAL — this check always runs, for
+//                                     every request with (or without) an email, with no flag to turn
+//                                     it off and no owner bypass. That's a deliberate difference from
+//                                     the old E108/E111 subscription-paywall gate this replaces: that
+//                                     one stayed default-off until a real Stripe checkout existed,
+//                                     because being entitled there required having actually paid.
+//                                     Here every token anyone can spend is free-earned (200 on first
+//                                     read of a never-before-seen email, +100 every 24h — see
+//                                     getTokenStatus) until shop.html's token packs go live, so
+//                                     there's no "before checkout exists" state to protect against —
+//                                     this is a cost/usage safeguard, not a payment gate, and nobody
+//                                     is ever hard-blocked forever (the daily drip guarantees
+//                                     continued access), just rate-limited to a sustainable free
+//                                     tier. A request with no email at all has no way to be
+//                                     identified for a balance, so it's treated as balance 0 (blocked)
+//                                     — see the handler below.
 //
 // Mock mode & test-duration override — see docs/TESTING.md for the full
 // writeup and AGENT_POLICY.md's "Never spend real generation cost on
@@ -409,9 +381,11 @@ async function callVeoDirect(prompt, apiKey) {
 //   - GENERATION_MOCK_MODE==="true": every real fal.ai call is skipped
 //     entirely (no FAL_KEY read, no network call to fal at all — zero
 //     cost). All the checks above this point (validation, rate limit,
-//     entitlement, spend guard) still run unchanged, so mock mode is only
-//     ever a stand-in for the model call itself, never a way to bypass the
-//     guardrails those checks exist to test. Produces a fake
+//     token balance, spend guard) still run unchanged, and a mock success
+//     still spends 100 tokens exactly like a real one (see spendTokens
+//     below), so mock mode is only ever a stand-in for the model call
+//     itself, never a way to bypass the guardrails those checks exist to
+//     test. Produces a fake
 //     "mock:<startedAtMs>:<id>" operationName in the same response shape
 //     the real path returns, which video-status.js (see that file)
 //     recognizes and resolves to a real, working sample video after a
@@ -434,7 +408,6 @@ var crypto = require('crypto');
 var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
-var paywallSettings = require('./lib/paywall-settings');
 var promptCondenser = require('./lib/prompt-condenser');
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above. The embedded timestamp lets video-status.js resolve "done" purely from elapsed wall-clock time, with no server-side memory needed (see that file's checkMockStatus). */
@@ -477,9 +450,9 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E104: caption_and_style_required' }) };
   }
 
-  // --- Guardrails below run regardless of PAYWALL_ENABLED (rate limiting +
-  // spend circuit breaker) or are gated by it (entitlement check) — see the
-  // E108/E109/E110 doc block above and docs/PAYWALL_SETUP.md.
+  // --- Guardrails below: rate limiting (E109), the token gate (E112), and
+  // the spend circuit breaker (E110) — all unconditional, see the doc block
+  // above for each.
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
@@ -496,28 +469,15 @@ exports.handler = async function (event) {
     }
   }
 
-  var ownerEmail = entitlements.normalizeEmail(process.env.OWNER_EMAIL);
-  var isOwner = !!(ownerEmail && email && email === ownerEmail);
-
-  if (!isOwner) {
-    var paywallState = await paywallSettings.isPaywallEnabled(event);
-    if (paywallState.enabled) {
-      if (!email) {
-        return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: sign in with the email you subscribed with' }) };
-      }
-      var entitled = await entitlements.isEntitled(event, email);
-      if (!entitled) {
-        return { statusCode: 402, body: JSON.stringify({ error: 'E108: payment_required: an active subscription is required to generate videos' }) };
-      }
-      // Same scope as the entitlement check above (not isOwner, paywall
-      // enabled) — see the E111 doc block above and
-      // netlify/functions/lib/entitlements.js's getQuotaStatus for the
-      // lazy-monthly-reset mechanism this reads.
-      var quotaStatus = await entitlements.getQuotaStatus(event, email);
-      if (quotaStatus.effectiveRemaining <= 0) {
-        return { statusCode: 402, body: JSON.stringify({ error: 'E111: quota_exceeded: you have used all of your included generations this month' }) };
-      }
-    }
+  // E112 — unconditional token-balance gate, see the doc block above for
+  // why this always runs (no flag, no owner bypass), unlike the E108/E111
+  // subscription-paywall gate this replaces. A request with no email can't
+  // be identified for a balance at all, so it reads as balance 0 (blocked)
+  // via getTokenStatus's own empty-email guard rather than a special case
+  // here.
+  var tokenStatus = await entitlements.getTokenStatus(event, email);
+  if (tokenStatus.balance < 100) {
+    return { statusCode: 402, body: JSON.stringify({ error: 'E112: insufficient_tokens: not enough tokens to generate a video' }) };
   }
 
   var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);
@@ -533,10 +493,10 @@ exports.handler = async function (event) {
   // below this point (buildPrompt, the self-photo check, FAL_MODEL,
   // GENERATION_TEST_DURATION, the actual fal.ai call) is ever reached.
   if (mockMode) {
-    // Counts against quota exactly like a real submission — see
-    // recordGenerationUsage's own doc comment for why a rejection (E105-
-    // E107) never reaches this point but every 200 does, mock or real.
-    await entitlements.recordGenerationUsage(event, email);
+    // Spends tokens exactly like a real submission — see spendTokens' own
+    // doc comment for why a rejection (E105-E107) never reaches this point
+    // but every 200 does, mock or real.
+    await entitlements.spendTokens(event, email, 100);
     return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
   }
 
@@ -578,13 +538,13 @@ exports.handler = async function (event) {
       ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
       : await callFal(prompt, falKey, duration, generateAudio);
     if (!result.ok) {
-      // No real spend happened — a rejected submission must NOT count
-      // against quota, so recordGenerationUsage is deliberately not called
-      // on this path (see the E111 doc block above).
+      // No real spend happened — a rejected submission must NOT spend
+      // tokens, so spendTokens is deliberately not called on this path
+      // (see the E112 doc block above).
       var rejectCode = selfPhoto ? 'E106' : 'E105';
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
-    await entitlements.recordGenerationUsage(event, email);
+    await entitlements.spendTokens(event, email, 100);
     return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };

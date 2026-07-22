@@ -9,8 +9,8 @@
 //     is never required and the real call functions are never invoked
 //     (spied via global.fetch — a mock-mode request that reached fal
 //     would show up as a fetch call), that every guardrail (validation,
-//     rate limit, entitlement, spend guard) still runs unchanged, and that
-//     default behavior (the flag unset) is completely untouched.
+//     rate limit, token balance, spend guard) still runs unchanged, and
+//     that default behavior (the flag unset) is completely untouched.
 //   - GENERATION_TEST_DURATION="4s"|"6s"|"8s": still makes a real fal.ai
 //     call (fetch is stubbed here — this suite never spends real money or
 //     needs real credentials) but at the requested duration instead of
@@ -24,6 +24,7 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
+var entitlements = require('../netlify/functions/lib/entitlements');
 var handler = require('../netlify/functions/generate-video').handler;
 
 var realFetch = global.fetch;
@@ -34,11 +35,17 @@ function nextIp() {
   return '10.1.0.' + ipCounter;
 }
 
+// This suite is about mock-mode/duration behavior, not the token gate — so
+// every event defaults to a well-funded email (huge balance, refreshed in
+// beforeEach) unless a test explicitly overrides `email` to exercise E112
+// itself (see the one test below that does).
+var DEFAULT_EMAIL = 'mockduration@example.com';
+
 function genEvent(overrides) {
   return fakeEvent({
     method: 'POST',
     ip: (overrides && overrides.ip) || nextIp(),
-    body: Object.assign({ caption: 'a dream about flying', style: 'Cartoon' }, overrides && overrides.body)
+    body: Object.assign({ caption: 'a dream about flying', style: 'Cartoon', email: DEFAULT_EMAIL }, overrides && overrides.body)
   });
 }
 
@@ -52,16 +59,17 @@ function installFetchSpy() {
   return calls;
 }
 
-test.beforeEach(function () {
+test.beforeEach(async function () {
   mockBlobs.reset();
   global.fetch = realFetch;
   delete process.env.GENERATION_MOCK_MODE;
   delete process.env.GENERATION_TEST_DURATION;
   delete process.env.FAL_KEY;
-  delete process.env.PAYWALL_ENABLED;
-  delete process.env.OWNER_EMAIL;
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
+  // mockBlobs.reset() just wiped this too — reseed so DEFAULT_EMAIL always
+  // has plenty of tokens for whichever test runs next.
+  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
 });
 
 test.after(function () {
@@ -145,12 +153,12 @@ test('mock mode: spend guard (E110) still applies — a pre-tripped daily cap bl
   assert.match(JSON.parse(res.body).error, /^E110: daily_spend_cap_exceeded/);
 });
 
-test('mock mode: paywall entitlement gate (E108) still applies to a non-entitled email', async function () {
+test('mock mode: the token gate (E112) still applies to an email with insufficient balance', async function () {
   process.env.GENERATION_MOCK_MODE = 'true';
-  process.env.PAYWALL_ENABLED = 'true';
-  var res = await handler(genEvent({ body: { email: 'nobody@example.com' } }));
+  await entitlements.setEntitlement({}, 'broke@example.com', { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  var res = await handler(genEvent({ body: { email: 'broke@example.com' } }));
   assert.equal(res.statusCode, 402);
-  assert.match(JSON.parse(res.body).error, /^E108: payment_required/);
+  assert.match(JSON.parse(res.body).error, /^E112: insufficient_tokens/);
 });
 
 // ----- Default (unset) behavior is completely unchanged -----

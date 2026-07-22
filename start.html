@@ -244,32 +244,12 @@
   .fn-proof-strip .avatars i:first-child{ margin-left:0;}
   .fn-proof-strip span{ font-size:11.5px; font-weight:700; color:#6E6480;}
 
-  .fn-price-card{ border:1.5px solid rgba(58,51,80,0.14); border-radius:19px; padding:16px; margin-bottom:11px; position:relative; background:#fff; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:box-shadow .15s ease, border-color .15s ease;}
-  .fn-price-card.best{ border-color:var(--fn-accent-solid);}
-  .fn-price-card .tag{ position:absolute; top:-10px; right:13px; background:var(--fn-accent-grad); color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
-  .fn-price-card .row{ display:flex; justify-content:space-between; align-items:baseline;}
-  .fn-price-card .plan{ font-weight:800; font-size:14.5px; color:#2C2846;}
-  .fn-price-card .amt{ font-weight:800; font-size:17px; color:#2C2846;}
-  .fn-price-card .sub{ font-size:12px; color:#6E6480; margin-top:3px;}
-  /* Selected-plan indicator — a light card on a light-themed screen, so
-     this deliberately does NOT reuse .opt-chip.selected's dark-theme
-     white-fill/black-text pattern. Instead: an accent-colored ring
-     (box-shadow, not just border-color, so it reads distinctly from
-     .best's plain accent border above) plus a small checkmark badge. */
-  .fn-price-card.selected{ border-color:var(--fn-accent-solid); box-shadow:0 0 0 2.5px var(--fn-accent-solid), 0 14px 28px -16px rgba(124,130,196,.6);}
-  .fn-price-card .plan-check{ position:absolute; top:-9px; left:13px; width:21px; height:21px; border-radius:50%; background:var(--fn-accent-grad); color:#fff; display:flex; align-items:center; justify-content:center; opacity:0; transform:scale(.5); transition:opacity .15s ease, transform .15s ease;}
-  .fn-price-card .plan-check .icon, .fn-price-card .plan-check svg{ width:12px; height:12px;}
-  .fn-price-card.selected .plan-check{ opacity:1; transform:scale(1);}
   .fn-price-note{ font-size:12px; color:#6E6480; text-align:center; margin:2px 0 0;}
 
   .fn-value-card{ background:#fff; border-radius:16px; padding:13px 15px 9px; margin-bottom:14px; border:1px solid rgba(58,51,80,0.1);}
   .fn-value-item{ display:flex; align-items:flex-start; gap:9px; font-size:13px; font-weight:600; color:#3A3350; padding-bottom:9px;}
   .fn-value-item .icon{ width:14px; height:14px; flex:none; margin-top:2px; color:var(--fn-accent-solid);}
   .fn-value-foot{ font-size:11.5px; color:var(--phase-soft, var(--fn-ink-soft)); margin-bottom:12px; line-height:1.6;}
-  .fn-value-foot .lock-line{ display:flex; align-items:center; gap:6px; margin-top:2px;}
-  .fn-value-foot .lock-line .icon{ width:11px; height:11px; flex:none;}
-  .fn-pricing-close{ position:absolute; top:2px; right:0; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:10;}
-  .fn-pricing-close .icon, .fn-pricing-close svg{ width:15px; height:15px;}
 
   .fn-check-badge{ width:72px; height:72px; border-radius:50%; background:rgba(255,255,255,.12); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; font-size:30px; margin:0 auto 18px; color:#fff;}
 
@@ -827,8 +807,19 @@
   }
 
   // ===================================================================
-  // Screen 14 — Pricing / paywall
+  // Screen 14 — Token intro (formerly Pricing / paywall)
   // ===================================================================
+  // DreamTube's launch monetization model is consumption-based tokens, not
+  // subscriptions — see netlify/functions/lib/entitlements.js's big doc
+  // block for the full model. There is no plan to choose here anymore (no
+  // Yearly/Monthly cards, no MOTIVATION_PLAN recommendation, no
+  // "Continue to payment") — every visitor gets the same free starting
+  // balance (200 tokens on signup, +100 every 24h automatically, see
+  // getTokenStatus), so this screen is now a plain, honest acknowledgment/
+  // continue step, not a paywall to get past. shop.html (linked from
+  // profile.html once signed in) is where token packs will eventually be
+  // purchased — "Coming soon" until a payment processor is chosen (see
+  // AGENT_POLICY.md's escalation policy).
   var MOTIVATION_HEADLINES = {
     'Capture dreams before they fade': 'Never lose a dream again.',
     'Turn them into videos': 'See your dreams, not just remember them.',
@@ -837,47 +828,11 @@
     'Watch dreams of other people': "Yours — and everyone else's — waiting to be seen.",
     'Share with friends': 'Dreams worth sharing.'
   };
-  // Which plan card the "Recommended for you" tag should attach to, based on
-  // the visitor's primary motivation from the earlier quiz step. No match
-  // (or no motivation data at all) falls back to Yearly with today's
-  // unchanged "Best value" copy — zero regression for the no-data case.
-  var MOTIVATION_PLAN = {
-    'Capture dreams before they fade': 'Yearly',
-    'Turn them into videos': 'Yearly',
-    'Process a recurring dream': 'Yearly',
-    'Keep them forever': 'Yearly',
-    'Watch dreams of other people': 'Monthly',
-    'Share with friends': 'Monthly'
-  };
-  // Which plan is currently selected on the pricing cards — module-level
-  // (not local to renderScreen14) so a selection survives a re-render of
-  // this same screen (e.g. the visitor goes back then forward again).
-  // Left null until the first render, at which point it defaults to
-  // whichever plan MOTIVATION_PLAN/recommendedPlan already recommends, so
-  // there's always a real selection (never an implicit/undefined one)
-  // even before the visitor taps a card.
-  var selectedPlan = null;
   function renderScreen14(el){
     var primaryMotivation = quiz.motivations[0] || null;
     var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
-    var matchedPlan = primaryMotivation ? MOTIVATION_PLAN[primaryMotivation] : null;
-    var recommendedPlan = matchedPlan || 'Yearly';
-    if(selectedPlan !== 'Yearly' && selectedPlan !== 'Monthly') selectedPlan = recommendedPlan;
-
-    var yearlyTag = '';
-    var yearlySub = 'billed as $59.99/year';
-    var monthlyTag = '';
-    if(recommendedPlan === 'Monthly'){
-      monthlyTag = '<span class="tag">Recommended for you</span>';
-      yearlySub = 'billed as $59.99/year &middot; best value';
-    } else {
-      yearlyTag = '<span class="tag">' + (matchedPlan ? 'Recommended for you' : 'Best value') + '</span>';
-    }
-
-    function planCheckHTML(){ return '<span class="plan-check"><span class="icon">' + Icons.check + '</span></span>'; }
 
     el.innerHTML =
-      '<button class="fn-pricing-close" id="fn-pricing-close" type="button" aria-label="Close">' + Icons.close + '</button>' +
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
       '<div class="fn-headline" style="font-size:21px;">' + esc(headline) + '</div>' +
       (dreamsThisMonthCount !== null ?
@@ -891,76 +846,28 @@
         '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Personalize with your own style and characters</span></div>' +
         '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Save your dreams and publish them to Explore</span></div>' +
       '</div>' +
-      '<div class="fn-price-card best' + (selectedPlan === 'Yearly' ? ' selected' : '') + '" data-plan="Yearly">' + planCheckHTML() + yearlyTag +
-        '<div class="row"><span class="plan">Yearly</span><span class="amt">$5.00/mo</span></div>' +
-        '<div class="sub">' + yearlySub + '</div>' +
-      '</div>' +
-      '<div class="fn-price-card' + (selectedPlan === 'Monthly' ? ' selected' : '') + '" data-plan="Monthly">' + planCheckHTML() + monthlyTag +
-        '<div class="row"><span class="plan">Monthly</span><span class="amt">$9.99/mo</span></div>' +
-        '<div class="sub">billed monthly, cancel anytime</div>' +
-      '</div>' +
-      '<div class="fn-price-note">Both plans include 10 dream generations a month — top up anytime if you need more.</div>' +
+      '<div class="fn-price-note" style="text-align:left; font-size:14px; font-weight:700; color:var(--phase-ink, var(--fn-ink));">Start with 200 free tokens — plus 100 more every day.</div>' +
       '<div class="fn-value-foot">' +
-        '<div>Cancel anytime — no long-term commitment.</div>' +
-        '<div class="lock-line"><span class="icon">' + Icons.lock + '</span><span>Secure checkout. Your payment details are never stored on our servers.</span></div>' +
+        '<div>No card needed. Each dream video costs 100 tokens. Token shop coming soon.</div>' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue to payment</button>';
+      '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue</button>';
 
-    // Paywall-reached moment — fires every time this screen renders,
-    // including a return visit via the back button, same as this file's
-    // existing track('funnel_step_viewed', ...) in render() below (no
-    // dedup guard there either). Shared event_id pairs this with the
-    // Pixel's own InitiateCheckout call — see js/analytics-config.js's
-    // fireMetaConversion.
-    fireMetaConversion('InitiateCheckout', {});
-
-    function selectPlan(plan){
-      if(plan !== 'Yearly' && plan !== 'Monthly') return;
-      if(selectedPlan === plan) return;
-      selectedPlan = plan;
-      Array.prototype.forEach.call(el.querySelectorAll('.fn-price-card'), function(cardEl){
-        var isSel = cardEl.dataset.plan === plan;
-        cardEl.classList.toggle('selected', isSel);
-        cardEl.setAttribute('aria-pressed', isSel ? 'true' : 'false');
-      });
-      track('funnel_plan_selected', { step: 14, plan: plan });
-    }
-    Array.prototype.forEach.call(el.querySelectorAll('.fn-price-card'), function(cardEl){
-      cardEl.setAttribute('role', 'button');
-      cardEl.setAttribute('tabindex', '0');
-      cardEl.setAttribute('aria-pressed', cardEl.dataset.plan === selectedPlan ? 'true' : 'false');
-      cardEl.addEventListener('click', function(){ selectPlan(cardEl.dataset.plan); });
-      cardEl.addEventListener('keydown', function(e){
-        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectPlan(cardEl.dataset.plan); }
-      });
-    });
-
-    document.getElementById('fn-pricing-close').addEventListener('click', proceedPastPricing);
     document.getElementById('fn-s14-continue').addEventListener('click', proceedPastPricing);
   }
 
-  // ============================================================================
-  // TEMPORARY PAYWALL BYPASS — READ BEFORE TOUCHING
-  // ----------------------------------------------------------------------------
-  // No payment provider has been chosen yet (still under discussion — see
-  // payment-providers-israel.md / rapyd-vs-payoneer.md in the research folder;
-  // that's a human/vendor decision, not something a build pass makes). Both the
-  // X (dismiss) button and "Continue to payment" call this SAME function, which
-  // just advances to the confirmation screen with no charge — mirroring
-  // generate-video.js's own PAYWALL_ENABLED=false default. This is NOT a
-  // finished checkout integration. Replace this function's body with a real
-  // netlify/functions/create-checkout-session.js call the moment a provider is
-  // picked. Do not mistake this for done, and do not build the real checkout
-  // call here without that human decision having happened first.
-  // ============================================================================
+  // This screen used to be a real (if bypassed) paywall — see this file's
+  // git history for the old proceedPastPricing() doc comment. There is
+  // nothing left to bypass now: every token a visitor can spend today is
+  // free-earned (see the doc block above renderScreen14), so this is just
+  // the screen's "acknowledge and continue" action, kept as its own named
+  // function (rather than inlined into the click listener) purely so the
+  // tracking call below has one obvious home.
   function proceedPastPricing(){
-    // Records the plan actually selected on the cards above (defaulted to
-    // recommendedPlan if the visitor never tapped one) rather than an
-    // implicit/undefined choice — this is the one place that value flows
-    // out of screen 14, and the checkout call this gets replaced with
-    // once a payment provider is chosen will need it too.
-    track('funnel_pricing_bypassed', { step: 14, plan: selectedPlan });
+    // Renamed from the old funnel_pricing_bypassed (there's no plan to
+    // record anymore, and "bypassed" implied skipping a real paywall,
+    // which this screen no longer is).
+    track('funnel_token_intro_continued', { step: 14 });
     next();
   }
 
