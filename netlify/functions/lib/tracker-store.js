@@ -260,6 +260,14 @@ var SEED_ITEMS = [
     done: false,
     title: "Give tracker.html real add/delete endpoints instead of source-edited seed data",
     detail: "Right now every new tracker item (including this one) is added by editing SEED_ITEMS in the repo and pushing to main — which only has any effect on the LIVE page before its very first real read; tracker-store.js's lazy-seed only ever fires once, so once the live Blobs store has actually been seeded, further edits to SEED_ITEMS in source do nothing at all. Standing instruction now is to keep adding flagged items here and deleting resolved ones going forward, so this needs real owner-gated add-item/delete-item endpoints (matching update-tracker-item.js's existing owner-check pattern) rather than continuing to rely on source edits, which will silently stop working the moment the page is first visited live."
+  },
+  {
+    id: 'accounts-dont-sync-across-devices',
+    category: 'task',
+    priority: 'high',
+    done: false,
+    title: 'Accounts (including "forgot password") only work on the device/browser where they were created',
+    detail: "js/store.js's whole account model is localStorage-only, per browser — there is no real account database. Password reset (request-password-reset.js/verify-password-reset.js) is built and does send a real email via Resend, but login.html's own client-side guard (findAccountByEmail) only even attempts it if a matching account already exists in the CURRENT browser's storage — if you're on a different device/browser than the one an account was created on, forgot-password silently does nothing (same generic success message either way, by design, so it can't be used to probe which emails have accounts). Hit this directly trying to log into the owner account on a new device. Immediate workaround: just sign up fresh (not log in) with the owner email on whichever browser needs access — no conflict, since storage is per-browser. Real fix (a proper server-side account system) is a bigger architecture decision, not something to do reflexively."
   }
 ];
 
