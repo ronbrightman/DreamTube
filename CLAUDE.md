@@ -48,6 +48,13 @@ scheduled or automatically triggered.
   built/shipped), delete it from there. Standing rule, not a one-off.
 - No dead code or broken links left behind — clean up fully, don't
   just add new stuff on top.
+- Never give exact dashboard/UI navigation instructions (Netlify, other
+  vendor consoles) from memory — terminology and layout drift over time
+  (e.g. Netlify's "Sites"→"Projects", "Site settings"→"Project
+  configuration"), and a confidently-wrong path wastes his time worse
+  than a hedge would. Verify first — a quick web search, or read the
+  labels off a screenshot he's already shared — before stating an exact
+  click-path as fact.
 - Keep unrelated projects/contexts cleanly separated.
 - Prefer real, working examples over descriptions when possible.
 - When Ron uses the word "always" in a message, treat it as a standing
