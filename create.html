@@ -564,10 +564,38 @@
   // "me" in the caption has no guaranteed link to the same self-character
   // across different dreams, defeating the point of saving one.
   var FIRST_PERSON_RE = /\b(i|me)\b/i;
+
+  /** Escapes a string for safe interpolation into a RegExp's source. */
+  function escapeRegExp(str){
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Builds a whole-word/whole-phrase, case-insensitive matcher for the Me
+   * character's own name — the full name plus each individual space-
+   * separated part of it, so "Sarah Chen" matches on "Sarah", "Chen", or
+   * "Sarah Chen" appearing anywhere in the text (typing just a first or
+   * last name still auto-attaches). Simple whole-word matching, not a
+   * bulletproof name detector — this is a low-stakes auto-attach
+   * convenience, not a security boundary, so a name that's also a common
+   * English word can still cause a match; that's an accepted tradeoff, the
+   * same one "I"/"me" above already makes by matching such common words.
+   */
+  function buildNameRegex(name){
+    var trimmed = (name || '').trim();
+    if(!trimmed) return null;
+    var parts = trimmed.split(/\s+/).filter(Boolean);
+    var alternatives = parts.length > 1 ? [trimmed].concat(parts) : parts;
+    if(!alternatives.length) return null;
+    return new RegExp('\\b(' + alternatives.map(escapeRegExp).join('|') + ')\\b', 'i');
+  }
+
   function autoSelectSelfIfMentioned(captionText){
-    if(!FIRST_PERSON_RE.test(captionText)) return;
     var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
     if(!self) return;
+    var nameRe = buildNameRegex(self.name);
+    var mentioned = FIRST_PERSON_RE.test(captionText) || (nameRe && nameRe.test(captionText));
+    if(!mentioned) return;
     var selectedIds = DreamStore.getDraft().characterIds || [];
     if(selectedIds.indexOf(self.id) !== -1) return;
     DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });

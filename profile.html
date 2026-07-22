@@ -73,8 +73,11 @@
   </div>
   <div class="scroll-area">
     <div class="profile-head">
-      <div class="profile-avatar-ring"><div class="profile-avatar">🌙</div></div>
-      <div class="profile-name" id="profile-handle">@you</div>
+      <div class="profile-avatar-ring" id="profile-avatar-edit" title="Edit your profile">
+        <div class="profile-avatar" id="profile-avatar">🌙</div>
+        <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
+      </div>
+      <div class="profile-name" id="profile-handle" title="Edit your profile">@you</div>
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
       <a class="token-chip" id="profile-tokens" href="shop.html">
@@ -152,6 +155,44 @@
     </div>
   </div>
 
+  <!-- Edit-profile sheet — this is the SAME underlying isSelf character
+       create.html's Advanced > Characters "Add/Edit yourself" sheet reads
+       and writes (both call DreamStore.saveCharacter({isSelf:true, ...})
+       against the same state.charactersByUser entry), just a second small
+       UI onto it rather than a parallel identity store. The describe/photo
+       toggle below mirrors create.html's #char-mode-row/#char-photo-area
+       markup+behavior (including the same resizeImageFile downscale step)
+       since this codebase has no shared-component system to factor it into
+       instead — see js/store.js's saveCharacter doc comment for why an
+       isSelf character needs a description OR a photo (at least one). -->
+  <div class="sheet-overlay" id="sheet-identity-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Edit profile</div>
+      <input class="field" id="identity-name-input" placeholder="Your name" dir="auto">
+
+      <div class="char-mode-row" id="identity-mode-row">
+        <div class="char-mode-btn" data-identity-mode="describe">Describe</div>
+        <div class="char-mode-btn" data-identity-mode="photo">Upload photo</div>
+      </div>
+
+      <textarea class="field" id="identity-desc-input" placeholder="Describe how you look..." dir="auto" style="min-height:90px;"></textarea>
+
+      <div class="char-photo-area" id="identity-photo-area" style="display:none;">
+        <div class="char-photo-preview" id="identity-photo-preview"><div class="char-photo-empty">No photo yet</div></div>
+        <div class="char-photo-hint">A photo of a child or teen can't be used for video generation — use Describe instead.</div>
+        <input type="file" accept="image/*" id="identity-photo-input" style="display:none;">
+        <button type="button" class="btn btn-secondary btn-block" id="identity-photo-pick-btn">Choose photo</button>
+        <span class="char-photo-remove" id="identity-photo-remove" style="display:none;">Remove photo</span>
+      </div>
+
+      <div class="err-text" id="identity-error"></div>
+      <button class="btn btn-primary btn-block" id="identity-save-btn">Save</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="identity-cancel" style="cursor:pointer;">Close</span>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -161,6 +202,7 @@
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
+  document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
   var navIcons = document.querySelectorAll('.nav-icon');
   navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
@@ -222,7 +264,158 @@
   }
 
   var user = DreamStore.getCurrentUser();
-  if(user) document.getElementById('profile-handle').textContent = user.handle;
+
+  // ===== Identity (the "Me" character) =====
+  // Profile's name+photo are NOT a separate identity field — they ARE
+  // whichever character DreamStore.getCharacters() marks isSelf, the same
+  // one create.html's Advanced > Characters "Add/Edit yourself" sheet
+  // reads and writes. Editing here calls DreamStore.saveCharacter({isSelf:
+  // true, ...}) same as create.html does, so a change made from either
+  // page is immediately visible from the other next time it renders —
+  // there is no second storage path to keep in sync.
+  function getMeCharacter(){
+    return DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0] || null;
+  }
+  function renderIdentity(){
+    var me = getMeCharacter();
+    var nameEl = document.getElementById('profile-handle');
+    var avatarEl = document.getElementById('profile-avatar');
+    if(me && me.name){
+      nameEl.textContent = me.name;
+    } else if(user){
+      nameEl.textContent = user.handle;
+    }
+    if(me && me.photoDataUrl){
+      avatarEl.innerHTML = '<img src="'+me.photoDataUrl+'" alt="">';
+    } else {
+      avatarEl.textContent = '🌙';
+    }
+  }
+  renderIdentity();
+
+  // ===== Edit-profile sheet =====
+  // Mirrors create.html's #char-mode-row/#char-photo-area describe/photo
+  // toggle for isSelf characters (including the same downscale-before-store
+  // step in resizeImageFile) since there's no shared-component system in
+  // this static multi-page codebase to factor it into instead — see the
+  // markup comment above the sheet for the full rationale.
+  var identityOverlay = document.getElementById('sheet-identity-overlay');
+  var identitySubMode = 'describe';
+  var identityPendingPhotoDataUrl = null;
+
+  /**
+   * Downscales/recompresses a picked photo to a JPEG data URL before it
+   * ever touches localStorage — same shape as create.html's own
+   * resizeImageFile (duplicated here rather than shared, per this
+   * codebase's no-bundler/no-ES-modules convention — see CLAUDE.md).
+   */
+  function resizeImageFile(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error('read_failed')); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error('decode_failed')); };
+        img.onload = function(){
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderIdentityPhotoPreview(){
+    var preview = document.getElementById('identity-photo-preview');
+    var removeLink = document.getElementById('identity-photo-remove');
+    if(identityPendingPhotoDataUrl){
+      preview.innerHTML = '<img src="'+identityPendingPhotoDataUrl+'" alt="">';
+      removeLink.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
+      removeLink.style.display = 'none';
+    }
+  }
+  function setIdentitySubMode(next){
+    identitySubMode = next;
+    Array.prototype.forEach.call(document.querySelectorAll('#identity-mode-row .char-mode-btn'), function(b){
+      b.classList.toggle('active', b.dataset.identityMode === next);
+    });
+    document.getElementById('identity-desc-input').style.display = next === 'describe' ? 'block' : 'none';
+    document.getElementById('identity-photo-area').style.display = next === 'photo' ? 'block' : 'none';
+    renderIdentityPhotoPreview();
+  }
+  document.getElementById('identity-mode-row').addEventListener('click', function(e){
+    var btn = e.target.closest('.char-mode-btn');
+    if(btn) setIdentitySubMode(btn.dataset.identityMode);
+  });
+  document.getElementById('identity-photo-pick-btn').addEventListener('click', function(){
+    document.getElementById('identity-photo-input').click();
+  });
+  document.getElementById('identity-photo-input').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if(!file) return;
+    document.getElementById('identity-error').textContent = '';
+    resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      identityPendingPhotoDataUrl = dataUrl;
+      renderIdentityPhotoPreview();
+    }).catch(function(){
+      document.getElementById('identity-error').textContent = "Couldn't read that photo — try a different image.";
+    });
+  });
+  document.getElementById('identity-photo-remove').addEventListener('click', function(){
+    identityPendingPhotoDataUrl = null;
+    renderIdentityPhotoPreview();
+  });
+
+  function openIdentitySheet(){
+    var me = getMeCharacter();
+    document.getElementById('identity-name-input').value = me ? (me.name || '') : '';
+    document.getElementById('identity-desc-input').value = me ? (me.description || '') : '';
+    document.getElementById('identity-error').textContent = '';
+    identityPendingPhotoDataUrl = (me && me.photoDataUrl) ? me.photoDataUrl : null;
+    setIdentitySubMode(identityPendingPhotoDataUrl ? 'photo' : 'describe');
+    identityOverlay.classList.add('open');
+  }
+  function closeIdentitySheet(){ identityOverlay.classList.remove('open'); }
+  document.getElementById('profile-avatar-edit').addEventListener('click', openIdentitySheet);
+  document.getElementById('profile-handle').addEventListener('click', openIdentitySheet);
+  document.getElementById('identity-cancel').addEventListener('click', closeIdentitySheet);
+  identityOverlay.addEventListener('click', function(e){
+    if(e.target.id === 'sheet-identity-overlay') closeIdentitySheet();
+  });
+
+  document.getElementById('identity-save-btn').addEventListener('click', function(){
+    var me = getMeCharacter();
+    var usingPhoto = identitySubMode === 'photo';
+    // Profile's edit sheet only exposes name+description/photo, not a
+    // separate default — if neither a description nor a photo end up set
+    // (first-time save, describe mode left blank), saveCharacter's own
+    // isSelf validation ("Add a description or a photo") is surfaced as-is
+    // rather than silently inventing filler text that would otherwise leak
+    // into the video-generation prompt (see generate-video.js's buildPrompt).
+    var result = DreamStore.saveCharacter({
+      id: me ? me.id : null,
+      isSelf: true,
+      name: document.getElementById('identity-name-input').value,
+      description: usingPhoto ? '' : document.getElementById('identity-desc-input').value,
+      photoDataUrl: usingPhoto ? identityPendingPhotoDataUrl : null
+    });
+    if(!result.ok){
+      document.getElementById('identity-error').textContent = result.error;
+      return;
+    }
+    closeIdentitySheet();
+    renderIdentity();
+    showToast('Profile updated');
+  });
 
   // Ideas #4 (recurring-theme insight) & #5 (milestone counter) — both
   // read data already saved on the signed-in user's own dreams (no new
