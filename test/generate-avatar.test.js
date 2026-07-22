@@ -1,9 +1,11 @@
 // test/generate-avatar.test.js
 //
 // Covers netlify/functions/generate-avatar.js: every error code from its
-// own header comment (E1-E7), the GENERATION_MOCK_MODE escape hatch, the
+// own header comment (E1-E8), the GENERATION_MOCK_MODE escape hatch, the
 // per-IP rate limit's own 'avatar-ip' scope (independent of generate-
-// video.js's 'ip' scope), and a successful call. fal.ai is stubbed via a
+// video.js's 'ip' scope), the global daily cap's own 'avatar-global' scope
+// (E8, defense-in-depth against many-IP abuse), and a successful call.
+// fal.ai is stubbed via a
 // fake global.fetch (same approach interpret-dream.test.js/generate-video-
 // mock.test.js use) — these tests exercise this function's own logic
 // (validation, rate limiting, response-shape handling, content-safety
@@ -84,6 +86,7 @@ test.beforeEach(function () {
   process.env.FAL_KEY = 'test-fal-key';
   delete process.env.GENERATION_MOCK_MODE;
   delete process.env.MAX_AVATAR_GENERATIONS_PER_IP_PER_DAY;
+  delete process.env.MAX_AVATAR_GENERATIONS_PER_DAY_GLOBAL;
 });
 
 test.after(function () {
@@ -174,6 +177,34 @@ test('generate-video.js\'s own "ip" scope bucket does not affect this endpoint\'
   stubFullSuccess();
   var res = await handler(genEvent({ ip: ip }));
   assert.equal(res.statusCode, 200);
+});
+
+// ----- E8 (global daily cap, defense-in-depth across every IP) -----
+
+test('exceeding the global daily cap is rejected E8, even from a fresh IP that has never been seen before', async function () {
+  process.env.MAX_AVATAR_GENERATIONS_PER_DAY_GLOBAL = '1';
+  stubFullSuccess();
+  var first = await handler(genEvent({ ip: nextIp() }));
+  assert.equal(first.statusCode, 200);
+  stubFullSuccess();
+  var second = await handler(genEvent({ ip: nextIp() })); // a different IP -- the per-IP cap alone would let this through
+  assert.equal(second.statusCode, 429);
+  assert.match(JSON.parse(second.body).error, /^E8: rate_limited_global/);
+});
+
+test('a pre-tripped "avatar-global" counter blocks the request without touching the per-IP "avatar-ip" scope key', async function () {
+  mockBlobs.seed('dreamtube-rate-limits', 'avatar-global:' + todayUtc() + ':global', 999999);
+  var res = await handler(genEvent({ ip: nextIp() }));
+  assert.equal(res.statusCode, 429);
+  assert.match(JSON.parse(res.body).error, /^E8: rate_limited_global/);
+});
+
+test('mock mode: the global daily cap (E8) still applies', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  mockBlobs.seed('dreamtube-rate-limits', 'avatar-global:' + todayUtc() + ':global', 999999);
+  var res = await handler(genEvent({ ip: nextIp() }));
+  assert.equal(res.statusCode, 429);
+  assert.match(JSON.parse(res.body).error, /^E8: rate_limited_global/);
 });
 
 // ----- E6 (fal rejected or flagged the prompt) -----

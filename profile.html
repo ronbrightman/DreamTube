@@ -375,7 +375,17 @@
     renderIdentityPhotoPreview();
   });
 
+  // Bumped on every open AND every close (Save's own success path included,
+  // via closeIdentitySheet) so a pending generateAvatarFromDescription call
+  // started by one sheet "instance" can tell, once it resolves, whether
+  // it's still talking about the instance that's still on screen. Cancel /
+  // the overlay-backdrop click both route through closeIdentitySheet, so
+  // this is the single place that invalidates a pending call -- see the
+  // save handler's .then() below, which is the only reader of this token.
+  var identitySheetToken = 0;
+
   function openIdentitySheet(){
+    identitySheetToken++;
     var me = getMeCharacter();
     document.getElementById('identity-name-input').value = me ? (me.name || '') : '';
     document.getElementById('identity-desc-input').value = me ? (me.description || '') : '';
@@ -384,7 +394,10 @@
     setIdentitySubMode(identityPendingPhotoDataUrl ? 'photo' : 'describe');
     identityOverlay.classList.add('open');
   }
-  function closeIdentitySheet(){ identityOverlay.classList.remove('open'); }
+  function closeIdentitySheet(){
+    identitySheetToken++;
+    identityOverlay.classList.remove('open');
+  }
   document.getElementById('profile-avatar-edit').addEventListener('click', openIdentitySheet);
   document.getElementById('profile-handle').addEventListener('click', openIdentitySheet);
   document.getElementById('identity-cancel').addEventListener('click', closeIdentitySheet);
@@ -471,9 +484,16 @@
     saveBtn.disabled = true;
     var originalLabel = saveBtn.textContent;
     saveBtn.textContent = 'Generating avatar…';
+    // Captured now, checked once the (real, multi-second) call resolves --
+    // if Cancel or a backdrop click closed this sheet instance in the
+    // meantime (or the sheet was reopened for a different edit), the token
+    // has moved on and this result is stale: discard it silently, no save,
+    // no toast. See identitySheetToken's own comment above.
+    var tokenAtSave = identitySheetToken;
     generateAvatarFromDescription(descText).then(function(result){
       saveBtn.disabled = false;
       saveBtn.textContent = originalLabel;
+      if(tokenAtSave !== identitySheetToken) return;
       if(!result.ok){
         errorEl.textContent = result.error;
         return;

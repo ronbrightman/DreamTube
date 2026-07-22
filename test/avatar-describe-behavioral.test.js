@@ -271,6 +271,70 @@ test('a failed generation shows a clear error, re-enables Save, and never loses 
   }
 });
 
+test('profile.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved, no toast, once it resolves', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await seedUser(page, null);
+    await mockGenerateAvatar(page);
+    await safeGoto(page, baseUrl + '/profile.html');
+
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    await page.fill('#identity-desc-input', 'a description the user backs out on');
+    await page.click('#identity-save-btn');
+    await page.waitForSelector('#identity-save-btn:has-text("Generating avatar")');
+
+    // Back out while the (mocked) network call is still in flight.
+    await page.click('#identity-cancel');
+    await page.waitForSelector('#sheet-identity-overlay:not(.open)');
+
+    // Give the mocked call (300ms delay) time to resolve after the sheet
+    // was already dismissed.
+    await new Promise(function (r) { setTimeout(r, 500); });
+
+    var state = await readState(page);
+    assert.equal((state.charactersByUser.tester || []).length, 0, 'no character should be created after Cancel, even once the pending generation resolves');
+    var toastClass = await page.locator('#toast').getAttribute('class');
+    assert.equal(/\bshow\b/.test(toastClass), false, '"Profile updated" toast must never appear for a cancelled save');
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html: clicking Cancel while a generate-avatar.js call is still pending discards the result -- no character saved once it resolves', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await seedUser(page, null);
+    await mockGenerateAvatar(page);
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-write');
+    await page.click('#adv-toggle');
+
+    await page.click('#char-add-self');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.fill('#char-desc-input', 'a description the user backs out on');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#char-save-btn:has-text("Generating avatar")');
+
+    // Back out while the (mocked) network call is still in flight.
+    await page.click('#char-cancel');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    // Give the mocked call (300ms delay) time to resolve after the sheet
+    // was already dismissed.
+    await new Promise(function (r) { setTimeout(r, 500); });
+
+    var state = await readState(page);
+    assert.equal((state.charactersByUser.tester || []).length, 0, 'no character should be created after Cancel, even once the pending generation resolves');
+  } finally {
+    await page.close();
+  }
+});
+
 test('describe mode left blank on a brand-new Me character skips the generation call entirely and surfaces saveCharacter\'s own validation', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

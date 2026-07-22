@@ -57,6 +57,19 @@
 // 'avatar-ip' scope so its bucket never shares (or fights over) counts with
 // generate-video.js's own 'ip' scope.
 //
+// Plus a second, simple defense-in-depth layer: MAX_AVATAR_GENERATIONS_
+// PER_DAY_GLOBAL, a raw daily request-count cap shared across every IP
+// (scope 'avatar-global', single identifier 'global') via the exact same
+// checkAndIncrement helper. The per-IP cap alone has no aggregate ceiling
+// at all if abuse comes from many different IPs (e.g. a botnet, or a
+// rotating-proxy script) — this closes that gap. Deliberately NOT
+// cost-estimation-based like generate-video.js's spend-guard.js (no
+// running-dollar-total tracking, no reservation/release lifecycle) — at
+// flux/schnell's ~$0.003/image (see the model-choice note below), a plain
+// request-count ceiling is proportionate to how cheap a single call is;
+// building real cost-tracking infrastructure for this endpoint would be
+// over-engineering relative to the actual dollar exposure.
+//
 // ---- Model choice ----
 //
 // fal-ai/flux/schnell, called via fal's *synchronous direct* endpoint
@@ -75,10 +88,13 @@
 //     megapixel. A 512x512 image (0.26MP, rounds up to 1MP) costs $0.003 —
 //     fal's pricing page lists no image model cheaper than this (the next
 //     cheapest listed, Seedream V4, is a flat $0.03/image, 10x more).
-//   - image_size accepts a literal {width,height} object (default 512x512)
-//     as well as named presets — sent explicitly as {512,512} below to
-//     lock in the cheapest 1MP-rounded tier rather than relying on the
-//     default staying what it is today.
+//   - image_size accepts a literal {width,height} object as well as named
+//     presets — the field's actual documented default is the preset
+//     "landscape_4_3", not a 512x512 object (verified against fal's live
+//     OpenAPI schema, not guessed). Doesn't matter either way since this
+//     handler always sends an explicit {width:512,height:512} below rather
+//     than relying on whatever the default happens to be, to lock in the
+//     cheapest 1MP-rounded billing tier.
 //   - Response shape: { images: [{url, width, height, content_type}],
 //     has_nsfw_concepts: [bool], seed, prompt, timings } — images are
 //     returned as a fal-hosted URL, not inline base64, so this handler
@@ -252,6 +268,10 @@ async function callFalAvatar(description, falKey) {
 //   E6 fal rejected the prompt, or flagged it as unsafe (content policy, validation, or has_nsfw_concepts)
 //   E7 couldn't reach fal at all, or the response couldn't be turned into a photoDataUrl
 //      (network failure, no image in the response, or the image download itself failed)
+//   E8 rate_limited_global       — MAX_AVATAR_GENERATIONS_PER_DAY_GLOBAL exceeded for today, across every
+//                                   IP (own 'avatar-global' rate-limit.js scope, single 'global' identifier
+//                                   — see the doc block above: defense-in-depth against many-IP abuse, not
+//                                   a replacement for the per-IP cap)
 //
 // GENERATION_MOCK_MODE (same flag generate-video.js/video-status.js use —
 // see docs/TESTING.md — deliberately shared rather than a second avatar-
@@ -301,6 +321,18 @@ exports.handler = async function (event) {
   var ipLimit = await rateLimit.checkAndIncrement(event, 'avatar-ip', ip, maxPerDay);
   if (!ipLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E5: rate_limited: too many avatar generations from this network today, try again tomorrow' }) };
+  }
+
+  // Defense-in-depth: a raw aggregate ceiling across every IP, independent
+  // of the per-IP cap above (see the doc block above for why). Checked
+  // after the per-IP cap so a single hammering IP still gets its own E5
+  // first; this is the backstop for when the abuse is spread across many
+  // different IPs instead.
+  var maxPerDayGlobal = parseInt(process.env.MAX_AVATAR_GENERATIONS_PER_DAY_GLOBAL, 10);
+  if (!maxPerDayGlobal || maxPerDayGlobal <= 0) maxPerDayGlobal = 500;
+  var globalLimit = await rateLimit.checkAndIncrement(event, 'avatar-global', 'global', maxPerDayGlobal);
+  if (!globalLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ error: 'E8: rate_limited_global: too many avatar generations today across all users, try again tomorrow' }) };
   }
 
   if (mockMode) {
