@@ -34,9 +34,12 @@ Each of research, marketing, evaluation, and design also loads a small
 set of frozen (locally-owned, not live-plugin) third-party skills via
 its own `skills:` frontmatter — see the `NOTICE.md` next to each copied
 skill folder under `~/.claude/skills/` for source/license details. `build`
-and `review` do the same at project level, under
-`.claude/skills/superpowers/` and `.claude/skills/skill-security-auditor/`
-respectively.
+and `review` do the same at project level: `build` loads
+`.claude/skills/systematic-debugging/` (one skill frozen out of
+`obra/superpowers`, deliberately not the whole framework — see that
+folder's `NOTICE.md`); a second frozen skill, `.claude/skills/brainstorming/`,
+is available but intentionally not auto-loaded, for explicit invocation
+only. `review` loads `.claude/skills/skill-security-auditor/`.
 
 ## Invoking agents — always name them explicitly
 
