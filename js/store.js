@@ -434,7 +434,14 @@
             // unconditional and always on, and identifies the caller's token
             // balance by this email. No email means no way to look up a
             // balance, so an anonymous/logged-out call here fails E112.
-            email: currentAccountEmail()
+            email: currentAccountEmail(),
+            // Best-effort Cloudflare Turnstile token, resolved client-side by
+            // processing.html before calling generateVideo/regenerateDream
+            // (see js/turnstile-config.js's getTurnstileToken()) — null
+            // until a real TURNSTILE_SITE_KEY is configured there. Only
+            // actually checked server-side (E113) once TURNSTILE_SECRET_KEY
+            // is likewise configured — see generate-video.js's doc block.
+            turnstileToken: opts.turnstileToken || null
           })
         }).then(function (res) {
           return res.json().then(function (data) {
@@ -738,12 +745,13 @@
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
     clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null }; persist(); },
 
-    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace }. */
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken }. */
     generateVideo: function (caption, style, opts) {
       opts = opts || {};
       return startGeneration(caption, style, {
         characterIds: opts.characterIds, cameraView: opts.cameraView,
-        sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace
+        sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
+        turnstileToken: opts.turnstileToken
       });
     },
 
@@ -751,7 +759,8 @@
     regenerateDream: function (id, patch) {
       return startGeneration(patch.caption, patch.style, {
         sourceDreamId: id, characterIds: patch.characterIds,
-        cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace
+        cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace,
+        turnstileToken: patch.turnstileToken
       });
     },
 

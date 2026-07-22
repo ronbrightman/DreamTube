@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>turnstile-config.js test fixture</title>
+</head>
+<body>
+<!--
+  Test-only fixture for test/turnstile-config-behavioral.test.js. Not
+  linked from anywhere in the real app and not part of the site a user can
+  navigate to -- served only because test/helpers/static-server.js happens
+  to serve the whole repo root, the same way it serves every real page.
+
+  Loads js/turnstile-config.js exactly as processing.html does (same
+  <script> tag, same global functions/vars exposed: getTurnstileToken(),
+  TURNSTILE_SITE_KEY, etc.) but without any of processing.html's own
+  auth-guard/generation-flow surface area, so tests can drive
+  getTurnstileToken() directly and deterministically against a faked
+  window.turnstile (installed by the test via context.addInitScript
+  before this script tag ever runs) instead of a real Cloudflare widget.
+-->
+<script src="/js/turnstile-config.js"></script>
+</body>
+</html>
