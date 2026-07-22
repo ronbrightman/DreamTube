@@ -816,3 +816,103 @@ test("an older priority-change request for item A that SUCCEEDS after a newer pr
     await context.close();
   }
 });
+
+// ===== handleAddSubmit gaps (tracker-add-delete + tracker-comments merge) =====
+//
+// Confirmed by direct review of the merged tracker-comments-add-delete-merge
+// branch (signal tm4qv8n): handleAddSubmit's success .then() called
+// items.push(created); render(); with no captureDrafts() first -- the exact
+// same bug class covered above for handleDoneChange/handlePriorityChange/
+// handleCommentSave/handleDelete, just never applied to the add-item path
+// when it was merged in. It also never seeded commentConfirmed/
+// doneConfirmed/priorityConfirmed for the newly-created item's id, unlike
+// the initial get-tracker-items page-load loop.
+
+test("typing an unsaved draft in item A survives successfully adding a new item via the add-item form (handleAddSubmit's success .then() was missing the captureDrafts() call every other render()-triggering handler on this page has)", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await setUpTrackerPage(page);
+
+    var CREATED = { id: 'task-new-1', category: 'task', title: 'Brand new item', detail: 'New detail.', priority: 'medium', done: false, comment: '' };
+    await page.route('**/.netlify/functions/add-tracker-item', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: CREATED }) });
+    });
+
+    await openItem(page, 'task-a');
+    var draft = 'unsaved note about A, never clicked save';
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', draft);
+
+    await page.fill('#tracker-add-title', 'Brand new item');
+    await page.fill('#tracker-add-detail', 'New detail.');
+    await page.click('#tracker-add-submit');
+
+    // Wait for the new item to actually land -- this is the render() call
+    // that used to wipe A's draft with no captureDrafts() before it.
+    await page.waitForSelector('.tracker-item[data-id="task-new-1"]', { timeout: 5000 });
+
+    var aStillOpen = await page.$eval('.tracker-item[data-id="task-a"]', function (el) { return el.open; });
+    assert.equal(aStillOpen, true, "item A's <details> should still be open after the new item's render()");
+    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    assert.equal(aValue, draft, "item A's unsaved draft must survive a successful add-item render(), same as done/priority/delete already do");
+  } finally {
+    await context.close();
+  }
+});
+
+test("changing priority on a brand-new item immediately after adding it, and having that request FAIL, reverts to the item's actual just-created priority ('medium') instead of undefined (handleAddSubmit never seeded priorityConfirmed/doneConfirmed/commentConfirmed for the new id)", async function (t) {
+  // Uses priority rather than done for this assertion: itemHTML's checkbox
+  // ternary (item.done ? ' checked' : '') renders identically for `false`
+  // and `undefined`, so a done-based revert can't actually distinguish
+  // "reverted to the real seeded value" from "reverted to undefined". The
+  // priority buttons don't have that blind spot -- item.priority === p is
+  // false (no button active) for undefined, and true for exactly one button
+  // when correctly seeded, so this is the version of the test that can
+  // actually fail if the seeding is missing.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var CREATED = { id: 'task-new-2', category: 'task', title: 'Another new item', detail: 'Another detail.', priority: 'medium', done: false, comment: '' };
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-new-2') {
+        route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+    await page.route('**/.netlify/functions/add-tracker-item', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: CREATED }) });
+    });
+
+    await page.fill('#tracker-add-title', 'Another new item');
+    await page.fill('#tracker-add-detail', 'Another detail.');
+    await page.click('#tracker-add-submit');
+    await page.waitForSelector('.tracker-item[data-id="task-new-2"]', { timeout: 5000 });
+
+    // Change priority on the just-created item (medium -> high) -- this
+    // request fails (mocked above), triggering handlePriorityChange's
+    // revert to priorityConfirmed[id]. With the seeding bug,
+    // priorityConfirmed['task-new-2'] is undefined at this point instead of
+    // the item's real created value ('medium'), so the revert would leave
+    // no priority button active at all.
+    await page.click('.tracker-item[data-id="task-new-2"] .tracker-pri-btn[data-priority="high"]');
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var mediumActive = await page.$eval('.tracker-item[data-id="task-new-2"] .tracker-pri-btn[data-priority="medium"]', function (el) { return el.classList.contains('active'); });
+    assert.equal(mediumActive, true, "reverting a failed priority-change on a brand-new item must land on its real seeded value ('medium'), not undefined");
+    var highActive = await page.$eval('.tracker-item[data-id="task-new-2"] .tracker-pri-btn[data-priority="high"]', function (el) { return el.classList.contains('active'); });
+    assert.equal(highActive, false, "the rejected optimistic priority must not remain active after the revert");
+  } finally {
+    await context.close();
+  }
+});

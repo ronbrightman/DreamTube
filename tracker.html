@@ -536,6 +536,18 @@
       priority: priorityEl.value
     }).then(function (created) {
       items.push(created);
+      // Seed the *Confirmed maps for this brand-new id, same as the
+      // initial page-load loop below — without this, the first done/
+      // priority/comment edit on this item that happens to fail would
+      // revert to undefined instead of its actual just-created value.
+      commentConfirmed[created.id] = created.comment || '';
+      doneConfirmed[created.id] = created.done;
+      priorityConfirmed[created.id] = created.priority;
+      // captureDrafts() before render(), same as handleDelete/
+      // handleDoneChange/handlePriorityChange/handleCommentSave — without
+      // it, adding a new item would silently wipe in-progress unsaved
+      // comment drafts on every OTHER currently-rendered item.
+      captureDrafts();
       render();
       titleEl.value = '';
       detailEl.value = '';
