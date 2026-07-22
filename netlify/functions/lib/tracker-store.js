@@ -223,7 +223,27 @@ var SEED_ITEMS = [
     priority: 'low',
     done: false,
     title: 'FAQ section in Settings',
-    detail: "A static FAQ section/page in Settings. A first-draft set of questions and answers was suggested in chat when this idea was raised (covering tokens/refunds, privacy, content-policy basics, editing/regenerating, and Explore visibility) — review and edit before publishing."
+    detail: "A static FAQ section/page in Settings. Draft Q&A below — edit before publishing, and confirm the account-deletion answer (flagged) before it goes live.\n\n" +
+      "Q: What is DreamTube?\n" +
+      "A: Type or record a description of a dream, and DreamTube turns it into a short AI-generated video.\n\n" +
+      "Q: How do tokens work?\n" +
+      "A: Every generation — a new dream, an edit, or a regenerate — costs 100 tokens. You start with 200 free, plus 100 more every day automatically. Need more than that? Token packs are coming soon in the Shop.\n\n" +
+      "Q: My generation failed. Do I get my tokens back?\n" +
+      "A: Yes, once per day automatically. If it happens again the same day, contact support below and we'll sort it out manually.\n\n" +
+      "Q: How long does a video take to generate?\n" +
+      "A: Usually under a minute or two — you'll see progress on screen while it renders.\n\n" +
+      "Q: Can I edit a dream after it's made?\n" +
+      "A: Yes — change the text or style and regenerate. Each regenerate costs another 100 tokens, same as a new dream.\n\n" +
+      "Q: What's \"Advanced\"?\n" +
+      "A: Optional extras before you generate: add characters (including yourself, via photo or description), pick a camera angle, and set the time/place of the scene.\n\n" +
+      "Q: Can I use my own photo?\n" +
+      "A: Yes, for yourself specifically. Photos of other people aren't supported yet, for safety reasons.\n\n" +
+      "Q: Is my dream public or private?\n" +
+      "A: Private by default. You choose if and when to publish a dream to Explore, where other users can see it.\n\n" +
+      "Q: Can I delete a dream, or my account?\n" +
+      "A: You can delete any dream you've created any time. [FLAGGED: account-deletion flow doesn't appear to exist yet — confirm/build before publishing this answer.]\n\n" +
+      "Q: Something's wrong / I have another question\n" +
+      "A: Use the contact form below — we read every message."
   }
 ];
 
