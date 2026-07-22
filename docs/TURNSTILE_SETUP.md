@@ -93,9 +93,19 @@ controls. This feature deliberately targets Managed or Invisible (not the
 always-visible checkbox widget), since Cloudflare's own Managed mode is
 frequently non-interactive for normal traffic — chosen specifically to
 avoid adding friction to the generation flow for legitimate users.
-`js/turnstile-config.js` renders the widget into a hidden, detached
-container regardless of which of the two the founder picks, since neither
-needs a permanently visible element on the page.
+
+`js/turnstile-config.js` renders the widget into a container that starts
+hidden (`display:none`) and stays that way for the whole session on
+Invisible mode (never shows UI at all) and for the common Managed-mode
+case (Cloudflare's risk scoring passes non-interactively). But Managed
+mode can also decide a specific request needs an interactive
+checkbox/puzzle challenge — when that happens, `getTurnstileToken()`
+promotes the same container to a visible, centered overlay (via
+Turnstile's `before-interactive-callback`/`after-interactive-callback`
+hooks) so that user can actually see and complete it, then hides it again
+once resolved. Without this, a Managed-mode challenge would render into a
+permanently invisible container, time out, and silently block generation
+for exactly the users Cloudflare flagged.
 
 ## Environment variables
 

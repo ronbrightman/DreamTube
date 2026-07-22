@@ -46,7 +46,35 @@ var TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.j
 // hiccup shouldn't be able to stall the whole generation flow.
 var TURNSTILE_TOKEN_TIMEOUT_MS = 8000;
 
+// If Cloudflare's risk engine decides a *Managed*-mode widget needs an
+// interactive challenge (see 'before-interactive-callback' below), the
+// short timeout above is replaced with this much longer one — a real
+// person solving a visible checkbox/puzzle needs more than 8 seconds, and
+// the timeout's job at that point is purely "don't hang forever if they
+// abandon the tab," not "keep the common non-interactive case snappy."
+var TURNSTILE_INTERACTIVE_TIMEOUT_MS = 120000;
+
 var _turnstileScriptPromise = null;
+
+// Tracks the single most recently rendered widget/container so a fresh
+// getTurnstileToken() call (e.g. processing.html's "Try Again" retry,
+// which can fire repeatedly without a page reload) can tear down the
+// previous one instead of leaking widget instances/DOM nodes for the
+// life of the page.
+var _activeTurnstileWidgetId = null;
+var _activeTurnstileContainer = null;
+
+/** Removes the previous widget (if any) via the Turnstile API, plus its container DOM node. Safe to call even if nothing is active. */
+function _cleanupTurnstileWidget() {
+  if (_activeTurnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.remove(_activeTurnstileWidgetId); } catch (e) { /* already gone */ }
+  }
+  if (_activeTurnstileContainer && _activeTurnstileContainer.parentNode) {
+    _activeTurnstileContainer.parentNode.removeChild(_activeTurnstileContainer);
+  }
+  _activeTurnstileWidgetId = null;
+  _activeTurnstileContainer = null;
+}
 
 /** Loads Cloudflare's Turnstile script exactly once per page load, however many times getTurnstileToken() is called. */
 function _loadTurnstileScript() {
@@ -75,47 +103,80 @@ function _loadTurnstileScript() {
  * rejection (E113) happens there, not here — this function's only job is
  * best-effort token acquisition, never enforcement.
  *
- * Renders the widget into a hidden, detached container — safe regardless
- * of whether the configured site key is Managed or Invisible mode (see
- * docs/TURNSTILE_SETUP.md): Invisible mode never shows UI at all, and
- * Managed mode only shows an interactive challenge on traffic Cloudflare's
- * own risk scoring flags, which this container's display:none would hide
- * anyway — deliberately chosen over a permanently-visible checkbox widget
- * so legitimate users see zero added friction in the common case.
+ * Renders the widget into a container that starts hidden (display:none) —
+ * fine for Invisible mode, which never shows UI at all, and fine for the
+ * common Managed-mode case too, where Cloudflare's risk scoring is happy
+ * with a non-interactive pass. But Managed mode can also decide a given
+ * request needs an interactive checkbox/puzzle challenge, and a user in
+ * that bucket can't complete a challenge they can't see — so this promotes
+ * the container to a visible, centered overlay for exactly that case, via
+ * Turnstile's 'before-interactive-callback'/'after-interactive-callback'
+ * hooks (fired only when Cloudflare actually needs interaction), and hides
+ * it again once the challenge is resolved. Legitimate non-interactive
+ * traffic (the large majority) never sees this — it stays exactly as
+ * invisible and frictionless as before.
  */
 function getTurnstileToken() {
   if (typeof TURNSTILE_SITE_KEY === 'undefined' || TURNSTILE_SITE_KEY === 'REPLACE_WITH_REAL_TURNSTILE_SITE_KEY') {
     return Promise.resolve(null);
   }
 
+  // Tear down any widget left over from a previous call (e.g. a retry)
+  // before rendering a new one — see _cleanupTurnstileWidget()'s doc
+  // comment.
+  _cleanupTurnstileWidget();
+
   return _loadTurnstileScript().then(function () {
     return new Promise(function (resolve) {
       var settled = false;
-      function done(token) {
-        if (settled) return;
-        settled = true;
-        resolve(token || null);
-      }
-
-      var timer = setTimeout(function () { done(null); }, TURNSTILE_TOKEN_TIMEOUT_MS);
+      var timer = null;
 
       var container = document.createElement('div');
       container.style.display = 'none';
+      container.setAttribute('aria-live', 'polite');
       document.body.appendChild(container);
+      _activeTurnstileContainer = container;
+
+      function done(token) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        _cleanupTurnstileWidget();
+        resolve(token || null);
+      }
+
+      function showInteractiveChallenge() {
+        // Restart the timeout budget on the much longer interactive
+        // allowance — see TURNSTILE_INTERACTIVE_TIMEOUT_MS's doc comment —
+        // and promote the container from an invisible detached node to a
+        // centered overlay so the user can actually see and solve it.
+        clearTimeout(timer);
+        timer = setTimeout(function () { done(null); }, TURNSTILE_INTERACTIVE_TIMEOUT_MS);
+        container.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;' +
+          'justify-content:center;background:rgba(0,0,0,0.55);z-index:9999;';
+      }
+
+      function hideInteractiveChallenge() {
+        container.style.cssText = 'display:none;';
+      }
+
+      timer = setTimeout(function () { done(null); }, TURNSTILE_TOKEN_TIMEOUT_MS);
 
       try {
-        window.turnstile.render(container, {
+        _activeTurnstileWidgetId = window.turnstile.render(container, {
           sitekey: TURNSTILE_SITE_KEY,
-          callback: function (token) { clearTimeout(timer); done(token); },
-          'error-callback': function () { clearTimeout(timer); done(null); },
-          'expired-callback': function () { clearTimeout(timer); done(null); }
+          callback: function (token) { done(token); },
+          'error-callback': function () { done(null); },
+          'expired-callback': function () { done(null); },
+          'before-interactive-callback': function () { showInteractiveChallenge(); },
+          'after-interactive-callback': function () { hideInteractiveChallenge(); }
         });
       } catch (e) {
-        clearTimeout(timer);
         done(null);
       }
     });
   }).catch(function () {
+    _cleanupTurnstileWidget();
     return null; // script failed to load — never block generation on this
   });
 }

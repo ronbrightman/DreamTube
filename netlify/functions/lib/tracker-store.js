@@ -90,14 +90,6 @@ var SEED_ITEMS = [
     detail: 'Both pack buttons (100 tokens/$1.99, 500 tokens/$8.95) are currently disabled "Coming soon" with no backend call at all. Once a provider is picked and approved, this needs a real one-time-purchase checkout flow (likely adapting create-checkout-session-dodo.js\'s plumbing, built for subscriptions, to a one-time token-pack purchase instead).'
   },
   {
-    id: 'add-turnstile',
-    category: 'task',
-    priority: 'medium',
-    done: false,
-    title: 'Add Cloudflare Turnstile before generation-triggering screens',
-    detail: "Free, low-effort (~half a day), stops naive scripted/bot abuse. Doesn't stop a determined attacker on its own, but the anti-abuse research done for this project recommended it as a cheap baseline layer worth having regardless of the token-economy safeguards already in place. Not yet built."
-  },
-  {
     id: 'tighten-descriptions',
     category: 'task',
     priority: 'medium',
