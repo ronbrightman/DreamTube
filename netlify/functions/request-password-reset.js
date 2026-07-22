@@ -46,6 +46,21 @@
 //                               is a fixed environment fact, not something
 //                               that varies by which email was requested,
 //                               so it can never leak per-account existence.
+//
+// Timing side-channel (explicitly addressed, not left silent): the
+// response body/status is identical either way, but the matched-account
+// path does real extra work (a Blobs write + an outbound HTTPS call to
+// Resend) that the no-match path doesn't — a measurable wall-clock
+// difference an attacker could use to infer account existence even though
+// the response itself never does. DUMMY_DELAY_MS below burns roughly
+// comparable wall-clock time on the no-match path for exactly this reason.
+// This is a heuristic, not a real fix: real network latency to Resend
+// varies request to request, so a fixed delay narrows the gap rather than
+// closing it byte-for-byte — accepted as good enough here given the actual
+// stakes (this only narrows down "which email", never exposes a password
+// or token, and still requires an attacker to have email addresses to
+// probe in the first place), rather than building real constant-time
+// infrastructure for one endpoint.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var crypto = require('crypto');
@@ -57,6 +72,13 @@ var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Works out of the box with any Resend account, no domain verification
 // needed — swap for a verified custom domain address once one is set up.
 var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
+
+// See the "Timing side-channel" doc block above. Rough order-of-magnitude
+// match for the matched-account path's Blobs write + Resend HTTPS call.
+var DUMMY_DELAY_MS = 250;
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -111,6 +133,11 @@ exports.handler = async function (event) {
       } catch (sendErr) {
         console.error('request-password-reset: Resend send failed', sendErr);
       }
+    } else {
+      // No match — see the "Timing side-channel" doc block above for why
+      // this branch deliberately burns comparable wall-clock time instead
+      // of returning almost immediately.
+      await sleep(DUMMY_DELAY_MS);
     }
   } catch (e) {
     console.error('request-password-reset: unexpected error', e);

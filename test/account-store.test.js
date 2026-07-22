@@ -17,8 +17,17 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 
+var ipCounter = 0;
+function nextIp() {
+  ipCounter += 1;
+  return '10.2.0.' + ipCounter;
+}
+
 test.beforeEach(function () {
   mockBlobs.reset();
+  delete process.env.MAX_REGISTRATIONS_PER_IP_PER_DAY;
+  delete process.env.MAX_LOGIN_ATTEMPTS_PER_IP_PER_DAY;
+  delete process.env.MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY;
   delete require.cache[require.resolve('../netlify/functions/register-account')];
   delete require.cache[require.resolve('../netlify/functions/account-login')];
   delete require.cache[require.resolve('../netlify/functions/lib/account-store')];
@@ -102,7 +111,8 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
   var event = fakeEvent({ method: 'POST' });
   await accountStore.createAccount(event, { username: 'frank', password: 'oldpassword1', email: 'frank@example.com' });
 
-  await accountStore.applyPasswordReset(event, { username: 'frank', email: 'frank@example.com', password: 'newpassword2' });
+  var result = await accountStore.applyPasswordReset(event, { username: 'frank', email: 'frank@example.com', password: 'newpassword2' });
+  assert.equal(result.ok, true);
 
   var oldFails = await accountStore.verifyLogin(event, 'frank', 'oldpassword1');
   assert.equal(oldFails.ok, false);
@@ -110,6 +120,71 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
 
   var newWorks = await accountStore.verifyLogin(event, 'frank', 'newpassword2');
   assert.equal(newWorks.ok, true);
+});
+
+// ===== concurrency: the two-key write race (review finding #2) =====
+//
+// The mock Blobs store's operations are still genuinely async (each one
+// yields to the microtask queue, just like the real @netlify/blobs client
+// would), so two createAccount/applyPasswordReset calls kicked off together
+// via Promise.all actually interleave step-by-step, exactly like two
+// concurrent Netlify Function invocations racing against the same Blobs
+// store would. This is what lets these tests exercise the real race
+// end-to-end rather than merely asserting the fixed code "looks" correct.
+
+test('account-store: two concurrent createAccount calls for the SAME username (different emails) -- exactly one wins cleanly, the other gets a clear conflict (never a false ok:true, never a mixed/corrupted record)', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  var results = await Promise.all([
+    accountStore.createAccount(event, { username: 'racer', password: 'firstpassword1', email: 'racer-first@example.com' }),
+    accountStore.createAccount(event, { username: 'RACER', password: 'secondpassword2', email: 'racer-second@example.com' })
+  ]);
+
+  var winners = results.filter(function (r) { return r.ok; });
+  var losers = results.filter(function (r) { return !r.ok; });
+  assert.equal(winners.length, 1, 'exactly one of the two racing signups should end up ok:true');
+  assert.equal(losers.length, 1, 'the other must get a clear, safe error -- never silent corruption or a second false ok:true');
+  assert.equal(losers[0].error, 'conflict');
+
+  // The stored record must be entirely the winner's -- never a mix of one
+  // request's password with the other's email (the exact corruption this
+  // fix exists to prevent) -- and the winner's own password must be the
+  // one that actually authenticates going forward.
+  var stored = await accountStore.getByUsername(event, 'racer');
+  assert.equal(stored.password, winners[0].record.password);
+  assert.equal(stored.email, winners[0].record.email);
+  var loginAsWinner = await accountStore.verifyLogin(event, 'racer', winners[0].record.password);
+  assert.equal(loginAsWinner.ok, true);
+
+  // The loser's own client would have cached ITS password locally after
+  // seeing a false ok:true -- with this fix it never does, since it got a
+  // conflict instead. Confirm the loser's password is NOT what's live
+  // server-side (i.e. this scenario no longer produces the lockout
+  // described in this file's own header comment).
+  var loserPassword = results[0].ok ? 'secondpassword2' : 'firstpassword1';
+  var loginAsLoser = await accountStore.verifyLogin(event, 'racer', loserPassword);
+  assert.equal(loginAsLoser.ok, false);
+});
+
+test('account-store: two concurrent applyPasswordReset calls for the SAME username -- exactly one wins cleanly, the other gets a clear conflict', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'racer2', password: 'originalpw1', email: 'racer2@example.com' });
+
+  var results = await Promise.all([
+    accountStore.applyPasswordReset(event, { username: 'racer2', email: 'racer2@example.com', password: 'resetpw-onexx' }),
+    accountStore.applyPasswordReset(event, { username: 'RACER2', email: 'racer2@example.com', password: 'resetpw-twoyy' })
+  ]);
+
+  var winners = results.filter(function (r) { return r.ok; });
+  var losers = results.filter(function (r) { return !r.ok; });
+  assert.equal(winners.length, 1, 'exactly one of the two racing resets should end up ok:true');
+  assert.equal(losers.length, 1);
+  assert.equal(losers[0].error, 'conflict');
+
+  var loginAsWinner = await accountStore.verifyLogin(event, 'racer2', winners[0].record.password);
+  assert.equal(loginAsWinner.ok, true);
 });
 
 // ===== register-account.js =====
@@ -166,6 +241,38 @@ test('register-account: validates shape before ever touching the account store (
   assert.match(JSON.parse(badEmail.body).error, /^E6: invalid_email/);
 });
 
+test('register-account: exceeding MAX_REGISTRATIONS_PER_IP_PER_DAY is rejected with E9 rate_limited (429, ok:false)', async function () {
+  process.env.MAX_REGISTRATIONS_PER_IP_PER_DAY = '1';
+  var handler = require('../netlify/functions/register-account').handler;
+  var ip = nextIp();
+
+  var first = await handler(fakeEvent({ method: 'POST', ip: ip, body: { username: 'quotafirst', password: 'longenoughpw1', email: 'quotafirst@example.com' } }));
+  assert.equal(first.statusCode, 200);
+  assert.equal(JSON.parse(first.body).ok, true);
+
+  var second = await handler(fakeEvent({ method: 'POST', ip: ip, body: { username: 'quotasecond', password: 'longenoughpw1', email: 'quotasecond@example.com' } }));
+  assert.equal(second.statusCode, 429);
+  var body = JSON.parse(second.body);
+  assert.equal(body.ok, false, 'must be ok:false, not the bare {error} shape -- js/store.js\'s signup() branches on data.ok and would otherwise treat this as a malformed response and fall back to a local-only account');
+  assert.match(body.error, /^E9: rate_limited/);
+});
+
+test('register-account: a concurrent write conflict from lib/account-store.js surfaces as E10 conflict (200, ok:false), never a false ok:true', async function () {
+  var handler = require('../netlify/functions/register-account').handler;
+
+  var results = await Promise.all([
+    handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'concurrentuser', password: 'firstpassword1', email: 'concurrent-a@example.com' } })),
+    handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'CONCURRENTUSER', password: 'secondpassword2', email: 'concurrent-b@example.com' } }))
+  ]);
+  var bodies = results.map(function (r) { return JSON.parse(r.body); });
+  var winners = bodies.filter(function (b) { return b.ok; });
+  var losers = bodies.filter(function (b) { return !b.ok; });
+
+  assert.equal(winners.length, 1, 'exactly one concurrent signup should succeed');
+  assert.equal(losers.length, 1);
+  assert.match(losers[0].error, /^E10: conflict/);
+});
+
 test('register-account: rejects invalid JSON and non-POST methods', async function () {
   var handler = require('../netlify/functions/register-account').handler;
 
@@ -210,6 +317,39 @@ test('account-login: E4 not_found for an unregistered identifier, E5 incorrect_p
   var wrongPasswordBody = JSON.parse(wrongPassword.body);
   assert.equal(wrongPasswordBody.ok, false);
   assert.match(wrongPasswordBody.error, /^E5: incorrect_password/);
+});
+
+test('account-login: exceeding MAX_LOGIN_ATTEMPTS_PER_IP_PER_DAY is rejected with E6 rate_limited (429, ok:false), independent of whether the account/password are even valid', async function () {
+  process.env.MAX_LOGIN_ATTEMPTS_PER_IP_PER_DAY = '1';
+  var registerHandler = require('../netlify/functions/register-account').handler;
+  var loginHandler = require('../netlify/functions/account-login').handler;
+  var ip = nextIp();
+  await registerHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'ipcapuser', password: 'realpassword1', email: 'ipcapuser@example.com' } }));
+
+  var first = await loginHandler(fakeEvent({ method: 'POST', ip: ip, body: { usernameOrEmail: 'ipcapuser', password: 'wrongpassword1' } }));
+  assert.equal(first.statusCode, 200); // the one allowed attempt still reaches verifyLogin (E5 incorrect_password)
+
+  var second = await loginHandler(fakeEvent({ method: 'POST', ip: ip, body: { usernameOrEmail: 'ipcapuser', password: 'realpassword1' } }));
+  assert.equal(second.statusCode, 429);
+  var body = JSON.parse(second.body);
+  assert.equal(body.ok, false, 'must be ok:false -- js/store.js\'s login() branches on data.ok and must never fall back to a local-only login check on a deliberate rate-limit rejection');
+  assert.match(body.error, /^E6: rate_limited/);
+});
+
+test('account-login: exceeding MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY throttles repeated guesses against ONE account even from rotating IPs', async function () {
+  process.env.MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY = '2';
+  var registerHandler = require('../netlify/functions/register-account').handler;
+  var loginHandler = require('../netlify/functions/account-login').handler;
+  await registerHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'guesstarget', password: 'realpassword1', email: 'guesstarget@example.com' } }));
+
+  var first = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'guesstarget', password: 'guess-one1' } }));
+  assert.equal(first.statusCode, 200); // 1st of 2 allowed identifier attempts (E5 incorrect_password)
+  var second = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'guesstarget', password: 'guess-two2' } }));
+  assert.equal(second.statusCode, 200); // still under the per-identifier cap, even from a brand-new IP each time
+
+  var third = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'GuessTarget', password: 'guess-three3' } }));
+  assert.equal(third.statusCode, 429, 'a different IP does not bypass the per-identifier cap');
+  assert.match(JSON.parse(third.body).error, /^E6: rate_limited/);
 });
 
 test('account-login: rejects missing fields, invalid JSON, and non-POST methods', async function () {

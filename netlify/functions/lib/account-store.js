@@ -19,6 +19,22 @@
 // sync-private-dreams-videos-later item for why that's a separate, bigger,
 // deliberately deferred project, not something this file reaches for.
 //
+// "No retroactive lockout" is a goal here, not an absolute guarantee — one
+// known, inherent edge case: if the SAME username was independently created
+// as two different local-only accounts on two different devices before
+// this store existed, whichever one backfills here first (see
+// js/store.js's backfillAccountServerSide, and that function's own doc
+// comment for the full writeup) permanently wins that username server-side.
+// The other device's account isn't retroactively broken ON THAT DEVICE
+// (its own localStorage still logs it in there, unchanged) — but the
+// moment it's used from anywhere account-login.js has to actually check
+// (a fresh device, cleared storage, etc.), it gets a genuine, server-
+// confirmed incorrect_password rejection with no local fallback, since
+// there's no way for this store to know two different browsers ever
+// independently claimed the same name. This is an unavoidable consequence
+// of retrofitting real uniqueness onto a system that previously had none,
+// not a bug this file is meant to fix.
+//
 // Backed by a single Netlify Blobs store ("dreamtube-accounts"), with TWO
 // kinds of keys sharing that one store (same "one small store, a couple of
 // key prefixes" shape paywall-settings.js/tracker-store.js already use for
@@ -46,18 +62,49 @@
 //
 // Two-key writes are NOT atomic — createAccount/applyPasswordReset each
 // write the "u:" record and the "e:" index in two separate Blobs calls, and
-// the installed @netlify/blobs SDK has no compare-and-swap/transaction
-// primitive to make that one write (same underlying limitation already
-// documented in entitlements.js and flagged repo-wide by the
-// decide-blobs-lazy-seed-race tracker item). A request that fails/crashes
-// between the two writes would leave a record with no matching email
-// index (or vice versa) — accepted here deliberately, not fixed, for the
-// same reason entitlements.js accepts its own narrow last-write-wins
-// races: account registration/reset is low-frequency, single-record-at-a-
-// time, and the worst case (a stale/missing index entry) is a failed
-// lookup on the next request, not silent data corruption or a security
-// hole. Revisit only if this store's write volume/criticality changes
-// enough to justify a heavier fix.
+// the installed @netlify/blobs SDK exposes no compare-and-swap/transaction
+// primitive (checked node_modules/@netlify/blobs/dist/main.d.ts directly —
+// set()/setJSON() take no etag/onlyIf condition at all) to make that one
+// write atomic.
+//
+// Unlike the lazy-seed race entitlements.js/paywall-settings.js/
+// tracker-store.js accept (a one-time-per-key materialization that's rare
+// and whose worst case is a dropped increment), this store is written on
+// EVERY signup/reset, and a lost race here can misdirect or lock a real
+// person out of their own account (see the two concrete scenarios below) —
+// that reasoning doesn't transfer, so this is narrowed instead of just
+// documented:
+//   - Two concurrent signups for the SAME username, different emails: with
+//     a plain last-write-wins two-key write, the losing signer's OWN client
+//     already got ok:true and cached that password locally — their next
+//     login is a genuine incorrect_password rejection from the server, with
+//     no local fallback (by design — see verifyLogin's own comment on why a
+//     wrong password against a real registered account is never
+//     second-guessed locally). That's a real account lockout, not a cosmetic
+//     glitch.
+//   - Because the "e:" index write and the "u:" record's own `email` field
+//     could be won by DIFFERENT concurrent requests, getByEmail() could
+//     resolve a username whose CURRENT "u:" record has a different email
+//     than the one actually queried — a password-reset lookup by email
+//     could then email a reset link to the wrong current owner of that
+//     username.
+//
+// The fix below doesn't add real atomicity (there is no primitive here to
+// build that on) — it narrows the window by having each write immediately
+// read itself back and comparing what's actually there against what this
+// call itself just wrote, on BOTH keys. A concurrent writer that raced in
+// between the write and the read-back changes what the read-back sees, so
+// the loser can detect that and fail cleanly with a distinct 'conflict'
+// error (see register-account.js's E10/verify-password-reset.js's E6) that
+// the client surfaces as "try again" — instead of returning ok:true over
+// data that a moment later belonged to someone else. This still has an
+// inherent gap (a third write landing between this call's own write and its
+// own read-back would go undetected), but that's a much narrower window
+// than "the entire two-key write with no check at all", and two clients
+// racing on the exact same username/email — the actual scenario this
+// exists for — reliably narrows to one clean success and one clean,
+// safe-to-retry conflict rather than silent corruption. See
+// test/account-store.test.js's concurrency test for exactly this scenario.
 //
 // Passwords stay plaintext here, same already-accepted tradeoff
 // js/store.js's own comment documents for the local copy (no real backend,
@@ -109,10 +156,11 @@ async function getByEmail(event, email) {
  * email is already registered server-side — this is the authoritative
  * uniqueness check now (see register-account.js), not js/store.js's local
  * per-browser one. Returns { ok:true, record } on success, or
- * { ok:false, error } — 'username_taken' or 'email_taken' — on a
- * collision. Callers are expected to have already validated shape
- * (length/format) before calling this; this function only checks
- * uniqueness and writes.
+ * { ok:false, error } — 'username_taken' / 'email_taken' on a pre-existing
+ * collision, or 'conflict' when a concurrent write raced this one and won
+ * (see the header comment's narrowed-race writeup) — callers should treat
+ * 'conflict' as safe to retry, never as evidence the account wasn't
+ * created (it wasn't, by this call).
  */
 async function createAccount(event, account) {
   var key = normalizeUsername(account.username);
@@ -126,9 +174,27 @@ async function createAccount(event, account) {
   var existingEmailOwner = await s.get('e:' + email, { type: 'json' });
   if (existingEmailOwner) return { ok: false, error: 'email_taken' };
 
+  // Claim the email index FIRST, then read it straight back — see the
+  // header comment. If a concurrent createAccount/applyPasswordReset for a
+  // DIFFERENT username won this same email key in between, this read-back
+  // sees THEIR username, not ours, and we bail out here having written
+  // nothing to 'u:' at all.
+  await s.setJSON('e:' + email, key);
+  var emailIndexAfterClaim = await s.get('e:' + email, { type: 'json' });
+  if (emailIndexAfterClaim !== key) return { ok: false, error: 'conflict' };
+
   var record = { username: key, email: email, password: account.password, updatedAt: Date.now() };
   await s.setJSON('u:' + key, record);
-  await s.setJSON('e:' + email, key);
+  // Same idea for the username record itself: read our own write straight
+  // back. A concurrent createAccount for the SAME username that wrote
+  // after us flips what's actually stored here to THEIR email/password —
+  // if that happened, we lost the race and must not report ok:true over
+  // data that isn't ours anymore.
+  var afterWrite = await s.get('u:' + key, { type: 'json' });
+  if (!afterWrite || afterWrite.email !== email || afterWrite.password !== account.password) {
+    return { ok: false, error: 'conflict' };
+  }
+
   return { ok: true, record: record };
 }
 
@@ -160,13 +226,22 @@ async function verifyLogin(event, usernameOrEmail, password) {
  * the reset was actually sent to (request-password-reset.js's own record).
  * Unlike createAccount, this never rejects on "already exists" — a
  * password reset legitimately overwrites whatever password was there
- * before, if any. Returns the updated/created record.
+ * before, if any. Returns { ok:true, record } on success, or
+ * { ok:false, error:'conflict' } when a concurrent write raced this one and
+ * won (same narrowed-race check as createAccount, see the header comment
+ * and that function's own comment) — callers should treat this as
+ * safe-to-retry, not as evidence the reset failed to apply anywhere.
  */
 async function applyPasswordReset(event, account) {
   var key = normalizeUsername(account.username);
   var email = normalizeEmail(account.email);
   connectLambda(event);
   var s = store();
+
+  await s.setJSON('e:' + email, key);
+  var emailIndexAfterClaim = await s.get('e:' + email, { type: 'json' });
+  if (emailIndexAfterClaim !== key) return { ok: false, error: 'conflict' };
+
   var existing = await s.get('u:' + key, { type: 'json' });
   var record = Object.assign({}, existing, {
     username: key,
@@ -175,8 +250,12 @@ async function applyPasswordReset(event, account) {
     updatedAt: Date.now()
   });
   await s.setJSON('u:' + key, record);
-  await s.setJSON('e:' + email, key);
-  return record;
+  var afterWrite = await s.get('u:' + key, { type: 'json' });
+  if (!afterWrite || afterWrite.email !== email || afterWrite.password !== account.password) {
+    return { ok: false, error: 'conflict' };
+  }
+
+  return { ok: true, record: record };
 }
 
 module.exports = {

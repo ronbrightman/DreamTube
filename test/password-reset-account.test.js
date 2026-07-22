@@ -212,6 +212,45 @@ test('verify-password-reset: newPassword also backfills a username that was neve
   assert.equal(login.ok, true, 'sam should now be a real, server-side account, usable from any device');
 });
 
+test('verify-password-reset: two concurrent resets for the SAME account (e.g. two valid links open on two devices) -- exactly one applies cleanly, the loser gets E6 conflict with its own token left unconsumed and safe to retry', async function () {
+  var registerHandler = require('../netlify/functions/register-account').handler;
+  await registerHandler(fakeEvent({ method: 'POST', body: { username: 'tara', password: 'originalpw1', email: 'tara@example.com' } }));
+
+  // Two independently-seeded tokens for the same account, same as two
+  // different reset emails/links both still being valid at once.
+  seedResetToken('tara-token-one', { username: 'tara', email: 'tara@example.com' });
+  seedResetToken('tara-token-two', { username: 'tara', email: 'tara@example.com' });
+
+  var handler = require('../netlify/functions/verify-password-reset').handler;
+  var results = await Promise.all([
+    handler(fakeEvent({ method: 'POST', body: { token: 'tara-token-one', consume: true, newPassword: 'devicepw-onexx' } })),
+    handler(fakeEvent({ method: 'POST', body: { token: 'tara-token-two', consume: true, newPassword: 'devicepw-twoyy' } }))
+  ]);
+  var bodies = results.map(function (r) { return JSON.parse(r.body); });
+  var winners = bodies.filter(function (b) { return b.ok; });
+  var losers = bodies.filter(function (b) { return !b.ok; });
+
+  assert.equal(winners.length, 1, 'exactly one of the two concurrent resets should apply');
+  assert.equal(losers.length, 1);
+  assert.match(losers[0].error, /^E6: conflict/);
+
+  // The account must actually be usable with the WINNER's password --
+  // never left in a broken/mixed state.
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  var winningIndex = bodies.indexOf(winners[0]);
+  var winningPasswordActual = winningIndex === 0 ? 'devicepw-onexx' : 'devicepw-twoyy';
+  var login = await accountStore.verifyLogin(event, 'tara', winningPasswordActual);
+  assert.equal(login.ok, true);
+
+  // The loser's own token was NOT consumed on a conflict -- safe to retry
+  // the exact same request.
+  var loserIndex = winningIndex === 0 ? 1 : 0;
+  var loserToken = loserIndex === 0 ? 'tara-token-one' : 'tara-token-two';
+  var retryRes = await handler(fakeEvent({ method: 'POST', body: { token: loserToken, consume: true, newPassword: 'retriedpw123' } }));
+  assert.equal(JSON.parse(retryRes.body).ok, true, 'the conflicted request\'s own token must still be valid and usable on retry');
+});
+
 test('verify-password-reset: an invalid/expired token is rejected the same way regardless of whether newPassword was also sent', async function () {
   var handler = require('../netlify/functions/verify-password-reset').handler;
 

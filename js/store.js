@@ -572,6 +572,13 @@
     if (code.indexOf('invalid_username') !== -1) return 'Username must be at least 3 characters.';
     if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 8 characters.';
     if (code.indexOf('invalid_email') !== -1) return 'Enter a valid email address.';
+    if (code.indexOf('rate_limited') !== -1) return "Too many signups from this network today — try again tomorrow.";
+    // E10 conflict — lib/account-store.js detected a concurrent write race
+    // on this exact username/email and safely declined rather than risk a
+    // corrupted account (see that file's own comment). Nothing was created
+    // — the same submission is safe to retry as-is, no suffix/rename
+    // needed like the username_taken case below.
+    if (code.indexOf('conflict') !== -1) return 'Something went wrong creating your account — please try again.';
     // Default covers username_taken and anything else unexpected — matches
     // the original local-only error text for the single most common case.
     return 'That username is already taken.';
@@ -617,6 +624,22 @@
    * working locally on this device exactly as it does today either way.
    * Skipped entirely for an account with no email on file (predates email
    * being required) — there's nothing to register it with.
+   *
+   * Known, inherent edge case (not a bug to fix — see lib/account-store.js
+   * for the full "no retroactive lockout" writeup this narrows): if the
+   * SAME username was independently created as two different local-only
+   * accounts on two different devices before this fix ever existed,
+   * whichever one backfills here first permanently wins that username
+   * server-side. The other device's own account keeps working locally on
+   * IT (this function's own guarantee, above, is unaffected) — but that
+   * device's login will start getting a genuine, server-confirmed
+   * incorrect_password rejection with no local fallback the moment it
+   * ever reaches a device/browser where its local cache is gone (a fresh
+   * device, cleared storage, etc.), since account-login.js has no way to
+   * know two different browsers ever shared this username. Unavoidable
+   * consequence of retrofitting real uniqueness onto a system that
+   * previously had none — there's no way to guess which of two
+   * independently-created local accounts "should" own the name.
    */
   function backfillAccountServerSide(username, account) {
     if (!account || !account.email) return;
@@ -740,6 +763,16 @@
           // didn't match it — trust that outright, no local fallback.
           return { ok: false, error: 'Incorrect password.' };
         }
+        if (data && data.ok === false && data.error && data.error.indexOf('rate_limited') !== -1) {
+          // account-login.js's own per-IP/per-identifier throttle tripped —
+          // a deliberate rejection, not "no account found" or "server
+          // unreachable". Falling back to attemptLocalLogin here would
+          // silently defeat the whole point of that rate limit (this
+          // browser's own local account cache would still let a match
+          // through), so this is the one other explicit branch that never
+          // falls back, same reasoning as incorrect_password above.
+          return { ok: false, error: 'Too many login attempts — please wait and try again.' };
+        }
         // Explicit "no account found" server-side, or an unexpected/
         // malformed response shape — fall back to the pre-fix local
         // check, so a legacy account never loses the ability to log in on
@@ -779,7 +812,19 @@
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
-        if (!data || !data.ok) return { ok: false, error: 'link_invalid_or_expired' };
+        if (!data || !data.ok) {
+          // E6 conflict (see verify-password-reset.js) means the token is
+          // still valid and untouched — a concurrent write raced this one
+          // server-side, nothing was actually saved, and the exact same
+          // request is safe to retry. Everything else (missing/expired/
+          // already-consumed token, or an unexpected response shape) keeps
+          // the original message.
+          var code = (data && data.error) || '';
+          if (code.indexOf('conflict') !== -1) {
+            return { ok: false, error: 'Something went wrong saving your new password — please try again.' };
+          }
+          return { ok: false, error: 'link_invalid_or_expired' };
+        }
         var key = (data.username || '').toLowerCase();
         if (state.accounts[key]) {
           state.accounts[key].password = newPassword;

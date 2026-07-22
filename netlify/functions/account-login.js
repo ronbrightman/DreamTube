@@ -14,6 +14,30 @@
 //   200 { ok:false, error: 'E5: incorrect_password' }    that identifier
 //                                                         server-side, or
 //                                                         a wrong password
+//   429 { ok:false, error: 'E6: rate_limited: ...' }  — see the rate-
+//                                                        limiting doc block
+//                                                        below. Deliberately
+//                                                        ok:false (not just
+//                                                        the bare {error:
+//                                                        ...} shape generate-
+//                                                        video.js/track-
+//                                                        conversion.js use
+//                                                        for their own 429s)
+//                                                        so js/store.js's
+//                                                        login() — which
+//                                                        branches on data.ok,
+//                                                        not on HTTP status —
+//                                                        treats this as the
+//                                                        real, deliberate
+//                                                        rejection it is,
+//                                                        never as
+//                                                        "malformed
+//                                                        response, fall back
+//                                                        to local login"
+//                                                        (see that
+//                                                        function's own
+//                                                        explicit rate_
+//                                                        limited check).
 // Same "business outcome, not a client error" reasoning as
 // verify-password-reset.js's E4/register-account.js's E7/E8 — a login
 // attempt that doesn't match anything is a completely normal, expected
@@ -29,8 +53,30 @@
 //   E3 missing_fields      — usernameOrEmail/password not both present
 //   E4 not_found           — no account matches that username or email
 //   E5 incorrect_password  — account found, password didn't match it
+//   E6 rate_limited        — MAX_LOGIN_ATTEMPTS_PER_IP_PER_DAY or
+//                             MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY
+//                             exceeded for today
+//
+// Rate limiting: this is a brand-new, fully anonymous endpoint that checks
+// a caller-supplied password against a real account with zero throttling
+// otherwise — same lib/rate-limit.js checkAndIncrement() helper generate-
+// video.js/interpret-dream.js/track-conversion.js already use, but gated on
+// TWO buckets rather than one: per-IP (same shape as everywhere else), AND
+// per-identifier (the normalized usernameOrEmail itself), since the risk
+// here isn't just "one source hammering the endpoint" but specifically
+// unlimited password-guessing against ONE known username/email — a per-IP
+// cap alone doesn't stop that if the guesses are spread across IPs, and a
+// per-identifier cap alone doesn't stop a single IP from spraying guesses
+// across many identifiers. Both run unconditionally, before verifyLogin is
+// ever called, so a request that's already over either cap never even
+// reaches the account store. This also mitigates (doesn't eliminate — see
+// the E4/E5 doc block above for why that distinction is kept) the account-
+// enumeration angle: whatever an attacker could learn from E4 vs E5 across
+// many attempts now costs a bounded, slow, detectable number of requests
+// per day rather than being unlimited.
 
 var accountStore = require('./lib/account-store');
+var rateLimit = require('./lib/rate-limit');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -48,6 +94,21 @@ exports.handler = async function (event) {
   var password = typeof payload.password === 'string' ? payload.password : '';
   if (!usernameOrEmail || !password) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E3: missing_fields' }) };
+  }
+
+  var maxPerIpPerDay = parseInt(process.env.MAX_LOGIN_ATTEMPTS_PER_IP_PER_DAY, 10);
+  if (!maxPerIpPerDay || maxPerIpPerDay <= 0) maxPerIpPerDay = 100;
+  var maxPerIdentifierPerDay = parseInt(process.env.MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY, 10);
+  if (!maxPerIdentifierPerDay || maxPerIdentifierPerDay <= 0) maxPerIdentifierPerDay = 30;
+
+  var ip = rateLimit.clientIp(event);
+  var ipLimit = await rateLimit.checkAndIncrement(event, 'login-ip', ip, maxPerIpPerDay);
+  if (!ipLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E6: rate_limited: too many login attempts from this network today, try again tomorrow' }) };
+  }
+  var identifierLimit = await rateLimit.checkAndIncrement(event, 'login-identifier', usernameOrEmail.toLowerCase(), maxPerIdentifierPerDay);
+  if (!identifierLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E6: rate_limited: too many login attempts for this account today, try again tomorrow' }) };
   }
 
   var result = await accountStore.verifyLogin(event, usernameOrEmail, password);

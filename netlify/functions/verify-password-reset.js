@@ -46,6 +46,15 @@
 //                               signup) — checked before the token is
 //                               even looked up, so a malformed request
 //                               never touches Blobs at all.
+//   E6 conflict              — applyPasswordReset detected a concurrent
+//                               write to the same account (see
+//                               lib/account-store.js's own narrowed-race
+//                               comment) and safely declined rather than
+//                               risk a corrupted/misdirected record. The
+//                               token itself is still valid and NOT
+//                               consumed on this path (even if `consume`
+//                               was true) — safe for the caller to retry
+//                               the exact same request.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var accountStore = require('./lib/account-store');
@@ -86,11 +95,19 @@ exports.handler = async function (event) {
     }
 
     if (applyingNewPassword) {
-      await accountStore.applyPasswordReset(event, {
+      var resetResult = await accountStore.applyPasswordReset(event, {
         username: record.username,
         email: record.email,
         password: newPassword
       });
+      if (!resetResult.ok) {
+        // Leave the token untouched (never consumed on this path, even if
+        // consume:true was requested) — a concurrent write raced this one
+        // and won, so nothing was actually saved here; the caller can just
+        // retry the identical request with the same still-valid token. See
+        // the E6 doc block above.
+        return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E6: conflict' }) };
+      }
     }
 
     if (payload.consume) await store.delete(token);
