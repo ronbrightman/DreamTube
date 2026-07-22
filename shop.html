@@ -56,12 +56,14 @@
 
   <div class="px" style="flex:1; padding-bottom:30px;">
     <div class="token-balance-card">
-      <div class="token-balance-amt" id="shop-balance">–</div>
-      <div class="token-balance-sub">tokens available</div>
-      <div class="token-balance-sub" id="shop-countdown"></div>
+      <div class="token-balance-inner">
+        <div class="token-balance-amt" id="shop-balance">–</div>
+        <div class="token-balance-sub">tokens available</div>
+        <div class="token-balance-sub" id="shop-countdown"></div>
+      </div>
     </div>
 
-    <div class="section-label" style="padding:0;">Packs</div>
+    <div class="section-label" style="padding:0;">Need more?</div>
 
     <!-- Neither pack has a real checkout yet — see the header comment in
          the script block below for why both buttons are deliberately
@@ -75,7 +77,7 @@
       <button class="btn btn-secondary btn-block" disabled>Coming soon</button>
     </div>
 
-    <div class="token-pack-card">
+    <div class="token-pack-card best">
       <div class="token-pack-badge">10% off</div>
       <div class="token-pack-row">
         <div class="token-pack-amt">500 tokens</div>

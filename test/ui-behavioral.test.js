@@ -883,10 +883,14 @@ test('pricing screen (14, now the token intro): renders the value bullets and th
     assert.match(valueText, /Save your dreams and publish them to Explore/);
 
     var bodyText = await page.textContent('#app');
-    assert.match(bodyText, /200 free tokens/i, 'expected the honest free-tokens headline');
-    assert.match(bodyText, /100 more every day/i);
+    assert.match(bodyText, /200 tokens/i, 'expected the honest free-tokens headline');
+    assert.match(bodyText, /100 more free every day/i);
     assert.match(bodyText, /no card needed/i);
-    assert.match(bodyText, /token shop coming soon/i);
+    assert.match(bodyText, /coming soon/i);
+    // The pack-price preview added alongside the free-tier card (founder
+    // feedback: make pricing genuinely clear here, not just a text note).
+    assert.match(bodyText, /\$1\.99/);
+    assert.match(bodyText, /\$8\.95/);
     assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b/, 'no subscription pricing should remain on this screen');
 
     var priceCardCount = await page.$$eval('.fn-price-card', function (els) { return els.length; });

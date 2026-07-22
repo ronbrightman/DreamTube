@@ -77,7 +77,11 @@
       <div class="profile-name" id="profile-handle">@you</div>
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
-      <div class="profile-stats" id="profile-tokens" style="margin-top:8px; cursor:pointer; text-decoration:underline;"></div>
+      <a class="token-chip" id="profile-tokens" href="shop.html">
+        <span class="token-chip-balance" id="profile-tokens-balance">–</span>
+        <span class="token-chip-meta" id="profile-tokens-meta"></span>
+        <span class="token-chip-cta">Shop</span>
+      </a>
     </div>
     <div id="profile-insights" style="display:none;">
       <div class="profile-milestone-row" id="milestone-row"></div>
@@ -281,16 +285,20 @@
   // resolves to balance:0 with no network call, see getTokenStatus's own
   // doc comment) — unlike the old quota indicator this replaces, tokens
   // apply to everyone from launch, not just an active subscriber, so there
-  // is no "hide when inactive" state here. Always clickable, straight to
-  // the token shop — see shop.html.
-  var tokenEl = document.getElementById('profile-tokens');
+  // is no "hide when inactive" state here. Styled as a real "chip" (see
+  // .token-chip in css/styles.css, reusing the app's existing --gradient-ig
+  // "special" treatment) rather than a plain muted stat line — founder
+  // feedback was that the old plain-text version read as inert, not as an
+  // inviting entry point into the shop it's a plain <a href> to.
+  var tokenBalanceEl = document.getElementById('profile-tokens-balance');
+  var tokenMetaEl = document.getElementById('profile-tokens-meta');
   var tokenStatus = null;
   function renderTokenText(){
     if(!tokenStatus) return;
-    var text = tokenStatus.balance + ' tokens';
-    if(tokenStatus.balance < 100) text += ' · out of tokens';
-    else if(tokenStatus.nextGrantAt) text += ' · next 100 in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
-    tokenEl.textContent = text;
+    tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
+    if(tokenStatus.balance < 100) tokenMetaEl.textContent = 'Out of tokens';
+    else if(tokenStatus.nextGrantAt) tokenMetaEl.textContent = '+100 in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
+    else tokenMetaEl.textContent = '';
   }
   function renderTokens(){
     DreamStore.getTokenStatus().then(function(status){
@@ -303,8 +311,6 @@
   // re-fetch from the server that often, just re-render from the balance
   // already cached in tokenStatus.
   setInterval(renderTokenText, 60000);
-
-  tokenEl.addEventListener('click', function(){ location.href = 'shop.html'; });
 
   document.getElementById('account-success-icon').innerHTML = Icons.mail;
   var accountOverlay = document.getElementById('sheet-account-overlay');

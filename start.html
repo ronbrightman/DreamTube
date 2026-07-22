@@ -246,6 +246,23 @@
 
   .fn-price-note{ font-size:12px; color:#6E6480; text-align:center; margin:2px 0 0;}
 
+  /* Screen 14's token-pricing display — replaces a small text-note-only
+     treatment (found unclear enough that the founder asked for pricing
+     to be genuinely clear here, not just mentioned) with the same visual
+     weight the old Monthly/Yearly subscription cards used to get, so
+     pricing reads as a real, considered part of the screen rather than a
+     footnote. See renderScreen14 below for the markup this styles. */
+  .fn-token-free-card{ background:#fff; border-radius:16px; padding:14px 16px; margin-bottom:12px; border:1.5px solid var(--fn-accent-solid);}
+  .fn-token-free-card .title{ font-weight:800; font-size:14px; color:var(--fn-ink); margin-bottom:4px;}
+  .fn-token-free-card .body{ font-size:13px; color:var(--fn-ink-soft); line-height:1.5;}
+  .fn-token-free-card .body b{ color:var(--fn-ink); font-weight:700;}
+
+  .fn-pack-row{ display:flex; gap:9px; margin-bottom:10px;}
+  .fn-pack-card{ flex:1; background:#fff; border-radius:14px; padding:11px; text-align:center; position:relative; border:1px solid rgba(58,51,80,0.1);}
+  .fn-pack-badge{ position:absolute; top:-8px; right:9px; background:var(--fn-accent-grad); color:#fff; font-size:9.5px; font-weight:800; padding:3px 8px; border-radius:100px;}
+  .fn-pack-amt{ font-weight:700; font-size:13px; color:var(--fn-ink);}
+  .fn-pack-price{ font-weight:800; font-size:17px; color:var(--fn-ink); margin-top:1px;}
+
   .fn-value-card{ background:#fff; border-radius:16px; padding:13px 15px 9px; margin-bottom:14px; border:1px solid rgba(58,51,80,0.1);}
   .fn-value-item{ display:flex; align-items:flex-start; gap:9px; font-size:13px; font-weight:600; color:#3A3350; padding-bottom:9px;}
   .fn-value-item .icon{ width:14px; height:14px; flex:none; margin-top:2px; color:var(--fn-accent-solid);}
@@ -846,9 +863,25 @@
         '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Personalize with your own style and characters</span></div>' +
         '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Save your dreams and publish them to Explore</span></div>' +
       '</div>' +
-      '<div class="fn-price-note" style="text-align:left; font-size:14px; font-weight:700; color:var(--phase-ink, var(--fn-ink));">Start with 200 free tokens — plus 100 more every day.</div>' +
+      '<div class="fn-token-free-card">' +
+        '<div class="title">Free to start</div>' +
+        '<div class="body">' +
+          '<b>200 tokens</b> when you sign up, plus <b>100 more free every day</b> — no card needed. Each dream video costs <b>100 tokens</b>, whether it\'s a new one, an edit, or a redo.' +
+        '</div>' +
+      '</div>' +
+      '<div class="fn-pack-row">' +
+        '<div class="fn-pack-card">' +
+          '<div class="fn-pack-amt">100 tokens</div>' +
+          '<div class="fn-pack-price">$1.99</div>' +
+        '</div>' +
+        '<div class="fn-pack-card">' +
+          '<div class="fn-pack-badge">10% off</div>' +
+          '<div class="fn-pack-amt">500 tokens</div>' +
+          '<div class="fn-pack-price">$8.95</div>' +
+        '</div>' +
+      '</div>' +
       '<div class="fn-value-foot">' +
-        '<div>No card needed. Each dream video costs 100 tokens. Token shop coming soon.</div>' +
+        '<div>Need more later? Token packs above — coming soon.</div>' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue</button>';
