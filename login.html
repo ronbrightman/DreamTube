@@ -88,7 +88,7 @@
       <span class="icon" id="auth-trust-icon"></span>
       <span>Your dreams stay private until you choose to share them.</span>
     </div>
-    <div class="auth-sub" id="local-only-note" style="margin-top:10px; display:none;">Heads up — your account and dreams currently live only on this device. Export a backup anytime from Profile → the settings icon, in case this browser's storage ever gets cleared.</div>
+    <div class="auth-sub" id="local-only-note" style="margin-top:10px; display:none;">Heads up — your dreams currently live only on this device (your account itself works from anywhere). Export a backup anytime from Profile → the settings icon, in case this browser's storage ever gets cleared.</div>
 
     <div style="flex:1"></div>
     <span class="link-text" id="restore-backup-link" style="cursor:pointer; margin-bottom:14px;">Have a backup file? <b>Restore it</b></span>
@@ -109,7 +109,7 @@
     </div>
     <div class="auth-notice" id="forgot-success" style="display:none;">
       <span class="icon" id="forgot-success-icon"></span>
-      <span>If an account with that email exists on this device, we've sent a reset link — check your inbox. The link only works on this device.</span>
+      <span>If an account with that email exists, we've sent a reset link — check your inbox.</span>
     </div>
 
     <div style="flex:1"></div>
@@ -222,19 +222,21 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-inline"></span>';
     setTimeout(function(){
-      var result = isSignup ? DreamStore.signup(username, password, email) : DreamStore.login(username, password);
-      if(result.ok){
-        // Direct-signup path (?mode=signup) — start.html's screen 13 fires
-        // the equivalent call for the post-quiz funnel signup. Shared
-        // event_id pairs this with the Pixel's own CompleteRegistration
-        // call — see js/analytics-config.js's fireMetaConversion.
-        if(isSignup){ fireMetaConversion('CompleteRegistration', { email: email }); }
-        location.href = nextUrl;
-      } else {
-        err.textContent = result.error;
-        btn.disabled = false;
-        btn.textContent = 'Continue';
-      }
+      var call = isSignup ? DreamStore.signup(username, password, email) : DreamStore.login(username, password);
+      call.then(function(result){
+        if(result.ok){
+          // Direct-signup path (?mode=signup) — start.html's screen 13 fires
+          // the equivalent call for the post-quiz funnel signup. Shared
+          // event_id pairs this with the Pixel's own CompleteRegistration
+          // call — see js/analytics-config.js's fireMetaConversion.
+          if(isSignup){ fireMetaConversion('CompleteRegistration', { email: email }); }
+          location.href = nextUrl;
+        } else {
+          err.textContent = result.error;
+          btn.disabled = false;
+          btn.textContent = 'Continue';
+        }
+      });
     }, 450);
   });
 
@@ -291,22 +293,21 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-inline"></span>';
 
-    // Only accounts that exist in THIS browser can be reset at all (see
-    // js/store.js) — but the success message is shown either way, so
-    // nobody can use this to probe which emails have accounts.
-    var match = DreamStore.findAccountByEmail(email);
-    var sendPromise = match
-      ? fetch('/.netlify/functions/request-password-reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: match.username, email: match.email })
-        }).catch(function(){ /* best-effort — same generic message either way */ })
-      : Promise.resolve();
-
-    sendPromise.then(function(){
-      document.getElementById('forgot-form').style.display = 'none';
-      document.getElementById('forgot-success').style.display = 'flex';
-    });
+    // Goes to the server unconditionally now — request-password-reset.js
+    // does its own account lookup (across every device, not just this
+    // browser's localStorage) and returns the same generic response either
+    // way, so nobody can use this to probe which emails have accounts. See
+    // that function's own header comment for the full anti-enumeration
+    // reasoning this preserves.
+    fetch('/.netlify/functions/request-password-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    }).catch(function(){ /* best-effort — same generic message either way */ })
+      .then(function(){
+        document.getElementById('forgot-form').style.display = 'none';
+        document.getElementById('forgot-success').style.display = 'flex';
+      });
   });
 
   // ===== Reset password (arrived via emailed link) =====
@@ -322,7 +323,6 @@
     var resetSub = document.getElementById('reset-sub');
     var resetForm = document.getElementById('reset-form');
     var resetBack = document.getElementById('reset-back');
-    var resetUsername = null;
 
     fetch('/.netlify/functions/verify-password-reset', {
       method: 'POST',
@@ -335,7 +335,6 @@
         resetBack.style.display = 'block';
         return;
       }
-      resetUsername = data.username;
       resetSub.textContent = 'Enter a new password for ' + data.username + '.';
       resetForm.style.display = 'block';
     }).catch(function(){
@@ -357,38 +356,25 @@
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-inline"></span>';
 
-      fetch('/.netlify/functions/verify-password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetToken, consume: true })
-      }).then(function(res){ return res.json(); }).then(function(data){
-        if(!data.ok){
-          err.textContent = 'That link just expired — request a new one.';
-          btn.disabled = false;
-          btn.textContent = 'Set new password';
-          return;
-        }
-        var applied = DreamStore.resetPasswordLocally(data.username, newPassword);
+      // One call now both consumes the token and applies the new password
+      // for real, server-side (see DreamStore.resetPasswordLocally) — no
+      // separate "wrong device" case anymore, since the account this
+      // resets is no longer tied to a single browser. Any failure here
+      // (expired/invalid link, or resetPasswordLocally's own 8-character
+      // minimum) is shown the same way, inline, with the form left in
+      // place to retry.
+      DreamStore.resetPasswordLocally(resetToken, newPassword).then(function(applied){
         if(!applied.ok){
-          // Only the account-not-found-on-this-device case replaces the whole
-          // form with the "wrong device" explanation — any other failure
-          // (e.g. resetPasswordLocally's own 8-character minimum) is a normal,
-          // fixable form error, so it's shown the same way signup()'s errors
-          // are: inline, with the form left in place to retry.
-          if(applied.error === 'account_not_found_on_this_device'){
-            resetForm.style.display = 'none';
-            resetSub.textContent = "Your link checked out, but this account isn't set up on this device — DreamTube accounts currently live on the device where they were created. Open this link on that device to finish resetting the password.";
-            resetBack.textContent = 'Back to log in';
-            resetBack.style.display = 'block';
-            return;
-          }
-          err.textContent = applied.error;
+          err.textContent = applied.error === 'link_invalid_or_expired'
+            ? 'That link just expired — request a new one.'
+            : (applied.error || "Couldn't reset your password — try again.");
           btn.disabled = false;
           btn.textContent = 'Set new password';
           return;
         }
-        DreamStore.login(data.username, newPassword);
-        location.href = nextUrl;
+        DreamStore.login(applied.username, newPassword).then(function(){
+          location.href = nextUrl;
+        });
       }).catch(function(){
         err.textContent = "Couldn't reset your password — check your connection and try again.";
         btn.disabled = false;

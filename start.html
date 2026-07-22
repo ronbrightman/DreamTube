@@ -86,9 +86,14 @@
   separate funnel screens, one per section — see below), the "coming
   together" transition (screen 11), signup, pricing, and confirmation
   (screens 13-15). Two reasons those couldn't move:
-   1. Signup is NOT a network call — DreamStore.signup() writes straight
-      into this origin's own localStorage. There is no account to create
-      from a different origin.
+   1. Signup DOES make a network call now — DreamStore.signup() checks/
+      creates the account server-side first (register-account.js, the
+      authoritative cross-device uniqueness check), then mirrors it into
+      this origin's own localStorage on success (falling back to a
+      local-only write if the server can't be reached at all — see that
+      function's own comment). The account still has to be created from
+      THIS origin either way, since the local mirror it writes only exists
+      here.
    2. Character photos are staged in-memory as base64 data URLs (the
       `staged` object below) until signup — arbitrarily large, and every
       other Advanced field (camera/scenery chips) writes directly into
@@ -751,23 +756,31 @@
     var base = deriveUsernameBase(email);
     var attempts = 0;
     var MAX_ATTEMPTS = 8;
+    // DreamStore.signup is now a real network round trip (server-side
+    // account check, see js/store.js) — this loop is unchanged in shape,
+    // just chained through the returned Promise instead of a synchronous
+    // return, so a "username taken" collision (now possibly discovered on
+    // the SERVER, from a signup on a different device, not just this
+    // browser's local storage) still retries with a new suffix exactly as
+    // before.
     function tryUsername(username){
-      var result = DreamStore.signup(username, password, email);
-      if(result.ok){
-        // Shared event_id pairs this with the Pixel's own
-        // CompleteRegistration call — see js/analytics-config.js's
-        // fireMetaConversion for why. login.html's own ?mode=signup path
-        // fires the equivalent call for its own signup case.
-        fireMetaConversion('CompleteRegistration', { email: email });
-        cb(true, null); return;
-      }
-      if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
-        attempts++;
-        var suffix = Math.floor(1000 + Math.random() * 9000);
-        tryUsername(base + suffix);
-        return;
-      }
-      cb(false, result.error);
+      DreamStore.signup(username, password, email).then(function(result){
+        if(result.ok){
+          // Shared event_id pairs this with the Pixel's own
+          // CompleteRegistration call — see js/analytics-config.js's
+          // fireMetaConversion for why. login.html's own ?mode=signup path
+          // fires the equivalent call for its own signup case.
+          fireMetaConversion('CompleteRegistration', { email: email });
+          cb(true, null); return;
+        }
+        if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
+          attempts++;
+          var suffix = Math.floor(1000 + Math.random() * 9000);
+          tryUsername(base + suffix);
+          return;
+        }
+        cb(false, result.error);
+      });
     }
     tryUsername(base);
   }
@@ -805,9 +818,12 @@
       continueBtn.disabled = true;
       continueBtn.textContent = 'Creating your account…';
       // Yields to a frame so the disabled/label state above actually paints
-      // before signup (synchronous) runs — same 0ms-defer trick, applied
-      // here instead of login.html's setTimeout(...,450) since there's no
-      // artificial delay to justify here (signup is instant, local-only).
+      // before attemptSignup kicks off its real network round trip (see
+      // that function's own comment — signup is no longer instant/
+      // local-only) — same 0ms-defer trick as login.html's own signup path,
+      // used here instead of login.html's setTimeout(...,450) since there's
+      // no artificial minimum-delay to simulate on top of the real network
+      // latency this now already has.
       setTimeout(function(){
         attemptSignup(email, password, function(ok, err){
           if(!ok){

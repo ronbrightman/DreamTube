@@ -36,14 +36,14 @@ Navigation between pages is real browser navigation — back/forward buttons wor
 
 ## How state works now
 
-There's no in-memory JavaScript state that would get wiped by a page load anymore (that was the point of a real multi-page site). Instead, `js/store.js` persists a small JSON blob to `localStorage` — think of it as a fake local database standing in for a real backend. It survives navigation and page refreshes; it resets if you clear your browser's site data, and it's specific to whichever device/browser you're using (nothing is synced anywhere, on purpose — there's no real backend yet).
+There's no in-memory JavaScript state that would get wiped by a page load anymore (that was the point of a real multi-page site). Instead, `js/store.js` persists a small JSON blob to `localStorage` — think of it as a fake local database standing in for a real backend. It survives navigation and page refreshes; it resets if you clear your browser's site data, and it's specific to whichever device/browser you're using. Dreams/characters are deliberately not synced anywhere (no real backend for those yet) — but the account check itself (signup/login/forgot-password) now also goes through a real server-side store (`netlify/functions/lib/account-store.js`), so an account works from any device, even though what it contains locally (dreams, characters) doesn't follow it there. See that file's header comment for the full story.
 
 ## What's real vs. mocked
 
 **Real:**
 - Actual multi-page navigation with real URLs.
 - A login gate — visiting any protected page without being "logged in" bounces you to `login.html`.
-- Real username/password accounts: `signup()`/`login()` in `store.js` validate username length, reject duplicate usernames, and check exact password matches — not a "any password works" mock. Credentials are still stored in plaintext in `localStorage` since there's no real backend yet.
+- Real username/password accounts: `signup()`/`login()` in `store.js` validate username length, reject duplicate usernames/emails, and check exact password matches — not a "any password works" mock. The account check itself is real and server-side now (`register-account.js`/`account-login.js`, backed by Netlify Blobs), so it works from any device; a local `localStorage` mirror is still kept too, for the dream/character logic that stays local-only. Credentials are still stored in plaintext (locally and server-side) since there's no real hashing infra yet — an accepted tradeoff, not a regression from before this existed.
 - Real video generation via fal.ai (`fal-ai/wan/v2.2-5b/text-to-video`), called through Netlify Functions. Failures shown on Processing are genuine generation errors from fal.ai, not a simulated rate.
 - Real audio recording (`MediaRecorder`/`getUserMedia`) and real transcription via fal.ai's Whisper model (`transcribe-audio.js`) — Record actually captures and transcribes your voice.
 - Editing a dream's text/style and regenerating actually updates that dream in the shared store.
@@ -56,7 +56,7 @@ There's no in-memory JavaScript state that would get wiped by a page load anymor
 **Mocked (no real backend to connect to):**
 - No real user-facing video files management — fal.ai hosts finished clips on its own CDN URL.
 - No real OAuth — only the username/password form logs you in.
-- "Database" is `localStorage`, not a server — private per browser, not a real multi-user backend.
+- Dreams/characters live only in `localStorage`, private per browser — not a real multi-user backend, and not synced across devices (a deliberate, separate, deferred project). Accounts are the one exception — see "Real" above.
 
 ## Connecting a real backend later
 
