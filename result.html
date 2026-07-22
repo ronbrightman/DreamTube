@@ -590,6 +590,46 @@
   }
   render();
 
+  // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
+  // every other page's inline funnel script already defines locally (see
+  // start.html) — this page didn't have one yet. =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
+  // ===== "First video created" conversion event =====
+  // Fires exactly once per account, the moment the user's actual
+  // first-ever completed dream video finishes generating and shows here
+  // fresh off processing.html -- not on a later revisit/reload of this
+  // same page, and not on their 2nd+ video. Two independent guards must
+  // both pass:
+  //   1. sessionStorage's dreamtube_just_generated_id (set by
+  //      processing.html right before this redirect, consumed here
+  //      exactly once) -- confirms this page load is the actual moment
+  //      generation just finished, not a later visit to an old result.
+  //   2. DreamStore.markFirstVideoCreatedIfEligible(dream.id) -- confirms
+  //      this is chronologically this account's first-ever completed
+  //      dream, and atomically marks the account's one-time flag so it
+  //      can never fire again after this.
+  // See js/store.js's markFirstVideoCreatedIfEligible doc comment and
+  // js/analytics-config.js's fireMetaConversion (custom=true branch) for
+  // the full mechanics; docs/EVENT_TAXONOMY.md documents this event
+  // alongside every other one this codebase fires. Fire-and-forget: must
+  // never throw or block rendering.
+  (function(){
+    try {
+      var justGeneratedId = sessionStorage.getItem('dreamtube_just_generated_id');
+      sessionStorage.removeItem('dreamtube_just_generated_id'); // consume once regardless of outcome below
+      if(!justGeneratedId || justGeneratedId !== dream.id) return;
+      if(!DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
+
+      track('first_video_created', { style: dream.style });
+      fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
+    } catch (e) { /* analytics must never break the app */ }
+  })();
+
   // The video autoplays (muted) as soon as it has a src, so the badge only
   // needs to show a real ▶ affordance while paused — it hides itself once
   // playback is running and toggles play/pause on click, instead of sitting

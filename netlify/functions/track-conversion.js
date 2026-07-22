@@ -10,8 +10,16 @@
 //
 // event_name is restricted to a fixed allowlist (see ALLOWED_EVENT_NAMES
 // below) — this is NOT a general-purpose event-forwarding proxy, and
-// anything outside the four events DreamTube actually tracks is rejected
-// with E4 rather than silently forwarded to Meta.
+// anything outside the events DreamTube actually tracks is rejected with
+// E4 rather than silently forwarded to Meta. The allowlist mixes Meta
+// *standard* event names (CompleteRegistration/InitiateCheckout/Purchase/
+// Subscribe — fired client-side via fbq('track', ...)) and Meta *custom*
+// event names (FirstVideoCreated — fired client-side via
+// fbq('trackCustom', ...), see js/analytics-config.js's fireMetaConversion
+// `custom` param) — CAPI itself doesn't care which kind a name is, it's
+// forwarded to Meta as a plain string either way (see lib/meta-capi.js).
+// See docs/EVENT_TAXONOMY.md for the full list of every event this
+// codebase fires, per vendor.
 //
 // event_id is required and must be supplied by the caller (never
 // generated here) — the whole point is that the client's matching
@@ -57,7 +65,7 @@
 var metaCapi = require('./lib/meta-capi');
 var rateLimit = require('./lib/rate-limit');
 
-var ALLOWED_EVENT_NAMES = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe'];
+var ALLOWED_EVENT_NAMES = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe', 'FirstVideoCreated'];
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {

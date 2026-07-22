@@ -30,6 +30,9 @@
 //   getInterpretation(id)                -> local read of a dream's saved "what this might mean" reflection
 //   generateInterpretation(id)            -> POST /.netlify/functions/interpret-dream (see that file)
 //   getTokenStatus()                      -> GET  /.netlify/functions/get-token-status
+//   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
+//                                                the "first video created" conversion event (see
+//                                                result.html's call site + js/analytics-config.js)
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -1045,6 +1048,44 @@
           if (data.error) throw new Error(data.error);
           return data;
         });
+    },
+
+    /**
+     * Fire-once-per-account guard for the "first video created" conversion
+     * event (see result.html's call site + js/analytics-config.js's
+     * fireMetaConversion). Returns true exactly once ever, for the
+     * chronologically-first completed dream (ownerHandle + videoUrl) this
+     * account ever generates — every other call (a revisit/reload of that
+     * same dream, or the account's 2nd/Nth completed dream) returns false,
+     * atomically: eligibility-check and flag-write happen in the same call
+     * so there's no separate "check" step a caller could race against.
+     *
+     * The flag itself (firstVideoCreatedFired) lives directly on the
+     * account record (state.accounts[key]) — the same per-account
+     * persistence the email field above already uses — so it survives
+     * logout/login and page reloads on this browser, the closest this
+     * fake backend gets to a real backend's per-user "has this one-time
+     * event already fired" column. Accounts that predate this feature
+     * simply have the field undefined (falsy), which is exactly the
+     * "not yet fired" state, no migration needed.
+     *
+     * dreamId is required and compared against the account's current
+     * (and, given the length===1 check, only) completed dream — this
+     * guards against firing for the wrong dream if the caller's own
+     * "just generated" bookkeeping (e.g. a page-level sessionStorage
+     * marker) is ever stale.
+     */
+    markFirstVideoCreatedIfEligible: function (dreamId) {
+      if (!state.user || !dreamId) return false;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account || account.firstVideoCreatedFired) return false;
+      var myHandle = state.user.handle;
+      var completed = state.dreams.filter(function (d) { return d.ownerHandle === myHandle && !!d.videoUrl; });
+      if (completed.length !== 1 || completed[0].id !== dreamId) return false;
+      account.firstVideoCreatedFired = true;
+      persist();
+      return true;
     }
   };
 })();

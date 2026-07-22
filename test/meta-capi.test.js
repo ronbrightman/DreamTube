@@ -11,8 +11,9 @@
 //   - hash() produces a correct, stable SHA-256 hex digest for a known
 //     input, lowercased+trimmed first per Meta's spec.
 //   - track-conversion.js rejects any event_name outside the fixed
-//     CompleteRegistration/InitiateCheckout/Purchase/Subscribe allowlist
-//     — this endpoint is not a general-purpose event-forwarding proxy.
+//     CompleteRegistration/InitiateCheckout/Purchase/Subscribe/
+//     FirstVideoCreated allowlist — this endpoint is not a
+//     general-purpose event-forwarding proxy.
 //   - the payload actually sent to Meta has the right shape: data: [...],
 //     correct field names (event_name, event_time, event_id,
 //     action_source, user_data.em/external_id/fbc/fbp, custom_data).
@@ -257,15 +258,26 @@ test('track-conversion.js: rejects an event_name outside the fixed allowlist —
   });
 });
 
-test('track-conversion.js: accepts each of the four allowed event names', function () {
+test('track-conversion.js: accepts each of the five allowed event names (four Meta standard events + the FirstVideoCreated custom event)', function () {
   return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
     var handler = require('../netlify/functions/track-conversion').handler;
-    var names = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe'];
+    var names = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe', 'FirstVideoCreated'];
     for (var i = 0; i < names.length; i++) {
       installFetchSpy();
       var res = await handler(convEvent({ event_name: names[i], event_id: 'evt-' + i }));
       assert.equal(res.statusCode, 200, names[i] + ' should be accepted');
     }
+  });
+});
+
+test('track-conversion.js: FirstVideoCreated forwards custom_data (e.g. style) through to Meta unchanged, same as the four standard events', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
+    var calls = installFetchSpy();
+    var handler = require('../netlify/functions/track-conversion').handler;
+    var res = await handler(convEvent({ event_name: 'FirstVideoCreated', event_id: 'evt-fvc', custom_data: { style: 'Cinematic' } }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls[0].body.data[0].event_name, 'FirstVideoCreated');
+    assert.deepEqual(calls[0].body.data[0].custom_data, { style: 'Cinematic' });
   });
 });
 

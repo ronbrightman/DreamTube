@@ -73,7 +73,13 @@ function redactToken(text, secret) {
 
 /**
  * Sends one event to Meta's CAPI. `params`:
- *   event_name        (required) — one of Meta's standard event names
+ *   event_name        (required) — one of Meta's standard event names, or
+ *                       an app-defined custom event name (e.g.
+ *                       FirstVideoCreated) — CAPI takes this as a plain
+ *                       string either way, no validation against Meta's
+ *                       standard list happens here or anywhere server-side;
+ *                       track-conversion.js's ALLOWED_EVENT_NAMES is the
+ *                       only allowlist in this codebase
  *   event_id           (required) — shared with the matching client-side
  *                       fbq('track', ...) call for Pixel+CAPI dedup
  *   event_source_url   (optional) — the page/flow the event happened on;

@@ -80,31 +80,43 @@ setup was the only manual step; everything else is code, already wired:
   network-layer error text).
 - `netlify/functions/track-conversion.js` — the client-facing endpoint.
   `POST { event_name, event_id, event_source_url, email?, external_id?,
-  fbc?, fbp?, custom_data? }`. `event_name` is restricted to exactly
-  `CompleteRegistration`, `InitiateCheckout`, `Purchase`, `Subscribe` —
-  not a general-purpose event-forwarding proxy.
-- `js/analytics-config.js`'s `fireMetaConversion(eventName, extra)` — the
-  one place a page fires one of the four tracked events. Generates one
-  `event_id` and fires BOTH the client-side `fbq('track', ...)` Pixel call
-  and the server-side `track-conversion.js` POST with that same id, so
-  Meta's Pixel+CAPI dedup (matches on event_id + event_name) collapses
-  them into a single counted conversion — this is why Event ID was
-  selected as a parameter when the access token was set up. Also reads
-  the `_fbc`/`_fbp` first-party cookies Meta's Pixel snippet sets, and
-  includes them in the CAPI payload.
+  fbc?, fbp?, custom_data? }`. `event_name` is restricted to a fixed
+  allowlist (`CompleteRegistration`, `InitiateCheckout`, `Purchase`,
+  `Subscribe`, `FirstVideoCreated`) — not a general-purpose
+  event-forwarding proxy.
+- `js/analytics-config.js`'s `fireMetaConversion(eventName, extra, custom)`
+  — the one place a page fires one of the tracked events. Generates one
+  `event_id` and fires BOTH the client-side Pixel call (`fbq('track', ...)`
+  for a Meta *standard* event, or `fbq('trackCustom', ...)` when `custom`
+  is `true`, for a Meta *custom* event like `FirstVideoCreated`) and the
+  server-side `track-conversion.js` POST with that same id, so Meta's
+  Pixel+CAPI dedup (matches on event_id + event_name) collapses them into
+  a single counted conversion — this is why Event ID was selected as a
+  parameter when the access token was set up. Also reads the `_fbc`/`_fbp`
+  first-party cookies Meta's Pixel snippet sets, and includes them in the
+  CAPI payload.
 - Wired call sites: `start.html`'s `attemptSignup()` and `login.html`'s
   `?mode=signup` path (both → `CompleteRegistration`), `start.html`'s
-  `renderScreen14()` pricing screen (→ `InitiateCheckout`), and
+  `renderScreen14()` pricing screen (→ `InitiateCheckout`),
   `netlify/functions/stripe-webhook.js`'s `checkout.session.completed`
   handler (→ `Purchase` + `Subscribe`, currently dormant — see that
   file's comment — because no real checkout flow calls
   `create-checkout-session.js` yet; nothing fires these two events from
-  `start.html`'s temporary payment bypass, deliberately).
+  `start.html`'s temporary payment bypass, deliberately), and
+  `result.html` (→ `FirstVideoCreated`, a Meta *custom* event — fires once
+  per account, the moment a user's actual first-ever completed dream
+  video shows here fresh off `processing.html`; see
+  `docs/EVENT_TAXONOMY.md` for the full fire-once mechanics).
 
-If a custom event parameter beyond Meta's standard set is ever needed
-(e.g. which A/B variant a converting user saw), add it to the
-`custom_data` object at the relevant call site — the plumbing already
-supports arbitrary `custom_data`.
+If a custom_data field beyond Meta's standard set is ever needed (e.g.
+which A/B variant a converting user saw), add it to the `custom_data`
+object at the relevant call site — the plumbing already supports
+arbitrary `custom_data`.
+
+**See `docs/EVENT_TAXONOMY.md` for the full list of every conversion
+event this codebase fires, across all three vendors (Pixel/PostHog/CAPI),
+with fire-once/guard semantics for each** — this file covers the Meta
+CAPI *mechanism*; that one covers every individual *event*.
 
 ## Session-replay privacy: why `#dream-text` is masked
 
@@ -151,3 +163,20 @@ screens, etc.), add the same `ph-no-capture` class to that element.
 - `login.html` — `?mode=signup` submit handler (CompleteRegistration)
 - `netlify/functions/stripe-webhook.js` — `checkout.session.completed`
   handler (Purchase + Subscribe, dormant until real payment goes live)
+
+**Files touched by the `FirstVideoCreated` addition (see
+`docs/EVENT_TAXONOMY.md` for the full picture):**
+
+- `js/analytics-config.js` — `fireMetaConversion()` gained a third
+  `custom` param (`fbq('trackCustom', ...)` vs. `fbq('track', ...)`)
+- `netlify/functions/track-conversion.js` — `ALLOWED_EVENT_NAMES` gained
+  `FirstVideoCreated`
+- `netlify/functions/lib/meta-capi.js` — doc comment only, no logic
+  change (event_name was already forwarded as a plain string)
+- `js/store.js` — new `markFirstVideoCreatedIfEligible(dreamId)`,
+  fire-once-per-account guard
+- `processing.html` — sets a `dreamtube_just_generated_id` sessionStorage
+  marker right before redirecting to `result.html` on a successful
+  generation
+- `result.html` — new local `track()` PostHog helper (mirrors
+  `start.html`'s) + the call site itself
