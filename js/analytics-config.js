@@ -63,13 +63,27 @@ if (typeof module !== 'undefined' && module.exports) {
 // double-counting — this is exactly why Event ID was selected as a
 // parameter when CAPI access was set up. fireMetaConversion() below is
 // the one place that pairing happens; every page that fires one of these
-// four events (CompleteRegistration, InitiateCheckout, Purchase,
-// Subscribe) should call this instead of calling fbq('track', ...)
-// directly for those events. (Purchase/Subscribe are currently only
-// fired server-side, from stripe-webhook.js's real payment-confirmation
-// path — see that file's comment — so this function's Purchase/Subscribe
+// events (CompleteRegistration, InitiateCheckout, Purchase, Subscribe —
+// Meta *standard* events — or FirstVideoCreated, a Meta *custom* event,
+// see the `custom` param doc below) should call this instead of calling
+// fbq(...) directly. (Purchase/Subscribe are currently only fired
+// server-side, from stripe-webhook.js's real payment-confirmation path —
+// see that file's comment — so this function's Purchase/Subscribe
 // branches exist for when a client-side moment for them exists too, e.g.
 // a checkout-return page; nothing in this codebase calls them yet.)
+//
+// Standard vs. custom Meta events: Meta's Pixel API has two distinct
+// client-side calls — fbq('track', name, ...) for its fixed list of
+// *standard* event names (CompleteRegistration/InitiateCheckout/Purchase/
+// Subscribe/etc.), and fbq('trackCustom', name, ...) for any other,
+// app-defined *custom* event name (FirstVideoCreated is one). CAPI itself
+// doesn't draw this distinction server-side — Meta's Conversions API
+// endpoint takes event_name as a plain string either way (see
+// lib/meta-capi.js's sendCapiEvent — it never validates event_name
+// against Meta's standard list, it just forwards whatever the caller
+// passed), so the CAPI half of this function is identical for both;
+// only the client-side fbq call name changes. See docs/EVENT_TAXONOMY.md
+// for the full list of every event this codebase fires, per vendor.
 // ---------------------------------------------------------------------
 
 /** New v4 UUID via the browser's crypto API, with a low-tech fallback for the rare browser without crypto.randomUUID. */
@@ -89,14 +103,23 @@ function getMetaCookies() {
 
 /**
  * Fires both halves of one conversion: the client-side Pixel call
- * (fbq('track', eventName, {}, {eventID: ...})) and the server-side CAPI
- * call (POSTs to netlify/functions/track-conversion.js), sharing one
- * generated event_id between them — see the header comment above for why.
+ * (fbq('track', eventName, {}, {eventID: ...}) — or fbq('trackCustom', ...)
+ * when `custom` is true, see below) and the server-side CAPI call (POSTs
+ * to netlify/functions/track-conversion.js), sharing one generated
+ * event_id between them — see the header comment above for why.
  *
- * eventName must be one of the four names track-conversion.js allows —
- * CompleteRegistration, InitiateCheckout, Purchase, Subscribe. `extra` can
- * carry { email, external_id, custom_data }; anything else is ignored by
- * the server function.
+ * eventName must be one of the names track-conversion.js's
+ * ALLOWED_EVENT_NAMES allows. `extra` can carry { email, external_id,
+ * custom_data }; anything else is ignored by the server function.
+ *
+ * `custom` (optional, default false): pass true for a Meta *custom* event
+ * (currently just FirstVideoCreated) so the Pixel call goes out as
+ * fbq('trackCustom', ...) instead of fbq('track', ...) — required by
+ * Meta's Pixel API for any event name outside its fixed standard-event
+ * list (see the header comment above for the standard-vs-custom
+ * distinction). The CAPI POST below is unaffected either way — Meta's
+ * CAPI endpoint takes event_name as a plain string regardless of which
+ * client-side call produced it.
  *
  * Fire-and-forget: analytics must never block or break the actual user
  * flow (same rule every page's existing `track()` PostHog helper
@@ -104,12 +127,12 @@ function getMetaCookies() {
  * the fetch itself rejecting, a non-2xx from the server — is swallowed
  * rather than surfaced.
  */
-function fireMetaConversion(eventName, extra) {
+function fireMetaConversion(eventName, extra, custom) {
   extra = extra || {};
   var eventId = generateEventId();
 
   if (typeof window.fbq === 'function') {
-    try { window.fbq('track', eventName, {}, { eventID: eventId }); } catch (e) { /* analytics must never break the app */ }
+    try { window.fbq(custom ? 'trackCustom' : 'track', eventName, {}, { eventID: eventId }); } catch (e) { /* analytics must never break the app */ }
   }
 
   try {
