@@ -127,7 +127,15 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E6: rate_limited: too many login attempts for this account today, try again tomorrow' }) };
   }
 
-  var result = await accountStore.verifyLogin(event, usernameOrEmail, password);
+  // Reuse the lookup just above (canonicalAccount) instead of having
+  // verifyLogin redo the identical username-then-email resolution a second
+  // time — same account, same two Blobs reads, moments apart. Passing
+  // `{ record: canonicalAccount }` tells verifyLogin to skip its own
+  // lookup entirely and check the password against this record directly
+  // (canonicalAccount is `null` here exactly when verifyLogin's own lookup
+  // would also have found nothing, so this is a lookup-count optimization,
+  // not a behavior change — see that function's own comment).
+  var result = await accountStore.verifyLogin(event, usernameOrEmail, password, { record: canonicalAccount });
   if (!result.ok) {
     var code = result.error === 'incorrect_password' ? 'E5: incorrect_password' : 'E4: not_found';
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };

@@ -161,11 +161,35 @@ function store() {
  *     attempted email) -- if the winner happens to share the same email,
  *     the index still correctly points at the right place; nothing is
  *     stale, so nothing is touched.
- *   - the "e:" entry must, at the moment of rollback, STILL point at
- *     `key` (this call's own attempted username) -- if some other,
- *     legitimate process has since reclaimed that exact email for a
- *     different reason, this deliberately backs off rather than deleting
- *     a still-valid claim out from under it.
+ *   - the "e:" entry must, at the moment of THIS FUNCTION'S OWN READ,
+ *     still point at `key` (this call's own attempted username) -- if some
+ *     other, legitimate process reclaimed that exact email BEFORE this
+ *     read ran, this backs off rather than deleting a still-valid claim
+ *     out from under it.
+ *
+ * Residual TOCTOU gap (round-3 review, previously undisclosed): the read
+ * above and the delete() below are two separate Blobs calls with no
+ * compare-and-swap between them -- same "no CAS primitive in the installed
+ * SDK" limit the header comment already documents for the two-key claim
+ * writes themselves. The bulleted safety check only covers a legitimate
+ * claim that existed BEFORE this function's read; it does nothing for a
+ * claim landing IN the gap between this read and this delete. If a THIRD,
+ * unrelated createAccount/applyPasswordReset call legitimately claims this
+ * exact email in that narrow window, the delete() below destroys THAT
+ * party's freshly-written, legitimate "e:" entry -- not a stale one --
+ * silently orphaning a real, unrelated account from email-based
+ * password-reset lookup (getByEmail would return null for their own live
+ * email; no error, nothing logged). This needs a third concurrent writer
+ * on top of the original two-racer scenario this function exists for, so
+ * it's rare, but the consequence is real, not cosmetic. There's also no
+ * cheap way to narrow it with a read-back after the delete: once delete()
+ * runs, a subsequent read only shows what (if anything) was written AFTER
+ * the delete, never what the delete itself just destroyed, so there is no
+ * way to tell after the fact whether what got destroyed was this call's
+ * own stale entry or a third party's live one. Same "narrows, doesn't
+ * eliminate" tradeoff already accepted elsewhere in this file (see the
+ * header comment and getByEmail's own defense-in-depth comment) -- left
+ * disclosed rather than "fixed" for that reason.
  */
 async function rollBackStaleEmailIndex(s, email, key, liveRecord) {
   if (liveRecord && liveRecord.email === email) return;
@@ -274,11 +298,26 @@ async function createAccount(event, account) {
  * check is appropriate (not_found only — see js/store.js's login()), since
  * a wrong password against a REAL registered account should never be
  * silently second-guessed by a local fallback.
+ *
+ * Optional 4th arg `preResolved` — pass `{ record }` (the account record,
+ * or `null` if none was found) when the caller already did this exact
+ * username-then-email lookup itself for an unrelated reason (see
+ * account-login.js, which resolves the canonical account first for
+ * rate-limit bucketing) so this function reuses that result instead of
+ * doing the identical two Blobs reads a second time moments later. Must be
+ * an object with an own `record` key to take effect — pass nothing (the
+ * common case, every other caller in this codebase) to keep doing the
+ * lookup here as always.
  */
-async function verifyLogin(event, usernameOrEmail, password) {
-  var key = normalizeUsername(usernameOrEmail);
-  var record = await getByUsername(event, key);
-  if (!record) record = await getByEmail(event, usernameOrEmail);
+async function verifyLogin(event, usernameOrEmail, password, preResolved) {
+  var record;
+  if (preResolved && Object.prototype.hasOwnProperty.call(preResolved, 'record')) {
+    record = preResolved.record;
+  } else {
+    var key = normalizeUsername(usernameOrEmail);
+    record = await getByUsername(event, key);
+    if (!record) record = await getByEmail(event, usernameOrEmail);
+  }
   if (!record) return { ok: false, error: 'not_found' };
   if (record.password !== password) return { ok: false, error: 'incorrect_password' };
   return { ok: true, record: record };

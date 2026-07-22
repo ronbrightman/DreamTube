@@ -247,6 +247,41 @@ test('account-store: two concurrent applyPasswordReset calls for the SAME userna
   assert.equal(loginAsWinner.ok, true);
 });
 
+test('account-store: two concurrent createAccount calls for the exact SAME username, email, AND password (a user double-submitting the same signup) both succeed cleanly -- not misclassified as a race requiring rollback', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  // Unlike the genuine-race tests above, these two calls describe the
+  // exact same account -- same normalized username, same normalized
+  // email, same password -- so whichever write actually lands last still
+  // matches what the OTHER call itself attempted too. There is no real
+  // "winner" whose data differs from a "loser"'s here, so neither call
+  // should ever see its own read-back disagree with what it wrote, and
+  // neither should be misclassified as a losing racer needing
+  // rollBackStaleEmailIndex.
+  var results = await Promise.all([
+    accountStore.createAccount(event, { username: 'dupuser', password: 'samepassword1', email: 'dupuser@example.com' }),
+    accountStore.createAccount(event, { username: 'DUPUSER', password: 'samepassword1', email: 'DupUser@Example.com' })
+  ]);
+
+  assert.equal(results[0].ok, true, 'first submission of the duplicate signup should succeed');
+  assert.equal(results[1].ok, true, 'second, identical duplicate submission should ALSO succeed -- not treated as a losing racer just because another call touched the same keys');
+
+  var stored = await accountStore.getByUsername(event, 'dupuser');
+  assert.equal(stored.email, 'dupuser@example.com');
+  assert.equal(stored.password, 'samepassword1');
+
+  var login = await accountStore.verifyLogin(event, 'dupuser', 'samepassword1');
+  assert.equal(login.ok, true);
+
+  // The email index must still resolve to this same, still-valid account
+  // -- confirms neither call's rollBackStaleEmailIndex path fired and
+  // freed an index entry that was never actually stale.
+  var byEmail = await accountStore.getByEmail(event, 'dupuser@example.com');
+  assert.ok(byEmail);
+  assert.equal(byEmail.username, 'dupuser');
+});
+
 // ===== register-account.js =====
 
 test('register-account: creates an account and returns ok:true with username/email', async function () {
