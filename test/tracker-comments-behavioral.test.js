@@ -47,6 +47,20 @@
 //      (commentConfirmed/doneConfirmed/priorityConfirmed, updated only on
 //      an actual successful postUpdate) instead of "previous". The
 //      "chained double-failure" test below covers this.
+//   5. The {comment,done,priority}Confirmed writes added for #4 above were
+//      only guarded by the seqMap check on the .catch (failure) side, never
+//      on the .then (success) side -- so if an OLDER same-id request happens
+//      to SUCCEED after a NEWER same-id request has already resolved (either
+//      way), the older request's unconditional `Confirmed[id] = ...` in its
+//      .then still runs and clobbers the newer, correct confirmed value with
+//      a stale one, even though nothing on screen changes at that instant
+//      (success handlers don't render()). The corruption only becomes
+//      visible later, on the next same-id failure, which then reverts to the
+//      wrong (stale) value instead of the true last-good one. Fixed by
+//      guarding every .then the same way its sibling .catch already is:
+//      `if ({comment,done,priority}ChangeSeq[id] === mySeq)
+//      {comment,done,priority}Confirmed[id] = ...`. The "stale older success"
+//      tests below cover all three handlers.
 //
 // This is the first browser-level coverage tracker.html has ever had --
 // test/tracker.test.js only covers the server side (get-tracker-items.js /
@@ -581,6 +595,223 @@ test("two overlapping comment-save requests for the SAME item that BOTH fail mus
 
     var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
     assert.equal(aValueFinal, 'saved comment A', "the older (now-stale) request's later failure must not change anything further");
+  } finally {
+    await context.close();
+  }
+});
+
+test("an older done-toggle request for item A that SUCCEEDS after a newer done-toggle request for the SAME item has already succeeded must not clobber doneConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var taskADoneCount = 0;
+    var resolveOlderRequestSeen = null;
+    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
+
+    // Request 1 (older, done: true) is held open and SUCCEEDS only after a
+    // long delay. Request 2 (newer, done: false) fires while request 1 is
+    // still in flight and SUCCEEDS immediately -- exactly the ordering from
+    // the bug report: the newer request's success lands first, then the
+    // older request's success lands after. A THIRD request (done: true)
+    // fires only once both of the above have resolved, and is made to FAIL
+    // -- its revert is the only way to observe which value doneConfirmed[id]
+    // actually holds, since a successful .then never itself calls render().
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        taskADoneCount++;
+        if (taskADoneCount === 1) {
+          resolveOlderRequestSeen();
+          setTimeout(function () {
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          }, 300);
+        } else if (taskADoneCount === 2) {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        } else {
+          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+        }
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+
+    // Item A starts not-done. First click checks it (done: true) -- the
+    // older, slow-to-succeed request.
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+
+    // Wait until the older request has actually gone out, then click again
+    // (unchecking it, done: false) -- the newer request for the SAME id,
+    // which succeeds immediately.
+    await olderRequestSeen;
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+
+    // Give the newer request time to resolve and land (doneConfirmed[id]
+    // should now correctly be false).
+    await page.waitForTimeout(100);
+
+    // Now let the older request's delayed success land too -- with the bug,
+    // its unguarded .then unconditionally overwrites doneConfirmed[id] back
+    // to true here, even though nothing on screen changes yet.
+    await page.waitForTimeout(350);
+
+    // Re-check the box a third time (done: true) -- this request FAILS, and
+    // its catch reverts to doneConfirmed[id]. Correct behavior: revert to
+    // false (the newer request's confirmed value). Buggy behavior: revert to
+    // true (the older request's stale, later-landing success).
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var checkedFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { return el.checked; });
+    assert.equal(checkedFinal, false, "the third request's failure-revert must land on the newer request's confirmed value (unchecked), not the older request's stale later-landing success (checked)");
+  } finally {
+    await context.close();
+  }
+});
+
+test("an older comment-save request for item A that SUCCEEDS after a newer comment-save request for the SAME item has already succeeded must not clobber commentConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var taskASaveCount = 0;
+    var resolveOlderRequestSeen = null;
+    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
+
+    // Same shape as the done-toggle version above, applied to
+    // handleCommentSave: request 1 (older, "X, first edit") succeeds only
+    // after a long delay; request 2 (newer, "Y, second edit") fires first
+    // and succeeds immediately; request 3 ("Z, third edit") fires only after
+    // both have resolved and FAILS, so its revert target reveals whether
+    // commentConfirmed[id] still correctly holds "Y, second edit" or was
+    // clobbered back to "X, first edit" by the older request's stale
+    // success.
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        taskASaveCount++;
+        if (taskASaveCount === 1) {
+          resolveOlderRequestSeen();
+          setTimeout(function () {
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          }, 300);
+        } else if (taskASaveCount === 2) {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        } else {
+          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+        }
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+
+    await openItem(page, 'task-a');
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'X, first edit');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    await olderRequestSeen;
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Y, second edit');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    // Give the newer request time to resolve and land (commentConfirmed[id]
+    // should now correctly be "Y, second edit").
+    await page.waitForTimeout(100);
+
+    // Now let the older request's delayed success land too -- with the bug,
+    // this clobbers commentConfirmed[id] back to "X, first edit".
+    await page.waitForTimeout(350);
+
+    // Save a third edit -- this request FAILS, and its catch reverts to
+    // commentConfirmed[id].
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Z, third edit');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    assert.equal(aValueFinal, 'Y, second edit', "the third request's failure-revert must land on the newer request's confirmed value ('Y, second edit'), not the older request's stale later-landing success ('X, first edit')");
+  } finally {
+    await context.close();
+  }
+});
+
+test("an older priority-change request for item A that SUCCEEDS after a newer priority-change request for the SAME item has already succeeded must not clobber priorityConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var taskAPriorityCount = 0;
+    var resolveOlderRequestSeen = null;
+    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
+
+    // Same shape again, applied to handlePriorityChange: request 1 (older,
+    // -> "high") succeeds only after a long delay; request 2 (newer, ->
+    // "low") fires first and succeeds immediately; request 3 (-> "medium")
+    // fires only after both have resolved and FAILS, so its revert target
+    // reveals whether priorityConfirmed[id] still correctly holds "low" or
+    // was clobbered back to "high".
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        taskAPriorityCount++;
+        if (taskAPriorityCount === 1) {
+          resolveOlderRequestSeen();
+          setTimeout(function () {
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          }, 300);
+        } else if (taskAPriorityCount === 2) {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        } else {
+          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+        }
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+
+    // Item A starts medium. First click sets it to high (the older,
+    // slow-to-succeed request).
+    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]');
+
+    await olderRequestSeen;
+    // Second click sets it to low -- the newer request, succeeds
+    // immediately.
+    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]');
+
+    // Give the newer request time to resolve and land (priorityConfirmed[id]
+    // should now correctly be "low").
+    await page.waitForTimeout(100);
+
+    // Now let the older request's delayed success land too -- with the bug,
+    // this clobbers priorityConfirmed[id] back to "high".
+    await page.waitForTimeout(350);
+
+    // Third click sets it to medium -- this request FAILS, and its catch
+    // reverts to priorityConfirmed[id].
+    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="medium"]');
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var lowActiveFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]', function (el) { return el.classList.contains('active'); });
+    assert.equal(lowActiveFinal, true, "the third request's failure-revert must land on the newer request's confirmed priority ('low'), not the older request's stale later-landing success ('high')");
+    var highActiveFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]', function (el) { return el.classList.contains('active'); });
+    assert.equal(highActiveFinal, false, "the stale older request's confirmed value must not resurface as active either");
   } finally {
     await context.close();
   }

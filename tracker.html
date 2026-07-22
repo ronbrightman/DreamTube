@@ -144,6 +144,17 @@
   // actually acknowledged, no matter how many same-id requests are chained
   // and failing. See the "chained double-failure" tests below for the
   // concrete scenario this fixes.
+  //
+  // The write side needs the exact same seqMap guard as the revert side:
+  // each handler's .then only updates {comment,done,priority}Confirmed[id]
+  // if it's still the most recently-started request for that id (mirroring
+  // the mySeq check its own .catch already does). Without that guard, an
+  // OLDER same-id request that happens to SUCCEED after a NEWER same-id
+  // request has already resolved would silently clobber the newer,
+  // server-confirmed value with its own stale one -- invisibly, since a
+  // successful .then never itself calls render(), so nothing looks wrong
+  // until some later same-id failure reverts to the wrong value. See the
+  // "stale older success" tests below for the concrete scenario this fixes.
   var commentConfirmed = {};
   var doneConfirmed = {};
   var priorityConfirmed = {};
@@ -305,7 +316,15 @@
     captureDrafts();
     render();
     postUpdate(id, { done: newDone }).then(function () {
-      doneConfirmed[id] = newDone;
+      // Only the most recently-started done-toggle for THIS id is allowed
+      // to update the confirmed value -- mirrors the seq check in the
+      // .catch below. Without this, an OLDER request that happens to
+      // SUCCEED after a NEWER same-id request has already resolved would
+      // unconditionally clobber doneConfirmed[id] with its own stale
+      // value, even though nothing renders at that instant -- the
+      // corruption only surfaces later, when some subsequent same-id
+      // failure reverts to the wrong confirmed value.
+      if (doneChangeSeq[id] === mySeq) doneConfirmed[id] = newDone;
     }).catch(function () {
       // Only the most recently-started done-toggle for THIS id is allowed
       // to revert -- see the seqMap block near unsavedComments for why.
@@ -329,7 +348,10 @@
     captureDrafts();
     render();
     postUpdate(id, { priority: newPriority }).then(function () {
-      priorityConfirmed[id] = newPriority;
+      // Same seq guard as handleDoneChange's .then above, applied here --
+      // see that comment for why an unguarded success handler can clobber
+      // a newer, correct confirmed value with a stale older one.
+      if (priorityChangeSeq[id] === mySeq) priorityConfirmed[id] = newPriority;
     }).catch(function () {
       // Only the most recently-started priority-change for THIS id is
       // allowed to revert -- see the seqMap block near unsavedComments.
@@ -377,7 +399,10 @@
     captureDrafts(id);
     render();
     postUpdate(id, { comment: newComment }).then(function () {
-      commentConfirmed[id] = newComment;
+      // Same seq guard as handleDoneChange's .then -- see that comment for
+      // why an unguarded success handler can clobber a newer, correct
+      // confirmed value with a stale older one.
+      if (commentSaveSeq[id] === mySeq) commentConfirmed[id] = newComment;
     }).catch(function () {
       // Only the most recently-started save for this id may revert -- if a
       // newer save for the same id has started since this request went out,
