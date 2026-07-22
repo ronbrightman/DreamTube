@@ -72,6 +72,34 @@ function blockThirdParty(page) {
   });
 }
 
+/**
+ * Intercepts the real network call profile.html/create.html now make to
+ * netlify/functions/generate-avatar.js the moment Describe mode (with real
+ * text) is saved for the "Me" character -- see that function's own header
+ * and each page's identity-save-btn/char-save-btn handler. No local
+ * Netlify Functions runtime is available to these tests (see
+ * test/helpers/static-server.js's own doc comment), so this stands in for
+ * it, same pattern as test/ui-behavioral.test.js's mockGetFeed.
+ */
+function mockGenerateAvatar(page, opts) {
+  opts = opts || {};
+  var photoDataUrl = opts.photoDataUrl || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  // Waits a short, deliberate delay before fulfilling (default 300ms) --
+  // a real fal.ai call is nowhere near instant, and a mock that resolves
+  // same-tick makes any assertion on the button's loading state a timing
+  // race (see test/avatar-describe-behavioral.test.js's own copy of this
+  // helper for the fuller explanation).
+  var delayMs = opts.delayMs === undefined ? 300 : opts.delayMs;
+  return page.route('**/.netlify/functions/generate-avatar', async function (route) {
+    if (delayMs > 0) await new Promise(function (r) { setTimeout(r, delayMs); });
+    if (opts.fail) {
+      route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'E6: ' + (opts.failMessage || 'The description was flagged by the safety system.') }) });
+      return;
+    }
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ photoDataUrl: photoDataUrl }) });
+  });
+}
+
 /** Wraps page.goto so a transient network stall on a blocked-in-vain third-party request doesn't crash the whole run -- see CLAUDE.md's environment-quirk note. */
 async function safeGoto(page, url) {
   try {
@@ -201,30 +229,40 @@ test('create.html: editing the Me character\'s photo is reflected on profile.htm
   }
 });
 
-test('profile.html: can create the Me character for the first time (name + description, no prior create.html visit)', async function (t) {
+test('profile.html: can create the Me character for the first time (name + description, no prior create.html visit) -- Describe now generates a real avatar image via generate-avatar.js', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
+  var GENERATED = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   try {
     await seedUser(page, null);
+    await mockGenerateAvatar(page, { photoDataUrl: GENERATED });
     await safeGoto(page, baseUrl + '/profile.html');
 
     await page.click('#profile-handle');
     await page.waitForSelector('#sheet-identity-overlay.open');
     await page.fill('#identity-name-input', 'Alex');
-    // Left in "Describe" mode (the default) -- exercises the no-photo, description-only path.
+    // Left in "Describe" mode (the default) -- this now triggers a real
+    // (mocked) call to generate-avatar.js before the sheet closes; the
+    // button shows a loading state for the duration of that call.
     await page.fill('#identity-desc-input', 'A friendly dreamer with curly hair');
     await page.click('#identity-save-btn');
+    await page.waitForSelector('#identity-save-btn:has-text("Generating avatar")');
     await page.waitForSelector('#sheet-identity-overlay:not(.open)');
 
     assert.equal(await page.locator('#profile-handle').textContent(), 'Alex');
+    assert.equal(await page.locator('#profile-avatar img').count(), 1, 'the generated avatar must render immediately, same as an uploaded photo would');
     var state = await readState(page);
     var chars = state.charactersByUser.tester;
     assert.equal(chars.length, 1);
     assert.equal(chars[0].isSelf, true);
     assert.equal(chars[0].name, 'Alex');
+    // The typed description is still stored alongside the generated image
+    // (see generate-avatar.js's own header for why) -- purely so reopening
+    // Describe mode shows the original words if the user wants to tweak
+    // and regenerate, not because it feeds the video-generation prompt.
     assert.equal(chars[0].description, 'A friendly dreamer with curly hair');
-    assert.equal(chars[0].photoDataUrl, undefined);
+    assert.equal(chars[0].photoDataUrl, GENERATED);
   } finally {
     await page.close();
   }

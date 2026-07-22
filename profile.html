@@ -363,10 +363,21 @@
     e.target.value = ''; // allow re-picking the same file later
     if(!file) return;
     document.getElementById('identity-error').textContent = '';
+    // resizeImageFile is a real multi-step async chain (FileReader -> Image
+    // decode -> canvas draw), easily slow enough to race a Cancel-then-
+    // reopen of this sheet. Captured now and re-checked once it resolves,
+    // same tokenAtSave pattern as the generate-avatar call below -- without
+    // this, a stale resize from a cancelled instance can resolve after the
+    // sheet's been reopened (same character or, on create.html, a different
+    // one) and silently overwrite identityPendingPhotoDataUrl/the preview
+    // with an abandoned photo the user never confirmed for this instance.
+    var tokenAtPick = identitySheetToken;
     resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      if(tokenAtPick !== identitySheetToken) return;
       identityPendingPhotoDataUrl = dataUrl;
       renderIdentityPhotoPreview();
     }).catch(function(){
+      if(tokenAtPick !== identitySheetToken) return;
       document.getElementById('identity-error').textContent = "Couldn't read that photo — try a different image.";
     });
   });
@@ -375,16 +386,40 @@
     renderIdentityPhotoPreview();
   });
 
+  // Bumped on every open AND every close (Save's own success path included,
+  // via closeIdentitySheet) so a pending generateAvatarFromDescription call
+  // started by one sheet "instance" can tell, once it resolves, whether
+  // it's still talking about the instance that's still on screen. Cancel /
+  // the overlay-backdrop click both route through closeIdentitySheet, so
+  // this is the single place that invalidates a pending call -- see the
+  // save handler's .then() below, which is the only reader of this token.
+  var identitySheetToken = 0;
+
   function openIdentitySheet(){
+    identitySheetToken++;
     var me = getMeCharacter();
     document.getElementById('identity-name-input').value = me ? (me.name || '') : '';
     document.getElementById('identity-desc-input').value = me ? (me.description || '') : '';
     document.getElementById('identity-error').textContent = '';
     identityPendingPhotoDataUrl = (me && me.photoDataUrl) ? me.photoDataUrl : null;
     setIdentitySubMode(identityPendingPhotoDataUrl ? 'photo' : 'describe');
+    // Unconditionally reset the Save button to its ready state on every
+    // open, regardless of whether a stale generateAvatarFromDescription
+    // call from a previously-cancelled instance of this sheet might still
+    // be outstanding — that call's own .then() re-enables the button too,
+    // but only once it resolves, which can be well after this reopen. Not
+    // gating this on identitySheetToken is deliberate: reopening should
+    // always show a ready button immediately, never a leftover "Generating
+    // avatar…" from an instance the user already backed out of.
+    var saveBtnOnOpen = document.getElementById('identity-save-btn');
+    saveBtnOnOpen.disabled = false;
+    saveBtnOnOpen.textContent = 'Save';
     identityOverlay.classList.add('open');
   }
-  function closeIdentitySheet(){ identityOverlay.classList.remove('open'); }
+  function closeIdentitySheet(){
+    identitySheetToken++;
+    identityOverlay.classList.remove('open');
+  }
   document.getElementById('profile-avatar-edit').addEventListener('click', openIdentitySheet);
   document.getElementById('profile-handle').addEventListener('click', openIdentitySheet);
   document.getElementById('identity-cancel').addEventListener('click', closeIdentitySheet);
@@ -392,29 +427,107 @@
     if(e.target.id === 'sheet-identity-overlay') closeIdentitySheet();
   });
 
+  /**
+   * Calls netlify/functions/generate-avatar.js to turn a typed description
+   * into a real avatar image — a separate, tokenless endpoint from
+   * generate-video.js (see that file's own header for why). Never rejects
+   * — always resolves to { ok:true, photoDataUrl } or { ok:false, error },
+   * so callers can chain a single .then() with no separate .catch().
+   */
+  function generateAvatarFromDescription(description){
+    return fetch('/.netlify/functions/generate-avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: description })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || !result.data || !result.data.photoDataUrl){
+        var raw = result.data && result.data.error;
+        // Strips the leading "E5: "-style code this function's errors carry
+        // (see generate-avatar.js's own error-code doc block) — those exist
+        // for someone reporting a bug, not as user-facing copy.
+        var message = raw ? raw.replace(/^E\d+:\s*/, '') : "Couldn't generate an avatar — try again.";
+        return { ok: false, error: message };
+      }
+      return { ok: true, photoDataUrl: result.data.photoDataUrl };
+    }).catch(function(){
+      return { ok: false, error: "Couldn't generate an avatar — check your connection and try again." };
+    });
+  }
+
   document.getElementById('identity-save-btn').addEventListener('click', function(){
     var me = getMeCharacter();
     var usingPhoto = identitySubMode === 'photo';
+    var descText = document.getElementById('identity-desc-input').value.trim();
+    var errorEl = document.getElementById('identity-error');
+    var saveBtn = document.getElementById('identity-save-btn');
+    errorEl.textContent = '';
+
     // Profile's edit sheet only exposes name+description/photo, not a
     // separate default — if neither a description nor a photo end up set
     // (first-time save, describe mode left blank), saveCharacter's own
     // isSelf validation ("Add a description or a photo") is surfaced as-is
     // rather than silently inventing filler text that would otherwise leak
     // into the video-generation prompt (see generate-video.js's buildPrompt).
-    var result = DreamStore.saveCharacter({
-      id: me ? me.id : null,
-      isSelf: true,
-      name: document.getElementById('identity-name-input').value,
-      description: usingPhoto ? '' : document.getElementById('identity-desc-input').value,
-      photoDataUrl: usingPhoto ? identityPendingPhotoDataUrl : null
-    });
-    if(!result.ok){
-      document.getElementById('identity-error').textContent = result.error;
+    function finishSave(generatedPhotoDataUrl){
+      var result = DreamStore.saveCharacter({
+        id: me ? me.id : null,
+        isSelf: true,
+        name: document.getElementById('identity-name-input').value,
+        description: usingPhoto ? '' : descText,
+        photoDataUrl: usingPhoto ? identityPendingPhotoDataUrl : generatedPhotoDataUrl
+      });
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      closeIdentitySheet();
+      renderIdentity();
+      showToast('Profile updated');
+    }
+
+    // Describe mode left blank skips the generation call entirely (no
+    // wasted API call for text that doesn't exist yet) and falls straight
+    // through to finishSave, so the "Add a description or a photo" error
+    // above still surfaces exactly as before.
+    if(usingPhoto || !descText){
+      finishSave(null);
       return;
     }
-    closeIdentitySheet();
-    renderIdentity();
-    showToast('Profile updated');
+
+    // Describe mode with real text: generate a real avatar image from it
+    // (see netlify/functions/generate-avatar.js) instead of leaving the
+    // avatar blank. This is a real network call, so show a loading state
+    // and never lose the typed description on failure — the textarea and
+    // identitySubMode are both untouched here, so a failed generation
+    // leaves the sheet exactly as the user left it, just with an error
+    // message and the button re-enabled.
+    saveBtn.disabled = true;
+    var originalLabel = saveBtn.textContent;
+    saveBtn.textContent = 'Generating avatar…';
+    // Captured now, checked once the (real, multi-second) call resolves --
+    // if Cancel or a backdrop click closed this sheet instance in the
+    // meantime (or the sheet was reopened for a different edit), the token
+    // has moved on and this result is stale: discard it silently, no save,
+    // no toast. See identitySheetToken's own comment above.
+    var tokenAtSave = identitySheetToken;
+    generateAvatarFromDescription(descText).then(function(result){
+      // Redundant with openIdentitySheet's own unconditional reset (the
+      // real fix for reopen-during-pending-call), but gated here too so
+      // this callback never touches a Save button that belongs to a sheet
+      // instance the user has already moved on from.
+      if(tokenAtSave === identitySheetToken){
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalLabel;
+      }
+      if(tokenAtSave !== identitySheetToken) return;
+      if(!result.ok){
+        errorEl.textContent = result.error;
+        return;
+      }
+      finishSave(result.photoDataUrl);
+    });
   });
 
   // Ideas #4 (recurring-theme insight) & #5 (milestone counter) — both
