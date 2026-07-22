@@ -538,4 +538,42 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .token-pack-badge{ position:absolute; top:-10px; right:16px; background:var(--gradient-ig); color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
 .token-pack-card .btn{ margin-top:14px;}
 
+/* ===== Tracker (tracker.html) ===== */
+/* One item = one native <details>/<summary> — the summary row (always
+   visible) holds the done checkbox + priority buttons + title + expand
+   chevron; the detail text is the collapsible body. Checkbox/priority
+   buttons stopPropagation() their own click in tracker.html's script so
+   clicking them doesn't also toggle the item open/closed — only the
+   title/whitespace area of the summary does that (native <summary>
+   behavior, untouched). */
+.tracker-item{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden; transition:border-color .18s ease;}
+.tracker-item[open]{ border-color:var(--border-strong);}
+.tracker-item-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:14px; -webkit-tap-highlight-color:transparent;}
+.tracker-item-summary::-webkit-details-marker{ display:none;}
+.tracker-item-summary::marker{ content:'';}
+.tracker-check{ flex:none; width:18px; height:18px; accent-color:#fff; cursor:pointer;}
+.tracker-item-title{ flex:1; min-width:0; font-size:13.5px; font-weight:600; line-height:1.4;}
+.tracker-pri-group{ display:flex; gap:4px; flex:none;}
+.tracker-pri-btn{
+  width:24px; height:24px; border-radius:7px; border:1px solid var(--border-strong);
+  background:var(--surface-alt); color:var(--text-faint); font-size:10.5px; font-weight:800;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  font-family:var(--font-body); transition:background .15s ease, color .15s ease, border-color .15s ease;
+}
+.tracker-pri-btn:hover{ border-color:var(--text-faint);}
+.tracker-pri-btn.active[data-priority="high"]{ background:var(--danger); border-color:var(--danger); color:#fff;}
+.tracker-pri-btn.active[data-priority="medium"]{ background:#fff; border-color:#fff; color:#000;}
+.tracker-pri-btn.active[data-priority="low"]{ background:var(--surface-alt); border-color:var(--text-muted); color:var(--text-primary);}
+.tracker-chevron{ width:16px; height:16px; flex:none; color:var(--text-faint); transition:transform .18s ease;}
+.tracker-item[open] .tracker-chevron{ transform:rotate(180deg);}
+.tracker-item-detail{ padding:0 14px 16px 42px; font-size:12.5px; color:var(--text-muted); line-height:1.55;}
+.tracker-done-details{ margin-top:2px; margin-bottom:18px;}
+.tracker-done-summary{ list-style:none; cursor:pointer; display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.03em; color:var(--text-faint); padding:8px 4px; -webkit-tap-highlight-color:transparent;}
+.tracker-done-summary::-webkit-details-marker{ display:none;}
+.tracker-done-summary::marker{ content:'';}
+.tracker-done-list{ margin-top:8px;}
+.tracker-done-list .tracker-item{ opacity:.68;}
+.tracker-done-list .tracker-item-title{ text-decoration:line-through;}
+.tracker-empty{ font-size:12.5px; color:var(--text-faint); padding:2px 2px 16px;}
+
 .spinner-inline{ display:inline-block; width:16px; height:16px; border-radius:50%; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; animation:spin .7s linear infinite;}

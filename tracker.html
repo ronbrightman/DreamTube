@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Tracker — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <a class="icon-btn" id="tracker-back" href="admin.html"></a>
+    <div class="topbar-logo" style="font-size:16px;">Tracker</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <div class="scroll-area">
+    <div class="px" style="padding-bottom:24px;">
+      <!-- Shown while the current account's email hasn't been confirmed as
+           OWNER_EMAIL yet, and left showing (in place of the content below)
+           if it never matches. Same client-side-UX-only pattern as
+           admin.html — real enforcement is server-side in
+           update-tracker-item.js, which independently re-checks the email
+           on every write. get-tracker-items.js itself needs no auth (the
+           item list isn't sensitive), so reads always succeed once the
+           owner check below passes; nothing here depends on the read
+           endpoint itself being gated. -->
+      <div id="tracker-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+        <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="tracker-unauthorized-icon"></div>
+        <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+      </div>
+
+      <div id="tracker-content" style="display:none;">
+        <div class="section-label" style="padding:0;">Open Tasks</div>
+        <div id="tracker-tasks"></div>
+
+        <div class="section-label" style="padding:0;">Ideas</div>
+        <div id="tracker-ideas"></div>
+      </div>
+      <div class="err-text" id="tracker-error" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script>
+  document.getElementById('tracker-back').innerHTML = Icons.back;
+  document.getElementById('tracker-unauthorized-icon').innerHTML = Icons.lock;
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=tracker.html'; }
+
+  var email = DreamStore.getAccountEmail();
+  var unauthorizedEl = document.getElementById('tracker-unauthorized');
+  var contentEl = document.getElementById('tracker-content');
+  var errorEl = document.getElementById('tracker-error');
+  var tasksEl = document.getElementById('tracker-tasks');
+  var ideasEl = document.getElementById('tracker-ideas');
+
+  function esc(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    contentEl.style.display = 'none';
+  }
+
+  // ===== State =====
+  // The full item list as last known from the server, mutated optimistically
+  // on every checkbox/priority change and reconciled (reverted + toasted) if
+  // the write actually fails. `expandedIds`/`doneOpen` track which
+  // <details> the user has open so a full re-render (needed every time the
+  // done/priority grouping changes) doesn't collapse whatever they were
+  // already looking at.
+  var items = [];
+  var expandedIds = {};
+  var doneOpen = { task: false, idea: false };
+
+  var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+  var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
+
+  /**
+   * Not-done first, then High -> Medium -> Low. Array.prototype.sort has
+   * been spec-guaranteed stable since ES2019 (every engine this app
+   * targets), so equal-priority items keep whatever relative order they
+   * already had — ties never get shuffled between renders, only a real
+   * done/priority change ever moves an item.
+   */
+  function sortItems(list) {
+    return list.slice().sort(function (a, b) {
+      return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+    });
+  }
+
+  function itemHTML(item) {
+    var priButtons = ['high', 'medium', 'low'].map(function (p) {
+      return '<button type="button" class="tracker-pri-btn' + (item.priority === p ? ' active' : '') +
+        '" data-priority="' + p + '" aria-label="Set priority ' + p + '" aria-pressed="' + (item.priority === p) + '">' +
+        PRIORITY_LABEL[p] + '</button>';
+    }).join('');
+    return '' +
+      '<details class="tracker-item" data-id="' + esc(item.id) + '">' +
+        '<summary class="tracker-item-summary">' +
+          '<input type="checkbox" class="tracker-check"' + (item.done ? ' checked' : '') + ' aria-label="Mark done">' +
+          '<span class="tracker-item-title" dir="auto">' + esc(item.title) + '</span>' +
+          '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
+          '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
+        '</summary>' +
+        '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + '</div>' +
+      '</details>';
+  }
+
+  function sectionHTML(categoryKey) {
+    var inCategory = items.filter(function (i) { return i.category === categoryKey; });
+    var open = sortItems(inCategory.filter(function (i) { return !i.done; }));
+    var done = sortItems(inCategory.filter(function (i) { return i.done; }));
+
+    var html = open.length
+      ? open.map(itemHTML).join('')
+      : '<div class="tracker-empty">Nothing open here.</div>';
+
+    if (done.length) {
+      html += '<details class="tracker-done-details" data-category="' + categoryKey + '">' +
+        '<summary class="tracker-done-summary">Done (' + done.length + ')</summary>' +
+        '<div class="tracker-done-list">' + done.map(itemHTML).join('') + '</div>' +
+      '</details>';
+    }
+    return html;
+  }
+
+  /** Wires a just-rendered container's checkbox/priority/expand-state behavior. Called after every render() since innerHTML replacement always needs fresh listeners. */
+  function wireItems(containerEl) {
+    Array.prototype.forEach.call(containerEl.querySelectorAll('.tracker-item'), function (el) {
+      var id = el.dataset.id;
+
+      el.open = !!expandedIds[id];
+      el.addEventListener('toggle', function () { expandedIds[id] = el.open; });
+
+      var checkbox = el.querySelector('.tracker-check');
+      checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+      checkbox.addEventListener('change', function () { handleDoneChange(id, checkbox.checked); });
+
+      Array.prototype.forEach.call(el.querySelectorAll('.tracker-pri-btn'), function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handlePriorityChange(id, btn.dataset.priority);
+        });
+      });
+    });
+
+    Array.prototype.forEach.call(containerEl.querySelectorAll('.tracker-done-details'), function (el) {
+      var category = el.dataset.category;
+      el.open = !!doneOpen[category];
+      el.addEventListener('toggle', function () { doneOpen[category] = el.open; });
+    });
+  }
+
+  function render() {
+    tasksEl.innerHTML = sectionHTML('task');
+    ideasEl.innerHTML = sectionHTML('idea');
+    wireItems(tasksEl);
+    wireItems(ideasEl);
+  }
+
+  function findItem(id) {
+    for (var i = 0; i < items.length; i++) { if (items[i].id === id) return items[i]; }
+    return null;
+  }
+
+  /** POSTs one field patch to update-tracker-item.js. Rejects on any non-2xx or network failure so callers can revert + toast. */
+  function postUpdate(id, patch) {
+    var body = Object.assign({ id: id, email: email }, patch);
+    return fetch('/.netlify/functions/update-tracker-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('update-tracker-item failed');
+      return res.json();
+    });
+  }
+
+  function handleDoneChange(id, newDone) {
+    var item = findItem(id);
+    if (!item) return;
+    var previous = item.done;
+    item.done = newDone;
+    render();
+    postUpdate(id, { done: newDone }).catch(function () {
+      item.done = previous;
+      render();
+      showToast("Couldn't save — try again.");
+    });
+  }
+
+  function handlePriorityChange(id, newPriority) {
+    var item = findItem(id);
+    if (!item || item.priority === newPriority) return;
+    var previous = item.priority;
+    item.priority = newPriority;
+    render();
+    postUpdate(id, { priority: newPriority }).catch(function () {
+      item.priority = previous;
+      render();
+      showToast("Couldn't save — try again.");
+    });
+  }
+
+  if (!email) {
+    // Logged in, but this account has no email on file at all — can never
+    // match OWNER_EMAIL, so there's no point calling the function.
+    showUnauthorized();
+  } else {
+    fetch('/.netlify/functions/admin-paywall-toggle?email=' + encodeURIComponent(email))
+      .then(function (res) { return res.json(); })
+      .then(function (state) {
+        if (!state.isOwner) { showUnauthorized(); return; }
+        contentEl.style.display = 'block';
+        return fetch('/.netlify/functions/get-tracker-items')
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            items = data.items || [];
+            render();
+          })
+          .catch(function () {
+            errorEl.textContent = "Couldn't load the tracker — try refreshing.";
+          });
+      })
+      .catch(function () {
+        // Fails closed — same visible result as not being the owner,
+        // rather than a broken half-rendered page.
+        showUnauthorized();
+      });
+  }
+</script>
+</body>
+</html>
