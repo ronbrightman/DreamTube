@@ -106,6 +106,25 @@
 // safe-to-retry conflict rather than silent corruption. See
 // test/account-store.test.js's concurrency test for exactly this scenario.
 //
+// A round of review (findings kd7m3wq / ay3nqfz) caught that the first cut
+// of this read-back-and-compare fix only closed HALF the race: it correctly
+// makes the loser of a 'u:' write return 'conflict' instead of a false
+// ok:true, but it never revisited the loser's OWN 'e:<its email>' index
+// entry, which stayed permanently pointing at the winner's username — whose
+// live record now carries a DIFFERENT email. Left alone, that permanently
+// blocked the loser's real email from ever registering again
+// (register-account.js's existingEmailOwner check would see that stale
+// entry and return email_taken forever) and could misdirect a password
+// reset to the winner. Two fixes close this, deliberately redundant with
+// each other:
+//   - createAccount/applyPasswordReset now roll back their own losing 'e:'
+//     entry when it's safe to (see rollBackStaleEmailIndex below) — this is
+//     the actual un-lockout fix.
+//   - getByEmail() independently refuses to return a record whose own
+//     `email` field doesn't match the query, even if some other stale-index
+//     path the rollback above doesn't cover ever produces one — defense in
+//     depth, not a substitute for the rollback.
+//
 // Passwords stay plaintext here, same already-accepted tradeoff
 // js/store.js's own comment documents for the local copy (no real backend,
 // no hashing infra, by design for now) — this is a lateral move (plaintext
@@ -124,6 +143,36 @@ function normalizeUsername(username) {
 
 function store() {
   return getStore({ name: STORE_NAME });
+}
+
+/**
+ * Rolls back a losing call's own "e:<email>" index entry after it's lost
+ * the "u:<username>" write race to a concurrent createAccount/
+ * applyPasswordReset call for the same username (see both functions'
+ * read-back-and-compare checks below). Without this, the losing call's
+ * "e:" entry is left pointing at `key`, whose live record now carries the
+ * WINNER's email -- permanently blocking the loser's real email from ever
+ * registering again (review finding ay3nqfz: register-account.js's
+ * existingEmailOwner check would see that stale entry and return
+ * email_taken forever).
+ *
+ * Only rolls back when it's actually safe to:
+ *   - the winner's live email must differ from `email` (this call's own
+ *     attempted email) -- if the winner happens to share the same email,
+ *     the index still correctly points at the right place; nothing is
+ *     stale, so nothing is touched.
+ *   - the "e:" entry must, at the moment of rollback, STILL point at
+ *     `key` (this call's own attempted username) -- if some other,
+ *     legitimate process has since reclaimed that exact email for a
+ *     different reason, this deliberately backs off rather than deleting
+ *     a still-valid claim out from under it.
+ */
+async function rollBackStaleEmailIndex(s, email, key, liveRecord) {
+  if (liveRecord && liveRecord.email === email) return;
+  var current = await s.get('e:' + email, { type: 'json' });
+  if (current === key) {
+    await s.delete('e:' + email);
+  }
 }
 
 /**
@@ -148,7 +197,20 @@ async function getByEmail(event, email) {
   connectLambda(event);
   var username = await store().get('e:' + normalized, { type: 'json' });
   if (!username) return null;
-  return getByUsername(event, username);
+  var record = await getByUsername(event, username);
+  // Defense in depth (see the header comment's stale-index writeup, and
+  // review finding ay3nqfz): the "e:" index and the "u:" record it points
+  // at are two separate writes with no atomicity between them, so a lost
+  // 'u:' race elsewhere can (should Fix A below ever miss a case) leave an
+  // "e:" entry pointing at a record whose CURRENT email is no longer the
+  // one just queried. Never hand back a record whose own `email` field
+  // doesn't match what was actually asked for -- treat that mismatch as
+  // "not found", exactly like no index entry existed at all. This
+  // protects every caller of getByEmail (request-password-reset.js today)
+  // even if createAccount/applyPasswordReset's own rollback below has any
+  // remaining edge case.
+  if (!record || record.email !== normalized) return null;
+  return record;
 }
 
 /**
@@ -192,6 +254,10 @@ async function createAccount(event, account) {
   // data that isn't ours anymore.
   var afterWrite = await s.get('u:' + key, { type: 'json' });
   if (!afterWrite || afterWrite.email !== email || afterWrite.password !== account.password) {
+    // We lost the 'u:' race -- see rollBackStaleEmailIndex's own comment
+    // for why our own 'e:' index entry needs revisiting here too, not
+    // just this 'u:' write.
+    await rollBackStaleEmailIndex(s, email, key, afterWrite);
     return { ok: false, error: 'conflict' };
   }
 
@@ -252,6 +318,8 @@ async function applyPasswordReset(event, account) {
   await s.setJSON('u:' + key, record);
   var afterWrite = await s.get('u:' + key, { type: 'json' });
   if (!afterWrite || afterWrite.email !== email || afterWrite.password !== account.password) {
+    // Same rollback as createAccount -- see rollBackStaleEmailIndex.
+    await rollBackStaleEmailIndex(s, email, key, afterWrite);
     return { ok: false, error: 'conflict' };
   }
 

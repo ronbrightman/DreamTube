@@ -167,6 +167,66 @@ test('account-store: two concurrent createAccount calls for the SAME username (d
   assert.equal(loginAsLoser.ok, false);
 });
 
+test('account-store: after two concurrent createAccount calls for the SAME username with DIFFERENT emails, the loser\'s own email is not left permanently pointing at the winner\'s (now differently-emailed) account (review findings ay3nqfz/kd7m3wq)', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  var results = await Promise.all([
+    accountStore.createAccount(event, { username: 'racer3', password: 'firstpassword1', email: 'racer3-a@example.com' }),
+    accountStore.createAccount(event, { username: 'RACER3', password: 'secondpassword2', email: 'racer3-b@example.com' })
+  ]);
+
+  var winners = results.filter(function (r) { return r.ok; });
+  var losers = results.filter(function (r) { return !r.ok; });
+  assert.equal(winners.length, 1, 'exactly one of the two racing signups should end up ok:true');
+  assert.equal(losers.length, 1);
+  assert.equal(losers[0].error, 'conflict');
+
+  var winnerEmail = winners[0].record.email;
+  var loserEmail = winnerEmail === 'racer3-a@example.com' ? 'racer3-b@example.com' : 'racer3-a@example.com';
+
+  // Fix B (defense in depth): getByEmail must never resolve the loser's
+  // real email to the winner's live record, which now carries a DIFFERENT
+  // email than the one queried -- that mismatch must read as "not found",
+  // not as a misresolved account.
+  var byLoserEmail = await accountStore.getByEmail(event, loserEmail);
+  assert.equal(byLoserEmail, null, 'the loser\'s email must not resolve to the differently-emailed winner record');
+
+  // Fix A: the loser's own "e:" index entry should actually be rolled back
+  // (freed), not merely masked by getByEmail's mismatch check -- confirm
+  // the real owner of that email can still register a brand-new account
+  // under it afterward. This is the "permanent email_taken lockout" this
+  // fix exists to close.
+  var retry = await accountStore.createAccount(event, { username: 'racer3-retry', password: 'retrypassword1', email: loserEmail });
+  assert.equal(retry.ok, true, 'the loser\'s real email must be able to register again -- not permanently locked out by a stale index entry still pointing at the winner\'s account');
+  assert.equal(retry.record.email, loserEmail);
+});
+
+test('account-store: after two concurrent applyPasswordReset calls for the SAME username with DIFFERENT emails, the loser\'s own email is freed rather than left pointing at the winner\'s account', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'racer4', password: 'originalpw1', email: 'racer4-original@example.com' });
+
+  var results = await Promise.all([
+    accountStore.applyPasswordReset(event, { username: 'racer4', email: 'racer4-a@example.com', password: 'resetpw-onexx' }),
+    accountStore.applyPasswordReset(event, { username: 'RACER4', email: 'racer4-b@example.com', password: 'resetpw-twoyy' })
+  ]);
+
+  var winners = results.filter(function (r) { return r.ok; });
+  var losers = results.filter(function (r) { return !r.ok; });
+  assert.equal(winners.length, 1);
+  assert.equal(losers.length, 1);
+
+  var winnerEmail = winners[0].record.email;
+  var loserEmail = winnerEmail === 'racer4-a@example.com' ? 'racer4-b@example.com' : 'racer4-a@example.com';
+
+  var byLoserEmail = await accountStore.getByEmail(event, loserEmail);
+  assert.equal(byLoserEmail, null, 'the loser\'s reset email must not resolve to the differently-emailed winner record');
+
+  var retry = await accountStore.createAccount(event, { username: 'racer4-retry', password: 'retrypassword1', email: loserEmail });
+  assert.equal(retry.ok, true, 'the loser\'s reset email must not be permanently locked out');
+});
+
 test('account-store: two concurrent applyPasswordReset calls for the SAME username -- exactly one wins cleanly, the other gets a clear conflict', async function () {
   var accountStore = require('../netlify/functions/lib/account-store');
   var event = fakeEvent({ method: 'POST' });
@@ -350,6 +410,29 @@ test('account-login: exceeding MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY throttl
   var third = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'GuessTarget', password: 'guess-three3' } }));
   assert.equal(third.statusCode, 429, 'a different IP does not bypass the per-identifier cap');
   assert.match(JSON.parse(third.body).error, /^E6: rate_limited/);
+});
+
+test('account-login: the per-identifier rate limit is one shared bucket per ACCOUNT, not one per raw identifier string -- guessing by username then by email against the same account doesn\'t double the allowed attempts (non-blocking review item)', async function () {
+  process.env.MAX_LOGIN_ATTEMPTS_PER_IDENTIFIER_PER_DAY = '2';
+  var registerHandler = require('../netlify/functions/register-account').handler;
+  var loginHandler = require('../netlify/functions/account-login').handler;
+  await registerHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'dualidtarget', password: 'realpassword1', email: 'dualidtarget@example.com' } }));
+
+  // Two allowed attempts -- one by username, one by email -- both against
+  // the SAME account, must share the one bucket, not get two independent
+  // ones (which would let an attacker who knows both effectively double
+  // their guesses).
+  var first = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'dualidtarget', password: 'guess-one1' } }));
+  assert.equal(first.statusCode, 200);
+  var second = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'DualIdTarget@Example.com', password: 'guess-two2' } }));
+  assert.equal(second.statusCode, 200);
+
+  var third = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'dualidtarget', password: 'guess-three3' } }));
+  assert.equal(third.statusCode, 429, 'username and email attempts against the same account must share one identifier bucket');
+  assert.match(JSON.parse(third.body).error, /^E6: rate_limited/);
+
+  var fourthByEmail = await loginHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { usernameOrEmail: 'dualidtarget@example.com', password: 'guess-four4' } }));
+  assert.equal(fourthByEmail.statusCode, 429, 'the shared bucket is enforced regardless of which identifier form is used to hit it');
 });
 
 test('account-login: rejects missing fields, invalid JSON, and non-POST methods', async function () {
