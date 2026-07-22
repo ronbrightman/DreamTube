@@ -38,6 +38,28 @@ and `review` do the same at project level, under
 `.claude/skills/superpowers/` and `.claude/skills/skill-security-auditor/`
 respectively.
 
+## Invoking agents — always name them explicitly
+
+For this pipeline, and for `ab-test-creator`, always invoke the specific
+agent by name/type rather than relying on auto-routing from a natural-
+language description match. Auto-matching is fine for a casual one-off
+request, but this pipeline's stages depend on happening in the right
+order with the right specialist doing each one — if descriptions overlap
+even slightly, an ambiguous request can silently skip a stage or route to
+the wrong agent, with nothing throwing an error to flag it. Founder's own
+standing instruction: lean into explicit naming, always, not just when it
+happens to be convenient.
+
+One live caveat this depends on: `research`/`evaluation`/`design`/
+`marketing` are currently registered twice in this environment — once as
+a raw local copy (`~/.claude/agents/`) and once via the installed
+`product-agents` marketplace plugin (`product-agents:research`, etc.) —
+so even an explicit name can still have two matching candidates until
+that duplication is resolved. See `tracker.html`'s open
+`agent-skill-duplication` task; until it's closed, prefer being fully
+unambiguous (the exact registered name, not just a close paraphrase) when
+naming an agent explicitly.
+
 ## Companion signals repo
 
 `ronbrightman/dreamtube-signals` is a shared, git-tracked signal log this

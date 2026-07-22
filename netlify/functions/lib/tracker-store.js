@@ -114,14 +114,6 @@ var SEED_ITEMS = [
     detail: 'research\'s description shares an overlapping trigger phrase with marketing\'s ("brainstorm ... marketing/growth ideas") — before/after text already drafted, not yet applied. pricing-strategy\'s skill description references two skills ("product-strategist", "customer-success-manager") that don\'t exist in this narrower bundle — leftover from the original 47-skill upstream source. Minor: marketing-strategy-pmm and launch-strategy both claim "launch plans"/"launch strategy" as a trigger.'
   },
   {
-    id: 'agent-policy-explicit-naming',
-    category: 'task',
-    priority: 'medium',
-    done: false,
-    title: 'Add an explicit agent-naming convention to AGENT_POLICY.md for the core pipeline',
-    detail: 'The research → evaluation → design → build → review pipeline is currently only documented in prose in AGENT_POLICY.md\'s Workflow section — nothing scripts or enforces the sequence, and nothing currently tells whoever\'s driving the pipeline to name each agent explicitly rather than relying on auto-routing. Recommended: add a short section spelling out the exact agent names/invocation convention to use per stage, especially once item "agent-skill-duplication" above is resolved.'
-  },
-  {
     id: 'prompt-marketing-audit',
     category: 'task',
     priority: 'medium',
