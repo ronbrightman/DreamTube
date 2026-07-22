@@ -59,7 +59,7 @@ test('GET seeds the store on first call and returns every seed item', async func
     assert.equal(got.title, seedItem.title);
     assert.equal(got.detail, seedItem.detail);
     assert.equal(got.priority, seedItem.priority);
-    assert.equal(got.done, false);
+    assert.equal(got.done, seedItem.done);
   });
 });
 

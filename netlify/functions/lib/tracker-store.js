@@ -53,9 +53,9 @@ var SEED_ITEMS = [
     id: 'token-refund-gap',
     category: 'task',
     priority: 'high',
-    done: false,
+    done: true,
     title: 'Decide: refund tokens if generation fails after submission?',
-    detail: 'Tokens are spent the moment fal.ai accepts a generation submission (a 200 response), not when the video actually finishes. If the job later fails during polling (video-status.js\'s E205/E208 etc.), there\'s currently no refund — a user can lose 100 tokens for a video that never rendered. This matches the old quota system\'s identical behavior, so it isn\'t a new regression, but tokens are a harder, more consequential cap now. Decide: leave as-is (and document it explicitly), or add a refund-on-terminal-failure path.'
+    detail: 'RESOLVED: auto-refund once per day per user on a post-submission generation failure (E205/E208 etc.); beyond that daily auto-refund, direct the user to request a manual refund via the support form. See idea-auto-refund-policy for the implementation, which depends on idea-support-contact-form existing for the manual fallback path.'
   },
   {
     id: 'env-vars-confirm',
@@ -200,6 +200,30 @@ var SEED_ITEMS = [
     done: false,
     title: '"Generate during the funnel, reveal at the end" / "email me my dream if I don\'t convert"',
     detail: "Both researched as marketing/conversion mechanics. Explicitly recommended against for now: both mean incurring real generation cost before any identity signal exists that early in the funnel, which was judged too risky without a much heavier anti-abuse stack in place first. Worth revisiting only once the guardrails above mature."
+  },
+  {
+    id: 'idea-auto-refund-policy',
+    category: 'idea',
+    priority: 'medium',
+    done: false,
+    title: 'Auto-refund tokens once/day per user on failed generation, else manual support refund',
+    detail: 'Decided policy for the "token-refund-gap" question above: automatically refund the 100 tokens once per day per user when a generation fails after submission (E205/E208 etc.), and for any additional failures beyond that daily auto-refund, direct the user to request a manual refund via the support contact form (see idea-support-contact-form). Needs a way to track "already auto-refunded today" per user — likely mirrors the existing lazy daily-check pattern already used for the token grant in entitlements.js — and the support form to exist first for the manual fallback path to actually go anywhere.'
+  },
+  {
+    id: 'idea-support-contact-form',
+    category: 'idea',
+    priority: 'medium',
+    done: false,
+    title: 'Support contact form in Settings, emailing the founder with user context',
+    detail: "A text field in Settings that sends a message to the founder's email, automatically including: username, email, number of videos created, days since signup, and total amount paid (once real payments exist). Needs a transactional email send (Resend is already wired into this codebase for other purposes) and pulling together account stats that aren't all in one place today. Also the fallback path idea-auto-refund-policy depends on."
+  },
+  {
+    id: 'idea-faq-section',
+    category: 'idea',
+    priority: 'low',
+    done: false,
+    title: 'FAQ section in Settings',
+    detail: "A static FAQ section/page in Settings. A first-draft set of questions and answers was suggested in chat when this idea was raised (covering tokens/refunds, privacy, content-policy basics, editing/regenerating, and Explore visibility) — review and edit before publishing."
   }
 ];
 
