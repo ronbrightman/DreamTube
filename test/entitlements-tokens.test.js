@@ -242,3 +242,52 @@ test('unset/invalid MAX_TOKEN_GRANTS_PER_IP_PER_DAY falls back to a sane default
   }
   assert.ok(results.indexOf(0) !== -1, 'the default cap must eventually kick in within 7 brand-new emails from one IP');
 });
+
+// ----- addTokens (manual top-up, see owner-topup-tokens.js for the only caller) -----
+
+test('addTokens credits the given amount onto the existing balance', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.getTokenStatus(ev, 'topup@example.com'); // -> 200
+  await entitlements.addTokens(ev, 'topup@example.com', 500);
+  var record = await entitlements.getEntitlement(ev, 'topup@example.com');
+  assert.equal(record.tokens.balance, 700);
+});
+
+test('addTokens on a never-before-seen email materializes the record starting from the usual signup grant, then adds on top', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.addTokens(ev, 'brandnew-topup@example.com', 300);
+  var record = await entitlements.getEntitlement(ev, 'brandnew-topup@example.com');
+  assert.equal(record.tokens.balance, 500, '200 signup grant + 300 top-up');
+});
+
+test('addTokens does not change lastGrantAt (purely additive to balance, never resets or delays the automatic daily drip)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var staleTime = Date.now() - 1000; // recent, not due for a lazy grant
+  await entitlements.setEntitlement(ev, 'timing-topup@example.com', {
+    tokens: { balance: 50, lastGrantAt: staleTime }
+  });
+  await entitlements.addTokens(ev, 'timing-topup@example.com', 100);
+  var record = await entitlements.getEntitlement(ev, 'timing-topup@example.com');
+  assert.equal(record.tokens.balance, 150);
+  assert.equal(record.tokens.lastGrantAt, staleTime, 'lastGrantAt must be untouched by a manual top-up');
+});
+
+test('addTokens caps the resulting balance at a sane ceiling rather than growing without bound', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.setEntitlement(ev, 'huge-topup@example.com', {
+    tokens: { balance: 999900, lastGrantAt: Date.now() }
+  });
+  await entitlements.addTokens(ev, 'huge-topup@example.com', 5000);
+  var record = await entitlements.getEntitlement(ev, 'huge-topup@example.com');
+  assert.equal(record.tokens.balance, 1000000, 'held at the MAX_TOKEN_BALANCE ceiling, not 1004900');
+});
+
+test('addTokens is a safe no-op for an empty/missing email, same as spendTokens', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var result1 = await entitlements.addTokens(ev, '', 100);
+  var result2 = await entitlements.addTokens(ev, null, 100);
+  var result3 = await entitlements.addTokens(ev, undefined, 100);
+  assert.equal(result1, null);
+  assert.equal(result2, null);
+  assert.equal(result3, null);
+});

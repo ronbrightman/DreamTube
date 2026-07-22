@@ -310,6 +310,40 @@ async function spendTokens(event, email, amount) {
   return setEntitlement(event, key, { tokens: { balance: newBalance, lastGrantAt: tokens.lastGrantAt } });
 }
 
+// Sanity ceiling on the *total* balance addTokens can ever produce — not a
+// security boundary (this function is only ever reachable through
+// owner-topup-tokens.js's owner-only 403 gate, see that file), just a
+// backstop against a balance silently ballooning without limit if this ever
+// got called in a loop (a retried request, a scripting mistake) rather than
+// the deliberate one-off top-ups it's meant for. Chosen well above any
+// realistic manual top-up total (owner-topup-tokens.js's own 5000-per-call
+// cap means reaching this would take 200+ separate calls) so it never gets
+// in the way of legitimate testing use.
+var MAX_TOKEN_BALANCE = 1000000;
+
+/**
+ * Direct, immediate credit to this email's balance — the manual "top up my
+ * balance" counterpart to spendTokens' manual deduction, both built on the
+ * same syncTokens-then-setEntitlement shape. Deliberately separate from the
+ * automatic daily-grant machinery syncTokens drives: `lastGrantAt` is
+ * carried through unchanged (not bumped to "now"), so a top-up never resets
+ * or delays the next automatic +100/24h drip — it is purely additive to
+ * `balance`, nothing else about the record's grant timing changes because
+ * of it. (syncTokens itself may still apply an already-*due* lazy grant as
+ * part of reading the current balance before adding to it, exactly as
+ * spendTokens already does — that's the normal lazy-grant mechanism firing
+ * on read, not something this function triggers.) Result is capped at
+ * MAX_TOKEN_BALANCE (see above). No-ops (returns null, writes nothing) for
+ * an empty/missing email, matching spendTokens' and syncTokens' own guard.
+ */
+async function addTokens(event, email, amount) {
+  var key = normalizeEmail(email);
+  if (!key) return null;
+  var tokens = await syncTokens(event, key);
+  var newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + amount);
+  return setEntitlement(event, key, { tokens: { balance: newBalance, lastGrantAt: tokens.lastGrantAt } });
+}
+
 module.exports = {
   STORE_NAME,
   normalizeEmail,
@@ -317,5 +351,6 @@ module.exports = {
   isEntitled,
   setEntitlement,
   getTokenStatus,
-  spendTokens
+  spendTokens,
+  addTokens
 };

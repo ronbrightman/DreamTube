@@ -123,6 +123,24 @@
       <div style="height:10px;"></div>
       <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
 
+      <!-- Owner-only manual top-up — resolves the "owner bypass for the
+           token gate" question the founder's own way: not an E112
+           exemption (generate-video.js's gate stays unconditional for
+           every email, owner included), but a self-service way for the
+           owner specifically to top up their own balance for testing. See
+           netlify/functions/owner-topup-tokens.js. Hidden by default and
+           only shown once ownerTopupCheck below confirms, server-side,
+           that the signed-in account's email is OWNER_EMAIL — never a
+           hardcoded email comparison here. -->
+      <div id="owner-topup-block" style="display:none;">
+        <div style="height:10px;"></div>
+        <div class="auth-sub" style="margin-bottom:10px;">Owner tools — top up your own token balance for testing.</div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input class="field" id="owner-topup-amount" type="number" min="1" max="5000" step="1" value="500" style="margin-bottom:0;" aria-label="Top-up amount">
+          <button class="btn btn-secondary" id="owner-topup-btn" style="white-space:nowrap;">Top up my balance</button>
+        </div>
+      </div>
+
       <div style="height:10px;"></div>
       <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
       <div style="height:8px;"></div>
@@ -296,6 +314,7 @@
     document.getElementById('account-email-input').value = DreamStore.getAccountEmail() || '';
     document.getElementById('account-error').textContent = '';
     document.getElementById('account-success').style.display = 'none';
+    ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
     accountOverlay.classList.add('open');
   }
   function closeAccountSheet(){ accountOverlay.classList.remove('open'); }
@@ -317,6 +336,65 @@
     }
     err.textContent = '';
     document.getElementById('account-success').style.display = 'flex';
+  });
+
+  // ===== Owner-only manual top-up =====
+  // Same "ask a GET endpoint whether I'm the owner" pattern admin.html/
+  // tracker.html already established via admin-paywall-toggle.js's
+  // ?email=... -> isOwner field (server-confirmed against OWNER_EMAIL,
+  // itself a server-only env var the client has no other way to compare
+  // against) -- never a hardcoded ronbrightman@gmail.com literal here.
+  // Checked once per page load; applied to the block's visibility whenever
+  // the account sheet opens (see openAccountSheet above). Real enforcement
+  // is owner-topup-tokens.js's own independent 403 check on every write --
+  // this is purely "don't show the control to random logged-in users",
+  // same tradeoff admin.html already accepts.
+  var ownerTopupBlock = document.getElementById('owner-topup-block');
+  var isOwnerAccount = false;
+  (function checkOwner(){
+    var email = DreamStore.getAccountEmail();
+    if(!email) return;
+    fetch('/.netlify/functions/admin-paywall-toggle?email=' + encodeURIComponent(email))
+      .then(function(res){ return res.json(); })
+      .then(function(state){
+        isOwnerAccount = !!state.isOwner;
+        // This check is async and fires once on page load — if the sheet
+        // is already open by the time it resolves (a real possibility on
+        // a slow connection), re-apply visibility immediately rather than
+        // leaving the owner needing to close and reopen the sheet once for
+        // the control to appear.
+        if(accountOverlay.classList.contains('open')) ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
+      })
+      .catch(function(){ /* stays hidden -- fails closed, same as admin.html */ });
+  })();
+
+  document.getElementById('owner-topup-btn').addEventListener('click', function(){
+    var btn = this;
+    var amountInput = document.getElementById('owner-topup-amount');
+    var amount = parseInt(amountInput.value, 10);
+    if(!amount || amount <= 0){ showToast('Enter a valid amount'); return; }
+    if(amount > 5000){ showToast('Max 5000 per top-up'); return; }
+    var email = DreamStore.getAccountEmail();
+    btn.disabled = true;
+    fetch('/.netlify/functions/owner-topup-tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, amount: amount })
+    })
+      .then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+      })
+      .then(function(result){
+        btn.disabled = false;
+        if(!result.ok){ showToast("Couldn't top up — try again."); return; }
+        tokenStatus = result.data;
+        renderTokenText();
+        showToast('Balance topped up to ' + result.data.balance + ' tokens');
+      })
+      .catch(function(){
+        btn.disabled = false;
+        showToast("Couldn't top up — try again.");
+      });
   });
 
   document.getElementById('account-logout-link').addEventListener('click', function(){
