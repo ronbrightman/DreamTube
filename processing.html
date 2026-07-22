@@ -92,16 +92,6 @@
     </div>
   </div>
 
-  <div class="sheet-overlay" id="sheet-topup-overlay">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-title">Get more dreams</div>
-      <div class="auth-sub" style="margin-bottom:14px;">Add 10 more generations to keep creating this month.</div>
-      <button class="btn btn-primary btn-block" id="topup-confirm-btn">Get 10 more dreams</button>
-      <div style="height:10px;"></div>
-      <span class="link-text" id="topup-cancel" style="cursor:pointer;">Not now</span>
-    </div>
-  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -208,24 +198,21 @@
     }).catch(function(){ section.style.display = 'none'; });
   }
 
-  // ===== Usage-quota/credits fail-state (E111) =====
-  // retry-btn normally just re-runs generation, but an E111 failure means
-  // an immediate retry would fail identically (the account is genuinely out
-  // of dreams for the month) — see generate-video.js's E111 doc block.
-  // quotaFailContext tracks whether the *current* fail screen is that case,
-  // so retry-btn's single listener below can dispatch to the right action
-  // without needing to add/remove listeners on every run.
+  // ===== Insufficient-tokens fail-state (E112) =====
+  // retry-btn normally just re-runs generation, but an E112 failure means
+  // an immediate retry would fail identically (the account genuinely
+  // doesn't have the 100 tokens a generation costs) — see generate-video.js's
+  // E112 doc block. tokenFailContext tracks whether the *current* fail
+  // screen is that case, so retry-btn's single listener below can dispatch
+  // to the right action without needing to add/remove listeners on every
+  // run.
   var retryBtn = document.getElementById('retry-btn');
-  var quotaFailContext = false;
-
-  var topupOverlay = document.getElementById('sheet-topup-overlay');
-  function openTopupSheet(){ topupOverlay.classList.add('open'); }
-  function closeTopupSheet(){ topupOverlay.classList.remove('open'); }
+  var tokenFailContext = false;
 
   function runGeneration(){
     document.getElementById('proc-live').style.display = 'flex';
     document.getElementById('proc-fail').style.display = 'none';
-    quotaFailContext = false;
+    tokenFailContext = false;
     retryBtn.textContent = 'Try Again';
     startFakeProgress();
     renderPreview();
@@ -271,43 +258,26 @@
         document.getElementById('proc-fail-code').textContent = raw;
         reasonEl.style.display = 'none';
       }
-      // E111 specifically: an immediate retry would just fail the same way
+      // E112 specifically: an immediate retry would just fail the same way
       // again (see the doc block above), so retry-btn's label/behavior
-      // swaps to opening the top-up sheet instead of re-running generation.
-      if(match && match[1] === 'E111'){
-        quotaFailContext = true;
-        retryBtn.textContent = 'Get more dreams';
+      // swaps to navigating to the token shop instead of re-running
+      // generation — same pattern the old E111 handling used, just pointing
+      // at shop.html instead of an inline top-up sheet (there's no
+      // backend purchase call yet, see shop.html's own header comment).
+      if(match && match[1] === 'E112'){
+        tokenFailContext = true;
+        retryBtn.textContent = 'Get more tokens';
       }
     });
   }
 
   retryBtn.addEventListener('click', function(){
-    if(quotaFailContext){ openTopupSheet(); return; }
+    if(tokenFailContext){ location.href = 'shop.html'; return; }
     runGeneration();
   });
   document.getElementById('fail-edit-btn').addEventListener('click', function(){
     DreamStore.setDraft({ restore: true });
     location.href = 'create.html';
-  });
-  document.getElementById('topup-cancel').addEventListener('click', closeTopupSheet);
-  topupOverlay.addEventListener('click', function(e){
-    if(e.target.id === 'sheet-topup-overlay') closeTopupSheet();
-  });
-  document.getElementById('topup-confirm-btn').addEventListener('click', function(){
-    var btn = document.getElementById('topup-confirm-btn');
-    btn.disabled = true;
-    DreamStore.grantTopUpBonus(10).then(function(){
-      closeTopupSheet();
-      // Only this specific fail-state context re-triggers generation
-      // automatically — a top-up from elsewhere (profile.html's indicator,
-      // style.html/result.html's quota-block modal) just refreshes the
-      // quota UI and leaves the next action to the user, since there's no
-      // "stranded" generation waiting to resume there.
-      if(quotaFailContext){
-        quotaFailContext = false;
-        runGeneration();
-      }
-    }).catch(function(){ /* leave the sheet open — the user can retry */ }).then(function(){ btn.disabled = false; });
   });
 
   runGeneration();

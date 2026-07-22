@@ -29,8 +29,7 @@
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
 //   getInterpretation(id)                -> local read of a dream's saved "what this might mean" reflection
 //   generateInterpretation(id)            -> POST /.netlify/functions/interpret-dream (see that file)
-//   getQuotaStatus()                      -> GET  /.netlify/functions/get-quota-status
-//   grantTopUpBonus(bundleSize)           -> POST /.netlify/functions/grant-topup-bonus (TEMPORARY BYPASS — see that file's header)
+//   getTokenStatus()                      -> GET  /.netlify/functions/get-token-status
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -428,12 +427,13 @@
             cameraView: opts.cameraView || null,
             sceneryTime: opts.sceneryTime || null,
             sceneryPlace: opts.sceneryPlace || null,
-            // Sent opportunistically whenever the browser knows it (logged-in
-            // account with an email on file) — a no-op today (the server-side
-            // entitlement gate is off by default, see PAYWALL_ENABLED in
-            // generate-video.js), but means this call already carries what
-            // that gate needs once it's turned on, with no client change
-            // required at that point.
+            // Sent whenever the browser knows it (logged-in account with an
+            // email on file) — this is load-bearing, not opportunistic: the
+            // server-side E112 token gate (see lib/entitlements.js and the
+            // doc block above generate-video.js's guardrails) is
+            // unconditional and always on, and identifies the caller's token
+            // balance by this email. No email means no way to look up a
+            // balance, so an anonymous/logged-out call here fails E112.
             email: currentAccountEmail()
           })
         }).then(function (res) {
@@ -1014,50 +1014,28 @@
     },
 
     /**
-     * Reads the signed-in account's current generation-quota status —
-     * monthly included generations used/remaining plus any never-expiring
-     * top-up bonusCredits (see netlify/functions/lib/entitlements.js).
-     * Resolves to { active:false } with no network call at all when
-     * there's no logged-in account or no email on file, since the server
-     * side can't be entitled without an email either way — callers should
-     * treat active:false as "hide the quota UI entirely" (see profile.html),
-     * the same convention this app already uses for #profile-insights.
-     * Used both for profile.html's indicator and as a fail-open convenience
-     * pre-check on style.html/result.html before navigating to
-     * processing.html — the real enforcement is generate-video.js's
-     * server-side E111 check, this is never the security boundary.
+     * Reads the signed-in account's current token balance — see
+     * netlify/functions/lib/entitlements.js's getTokenStatus for the full
+     * grant mechanism (200 on first-ever read, +100/24h lazily thereafter,
+     * capped once balance is already ≥500). Resolves to
+     * { balance:0, nextGrantAt:null, dailyGrantAmount:100 } with no network
+     * call at all when there's no logged-in account or no email on file
+     * (a legacy account that never added one — signup requires an email
+     * today, see signup() above) since the server side has nothing to key
+     * a balance on without one either way. Used by profile.html's/
+     * style.html's/result.html's/processing.html's/shop.html's token UI —
+     * the real enforcement is generate-video.js's server-side E112 check,
+     * this is never the security boundary.
      */
-    getQuotaStatus: function () {
+    getTokenStatus: function () {
       var email = currentAccountEmail();
-      if (!email) return Promise.resolve({ active: false });
-      return fetch('/.netlify/functions/get-quota-status?email=' + encodeURIComponent(email))
+      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 100 });
+      return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })
         .then(function (data) {
           if (data.error) throw new Error(data.error);
           return data;
         });
-    },
-
-    /**
-     * TEMPORARY PAYWALL BYPASS — grants bundleSize bonus generations with no
-     * real charge (see netlify/functions/grant-topup-bonus.js's own header
-     * for the full "replace before going live" story). Resolves with the
-     * account's refreshed quota status (same shape getQuotaStatus above
-     * returns), so a caller can redraw its quota UI from this one response.
-     */
-    grantTopUpBonus: function (bundleSize) {
-      var email = currentAccountEmail();
-      if (!email) return Promise.reject(new Error('not_logged_in_or_no_email_on_file'));
-      return fetch('/.netlify/functions/grant-topup-bonus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, bundleSize: bundleSize })
-      }).then(function (res) {
-        return res.json().then(function (data) {
-          if (!res.ok) throw new Error(data.error || 'grant_topup_failed');
-          return data;
-        });
-      });
     }
   };
 })();

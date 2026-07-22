@@ -1,5 +1,18 @@
 # Paywall setup
 
+> **Superseded for the generation gate itself (token-economy branch).**
+> `generate-video.js` no longer reads `PAYWALL_ENABLED`, the in-product
+> override below, or `isEntitled`/`E108`/`E111` at all — it's gated
+> unconditionally by a token balance instead (`E112`, see
+> `netlify/functions/lib/entitlements.js`'s doc block). The rest of this
+> document (Stripe Checkout backend, `stripe-webhook.js`, the
+> `active`/`plan`/`stripeCustomerId` entitlement fields, `admin.html`'s
+> on/off toggle) is unaffected code-wise and stays in place — the founder's
+> plan is to potentially reuse it for one-time token-pack checkouts (see
+> `shop.html`) instead of subscriptions — but as of this branch none of it
+> is consulted by the generation gate anymore, so `admin.html`'s paywall
+> switch currently has no effect on whether generation is allowed.
+
 This document covers the Stripe subscription paywall backend added in this
 branch: what it is, every new environment variable it introduces, and
 exactly what a human still has to do before any of it can go live. Read

@@ -224,6 +224,35 @@ test('Explore cards render without the removed comment/repost icons and without 
   }
 });
 
+test('email capture screen (13) has no leftover subscription pricing copy', async function (t) {
+  // Regression test for a bug review caught: the previous version of this
+  // file only checked screen 14's rendered #app text for stale "$9.99 /
+  // $5.00 / /mo" language. Screen 13 renders and is replaced by screen 14
+  // before that later assertion runs (this is a single-page funnel that
+  // reuses one #app container across screens), so a leftover subscription
+  // line on screen 13 itself was never actually inspected and slipped
+  // through. This test stops at screen 13 -- right after it renders, before
+  // continuing past it -- specifically to catch that class of bug.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+
+    var bodyText = await page.textContent('#app');
+    assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b|plans from/i, 'no subscription pricing should remain on the email capture screen');
+    assert.match(bodyText, /200 tokens/i, 'expected the honest free-tokens copy on the email capture screen');
+  } finally {
+    await context.close();
+  }
+});
+
 test('pricing screen shows a real dreams-this-month count when getSharedFeed() resolves', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -797,21 +826,15 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
   }
 });
 
-test('pricing screen (14): clicking a non-default plan card updates its selected state, and that clicked plan (not the original default) is what gets tracked when continuing past pricing', async function (t) {
+test('pricing screen (14, now the token intro): Continue advances to the confirmation screen and fires the renamed acknowledgment tracking event (no plan involved anymore)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
-    // goToPricingScreen doesn't pass a motivations param, so MOTIVATION_PLAN
-    // has no match and the default recommendation -- and therefore the
-    // default selectedPlan -- is Yearly. Confirmed below before relying on it.
-    await goToPricingScreen(page, 'plan-picker@example.com');
-    await page.waitForSelector('.fn-price-card[data-plan="Yearly"]', { timeout: 5000 });
-
-    var yearlySelectedBefore = await page.$eval('.fn-price-card[data-plan="Yearly"]', function (el) { return el.classList.contains('selected'); });
-    assert.equal(yearlySelectedBefore, true, 'Yearly should be the default-selected plan with no motivation data');
+    await goToPricingScreen(page, 'token-intro@example.com');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 
     // Spy on posthog.capture the same way start.html's own track() calls it
     // -- this funnel is a single in-page SPA (no real navigation between
@@ -828,31 +851,23 @@ test('pricing screen (14): clicking a non-default plan card updates its selected
       };
     });
 
-    await page.click('.fn-price-card[data-plan="Monthly"]');
-
-    var monthlySelectedAfter = await page.$eval('.fn-price-card[data-plan="Monthly"]', function (el) { return el.classList.contains('selected'); });
-    var yearlySelectedAfter = await page.$eval('.fn-price-card[data-plan="Yearly"]', function (el) { return el.classList.contains('selected'); });
-    assert.equal(monthlySelectedAfter, true, 'the clicked card should now show the selected state');
-    assert.equal(yearlySelectedAfter, false, 'the previously-selected card should lose the selected state');
-    var monthlyAriaPressed = await page.getAttribute('.fn-price-card[data-plan="Monthly"]', 'aria-pressed');
-    assert.equal(monthlyAriaPressed, 'true');
-
     await page.click('#fn-s14-continue');
     await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
 
     var phCalls = await page.evaluate(function () { return window.__phCalls; });
-    var planSelectedCalls = phCalls.filter(function (c) { return c.name === 'funnel_plan_selected'; });
-    var pricingBypassedCalls = phCalls.filter(function (c) { return c.name === 'funnel_pricing_bypassed'; });
-    assert.equal(planSelectedCalls.length, 1, 'expected exactly one funnel_plan_selected call, from the click above');
-    assert.equal(planSelectedCalls[0].props.plan, 'Monthly');
-    assert.equal(pricingBypassedCalls.length, 1, 'expected exactly one funnel_pricing_bypassed call, from Continue');
-    assert.equal(pricingBypassedCalls[0].props.plan, 'Monthly', 'must record the plan actually clicked, not the original default');
+    var continuedCalls = phCalls.filter(function (c) { return c.name === 'funnel_token_intro_continued'; });
+    var oldBypassedCalls = phCalls.filter(function (c) { return c.name === 'funnel_pricing_bypassed'; });
+    var oldPlanSelectedCalls = phCalls.filter(function (c) { return c.name === 'funnel_plan_selected'; });
+    assert.equal(continuedCalls.length, 1, 'expected exactly one funnel_token_intro_continued call, from Continue');
+    assert.equal(continuedCalls[0].props.step, 14);
+    assert.equal(oldBypassedCalls.length, 0, 'the old funnel_pricing_bypassed event name must not still fire');
+    assert.equal(oldPlanSelectedCalls.length, 0, 'there is no plan to select anymore, so this old event must never fire');
   } finally {
     await context.close();
   }
 });
 
-test('pricing screen (14): renders the value bullets, cancel-anytime line, and secure-checkout trust line', async function (t) {
+test('pricing screen (14, now the token intro): renders the value bullets and the free-tokens copy, with no plan cards or payment/checkout language left behind', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -867,10 +882,15 @@ test('pricing screen (14): renders the value bullets, cancel-anytime line, and s
     assert.match(valueText, /Personalize with your own style and characters/);
     assert.match(valueText, /Save your dreams and publish them to Explore/);
 
-    var footText = await page.textContent('.fn-value-foot');
-    assert.match(footText, /cancel anytime/i, 'expected a cancel-anytime line');
-    assert.match(footText, /secure checkout/i, 'expected a secure-checkout trust line');
-    assert.match(footText, /payment details are never stored/i, 'expected the trust line to actually say what "secure" means here');
+    var bodyText = await page.textContent('#app');
+    assert.match(bodyText, /200 free tokens/i, 'expected the honest free-tokens headline');
+    assert.match(bodyText, /100 more every day/i);
+    assert.match(bodyText, /no card needed/i);
+    assert.match(bodyText, /token shop coming soon/i);
+    assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b/, 'no subscription pricing should remain on this screen');
+
+    var priceCardCount = await page.$$eval('.fn-price-card', function (els) { return els.length; });
+    assert.equal(priceCardCount, 0, 'no plan cards should be rendered anymore');
   } finally {
     await context.close();
   }

@@ -34,9 +34,10 @@ as it's always been — this is purely additive.
 - Skips every real fal.ai call entirely: no `FAL_KEY` is read, no network
   request to fal.ai is made at all.
 - Still runs every guardrail exactly as it does on the real path — caption/
-  style validation, the per-IP/per-email rate limit (`E109`), the paywall
-  entitlement gate (`E108`, when the paywall is on), and the daily spend-cap
-  circuit breaker (`E110`). Mock mode is a stand-in for the model call
+  style validation, the per-IP/per-email rate limit (`E109`), the
+  unconditional token-balance gate (`E112`, see
+  `netlify/functions/lib/entitlements.js`), and the daily spend-cap circuit
+  breaker (`E110`). Mock mode is a stand-in for the model call
   itself, never a way to bypass the checks those guardrails exist to test —
   if you're testing the guardrails themselves, mock mode is exactly the
   right way to do it for free.

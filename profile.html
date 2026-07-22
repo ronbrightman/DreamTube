@@ -77,7 +77,7 @@
       <div class="profile-name" id="profile-handle">@you</div>
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
-      <div class="profile-stats" id="profile-quota" style="display:none; margin-top:8px;"></div>
+      <div class="profile-stats" id="profile-tokens" style="margin-top:8px; cursor:pointer; text-decoration:underline;"></div>
     </div>
     <div id="profile-insights" style="display:none;">
       <div class="profile-milestone-row" id="milestone-row"></div>
@@ -121,20 +121,12 @@
       <button class="btn btn-secondary btn-block" id="export-backup-btn"><span class="icon" id="export-backup-icon"></span> Export backup</button>
 
       <div style="height:10px;"></div>
+      <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
+
+      <div style="height:10px;"></div>
       <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
       <div style="height:8px;"></div>
       <span class="link-text" id="account-logout-link" style="cursor:pointer; color:var(--danger);">Log out</span>
-    </div>
-  </div>
-
-  <div class="sheet-overlay" id="sheet-topup-overlay">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-title">Get more dreams</div>
-      <div class="auth-sub" style="margin-bottom:14px;">Add 10 more generations to keep creating this month.</div>
-      <button class="btn btn-primary btn-block" id="topup-confirm-btn">Get 10 more dreams</button>
-      <div style="height:10px;"></div>
-      <span class="link-text" id="topup-cancel" style="cursor:pointer;">Not now</span>
     </div>
   </div>
 
@@ -153,6 +145,17 @@
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero (the ≥500-balance-ceiling case, see entitlements.js) reads as "now": a grant is genuinely pending as soon as balance drops, not overdue. */
+  function formatTokenCountdown(nextGrantAt){
+    if(nextGrantAt == null) return '';
+    var ms = nextGrantAt - Date.now();
+    if(ms <= 0) return 'now';
+    var totalMin = Math.ceil(ms / 60000);
+    var h = Math.floor(totalMin / 60);
+    var m = totalMin % 60;
+    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+  }
 
   function vcardHTML(d){
     // Links to result.html (the owner detail/edit view, reads local state),
@@ -254,52 +257,36 @@
   }
   render();
 
-  // ===== Usage-quota/credits indicator =====
-  // Only ever shown for an active subscriber (see js/store.js's
-  // getQuotaStatus — resolves { active:false } with no network call at all
-  // when there's no logged-in account or no email on file), matching this
-  // page's existing "hide, don't show empty" convention already used by
-  // #profile-insights above. While the paywall is off (today's default),
-  // no entitlement record is ever active, so this stays hidden for
-  // everyone — fully inert until the founder turns the paywall on.
-  var topupOverlay = document.getElementById('sheet-topup-overlay');
-  function openTopupSheet(){ topupOverlay.classList.add('open'); }
-  function closeTopupSheet(){ topupOverlay.classList.remove('open'); }
-
-  var quotaEl = document.getElementById('profile-quota');
-  var quotaExhausted = false;
-  function renderQuota(){
-    DreamStore.getQuotaStatus().then(function(status){
-      if(!status || status.active !== true){ quotaEl.style.display = 'none'; return; }
-      var text = status.remaining + ' of ' + status.includedPerMonth + ' dreams left this month';
-      if(status.bonusCredits > 0) text += ' · +' + status.bonusCredits + ' extra';
-      quotaEl.textContent = text;
-      quotaExhausted = status.effectiveRemaining <= 0;
-      quotaEl.style.cursor = quotaExhausted ? 'pointer' : 'default';
-      quotaEl.style.textDecoration = quotaExhausted ? 'underline' : 'none';
-      quotaEl.style.display = 'block';
-    }).catch(function(){ quotaEl.style.display = 'none'; });
+  // ===== Token balance indicator =====
+  // Shown for every logged-in account with an email on file (every new
+  // signup has one — see js/store.js's signup(); a legacy no-email account
+  // resolves to balance:0 with no network call, see getTokenStatus's own
+  // doc comment) — unlike the old quota indicator this replaces, tokens
+  // apply to everyone from launch, not just an active subscriber, so there
+  // is no "hide when inactive" state here. Always clickable, straight to
+  // the token shop — see shop.html.
+  var tokenEl = document.getElementById('profile-tokens');
+  var tokenStatus = null;
+  function renderTokenText(){
+    if(!tokenStatus) return;
+    var text = tokenStatus.balance + ' tokens';
+    if(tokenStatus.balance < 100) text += ' · out of tokens';
+    else if(tokenStatus.nextGrantAt) text += ' · next 100 in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
+    tokenEl.textContent = text;
   }
-  renderQuota();
+  function renderTokens(){
+    DreamStore.getTokenStatus().then(function(status){
+      tokenStatus = status;
+      renderTokenText();
+    }).catch(function(){ /* leave whatever was last rendered (or nothing) — never block the rest of the page on this */ });
+  }
+  renderTokens();
+  // Countdown only needs to move visibly once a minute — no reason to
+  // re-fetch from the server that often, just re-render from the balance
+  // already cached in tokenStatus.
+  setInterval(renderTokenText, 60000);
 
-  quotaEl.addEventListener('click', function(){
-    if(!quotaExhausted) return;
-    openTopupSheet();
-  });
-  document.getElementById('topup-cancel').addEventListener('click', closeTopupSheet);
-  topupOverlay.addEventListener('click', function(e){
-    if(e.target.id === 'sheet-topup-overlay') closeTopupSheet();
-  });
-  document.getElementById('topup-confirm-btn').addEventListener('click', function(){
-    var btn = document.getElementById('topup-confirm-btn');
-    btn.disabled = true;
-    DreamStore.grantTopUpBonus(10).then(function(){
-      closeTopupSheet();
-      renderQuota();
-    }).catch(function(){
-      showToast("Couldn't add more dreams right now — try again");
-    }).then(function(){ btn.disabled = false; });
-  });
+  tokenEl.addEventListener('click', function(){ location.href = 'shop.html'; });
 
   document.getElementById('account-success-icon').innerHTML = Icons.mail;
   var accountOverlay = document.getElementById('sheet-account-overlay');
