@@ -42,14 +42,6 @@ var KEY = 'items';
 // items instead of rewriting these if the content ever needs to change.
 var SEED_ITEMS = [
   {
-    id: 'owner-token-bypass',
-    category: 'task',
-    priority: 'high',
-    done: false,
-    title: 'Decide: owner bypass for the token gate (E112)?',
-    detail: 'The old subscription paywall exempted OWNER_EMAIL from its entitlement check. The new token-economy gate (E112) has no owner bypass at all — the founder\'s own account is subject to the same 200-signup + 100/day limit as any user. Decide whether to restore an owner exemption for E112 specifically (E109/E110 rate-limit and spend-cap protections would still apply to the owner either way, matching how the old bypass worked).'
-  },
-  {
     id: 'token-refund-gap',
     category: 'task',
     priority: 'high',

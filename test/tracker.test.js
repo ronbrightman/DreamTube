@@ -173,7 +173,11 @@ test('POST from a non-owner email is rejected with 403 and does not write anythi
     var getRes = await getHandler(fakeEvent({ method: 'GET' }));
     var getBody = JSON.parse(getRes.body);
     var untouched = getBody.items.find(function (i) { return i.id === id; });
-    assert.equal(untouched.done, false);
+    // Compare against the seed's own starting value, not a hardcoded
+    // `false` — the rejected POST tried to set done:true regardless of
+    // where the item actually started, so "untouched" means "still
+    // whatever the seed said," not "still false" specifically.
+    assert.equal(untouched.done, trackerStore.SEED_ITEMS[0].done);
   });
 });
 
