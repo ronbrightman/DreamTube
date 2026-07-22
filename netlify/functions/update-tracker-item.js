@@ -2,11 +2,11 @@
 //
 // Owner-only write for tracker.html: updates one item's `priority` and/or
 // `done` fields by id. Deliberately does NOT allow editing title/detail/
-// category through this endpoint — that's seed-authored content (see
-// tracker-store.js's SEED_ITEMS), not something the UI should let anyone
-// accidentally mutate. If the founder wants to add new items later,
-// that's a follow-up (a new endpoint or a seed edit), not something this
-// endpoint grows into.
+// category through this endpoint — that's seed-authored-or-added content
+// (see tracker-store.js's SEED_ITEMS and addItem()), not something this
+// endpoint should let anyone accidentally mutate. Adding/removing whole
+// items is add-tracker-item.js/delete-tracker-item.js's job now, not a
+// hypothetical this endpoint is expected to grow into.
 //
 // Same owner-check-and-403 pattern as admin-paywall-toggle.js's POST:
 // trusts client-supplied identity (an `email` field, checked against
