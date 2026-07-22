@@ -132,7 +132,23 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
 // store would. This is what lets these tests exercise the real race
 // end-to-end rather than merely asserting the fixed code "looks" correct.
 
-test('account-store: two concurrent createAccount calls for the SAME username (different emails) -- exactly one wins cleanly, the other gets a clear conflict (never a false ok:true, never a mixed/corrupted record)', async function () {
+// INCIDENT (2026-07-22): this file used to test a stricter-looking
+// "read-your-own-write-back to detect a losing racer" mechanism in
+// createAccount/applyPasswordReset. Every one of those tests passed
+// against this file's own in-memory Map mock, which has perfect,
+// synchronous read-after-write consistency by construction -- but the
+// REAL @netlify/blobs store does not guarantee that, and the mechanism
+// caused a total production outage (every solo, non-racing signup falsely
+// rejected as 'conflict'). See lib/account-store.js's header comment for
+// the full write-up. The tests below now match the reverted, simpler
+// design: two concurrent writes to the same username can still race
+// (last write wins, un-detected, same accepted tradeoff every other
+// Blobs-backed store in this codebase already lives with) -- what matters
+// is that the record actually left behind afterward is self-consistent
+// (never a corrupted mix of one call's password with the other's email),
+// not that either caller can tell who "won".
+
+test('account-store: two concurrent createAccount calls for the SAME username (different emails) -- whichever write actually lands last is what is live afterward, never a corrupted mix of the two', async function () {
   var accountStore = require('../netlify/functions/lib/account-store');
   var event = fakeEvent({ method: 'POST' });
 
@@ -141,93 +157,23 @@ test('account-store: two concurrent createAccount calls for the SAME username (d
     accountStore.createAccount(event, { username: 'RACER', password: 'secondpassword2', email: 'racer-second@example.com' })
   ]);
 
-  var winners = results.filter(function (r) { return r.ok; });
-  var losers = results.filter(function (r) { return !r.ok; });
-  assert.equal(winners.length, 1, 'exactly one of the two racing signups should end up ok:true');
-  assert.equal(losers.length, 1, 'the other must get a clear, safe error -- never silent corruption or a second false ok:true');
-  assert.equal(losers[0].error, 'conflict');
+  // Neither call detects the other, so both report ok:true -- this test's
+  // job is to confirm the record actually left behind is internally
+  // consistent (one call's password paired with THAT SAME call's email),
+  // not a mix of the two.
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, true);
 
-  // The stored record must be entirely the winner's -- never a mix of one
-  // request's password with the other's email (the exact corruption this
-  // fix exists to prevent) -- and the winner's own password must be the
-  // one that actually authenticates going forward.
   var stored = await accountStore.getByUsername(event, 'racer');
-  assert.equal(stored.password, winners[0].record.password);
-  assert.equal(stored.email, winners[0].record.email);
-  var loginAsWinner = await accountStore.verifyLogin(event, 'racer', winners[0].record.password);
-  assert.equal(loginAsWinner.ok, true);
+  var matchesFirst = stored.password === 'firstpassword1' && stored.email === 'racer-first@example.com';
+  var matchesSecond = stored.password === 'secondpassword2' && stored.email === 'racer-second@example.com';
+  assert.ok(matchesFirst || matchesSecond, 'the live record must match one call entirely, never a mix of one password with the other email');
 
-  // The loser's own client would have cached ITS password locally after
-  // seeing a false ok:true -- with this fix it never does, since it got a
-  // conflict instead. Confirm the loser's password is NOT what's live
-  // server-side (i.e. this scenario no longer produces the lockout
-  // described in this file's own header comment).
-  var loserPassword = results[0].ok ? 'secondpassword2' : 'firstpassword1';
-  var loginAsLoser = await accountStore.verifyLogin(event, 'racer', loserPassword);
-  assert.equal(loginAsLoser.ok, false);
+  var loginAsLiveOwner = await accountStore.verifyLogin(event, 'racer', stored.password);
+  assert.equal(loginAsLiveOwner.ok, true);
 });
 
-test('account-store: after two concurrent createAccount calls for the SAME username with DIFFERENT emails, the loser\'s own email is not left permanently pointing at the winner\'s (now differently-emailed) account (review findings ay3nqfz/kd7m3wq)', async function () {
-  var accountStore = require('../netlify/functions/lib/account-store');
-  var event = fakeEvent({ method: 'POST' });
-
-  var results = await Promise.all([
-    accountStore.createAccount(event, { username: 'racer3', password: 'firstpassword1', email: 'racer3-a@example.com' }),
-    accountStore.createAccount(event, { username: 'RACER3', password: 'secondpassword2', email: 'racer3-b@example.com' })
-  ]);
-
-  var winners = results.filter(function (r) { return r.ok; });
-  var losers = results.filter(function (r) { return !r.ok; });
-  assert.equal(winners.length, 1, 'exactly one of the two racing signups should end up ok:true');
-  assert.equal(losers.length, 1);
-  assert.equal(losers[0].error, 'conflict');
-
-  var winnerEmail = winners[0].record.email;
-  var loserEmail = winnerEmail === 'racer3-a@example.com' ? 'racer3-b@example.com' : 'racer3-a@example.com';
-
-  // Fix B (defense in depth): getByEmail must never resolve the loser's
-  // real email to the winner's live record, which now carries a DIFFERENT
-  // email than the one queried -- that mismatch must read as "not found",
-  // not as a misresolved account.
-  var byLoserEmail = await accountStore.getByEmail(event, loserEmail);
-  assert.equal(byLoserEmail, null, 'the loser\'s email must not resolve to the differently-emailed winner record');
-
-  // Fix A: the loser's own "e:" index entry should actually be rolled back
-  // (freed), not merely masked by getByEmail's mismatch check -- confirm
-  // the real owner of that email can still register a brand-new account
-  // under it afterward. This is the "permanent email_taken lockout" this
-  // fix exists to close.
-  var retry = await accountStore.createAccount(event, { username: 'racer3-retry', password: 'retrypassword1', email: loserEmail });
-  assert.equal(retry.ok, true, 'the loser\'s real email must be able to register again -- not permanently locked out by a stale index entry still pointing at the winner\'s account');
-  assert.equal(retry.record.email, loserEmail);
-});
-
-test('account-store: after two concurrent applyPasswordReset calls for the SAME username with DIFFERENT emails, the loser\'s own email is freed rather than left pointing at the winner\'s account', async function () {
-  var accountStore = require('../netlify/functions/lib/account-store');
-  var event = fakeEvent({ method: 'POST' });
-  await accountStore.createAccount(event, { username: 'racer4', password: 'originalpw1', email: 'racer4-original@example.com' });
-
-  var results = await Promise.all([
-    accountStore.applyPasswordReset(event, { username: 'racer4', email: 'racer4-a@example.com', password: 'resetpw-onexx' }),
-    accountStore.applyPasswordReset(event, { username: 'RACER4', email: 'racer4-b@example.com', password: 'resetpw-twoyy' })
-  ]);
-
-  var winners = results.filter(function (r) { return r.ok; });
-  var losers = results.filter(function (r) { return !r.ok; });
-  assert.equal(winners.length, 1);
-  assert.equal(losers.length, 1);
-
-  var winnerEmail = winners[0].record.email;
-  var loserEmail = winnerEmail === 'racer4-a@example.com' ? 'racer4-b@example.com' : 'racer4-a@example.com';
-
-  var byLoserEmail = await accountStore.getByEmail(event, loserEmail);
-  assert.equal(byLoserEmail, null, 'the loser\'s reset email must not resolve to the differently-emailed winner record');
-
-  var retry = await accountStore.createAccount(event, { username: 'racer4-retry', password: 'retrypassword1', email: loserEmail });
-  assert.equal(retry.ok, true, 'the loser\'s reset email must not be permanently locked out');
-});
-
-test('account-store: two concurrent applyPasswordReset calls for the SAME username -- exactly one wins cleanly, the other gets a clear conflict', async function () {
+test('account-store: two concurrent applyPasswordReset calls for the SAME username -- whichever write lands last is what is live afterward', async function () {
   var accountStore = require('../netlify/functions/lib/account-store');
   var event = fakeEvent({ method: 'POST' });
   await accountStore.createAccount(event, { username: 'racer2', password: 'originalpw1', email: 'racer2@example.com' });
@@ -237,14 +183,12 @@ test('account-store: two concurrent applyPasswordReset calls for the SAME userna
     accountStore.applyPasswordReset(event, { username: 'RACER2', email: 'racer2@example.com', password: 'resetpw-twoyy' })
   ]);
 
-  var winners = results.filter(function (r) { return r.ok; });
-  var losers = results.filter(function (r) { return !r.ok; });
-  assert.equal(winners.length, 1, 'exactly one of the two racing resets should end up ok:true');
-  assert.equal(losers.length, 1);
-  assert.equal(losers[0].error, 'conflict');
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, true);
 
-  var loginAsWinner = await accountStore.verifyLogin(event, 'racer2', winners[0].record.password);
-  assert.equal(loginAsWinner.ok, true);
+  var stored = await accountStore.getByUsername(event, 'racer2');
+  var loginAsLiveOwner = await accountStore.verifyLogin(event, 'racer2', stored.password);
+  assert.equal(loginAsLiveOwner.ok, true);
 });
 
 test('account-store: two concurrent createAccount calls for the exact SAME username, email, AND password (a user double-submitting the same signup) both succeed cleanly -- not misclassified as a race requiring rollback', async function () {
@@ -352,20 +296,22 @@ test('register-account: exceeding MAX_REGISTRATIONS_PER_IP_PER_DAY is rejected w
   assert.match(body.error, /^E9: rate_limited/);
 });
 
-test('register-account: a concurrent write conflict from lib/account-store.js surfaces as E10 conflict (200, ok:false), never a false ok:true', async function () {
+test('register-account: two concurrent signups for the SAME username both report ok:true (no conflict detection -- see the account store\'s own header comment), and the live account afterward is self-consistent', async function () {
   var handler = require('../netlify/functions/register-account').handler;
+  var accountStore = require('../netlify/functions/lib/account-store');
 
   var results = await Promise.all([
     handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'concurrentuser', password: 'firstpassword1', email: 'concurrent-a@example.com' } })),
     handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'CONCURRENTUSER', password: 'secondpassword2', email: 'concurrent-b@example.com' } }))
   ]);
   var bodies = results.map(function (r) { return JSON.parse(r.body); });
-  var winners = bodies.filter(function (b) { return b.ok; });
-  var losers = bodies.filter(function (b) { return !b.ok; });
+  assert.equal(bodies[0].ok, true);
+  assert.equal(bodies[1].ok, true);
 
-  assert.equal(winners.length, 1, 'exactly one concurrent signup should succeed');
-  assert.equal(losers.length, 1);
-  assert.match(losers[0].error, /^E10: conflict/);
+  var event = fakeEvent({ method: 'POST' });
+  var stored = await accountStore.getByUsername(event, 'concurrentuser');
+  var loginAsLiveOwner = await accountStore.verifyLogin(event, 'concurrentuser', stored.password);
+  assert.equal(loginAsLiveOwner.ok, true);
 });
 
 test('register-account: rejects invalid JSON and non-POST methods', async function () {

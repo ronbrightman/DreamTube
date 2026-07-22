@@ -583,12 +583,6 @@
     if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 8 characters.';
     if (code.indexOf('invalid_email') !== -1) return 'Enter a valid email address.';
     if (code.indexOf('rate_limited') !== -1) return "Too many signups from this network today — try again tomorrow.";
-    // E10 conflict — lib/account-store.js detected a concurrent write race
-    // on this exact username/email and safely declined rather than risk a
-    // corrupted account (see that file's own comment). Nothing was created
-    // — the same submission is safe to retry as-is, no suffix/rename
-    // needed like the username_taken case below.
-    if (code.indexOf('conflict') !== -1) return 'Something went wrong creating your account — please try again.';
     // Default covers username_taken and anything else unexpected — matches
     // the original local-only error text for the single most common case.
     return 'That username is already taken.';
@@ -823,16 +817,6 @@
         return res.json();
       }).then(function (data) {
         if (!data || !data.ok) {
-          // E6 conflict (see verify-password-reset.js) means the token is
-          // still valid and untouched — a concurrent write raced this one
-          // server-side, nothing was actually saved, and the exact same
-          // request is safe to retry. Everything else (missing/expired/
-          // already-consumed token, or an unexpected response shape) keeps
-          // the original message.
-          var code = (data && data.error) || '';
-          if (code.indexOf('conflict') !== -1) {
-            return { ok: false, error: 'Something went wrong saving your new password — please try again.' };
-          }
           return { ok: false, error: 'link_invalid_or_expired' };
         }
         var key = (data.username || '').toLowerCase();

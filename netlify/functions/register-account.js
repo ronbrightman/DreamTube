@@ -21,31 +21,29 @@
 //   200 { ok:false, error: 'E7: username_taken' }   — collision, not a
 //   200 { ok:false, error: 'E8: email_taken' }         client/shape error
 //   429 { ok:false, error: 'E9: rate_limited: ...' } — see the rate-
-//   200 { ok:false, error: 'E10: conflict' }            limiting doc block
-//                                                        below. Both
-//                                                        deliberately carry
-//                                                        ok:false (E9's 429
-//                                                        included, unlike
-//                                                        generate-video.js/
-//                                                        track-conversion.js's
-//                                                        bare {error:...} 429
-//                                                        shape) so js/
-//                                                        store.js's signup()
-//                                                        — which branches on
-//                                                        data.ok, not on
-//                                                        HTTP status — never
-//                                                        mistakes either for
-//                                                        a malformed
-//                                                        response and falls
-//                                                        back to a local-only
-//                                                        account that was
-//                                                        never actually
-//                                                        checked/created
-//                                                        server-side (see
-//                                                        that function's own
-//                                                        explicit rate_
-//                                                        limited/conflict
-//                                                        handling).
+//                                                       limiting doc block
+//                                                       below. Deliberately
+//                                                       carries ok:false on
+//                                                       the 429 (unlike
+//                                                       generate-video.js/
+//                                                       track-conversion.js's
+//                                                       bare {error:...} 429
+//                                                       shape) so js/
+//                                                       store.js's signup()
+//                                                       — which branches on
+//                                                       data.ok, not on HTTP
+//                                                       status — never
+//                                                       mistakes it for a
+//                                                       malformed response
+//                                                       and falls back to a
+//                                                       local-only account
+//                                                       that was never
+//                                                       actually checked/
+//                                                       created server-side
+//                                                       (see that function's
+//                                                       own explicit
+//                                                       rate_limited
+//                                                       handling).
 // A real 4xx is reserved for the caller not even sending a well-formed
 // request at all (E1-E6 below) — "someone already has this name" is a
 // normal, expected business outcome the client needs to branch on and
@@ -63,12 +61,6 @@
 //   E7 username_taken       — already registered under a different account
 //   E8 email_taken          — already registered under a different account
 //   E9 rate_limited         — MAX_REGISTRATIONS_PER_IP_PER_DAY exceeded for today
-//   E10 conflict            — lib/account-store.js's createAccount detected a
-//                              concurrent write to the same username/email
-//                              and safely declined rather than risk a
-//                              corrupted/misdirected account (see that
-//                              file's own comment) — safe for the caller to
-//                              retry the exact same request.
 //
 // Rate limiting: this is a brand-new, fully anonymous, unauthenticated
 // endpoint, so it gets the same per-IP daily cap every other public
@@ -125,9 +117,7 @@ exports.handler = async function (event) {
 
   var result = await accountStore.createAccount(event, { username: username, password: password, email: email });
   if (!result.ok) {
-    var code = 'E7: username_taken';
-    if (result.error === 'email_taken') code = 'E8: email_taken';
-    else if (result.error === 'conflict') code = 'E10: conflict';
+    var code = result.error === 'email_taken' ? 'E8: email_taken' : 'E7: username_taken';
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
   }
 
