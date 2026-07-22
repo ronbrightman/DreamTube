@@ -427,12 +427,13 @@
             cameraView: opts.cameraView || null,
             sceneryTime: opts.sceneryTime || null,
             sceneryPlace: opts.sceneryPlace || null,
-            // Sent opportunistically whenever the browser knows it (logged-in
-            // account with an email on file) — a no-op today (the server-side
-            // entitlement gate is off by default, see PAYWALL_ENABLED in
-            // generate-video.js), but means this call already carries what
-            // that gate needs once it's turned on, with no client change
-            // required at that point.
+            // Sent whenever the browser knows it (logged-in account with an
+            // email on file) — this is load-bearing, not opportunistic: the
+            // server-side E112 token gate (see lib/entitlements.js and the
+            // doc block above generate-video.js's guardrails) is
+            // unconditional and always on, and identifies the caller's token
+            // balance by this email. No email means no way to look up a
+            // balance, so an anonymous/logged-out call here fails E112.
             email: currentAccountEmail()
           })
         }).then(function (res) {

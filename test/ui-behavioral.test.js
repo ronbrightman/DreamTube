@@ -224,6 +224,35 @@ test('Explore cards render without the removed comment/repost icons and without 
   }
 });
 
+test('email capture screen (13) has no leftover subscription pricing copy', async function (t) {
+  // Regression test for a bug review caught: the previous version of this
+  // file only checked screen 14's rendered #app text for stale "$9.99 /
+  // $5.00 / /mo" language. Screen 13 renders and is replaced by screen 14
+  // before that later assertion runs (this is a single-page funnel that
+  // reuses one #app container across screens), so a leftover subscription
+  // line on screen 13 itself was never actually inspected and slipped
+  // through. This test stops at screen 13 -- right after it renders, before
+  // continuing past it -- specifically to catch that class of bug.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+
+    var bodyText = await page.textContent('#app');
+    assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b|plans from/i, 'no subscription pricing should remain on the email capture screen');
+    assert.match(bodyText, /200 tokens/i, 'expected the honest free-tokens copy on the email capture screen');
+  } finally {
+    await context.close();
+  }
+});
+
 test('pricing screen shows a real dreams-this-month count when getSharedFeed() resolves', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

@@ -74,9 +74,12 @@
 // "100/day" for anyone actually using the product. See getTokenStatus.
 //
 // Per-IP daily cap on brand-new signup-bonus grants: see the big comment
-// on syncTokens below for the abuse vector this closes and why it's
+// on syncTokens below for what this raises the cost of and why it's
 // enforced exactly at token-materialization time rather than as a separate
-// signup-registration endpoint.
+// signup-registration endpoint. It only raises the cost of casual
+// single-IP farming — a determined attacker with rotating IPs can still
+// exceed it, bounded by the existing E109/E110 backstops (unrelated to
+// this change), not by this cap.
 //
 // Why keyed by normalized (trimmed, lowercased) email, not a new
 // proprietary user-id: this project's only other "account" concept

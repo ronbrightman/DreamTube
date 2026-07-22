@@ -75,9 +75,17 @@
     var enabled = !!state.enabled;
     toggleEl.classList.toggle('on', enabled);
     toggleEl.setAttribute('aria-checked', String(enabled));
-    subEl.textContent = enabled
-      ? 'On — generation requires an active subscription (except the owner).'
-      : 'Off — generation is open to everyone, same as before the paywall existed.';
+    // Superseded (token-economy branch): generate-video.js no longer reads
+    // this toggle at all — generation is gated unconditionally by token
+    // balance (E112, see netlify/functions/lib/entitlements.js) regardless
+    // of this switch's position. See docs/PAYWALL_SETUP.md's superseded
+    // notice. The toggle and its state are left in place for a possible
+    // future reuse (one-time token-pack checkouts), not because it still
+    // does anything today.
+    subEl.textContent = 'Has no effect on generation anymore — superseded by the always-on token gate (E112). ' +
+      (enabled
+        ? 'Currently On (unused).'
+        : 'Currently Off (unused).');
     sourceEl.textContent = state.source === 'override'
       ? 'Set from this page (overrides the PAYWALL_ENABLED env var).'
       : 'Following PAYWALL_ENABLED env var (no in-product override set yet).';
