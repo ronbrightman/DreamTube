@@ -1,8 +1,16 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email? }
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken? }
 // -> kicks off a video generation job and returns an operationName the
 // client can poll via video-status.js.
+//
+// turnstileToken (optional) is a Cloudflare Turnstile response token,
+// obtained client-side (see js/turnstile-config.js's getTurnstileToken(),
+// called from processing.html's runGeneration() — the one real choke
+// point every generation path funnels through). Only ever actually
+// checked when TURNSTILE_SECRET_KEY is configured — see the E113 doc
+// block below and docs/TURNSTILE_SETUP.md for the full story on why this
+// guardrail is attached here rather than at signup.
 //
 // characters (optional) is [{ name, description, isSelf, photoDataUrl? }] —
 // the user's selected Advanced characters, resolved client-side from their
@@ -372,6 +380,30 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     tier. A request with no email at all has no way to be
 //                                     identified for a balance, so it's treated as balance 0 (blocked)
 //                                     — see the handler below.
+//   E113 turnstile_verification_failed — Cloudflare Turnstile bot-abuse check (see
+//                                     lib/turnstile.js) rejected the request: the client-supplied
+//                                     turnstileToken was missing, or Cloudflare's siteverify call
+//                                     said it was invalid/expired, or siteverify itself couldn't be
+//                                     reached. UNLIKE E109/E110/E112, this one is CONDITIONAL — it
+//                                     only runs at all when TURNSTILE_SECRET_KEY is configured with a
+//                                     real (non-placeholder) value (see docs/TURNSTILE_SETUP.md).
+//                                     Unset/placeholder = this whole check is skipped entirely, same
+//                                     as today, so a fresh deploy with no Cloudflare Turnstile site
+//                                     set up yet never blocks a single real generation on this. Once
+//                                     configured, it's still only a cheap complement to the three
+//                                     guardrails above (a bot-abuse layer, per the anti-abuse-
+//                                     guardrails research this implements) — it stops naive scripted
+//                                     abuse, not a determined attacker working around it, and is
+//                                     deliberately NOT attached to signup (js/store.js's signup() is
+//                                     100% client-side, no server round-trip to verify a token
+//                                     against — see docs/TURNSTILE_SETUP.md for why this generation
+//                                     call is the actual choke point instead). Returns 403 (not
+//                                     429/402/503 like the other three) since this isn't "come back
+//                                     later" (rate limit), "you're out of balance" (token gate), or
+//                                     "paused for today" (spend cap) — it's "this specific request
+//                                     failed to establish trust," the same category as the 403s
+//                                     already used elsewhere in this codebase for a failed identity/
+//                                     ownership check (see admin-paywall-toggle.js).
 //
 // Mock mode & test-duration override — see docs/TESTING.md for the full
 // writeup and AGENT_POLICY.md's "Never spend real generation cost on
@@ -409,6 +441,20 @@ var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var promptCondenser = require('./lib/prompt-condenser');
+var turnstile = require('./lib/turnstile');
+
+// Same placeholder-string convention as js/analytics-config.js's
+// POSTHOG_KEY/META_PIXEL_ID and js/turnstile-config.js's TURNSTILE_SITE_KEY
+// — an unset or still-placeholder secret key means the E113 guardrail
+// below is skipped entirely, so this must never accidentally block
+// generation before the founder has actually set up a real Cloudflare
+// Turnstile site (see docs/TURNSTILE_SETUP.md). Unlike the client-side
+// site key, a real deploy has no reason to ever literally contain this
+// placeholder string in TURNSTILE_SECRET_KEY (it's an env var, not
+// checked-in source) — this check exists purely as defense-in-depth
+// against someone copy-pasting the doc's example placeholder text
+// directly into the env var box.
+var TURNSTILE_SECRET_PLACEHOLDER = 'REPLACE_WITH_REAL_TURNSTILE_SECRET_KEY';
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above. The embedded timestamp lets video-status.js resolve "done" purely from elapsed wall-clock time, with no server-side memory needed (see that file's checkMockStatus). */
 function mockOperationName() {
@@ -432,7 +478,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -442,6 +488,7 @@ exports.handler = async function (event) {
     sceneryTime = payload.sceneryTime || null;
     sceneryPlace = payload.sceneryPlace || null;
     email = entitlements.normalizeEmail(payload.email);
+    turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
@@ -450,14 +497,28 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E104: caption_and_style_required' }) };
   }
 
-  // --- Guardrails below: rate limiting (E109), the token gate (E112), and
-  // the spend circuit breaker (E110) — all unconditional, see the doc block
-  // above for each.
+  // --- Guardrails below: the Turnstile bot-check (E113, conditional — see
+  // its doc block above), rate limiting (E109), the token gate (E112), and
+  // the spend circuit breaker (E110) — the latter three unconditional, see
+  // the doc block above for each.
+
+  var ip = rateLimit.clientIp(event);
+
+  // E113 — only runs at all once TURNSTILE_SECRET_KEY is a real, configured
+  // value (see the doc block above and docs/TURNSTILE_SETUP.md). Placed
+  // first among the guardrails so an obviously-bot request never consumes
+  // any of the rate-limit/token/spend-guard budget below it.
+  var turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  if (turnstileSecret && turnstileSecret !== TURNSTILE_SECRET_PLACEHOLDER) {
+    var turnstileResult = await turnstile.verify(turnstileToken, turnstileSecret, ip);
+    if (!turnstileResult.success) {
+      return { statusCode: 403, body: JSON.stringify({ error: 'E113: turnstile_verification_failed' + (turnstileResult.reason ? ': ' + turnstileResult.reason : '') }) };
+    }
+  }
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
 
-  var ip = rateLimit.clientIp(event);
   var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
   if (!ipLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this network today, try again tomorrow' }) };

@@ -96,6 +96,12 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<!-- Cloudflare Turnstile: baseline bot-abuse layer in front of the real
+     generation call below (netlify/functions/generate-video.js's E113
+     guardrail). No-ops safely (no script load, no network call, no delay)
+     until a real site key is set in js/turnstile-config.js — see that
+     file and docs/TURNSTILE_SETUP.md. -->
+<script src="js/turnstile-config.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.querySelector('.proc-fail-icon').innerHTML = Icons.warning;
@@ -218,17 +224,34 @@
     renderPreview();
 
     var pending = DreamStore.getPendingJob();
-    var task;
     if(pending){
-      task = DreamStore.resumePendingJob();
+      // Resuming an in-flight job never re-submits to generate-video (the
+      // operationName already exists from whenever it was first submitted),
+      // so there's no new request here for a turnstileToken to attach to.
+      attachTaskHandlers(DreamStore.resumePendingJob());
     } else {
-      var d = DreamStore.getDraft();
-      var advancedOpts = { characterIds: d.characterIds, cameraView: d.cameraView, sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace };
-      task = d.sourceDreamId
-        ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
-        : DreamStore.generateVideo(d.caption, d.style, advancedOpts);
+      // getTurnstileToken() (js/turnstile-config.js) resolves immediately
+      // with null until a real TURNSTILE_SITE_KEY is configured — see that
+      // file's doc comment — so this adds no delay at all in that (today's)
+      // default state. The fake progress UI above already started, so even
+      // once Turnstile is live, its typically-sub-second non-interactive
+      // resolution isn't user-visible as a distinct wait.
+      getTurnstileToken().then(function(turnstileToken){
+        var d = DreamStore.getDraft();
+        var advancedOpts = {
+          characterIds: d.characterIds, cameraView: d.cameraView,
+          sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace,
+          turnstileToken: turnstileToken
+        };
+        var freshTask = d.sourceDreamId
+          ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
+          : DreamStore.generateVideo(d.caption, d.style, advancedOpts);
+        attachTaskHandlers(freshTask);
+      });
     }
+  }
 
+  function attachTaskHandlers(task){
     task.then(function(dream){
       finishProgress();
       setTimeout(function(){
