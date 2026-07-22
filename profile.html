@@ -363,10 +363,21 @@
     e.target.value = ''; // allow re-picking the same file later
     if(!file) return;
     document.getElementById('identity-error').textContent = '';
+    // resizeImageFile is a real multi-step async chain (FileReader -> Image
+    // decode -> canvas draw), easily slow enough to race a Cancel-then-
+    // reopen of this sheet. Captured now and re-checked once it resolves,
+    // same tokenAtSave pattern as the generate-avatar call below -- without
+    // this, a stale resize from a cancelled instance can resolve after the
+    // sheet's been reopened (same character or, on create.html, a different
+    // one) and silently overwrite identityPendingPhotoDataUrl/the preview
+    // with an abandoned photo the user never confirmed for this instance.
+    var tokenAtPick = identitySheetToken;
     resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      if(tokenAtPick !== identitySheetToken) return;
       identityPendingPhotoDataUrl = dataUrl;
       renderIdentityPhotoPreview();
     }).catch(function(){
+      if(tokenAtPick !== identitySheetToken) return;
       document.getElementById('identity-error').textContent = "Couldn't read that photo — try a different image.";
     });
   });

@@ -352,10 +352,22 @@
     e.target.value = ''; // allow re-picking the same file later
     if(!file) return;
     document.getElementById('char-error').textContent = '';
+    // resizeImageFile is a real multi-step async chain (FileReader -> Image
+    // decode -> canvas draw), easily slow enough to race a Cancel-then-
+    // reopen of this sheet -- including reopening for a DIFFERENT character
+    // than the one being edited when the photo was picked. Captured now and
+    // re-checked once it resolves, same tokenAtSave pattern as the
+    // generate-avatar call below -- without this, a stale resize from a
+    // cancelled instance can resolve after reopen and silently overwrite
+    // charPendingPhotoDataUrl/the preview with an abandoned photo the user
+    // never confirmed for this instance.
+    var tokenAtPick = charSheetToken;
     resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      if(tokenAtPick !== charSheetToken) return;
       charPendingPhotoDataUrl = dataUrl;
       renderCharPhotoPreview();
     }).catch(function(){
+      if(tokenAtPick !== charSheetToken) return;
       document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
     });
   });

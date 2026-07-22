@@ -18,9 +18,11 @@
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
+var path = require('node:path');
 var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+var PHOTO_FIXTURE = path.join(__dirname, '..', 'assets', 'logo-v2.png');
 
 var playwright = null;
 var unavailableReason = null;
@@ -116,6 +118,27 @@ function mockGenerateAvatar(page, opts) {
       return;
     }
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ photoDataUrl: opts.photoDataUrl || GENERATED_AVATAR }) });
+  });
+}
+
+/**
+ * Stands in for the page's real resizeImageFile (FileReader -> Image decode
+ * -> canvas draw) with a promise this test controls the resolution of.
+ * There's no network call in that pipeline for page.route() to intercept
+ * (unlike generate-avatar.js above), so this is the only reliable way to
+ * hold a photo pick pending long enough to race a Cancel-then-reopen
+ * against it. Safe to install any time after the page's own <script> has
+ * already run: resizeImageFile is a plain top-level function declaration in
+ * a non-module classical script, so it's a `window` property just like
+ * `fetch`, and every call site looks the identifier up by name at call
+ * time -- reassigning `window.resizeImageFile` redirects them exactly like
+ * overriding `window.fetch` would.
+ */
+function armControllableResize(page) {
+  return page.evaluate(function () {
+    window.resizeImageFile = function () {
+      return new Promise(function (resolve) { window.__resolveResize = resolve; });
+    };
   });
 }
 
@@ -431,6 +454,144 @@ test('describe mode left blank on a brand-new Me character skips the generation 
     await page.click('#identity-save-btn');
     await page.waitForSelector('#identity-error:has-text("Add a description or a photo")');
     assert.equal(calls, 0, 'an empty description must never trigger a real (or mocked) generation call');
+  } finally {
+    await page.close();
+  }
+});
+
+// ===== Round-4 regression: the photo-upload path had the identical
+// unguarded-async shape as the (now token-gated) generate-avatar path. =====
+//
+// resizeImageFile is a real multi-step async chain (FileReader -> Image
+// decode -> canvas draw), easily slow enough to race a Cancel-then-reopen
+// the same way generateAvatarFromDescription's call could. Unlike that
+// call, there's nothing here for page.route() to intercept, so
+// armControllableResize (above) stands in for the real pipeline with a
+// promise these tests resolve on their own schedule.
+
+test('profile.html: cancelling a photo pick before resizeImageFile resolves must not clobber a later reopen of the same sheet, nor let the stale photo get saved', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  var ORIGINAL_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAA=';
+  var STALE_PHOTO = 'data:image/jpeg;base64,ZmFrZS1zdGFsZS1waG90by1kYXRh';
+  var existing = { id: 'me-existing-photo', isSelf: true, name: 'Ron', description: '', photoDataUrl: ORIGINAL_PHOTO };
+  try {
+    await seedUser(page, existing);
+    await safeGoto(page, baseUrl + '/profile.html');
+
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    // Existing character already has a photo, so the sheet opens straight into Photo mode.
+    assert.equal(await page.locator('#identity-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO);
+
+    await armControllableResize(page);
+    await page.setInputFiles('#identity-photo-input', PHOTO_FIXTURE);
+    // Confirm the (stubbed) resize is genuinely pending before backing out.
+    await page.waitForFunction(function () { return typeof window.__resolveResize === 'function'; });
+
+    // Back out before the pending resize ever resolves.
+    await page.click('#identity-cancel');
+    await page.waitForSelector('#sheet-identity-overlay:not(.open)');
+
+    // Reopen immediately -- openIdentitySheet's own unconditional reset must
+    // show the character's real existing photo, not anything left over from
+    // the abandoned pick.
+    await page.click('#profile-handle');
+    await page.waitForSelector('#sheet-identity-overlay.open');
+    assert.equal(await page.locator('#identity-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO, 'reopened sheet must show the character\'s real photo, not the abandoned pick');
+
+    // Now let the stale resize resolve, well after the reopen.
+    await page.evaluate(function (staleUrl) { window.__resolveResize(staleUrl); }, STALE_PHOTO);
+    await page.waitForTimeout(100); // give its .then() a moment to run, if it were going to run at all
+
+    assert.equal(await page.locator('#identity-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO, 'the stale resize must not clobber the reopened sheet\'s preview once it resolves');
+
+    // Save without re-picking a photo -- must persist the real photo, never the stale one.
+    await page.click('#identity-save-btn');
+    await page.waitForSelector('#sheet-identity-overlay:not(.open)');
+
+    var state = await readState(page);
+    var me = state.charactersByUser.tester.filter(function (c) { return c.isSelf; })[0];
+    assert.equal(me.photoDataUrl, ORIGINAL_PHOTO, 'the stale, abandoned photo pick must never be persisted');
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html: cancelling a photo pick on the self sheet, then reopening for a DIFFERENT (non-self) character, must not let the stale resize leak into either character once it resolves', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  var ORIGINAL_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAA=';
+  var STALE_PHOTO = 'data:image/jpeg;base64,ZmFrZS1zdGFsZS1waG90by1kYXRh';
+  var self_ = { id: 'self-1', isSelf: true, name: 'Ron', description: '', photoDataUrl: ORIGINAL_PHOTO };
+  try {
+    await seedUser(page, self_);
+    // Add a second, non-self character directly into state -- seedUser only
+    // seeds a single (optional) self character, same shortcut every other
+    // test in this file/profile-me-character-behavioral.test.js uses.
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = JSON.parse(raw);
+      state.charactersByUser.tester.push({ id: 'mom-1', isSelf: false, name: 'Mom', description: 'short grey hair, warm smile' });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-write');
+    await page.click('#adv-toggle');
+
+    // Open the self character's sheet (opens straight into Photo mode) and pick a new photo.
+    await page.click('[data-char-edit="self-1"]');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    assert.equal(await page.locator('#char-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO);
+
+    await armControllableResize(page);
+    await page.setInputFiles('#char-photo-input', PHOTO_FIXTURE);
+    await page.waitForFunction(function () { return typeof window.__resolveResize === 'function'; });
+
+    // Back out before the pending resize ever resolves.
+    await page.click('#char-cancel');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    // Reopen for a DIFFERENT, non-self character -- a realistic flow on
+    // create.html's char-chip-row, unlike profile.html which only ever has
+    // one identity sheet. The non-self sheet has no photo picker at all
+    // (char-mode-row/char-photo-area stay hidden for isSelf:false), so
+    // saving it must never pick up the stale self-sheet photo either.
+    await page.click('[data-char-edit="mom-1"]');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    assert.equal(await page.locator('#char-sheet-title').textContent(), 'Edit character');
+    assert.equal(await page.locator('#char-mode-row').isVisible(), false);
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    var state = await readState(page);
+    var mom = state.charactersByUser.tester.filter(function (c) { return c.name === 'Mom'; })[0];
+    assert.equal(mom.photoDataUrl, undefined, 'a non-self character must never pick up the stale self-sheet photo');
+
+    // Reopen the self character sheet -- its own onOpen reset shows the real
+    // photo immediately, exactly like the profile.html test above.
+    await page.click('[data-char-edit="self-1"]');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    assert.equal(await page.locator('#char-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO, 'reopened sheet must show the character\'s real photo, not the abandoned pick');
+
+    // Only now does the stale resize resolve -- well after both the Mom
+    // reopen AND this self-character reopen. This ordering is the actual
+    // regression: resolving it *before* Mom or this reopen would be masked
+    // by openCharSheet's own unconditional per-open reset regardless of any
+    // token gating, so it wouldn't prove anything about this fix.
+    await page.evaluate(function (staleUrl) { window.__resolveResize(staleUrl); }, STALE_PHOTO);
+    await page.waitForTimeout(100);
+
+    assert.equal(await page.locator('#char-photo-preview img').getAttribute('src'), ORIGINAL_PHOTO, 'the stale resize must not clobber the reopened sheet\'s preview once it resolves, even after being reopened for a different character along the way');
+
+    // Save without re-picking a photo -- must persist the real photo, never the stale one.
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+    state = await readState(page);
+    var me = state.charactersByUser.tester.filter(function (c) { return c.isSelf; })[0];
+    assert.equal(me.photoDataUrl, ORIGINAL_PHOTO, 'the stale, abandoned photo pick must never be persisted onto the self character either');
   } finally {
     await page.close();
   }
