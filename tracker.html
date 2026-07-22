@@ -38,6 +38,34 @@
       </div>
 
       <div id="tracker-content" style="display:none;">
+        <!-- Add-item form. Real server-side owner enforcement happens on
+             add-tracker-item.js itself regardless of this page's own
+             owner-gating above — same defense-in-depth as every other
+             control on this page. Kept as its own container, never
+             touched by render() below, so an unrelated done/priority/
+             delete action elsewhere on the page can never wipe an
+             in-progress draft here (see the cross-item-draft-wipe class
+             of bug this codebase has hit before with a per-item free-text
+             field; this form isn't per-item so that failure mode doesn't
+             apply, but keeping it structurally separate is what makes
+             that true). -->
+        <form id="tracker-add-form" class="tracker-add-form">
+          <div class="section-label" style="padding:0;">Add item</div>
+          <select class="field" id="tracker-add-category" style="margin-bottom:8px;">
+            <option value="task">Open Task</option>
+            <option value="idea">Idea</option>
+          </select>
+          <input class="field" id="tracker-add-title" type="text" placeholder="Title" maxlength="200" style="margin-bottom:8px;">
+          <textarea class="field" id="tracker-add-detail" placeholder="Detail" maxlength="4000" dir="auto" style="min-height:70px; margin-bottom:8px;"></textarea>
+          <select class="field" id="tracker-add-priority" style="margin-bottom:8px;">
+            <option value="high">High priority</option>
+            <option value="medium" selected>Medium priority</option>
+            <option value="low">Low priority</option>
+          </select>
+          <button type="submit" class="btn btn-primary btn-block" id="tracker-add-submit">Add item</button>
+          <div class="err-text" id="tracker-add-error" style="display:none;"></div>
+        </form>
+
         <div class="section-label" style="padding:0;">Open Tasks</div>
         <div id="tracker-tasks"></div>
 
@@ -66,6 +94,8 @@
   var errorEl = document.getElementById('tracker-error');
   var tasksEl = document.getElementById('tracker-tasks');
   var ideasEl = document.getElementById('tracker-ideas');
+
+  document.getElementById('tracker-add-form').addEventListener('submit', function (e) { handleAddSubmit(e); });
 
   function esc(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
@@ -120,6 +150,7 @@
           '<input type="checkbox" class="tracker-check"' + (item.done ? ' checked' : '') + ' aria-label="Mark done">' +
           '<span class="tracker-item-title" dir="auto">' + esc(item.title) + '</span>' +
           '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
+          '<button type="button" class="tracker-delete-btn icon" aria-label="Delete item">' + Icons.trash + '</button>' +
           '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
         '</summary>' +
         '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + '</div>' +
@@ -161,6 +192,12 @@
           e.stopPropagation();
           handlePriorityChange(id, btn.dataset.priority);
         });
+      });
+
+      var deleteBtn = el.querySelector('.tracker-delete-btn');
+      deleteBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        handleDelete(id);
       });
     });
 
@@ -219,6 +256,96 @@
       item.priority = previous;
       render();
       showToast("Couldn't save — try again.");
+    });
+  }
+
+  /** POSTs a new item to add-tracker-item.js. Rejects on any non-2xx or network failure, same contract as postUpdate. Resolves with the created item (server-generated id included) on success. */
+  function postAdd(fields) {
+    var body = Object.assign({ email: email }, fields);
+    return fetch('/.netlify/functions/add-tracker-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('add-tracker-item failed');
+      return res.json();
+    }).then(function (data) { return data.item; });
+  }
+
+  /** POSTs a delete to delete-tracker-item.js. Rejects on any non-2xx or network failure, same contract as postUpdate/postAdd. */
+  function postDelete(id) {
+    return fetch('/.netlify/functions/delete-tracker-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, email: email })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('delete-tracker-item failed');
+      return res.json();
+    });
+  }
+
+  /**
+   * Submits the add-item form. Not optimistic the way priority/done/delete
+   * are — there's no client-known id yet for a brand-new item (the server
+   * generates it), so this waits for the real response before touching
+   * `items`/render() at all, then clears the form on success. Failure
+   * leaves the form's contents exactly as the user typed them (nothing to
+   * revert — it was never added client-side in the first place) and shows
+   * the same toast every other failure path uses.
+   */
+  function handleAddSubmit(e) {
+    e.preventDefault();
+    var addErrorEl = document.getElementById('tracker-add-error');
+    addErrorEl.style.display = 'none';
+
+    var categoryEl = document.getElementById('tracker-add-category');
+    var titleEl = document.getElementById('tracker-add-title');
+    var detailEl = document.getElementById('tracker-add-detail');
+    var priorityEl = document.getElementById('tracker-add-priority');
+    var submitBtn = document.getElementById('tracker-add-submit');
+
+    var title = titleEl.value.trim();
+    var detail = detailEl.value.trim();
+    if (!title || !detail) {
+      addErrorEl.textContent = 'Title and detail are both required.';
+      addErrorEl.style.display = 'block';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    postAdd({
+      category: categoryEl.value,
+      title: title,
+      detail: detail,
+      priority: priorityEl.value
+    }).then(function (created) {
+      items.push(created);
+      render();
+      titleEl.value = '';
+      detailEl.value = '';
+      categoryEl.value = 'task';
+      priorityEl.value = 'medium';
+    }).catch(function () {
+      showToast("Couldn't add — try again.");
+    }).finally(function () {
+      submitBtn.disabled = false;
+    });
+  }
+
+  /** Removes an item after a native confirm(), matching this codebase's existing delete-confirmation pattern (see e.g. create.html/result.html/start.html's "Delete this character?"). Optimistic: removes from `items`/render() immediately, re-inserts at its original index and toasts on failure — same revert-on-failure shape as handleDoneChange/handlePriorityChange, just for a removal instead of a field patch. */
+  function handleDelete(id) {
+    var idx = -1;
+    for (var i = 0; i < items.length; i++) { if (items[i].id === id) { idx = i; break; } }
+    if (idx === -1) return;
+    if (!confirm('Delete this item?')) return;
+
+    var removed = items[idx];
+    items.splice(idx, 1);
+    render();
+    postDelete(id).catch(function () {
+      items.splice(idx, 0, removed);
+      render();
+      showToast("Couldn't delete — try again.");
     });
   }
 

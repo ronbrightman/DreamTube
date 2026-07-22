@@ -29,8 +29,17 @@
 //   priority: "high"|"medium"|"low", done: boolean }
 //
 // update-tracker-item.js only ever patches `priority`/`done` on an existing
-// item — id/category/title/detail are seed-authored content, not something
-// the UI lets anyone mutate (see that function's own doc comment for why).
+// item — id/category/title/detail are seed-authored-or-added content, not
+// something that endpoint's PATCH-style write lets anyone mutate.
+//
+// New items are no longer only added by hand-editing SEED_ITEMS above and
+// pushing to main — that only ever affected a fresh environment's very
+// first read (getItems()'s seed-once behavior below means a source edit
+// silently does nothing at all once the live store has been seeded once).
+// add-tracker-item.js/delete-tracker-item.js are the real, owner-gated
+// add/remove path now, backed by addItem()/deleteItem() below — SEED_ITEMS
+// still exists and is still what a brand-new environment seeds from, this
+// is purely additive on top of it.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -284,6 +293,36 @@ function store() {
 }
 
 /**
+ * Slugifies a title into a URL/JS-identifier-safe base — lowercased,
+ * every run of non [a-z0-9] characters collapsed to a single hyphen,
+ * leading/trailing hyphens trimmed, capped at 40 characters so a very
+ * long title doesn't produce an unwieldy id. Falls back to "item" if
+ * that leaves nothing (e.g. a title that's entirely punctuation/emoji).
+ * Only ever used as the human-readable prefix of generateId()'s output
+ * below, never as an id on its own — it isn't unique by itself.
+ */
+function slugify(title) {
+  var slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug.slice(0, 40) || 'item';
+}
+
+/**
+ * Generates a new item id: "<slugified-title>-<6-char-random-suffix>",
+ * retried on the astronomically unlikely chance it collides with an id
+ * already in `items`. Never trusts a client-supplied id (see
+ * add-tracker-item.js's own doc comment for why) — this is the only way
+ * a new item's id comes into existence.
+ */
+function generateId(items, title) {
+  var base = slugify(title);
+  var id;
+  do {
+    id = base + '-' + Math.random().toString(36).slice(2, 8);
+  } while (items.some(function (item) { return item.id === id; }));
+  return id;
+}
+
+/**
  * Returns the full items array, seeding+persisting SEED_ITEMS on the very
  * first call in a fresh environment (no "items" key written yet). Every
  * later call — from either function — reads back whatever's actually
@@ -326,4 +365,51 @@ async function updateItem(event, id, patch) {
   return updated;
 }
 
-module.exports = { STORE_NAME, KEY, SEED_ITEMS, getItems, updateItem };
+/**
+ * Appends a brand-new item built from `patch` ({ category, title, detail,
+ * priority }) — shape/value validation is the caller's job (see
+ * add-tracker-item.js), this trusts what it's given. Generates the id
+ * server-side (see generateId above) and always starts the item at
+ * done: false, comment: ''. Returns the created item. A pure append —
+ * never reorders or otherwise touches any existing item.
+ */
+async function addItem(event, patch) {
+  var items = await getItems(event);
+  var created = {
+    id: generateId(items, patch.title),
+    category: patch.category,
+    title: patch.title,
+    detail: patch.detail,
+    priority: patch.priority,
+    done: false,
+    comment: ''
+  };
+  items = items.concat([created]);
+
+  connectLambda(event);
+  await store().setJSON(KEY, items);
+  return created;
+}
+
+/**
+ * Removes one item by id and persists the resulting list. Returns `true`
+ * if an item was actually found and removed, `false` if no item with
+ * that id existed (store is left untouched in that case — never
+ * partially written, same not-found handling as updateItem above).
+ */
+async function deleteItem(event, id) {
+  var items = await getItems(event);
+  var idx = -1;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].id === id) { idx = i; break; }
+  }
+  if (idx === -1) return false;
+
+  items = items.slice(0, idx).concat(items.slice(idx + 1));
+
+  connectLambda(event);
+  await store().setJSON(KEY, items);
+  return true;
+}
+
+module.exports = { STORE_NAME, KEY, SEED_ITEMS, getItems, updateItem, addItem, deleteItem };

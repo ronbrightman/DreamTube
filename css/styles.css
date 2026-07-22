@@ -590,5 +590,19 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .tracker-done-list .tracker-item{ opacity:.68;}
 .tracker-done-list .tracker-item-title{ text-decoration:line-through;}
 .tracker-empty{ font-size:12.5px; color:var(--text-faint); padding:2px 2px 16px;}
+/* Delete button lives in the summary row alongside the priority buttons —
+   same stopPropagation()-on-its-own-click treatment so clicking it doesn't
+   also toggle the item open/closed. */
+.tracker-delete-btn{
+  width:24px; height:24px; flex:none; border:none; background:transparent; color:var(--text-faint);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  transition:color .15s ease;
+}
+.tracker-delete-btn:hover{ color:var(--danger);}
+/* Add-item form sits above the Open Tasks/Ideas sections, inside the same
+   owner-gated #tracker-content — a plain card using the same .field/.btn
+   primitives every other form on this site already uses, not new form
+   styling of its own. */
+.tracker-add-form{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:24px;}
 
 .spinner-inline{ display:inline-block; width:16px; height:16px; border-radius:50%; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; animation:spin .7s linear infinite;}
