@@ -92,6 +92,20 @@
   var expandedIds = {};
   var doneOpen = { task: false, idea: false };
 
+  // Any comment text currently typed into an open textarea but not yet
+  // saved, keyed by item id. render() rebuilds every item's HTML from
+  // scratch (see itemHTML() below), which only knows about item.comment —
+  // the last *saved* value — so without this, checking a done box or
+  // clicking a priority button ANYWHERE on the page (including on the very
+  // item whose comment is being drafted, per the bug report) would
+  // silently wipe whatever unsaved note someone was mid-typing elsewhere.
+  // captureDrafts() (below) snapshots the live DOM right before every
+  // render() call; itemHTML() then prefers that snapshot over item.comment
+  // when one exists. This is in-memory only — never sent to the server on
+  // its own, just kept around so a render() triggered by something
+  // unrelated doesn't destroy an in-progress draft.
+  var unsavedComments = {};
+
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
 
@@ -124,10 +138,38 @@
         '</summary>' +
         '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + '</div>' +
         '<div class="tracker-comment-row">' +
-          '<textarea class="field tracker-comment-input" dir="auto" placeholder="Leave a note for whoever maintains this item...">' + esc(item.comment || '') + '</textarea>' +
+          '<textarea class="field tracker-comment-input" dir="auto" placeholder="Leave a note for whoever maintains this item...">' + esc(commentValueFor(item)) + '</textarea>' +
           '<button type="button" class="btn btn-secondary tracker-comment-save">Save comment</button>' +
         '</div>' +
       '</details>';
+  }
+
+  /** The value a just-rendered comment textarea should start with: an in-progress unsaved draft if one was captured, otherwise the last saved value. */
+  function commentValueFor(item) {
+    return Object.prototype.hasOwnProperty.call(unsavedComments, item.id) ? unsavedComments[item.id] : (item.comment || '');
+  }
+
+  /**
+   * Snapshots the live DOM value of every currently-rendered comment
+   * textarea into unsavedComments, keyed by item id, so the render() that's
+   * about to happen doesn't wipe it (see unsavedComments' own comment
+   * above). Must be called immediately before every render() — capturing
+   * after render() would just read back what render() already wrote.
+   *
+   * excludeId skips one id entirely (used by handleCommentSave): the item
+   * whose comment was just explicitly saved has its authoritative value
+   * committed to item.comment already, so it needs no draft entry — and
+   * deliberately NOT re-capturing it here is what stops a freshly-saved
+   * comment from ever being mistaken for an still-unsaved draft on its next
+   * render.
+   */
+  function captureDrafts(excludeId) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tracker-item'), function (el) {
+      var id = el.dataset.id;
+      if (id === excludeId) return;
+      var input = el.querySelector('.tracker-comment-input');
+      if (input) unsavedComments[id] = input.value;
+    });
   }
 
   function sectionHTML(categoryKey) {
@@ -217,9 +259,11 @@
     if (!item) return;
     var previous = item.done;
     item.done = newDone;
+    captureDrafts();
     render();
     postUpdate(id, { done: newDone }).catch(function () {
       item.done = previous;
+      captureDrafts();
       render();
       showToast("Couldn't save — try again.");
     });
@@ -230,9 +274,11 @@
     if (!item || item.priority === newPriority) return;
     var previous = item.priority;
     item.priority = newPriority;
+    captureDrafts();
     render();
     postUpdate(id, { priority: newPriority }).catch(function () {
       item.priority = previous;
+      captureDrafts();
       render();
       showToast("Couldn't save — try again.");
     });
@@ -251,9 +297,21 @@
     if (!item || item.comment === newComment) return;
     var previous = item.comment;
     item.comment = newComment;
+    // This id's value is now authoritative on item.comment itself -- drop
+    // any stale draft entry for it so commentValueFor() renders from
+    // item.comment, not a leftover snapshot (which would otherwise make a
+    // just-saved comment look unsaved, or make a same-value re-save into a
+    // silent no-op next time). excludeId on captureDrafts skips
+    // re-capturing this id from the live DOM for the same reason.
+    delete unsavedComments[id];
+    captureDrafts(id);
     render();
     postUpdate(id, { comment: newComment }).catch(function () {
       item.comment = previous;
+      // On failure this id must revert to the previous saved value, not
+      // whatever's still sitting in its live textarea (the just-rejected
+      // edit) -- so it stays excluded here too, same as above.
+      captureDrafts(id);
       render();
       showToast("Couldn't save — try again.");
     });
