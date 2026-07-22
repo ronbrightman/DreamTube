@@ -128,6 +128,26 @@
   var doneChangeSeq = {};
   var priorityChangeSeq = {};
 
+  // Per-id last known SERVER-CONFIRMED value for each field -- populated
+  // from the initial get-tracker-items load, then kept in sync on every
+  // successful postUpdate() (see each handler's .then below). This exists
+  // to fix a chained-failure edge case review caught on top of the seqMap
+  // guard above: the seqMap guard correctly stops an older *stale* failure
+  // from clobbering a newer *successful* save (tested below), but if TWO
+  // overlapping same-id requests both FAIL, the surviving (newer) request
+  // is still the sequence holder and still runs its revert -- and reverting
+  // to its own captured "previous" is wrong, because "previous" is just the
+  // prior optimistic in-memory value (itself never confirmed by the server,
+  // since the older request that set it also failed), not the actual
+  // last-good server state. Reverting to {comment,done,priority}Confirmed[id]
+  // instead means a revert can only ever land on a value the server has
+  // actually acknowledged, no matter how many same-id requests are chained
+  // and failing. See the "chained double-failure" tests below for the
+  // concrete scenario this fixes.
+  var commentConfirmed = {};
+  var doneConfirmed = {};
+  var priorityConfirmed = {};
+
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
 
@@ -279,17 +299,21 @@
   function handleDoneChange(id, newDone) {
     var item = findItem(id);
     if (!item) return;
-    var previous = item.done;
     if (!doneChangeSeq[id]) doneChangeSeq[id] = 0;
     var mySeq = ++doneChangeSeq[id];
     item.done = newDone;
     captureDrafts();
     render();
-    postUpdate(id, { done: newDone }).catch(function () {
+    postUpdate(id, { done: newDone }).then(function () {
+      doneConfirmed[id] = newDone;
+    }).catch(function () {
       // Only the most recently-started done-toggle for THIS id is allowed
       // to revert -- see the seqMap block near unsavedComments for why.
       if (doneChangeSeq[id] !== mySeq) return;
-      item.done = previous;
+      // Revert to the last SERVER-CONFIRMED value, not a captured "previous"
+      // -- see the {comment,done,priority}Confirmed block near unsavedComments
+      // for why a chained-failure case needs this instead of "previous".
+      item.done = doneConfirmed[id];
       captureDrafts();
       render();
       showToast("Couldn't save — try again.");
@@ -299,17 +323,20 @@
   function handlePriorityChange(id, newPriority) {
     var item = findItem(id);
     if (!item || item.priority === newPriority) return;
-    var previous = item.priority;
     if (!priorityChangeSeq[id]) priorityChangeSeq[id] = 0;
     var mySeq = ++priorityChangeSeq[id];
     item.priority = newPriority;
     captureDrafts();
     render();
-    postUpdate(id, { priority: newPriority }).catch(function () {
+    postUpdate(id, { priority: newPriority }).then(function () {
+      priorityConfirmed[id] = newPriority;
+    }).catch(function () {
       // Only the most recently-started priority-change for THIS id is
       // allowed to revert -- see the seqMap block near unsavedComments.
       if (priorityChangeSeq[id] !== mySeq) return;
-      item.priority = previous;
+      // Revert to the last SERVER-CONFIRMED value -- see the *Confirmed
+      // block near unsavedComments.
+      item.priority = priorityConfirmed[id];
       captureDrafts();
       render();
       showToast("Couldn't save — try again.");
@@ -327,7 +354,6 @@
   function handleCommentSave(id, newComment) {
     var item = findItem(id);
     if (!item || item.comment === newComment) return;
-    var previous = item.comment;
     // mySeq guards against a THIRD interleaving review caught on top of the
     // two below: double-submitting the SAME id (edit to X, save, edit
     // further to Y before X's request resolves, save again). The
@@ -350,14 +376,26 @@
     delete unsavedComments[id];
     captureDrafts(id);
     render();
-    postUpdate(id, { comment: newComment }).catch(function () {
+    postUpdate(id, { comment: newComment }).then(function () {
+      commentConfirmed[id] = newComment;
+    }).catch(function () {
       // Only the most recently-started save for this id may revert -- if a
       // newer save for the same id has started since this request went out,
       // that newer request (whatever it resolves to) has the final say, not
       // this stale one.
       if (commentSaveSeq[id] !== mySeq) return;
-      item.comment = previous;
-      // On failure this id must revert to the previous saved value, not
+      // Revert to the last SERVER-CONFIRMED comment, not a captured
+      // "previous" in-memory value. Matters when TWO overlapping same-id
+      // saves both fail: the surviving (later-started) request is still the
+      // one running this revert, but its own "previous" would only be the
+      // OTHER in-flight request's optimistic (also-never-confirmed) edit --
+      // reverting to that would show the browser a value the server never
+      // actually stored. commentConfirmed[id] only ever changes on an
+      // actual successful postUpdate, so it's always safe to revert to. See
+      // the commentConfirmed/doneConfirmed/priorityConfirmed block near
+      // unsavedComments, and the "chained double-failure" test below.
+      item.comment = commentConfirmed[id];
+      // On failure this id must revert to the confirmed saved value, not
       // whatever's still sitting in its live textarea (the just-rejected
       // edit) -- so it stays excluded here too, same as above. It also must
       // not display a STALE unsavedComments[id] entry: while this save was
@@ -389,6 +427,15 @@
           .then(function (res) { return res.json(); })
           .then(function (data) {
             items = data.items || [];
+            // Seed the server-confirmed baseline for every field this page
+            // can edit, so the very first optimistic edit on any item
+            // already has a real confirmed value to fall back to on
+            // failure (see the *Confirmed block near unsavedComments).
+            items.forEach(function (item) {
+              commentConfirmed[item.id] = item.comment || '';
+              doneConfirmed[item.id] = item.done;
+              priorityConfirmed[item.id] = item.priority;
+            });
             render();
           })
           .catch(function () {
