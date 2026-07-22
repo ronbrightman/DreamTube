@@ -751,23 +751,31 @@
     var base = deriveUsernameBase(email);
     var attempts = 0;
     var MAX_ATTEMPTS = 8;
+    // DreamStore.signup is now a real network round trip (server-side
+    // account check, see js/store.js) — this loop is unchanged in shape,
+    // just chained through the returned Promise instead of a synchronous
+    // return, so a "username taken" collision (now possibly discovered on
+    // the SERVER, from a signup on a different device, not just this
+    // browser's local storage) still retries with a new suffix exactly as
+    // before.
     function tryUsername(username){
-      var result = DreamStore.signup(username, password, email);
-      if(result.ok){
-        // Shared event_id pairs this with the Pixel's own
-        // CompleteRegistration call — see js/analytics-config.js's
-        // fireMetaConversion for why. login.html's own ?mode=signup path
-        // fires the equivalent call for its own signup case.
-        fireMetaConversion('CompleteRegistration', { email: email });
-        cb(true, null); return;
-      }
-      if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
-        attempts++;
-        var suffix = Math.floor(1000 + Math.random() * 9000);
-        tryUsername(base + suffix);
-        return;
-      }
-      cb(false, result.error);
+      DreamStore.signup(username, password, email).then(function(result){
+        if(result.ok){
+          // Shared event_id pairs this with the Pixel's own
+          // CompleteRegistration call — see js/analytics-config.js's
+          // fireMetaConversion for why. login.html's own ?mode=signup path
+          // fires the equivalent call for its own signup case.
+          fireMetaConversion('CompleteRegistration', { email: email });
+          cb(true, null); return;
+        }
+        if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
+          attempts++;
+          var suffix = Math.floor(1000 + Math.random() * 9000);
+          tryUsername(base + suffix);
+          return;
+        }
+        cb(false, result.error);
+      });
     }
     tryUsername(base);
   }

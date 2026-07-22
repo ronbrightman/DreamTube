@@ -5,10 +5,30 @@
 // Every method is written to mirror a real REST call; swap the body for a fetch()
 // when a real backend exists and nothing on any page needs to change.
 //
-//   signup(username,password,email) -> POST /api/auth/signup
-//   login(usernameOrEmail,password)  -> POST /api/auth/login
-//   findAccountByEmail(email)  -> local-only lookup, backs the forgot-password flow
-//   resetPasswordLocally(username,newPassword) -> applies a server-verified reset locally
+//   signup(username,password,email) -> Promise, POST /.netlify/functions/register-account
+//       (the real, server-side, authoritative account check), then mirrors the
+//       new account into local `accounts` on success — same as before this
+//       existed, so nothing about the *original* device's dream/character
+//       logic changes. Falls back to a local-only account (today's exact
+//       behavior) if the server call itself can't be reached at all — see
+//       that function's own comment for why, and its distinction from an
+//       explicit server-side rejection (username/email already taken),
+//       which is never silently downgraded to a local write.
+//   login(usernameOrEmail,password)  -> Promise, POST /.netlify/functions/account-login
+//       first (this is what makes login work from any device the account
+//       was ever registered from) — falls back to the pre-existing local-
+//       only check only when the server explicitly has no matching account
+//       at all (never on a wrong password against a real registered
+//       account), so a legacy account created before this server-side store
+//       existed keeps logging in on the device it already worked on. See
+//       that function's own comment for the full fallback reasoning.
+//   resetPasswordLocally(token,newPassword) -> Promise, POST
+//       /.netlify/functions/verify-password-reset {consume:true, newPassword}
+//       — applies the new password to the real server-side account store in
+//       the same call that consumes the reset token, then mirrors it into
+//       this browser's local `accounts` entry too (creating one if this
+//       device never had this account locally at all — same placeholder
+//       shape login() creates, dreams/characters left empty by design).
 //   getAccountEmail() / updateEmail(email) -> local-only, lets an existing account gain/change its email
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
@@ -525,77 +545,253 @@
     }
   }
 
+  // ==========================================================================
+  // Server-side account check (login + forgot-password from any device)
+  // --------------------------------------------------------------------------
+  // Everything below backs signup()/login()/resetPasswordLocally() below —
+  // see register-account.js/account-login.js/verify-password-reset.js and
+  // lib/account-store.js for the real, server-side half of this. This
+  // deliberately does NOT sync dreams/characters — see
+  // tracker.html's sync-private-dreams-videos-later item for that, explicitly
+  // deferred and out of scope here.
+
+  /** Writes a brand-new local account entry + signs in, exactly as signup() always has — used both when the server confirms the account was created, and as the offline/unreachable-server fallback below. */
+  function commitLocalSignup(username, password, email) {
+    var key = username.toLowerCase();
+    state.accounts[key] = { password: password, email: email.toLowerCase() };
+    state.user = { handle: '@' + username, username: username };
+    persist();
+    identifyForAnalytics(username);
+    return { ok: true, user: state.user };
+  }
+
+  /** Maps register-account.js's error codes to the exact same human-readable strings signup() has always returned locally, so callers (e.g. start.html's attemptSignup, which string-matches 'That username is already taken.' to retry with a new suffix) don't need to know or care whether the rejection came from the server or a local check. */
+  function mapRegisterError(code) {
+    code = code || '';
+    if (code.indexOf('email_taken') !== -1) return 'An account with that email already exists.';
+    if (code.indexOf('invalid_username') !== -1) return 'Username must be at least 3 characters.';
+    if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 8 characters.';
+    if (code.indexOf('invalid_email') !== -1) return 'Enter a valid email address.';
+    // Default covers username_taken and anything else unexpected — matches
+    // the original local-only error text for the single most common case.
+    return 'That username is already taken.';
+  }
+
+  /**
+   * The pre-fix, fully-local login check — kept as the fallback for an
+   * account that was created before the server-side store existed and was
+   * never registered there (see backfillAccountServerSide below, which
+   * opportunistically closes that gap the next time this succeeds), and
+   * for when the server call itself can't be reached at all. Never used
+   * when the server affirmatively found the account but rejected the
+   * password — see login() below for that distinction.
+   */
+  function attemptLocalLogin(usernameOrEmail, password) {
+    var key = usernameOrEmail.toLowerCase();
+    var loggedInViaEmail = false;
+    if (!state.accounts[key]) {
+      var emailKey = findAccountKeyByEmail(usernameOrEmail);
+      if (emailKey) { key = emailKey; loggedInViaEmail = true; }
+    }
+    var account = state.accounts[key];
+    if (!account) return { ok: false, error: 'No account found with that username or email.' };
+    if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
+    var username = loggedInViaEmail ? key : usernameOrEmail;
+    state.user = { handle: '@' + username, username: username };
+    persist();
+    identifyForAnalytics(username);
+    backfillAccountServerSide(key, account);
+    return { ok: true, user: state.user };
+  }
+
+  /**
+   * Best-effort: the moment a legacy, local-only account (one that
+   * predates the server-side account store) successfully logs in on the
+   * device it already worked on, this registers it server-side too, using
+   * whatever password/email are already on file locally — so login and
+   * forgot-password start working from OTHER devices from this point
+   * forward, without requiring the account to be recreated from scratch.
+   * Fire-and-forget: never blocks the login that triggered it, and any
+   * failure (e.g. the username/email got claimed by a different account
+   * server-side in the meantime) is silently ignored — this account keeps
+   * working locally on this device exactly as it does today either way.
+   * Skipped entirely for an account with no email on file (predates email
+   * being required) — there's nothing to register it with.
+   */
+  function backfillAccountServerSide(username, account) {
+    if (!account || !account.email) return;
+    try {
+      fetch('/.netlify/functions/register-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: account.password, email: account.email })
+      }).catch(function () { /* best-effort — see doc comment above */ });
+    } catch (e) { /* fetch unavailable/blocked — best-effort, ignore */ }
+  }
+
   window.DreamStore = {
     STYLE_GRADIENTS: STYLE_GRADIENTS,
 
     getCurrentUser: function () { return state.user; },
 
-    /** Creates an account. Returns { ok:true, user } or { ok:false, error }. */
+    /**
+     * Creates an account. Returns a Promise of { ok:true, user } or
+     * { ok:false, error }. Checks the real server-side account store
+     * first (register-account.js) — the authoritative uniqueness check
+     * now, across every device, not just this browser's localStorage —
+     * and mirrors the new account into local `accounts` on success so
+     * nothing about this device's own dream/character logic changes. If
+     * the server call itself can't be completed at all (offline, functions
+     * runtime unreachable), degrades to a local-only account exactly like
+     * this function always worked before — an explicit server-side
+     * rejection (username/email already taken elsewhere) is never
+     * downgraded to a local write, only a genuine failure-to-ask is.
+     */
     signup: function (username, password, email) {
       username = (username || '').trim();
       var key = username.toLowerCase();
       email = (email || '').trim();
-      if (username.length < 3) return { ok: false, error: 'Username must be at least 3 characters.' };
-      if (!password) return { ok: false, error: 'Enter a password.' };
-      if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
-      if (!EMAIL_RE.test(email)) return { ok: false, error: 'Enter a valid email address.' };
-      if (state.accounts[key]) return { ok: false, error: 'That username is already taken.' };
-      if (findAccountKeyByEmail(email)) return { ok: false, error: 'An account with that email already exists.' };
-      state.accounts[key] = { password: password, email: email.toLowerCase() };
-      state.user = { handle: '@' + username, username: username };
-      persist();
-      identifyForAnalytics(username);
-      return { ok: true, user: state.user };
+      if (username.length < 3) return Promise.resolve({ ok: false, error: 'Username must be at least 3 characters.' });
+      if (!password) return Promise.resolve({ ok: false, error: 'Enter a password.' });
+      if (password.length < 8) return Promise.resolve({ ok: false, error: 'Password must be at least 8 characters.' });
+      if (!EMAIL_RE.test(email)) return Promise.resolve({ ok: false, error: 'Enter a valid email address.' });
+      if (state.accounts[key]) return Promise.resolve({ ok: false, error: 'That username is already taken.' });
+      if (findAccountKeyByEmail(email)) return Promise.resolve({ ok: false, error: 'An account with that email already exists.' });
+
+      return fetch('/.netlify/functions/register-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password, email: email })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (data && data.ok) return commitLocalSignup(username, password, email);
+        if (data && data.ok === false && data.error) return { ok: false, error: mapRegisterError(data.error) };
+        // Unexpected/malformed response shape — treat the same as
+        // unreachable below rather than surface a confusing error.
+        return commitLocalSignup(username, password, email);
+      }).catch(function () {
+        // Network failure, or the functions runtime isn't available at all
+        // (e.g. this repo's own static-file-server-only browser tests) —
+        // degrade to local-only signup rather than hard-block account
+        // creation. See this method's own doc comment above.
+        return commitLocalSignup(username, password, email);
+      });
     },
 
-    /** Logs in with an existing account, identified by username OR email. Returns { ok:true, user } or { ok:false, error }. */
+    /**
+     * Logs in with an existing account, identified by username OR email.
+     * Returns a Promise of { ok:true, user } or { ok:false, error }.
+     * Checks the real server-side account store first (account-login.js)
+     * — this is what makes login work from any device the account was
+     * ever registered from, not just the one it was created on. Falls
+     * back to the pre-fix, fully-local check only when the server
+     * explicitly has no matching account at all, or can't be reached —
+     * never when it found the account but rejected the password, since a
+     * registered server-side account is authoritative for its own
+     * password once it exists there. The local fallback also
+     * opportunistically registers a successful legacy login server-side
+     * (see backfillAccountServerSide above), so it only ever needs to
+     * fall back once per account before other devices work too.
+     */
     login: function (usernameOrEmail, password) {
       usernameOrEmail = (usernameOrEmail || '').trim();
-      var key = usernameOrEmail.toLowerCase();
-      var loggedInViaEmail = false;
-      if (!state.accounts[key]) {
-        var emailKey = findAccountKeyByEmail(usernameOrEmail);
-        if (emailKey) { key = emailKey; loggedInViaEmail = true; }
-      }
-      var account = state.accounts[key];
-      if (!account) return { ok: false, error: 'No account found with that username or email.' };
-      if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
-      // Accounts don't store a canonical-case username, only the lowercase
-      // key — when matched via email there's no original casing to recover,
-      // so the key itself is used as the display name in that case.
-      var username = loggedInViaEmail ? key : usernameOrEmail;
-      state.user = { handle: '@' + username, username: username };
-      persist();
-      identifyForAnalytics(username);
-      return { ok: true, user: state.user };
+
+      return fetch('/.netlify/functions/account-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (data && data.ok) {
+          var serverUsername = (data.username || '').toLowerCase();
+          // No original casing to recover from a server-normalized
+          // username — but if what was typed IS that username (not an
+          // email), keep displaying it exactly as typed, same as the
+          // pre-fix local-only login always did.
+          var typedIsUsername = usernameOrEmail.toLowerCase() === serverUsername;
+          var displayUsername = typedIsUsername ? usernameOrEmail : serverUsername;
+          if (!state.accounts[serverUsername]) {
+            // Brand-new-to-this-device account — materialize a local
+            // placeholder so the rest of this app's local-storage-
+            // dependent logic (character/dream filtering by username,
+            // etc.) doesn't break from a missing accounts entry. Dreams/
+            // characters for this username are deliberately left empty —
+            // syncing those is out of scope, see
+            // tracker.html's sync-private-dreams-videos-later item.
+            state.accounts[serverUsername] = { password: password, email: (data.email || '').toLowerCase() };
+          } else {
+            // Already known locally (e.g. this is the account's original
+            // device) — keep the local mirror in sync with whatever the
+            // server just accepted, in case they'd drifted (e.g. a
+            // password reset applied server-side from a different device
+            // since).
+            state.accounts[serverUsername].password = password;
+            if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
+          }
+          state.user = { handle: '@' + displayUsername, username: displayUsername };
+          persist();
+          identifyForAnalytics(displayUsername);
+          return { ok: true, user: state.user };
+        }
+        if (data && data.ok === false && data.error && data.error.indexOf('incorrect_password') !== -1) {
+          // The server found a REAL registered account but the password
+          // didn't match it — trust that outright, no local fallback.
+          return { ok: false, error: 'Incorrect password.' };
+        }
+        // Explicit "no account found" server-side, or an unexpected/
+        // malformed response shape — fall back to the pre-fix local
+        // check, so a legacy account never loses the ability to log in on
+        // the device it already worked on. See attemptLocalLogin's own
+        // comment.
+        return attemptLocalLogin(usernameOrEmail, password);
+      }).catch(function () {
+        // Network failure / functions runtime unreachable — same
+        // fallback as above.
+        return attemptLocalLogin(usernameOrEmail, password);
+      });
     },
 
     /**
-     * True if this browser has a locally-stored account for the given
-     * email — used client-side to decide whether a password-reset request
-     * is even worth sending, since the server has no account store of its
-     * own to check against (accounts live only in localStorage).
+     * Applies a new password after its reset token has been verified —
+     * now a real, server-side password change (see
+     * verify-password-reset.js's newPassword parameter and
+     * lib/account-store.js's applyPasswordReset), not just a local-only
+     * write. `token` is the same reset token login.html already has on
+     * hand from the emailed link; this call both consumes it and applies
+     * the password in one round trip. Also mirrors the new password into
+     * this browser's local `accounts` entry (creating a placeholder if
+     * this device never had the account locally at all — same shape
+     * login() creates one, dreams/characters left empty by design) so an
+     * immediate DreamStore.login() right after this succeeds without a
+     * second round trip either way. Returns a Promise of
+     * { ok:true, username, email } or { ok:false, error }.
      */
-    findAccountByEmail: function (email) {
-      var key = findAccountKeyByEmail(email);
-      return key ? { username: key, email: state.accounts[key].email } : null;
-    },
+    resetPasswordLocally: function (token, newPassword) {
+      if (!newPassword) return Promise.resolve({ ok: false, error: 'Enter a new password.' });
+      if (newPassword.length < 8) return Promise.resolve({ ok: false, error: 'Password must be at least 8 characters.' });
 
-    /**
-     * Applies a new password to a locally-known account after its reset
-     * token has been verified server-side (see request/verify-password-reset
-     * functions). Only succeeds on the same browser the account was created
-     * in — there's no server-side account record to fall back to for a
-     * cross-device reset. Returns { ok:true } or { ok:false, error }.
-     */
-    resetPasswordLocally: function (username, newPassword) {
-      var key = (username || '').trim().toLowerCase();
-      if (!state.accounts[key]) return { ok: false, error: 'account_not_found_on_this_device' };
-      if (!newPassword) return { ok: false, error: 'Enter a new password.' };
-      if (newPassword.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
-      state.accounts[key].password = newPassword;
-      persist();
-      return { ok: true };
+      return fetch('/.netlify/functions/verify-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, consume: true, newPassword: newPassword })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (!data || !data.ok) return { ok: false, error: 'link_invalid_or_expired' };
+        var key = (data.username || '').toLowerCase();
+        if (state.accounts[key]) {
+          state.accounts[key].password = newPassword;
+          if (data.email) state.accounts[key].email = data.email.toLowerCase();
+        } else {
+          state.accounts[key] = { password: newPassword, email: (data.email || '').toLowerCase() };
+        }
+        persist();
+        return { ok: true, username: data.username, email: data.email };
+      }).catch(function () {
+        return { ok: false, error: 'network_error' };
+      });
     },
 
     /** The current user's email on file, or null — accounts created before email was required migrated with no email at all. */
@@ -605,9 +801,15 @@
 
     /**
      * Sets/changes the email on the current user's account — the only way
-     * an account that predates email (or wants to change it) can start
-     * using forgot-password, since findAccountByEmail has nothing to match
-     * without one on file. Returns { ok:true } or { ok:false, error }.
+     * an account that predates email can start using forgot-password.
+     * Still local-only (unlike signup()/login()/resetPasswordLocally()
+     * above) — a changed email here is NOT mirrored to the server-side
+     * account store, so forgot-password/cross-device login continue to
+     * resolve by whatever email the server has on file (from signup, or
+     * from a prior successful login/reset — see backfillAccountServerSide)
+     * until this account goes through one of those paths again. Out of
+     * scope for the cross-device account-check fix; flagged as a follow-on
+     * gap, not fixed here. Returns { ok:true } or { ok:false, error }.
      */
     updateEmail: function (email) {
       if (!state.user) return { ok: false, error: 'not_logged_in' };

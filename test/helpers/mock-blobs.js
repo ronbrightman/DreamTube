@@ -11,8 +11,9 @@
 // fake instead of hitting the real package.
 //
 // Storage is a plain object of storeName -> Map(key -> value), mirroring
-// getStore({name}).get(key)/.setJSON(key, value) closely enough for every
-// call site in this codebase (none of them use Blobs' other methods).
+// getStore({name}).get(key)/.setJSON(key, value)/.delete(key) closely
+// enough for every call site in this codebase (verify-password-reset.js is
+// the one caller that uses .delete, to consume a one-time reset token).
 // `reset()` clears everything between tests so one test's writes can't
 // leak into another's.
 
@@ -24,13 +25,21 @@ function storeFor(name) {
 }
 
 function fakeGetStore(opts) {
-  var map = storeFor(opts.name);
+  // Real @netlify/blobs' getStore() accepts either a plain string (treated
+  // as the store name — see request-password-reset.js/verify-password-
+  // reset.js's getStore(RESET_STORE) calls) or an { name } options object
+  // (every other lib/*.js file's convention) — mirror both here.
+  var name = typeof opts === 'string' ? opts : opts.name;
+  var map = storeFor(name);
   return {
     get: async function (key) {
       return map.has(key) ? map.get(key) : undefined;
     },
     setJSON: async function (key, value) {
       map.set(key, value);
+    },
+    delete: async function (key) {
+      map.delete(key);
     }
   };
 }
