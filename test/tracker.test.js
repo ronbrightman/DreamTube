@@ -3,8 +3,8 @@
 // Covers netlify/functions/get-tracker-items.js and
 // netlify/functions/update-tracker-item.js: seed-once behavior (first call
 // seeds+persists, later calls don't re-seed over edits), owner-only
-// enforcement on the update endpoint, and priority/done update persistence.
-// Same patterns as test/admin-paywall-toggle.test.js. Run with:
+// enforcement on the update endpoint, and priority/done/comment update
+// persistence. Same patterns as test/admin-paywall-toggle.test.js. Run with:
 //   node --test test/
 
 var test = require('node:test');
@@ -51,7 +51,8 @@ test('GET seeds the store on first call and returns every seed item', async func
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.items.length, trackerStore.SEED_ITEMS.length);
-  // Every seed item shows up unchanged (id, category, title, priority, done).
+  // Every seed item shows up unchanged (id, category, title, priority, done,
+  // comment).
   trackerStore.SEED_ITEMS.forEach(function (seedItem) {
     var got = body.items.find(function (i) { return i.id === seedItem.id; });
     assert.ok(got, 'seed item ' + seedItem.id + ' missing from response');
@@ -60,6 +61,15 @@ test('GET seeds the store on first call and returns every seed item', async func
     assert.equal(got.detail, seedItem.detail);
     assert.equal(got.priority, seedItem.priority);
     assert.equal(got.done, seedItem.done);
+    assert.equal(got.comment, seedItem.comment);
+  });
+});
+
+test('every seed item has an empty-string comment — nothing seeds a comment', function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  trackerStore.SEED_ITEMS.forEach(function (seedItem) {
+    assert.equal(typeof seedItem.comment, 'string');
+    assert.equal(seedItem.comment, '');
   });
 });
 
@@ -153,6 +163,120 @@ test('POST updating only `done` leaves priority untouched, and vice versa', func
     var body2 = JSON.parse(res2.body);
     assert.equal(body2.item.priority, 'high');
     assert.equal(body2.item.done, true, 'done must survive an update that only touches priority');
+  });
+});
+
+test('POST updating `comment` persists it and leaves priority/done untouched', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var seedItem = trackerStore.SEED_ITEMS[2];
+    var id = seedItem.id;
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: OWNER_EMAIL, comment: 'actually this is lower priority' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.comment, 'actually this is lower priority');
+    assert.equal(body.item.priority, seedItem.priority);
+    assert.equal(body.item.done, seedItem.done);
+    // title/detail/category must still be untouched too.
+    assert.equal(body.item.title, seedItem.title);
+    assert.equal(body.item.detail, seedItem.detail);
+    assert.equal(body.item.category, seedItem.category);
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var persisted = getBody.items.find(function (i) { return i.id === id; });
+    assert.equal(persisted.comment, 'actually this is lower priority');
+  });
+});
+
+test('POST with an empty-string comment clears a previously-saved one', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[3].id;
+
+    await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: OWNER_EMAIL, comment: 'here is some context' }
+    }));
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: OWNER_EMAIL, comment: '' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    // An empty string is a valid, accepted clear — not rejected as "missing".
+    assert.equal(body.item.comment, '');
+  });
+});
+
+test('POST with a non-string comment is rejected with 400', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, comment: 12345 }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E10: invalid_comment/);
+  });
+});
+
+test('POST with a comment longer than the max length is rejected with 400', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var tooLong = new Array(2002).join('x'); // 2001 chars, one over the 2000 cap
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, comment: tooLong }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E10: invalid_comment/);
+  });
+});
+
+test('POST with a comment at exactly the max length is accepted', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var maxLength = new Array(2001).join('x'); // exactly 2000 chars
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, comment: maxLength }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.comment.length, 2000);
+  });
+});
+
+test('POST updating `comment` from a non-owner email is rejected with 403 and does not write anything', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[4].id;
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: 'not-the-owner@example.com', comment: 'sneaky comment' }
+    }));
+    assert.equal(res.statusCode, 403);
+    assert.match(JSON.parse(res.body).error, /^E8: forbidden/);
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var untouched = getBody.items.find(function (i) { return i.id === id; });
+    assert.equal(untouched.comment, trackerStore.SEED_ITEMS[4].comment);
   });
 });
 
@@ -253,6 +377,34 @@ test('POST with a non-boolean done value is rejected with 400', function () {
     }));
     assert.equal(res.statusCode, 400);
     assert.match(JSON.parse(res.body).error, /^E7: invalid_done/);
+  });
+});
+
+test('POST with only `comment` present does not trip the no_fields_to_update check', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, comment: 'just a note' }
+    }));
+    assert.equal(res.statusCode, 200);
+  });
+});
+
+test('bad comment shape (non-string) is rejected before the owner check even matters', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    // Wrong email AND a non-string comment — must fail on the shape problem
+    // (400), not the auth problem (403), same ordering discipline as the
+    // missing-id case below.
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: 'not-the-owner@example.com', comment: 999 }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E10: invalid_comment/);
   });
 });
 

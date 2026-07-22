@@ -123,6 +123,10 @@
           '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
         '</summary>' +
         '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + '</div>' +
+        '<div class="tracker-comment-row">' +
+          '<textarea class="field tracker-comment-input" dir="auto" placeholder="Leave a note for whoever maintains this item...">' + esc(item.comment || '') + '</textarea>' +
+          '<button type="button" class="btn btn-secondary tracker-comment-save">Save comment</button>' +
+        '</div>' +
       '</details>';
   }
 
@@ -161,6 +165,18 @@
           e.stopPropagation();
           handlePriorityChange(id, btn.dataset.priority);
         });
+      });
+
+      // Textarea + save button live inside the <summary>'s sibling content,
+      // but a click anywhere inside an open <details> can still bubble up
+      // to the <summary> and re-toggle it closed — same stopPropagation
+      // discipline as the checkbox/priority buttons above.
+      var commentInput = el.querySelector('.tracker-comment-input');
+      commentInput.addEventListener('click', function (e) { e.stopPropagation(); });
+      var commentSaveBtn = el.querySelector('.tracker-comment-save');
+      commentSaveBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        handleCommentSave(id, commentInput.value);
       });
     });
 
@@ -217,6 +233,27 @@
     render();
     postUpdate(id, { priority: newPriority }).catch(function () {
       item.priority = previous;
+      render();
+      showToast("Couldn't save — try again.");
+    });
+  }
+
+  /**
+   * Same optimistic-update-with-toast-on-failure pattern as
+   * handleDoneChange/handlePriorityChange above. Unlike those two, this
+   * fires on an explicit "Save comment" click rather than on every
+   * keystroke — the textarea's current value is only committed to `items`
+   * (and re-rendered) when the founder actually clicks save. An empty
+   * string is a normal, valid save (clearing a comment), not a no-op.
+   */
+  function handleCommentSave(id, newComment) {
+    var item = findItem(id);
+    if (!item || item.comment === newComment) return;
+    var previous = item.comment;
+    item.comment = newComment;
+    render();
+    postUpdate(id, { comment: newComment }).catch(function () {
+      item.comment = previous;
       render();
       showToast("Couldn't save — try again.");
     });
