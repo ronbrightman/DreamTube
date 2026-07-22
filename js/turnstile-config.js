@@ -64,6 +64,18 @@ var _turnstileScriptPromise = null;
 var _activeTurnstileWidgetId = null;
 var _activeTurnstileContainer = null;
 
+// Tracks the in-flight getTurnstileToken() promise, if any, so a second
+// call made *before* the first has settled (e.g. a user is mid-solve on a
+// visible interactive challenge) returns that same promise instead of
+// tearing the live widget down out from under them and starting a new
+// one. This is distinct from the retry case _activeTurnstileWidgetId/
+// _activeTurnstileContainer above handle: a retry only ever happens after
+// the previous call has already resolved (processing.html's only caller
+// of getTurnstileToken() can't fire again until the prior generation
+// attempt has finished), at which point this is back to null and the
+// normal cleanup-then-render-fresh path runs as before.
+var _pendingTurnstileTokenPromise = null;
+
 /** Removes the previous widget (if any) via the Turnstile API, plus its container DOM node. Safe to call even if nothing is active. */
 function _cleanupTurnstileWidget() {
   if (_activeTurnstileWidgetId !== null && window.turnstile) {
@@ -115,18 +127,26 @@ function _loadTurnstileScript() {
  * it again once the challenge is resolved. Legitimate non-interactive
  * traffic (the large majority) never sees this — it stays exactly as
  * invisible and frictionless as before.
+ *
+ * Calling this again while a previous call hasn't settled yet returns
+ * that SAME promise rather than tearing down the active widget — see
+ * _pendingTurnstileTokenPromise's own doc comment for why.
  */
 function getTurnstileToken() {
   if (typeof TURNSTILE_SITE_KEY === 'undefined' || TURNSTILE_SITE_KEY === 'REPLACE_WITH_REAL_TURNSTILE_SITE_KEY') {
     return Promise.resolve(null);
   }
 
-  // Tear down any widget left over from a previous call (e.g. a retry)
-  // before rendering a new one — see _cleanupTurnstileWidget()'s doc
-  // comment.
+  if (_pendingTurnstileTokenPromise) {
+    return _pendingTurnstileTokenPromise;
+  }
+
+  // Tear down any widget left over from a previous, already-settled call
+  // (e.g. a retry) before rendering a new one — see
+  // _cleanupTurnstileWidget()'s doc comment.
   _cleanupTurnstileWidget();
 
-  return _loadTurnstileScript().then(function () {
+  var resultPromise = _loadTurnstileScript().then(function () {
     return new Promise(function (resolve) {
       var settled = false;
       var timer = null;
@@ -142,6 +162,7 @@ function getTurnstileToken() {
         settled = true;
         clearTimeout(timer);
         _cleanupTurnstileWidget();
+        _pendingTurnstileTokenPromise = null;
         resolve(token || null);
       }
 
@@ -177,6 +198,10 @@ function getTurnstileToken() {
     });
   }).catch(function () {
     _cleanupTurnstileWidget();
+    _pendingTurnstileTokenPromise = null;
     return null; // script failed to load — never block generation on this
   });
+
+  _pendingTurnstileTokenPromise = resultPromise;
+  return resultPromise;
 }
