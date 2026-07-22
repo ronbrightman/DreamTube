@@ -106,6 +106,28 @@
   // unrelated doesn't destroy an in-progress draft.
   var unsavedComments = {};
 
+  // Per-id monotonic request-sequence counters, one map per handler below.
+  // handleDoneChange/handlePriorityChange/handleCommentSave all follow the
+  // same optimistic-mutate -> render() -> postUpdate().catch(revert) shape,
+  // and each is only ever guarded against *itself* firing twice for the same
+  // id out of order, never across different ids -- so a fresh save/toggle
+  // started on id X before an earlier in-flight save/toggle on that SAME id
+  // X has resolved can otherwise have the OLDER request's failure-revert
+  // apply after the NEWER request's success already landed, silently
+  // reverting item.{comment,done,priority} to a stale pre-both-changes
+  // value even though the newer change was actually persisted server-side
+  // (this is what review flagged a third time on handleCommentSave; the
+  // other two handlers have the identical unguarded shape, so they get the
+  // same guard here rather than leaving a known-identical bug in place).
+  // Each handler stashes `var mySeq = ++seqMap[id]` at request start, and
+  // its .catch() checks `if (seqMap[id] !== mySeq) return;` before reverting
+  // anything -- so a stale request's failure can only revert state if it's
+  // still the most recently-started request for that id; a newer request
+  // (success or failure) always has the final say.
+  var commentSaveSeq = {};
+  var doneChangeSeq = {};
+  var priorityChangeSeq = {};
+
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
 
@@ -258,10 +280,15 @@
     var item = findItem(id);
     if (!item) return;
     var previous = item.done;
+    if (!doneChangeSeq[id]) doneChangeSeq[id] = 0;
+    var mySeq = ++doneChangeSeq[id];
     item.done = newDone;
     captureDrafts();
     render();
     postUpdate(id, { done: newDone }).catch(function () {
+      // Only the most recently-started done-toggle for THIS id is allowed
+      // to revert -- see the seqMap block near unsavedComments for why.
+      if (doneChangeSeq[id] !== mySeq) return;
       item.done = previous;
       captureDrafts();
       render();
@@ -273,10 +300,15 @@
     var item = findItem(id);
     if (!item || item.priority === newPriority) return;
     var previous = item.priority;
+    if (!priorityChangeSeq[id]) priorityChangeSeq[id] = 0;
+    var mySeq = ++priorityChangeSeq[id];
     item.priority = newPriority;
     captureDrafts();
     render();
     postUpdate(id, { priority: newPriority }).catch(function () {
+      // Only the most recently-started priority-change for THIS id is
+      // allowed to revert -- see the seqMap block near unsavedComments.
+      if (priorityChangeSeq[id] !== mySeq) return;
       item.priority = previous;
       captureDrafts();
       render();
@@ -296,6 +328,18 @@
     var item = findItem(id);
     if (!item || item.comment === newComment) return;
     var previous = item.comment;
+    // mySeq guards against a THIRD interleaving review caught on top of the
+    // two below: double-submitting the SAME id (edit to X, save, edit
+    // further to Y before X's request resolves, save again). The
+    // item.comment === newComment check above only no-ops an exact repeat
+    // click, not a further edit -- so without this, if the newer request
+    // (Y) resolves and succeeds before the older one (X) resolves and
+    // fails, X's .catch would revert item.comment past BOTH edits, silently
+    // discarding the correctly-saved Y. See the seqMap block near
+    // unsavedComments for the general shape (shared with
+    // handleDoneChange/handlePriorityChange).
+    if (!commentSaveSeq[id]) commentSaveSeq[id] = 0;
+    var mySeq = ++commentSaveSeq[id];
     item.comment = newComment;
     // This id's value is now authoritative on item.comment itself -- drop
     // any stale draft entry for it so commentValueFor() renders from
@@ -307,6 +351,11 @@
     captureDrafts(id);
     render();
     postUpdate(id, { comment: newComment }).catch(function () {
+      // Only the most recently-started save for this id may revert -- if a
+      // newer save for the same id has started since this request went out,
+      // that newer request (whatever it resolves to) has the final say, not
+      // this stale one.
+      if (commentSaveSeq[id] !== mySeq) return;
       item.comment = previous;
       // On failure this id must revert to the previous saved value, not
       // whatever's still sitting in its live textarea (the just-rejected

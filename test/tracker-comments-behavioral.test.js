@@ -1,17 +1,36 @@
 // test/tracker-comments-behavioral.test.js
 //
 // Real browser-driven coverage for tracker.html's comment-textarea/render()
-// interaction. Regression test for a bug review caught: handleDoneChange,
-// handlePriorityChange, and handleCommentSave all rebuild every item's HTML
-// from scratch via render() -> sectionHTML() -> itemHTML(), and itemHTML()
-// used to always seed each textarea from item.comment (the last *saved*
-// value) -- so any unrelated action anywhere on the page (checking a done
-// box, clicking a priority button, saving a *different* item's comment)
-// silently wiped whatever unsaved text was sitting in someone else's open
-// comment box, with zero warning. Fixed by snapshotting the live DOM value
-// of every open comment textarea into an in-memory unsavedComments map
-// immediately before every render() call, and having itemHTML() prefer that
-// snapshot over item.comment when one exists.
+// interaction. This file has grown across three review-caught variants of
+// the same underlying bug class (optimistic mutate + full render() + a
+// catch-revert-to-a-captured-previous-value, per item id):
+//
+//   1. handleDoneChange, handlePriorityChange, and handleCommentSave all
+//      rebuild every item's HTML from scratch via render() ->
+//      sectionHTML() -> itemHTML(), and itemHTML() used to always seed each
+//      textarea from item.comment (the last *saved* value) -- so any
+//      unrelated action anywhere on the page (checking a done box, clicking
+//      a priority button, saving a *different* item's comment) silently
+//      wiped whatever unsaved text was sitting in someone else's open
+//      comment box. Fixed by snapshotting the live DOM value of every open
+//      comment textarea into an in-memory unsavedComments map immediately
+//      before every render() call, and having itemHTML() prefer that
+//      snapshot over item.comment when one exists.
+//   2. The failure-revert (.catch) branch of handleCommentSave excluded its
+//      own id from re-capture but never explicitly deleted a stale
+//      unsavedComments[id] entry an unrelated interleaved render could have
+//      written mid-flight -- fixed by deleting it explicitly, mirroring the
+//      optimistic-save branch.
+//   3. handleCommentSave (and, with the identical unguarded shape,
+//      handleDoneChange/handlePriorityChange) had no per-id in-flight guard
+//      at all: double-submitting the SAME item id (edit, save, edit
+//      further, save again before the first request resolves) could have
+//      the OLDER request's failure-revert apply after the NEWER request's
+//      success already landed, silently discarding the successfully-saved
+//      newer value. Fixed with a per-id monotonic request-sequence counter
+//      per handler (commentSaveSeq/doneChangeSeq/priorityChangeSeq): each
+//      catch only reverts if it's still the most recently-started request
+//      for that id.
 //
 // This is the first browser-level coverage tracker.html has ever had --
 // test/tracker.test.js only covers the server side (get-tracker-items.js /
@@ -271,6 +290,76 @@ test('a failed comment save on item A reverts correctly even when an unrelated r
     // Sanity check B's unrelated action actually took effect.
     var bChecked = await page.$eval('.tracker-item[data-id="task-b"] .tracker-check', function (el) { return el.checked; });
     assert.equal(bChecked, true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an older comment-save request for item A that fails AFTER a newer request for the SAME item has already succeeded must not revert past the newer value (regression: same-item overlapping-request race, review's third finding on this bug class)", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var taskASaveCount = 0;
+    var resolveOlderRequestSeen = null;
+    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
+
+    // The OLDER request (comment = "X, first edit") is held open long enough
+    // for the test to fire a NEWER request (comment = "Y, second edit") on
+    // the exact SAME item id, let that newer one resolve successfully, and
+    // only THEN let the older one fail -- this is exactly the ordering
+    // review's third finding on this bug class described: an older, slower
+    // save's failure landing after a newer save's success has already
+    // landed, with nothing in the naive implementation to stop the older
+    // one's revert from clobbering the newer one's already-persisted value.
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        taskASaveCount++;
+        if (taskASaveCount === 1) {
+          resolveOlderRequestSeen();
+          setTimeout(function () {
+            route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
+          }, 300);
+        } else {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        }
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+      }
+    });
+
+    await openItem(page, 'task-a');
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'X, first edit');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    // Wait until the older request has actually gone out (still pending),
+    // then edit further and save again -- the newer request for the SAME id.
+    // The optimistic update from the first save has already re-rendered the
+    // textarea to show "X, first edit" at this point.
+    await olderRequestSeen;
+    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Y, second edit');
+    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+
+    // Give the newer (immediate) request time to resolve and land before the
+    // older, 300ms-delayed one fails.
+    await page.waitForTimeout(100);
+    var aValueMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    assert.equal(aValueMidway, 'Y, second edit', 'the newer save should already be showing, well before the older one has even failed yet');
+
+    // Now let the older request's delayed failure actually land.
+    await page.waitForTimeout(350);
+
+    var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    assert.equal(aValueFinal, 'Y, second edit', "the older request's failure-revert must not overwrite the newer request's already-landed success");
+
+    // No error toast should fire either: the newer request succeeded, and
+    // per the fix, the older one's now-stale failure is suppressed entirely
+    // for this same-id race (its .catch bails out before showing anything).
+    var toastShown = await page.$eval('#toast', function (el) { return el.classList.contains('show'); });
+    assert.equal(toastShown, false, "the suppressed older-request revert must not surface a \"couldn't save\" toast either");
   } finally {
     await context.close();
   }
