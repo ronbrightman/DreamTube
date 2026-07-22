@@ -416,11 +416,18 @@
   var charSubMode = 'describe';
   var charPendingPhotoDataUrl = null;
 
+  // Mirrors create.html's charChipDisplayName -- a self character's name is
+  // genuinely optional and stored as-is (including empty); "Me" here is a
+  // display-only fallback for the chip label, never written back to the
+  // character. See js/store.js's saveCharacter doc comment.
+  function charChipDisplayName(c){
+    return c.name || (c.isSelf ? 'Me' : '');
+  }
   function charChipHTML(c, selected){
     return '<div class="char-chip' + (selected ? ' selected' : '') + '" data-char-select="' + c.id + '">' +
       '<span class="chip-check"><span class="icon">' + Icons.check + '</span></span>' +
       '<span class="chip-edit-area" data-char-edit="' + c.id + '">' +
-        '<span>' + esc(c.name) + '</span>' +
+        '<span>' + esc(charChipDisplayName(c)) + '</span>' +
         '<span class="chip-edit icon">' + Icons.pencil + '</span>' +
       '</span>' +
     '</div>';
@@ -449,12 +456,12 @@
     var existing = patch.id ? staged.characters.filter(function(c){ return c.id === patch.id; })[0] : null;
     if(!existing && isSelf) existing = staged.characters.filter(function(c){ return c.isSelf; })[0] || null;
     if(existing){
-      existing.name = isSelf ? (name || 'Me') : name;
+      existing.name = name;
       existing.description = description;
       if(isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
       return { ok:true, character: existing };
     }
-    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: isSelf ? (name || 'Me') : name, isSelf: isSelf, description: description };
+    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: name, isSelf: isSelf, description: description };
     if(isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
     staged.characters.push(character);
     return { ok:true, character: character };

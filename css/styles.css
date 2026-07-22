@@ -206,9 +206,19 @@ body{
 .profile-head{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:20px 24px 6px;}
 /* The Instagram-style gradient's first appearance: a ring (padding reveals
    the ring thickness) around a plain dark inner avatar circle. */
-.profile-avatar-ring{ width:76px; height:76px; border-radius:50%; padding:3px; background:var(--gradient-ig); margin-bottom:12px;}
-.profile-avatar{ width:100%; height:100%; border-radius:50%; background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:26px;}
-.profile-name{ font-size:16px; font-weight:700;}
+.profile-avatar-ring{ width:76px; height:76px; border-radius:50%; padding:3px; background:var(--gradient-ig); margin-bottom:12px; position:relative; cursor:pointer;}
+.profile-avatar{ width:100%; height:100%; border-radius:50%; background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:26px; overflow:hidden;}
+.profile-avatar img{ width:100%; height:100%; object-fit:cover; display:block;}
+/* Small pencil badge overlaid on the avatar ring, the same "tap to edit"
+   affordance the Me character photo doesn't otherwise have anywhere on
+   this page — matches .icon-btn's circular surface look at a smaller size. */
+.profile-avatar-edit-badge{
+  position:absolute; right:-2px; bottom:-2px; width:24px; height:24px; border-radius:50%;
+  background:var(--surface); border:1px solid var(--border-strong); color:var(--text-primary);
+  display:flex; align-items:center; justify-content:center;
+}
+.profile-avatar-edit-badge svg{ width:12px; height:12px;}
+.profile-name{ font-size:16px; font-weight:700; cursor:pointer;}
 .profile-stats{ font-size:12.5px; color:var(--text-muted); margin-top:5px; max-width:240px; line-height:1.4;}
 .profile-stats b{ color:var(--text-primary);}
 

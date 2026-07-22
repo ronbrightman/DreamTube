@@ -320,11 +320,18 @@
     });
   }
 
+  // Mirrors create.html's charChipDisplayName -- a self character's name is
+  // genuinely optional and stored as-is (including empty); "Me" here is a
+  // display-only fallback for the chip label, never written back to the
+  // character. See js/store.js's saveCharacter doc comment.
+  function charChipDisplayName(c){
+    return c.name || (c.isSelf ? 'Me' : '');
+  }
   function charChipHTML(c, selected){
     return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
       '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
       '<span class="chip-edit-area" data-char-edit="'+c.id+'">' +
-        '<span>'+esc(c.name)+'</span>' +
+        '<span>'+esc(charChipDisplayName(c))+'</span>' +
         '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
       '</span>' +
     '</div>';

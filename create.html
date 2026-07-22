@@ -251,11 +251,19 @@
     });
   }
 
+  // A self character's name is genuinely optional (create.html's self-mode
+  // sheet never shows a name field) and is stored as-is, including empty —
+  // js/store.js's saveCharacter does not invent a placeholder. "Me" here is
+  // purely a display-time fallback for the chip label, applied fresh each
+  // render, not a value that ever gets written back to the character.
+  function charChipDisplayName(c){
+    return c.name || (c.isSelf ? 'Me' : '');
+  }
   function charChipHTML(c, selected){
     return '<div class="char-chip'+(selected?' selected':'')+'" data-char-select="'+c.id+'">' +
       '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
       '<span class="chip-edit-area" data-char-edit="'+c.id+'">' +
-        '<span>'+esc(c.name)+'</span>' +
+        '<span>'+esc(charChipDisplayName(c))+'</span>' +
         '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
       '</span>' +
     '</div>';
@@ -564,10 +572,41 @@
   // "me" in the caption has no guaranteed link to the same self-character
   // across different dreams, defeating the point of saving one.
   var FIRST_PERSON_RE = /\b(i|me)\b/i;
+
+  /** Escapes a string for safe interpolation into a RegExp's source. */
+  function escapeRegExp(str){
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Builds a whole-word/whole-phrase, case-insensitive matcher for the Me
+   * character's own name — the full name plus each individual space-
+   * separated part of it, so "Sarah Chen" matches on "Sarah", "Chen", or
+   * "Sarah Chen" appearing anywhere in the text (typing just a first or
+   * last name still auto-attaches). Simple whole-word matching, not a
+   * bulletproof name detector — this is a low-stakes auto-attach
+   * convenience, not a security boundary, so a name that's also a common
+   * English word can still cause a match; that's an accepted tradeoff, the
+   * same one "I"/"me" above already makes by matching such common words.
+   * Known limitation: \b is ASCII-only, so accented names (e.g. "José")
+   * can have inconsistent word-boundary behavior at the accented
+   * character. Not worth a unicode-aware rewrite for this low-stakes case.
+   */
+  function buildNameRegex(name){
+    var trimmed = (name || '').trim();
+    if(!trimmed) return null;
+    var parts = trimmed.split(/\s+/).filter(Boolean);
+    var alternatives = parts.length > 1 ? [trimmed].concat(parts) : parts;
+    if(!alternatives.length) return null;
+    return new RegExp('\\b(' + alternatives.map(escapeRegExp).join('|') + ')\\b', 'i');
+  }
+
   function autoSelectSelfIfMentioned(captionText){
-    if(!FIRST_PERSON_RE.test(captionText)) return;
     var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
     if(!self) return;
+    var nameRe = buildNameRegex(self.name);
+    var mentioned = FIRST_PERSON_RE.test(captionText) || (nameRe && nameRe.test(captionText));
+    if(!mentioned) return;
     var selectedIds = DreamStore.getDraft().characterIds || [];
     if(selectedIds.indexOf(self.id) !== -1) return;
     DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });
