@@ -655,16 +655,36 @@ async function updateItem(event, id, patch) {
       if (updated === null) return true;
       var found = items.filter(function (item) { return item.id === id; })[0];
       if (!found) return false;
-      if (Object.prototype.hasOwnProperty.call(patch, 'priority') && found.priority !== patch.priority) return false;
+      // Compares against `updated` — the exact object THIS attempt's
+      // mutate() computed — rather than re-deriving an expected shape from
+      // `patch` alone. Before this fix, the done branch asserted
+      // `typeof found.doneAt === 'string'` any time patch.done was true,
+      // which is only true for a REAL false->true transition; a
+      // done:true patch against an item that was already done with a
+      // legacy doneAt of `null` (reachable via direct API calls, not
+      // through this page's own UI, which only ever toggles to the
+      // opposite state) is a no-op that correctly leaves doneAt as
+      // `null` — see the mutate function above — so the old check spuriously
+      // failed verify on every attempt for that case, wasting all
+      // MAX_WRITE_ATTEMPTS retries before falling open to the (already
+      // correct) result. Comparing directly against `updated.doneAt`
+      // makes verify agree with whatever mutate() actually decided,
+      // instead of asserting an invariant that doesn't hold for
+      // already-done legacy items.
+      if (Object.prototype.hasOwnProperty.call(patch, 'priority') && found.priority !== updated.priority) return false;
       if (Object.prototype.hasOwnProperty.call(patch, 'done')) {
-        if (found.done !== patch.done) return false;
-        if (patch.done && typeof found.doneAt !== 'string') return false;
-        if (!patch.done && found.doneAt !== null) return false;
+        if (found.done !== updated.done) return false;
+        if (found.doneAt !== updated.doneAt) return false;
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'started') && patch.started) {
-        if (typeof found.startedAt !== 'string') return false;
+        if (found.startedAt !== updated.startedAt) return false;
       }
       if (Object.prototype.hasOwnProperty.call(patch, 'newComment')) {
+        // Deliberately NOT compared against updated.comments as a whole —
+        // a concurrent caller's own append landing between our write and
+        // this verify-read is expected and fine (that's the whole point
+        // of appending rather than overwriting); this only needs to
+        // confirm OUR entry (by its pre-assigned id) made it in.
         var hasNewComment = (found.comments || []).some(function (c) { return c.id === patch.newComment.id; });
         if (!hasNewComment) return false;
       }
