@@ -1,72 +1,53 @@
 // test/tracker-comments-behavioral.test.js
 //
-// Real browser-driven coverage for tracker.html's comment-textarea/render()
-// interaction. This file has grown across three review-caught variants of
-// the same underlying bug class (optimistic mutate + full render() + a
-// catch-revert-to-a-captured-previous-value, per item id):
+// Real browser-driven coverage for tracker.html's async, per-item controls:
+// the two comment compose areas ("Your comment"/"Claude's comment"), the
+// done button, the priority buttons, the one-way start button, the single
+// combined Done section, and the add-item form — specifically the
+// render()-triggered draft-preservation and per-id request-sequencing bug
+// class this page has hit repeatedly (see git history: six review rounds
+// on the earlier comment-field design, plus a seventh gap found in
+// handleAddSubmit once it was merged alongside that work).
 //
-//   1. handleDoneChange, handlePriorityChange, and handleCommentSave all
-//      rebuild every item's HTML from scratch via render() ->
-//      sectionHTML() -> itemHTML(), and itemHTML() used to always seed each
-//      textarea from item.comment (the last *saved* value) -- so any
-//      unrelated action anywhere on the page (checking a done box, clicking
-//      a priority button, saving a *different* item's comment) silently
-//      wiped whatever unsaved text was sitting in someone else's open
-//      comment box. Fixed by snapshotting the live DOM value of every open
-//      comment textarea into an in-memory unsavedComments map immediately
-//      before every render() call, and having itemHTML() prefer that
-//      snapshot over item.comment when one exists.
-//   2. The failure-revert (.catch) branch of handleCommentSave excluded its
-//      own id from re-capture but never explicitly deleted a stale
-//      unsavedComments[id] entry an unrelated interleaved render could have
-//      written mid-flight -- fixed by deleting it explicitly, mirroring the
-//      optimistic-save branch.
-//   3. handleCommentSave (and, with the identical unguarded shape,
-//      handleDoneChange/handlePriorityChange) had no per-id in-flight guard
-//      at all: double-submitting the SAME item id (edit, save, edit
-//      further, save again before the first request resolves) could have
-//      the OLDER request's failure-revert apply after the NEWER request's
-//      success already landed, silently discarding the successfully-saved
-//      newer value. Fixed with a per-id monotonic request-sequence counter
-//      per handler (commentSaveSeq/doneChangeSeq/priorityChangeSeq): each
-//      catch only reverts if it's still the most recently-started request
-//      for that id. The same-item-overlapping-request race test below only
-//      ever covered handleCommentSave; the fourth review pass flagged that
-//      the sequence-guard fix was extended to handleDoneChange/
-//      handlePriorityChange by code-shape analogy with no equivalent test
-//      for either -- the two "overlapping same-item toggle" tests below
-//      close that gap.
-//   4. Even with the seqMap guard in place, a further chained-failure case
-//      survived: if TWO overlapping same-id requests both FAIL (not just
-//      "older fails after newer already succeeded", the only case #3 above
-//      tested), the surviving (later-started) request's revert used to fall
-//      back to its own captured "previous" value -- which is only ever the
-//      OTHER in-flight request's optimistic, never-confirmed edit, not
-//      anything the server actually stored. Fixed by reverting to a
-//      per-id, per-field SERVER-CONFIRMED value
-//      (commentConfirmed/doneConfirmed/priorityConfirmed, updated only on
-//      an actual successful postUpdate) instead of "previous". The
-//      "chained double-failure" test below covers this.
-//   5. The {comment,done,priority}Confirmed writes added for #4 above were
-//      only guarded by the seqMap check on the .catch (failure) side, never
-//      on the .then (success) side -- so if an OLDER same-id request happens
-//      to SUCCEED after a NEWER same-id request has already resolved (either
-//      way), the older request's unconditional `Confirmed[id] = ...` in its
-//      .then still runs and clobbers the newer, correct confirmed value with
-//      a stale one, even though nothing on screen changes at that instant
-//      (success handlers don't render()). The corruption only becomes
-//      visible later, on the next same-id failure, which then reverts to the
-//      wrong (stale) value instead of the true last-good one. Fixed by
-//      guarding every .then the same way its sibling .catch already is:
-//      `if ({comment,done,priority}ChangeSeq[id] === mySeq)
-//      {comment,done,priority}Confirmed[id] = ...`. The "stale older success"
-//      tests below cover all three handlers.
+// SCHEMA CHANGE this file was rewritten for: the single overwritable
+// `comment: string` field became an append-only `comments: [{ id, author,
+// text, timestamp }]` list (see tracker-store.js's own SCHEMA CHANGE
+// comment for the full reasoning). That removed an entire prior bug
+// class this file used to cover in detail — "does a failed/overlapping
+// comment SAVE correctly revert to a server-confirmed value instead of a
+// stale in-flight one" — because appending a new, uniquely-id'd entry can
+// never silently clobber another append the way overwriting one shared
+// field could; there's nothing to revert client-side (a failed save
+// simply never appends anything, and leaves the compose box exactly as
+// typed). What this file keeps/still needs to cover for comments is
+// narrower: the compose boxes' DRAFT text still needs the exact same
+// cross-item/cross-render preservation as every other free-text input on
+// this page, and a save that succeeds needs to give real visible
+// feedback (this was Ron's own bug report: "I click Save and nothing
+// happens").
 //
-// This is the first browser-level coverage tracker.html has ever had --
-// test/tracker.test.js only covers the server side (get-tracker-items.js /
-// update-tracker-item.js). Same Playwright-via-node:test convention as
-// test/ui-behavioral.test.js (see that file's own header comment for why);
-// see also CLAUDE.md's "No test framework is wired in..." section.
+// The done/priority overlapping-same-id-request sequencing bug class is
+// UNCHANGED by that schema work and still fully applies — those tests are
+// kept (adapted only for the done control's new button markup, see
+// below), plus a new equivalent set for the start button, which is new
+// async per-item UI built the same way (optimistic mutate -> render() ->
+// postUpdate().catch(revert), with the same seqMap/Confirmed-map
+// discipline) and needs the same coverage per this repo's own build
+// instructions for any new async control on this page.
+//
+// The done control itself changed from a bare `<input type="checkbox"
+// class="tracker-check">` to a labeled `<button class="tracker-done-btn">`
+// (Ron's own feedback: "Maybe mark the button more clearly as a Done
+// button") — tests that used to read `.checked` now read the `is-done`
+// class / `aria-pressed` attribute instead, and still use `$eval(...).
+// click()` rather than `page.click()` once an item is done and has moved
+// into the (possibly still-collapsed) combined Done section, exactly like
+// the original tests already had to for the old checkbox once it moved
+// into a collapsed per-category Done section.
+//
+// Same Playwright-via-node:test convention as test/ui-behavioral.test.js
+// (see that file's own header comment for why); see also CLAUDE.md's "No
+// test framework is wired in..." section.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -112,8 +93,56 @@ function blockThirdParty(page) {
   });
 }
 
-var ITEM_A = { id: 'task-a', category: 'task', title: 'Item A', detail: 'Detail A', priority: 'medium', done: false, comment: 'saved comment A' };
-var ITEM_B = { id: 'task-b', category: 'task', title: 'Item B', detail: 'Detail B', priority: 'medium', done: false, comment: '' };
+var ITEM_A = {
+  id: 'task-a', category: 'task', title: 'Item A', detail: 'Detail A', priority: 'medium', done: false,
+  comments: [{ id: 'c-existing-1', author: 'ron', text: 'an existing saved comment', timestamp: '2026-01-01T00:00:00.000Z' }],
+  createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null
+};
+var ITEM_B = {
+  id: 'task-b', category: 'task', title: 'Item B', detail: 'Detail B', priority: 'medium', done: false,
+  comments: [], createdAt: null, doneAt: null, startedAt: null
+};
+var DEFAULT_SEED = [ITEM_A, ITEM_B];
+
+/**
+ * A realistic stand-in for update-tracker-item.js's own success response:
+ * merges whatever the request patched into the matching seed item (by id),
+ * deriving doneAt/startedAt/comments the same way tracker-store.js's real
+ * updateItem() does. Used as the default mocked update-tracker-item
+ * behavior for tests that aren't specifically about injecting a
+ * failure/delay — without this, a lazy `{ item: {} }` stand-in (the old
+ * file's default, back when handlers ignored the resolved value entirely)
+ * would make THIS page's handlers, which now read `data.item.doneAt` /
+ * `data.item.startedAt` / `data.item.comments` off a successful response,
+ * silently adopt `undefined` for those fields.
+ */
+function makeDefaultUpdateBehavior(seedItems) {
+  var byId = {};
+  seedItems.forEach(function (i) { byId[i.id] = i; });
+  return function (route) {
+    var body = JSON.parse(route.request().postData() || '{}');
+    var base = byId[body.id] || {};
+    var next = Object.assign({}, base);
+    if (Object.prototype.hasOwnProperty.call(body, 'priority')) next.priority = body.priority;
+    if (Object.prototype.hasOwnProperty.call(body, 'done')) {
+      next.done = body.done;
+      next.doneAt = body.done ? (base.done ? base.doneAt : new Date().toISOString()) : null;
+    }
+    if (body.started === true && !base.startedAt) {
+      next.startedAt = new Date().toISOString();
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'comment')) {
+      next.comments = (base.comments || []).concat([{
+        id: 'c-' + Math.random().toString(36).slice(2, 8),
+        author: body.commentAuthor,
+        text: body.comment,
+        timestamp: new Date().toISOString()
+      }]);
+    }
+    byId[body.id] = next; // so a later request in the same test sees this one's effect
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: next }) });
+  };
+}
 
 /**
  * Seeds a logged-in owner session (js/store.js localStorage state) and
@@ -121,10 +150,9 @@ var ITEM_B = { id: 'task-b', category: 'task', title: 'Item B', detail: 'Detail 
  * (owner check), get-tracker-items (seed data), update-tracker-item (the
  * actual write -- controllable per-test via updateBehavior).
  */
-async function setUpTrackerPage(page, updateBehavior) {
-  updateBehavior = updateBehavior || function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-  };
+async function setUpTrackerPage(page, updateBehavior, seedItems) {
+  seedItems = seedItems || DEFAULT_SEED;
+  updateBehavior = updateBehavior || makeDefaultUpdateBehavior(seedItems);
 
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function () {
@@ -140,15 +168,15 @@ async function setUpTrackerPage(page, updateBehavior) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ isOwner: true }) });
   });
   await page.route('**/.netlify/functions/get-tracker-items', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [ITEM_A, ITEM_B].map(function (i) { return Object.assign({}, i); }) }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: seedItems.map(function (i) { return Object.assign({}, i); }) }) });
   });
   await page.route('**/.netlify/functions/update-tracker-item', updateBehavior);
 
   await page.goto(baseUrl + '/tracker.html', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.tracker-item[data-id="task-a"]', { timeout: 5000 });
+  await page.waitForSelector('.tracker-item[data-id="' + seedItems[0].id + '"]', { timeout: 5000 });
 }
 
-/** Opens an item's <details> by clicking its title (avoids the checkbox/priority buttons, which stopPropagation their own clicks). */
+/** Opens an item's <details> by clicking its title (avoids the done/priority buttons, which stopPropagation their own clicks). */
 async function openItem(page, id) {
   await page.click('.tracker-item[data-id="' + id + '"] .tracker-item-title');
   await page.waitForFunction(function (id) {
@@ -157,7 +185,16 @@ async function openItem(page, id) {
   }, id, { timeout: 5000 });
 }
 
-test('typing an unsaved draft in item A survives a done-change on a DIFFERENT item B (the reported cross-item data-loss bug)', async function (t) {
+function commentInputSelector(id, author) {
+  return '.tracker-item[data-id="' + id + '"] .tracker-comment-compose[data-author="' + author + '"] .tracker-comment-input';
+}
+function commentSaveSelector(id, author) {
+  return '.tracker-item[data-id="' + id + '"] .tracker-comment-compose[data-author="' + author + '"] .tracker-comment-save';
+}
+
+// ===== Draft preservation across unrelated renders =====
+
+test('typing an unsaved draft in item A\'s "Your comment" box survives a done-change on a DIFFERENT item B', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -167,23 +204,52 @@ test('typing an unsaved draft in item A survives a done-change on a DIFFERENT it
 
     await openItem(page, 'task-a');
     var draft = 'unsaved note about A, never clicked save';
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', draft);
+    await page.fill(commentInputSelector('task-a', 'ron'), draft);
 
     // Trigger a done-change on the OTHER item (B) -- this is exactly the
-    // render() path that used to wipe A's draft.
-    await page.click('.tracker-item[data-id="task-b"] .tracker-check');
+    // render() path that used to wipe A's draft under the old single-
+    // comment-field design, and the same risk applies to the new compose
+    // boxes if captureDrafts() were ever dropped from handleDoneChange.
+    await page.click('.tracker-item[data-id="task-b"] .tracker-done-btn');
 
-    // Give the optimistic render() (synchronous, but let a tick pass to be
-    // safe) a moment, then confirm A's draft is untouched and A is still open.
     await page.waitForTimeout(50);
     var aStillOpen = await page.$eval('.tracker-item[data-id="task-a"]', function (el) { return el.open; });
     assert.equal(aStillOpen, true, "item A's <details> should still be open after B's done-change re-render");
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    var aValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
     assert.equal(aValue, draft, "item A's unsaved draft must survive a done-change triggered on a different item");
 
     // B's own done-change actually took effect (sanity check this wasn't a no-op).
-    var bChecked = await page.$eval('.tracker-item[data-id="task-b"] .tracker-check', function (el) { return el.checked; });
-    assert.equal(bChecked, true);
+    var bIsDone = await page.$eval('.tracker-item[data-id="task-b"] .tracker-done-btn', function (el) { return el.classList.contains('is-done'); });
+    assert.equal(bIsDone, true);
+  } finally {
+    await context.close();
+  }
+});
+
+test('drafts in BOTH compose boxes ("Your comment" and "Claude\'s comment") on item A survive a start-change on item A itself', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await setUpTrackerPage(page);
+
+    await openItem(page, 'task-a');
+    var ronDraft = "Ron's unsaved note";
+    var claudeDraft = "Claude's unsaved note";
+    await page.fill(commentInputSelector('task-a', 'ron'), ronDraft);
+    await page.fill(commentInputSelector('task-a', 'claude'), claudeDraft);
+
+    await page.click('.tracker-item[data-id="task-a"] .tracker-start-btn');
+    await page.waitForTimeout(50);
+
+    var ronValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    var claudeValue = await page.$eval(commentInputSelector('task-a', 'claude'), function (el) { return el.value; });
+    assert.equal(ronValue, ronDraft, "Ron's own unsaved draft must survive a start-change on the same item");
+    assert.equal(claudeValue, claudeDraft, "Claude's own unsaved draft must survive a start-change on the same item");
+
+    var metaText = await page.$eval('.tracker-item[data-id="task-a"] .tracker-item-meta', function (el) { return el.textContent; });
+    assert.match(metaText, /Started/, 'the start-change itself should still have taken effect');
   } finally {
     await context.close();
   }
@@ -199,12 +265,12 @@ test('typing an unsaved draft in item A survives a priority-change on item A its
 
     await openItem(page, 'task-a');
     var draft = 'unsaved note, then I change my own priority';
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', draft);
+    await page.fill(commentInputSelector('task-a', 'ron'), draft);
 
     await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]');
     await page.waitForTimeout(50);
 
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
+    var aValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
     assert.equal(aValue, draft, "item A's own unsaved draft must survive a priority-change on itself");
     var aPriorityActive = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]', function (el) { return el.classList.contains('active'); });
     assert.equal(aPriorityActive, true, 'the priority change itself should still have taken effect');
@@ -213,7 +279,68 @@ test('typing an unsaved draft in item A survives a priority-change on item A its
   }
 });
 
-test('saving a comment successfully is not treated as a still-unsaved draft on the next render (no regression from the draft-preservation fix)', async function (t) {
+// ===== Comment save: visible feedback, append-only semantics =====
+//
+// Directly covers Ron's own bug report: "I see that in the comments
+// section you wrote a comment for one of the items but the button - Save
+// comment - still shows as if this was not saved and when I click Save
+// nothing happens." The fix has three visible parts, all covered below:
+// the button disables + shows "Saving…" the instant it's clicked, the new
+// entry appears in the read-only comment list the moment the save
+// actually lands, and a toast confirms it either way.
+
+test('saving a comment shows immediate "Saving…" feedback, then appends the entry and shows a confirmation toast', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var resolveSave = null;
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      // Hold the response open until the test explicitly releases it, so
+      // the "Saving…" intermediate state is actually observable.
+      var releaseIt = new Promise(function (resolve) { resolveSave = resolve; });
+      releaseIt.then(function () {
+        route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify({ item: Object.assign({}, ITEM_A, { comments: ITEM_A.comments.concat([{ id: 'c-new-1', author: body.commentAuthor, text: body.comment, timestamp: '2026-02-01T00:00:00.000Z' }]) }) })
+        });
+      });
+    });
+
+    await openItem(page, 'task-a');
+    await page.fill(commentInputSelector('task-a', 'ron'), 'a brand new note from Ron');
+    await page.click(commentSaveSelector('task-a', 'ron'));
+
+    // Immediate feedback: the button disables and relabels while the
+    // request is still out -- this is the part that was previously
+    // entirely missing.
+    await page.waitForFunction(function (sel) {
+      var el = document.querySelector(sel);
+      return el && el.disabled && /Saving/.test(el.textContent);
+    }, commentSaveSelector('task-a', 'ron'), { timeout: 5000 });
+
+    resolveSave();
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var entries = await page.$$eval('.tracker-item[data-id="task-a"] .tracker-comment-entry .tracker-comment-text', function (els) { return els.map(function (e) { return e.textContent; }); });
+    assert.ok(entries.indexOf('a brand new note from Ron') !== -1, 'the newly saved comment must appear in the read-only comment list');
+    assert.ok(entries.indexOf('an existing saved comment') !== -1, 'the pre-existing comment must still be there too -- this is an append, not a replace');
+
+    var boxValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    assert.equal(boxValue, '', 'the compose box should clear itself once its own save actually lands');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a saved comment surviving an unrelated re-render does not resurrect as a stale draft in the now-empty compose box', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -222,27 +349,31 @@ test('saving a comment successfully is not treated as a still-unsaved draft on t
     await setUpTrackerPage(page);
 
     await openItem(page, 'task-a');
-    var saved = 'a genuinely saved comment';
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', saved);
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
-    await page.waitForTimeout(100);
+    await page.fill(commentInputSelector('task-a', 'ron'), 'a genuinely saved comment');
+    await page.click(commentSaveSelector('task-a', 'ron'));
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+    }, null, { timeout: 5000 });
 
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValue, saved, 'the saved comment should still show after its own re-render');
+    var boxValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    assert.equal(boxValue, '', 'the box should be empty right after its own successful save');
 
-    // Now trigger an unrelated render() via item B -- the saved comment must
-    // still be there (this is the scenario a naive always-treat-as-draft fix
-    // would break: a stale draft snapshot overriding the real saved value).
-    await page.click('.tracker-item[data-id="task-b"] .tracker-check');
+    // Now trigger an unrelated render() via item B -- a naive
+    // always-treat-as-draft implementation could make the now-cleared box
+    // reappear with the old text (the exact regression class this page
+    // has hit before, just inverted: previously an unrelated render wiped
+    // a real draft; here it must not resurrect a stale one).
+    await page.click('.tracker-item[data-id="task-b"] .tracker-done-btn');
     await page.waitForTimeout(50);
-    var aValueAfter = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueAfter, saved, 'a genuinely saved comment must survive an unrelated re-render too, unchanged');
+    var boxValueAfter = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    assert.equal(boxValueAfter, '', 'the cleared compose box must stay empty across an unrelated re-render, not resurrect the just-saved text as a stale draft');
   } finally {
     await context.close();
   }
 });
 
-test('a failed comment save still reverts to the previous value and toasts an error (already-correct behavior, unaffected by the draft-preservation fix)', async function (t) {
+test('a failed comment save leaves the typed text in the box untouched, appends nothing, and shows an error toast', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -251,151 +382,146 @@ test('a failed comment save still reverts to the previous value and toasts an er
     await setUpTrackerPage(page, function (route) { route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) }); });
 
     await openItem(page, 'task-a');
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'this save is going to fail');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+    await page.fill(commentInputSelector('task-a', 'ron'), 'this save is going to fail');
+    await page.click(commentSaveSelector('task-a', 'ron'));
 
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+      return t.classList.contains('show') && /Couldn.t save comment/.test(t.textContent);
     }, null, { timeout: 5000 });
 
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValue, 'saved comment A', "a failed save must revert the textarea to the item's previous saved value, not keep the rejected edit");
+    var boxValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    assert.equal(boxValue, 'this save is going to fail', "a failed save must leave the typed text exactly as the user left it -- there's nothing to revert to since nothing was ever optimistically appended");
+
+    var entries = await page.$$eval('.tracker-item[data-id="task-a"] .tracker-comment-entry .tracker-comment-text', function (els) { return els.map(function (e) { return e.textContent; }); });
+    assert.equal(entries.length, 1, 'a failed save must not append anything -- only the pre-existing seeded comment should be there');
+    assert.equal(entries[0], 'an existing saved comment');
   } finally {
     await context.close();
   }
 });
 
-test('a failed comment save on item A reverts correctly even when an unrelated render (item B\'s done-toggle) interleaves while A\'s save is still in flight (regression: stale unsavedComments[id] surviving the failure-revert)', async function (t) {
+test('clicking Save twice in quick succession only fires one request (the in-flight guard prevents a duplicate submission)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
 
-    var resolveARequestSeen = null;
-    var aRequestSeen = new Promise(function (resolve) { resolveARequestSeen = resolve; });
-
-    // Item A's update is held open (simulating an in-flight request) long
-    // enough for the test to trigger an unrelated render via item B, then
-    // resolves as a failure -- this is the exact window in which the bug's
-    // interleaved captureDrafts() call used to write a stale entry into
-    // unsavedComments['task-a'] that the revert never explicitly cleared.
-    // Item B's own update resolves immediately and successfully; it's only
-    // there to drive the unrelated render(), not to fail itself.
+    var requestCount = 0;
     await setUpTrackerPage(page, function (route) {
-      var body = JSON.parse(route.request().postData() || '{}');
-      if (body.id === 'task-a') {
-        resolveARequestSeen();
-        setTimeout(function () {
-          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-        }, 200);
-      } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-      }
+      requestCount++;
+      setTimeout(function () {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A, { comments: ITEM_A.comments.concat([{ id: 'c-once', author: 'ron', text: 'only once', timestamp: '2026-02-01T00:00:00.000Z' }]) }) }) });
+      }, 200);
     });
 
     await openItem(page, 'task-a');
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'A save that will fail while B interleaves');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+    await page.fill(commentInputSelector('task-a', 'ron'), 'only once');
+    await page.click(commentSaveSelector('task-a', 'ron'));
+    // The button is disabled synchronously on the first click's render(),
+    // so this second click lands on a disabled button and must not fire a
+    // second POST.
+    await page.click(commentSaveSelector('task-a', 'ron'), { force: true });
 
-    // Wait until A's save request has actually gone out (still pending),
-    // then fire an unrelated render by toggling B's done checkbox -- B's
-    // own handleDoneChange calls captureDrafts() (no excludeId), which
-    // snapshots A's still-open, just-rejected-but-not-yet-reverted textarea
-    // value into unsavedComments['task-a'] before A's revert ever runs.
-    await aRequestSeen;
-    await page.click('.tracker-item[data-id="task-b"] .tracker-check');
-    await page.waitForTimeout(50);
-
-    // Now let A's save actually fail and revert.
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
     }, null, { timeout: 5000 });
 
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValue, 'saved comment A', "after B's interleaved render, A's failed save must still show the correctly-reverted item.comment, not the stale draft B's render captured mid-flight");
-
-    // Sanity check B's unrelated action actually took effect.
-    var bChecked = await page.$eval('.tracker-item[data-id="task-b"] .tracker-check', function (el) { return el.checked; });
-    assert.equal(bChecked, true);
+    assert.equal(requestCount, 1, 'a double-click on Save must only ever result in one update-tracker-item request');
   } finally {
     await context.close();
   }
 });
 
-test("an older comment-save request for item A that fails AFTER a newer request for the SAME item has already succeeded must not revert past the newer value (regression: same-item overlapping-request race, review's third finding on this bug class)", async function (t) {
+test('Ron\'s and Claude\'s comment areas on the same item save independently -- both entries persist without either clobbering the other', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await setUpTrackerPage(page);
+
+    await openItem(page, 'task-b');
+    await page.fill(commentInputSelector('task-b', 'ron'), "Ron's note");
+    await page.click(commentSaveSelector('task-b', 'ron'));
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    await page.fill(commentInputSelector('task-b', 'claude'), "Claude's note");
+    await page.click(commentSaveSelector('task-b', 'claude'));
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+    }, null, { timeout: 5000 });
+
+    var authors = await page.$$eval('.tracker-item[data-id="task-b"] .tracker-comment-author', function (els) { return els.map(function (e) { return e.textContent; }); });
+    var texts = await page.$$eval('.tracker-item[data-id="task-b"] .tracker-comment-text', function (els) { return els.map(function (e) { return e.textContent; }); });
+    assert.deepEqual(authors, ['Ron', 'Claude'], 'both authors\' entries must show, in the order they were saved');
+    assert.deepEqual(texts, ["Ron's note", "Claude's note"], "neither author's comment overwrote the other's");
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== Start button: one-way "start working on this" signal =====
+
+test('clicking "Start working on this" replaces the button with a Started timestamp, and a failed start reverts it back', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
 
-    var taskASaveCount = 0;
-    var resolveOlderRequestSeen = null;
-    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
-
-    // The OLDER request (comment = "X, first edit") is held open long enough
-    // for the test to fire a NEWER request (comment = "Y, second edit") on
-    // the exact SAME item id, let that newer one resolve successfully, and
-    // only THEN let the older one fail -- this is exactly the ordering
-    // review's third finding on this bug class described: an older, slower
-    // save's failure landing after a newer save's success has already
-    // landed, with nothing in the naive implementation to stop the older
-    // one's revert from clobbering the newer one's already-persisted value.
+    var startCount = 0;
     await setUpTrackerPage(page, function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
-      if (body.id === 'task-a') {
-        taskASaveCount++;
-        if (taskASaveCount === 1) {
-          resolveOlderRequestSeen();
-          setTimeout(function () {
-            route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-          }, 300);
+      if (body.started) {
+        startCount++;
+        if (startCount === 1) {
+          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
         } else {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B, { startedAt: '2026-03-01T00:00:00.000Z' }) }) });
         }
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B) }) });
       }
     });
 
-    await openItem(page, 'task-a');
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'X, first edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+    await openItem(page, 'task-b');
+    await page.click('.tracker-item[data-id="task-b"] .tracker-start-btn');
 
-    // Wait until the older request has actually gone out (still pending),
-    // then edit further and save again -- the newer request for the SAME id.
-    // The optimistic update from the first save has already re-rendered the
-    // textarea to show "X, first edit" at this point.
-    await olderRequestSeen;
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Y, second edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+    // First attempt fails -- the button must come back (nothing persisted).
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && /Couldn.t start/.test(t.textContent);
+    }, null, { timeout: 5000 });
+    var startBtnBack = await page.$('.tracker-item[data-id="task-b"] .tracker-start-btn');
+    assert.ok(startBtnBack, 'a failed start must revert -- the "Start working on this" button must reappear');
 
-    // Give the newer (immediate) request time to resolve and land before the
-    // older, 300ms-delayed one fails.
-    await page.waitForTimeout(100);
-    var aValueMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueMidway, 'Y, second edit', 'the newer save should already be showing, well before the older one has even failed yet');
-
-    // Now let the older request's delayed failure actually land.
-    await page.waitForTimeout(350);
-
-    var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueFinal, 'Y, second edit', "the older request's failure-revert must not overwrite the newer request's already-landed success");
-
-    // No error toast should fire either: the newer request succeeded, and
-    // per the fix, the older one's now-stale failure is suppressed entirely
-    // for this same-id race (its .catch bails out before showing anything).
-    var toastShown = await page.$eval('#toast', function (el) { return el.classList.contains('show'); });
-    assert.equal(toastShown, false, "the suppressed older-request revert must not surface a \"couldn't save\" toast either");
+    // Second attempt succeeds.
+    await page.click('.tracker-item[data-id="task-b"] .tracker-start-btn');
+    await page.waitForFunction(function () {
+      var el = document.querySelector('.tracker-item[data-id="task-b"] .tracker-item-meta');
+      return el && /Started/.test(el.textContent);
+    }, null, { timeout: 5000 });
+    var startBtnGone = await page.$('.tracker-item[data-id="task-b"] .tracker-start-btn');
+    assert.equal(startBtnGone, null, 'once started, the button must be gone -- there is no "un-start" control');
   } finally {
     await context.close();
   }
 });
 
-test("an older done-toggle request for item A that fails AFTER a newer done-toggle request for the SAME item has already succeeded must not revert past the newer state (regression: the seqMap fix was extended to handleDoneChange 'since it had the same unguarded shape' but had no equivalent test until now)", async function (t) {
+// ===== Overlapping same-id request races: done-toggle, priority-change =====
+//
+// Unchanged bug class from before the comment schema change -- the
+// seqMap/Confirmed-map guard is identical for done/priority, only the
+// done control's markup changed (button instead of checkbox).
+
+test("an older done-toggle request for item A that fails AFTER a newer done-toggle request for the SAME item has already succeeded must not revert past the newer state", async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -406,12 +532,6 @@ test("an older done-toggle request for item A that fails AFTER a newer done-togg
     var resolveOlderRequestSeen = null;
     var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
 
-    // The OLDER done-toggle request (from the first click, done: true) is
-    // held open long enough for the test to fire a NEWER done-toggle
-    // request (from a second click, done: false) on the exact SAME item id,
-    // let that newer one resolve successfully, and only THEN let the older
-    // one fail -- identical ordering to the handleCommentSave race test
-    // above, applied to handleDoneChange.
     await setUpTrackerPage(page, function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
       if (body.id === 'task-a') {
@@ -422,40 +542,33 @@ test("an older done-toggle request for item A that fails AFTER a newer done-togg
             route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
           }, 300);
         } else {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A, { done: false, doneAt: null }) }) });
         }
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B) }) });
       }
     });
 
-    // Item A starts not-done. First click checks it (done: true, the older,
-    // slow-to-fail request). Uses el.click() via $eval rather than
-    // page.click(), because as soon as an item becomes done it moves into
-    // the collapsed "Done (N)" <details> section (closed by default) --
-    // Playwright's normal click() waits for the target to be visible, which
-    // it deliberately no longer is once checked, and a force:true click
-    // still computes real screen coordinates from a display:none (zero-size)
-    // box and hits nothing. Calling the DOM .click() method directly fires
-    // the same native click+change behavior regardless of visibility.
-    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+    // Item A starts not-done. First click marks it done (the older, slow-
+    // to-fail request). Uses $eval(...).click() rather than page.click(),
+    // because once done it moves into the (collapsed-by-default) combined
+    // Done section -- Playwright's normal click() waits for visibility,
+    // which a collapsed <details> deliberately doesn't have; calling the
+    // native .click() method directly bypasses that.
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
 
-    // Wait until the older request has actually gone out, then click again
-    // (unchecking it, done: false) -- the newer request for the SAME id.
     await olderRequestSeen;
-    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+    // Second click marks it not-done again -- the newer request for the SAME id.
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
 
-    // Give the newer (immediate) request time to resolve and land before
-    // the older, 300ms-delayed one fails.
     await page.waitForTimeout(100);
-    var checkedMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { return el.checked; });
-    assert.equal(checkedMidway, false, 'the newer (unchecked) state should already be showing, well before the older request has even failed yet');
+    var isDoneMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { return el.classList.contains('is-done'); });
+    assert.equal(isDoneMidway, false, 'the newer (not-done) state should already be showing, well before the older request has even failed yet');
 
-    // Now let the older request's delayed failure actually land.
     await page.waitForTimeout(350);
 
-    var checkedFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { return el.checked; });
-    assert.equal(checkedFinal, false, "the older request's failure-revert must not overwrite the newer request's already-landed success");
+    var isDoneFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { return el.classList.contains('is-done'); });
+    assert.equal(isDoneFinal, false, "the older request's failure-revert must not overwrite the newer request's already-landed success");
 
     var toastShown = await page.$eval('#toast', function (el) { return el.classList.contains('show'); });
     assert.equal(toastShown, false, "the suppressed older-request revert must not surface a \"couldn't save\" toast either");
@@ -464,7 +577,7 @@ test("an older done-toggle request for item A that fails AFTER a newer done-togg
   }
 });
 
-test("an older priority-change request for item A that fails AFTER a newer priority-change request for the SAME item has already succeeded must not revert past the newer state (regression: the seqMap fix was extended to handlePriorityChange 'since it had the same unguarded shape' but had no equivalent test until now)", async function (t) {
+test("an older priority-change request for item A that fails AFTER a newer priority-change request for the SAME item has already succeeded must not revert past the newer state", async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -475,12 +588,6 @@ test("an older priority-change request for item A that fails AFTER a newer prior
     var resolveOlderRequestSeen = null;
     var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
 
-    // The OLDER priority-change request (from the first click, -> "high")
-    // is held open long enough for the test to fire a NEWER priority-change
-    // request (from a second click, -> "low") on the exact SAME item id,
-    // let that newer one resolve successfully, and only THEN let the older
-    // one fail -- identical ordering to the handleCommentSave race test
-    // above, applied to handlePriorityChange.
     await setUpTrackerPage(page, function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
       if (body.id === 'task-a') {
@@ -491,29 +598,22 @@ test("an older priority-change request for item A that fails AFTER a newer prior
             route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
           }, 300);
         } else {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A) }) });
         }
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B) }) });
       }
     });
 
-    // Item A starts medium. First click sets it to high (the older,
-    // slow-to-fail request).
     await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]');
 
-    // Wait until the older request has actually gone out, then click "low"
-    // -- the newer request for the SAME id.
     await olderRequestSeen;
     await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]');
 
-    // Give the newer (immediate) request time to resolve and land before
-    // the older, 300ms-delayed one fails.
     await page.waitForTimeout(100);
     var lowActiveMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]', function (el) { return el.classList.contains('active'); });
     assert.equal(lowActiveMidway, true, 'the newer ("low") priority should already be showing, well before the older request has even failed yet');
 
-    // Now let the older request's delayed failure actually land.
     await page.waitForTimeout(350);
 
     var lowActiveFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]', function (el) { return el.classList.contains('active'); });
@@ -528,79 +628,7 @@ test("an older priority-change request for item A that fails AFTER a newer prior
   }
 });
 
-test("two overlapping comment-save requests for the SAME item that BOTH fail must revert to the server-confirmed value, not chain through an unconfirmed intermediate optimistic edit (regression: chained double-failure, review's fourth finding on this bug class)", async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-
-    var taskASaveCount = 0;
-    var resolveOlderRequestSeen = null;
-    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
-    var resolveNewerRequestSeen = null;
-    var newerRequestSeen = new Promise(function (resolve) { resolveNewerRequestSeen = resolve; });
-
-    // BOTH the older request (comment = "X, first edit") and the newer
-    // request (comment = "Y, second edit") for the SAME item eventually
-    // FAIL -- the older after a longer delay, the newer (the current
-    // sequence holder, so the one whose .catch actually runs the revert)
-    // after a shorter one. A naive fix that reverts to a captured
-    // "previous" in-memory value would land the newer request's revert on
-    // "X, first edit" -- an edit the server never actually stored either,
-    // since request A also failed -- instead of the true last-good
-    // server-confirmed value ("saved comment A").
-    await setUpTrackerPage(page, function (route) {
-      var body = JSON.parse(route.request().postData() || '{}');
-      if (body.id === 'task-a') {
-        taskASaveCount++;
-        if (taskASaveCount === 1) {
-          resolveOlderRequestSeen();
-          setTimeout(function () {
-            route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-          }, 300);
-        } else {
-          resolveNewerRequestSeen();
-          setTimeout(function () {
-            route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-          }, 100);
-        }
-      } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-      }
-    });
-
-    await openItem(page, 'task-a');
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'X, first edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
-
-    await olderRequestSeen;
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Y, second edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
-    await newerRequestSeen;
-
-    // Wait for the newer (sequence-holding) request's own failure to land
-    // and run its revert.
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
-    }, null, { timeout: 5000 });
-
-    var aValueAfterNewerFails = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueAfterNewerFails, 'saved comment A', "the sequence-holding request's revert must land on the server-confirmed original value, not the older request's unconfirmed optimistic edit ('X, first edit')");
-
-    // Now let the older request's own (later) failure land too -- the
-    // seqMap guard must suppress it entirely; nothing should change further.
-    await page.waitForTimeout(250);
-
-    var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueFinal, 'saved comment A', "the older (now-stale) request's later failure must not change anything further");
-  } finally {
-    await context.close();
-  }
-});
-
-test("an older done-toggle request for item A that SUCCEEDS after a newer done-toggle request for the SAME item has already succeeded must not clobber doneConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
+test("an older done-toggle request for item A that SUCCEEDS after a newer done-toggle request for the SAME item has already succeeded must not clobber doneConfirmed with the stale older value", async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -611,13 +639,11 @@ test("an older done-toggle request for item A that SUCCEEDS after a newer done-t
     var resolveOlderRequestSeen = null;
     var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
 
-    // Request 1 (older, done: true) is held open and SUCCEEDS only after a
-    // long delay. Request 2 (newer, done: false) fires while request 1 is
-    // still in flight and SUCCEEDS immediately -- exactly the ordering from
-    // the bug report: the newer request's success lands first, then the
-    // older request's success lands after. A THIRD request (done: true)
-    // fires only once both of the above have resolved, and is made to FAIL
-    // -- its revert is the only way to observe which value doneConfirmed[id]
+    // Request 1 (older, done: true) succeeds only after a long delay.
+    // Request 2 (newer, done: false) fires while request 1 is still in
+    // flight and succeeds immediately. A THIRD request (done: true) fires
+    // only once both of the above have resolved, and is made to FAIL --
+    // its revert is the only way to observe which value doneConfirmed[id]
     // actually holds, since a successful .then never itself calls render().
     await setUpTrackerPage(page, function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
@@ -626,209 +652,95 @@ test("an older done-toggle request for item A that SUCCEEDS after a newer done-t
         if (taskADoneCount === 1) {
           resolveOlderRequestSeen();
           setTimeout(function () {
-            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A, { done: true, doneAt: '2026-02-01T00:00:00.000Z' }) }) });
           }, 300);
         } else if (taskADoneCount === 2) {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A, { done: false, doneAt: null }) }) });
         } else {
           route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
         }
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B) }) });
       }
     });
 
-    // Item A starts not-done. First click checks it (done: true) -- the
-    // older, slow-to-succeed request.
-    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
 
-    // Wait until the older request has actually gone out, then click again
-    // (unchecking it, done: false) -- the newer request for the SAME id,
-    // which succeeds immediately.
     await olderRequestSeen;
-    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
 
-    // Give the newer request time to resolve and land (doneConfirmed[id]
-    // should now correctly be false).
     await page.waitForTimeout(100);
-
-    // Now let the older request's delayed success land too -- with the bug,
-    // its unguarded .then unconditionally overwrites doneConfirmed[id] back
-    // to true here, even though nothing on screen changes yet.
     await page.waitForTimeout(350);
 
-    // Re-check the box a third time (done: true) -- this request FAILS, and
-    // its catch reverts to doneConfirmed[id]. Correct behavior: revert to
-    // false (the newer request's confirmed value). Buggy behavior: revert to
-    // true (the older request's stale, later-landing success).
-    await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { el.click(); });
+    // Re-click a third time (done: true) -- this request FAILS, and its
+    // catch reverts to doneConfirmed[id]. Correct: reverts to not-done
+    // (the newer request's confirmed value). Buggy: reverts to done (the
+    // older request's stale, later-landing success).
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
 
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
       return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
     }, null, { timeout: 5000 });
 
-    var checkedFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-check', function (el) { return el.checked; });
-    assert.equal(checkedFinal, false, "the third request's failure-revert must land on the newer request's confirmed value (unchecked), not the older request's stale later-landing success (checked)");
+    var isDoneFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { return el.classList.contains('is-done'); });
+    assert.equal(isDoneFinal, false, "the third request's failure-revert must land on the newer request's confirmed value (not done), not the older request's stale later-landing success (done)");
   } finally {
     await context.close();
   }
 });
 
-test("an older comment-save request for item A that SUCCEEDS after a newer comment-save request for the SAME item has already succeeded must not clobber commentConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
+// ===== ONE combined Done section, spanning Tasks + Ideas =====
+
+test('marking a task and an idea both done puts them in ONE combined Done section, collapsed by default, with category badges', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
+    var IDEA = { id: 'idea-c', category: 'idea', title: 'Item C (idea)', detail: 'Detail C', priority: 'medium', done: false, comments: [], createdAt: null, doneAt: null, startedAt: null };
+    var seed = [ITEM_A, ITEM_B, IDEA];
+    await setUpTrackerPage(page, makeDefaultUpdateBehavior(seed), seed);
 
-    var taskASaveCount = 0;
-    var resolveOlderRequestSeen = null;
-    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
+    var doneSectionInitial = await page.$('#tracker-done-details');
+    assert.equal(doneSectionInitial, null, 'with nothing done yet, the combined Done section must not render at all');
 
-    // Same shape as the done-toggle version above, applied to
-    // handleCommentSave: request 1 (older, "X, first edit") succeeds only
-    // after a long delay; request 2 (newer, "Y, second edit") fires first
-    // and succeeds immediately; request 3 ("Z, third edit") fires only after
-    // both have resolved and FAILS, so its revert target reveals whether
-    // commentConfirmed[id] still correctly holds "Y, second edit" or was
-    // clobbered back to "X, first edit" by the older request's stale
-    // success.
-    await setUpTrackerPage(page, function (route) {
-      var body = JSON.parse(route.request().postData() || '{}');
-      if (body.id === 'task-a') {
-        taskASaveCount++;
-        if (taskASaveCount === 1) {
-          resolveOlderRequestSeen();
-          setTimeout(function () {
-            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-          }, 300);
-        } else if (taskASaveCount === 2) {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-        } else {
-          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-        }
-      } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-      }
-    });
+    await page.$eval('.tracker-item[data-id="task-a"] .tracker-done-btn', function (el) { el.click(); });
+    await page.waitForSelector('#tracker-done-details', { timeout: 5000 });
 
-    await openItem(page, 'task-a');
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'X, first edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
+    var openBeforeExpand = await page.$eval('#tracker-done-details', function (el) { return el.open; });
+    assert.equal(openBeforeExpand, false, 'the combined Done section must start collapsed, even once it has content');
 
-    await olderRequestSeen;
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Y, second edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
-
-    // Give the newer request time to resolve and land (commentConfirmed[id]
-    // should now correctly be "Y, second edit").
-    await page.waitForTimeout(100);
-
-    // Now let the older request's delayed success land too -- with the bug,
-    // this clobbers commentConfirmed[id] back to "X, first edit".
-    await page.waitForTimeout(350);
-
-    // Save a third edit -- this request FAILS, and its catch reverts to
-    // commentConfirmed[id].
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', 'Z, third edit');
-    await page.click('.tracker-item[data-id="task-a"] .tracker-comment-save');
-
+    await page.$eval('.tracker-item[data-id="idea-c"] .tracker-done-btn', function (el) { el.click(); });
     await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
+      var el = document.querySelector('.tracker-done-summary');
+      return el && /Done \(2\)/.test(el.textContent);
     }, null, { timeout: 5000 });
 
-    var aValueFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValueFinal, 'Y, second edit', "the third request's failure-revert must land on the newer request's confirmed value ('Y, second edit'), not the older request's stale later-landing success ('X, first edit')");
+    // Exactly one combined Done section for the whole page, not one per
+    // category.
+    var doneDetailsCount = await page.$$eval('.tracker-done-details', function (els) { return els.length; });
+    assert.equal(doneDetailsCount, 1, 'there must be exactly ONE Done section spanning both categories, not a separate one per category');
+
+    await page.click('.tracker-done-summary');
+    await page.waitForFunction(function () {
+      var el = document.querySelector('#tracker-done-details');
+      return el && el.open;
+    }, null, { timeout: 5000 });
+
+    var idsInDone = await page.$$eval('.tracker-done-list .tracker-item', function (els) { return els.map(function (e) { return e.dataset.id; }); });
+    assert.deepEqual(idsInDone.sort(), ['idea-c', 'task-a'], 'both the done task and the done idea must be inside the same combined list');
+
+    var badges = await page.$$eval('.tracker-done-list .tracker-category-badge', function (els) { return els.map(function (e) { return e.textContent; }); });
+    assert.deepEqual(badges.sort(), ['Idea', 'Task'], 'each item in the combined section must show which category it came from');
   } finally {
     await context.close();
   }
 });
 
-test("an older priority-change request for item A that SUCCEEDS after a newer priority-change request for the SAME item has already succeeded must not clobber priorityConfirmed with the stale older value (regression: unguarded success .then, review's fifth finding on this bug class)", async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
+// ===== handleAddSubmit gaps (draft preservation + Confirmed-map seeding) =====
 
-    var taskAPriorityCount = 0;
-    var resolveOlderRequestSeen = null;
-    var olderRequestSeen = new Promise(function (resolve) { resolveOlderRequestSeen = resolve; });
-
-    // Same shape again, applied to handlePriorityChange: request 1 (older,
-    // -> "high") succeeds only after a long delay; request 2 (newer, ->
-    // "low") fires first and succeeds immediately; request 3 (-> "medium")
-    // fires only after both have resolved and FAILS, so its revert target
-    // reveals whether priorityConfirmed[id] still correctly holds "low" or
-    // was clobbered back to "high".
-    await setUpTrackerPage(page, function (route) {
-      var body = JSON.parse(route.request().postData() || '{}');
-      if (body.id === 'task-a') {
-        taskAPriorityCount++;
-        if (taskAPriorityCount === 1) {
-          resolveOlderRequestSeen();
-          setTimeout(function () {
-            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-          }, 300);
-        } else if (taskAPriorityCount === 2) {
-          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-        } else {
-          route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
-        }
-      } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
-      }
-    });
-
-    // Item A starts medium. First click sets it to high (the older,
-    // slow-to-succeed request).
-    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]');
-
-    await olderRequestSeen;
-    // Second click sets it to low -- the newer request, succeeds
-    // immediately.
-    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]');
-
-    // Give the newer request time to resolve and land (priorityConfirmed[id]
-    // should now correctly be "low").
-    await page.waitForTimeout(100);
-
-    // Now let the older request's delayed success land too -- with the bug,
-    // this clobbers priorityConfirmed[id] back to "high".
-    await page.waitForTimeout(350);
-
-    // Third click sets it to medium -- this request FAILS, and its catch
-    // reverts to priorityConfirmed[id].
-    await page.click('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="medium"]');
-
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Couldn.t save/.test(t.textContent);
-    }, null, { timeout: 5000 });
-
-    var lowActiveFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="low"]', function (el) { return el.classList.contains('active'); });
-    assert.equal(lowActiveFinal, true, "the third request's failure-revert must land on the newer request's confirmed priority ('low'), not the older request's stale later-landing success ('high')");
-    var highActiveFinal = await page.$eval('.tracker-item[data-id="task-a"] .tracker-pri-btn[data-priority="high"]', function (el) { return el.classList.contains('active'); });
-    assert.equal(highActiveFinal, false, "the stale older request's confirmed value must not resurface as active either");
-  } finally {
-    await context.close();
-  }
-});
-
-// ===== handleAddSubmit gaps (tracker-add-delete + tracker-comments merge) =====
-//
-// Confirmed by direct review of the merged tracker-comments-add-delete-merge
-// branch (signal tm4qv8n): handleAddSubmit's success .then() called
-// items.push(created); render(); with no captureDrafts() first -- the exact
-// same bug class covered above for handleDoneChange/handlePriorityChange/
-// handleCommentSave/handleDelete, just never applied to the add-item path
-// when it was merged in. It also never seeded commentConfirmed/
-// doneConfirmed/priorityConfirmed for the newly-created item's id, unlike
-// the initial get-tracker-items page-load loop.
-
-test("typing an unsaved draft in item A survives successfully adding a new item via the add-item form (handleAddSubmit's success .then() was missing the captureDrafts() call every other render()-triggering handler on this page has)", async function (t) {
+test("typing an unsaved draft in item A survives successfully adding a new item via the add-item form", async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -836,54 +748,48 @@ test("typing an unsaved draft in item A survives successfully adding a new item 
     await blockThirdParty(page);
     await setUpTrackerPage(page);
 
-    var CREATED = { id: 'task-new-1', category: 'task', title: 'Brand new item', detail: 'New detail.', priority: 'medium', done: false, comment: '' };
+    var CREATED = { id: 'task-new-1', category: 'task', title: 'Brand new item', detail: 'New detail.', priority: 'medium', done: false, comments: [], createdAt: '2026-04-01T00:00:00.000Z', doneAt: null, startedAt: null };
     await page.route('**/.netlify/functions/add-tracker-item', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: CREATED }) });
     });
 
     await openItem(page, 'task-a');
     var draft = 'unsaved note about A, never clicked save';
-    await page.fill('.tracker-item[data-id="task-a"] .tracker-comment-input', draft);
+    await page.fill(commentInputSelector('task-a', 'ron'), draft);
 
     await page.fill('#tracker-add-title', 'Brand new item');
     await page.fill('#tracker-add-detail', 'New detail.');
     await page.click('#tracker-add-submit');
 
-    // Wait for the new item to actually land -- this is the render() call
-    // that used to wipe A's draft with no captureDrafts() before it.
     await page.waitForSelector('.tracker-item[data-id="task-new-1"]', { timeout: 5000 });
 
     var aStillOpen = await page.$eval('.tracker-item[data-id="task-a"]', function (el) { return el.open; });
     assert.equal(aStillOpen, true, "item A's <details> should still be open after the new item's render()");
-    var aValue = await page.$eval('.tracker-item[data-id="task-a"] .tracker-comment-input', function (el) { return el.value; });
-    assert.equal(aValue, draft, "item A's unsaved draft must survive a successful add-item render(), same as done/priority/delete already do");
+    var aValue = await page.$eval(commentInputSelector('task-a', 'ron'), function (el) { return el.value; });
+    assert.equal(aValue, draft, "item A's unsaved draft must survive a successful add-item render(), same as done/priority/start/delete already do");
   } finally {
     await context.close();
   }
 });
 
-test("changing priority on a brand-new item immediately after adding it, and having that request FAIL, reverts to the item's actual just-created priority ('medium') instead of undefined (handleAddSubmit never seeded priorityConfirmed/doneConfirmed/commentConfirmed for the new id)", async function (t) {
-  // Uses priority rather than done for this assertion: itemHTML's checkbox
-  // ternary (item.done ? ' checked' : '') renders identically for `false`
-  // and `undefined`, so a done-based revert can't actually distinguish
-  // "reverted to the real seeded value" from "reverted to undefined". The
-  // priority buttons don't have that blind spot -- item.priority === p is
-  // false (no button active) for undefined, and true for exactly one button
-  // when correctly seeded, so this is the version of the test that can
-  // actually fail if the seeding is missing.
+test("changing priority on a brand-new item immediately after adding it, and having that request FAIL, reverts to the item's actual just-created priority ('medium') instead of undefined", async function (t) {
+  // Uses priority rather than done for this assertion: item.priority === p
+  // is false (no button active) for undefined, and true for exactly one
+  // button when correctly seeded, so this is the version of the test that
+  // can actually fail if handleAddSubmit's Confirmed-map seeding is missing.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
 
-    var CREATED = { id: 'task-new-2', category: 'task', title: 'Another new item', detail: 'Another detail.', priority: 'medium', done: false, comment: '' };
+    var CREATED = { id: 'task-new-2', category: 'task', title: 'Another new item', detail: 'Another detail.', priority: 'medium', done: false, comments: [], createdAt: '2026-04-01T00:00:00.000Z', doneAt: null, startedAt: null };
     await setUpTrackerPage(page, function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
       if (body.id === 'task-new-2') {
         route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) });
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: {} }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A) }) });
       }
     });
     await page.route('**/.netlify/functions/add-tracker-item', function (route) {
@@ -895,12 +801,6 @@ test("changing priority on a brand-new item immediately after adding it, and hav
     await page.click('#tracker-add-submit');
     await page.waitForSelector('.tracker-item[data-id="task-new-2"]', { timeout: 5000 });
 
-    // Change priority on the just-created item (medium -> high) -- this
-    // request fails (mocked above), triggering handlePriorityChange's
-    // revert to priorityConfirmed[id]. With the seeding bug,
-    // priorityConfirmed['task-new-2'] is undefined at this point instead of
-    // the item's real created value ('medium'), so the revert would leave
-    // no priority button active at all.
     await page.click('.tracker-item[data-id="task-new-2"] .tracker-pri-btn[data-priority="high"]');
 
     await page.waitForFunction(function () {

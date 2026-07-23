@@ -43,12 +43,8 @@
              owner-gating above — same defense-in-depth as every other
              control on this page. Kept as its own container, never
              touched by render() below, so an unrelated done/priority/
-             delete action elsewhere on the page can never wipe an
-             in-progress draft here (see the cross-item-draft-wipe class
-             of bug this codebase has hit before with a per-item free-text
-             field; this form isn't per-item so that failure mode doesn't
-             apply, but keeping it structurally separate is what makes
-             that true). -->
+             delete/comment action elsewhere on the page can never wipe an
+             in-progress draft here. -->
         <form id="tracker-add-form" class="tracker-add-form">
           <div class="section-label" style="padding:0;">Add item</div>
           <select class="field" id="tracker-add-category" style="margin-bottom:8px;">
@@ -71,6 +67,14 @@
 
         <div class="section-label" style="padding:0;">Ideas</div>
         <div id="tracker-ideas"></div>
+
+        <!-- ONE combined Done section for the whole page (tasks + ideas
+             together), collapsed by default — see doneSectionHTML() below.
+             This replaced two separate per-category done-<details>
+             (one under Open Tasks, one under Ideas) per Ron's own
+             feedback: "keep all done items at the bottom of the page...
+             in an unopened, clickable-to-open Done section" (singular). -->
+        <div id="tracker-done"></div>
       </div>
       <div class="err-text" id="tracker-error" style="margin-top:8px;"></div>
     </div>
@@ -94,10 +98,20 @@
   var errorEl = document.getElementById('tracker-error');
   var tasksEl = document.getElementById('tracker-tasks');
   var ideasEl = document.getElementById('tracker-ideas');
+  var doneEl = document.getElementById('tracker-done');
 
   document.getElementById('tracker-add-form').addEventListener('submit', function (e) { handleAddSubmit(e); });
 
   function esc(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+  /** Formats an ISO timestamp for display, e.g. "Jul 23, 2026, 3:45 PM". Returns '' for a missing/invalid value — every caller only appends this into the DOM when it's non-empty, so a pre-existing item with no real historical timestamp (createdAt/doneAt/startedAt all default to null — see tracker-store.js) simply omits that line entirely rather than showing a fabricated date. */
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
 
   function showToast(msg) {
     var t = document.getElementById('toast');
@@ -113,84 +127,99 @@
 
   // ===== State =====
   // The full item list as last known from the server, mutated optimistically
-  // on every checkbox/priority change and reconciled (reverted + toasted) if
-  // the write actually fails. `expandedIds`/`doneOpen` track which
-  // <details> the user has open so a full re-render (needed every time the
-  // done/priority grouping changes) doesn't collapse whatever they were
-  // already looking at.
+  // on every done/priority/start change and reconciled (reverted + toasted)
+  // if the write actually fails. Comment saves are NOT optimistic — see
+  // handleCommentSave's own comment below for why an append-only field
+  // doesn't need the same revert dance. `expandedIds`/`doneSectionOpen`
+  // track which <details> the user has open so a full re-render (needed
+  // every time the done/priority grouping changes) doesn't collapse
+  // whatever they were already looking at.
   var items = [];
   var expandedIds = {};
-  var doneOpen = { task: false, idea: false };
+  // ONE flag for the whole page's single combined Done section — replaced
+  // the old per-category `doneOpen: { task, idea }` now that Ron's own
+  // feedback moved this to one section spanning both categories.
+  var doneSectionOpen = false;
 
-  // Any comment text currently typed into an open textarea but not yet
-  // saved, keyed by item id. render() rebuilds every item's HTML from
-  // scratch (see itemHTML() below), which only knows about item.comment —
-  // the last *saved* value — so without this, checking a done box or
-  // clicking a priority button ANYWHERE on the page (including on the very
-  // item whose comment is being drafted, per the bug report) would
+  // Any comment text currently typed into an open compose textarea but not
+  // yet saved, keyed by "<itemId>:<author>" (author is "ron" or "claude" —
+  // see the two compose areas in itemHTML below, one per author, per Ron's
+  // own request: "add a new comment area for me or for you"). render()
+  // rebuilds every item's HTML from scratch (see itemHTML() below), which
+  // has no saved value to fall back to for a compose box at all (comments
+  // are append-only now — see the SCHEMA CHANGE note on
+  // handleCommentSave/commentValueFor below), so without this, checking
+  // done or clicking a priority/start button ANYWHERE on the page —
+  // including on the very item whose comment is being drafted — would
   // silently wipe whatever unsaved note someone was mid-typing elsewhere.
   // captureDrafts() (below) snapshots the live DOM right before every
-  // render() call; itemHTML() then prefers that snapshot over item.comment
-  // when one exists. This is in-memory only — never sent to the server on
-  // its own, just kept around so a render() triggered by something
-  // unrelated doesn't destroy an in-progress draft.
+  // render() call; itemHTML() then prefers that snapshot over the default
+  // empty string when one exists. This is in-memory only — never sent to
+  // the server on its own, just kept around so a render() triggered by
+  // something unrelated doesn't destroy an in-progress draft.
   var unsavedComments = {};
 
+  // Whether a comment save is currently in flight, keyed the same way as
+  // unsavedComments ("<itemId>:<author>") — disables that one compose
+  // box's Save button (and shows "Saving…") while its own request is out,
+  // so a double-click can't fire the same note twice. Purely a UI guard;
+  // unrelated to the done/priority/start seq-guard machinery below since
+  // appending a comment can never silently clobber another append (see
+  // handleCommentSave's own comment).
+  var commentSaving = {};
+
   // Per-id monotonic request-sequence counters, one map per handler below.
-  // handleDoneChange/handlePriorityChange/handleCommentSave all follow the
+  // handleDoneChange/handlePriorityChange/handleStartChange all follow the
   // same optimistic-mutate -> render() -> postUpdate().catch(revert) shape,
   // and each is only ever guarded against *itself* firing twice for the same
   // id out of order, never across different ids -- so a fresh save/toggle
   // started on id X before an earlier in-flight save/toggle on that SAME id
   // X has resolved can otherwise have the OLDER request's failure-revert
   // apply after the NEWER request's success already landed, silently
-  // reverting item.{comment,done,priority} to a stale pre-both-changes
-  // value even though the newer change was actually persisted server-side
-  // (this is what review flagged a third time on handleCommentSave; the
-  // other two handlers have the identical unguarded shape, so they get the
-  // same guard here rather than leaving a known-identical bug in place).
-  // Each handler stashes `var mySeq = ++seqMap[id]` at request start, and
-  // its .catch() checks `if (seqMap[id] !== mySeq) return;` before reverting
-  // anything -- so a stale request's failure can only revert state if it's
-  // still the most recently-started request for that id; a newer request
-  // (success or failure) always has the final say.
-  var commentSaveSeq = {};
+  // reverting item state to a stale pre-both-changes value even though the
+  // newer change was actually persisted server-side. Each handler stashes
+  // `var mySeq = ++seqMap[id]` at request start, and its .catch() checks
+  // `if (seqMap[id] !== mySeq) return;` before reverting anything -- so a
+  // stale request's failure can only revert state if it's still the most
+  // recently-started request for that id; a newer request (success or
+  // failure) always has the final say.
   var doneChangeSeq = {};
   var priorityChangeSeq = {};
+  var startChangeSeq = {};
 
   // Per-id last known SERVER-CONFIRMED value for each field -- populated
   // from the initial get-tracker-items load, then kept in sync on every
   // successful postUpdate() (see each handler's .then below). This exists
-  // to fix a chained-failure edge case review caught on top of the seqMap
-  // guard above: the seqMap guard correctly stops an older *stale* failure
-  // from clobbering a newer *successful* save (tested below), but if TWO
-  // overlapping same-id requests both FAIL, the surviving (newer) request
-  // is still the sequence holder and still runs its revert -- and reverting
-  // to its own captured "previous" is wrong, because "previous" is just the
-  // prior optimistic in-memory value (itself never confirmed by the server,
-  // since the older request that set it also failed), not the actual
-  // last-good server state. Reverting to {comment,done,priority}Confirmed[id]
-  // instead means a revert can only ever land on a value the server has
-  // actually acknowledged, no matter how many same-id requests are chained
-  // and failing. See the "chained double-failure" tests below for the
-  // concrete scenario this fixes.
+  // to fix a chained-failure edge case: the seqMap guard above correctly
+  // stops an older *stale* failure from clobbering a newer *successful*
+  // save, but if TWO overlapping same-id requests both FAIL, the surviving
+  // (newer) request is still the sequence holder and still runs its
+  // revert -- and reverting to its own captured "previous" is wrong,
+  // because "previous" is just the prior optimistic in-memory value
+  // (itself never confirmed by the server, since the older request that
+  // set it also failed), not the actual last-good server state. Reverting
+  // to {done,doneAt,priority,startedAt}Confirmed[id] instead means a
+  // revert can only ever land on a value the server has actually
+  // acknowledged, no matter how many same-id requests are chained and
+  // failing.
   //
   // The write side needs the exact same seqMap guard as the revert side:
-  // each handler's .then only updates {comment,done,priority}Confirmed[id]
-  // if it's still the most recently-started request for that id (mirroring
-  // the mySeq check its own .catch already does). Without that guard, an
-  // OLDER same-id request that happens to SUCCEED after a NEWER same-id
-  // request has already resolved would silently clobber the newer,
-  // server-confirmed value with its own stale one -- invisibly, since a
-  // successful .then never itself calls render(), so nothing looks wrong
-  // until some later same-id failure reverts to the wrong value. See the
-  // "stale older success" tests below for the concrete scenario this fixes.
-  var commentConfirmed = {};
+  // each handler's .then only updates the Confirmed maps if it's still the
+  // most recently-started request for that id (mirroring the mySeq check
+  // its own .catch already does). Without that guard, an OLDER same-id
+  // request that happens to SUCCEED after a NEWER same-id request has
+  // already resolved would silently clobber the newer, server-confirmed
+  // value with its own stale one -- invisibly, since a successful .then
+  // never itself calls render(), so nothing looks wrong until some later
+  // same-id failure reverts to the wrong value.
   var doneConfirmed = {};
+  var doneAtConfirmed = {};
   var priorityConfirmed = {};
+  var startedAtConfirmed = {};
 
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
+  var COMMENT_AUTHOR_LABEL = { ron: 'Ron', claude: 'Claude' };
 
   /**
    * Not-done first, then High -> Medium -> Low. Array.prototype.sort has
@@ -205,76 +234,143 @@
     });
   }
 
-  function itemHTML(item) {
+  /** Done items sorted most-recently-done first (doneAt descending); an item with no doneAt at all (pre-existing seed items done before this field existed — see tracker-store.js) sorts to the very end rather than fabricating a position among real timestamps. */
+  function sortDoneItems(list) {
+    return list.slice().sort(function (a, b) {
+      var at = a.doneAt ? new Date(a.doneAt).getTime() : -Infinity;
+      var bt = b.doneAt ? new Date(b.doneAt).getTime() : -Infinity;
+      return bt - at;
+    });
+  }
+
+  function commentEntryHTML(c) {
+    return '' +
+      '<div class="tracker-comment-entry">' +
+        '<div class="tracker-comment-entry-head">' +
+          '<span class="tracker-comment-author">' + esc(COMMENT_AUTHOR_LABEL[c.author] || c.author) + '</span>' +
+          (c.timestamp ? '<span class="tracker-comment-time">' + esc(fmtDate(c.timestamp)) + '</span>' : '') +
+        '</div>' +
+        '<div class="tracker-comment-text" dir="auto">' + esc(c.text) + '</div>' +
+      '</div>';
+  }
+
+  /** One compose area — "Your comment" (author "ron") or "Claude's comment" (author "claude"). Both post through the same owner-gated update-tracker-item.js endpoint (see that function's own doc comment for why two authors don't need two auth boundaries); the only difference client-side is the label and which key they read/write in unsavedComments/commentSaving. */
+  function commentComposeHTML(item, author) {
+    var key = item.id + ':' + author;
+    var saving = !!commentSaving[key];
+    var label = author === 'ron' ? 'Your comment' : "Claude's comment";
+    return '' +
+      '<div class="tracker-comment-compose" data-author="' + author + '">' +
+        '<div class="tracker-comment-compose-label">' + esc(label) + '</div>' +
+        '<textarea class="field tracker-comment-input" dir="auto" placeholder="Write a note...">' + esc(commentValueFor(item.id, author)) + '</textarea>' +
+        '<button type="button" class="btn btn-secondary tracker-comment-save"' + (saving ? ' disabled' : '') + '>' + (saving ? 'Saving…' : 'Save comment') + '</button>' +
+      '</div>';
+  }
+
+  /** The value a just-rendered compose textarea should start with: an in-progress unsaved draft if one was captured, otherwise blank — comments are append-only now (see handleCommentSave's own comment), so unlike the old single-`comment`-field version there's no last-saved value to fall back to; a freshly rendered compose box is either mid-draft or empty. */
+  function commentValueFor(id, author) {
+    var key = id + ':' + author;
+    return Object.prototype.hasOwnProperty.call(unsavedComments, key) ? unsavedComments[key] : '';
+  }
+
+  /**
+   * Snapshots the live DOM value of every currently-rendered comment
+   * compose textarea into unsavedComments, keyed by "<itemId>:<author>",
+   * so the render() that's about to happen doesn't wipe it (see
+   * unsavedComments' own comment above). Must be called immediately
+   * before every render() — capturing after render() would just read back
+   * what render() already wrote.
+   *
+   * excludeKey skips one "<itemId>:<author>" key entirely (used by
+   * handleCommentSave): the compose box that was just successfully saved
+   * has already been cleared client-side, and deliberately NOT
+   * re-capturing it here is what stops a freshly-cleared box from ever
+   * being mistaken for a still-unsaved draft on its next render.
+   */
+  function captureDrafts(excludeKey) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tracker-comment-compose'), function (el) {
+      var itemEl = el.closest('.tracker-item');
+      if (!itemEl) return;
+      var key = itemEl.dataset.id + ':' + el.dataset.author;
+      if (key === excludeKey) return;
+      var input = el.querySelector('.tracker-comment-input');
+      if (input) unsavedComments[key] = input.value;
+    });
+  }
+
+  function itemHTML(item, showCategoryBadge) {
     var priButtons = ['high', 'medium', 'low'].map(function (p) {
       return '<button type="button" class="tracker-pri-btn' + (item.priority === p ? ' active' : '') +
         '" data-priority="' + p + '" aria-label="Set priority ' + p + '" aria-pressed="' + (item.priority === p) + '">' +
         PRIORITY_LABEL[p] + '</button>';
     }).join('');
+
+    var doneBtnLabel = item.done
+      ? (Icons.check + ' Done')
+      : 'Mark Done';
+    var doneBtn = '<button type="button" class="tracker-done-btn' + (item.done ? ' is-done' : '') +
+      '" aria-pressed="' + item.done + '" aria-label="' + (item.done ? 'Mark not done' : 'Mark as done') + '">' + doneBtnLabel + '</button>';
+
+    var categoryBadge = showCategoryBadge
+      ? '<span class="tracker-category-badge">' + (item.category === 'task' ? 'Task' : 'Idea') + '</span>'
+      : '';
+
+    var metaParts = [];
+    if (item.createdAt) metaParts.push('Created ' + esc(fmtDate(item.createdAt)));
+    if (item.startedAt) metaParts.push('Started ' + esc(fmtDate(item.startedAt)));
+    if (item.done && item.doneAt) metaParts.push('Done ' + esc(fmtDate(item.doneAt)));
+    var metaHTML = metaParts.length ? '<div class="tracker-item-meta">' + metaParts.map(function (p) { return '<span>' + p + '</span>'; }).join('') + '</div>' : '';
+
+    // "Start working on this" only makes sense for an item that hasn't
+    // been started yet and isn't already done — once startedAt is set it
+    // shows in metaParts above instead (a one-way signal, see
+    // tracker-store.js's updateItem — no "un-start" control at all).
+    var startControl = (!item.startedAt && !item.done)
+      ? '<button type="button" class="btn btn-secondary tracker-start-btn">Start working on this</button>'
+      : '';
+
+    var comments = item.comments || [];
+    var commentsListHTML = comments.length
+      ? '<div class="tracker-comment-list">' + comments.map(commentEntryHTML).join('') + '</div>'
+      : '<div class="tracker-comment-empty">No comments yet.</div>';
+
     return '' +
       '<details class="tracker-item" data-id="' + esc(item.id) + '">' +
         '<summary class="tracker-item-summary">' +
-          '<input type="checkbox" class="tracker-check"' + (item.done ? ' checked' : '') + ' aria-label="Mark done">' +
-          '<span class="tracker-item-title" dir="auto">' + esc(item.title) + '</span>' +
+          doneBtn +
+          '<span class="tracker-item-title" dir="auto">' + categoryBadge + esc(item.title) + '</span>' +
           '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
           '<button type="button" class="tracker-delete-btn icon" aria-label="Delete item">' + Icons.trash + '</button>' +
           '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
         '</summary>' +
-        '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + '</div>' +
-        '<div class="tracker-comment-row">' +
-          '<textarea class="field tracker-comment-input" dir="auto" placeholder="Leave a note for whoever maintains this item...">' + esc(commentValueFor(item)) + '</textarea>' +
-          '<button type="button" class="btn btn-secondary tracker-comment-save">Save comment</button>' +
+        '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + metaHTML + '</div>' +
+        (startControl ? '<div class="tracker-start-row">' + startControl + '</div>' : '') +
+        commentsListHTML +
+        '<div class="tracker-comment-compose-group">' +
+          commentComposeHTML(item, 'ron') +
+          commentComposeHTML(item, 'claude') +
         '</div>' +
       '</details>';
   }
 
-  /** The value a just-rendered comment textarea should start with: an in-progress unsaved draft if one was captured, otherwise the last saved value. */
-  function commentValueFor(item) {
-    return Object.prototype.hasOwnProperty.call(unsavedComments, item.id) ? unsavedComments[item.id] : (item.comment || '');
-  }
-
-  /**
-   * Snapshots the live DOM value of every currently-rendered comment
-   * textarea into unsavedComments, keyed by item id, so the render() that's
-   * about to happen doesn't wipe it (see unsavedComments' own comment
-   * above). Must be called immediately before every render() — capturing
-   * after render() would just read back what render() already wrote.
-   *
-   * excludeId skips one id entirely (used by handleCommentSave): the item
-   * whose comment was just explicitly saved has its authoritative value
-   * committed to item.comment already, so it needs no draft entry — and
-   * deliberately NOT re-capturing it here is what stops a freshly-saved
-   * comment from ever being mistaken for an still-unsaved draft on its next
-   * render.
-   */
-  function captureDrafts(excludeId) {
-    Array.prototype.forEach.call(document.querySelectorAll('.tracker-item'), function (el) {
-      var id = el.dataset.id;
-      if (id === excludeId) return;
-      var input = el.querySelector('.tracker-comment-input');
-      if (input) unsavedComments[id] = input.value;
-    });
-  }
-
   function sectionHTML(categoryKey) {
-    var inCategory = items.filter(function (i) { return i.category === categoryKey; });
-    var open = sortItems(inCategory.filter(function (i) { return !i.done; }));
-    var done = sortItems(inCategory.filter(function (i) { return i.done; }));
-
-    var html = open.length
-      ? open.map(itemHTML).join('')
+    var open = sortItems(items.filter(function (i) { return i.category === categoryKey && !i.done; }));
+    return open.length
+      ? open.map(function (i) { return itemHTML(i, false); }).join('')
       : '<div class="tracker-empty">Nothing open here.</div>';
-
-    if (done.length) {
-      html += '<details class="tracker-done-details" data-category="' + categoryKey + '">' +
-        '<summary class="tracker-done-summary">Done (' + done.length + ')</summary>' +
-        '<div class="tracker-done-list">' + done.map(itemHTML).join('') + '</div>' +
-      '</details>';
-    }
-    return html;
   }
 
-  /** Wires a just-rendered container's checkbox/priority/expand-state behavior. Called after every render() since innerHTML replacement always needs fresh listeners. */
+  /** ONE combined Done section spanning both Tasks and Ideas, collapsed by default (doneSectionOpen starts false) — includes items marked done however they got there (Ron checking the box, or a done:true set directly through the API), sorted most-recently-done first. Returns '' (renders nothing) when there are no done items at all yet. */
+  function doneSectionHTML() {
+    var done = sortDoneItems(items.filter(function (i) { return i.done; }));
+    if (!done.length) return '';
+    return '<details class="tracker-done-details" id="tracker-done-details">' +
+      '<summary class="tracker-done-summary">Done (' + done.length + ')</summary>' +
+      '<div class="tracker-done-list">' + done.map(function (i) { return itemHTML(i, true); }).join('') + '</div>' +
+    '</details>';
+  }
+
+  /** Wires a just-rendered container's done/priority/start/delete/comment/expand-state behavior. Called after every render() since innerHTML replacement always needs fresh listeners. */
   function wireItems(containerEl) {
     Array.prototype.forEach.call(containerEl.querySelectorAll('.tracker-item'), function (el) {
       var id = el.dataset.id;
@@ -282,9 +378,13 @@
       el.open = !!expandedIds[id];
       el.addEventListener('toggle', function () { expandedIds[id] = el.open; });
 
-      var checkbox = el.querySelector('.tracker-check');
-      checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
-      checkbox.addEventListener('change', function () { handleDoneChange(id, checkbox.checked); });
+      var doneBtn = el.querySelector('.tracker-done-btn');
+      doneBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var current = findItem(id);
+        if (!current) return;
+        handleDoneChange(id, !current.done);
+      });
 
       Array.prototype.forEach.call(el.querySelectorAll('.tracker-pri-btn'), function (btn) {
         btn.addEventListener('click', function (e) {
@@ -299,31 +399,48 @@
         handleDelete(id);
       });
 
-      // Textarea + save button live inside the <summary>'s sibling content,
-      // but a click anywhere inside an open <details> can still bubble up
-      // to the <summary> and re-toggle it closed — same stopPropagation
-      // discipline as the checkbox/priority buttons above.
-      var commentInput = el.querySelector('.tracker-comment-input');
-      commentInput.addEventListener('click', function (e) { e.stopPropagation(); });
-      var commentSaveBtn = el.querySelector('.tracker-comment-save');
-      commentSaveBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        handleCommentSave(id, commentInput.value);
+      var startBtn = el.querySelector('.tracker-start-btn');
+      if (startBtn) {
+        startBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleStartChange(id);
+        });
+      }
+
+      // Compose textareas + save buttons live inside the <summary>'s
+      // sibling content, but a click anywhere inside an open <details> can
+      // still bubble up to the <summary> and re-toggle it closed — same
+      // stopPropagation discipline as the done/priority/start buttons
+      // above.
+      Array.prototype.forEach.call(el.querySelectorAll('.tracker-comment-compose'), function (composeEl) {
+        var author = composeEl.dataset.author;
+        var input = composeEl.querySelector('.tracker-comment-input');
+        input.addEventListener('click', function (e) { e.stopPropagation(); });
+        var saveBtn = composeEl.querySelector('.tracker-comment-save');
+        saveBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleCommentSave(id, author, input.value);
+        });
       });
     });
+  }
 
-    Array.prototype.forEach.call(containerEl.querySelectorAll('.tracker-done-details'), function (el) {
-      var category = el.dataset.category;
-      el.open = !!doneOpen[category];
-      el.addEventListener('toggle', function () { doneOpen[category] = el.open; });
-    });
+  /** Wires the single combined Done <details>'s open/close state — separate from wireItems (which only ever iterates .tracker-item elements) since this is one container for the whole page, not a per-item control. */
+  function wireDoneSection(containerEl) {
+    var el = containerEl.querySelector('#tracker-done-details');
+    if (!el) return;
+    el.open = doneSectionOpen;
+    el.addEventListener('toggle', function () { doneSectionOpen = el.open; });
   }
 
   function render() {
     tasksEl.innerHTML = sectionHTML('task');
     ideasEl.innerHTML = sectionHTML('idea');
+    doneEl.innerHTML = doneSectionHTML();
     wireItems(tasksEl);
     wireItems(ideasEl);
+    wireItems(doneEl);
+    wireDoneSection(doneEl);
   }
 
   function findItem(id) {
@@ -331,7 +448,7 @@
     return null;
   }
 
-  /** POSTs one field patch to update-tracker-item.js. Rejects on any non-2xx or network failure so callers can revert + toast. */
+  /** POSTs one field patch to update-tracker-item.js. Rejects on any non-2xx or network failure so callers can revert + toast. Resolves with the parsed response body ({ item }) on success. */
   function postUpdate(id, patch) {
     var body = Object.assign({ id: id, email: email }, patch);
     return fetch('/.netlify/functions/update-tracker-item', {
@@ -350,9 +467,16 @@
     if (!doneChangeSeq[id]) doneChangeSeq[id] = 0;
     var mySeq = ++doneChangeSeq[id];
     item.done = newDone;
+    // Optimistic guess, corrected to the server's own authoritative value
+    // in the .then below (see tracker-store.js's updateItem for exactly
+    // how doneAt is derived server-side) — shows a timestamp immediately
+    // rather than waiting on the round-trip, without ever displaying a
+    // value the server didn't actually confirm past this request's own
+    // .then.
+    item.doneAt = newDone ? (item.doneAt || new Date().toISOString()) : null;
     captureDrafts();
     render();
-    postUpdate(id, { done: newDone }).then(function () {
+    postUpdate(id, { done: newDone }).then(function (data) {
       // Only the most recently-started done-toggle for THIS id is allowed
       // to update the confirmed value -- mirrors the seq check in the
       // .catch below. Without this, an OLDER request that happens to
@@ -361,15 +485,19 @@
       // value, even though nothing renders at that instant -- the
       // corruption only surfaces later, when some subsequent same-id
       // failure reverts to the wrong confirmed value.
-      if (doneChangeSeq[id] === mySeq) doneConfirmed[id] = newDone;
+      if (doneChangeSeq[id] !== mySeq) return;
+      doneConfirmed[id] = newDone;
+      doneAtConfirmed[id] = data.item.doneAt;
+      item.doneAt = data.item.doneAt;
     }).catch(function () {
       // Only the most recently-started done-toggle for THIS id is allowed
       // to revert -- see the seqMap block near unsavedComments for why.
       if (doneChangeSeq[id] !== mySeq) return;
       // Revert to the last SERVER-CONFIRMED value, not a captured "previous"
-      // -- see the {comment,done,priority}Confirmed block near unsavedComments
-      // for why a chained-failure case needs this instead of "previous".
+      // -- see the *Confirmed block near unsavedComments for why a
+      // chained-failure case needs this instead of "previous".
       item.done = doneConfirmed[id];
+      item.doneAt = Object.prototype.hasOwnProperty.call(doneAtConfirmed, id) ? doneAtConfirmed[id] : null;
       captureDrafts();
       render();
       showToast("Couldn't save — try again.");
@@ -403,75 +531,89 @@
   }
 
   /**
-   * Same optimistic-update-with-toast-on-failure pattern as
-   * handleDoneChange/handlePriorityChange above. Unlike those two, this
-   * fires on an explicit "Save comment" click rather than on every
-   * keystroke — the textarea's current value is only committed to `items`
-   * (and re-rendered) when the founder actually clicks save. An empty
-   * string is a normal, valid save (clearing a comment), not a no-op.
+   * "Start working on this" -- a new, one-way signal distinct from done
+   * (see update-tracker-item.js's own doc comment for why they're
+   * separate). No-ops entirely if the item is already started (there's no
+   * "un-start" UI at all — once startedAt is set, itemHTML stops rendering
+   * the button and shows the timestamp instead, so this is only reachable
+   * from a not-yet-started item in the first place; the guard here is
+   * belt-and-suspenders against a stale click landing after a render
+   * already flipped the button away). Same seq/confirmed/revert shape as
+   * handleDoneChange/handlePriorityChange above, for the same reasons.
    */
-  function handleCommentSave(id, newComment) {
+  function handleStartChange(id) {
     var item = findItem(id);
-    if (!item || item.comment === newComment) return;
-    // mySeq guards against a THIRD interleaving review caught on top of the
-    // two below: double-submitting the SAME id (edit to X, save, edit
-    // further to Y before X's request resolves, save again). The
-    // item.comment === newComment check above only no-ops an exact repeat
-    // click, not a further edit -- so without this, if the newer request
-    // (Y) resolves and succeeds before the older one (X) resolves and
-    // fails, X's .catch would revert item.comment past BOTH edits, silently
-    // discarding the correctly-saved Y. See the seqMap block near
-    // unsavedComments for the general shape (shared with
-    // handleDoneChange/handlePriorityChange).
-    if (!commentSaveSeq[id]) commentSaveSeq[id] = 0;
-    var mySeq = ++commentSaveSeq[id];
-    item.comment = newComment;
-    // This id's value is now authoritative on item.comment itself -- drop
-    // any stale draft entry for it so commentValueFor() renders from
-    // item.comment, not a leftover snapshot (which would otherwise make a
-    // just-saved comment look unsaved, or make a same-value re-save into a
-    // silent no-op next time). excludeId on captureDrafts skips
-    // re-capturing this id from the live DOM for the same reason.
-    delete unsavedComments[id];
-    captureDrafts(id);
+    if (!item || item.startedAt) return;
+    if (!startChangeSeq[id]) startChangeSeq[id] = 0;
+    var mySeq = ++startChangeSeq[id];
+    var optimisticTimestamp = new Date().toISOString();
+    item.startedAt = optimisticTimestamp;
+    captureDrafts();
     render();
-    postUpdate(id, { comment: newComment }).then(function () {
-      // Same seq guard as handleDoneChange's .then -- see that comment for
-      // why an unguarded success handler can clobber a newer, correct
-      // confirmed value with a stale older one.
-      if (commentSaveSeq[id] === mySeq) commentConfirmed[id] = newComment;
+    postUpdate(id, { started: true }).then(function (data) {
+      if (startChangeSeq[id] !== mySeq) return;
+      // Adopt the server's own timestamp as authoritative (avoids any
+      // client-clock drift from the optimistic guess above) -- no render()
+      // forced just for this correction, same non-intrusive-success
+      // pattern as handleDoneChange's doneAt correction above.
+      item.startedAt = data.item.startedAt;
+      startedAtConfirmed[id] = data.item.startedAt;
     }).catch(function () {
-      // Only the most recently-started save for this id may revert -- if a
-      // newer save for the same id has started since this request went out,
-      // that newer request (whatever it resolves to) has the final say, not
-      // this stale one.
-      if (commentSaveSeq[id] !== mySeq) return;
-      // Revert to the last SERVER-CONFIRMED comment, not a captured
-      // "previous" in-memory value. Matters when TWO overlapping same-id
-      // saves both fail: the surviving (later-started) request is still the
-      // one running this revert, but its own "previous" would only be the
-      // OTHER in-flight request's optimistic (also-never-confirmed) edit --
-      // reverting to that would show the browser a value the server never
-      // actually stored. commentConfirmed[id] only ever changes on an
-      // actual successful postUpdate, so it's always safe to revert to. See
-      // the commentConfirmed/doneConfirmed/priorityConfirmed block near
-      // unsavedComments, and the "chained double-failure" test below.
-      item.comment = commentConfirmed[id];
-      // On failure this id must revert to the confirmed saved value, not
-      // whatever's still sitting in its live textarea (the just-rejected
-      // edit) -- so it stays excluded here too, same as above. It also must
-      // not display a STALE unsavedComments[id] entry: while this save was
-      // in flight, an unrelated render() (triggered by another item's
-      // done/priority toggle, or another item's own comment save) could
-      // have run captureDrafts() and written this id's now-superseded live
-      // textarea value back into the map. excludeId on captureDrafts only
-      // stops US from re-capturing it here -- it doesn't clear whatever a
-      // *different* render already wrote, so that has to be deleted
-      // explicitly, exactly like the optimistic-save branch above does.
-      delete unsavedComments[id];
-      captureDrafts(id);
+      if (startChangeSeq[id] !== mySeq) return;
+      item.startedAt = Object.prototype.hasOwnProperty.call(startedAtConfirmed, id) ? startedAtConfirmed[id] : null;
+      captureDrafts();
       render();
-      showToast("Couldn't save — try again.");
+      showToast("Couldn't start — try again.");
+    });
+  }
+
+  /**
+   * Saves one new comment entry for one item, from one compose area
+   * ("ron" or "claude" — see commentComposeHTML above). Unlike
+   * handleDoneChange/handlePriorityChange/handleStartChange, this is NOT
+   * optimistic: comments used to be a single overwritable `comment`
+   * string (with the well-known optimistic-mutate/revert-on-failure
+   * complexity that required — sequence guards, confirmed-value tracking,
+   * the works), but the schema change to an append-only `comments` list
+   * (see tracker-store.js's own SCHEMA CHANGE comment) removes the need
+   * for almost all of that: appending a brand-new, uniquely-id'd entry can
+   * never silently clobber another append the way overwriting a shared
+   * field could, so there's nothing to "revert" — either the append
+   * persisted (show it, from the server's own response) or it didn't
+   * (leave the compose box exactly as the user left it, so nothing typed
+   * is ever lost, and toast). `commentSaving[key]` only guards against a
+   * literal double-click firing the same note twice; it is not a
+   * stale-response race guard, because there IS no race to guard against
+   * here.
+   *
+   * Directly addresses Ron's own bug report ("I click Save and nothing
+   * happens"): the button now visibly disables + shows "Saving…" the
+   * instant it's clicked, the new entry appears in the item's comment
+   * list the moment the save actually succeeds, and a toast confirms it
+   * either way.
+   */
+  function handleCommentSave(id, author, rawText) {
+    var item = findItem(id);
+    if (!item) return;
+    var text = rawText.trim();
+    if (!text) { showToast('Write something before saving.'); return; }
+    var key = id + ':' + author;
+    if (commentSaving[key]) return;
+    commentSaving[key] = true;
+    captureDrafts();
+    render();
+    postUpdate(id, { comment: text, commentAuthor: author }).then(function (data) {
+      item.comments = data.item.comments;
+      delete unsavedComments[key];
+      commentSaving[key] = false;
+      captureDrafts(key);
+      render();
+      showToast('Comment saved.');
+    }).catch(function () {
+      commentSaving[key] = false;
+      captureDrafts();
+      render();
+      showToast("Couldn't save comment — try again.");
     });
   }
 
@@ -501,7 +643,7 @@
   }
 
   /**
-   * Submits the add-item form. Not optimistic the way priority/done/delete
+   * Submits the add-item form. Not optimistic the way priority/done/start
    * are — there's no client-known id yet for a brand-new item (the server
    * generates it), so this waits for the real response before touching
    * `items`/render() at all, then clears the form on success. Failure
@@ -537,16 +679,18 @@
     }).then(function (created) {
       items.push(created);
       // Seed the *Confirmed maps for this brand-new id, same as the
-      // initial page-load loop below — without this, the first done/
-      // priority/comment edit on this item that happens to fail would
+      // initial page-load loop below — without this, the first
+      // done/priority/start edit on this item that happens to fail would
       // revert to undefined instead of its actual just-created value.
-      commentConfirmed[created.id] = created.comment || '';
       doneConfirmed[created.id] = created.done;
+      doneAtConfirmed[created.id] = created.doneAt;
       priorityConfirmed[created.id] = created.priority;
-      // captureDrafts() before render(), same as handleDelete/
-      // handleDoneChange/handlePriorityChange/handleCommentSave — without
-      // it, adding a new item would silently wipe in-progress unsaved
-      // comment drafts on every OTHER currently-rendered item.
+      startedAtConfirmed[created.id] = created.startedAt;
+      // captureDrafts() before render(), same as
+      // handleDelete/handleDoneChange/handlePriorityChange/
+      // handleStartChange/handleCommentSave — without it, adding a new
+      // item would silently wipe in-progress unsaved comment drafts on
+      // every OTHER currently-rendered item.
       captureDrafts();
       render();
       titleEl.value = '';
@@ -579,15 +723,13 @@
    * back in the right priority/done group regardless of array position,
    * so the only thing an id-based revert can't preserve is exact tie
    * order among same-priority items, which is cosmetic only.
-   */
-  /**
-   * Deletes one item optimistically, re-inserting it on failure. Calls
-   * captureDrafts() before every render() here, same as
-   * handleDoneChange/handlePriorityChange/handleCommentSave above — without
-   * it, deleting (or failing to delete, then reverting) ANY item would
-   * silently wipe in-progress unsaved comment drafts on every OTHER
-   * currently-rendered item, the exact cross-item-draft-wipe bug class this
-   * page already fixed once for the other three handlers.
+   *
+   * Calls captureDrafts() before every render() here, same as
+   * handleDoneChange/handlePriorityChange/handleStartChange/
+   * handleCommentSave above — without it, deleting (or failing to delete,
+   * then reverting) ANY item would silently wipe in-progress unsaved
+   * comment drafts on every OTHER currently-rendered item, the exact
+   * cross-item-draft-wipe bug class this page already fixed once before.
    */
   function handleDelete(id) {
     var removed = findItem(id);
@@ -624,9 +766,10 @@
             // already has a real confirmed value to fall back to on
             // failure (see the *Confirmed block near unsavedComments).
             items.forEach(function (item) {
-              commentConfirmed[item.id] = item.comment || '';
               doneConfirmed[item.id] = item.done;
+              doneAtConfirmed[item.id] = item.doneAt;
               priorityConfirmed[item.id] = item.priority;
+              startedAtConfirmed[item.id] = item.startedAt;
             });
             render();
           })

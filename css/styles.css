@@ -565,19 +565,36 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 
 /* ===== Tracker (tracker.html) ===== */
 /* One item = one native <details>/<summary> — the summary row (always
-   visible) holds the done checkbox + priority buttons + title + expand
-   chevron; the detail text is the collapsible body. Checkbox/priority
-   buttons stopPropagation() their own click in tracker.html's script so
-   clicking them doesn't also toggle the item open/closed — only the
-   title/whitespace area of the summary does that (native <summary>
-   behavior, untouched). */
+   visible) holds the done button + priority buttons + title + expand
+   chevron; the detail text, start control, and comments are the
+   collapsible body. Done/priority/start/delete buttons stopPropagation()
+   their own click in tracker.html's script so clicking them doesn't also
+   toggle the item open/closed — only the title/whitespace area of the
+   summary does that (native <summary> behavior, untouched). */
 .tracker-item{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden; transition:border-color .18s ease;}
 .tracker-item[open]{ border-color:var(--border-strong);}
 .tracker-item-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:14px; -webkit-tap-highlight-color:transparent;}
 .tracker-item-summary::-webkit-details-marker{ display:none;}
 .tracker-item-summary::marker{ content:'';}
-.tracker-check{ flex:none; width:18px; height:18px; accent-color:#fff; cursor:pointer;}
+/* Replaced the old bare `<input type="checkbox" class="tracker-check">`
+   with an explicitly labeled button — Ron's own feedback was that the
+   plain checkbox square read as an ambiguous UI element, not something he
+   could tell was a "mark as done" control at a glance. */
+.tracker-done-btn{
+  flex:none; display:flex; align-items:center; gap:4px; height:28px; padding:0 10px;
+  border-radius:8px; border:1px solid var(--border-strong); background:var(--surface-alt);
+  color:var(--text-muted); font-size:11px; font-weight:700; letter-spacing:.01em;
+  cursor:pointer; font-family:var(--font-body); white-space:nowrap;
+  transition:background .15s ease, color .15s ease, border-color .15s ease;
+}
+.tracker-done-btn:hover{ border-color:var(--text-faint); color:var(--text-primary);}
+.tracker-done-btn.is-done{ background:#fff; border-color:#fff; color:#000;}
+.tracker-done-btn .icon{ width:12px; height:12px; flex:none;}
 .tracker-item-title{ flex:1; min-width:0; font-size:13.5px; font-weight:600; line-height:1.4;}
+.tracker-category-badge{
+  display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--text-faint); border:1px solid var(--border-strong); border-radius:6px; padding:2px 6px; margin-right:7px; vertical-align:middle;
+}
 .tracker-pri-group{ display:flex; gap:4px; flex:none;}
 .tracker-pri-btn{
   width:24px; height:24px; border-radius:7px; border:1px solid var(--border-strong);
@@ -591,10 +608,33 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .tracker-pri-btn.active[data-priority="low"]{ background:var(--surface-alt); border-color:var(--text-muted); color:var(--text-primary);}
 .tracker-chevron{ width:16px; height:16px; flex:none; color:var(--text-faint); transition:transform .18s ease;}
 .tracker-item[open] .tracker-chevron{ transform:rotate(180deg);}
-.tracker-item-detail{ padding:0 14px 16px 42px; font-size:12.5px; color:var(--text-muted); line-height:1.55;}
-.tracker-comment-row{ padding:0 14px 16px 42px; display:flex; flex-direction:column; gap:8px;}
-.tracker-comment-input{ min-height:60px; resize:vertical; font-size:12.5px; margin-bottom:0; padding:10px 12px;}
-.tracker-comment-save{ align-self:flex-start; padding:8px 14px; font-size:12px; font-weight:600;}
+.tracker-item-detail{ padding:0 14px 12px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.55;}
+/* createdAt/startedAt/doneAt — omitted entirely (not rendered) whenever a
+   given item has no real value for that field, rather than showing a
+   fabricated date; see tracker-store.js's own SCHEMA CHANGE comment. */
+.tracker-item-meta{ display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:8px; font-size:11px; color:var(--text-faint);}
+.tracker-start-row{ padding:0 14px 14px;}
+.tracker-start-btn{ padding:8px 14px; font-size:12px; font-weight:600;}
+.tracker-comment-list{ padding:0 14px; display:flex; flex-direction:column; gap:8px; margin-bottom:14px;}
+.tracker-comment-entry{ background:var(--surface-alt); border-radius:10px; padding:10px 12px;}
+.tracker-comment-entry-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:3px;}
+.tracker-comment-author{ font-size:11px; font-weight:800; color:var(--text-primary);}
+.tracker-comment-time{ font-size:10.5px; color:var(--text-faint);}
+.tracker-comment-text{ font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap; word-break:break-word;}
+.tracker-comment-empty{ font-size:12px; color:var(--text-faint); padding:0 14px 14px;}
+/* Two compose areas, one per author ("Your comment" / "Claude's
+   comment") — Ron's own request: "add a new comment area for me or for
+   you", so his own notes and a build/review session's notes never
+   overwrite each other (see tracker-store.js's SCHEMA CHANGE comment for
+   the comment -> comments migration this replaced). */
+.tracker-comment-compose-group{ padding:0 14px 16px; display:flex; flex-direction:column; gap:14px;}
+.tracker-comment-compose-label{ font-size:10.5px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;}
+.tracker-comment-input{ min-height:60px; resize:vertical; font-size:12.5px; margin-bottom:8px; padding:10px 12px;}
+.tracker-comment-save{ padding:8px 14px; font-size:12px; font-weight:600;}
+.tracker-comment-save:disabled{ opacity:.55; cursor:default;}
+/* ONE combined Done section spans both Tasks and Ideas — see
+   doneSectionHTML() in tracker.html; this replaced two separate
+   per-category done-<details> per Ron's own feedback. */
 .tracker-done-details{ margin-top:2px; margin-bottom:18px;}
 .tracker-done-summary{ list-style:none; cursor:pointer; display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.03em; color:var(--text-faint); padding:8px 4px; -webkit-tap-highlight-color:transparent;}
 .tracker-done-summary::-webkit-details-marker{ display:none;}
