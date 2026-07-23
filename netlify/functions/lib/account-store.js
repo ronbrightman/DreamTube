@@ -180,7 +180,23 @@ async function createAccount(event, account) {
   var existingByUsername = await s.get('u:' + key, { type: 'json' });
   if (existingByUsername) return { ok: false, error: 'username_taken' };
 
-  var existingEmailOwner = await s.get('e:' + email, { type: 'json' });
+  // Was a raw `s.get('e:'+email)` truthy-check until the incident below —
+  // that only confirmed an "e:" index entry EXISTS, not that it still
+  // points at a real, matching account. Because the "e:" index and "u:"
+  // record are two separate non-atomic writes (see header comment), a
+  // write that landed the index but not the record (a mid-write failure,
+  // or an earlier bug) leaves a stale "e:" entry with no real owner —
+  // getByEmail() already treats that as "not found" (its own defense-in-
+  // depth check below), but this raw check didn't, so a real user's
+  // signup AND login both permanently failed for that email: signup saw
+  // "email_taken" from the orphaned index, login saw "not_found" because
+  // getByEmail correctly refused to hand back a non-matching/missing
+  // record. Reusing getByEmail's already-validated lookup here closes
+  // that gap the same way, and — since createAccount's own write below
+  // unconditionally overwrites whatever "e:" entry is there — a retried
+  // signup for a genuinely-orphaned email now self-heals the stale index
+  // instead of being permanently stuck behind it.
+  var existingEmailOwner = await getByEmail(event, account.email);
   if (existingEmailOwner) return { ok: false, error: 'email_taken' };
 
   await s.setJSON('e:' + email, key);

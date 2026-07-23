@@ -122,6 +122,61 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
   assert.equal(newWorks.ok, true);
 });
 
+// ===== orphaned "e:" index (real production bug, 2026-07-23) =====
+//
+// Because createAccount/applyPasswordReset write the "e:" index and the
+// "u:" record as two separate non-atomic Blobs calls, a write that lands
+// the index but never lands (or lands under a different email on) the
+// record leaves a stale "e:" entry with no real, matching owner. Before
+// this fix, createAccount's own email-uniqueness check only asked "does
+// an e: entry exist" (raw existence), not "does it still point at a real
+// matching account" (getByEmail's own already-validated defense-in-depth
+// check) — so a real user hit this live: signup permanently said
+// 'email_taken' (the stale index exists) while login permanently said
+// 'not_found' (getByEmail correctly refused to hand back the missing/
+// mismatched record) for the exact same email, with no way out for that
+// user short of a manual data fix. This test reproduces that stuck state
+// directly (via mockBlobs.seed, simulating whatever left the index
+// dangling) and confirms createAccount now treats it as available and
+// self-heals it.
+
+test('account-store: createAccount self-heals a stale/orphaned "e:" index (index exists, no real matching account behind it) instead of permanently blocking that email', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  // Simulate the orphan directly: an "e:" index entry pointing at a
+  // username with no "u:" record behind it at all (the simplest way this
+  // can happen -- the index write landed, the record write never did).
+  mockBlobs.seed(accountStore.STORE_NAME, 'e:orphan@example.com', 'ghost-user');
+
+  // Before the fix, this next line would have returned 'email_taken'.
+  var created = await accountStore.createAccount(event, {
+    username: 'realuser',
+    email: 'orphan@example.com',
+    password: 'realpassword1'
+  });
+  assert.equal(created.ok, true);
+
+  // The stale index is now repaired to point at the real new account.
+  var login = await accountStore.verifyLogin(event, 'orphan@example.com', 'realpassword1');
+  assert.equal(login.ok, true);
+  assert.equal(login.record.username, 'realuser');
+
+  var byEmail = await accountStore.getByEmail(event, 'orphan@example.com');
+  assert.equal(byEmail.username, 'realuser');
+});
+
+test('account-store: createAccount still correctly rejects email_taken when a REAL, matching account already owns that email', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  await accountStore.createAccount(event, { username: 'genuineowner', email: 'genuine@example.com', password: 'pw12345678' });
+
+  var second = await accountStore.createAccount(event, { username: 'someoneelse', email: 'genuine@example.com', password: 'differentpw1' });
+  assert.equal(second.ok, false);
+  assert.equal(second.error, 'email_taken');
+});
+
 // ===== concurrency: the two-key write race (review finding #2) =====
 //
 // The mock Blobs store's operations are still genuinely async (each one
