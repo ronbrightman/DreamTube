@@ -61,3 +61,18 @@ scheduled or automatically triggered.
   rule — durable across sessions, not just for the current task —
   until he says otherwise. This bullet exists because of exactly that
   kind of instruction.
+- Cross-session coordination (this session and the separate
+  `dreamtube-growth` marketing session) runs entirely through
+  `tracker.html` — no other channel. This failed once already: Ron
+  resolved something directly in conversation with the growth session
+  (a paused ad campaign), and since that resolution never went through
+  a code change, the tracker item stayed open for a full day and this
+  session reported stale status back to him. Standing rule: (1) update
+  or close a tracker item the moment Ron confirms/resolves anything in
+  conversation, not just when a branch merges — a resolution isn't done
+  until the tracker reflects it too; (2) always re-fetch the live
+  tracker (never rely on an earlier read) before reporting any
+  cross-session-dependent status back to Ron, since the other session
+  may have updated it since. Per Ron's own decision, the existing
+  tracker is sufficient for this — no new coordination tooling, just
+  tighter discipline using what's already there.
