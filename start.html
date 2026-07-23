@@ -239,6 +239,12 @@
 
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
 
+  /* SMS consent checkbox row (identity/retention project, screen 13 only —
+     see docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.1). Unchecked by
+     default in the markup itself below; this is purely visual. */
+  .fn-consent-row{ display:flex; align-items:flex-start; gap:10px; font-size:11.5px; color:var(--fn-ink-faint); line-height:1.45; margin:2px 0 14px; cursor:pointer;}
+  .fn-consent-row input[type="checkbox"]{ margin-top:2px; width:16px; height:16px; flex:none; accent-color:var(--fn-accent-solid);}
+
   .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
   .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
   .fn-small-link{ background:none; border:none; color:var(--phase-soft, var(--fn-ink-soft)); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
@@ -759,7 +765,7 @@
     if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
     return sanitized.slice(0, 20) || 'dreamer';
   }
-  function attemptSignup(email, password, cb){
+  function attemptSignup(email, password, cb, phone, phoneConsent){
     var base = deriveUsernameBase(email);
     var attempts = 0;
     var MAX_ATTEMPTS = 8;
@@ -771,7 +777,7 @@
     // browser's local storage) still retries with a new suffix exactly as
     // before.
     function tryUsername(username){
-      DreamStore.signup(username, password, email).then(function(result){
+      DreamStore.signup(username, password, email, phone, phoneConsent).then(function(result){
         if(result.ok){
           // Shared event_id pairs this with the Pixel's own
           // CompleteRegistration call — see js/analytics-config.js's
@@ -800,6 +806,17 @@
         '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
         '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
       '</div>' +
+      // Phone + SMS consent (identity/retention project — see
+      // docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.1). Both
+      // entirely optional -- never required to complete signup. This is
+      // the paid-traffic entry point the whole project is built around
+      // (see that spec's Section 0), so it gets the same capture the
+      // login.html signup form has.
+      '<input class="fn-field" id="fn-phone" type="tel" placeholder="Phone number (optional)" autocomplete="tel" dir="auto">' +
+      '<label class="fn-consent-row" id="fn-sms-consent-row">' +
+        '<input type="checkbox" id="fn-sms-consent-checkbox">' +
+        '<span>By checking this box, you agree to receive automated text messages from DreamTube, including a reminder about your dream the day after signup. Msg &amp; data rates may apply. Consent is not required to use DreamTube. Reply STOP at any time to opt out.</span>' +
+      '</label>' +
       '<div class="fn-err-text" id="fn-signup-error"></div>' +
       '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
       '<div class="fn-spacer"></div>';
@@ -819,6 +836,8 @@
     continueBtn.addEventListener('click', function(){
       var email = document.getElementById('fn-email').value.trim();
       var password = pwInput.value;
+      var phone = document.getElementById('fn-phone').value.trim();
+      var phoneConsent = document.getElementById('fn-sms-consent-checkbox').checked;
       errEl.textContent = '';
       if(!email){ errEl.textContent = 'Enter your email address.'; return; }
       if(!password){ errEl.textContent = 'Enter a password.'; return; }
@@ -841,7 +860,7 @@
           }
           flushStagedCharactersToStore();
           next();
-        });
+        }, phone, phoneConsent);
       }, 0);
     });
   }

@@ -29,6 +29,14 @@
 //       this browser's local `accounts` entry too (creating one if this
 //       device never had this account locally at all — same placeholder
 //       shape login() creates, dreams/characters left empty by design).
+//   requestMagicLink(email) -> Promise, POST
+//       /.netlify/functions/request-magic-link — always resolves {ok:true}
+//       (same anti-enumeration property as the password-reset request above).
+//   completeMagicLinkLogin(token) -> Promise, POST
+//       /.netlify/functions/verify-magic-link {consume:true} — verifies +
+//       consumes a magic-link token (email flow or the SMS day-1 reminder,
+//       both share the same token mechanism) and logs the user in locally,
+//       same materialization shape login() uses.
 //   getAccountEmail() / updateEmail(email) -> local-only, lets an existing account gain/change its email
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
@@ -674,10 +682,19 @@
      * rejection (username/email already taken elsewhere) is never
      * downgraded to a local write, only a genuine failure-to-ask is.
      */
-    signup: function (username, password, email) {
+    // `phone`/`phoneConsent` (both optional, identity/retention project —
+    // see docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.1) are passed
+    // straight through to register-account.js, which is the only place
+    // that decides whether they actually get stored (both a non-empty
+    // phone AND phoneConsent===true, exactly mirroring the unchecked-by-
+    // default consent checkbox in login.html/start.html's signup forms).
+    // Never validated or blocked here — an absent/malformed phone must
+    // never stop a signup, same as the server-side handling.
+    signup: function (username, password, email, phone, phoneConsent) {
       username = (username || '').trim();
       var key = username.toLowerCase();
       email = (email || '').trim();
+      phone = (phone || '').trim();
       if (username.length < 3) return Promise.resolve({ ok: false, error: 'Username must be at least 3 characters.' });
       if (!password) return Promise.resolve({ ok: false, error: 'Enter a password.' });
       if (password.length < 8) return Promise.resolve({ ok: false, error: 'Password must be at least 8 characters.' });
@@ -685,10 +702,16 @@
       if (state.accounts[key]) return Promise.resolve({ ok: false, error: 'That username is already taken.' });
       if (findAccountKeyByEmail(email)) return Promise.resolve({ ok: false, error: 'An account with that email already exists.' });
 
+      var body = { username: username, password: password, email: email };
+      if (phone && phoneConsent) {
+        body.phone = phone;
+        body.phoneConsent = true;
+      }
+
       return fetch('/.netlify/functions/register-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username, password: password, email: email })
+        body: JSON.stringify(body)
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
@@ -827,6 +850,70 @@
           state.accounts[key] = { password: newPassword, email: (data.email || '').toLowerCase() };
         }
         persist();
+        return { ok: true, username: data.username, email: data.email };
+      }).catch(function () {
+        return { ok: false, error: 'network_error' };
+      });
+    },
+
+    /**
+     * Requests an email magic-link login (identity/retention project,
+     * see docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.2) — POSTs to
+     * request-magic-link.js, which always resolves { ok:true } regardless
+     * of whether `email` actually matches an account (same anti-
+     * enumeration property request-password-reset.js already has — see
+     * that function's header comment; request-magic-link.js mirrors it
+     * exactly). login.html shows the same generic "check your inbox"
+     * copy either way, so a network failure here is treated the same as
+     * a normal { ok:true } rather than surfaced as an error.
+     */
+    requestMagicLink: function (email) {
+      email = (email || '').trim();
+      if (!EMAIL_RE.test(email)) return Promise.resolve({ ok: false, error: 'Enter a valid email address.' });
+      return fetch('/.netlify/functions/request-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      }).then(function () { return { ok: true }; })
+        .catch(function () { return { ok: true }; });
+    },
+
+    /**
+     * Completes a magic-link login — the user clicked the emailed link,
+     * or the SMS day-1 reminder's link (both are the exact same token
+     * mechanism, see lib/magic-link.js). Verifies+consumes `token` via
+     * verify-magic-link.js and, on success, logs the user in on THIS
+     * device exactly like login()'s server-ok branch does (materializes
+     * a local `accounts` entry if this device never had it, sets
+     * state.user). There's no real password to mirror locally here (a
+     * magic link never reveals one) — the local entry gets a random
+     * placeholder password that can never be typed/guessed; this
+     * account's authoritative login path is account-login.js/this
+     * function, not the local-only fallback, so that placeholder is
+     * never actually relied on for anything. Returns a Promise of
+     * { ok:true, username, email } or { ok:false, error }.
+     */
+    completeMagicLinkLogin: function (token) {
+      if (!token) return Promise.resolve({ ok: false, error: 'link_invalid_or_expired' });
+      return fetch('/.netlify/functions/verify-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, consume: true })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (!data || !data.ok) {
+          return { ok: false, error: 'link_invalid_or_expired' };
+        }
+        var key = (data.username || '').toLowerCase();
+        if (!state.accounts[key]) {
+          state.accounts[key] = { password: 'magic-link-' + Math.random().toString(36).slice(2), email: (data.email || '').toLowerCase() };
+        } else if (data.email) {
+          state.accounts[key].email = data.email.toLowerCase();
+        }
+        state.user = { handle: '@' + key, username: key };
+        persist();
+        identifyForAnalytics(key);
         return { ok: true, username: data.username, email: data.email };
       }).catch(function () {
         return { ok: false, error: 'network_error' };

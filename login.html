@@ -76,11 +76,17 @@
 
     <input class="field" id="login-username" placeholder="Username" autocomplete="username" dir="auto">
     <input class="field" id="login-email" placeholder="Email" type="email" autocomplete="email" dir="auto" style="display:none;">
+    <input class="field" id="login-phone" placeholder="Phone number (optional)" type="tel" autocomplete="tel" dir="auto" style="display:none;">
+    <label class="consent-row" id="sms-consent-row" style="display:none;">
+      <input type="checkbox" id="sms-consent-checkbox">
+      <span>By checking this box, you agree to receive automated text messages from DreamTube, including a reminder about your dream the day after signup. Msg &amp; data rates may apply. Consent is not required to use DreamTube. Reply STOP at any time to opt out.</span>
+    </label>
     <div class="field-pw-wrap">
       <input class="field" id="login-password" placeholder="Password" type="password" autocomplete="current-password">
       <button type="button" class="field-pw-toggle" id="pw-toggle" tabindex="-1" aria-label="Show password"></button>
     </div>
     <span class="link-text link-right" id="forgot-link" style="cursor:pointer; display:none;">Forgot password?</span>
+    <span class="link-text link-right" id="magic-link-link" style="cursor:pointer; display:none;">Email me a login link instead</span>
     <div class="err-text" id="login-error"></div>
     <button class="btn btn-primary btn-block" id="login-submit" style="margin-top:2px;">Continue</button>
 
@@ -114,6 +120,25 @@
 
     <div style="flex:1"></div>
     <span class="link-text" id="forgot-back" style="margin-bottom:22px; cursor:pointer;">Back to log in</span>
+  </div>
+
+  <div class="px" id="magic-view" style="flex:1; display:none; flex-direction:column;">
+    <div class="auth-logo"><img src="assets/logo-v2.png" alt="DreamTube"></div>
+    <div class="auth-head">Log in with an email link</div>
+    <div class="auth-sub">Enter your email and we'll send you a link that logs you in — no password needed.</div>
+
+    <div id="magic-form">
+      <input class="field" id="magic-email" placeholder="Email" type="email" autocomplete="email" dir="auto">
+      <div class="err-text" id="magic-error"></div>
+      <button class="btn btn-primary btn-block" id="magic-submit" style="margin-top:2px;">Send login link</button>
+    </div>
+    <div class="auth-notice" id="magic-success" style="display:none;">
+      <span class="icon" id="magic-success-icon"></span>
+      <span>If an account with that email exists, we've sent a login link — check your inbox. It works for 15 minutes.</span>
+    </div>
+
+    <div style="flex:1"></div>
+    <span class="link-text" id="magic-back" style="margin-bottom:22px; cursor:pointer;">Back to log in</span>
   </div>
 
   <div class="px" id="reset-view" style="flex:1; display:none; flex-direction:column;">
@@ -160,17 +185,18 @@
   var authView = document.getElementById('auth-view');
   var forgotView = document.getElementById('forgot-view');
   var resetView = document.getElementById('reset-view');
-  var views = [authView, forgotView, resetView];
+  var magicView = document.getElementById('magic-view');
+  var views = [authView, forgotView, resetView, magicView];
   function showView(view){
     views.forEach(function(v){ v.style.display = v === view ? 'flex' : 'none'; });
   }
 
   document.getElementById('login-back').addEventListener('click', function(){
-    // From the forgot-password screen, back means "back to log in" — only
-    // from the main auth screen does it mean "leave this page entirely".
-    // The reset screen (arrived via an emailed link) has no natural "back"
-    // beyond leaving to a clean login page.
-    if(forgotView.style.display === 'flex'){ showView(authView); }
+    // From the forgot-password/magic-link screens, back means "back to log
+    // in" — only from the main auth screen does it mean "leave this page
+    // entirely". The reset screen (arrived via an emailed link) has no
+    // natural "back" beyond leaving to a clean login page.
+    if(forgotView.style.display === 'flex' || magicView.style.display === 'flex'){ showView(authView); }
     else { location.href = 'index.html'; }
   });
 
@@ -189,8 +215,12 @@
   var sub = document.getElementById('auth-sub');
   var toggle = document.getElementById('auth-toggle');
   var emailField = document.getElementById('login-email');
+  var phoneField = document.getElementById('login-phone');
+  var consentRow = document.getElementById('sms-consent-row');
+  var consentCheckbox = document.getElementById('sms-consent-checkbox');
   var usernameField = document.getElementById('login-username');
   var forgotLink = document.getElementById('forgot-link');
+  var magicLinkLink = document.getElementById('magic-link-link');
 
   function syncAuthUI(){
     heading.textContent = isSignup ? 'Create your account' : 'Welcome back';
@@ -199,8 +229,18 @@
       : 'Log in to keep making dreams.';
     toggle.innerHTML = isSignup ? 'Already have an account? <b>Log in</b>' : 'New here? <b>Sign up</b>';
     emailField.style.display = isSignup ? 'block' : 'none';
+    // Phone + SMS consent (identity/retention project, signup only — see
+    // docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.1). Both entirely
+    // optional; the checkbox is unchecked by default in the markup itself
+    // and reset here every time signup mode is (re-)entered, so toggling
+    // back and forth between login/signup never leaves a stale checked
+    // state behind.
+    phoneField.style.display = isSignup ? 'block' : 'none';
+    consentRow.style.display = isSignup ? 'flex' : 'none';
+    if(isSignup){ phoneField.value = ''; consentCheckbox.checked = false; }
     usernameField.placeholder = isSignup ? 'Username' : 'Username or email';
     forgotLink.style.display = isSignup ? 'none' : 'block';
+    magicLinkLink.style.display = isSignup ? 'none' : 'block';
     document.getElementById('local-only-note').style.display = isSignup ? 'block' : 'none';
     document.getElementById('login-error').textContent = '';
   }
@@ -213,6 +253,8 @@
   document.getElementById('login-submit').addEventListener('click', function(){
     var username = usernameField.value.trim();
     var email = emailField.value.trim();
+    var phone = phoneField.value.trim();
+    var phoneConsent = consentCheckbox.checked;
     var password = document.getElementById('login-password').value;
     var err = document.getElementById('login-error');
     if(username.length < 3){ err.textContent = 'Username must be at least 3 characters.'; return; }
@@ -222,7 +264,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-inline"></span>';
     setTimeout(function(){
-      var call = isSignup ? DreamStore.signup(username, password, email) : DreamStore.login(username, password);
+      var call = isSignup ? DreamStore.signup(username, password, email, phone, phoneConsent) : DreamStore.login(username, password);
       call.then(function(result){
         if(result.ok){
           // Direct-signup path (?mode=signup) — start.html's screen 13 fires
@@ -309,6 +351,57 @@
         document.getElementById('forgot-success').style.display = 'flex';
       });
   });
+
+  // ===== Email magic-link login (identity/retention project — see
+  // docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.2) =====
+
+  magicLinkLink.addEventListener('click', function(){
+    document.getElementById('magic-email').value = '';
+    document.getElementById('magic-error').textContent = '';
+    document.getElementById('magic-form').style.display = 'block';
+    document.getElementById('magic-success').style.display = 'none';
+    showView(magicView);
+  });
+  document.getElementById('magic-back').addEventListener('click', function(){
+    showView(authView);
+  });
+
+  document.getElementById('magic-submit').addEventListener('click', function(){
+    var email = document.getElementById('magic-email').value.trim();
+    var err = document.getElementById('magic-error');
+    if(!email || email.indexOf('@') === -1){ err.textContent = 'Enter a valid email address.'; return; }
+    err.textContent = '';
+    var btn = document.getElementById('magic-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-inline"></span>';
+
+    DreamStore.requestMagicLink(email).then(function(){
+      document.getElementById('magic-form').style.display = 'none';
+      document.getElementById('magic-success').style.display = 'flex';
+    });
+  });
+
+  // Arrived via an emailed (or texted — see schedule-reminder.js) magic
+  // link: ?magic=<token>. Verifies+consumes it immediately and logs
+  // straight in on success (no separate form/step needed, unlike the
+  // password-reset flow below) — any failure (expired/already-used link)
+  // shows inline on the main auth screen rather than a dedicated one.
+  var magicToken = getParam('magic');
+  if(magicToken){
+    var magicBtn = document.getElementById('login-submit');
+    magicBtn.disabled = true;
+    magicBtn.innerHTML = '<span class="spinner-inline"></span>';
+    document.getElementById('login-error').textContent = '';
+    DreamStore.completeMagicLinkLogin(magicToken).then(function(result){
+      if(result.ok){
+        location.href = nextUrl;
+        return;
+      }
+      magicBtn.disabled = false;
+      magicBtn.textContent = 'Continue';
+      document.getElementById('login-error').textContent = 'That login link is invalid or has expired — request a new one below.';
+    });
+  }
 
   // ===== Reset password (arrived via emailed link) =====
 

@@ -185,6 +185,15 @@ async function createAccount(event, account) {
 
   await s.setJSON('e:' + email, key);
   var record = { username: key, email: email, password: account.password, updatedAt: Date.now() };
+  // Additive, optional fields for the identity/retention project (see
+  // docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.4) — only ever set
+  // when register-account.js's caller actually captured BOTH a phone
+  // number AND checked consent at signup (see that function's own
+  // comment); never written otherwise, so an account with no phone on
+  // file simply has no `phone`/`phoneConsentAt` keys at all, same as
+  // every pre-existing record.
+  if (account.phone) record.phone = account.phone;
+  if (account.phoneConsentAt) record.phoneConsentAt = account.phoneConsentAt;
   await s.setJSON('u:' + key, record);
 
   return { ok: true, record: record };
@@ -258,6 +267,48 @@ async function applyPasswordReset(event, account) {
   return { ok: true, record: record };
 }
 
+/**
+ * Writes `sid` (a Twilio scheduled-message SID) onto `username`'s
+ * pendingReminderSid field — see schedule-reminder.js's
+ * scheduleReminderForAccount, the only caller. Plain read-modify-write,
+ * same accepted-race shape as applyPasswordReset above (no read-your-
+ * own-write-back verification — see the header comment's INCIDENT note
+ * for why that pattern is deliberately not used anywhere in this file).
+ * Returns { ok:false, error:'not_found' } if the account no longer
+ * exists (should not normally happen — this is only ever called moments
+ * after createAccount for the same record — but is handled rather than
+ * assumed away).
+ */
+async function setPendingReminderSid(event, username, sid) {
+  var key = normalizeUsername(username);
+  connectLambda(event);
+  var s = store();
+  var existing = await s.get('u:' + key, { type: 'json' });
+  if (!existing) return { ok: false, error: 'not_found' };
+  var record = Object.assign({}, existing, { pendingReminderSid: sid, updatedAt: Date.now() });
+  await s.setJSON('u:' + key, record);
+  return { ok: true, record: record };
+}
+
+/**
+ * Clears `username`'s pendingReminderSid field — see
+ * schedule-reminder.js's cancelPendingReminder, called from
+ * account-login.js/verify-magic-link.js the moment a real login
+ * succeeds. A no-op (still ok:true) if the account has no
+ * pendingReminderSid, or doesn't exist at all — clearing something
+ * that's already clear/absent is never an error here.
+ */
+async function clearPendingReminderSid(event, username) {
+  var key = normalizeUsername(username);
+  connectLambda(event);
+  var s = store();
+  var existing = await s.get('u:' + key, { type: 'json' });
+  if (!existing || !existing.pendingReminderSid) return { ok: true, record: existing || null };
+  var record = Object.assign({}, existing, { pendingReminderSid: null, updatedAt: Date.now() });
+  await s.setJSON('u:' + key, record);
+  return { ok: true, record: record };
+}
+
 module.exports = {
   STORE_NAME,
   normalizeUsername,
@@ -265,5 +316,7 @@ module.exports = {
   getByEmail,
   createAccount,
   verifyLogin,
-  applyPasswordReset
+  applyPasswordReset,
+  setPendingReminderSid,
+  clearPendingReminderSid
 };

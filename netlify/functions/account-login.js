@@ -90,6 +90,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
+var scheduleReminder = require('./schedule-reminder');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -139,6 +140,17 @@ exports.handler = async function (event) {
   if (!result.ok) {
     var code = result.error === 'incorrect_password' ? 'E5: incorrect_password' : 'E4: not_found';
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
+  }
+
+  // Best-effort: a real login means any still-pending day-1 SMS reminder
+  // (see schedule-reminder.js's cancelPendingReminder) no longer needs
+  // to fire — cancel it and clear the field. Never allowed to fail or
+  // delay this login response; see that function's own comment for the
+  // full Twilio-gated no-op story.
+  try {
+    await scheduleReminder.cancelPendingReminder(event, result.record);
+  } catch (e) {
+    console.error('account-login: cancelPendingReminder threw (non-fatal)', e);
   }
 
   return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email }) };

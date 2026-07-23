@@ -62,6 +62,26 @@
 //   E8 email_taken          — already registered under a different account
 //   E9 rate_limited         — MAX_REGISTRATIONS_PER_IP_PER_DAY exceeded for today
 //
+// Optional `phone`/`phoneConsent` fields (identity/retention project,
+// see docs/IDENTITY_RETENTION_PROJECT_SPEC.md Sections 1.1/1.4): both
+// are entirely optional and NEVER block or fail signup either way — a
+// phone number is only ever stored on the account record (with a
+// phoneConsentAt timestamp) when BOTH a non-empty `phone` string AND
+// `phoneConsent === true` are present on the same request, exactly
+// mirroring the signup UI's unchecked-by-default consent checkbox
+// (login.html/start.html — see those files' own comments). No format
+// validation is applied to `phone` beyond trimming — an obviously
+// malformed value simply won't reach anyone real once Twilio is
+// configured (schedule-reminder.js's own Twilio call would fail
+// harmlessly), and rejecting signup over it would violate "never block
+// signup on this".
+//
+// The moment an account IS created with a phone + consent on file, this
+// function also best-effort schedules the day-1 SMS reminder (see
+// schedule-reminder.js's scheduleReminderForAccount) — Twilio-gated, and
+// never allowed to fail or delay this response past its own errors (see
+// that function's own header comment for the full no-op-until-Twilio-
+// is-configured story).
 // Rate limiting: this is a brand-new, fully anonymous, unauthenticated
 // endpoint, so it gets the same per-IP daily cap every other public
 // endpoint in this codebase has (generate-video.js, interpret-dream.js,
@@ -74,6 +94,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
+var scheduleReminder = require('./schedule-reminder');
 
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -115,10 +136,30 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E9: rate_limited: too many signups from this network today, try again tomorrow' }) };
   }
 
-  var result = await accountStore.createAccount(event, { username: username, password: password, email: email });
+  var phone = typeof payload.phone === 'string' ? payload.phone.trim() : '';
+  var phoneConsent = payload.phoneConsent === true;
+  var accountFields = { username: username, password: password, email: email };
+  if (phone && phoneConsent) {
+    accountFields.phone = phone;
+    accountFields.phoneConsentAt = Date.now();
+  }
+
+  var result = await accountStore.createAccount(event, accountFields);
   if (!result.ok) {
     var code = result.error === 'email_taken' ? 'E8: email_taken' : 'E7: username_taken';
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
+  }
+
+  // Best-effort day-1 SMS reminder scheduling — only attempted when a
+  // phone + consent were actually captured above. Never allowed to fail
+  // this signup response; see scheduleReminderForAccount's own comment
+  // for the full Twilio-gated no-op story.
+  if (result.record.phone) {
+    try {
+      await scheduleReminder.scheduleReminderForAccount(event, result.record);
+    } catch (e) {
+      console.error('register-account: scheduleReminderForAccount threw (non-fatal)', e);
+    }
   }
 
   return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email }) };
