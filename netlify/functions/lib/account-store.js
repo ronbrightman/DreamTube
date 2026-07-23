@@ -269,7 +269,7 @@ async function applyPasswordReset(event, account) {
 
 /**
  * Writes `sid` (a Twilio scheduled-message SID) onto `username`'s
- * pendingReminderSid field — see schedule-reminder.js's
+ * pendingReminderSid field — see lib/reminder.js's
  * scheduleReminderForAccount, the only caller. Plain read-modify-write,
  * same accepted-race shape as applyPasswordReset above (no read-your-
  * own-write-back verification — see the header comment's INCIDENT note
@@ -292,7 +292,7 @@ async function setPendingReminderSid(event, username, sid) {
 
 /**
  * Clears `username`'s pendingReminderSid field — see
- * schedule-reminder.js's cancelPendingReminder, called from
+ * lib/reminder.js's cancelPendingReminder, called from
  * account-login.js/verify-magic-link.js the moment a real login
  * succeeds. A no-op (still ok:true) if the account has no
  * pendingReminderSid, or doesn't exist at all — clearing something

@@ -121,7 +121,13 @@ event-driven Netlify Functions model exactly.
 
 - New function `schedule-reminder.js` — called from the signup path,
   schedules the Twilio SMS +24h out, stores the resulting message SID on
-  the account record.
+  the account record. **Built as `netlify/functions/lib/reminder.js`
+  instead (a plain module, not a public Netlify Function)** — a
+  standalone HTTP endpoint here would have been unauthenticated and
+  un-rate-limited with no page ever calling it, a real SMS-spam/
+  harassment vector the moment Twilio credentials exist (caught in
+  review). The in-process call shape this section describes is
+  unchanged either way.
 - Login path: if the account has a pending reminder SID, cancel it via
   Twilio's API, clear the field.
 - The SMS body includes a magic-link URL, generated the same way as 1.2 —

@@ -2,21 +2,21 @@
 //
 // POST { token, consume } -> checks a magic-link token stored by
 // request-magic-link.js (or generated for the SMS day-1 reminder by
-// schedule-reminder.js — same token store, same verification, either
-// source works here identically). With consume defaulting to true
-// (there's no "peek" step for a magic link the way verify-password-
-// reset.js has a preview screen — clicking the link IS the login) this
-// deletes the token so it can't be reused and returns the account's
-// username/email so the caller (login.html) can complete a real login.
+// lib/reminder.js — same token store, same verification, either source
+// works here identically). With consume defaulting to true (there's no
+// "peek" step for a magic link the way verify-password-reset.js has a
+// preview screen — clicking the link IS the login) this deletes the
+// token so it can't be reused and returns the account's username/email
+// so the caller (login.html) can complete a real login.
 //
 // On a successful verify, also best-effort cancels any pending day-1 SMS
 // reminder for this account (see lib/account-store.js's
-// pendingReminderSid field and schedule-reminder.js's
-// cancelPendingReminder) — clicking a magic link IS logging in, same as
-// account-login.js's password path, so the same "don't text someone who
-// already came back" rule applies here too. No-ops cleanly if Twilio
-// isn't configured or there's nothing pending; never lets a cancel
-// failure affect the magic-link login response itself.
+// pendingReminderSid field and lib/reminder.js's cancelPendingReminder)
+// — clicking a magic link IS logging in, same as account-login.js's
+// password path, so the same "don't text someone who already came back"
+// rule applies here too. No-ops cleanly if Twilio isn't configured or
+// there's nothing pending; never lets a cancel failure affect the
+// magic-link login response itself.
 //
 // Error codes:
 //   E1 method_not_allowed
@@ -26,7 +26,7 @@
 
 var accountStore = require('./lib/account-store');
 var magicLink = require('./lib/magic-link');
-var reminder = require('./schedule-reminder');
+var reminder = require('./lib/reminder');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {

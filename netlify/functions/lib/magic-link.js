@@ -2,7 +2,7 @@
 //
 // Shared token generation/storage for the email magic-link login (see
 // ../request-magic-link.js / ../verify-magic-link.js) AND for the SMS
-// day-1 reminder's link — ../schedule-reminder.js reuses this exact same
+// day-1 reminder's link — ./reminder.js reuses this exact same
 // token mechanism for the link inside the text (see
 // docs/IDENTITY_RETENTION_PROJECT_SPEC.md Section 1.3, "The SMS body
 // includes a magic-link URL, generated the same way as 1.2"). Same shape

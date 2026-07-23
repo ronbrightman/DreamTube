@@ -5,9 +5,15 @@
 //   - lib/account-store.js's additive phone/phoneConsentAt/
 //     pendingReminderSid fields (Section 1.4)
 //   - request-magic-link.js / verify-magic-link.js (Section 1.2)
-//   - schedule-reminder.js's Twilio-gated scheduleReminderForAccount /
+//   - lib/reminder.js's Twilio-gated scheduleReminderForAccount /
 //     cancelPendingReminder (Section 1.3), both with TWILIO_* env vars
-//     present and absent
+//     present and absent. lib/reminder.js is a plain module (like
+//     lib/account-store.js), not a Netlify Function — a standalone,
+//     unauthenticated, un-rate-limited HTTP handler here would have been
+//     a real cost/harassment vector (each call creates a new,
+//     non-idempotent Twilio scheduled message) with no page in this app
+//     ever calling it, so there is deliberately no exports.handler/public
+//     endpoint for this piece at all — see that file's header comment.
 //   - register-account.js's phone/phoneConsent capture (Section 1.1) and
 //     account-login.js's cancel-on-login wiring
 // Same patterns as test/password-reset-account.test.js / test/account-
@@ -91,7 +97,7 @@ function freshModules() {
   [
     '../netlify/functions/request-magic-link',
     '../netlify/functions/verify-magic-link',
-    '../netlify/functions/schedule-reminder',
+    '../netlify/functions/lib/reminder',
     '../netlify/functions/register-account',
     '../netlify/functions/account-login',
     '../netlify/functions/lib/account-store',
@@ -145,12 +151,12 @@ test('twilio-client: isConfigured is false with no env vars, false with placehol
   });
 });
 
-// ===== schedule-reminder.js: scheduleReminderForAccount =====
+// ===== lib/reminder.js: scheduleReminderForAccount =====
 
-test('schedule-reminder: scheduleReminderForAccount skips cleanly (no crash, no fetch) when the account has no phone on file', async function () {
+test('reminder: scheduleReminderForAccount skips cleanly (no crash, no fetch) when the account has no phone on file', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var calls = installFetchSpy();
     var result = await scheduleReminder.scheduleReminderForAccount(fakeEvent({ method: 'POST' }), { username: 'nophone', email: 'nophone@example.com' });
     assert.equal(result.ok, true);
@@ -160,10 +166,10 @@ test('schedule-reminder: scheduleReminderForAccount skips cleanly (no crash, no 
   });
 });
 
-test('schedule-reminder: scheduleReminderForAccount skips cleanly (no crash, no fetch) when Twilio env vars are not configured', async function () {
+test('reminder: scheduleReminderForAccount skips cleanly (no crash, no fetch) when Twilio env vars are not configured', async function () {
   return withEnv(NO_TWILIO_ENV, async function () {
     freshModules();
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var calls = installFetchSpy();
     var result = await scheduleReminder.scheduleReminderForAccount(fakeEvent({ method: 'POST' }), { username: 'hasphone', email: 'hasphone@example.com', phone: '+15559990000' });
     assert.equal(result.ok, true);
@@ -173,11 +179,11 @@ test('schedule-reminder: scheduleReminderForAccount skips cleanly (no crash, no 
   });
 });
 
-test('schedule-reminder: scheduleReminderForAccount schedules a real SMS and persists the SID when Twilio IS configured', async function () {
+test('reminder: scheduleReminderForAccount schedules a real SMS and persists the SID when Twilio IS configured', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
     var accountStore = require('../netlify/functions/lib/account-store');
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var event = fakeEvent({ method: 'POST' });
 
     var created = await accountStore.createAccount(event, {
@@ -198,7 +204,7 @@ test('schedule-reminder: scheduleReminderForAccount schedules a real SMS and per
     // encoded as "+" (not "%20") -- decodeURIComponent alone doesn't turn
     // "+" back into a space, so swap those first.
     var decodedBody = decodeURIComponent(scheduleCalls[0].body.replace(/\+/g, ' '));
-    assert.match(decodedBody, /come see your dream/i, 'SMS body should use the founder-confirmed promotional framing');
+    assert.match(decodedBody, /come see your dream/i, 'SMS body should use the promotional framing (builder\'s call per spec Section 1.5 — "your call on tone")');
     assert.match(decodedBody, /login\.html\?magic=/, 'SMS body should include a magic-link URL');
 
     var stored = await accountStore.getByUsername(event, 'uma');
@@ -206,10 +212,10 @@ test('schedule-reminder: scheduleReminderForAccount schedules a real SMS and per
   });
 });
 
-test('schedule-reminder: scheduleReminderForAccount never throws even if Twilio itself fails', async function () {
+test('reminder: scheduleReminderForAccount never throws even if Twilio itself fails', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     installFetchSpy({ twilioScheduleOk: false });
     var result = await scheduleReminder.scheduleReminderForAccount(fakeEvent({ method: 'POST' }), { username: 'vic', email: 'vic@example.com', phone: '+15551110000' });
     assert.equal(result.ok, true, 'a Twilio failure must never surface as a failure to the signup caller');
@@ -218,12 +224,12 @@ test('schedule-reminder: scheduleReminderForAccount never throws even if Twilio 
   });
 });
 
-// ===== schedule-reminder.js: cancelPendingReminder =====
+// ===== lib/reminder.js: cancelPendingReminder =====
 
-test('schedule-reminder: cancelPendingReminder skips cleanly with no pending reminder on file', async function () {
+test('reminder: cancelPendingReminder skips cleanly with no pending reminder on file', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var calls = installFetchSpy();
     var result = await scheduleReminder.cancelPendingReminder(fakeEvent({ method: 'POST' }), { username: 'nobody', pendingReminderSid: null });
     assert.equal(result.ok, true);
@@ -232,11 +238,11 @@ test('schedule-reminder: cancelPendingReminder skips cleanly with no pending rem
   });
 });
 
-test('schedule-reminder: cancelPendingReminder skips the Twilio API call (but still clears the field) when Twilio is not configured', async function () {
+test('reminder: cancelPendingReminder skips the Twilio API call (but still clears the field) when Twilio is not configured', async function () {
   return withEnv(NO_TWILIO_ENV, async function () {
     freshModules();
     var accountStore = require('../netlify/functions/lib/account-store');
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var event = fakeEvent({ method: 'POST' });
 
     var created = await accountStore.createAccount(event, { username: 'wade', password: 'realpassword1', email: 'wade@example.com' });
@@ -252,11 +258,11 @@ test('schedule-reminder: cancelPendingReminder skips the Twilio API call (but st
   });
 });
 
-test('schedule-reminder: cancelPendingReminder calls Twilio and clears the field when Twilio IS configured', async function () {
+test('reminder: cancelPendingReminder calls Twilio and clears the field when Twilio IS configured', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
     var accountStore = require('../netlify/functions/lib/account-store');
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var event = fakeEvent({ method: 'POST' });
 
     var created = await accountStore.createAccount(event, { username: 'xena', password: 'realpassword1', email: 'xena@example.com' });
@@ -275,11 +281,11 @@ test('schedule-reminder: cancelPendingReminder calls Twilio and clears the field
   });
 });
 
-test('schedule-reminder: cancelPendingReminder still clears the field even if Twilio reports the cancel failed (e.g. already sent)', async function () {
+test('reminder: cancelPendingReminder still clears the field even if Twilio reports the cancel failed (e.g. already sent)', async function () {
   return withEnv(REAL_TWILIO_ENV, async function () {
     freshModules();
     var accountStore = require('../netlify/functions/lib/account-store');
-    var scheduleReminder = require('../netlify/functions/schedule-reminder');
+    var scheduleReminder = require('../netlify/functions/lib/reminder');
     var event = fakeEvent({ method: 'POST' });
 
     var created = await accountStore.createAccount(event, { username: 'yara', password: 'realpassword1', email: 'yara@example.com' });

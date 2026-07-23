@@ -90,7 +90,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
-var scheduleReminder = require('./schedule-reminder');
+var scheduleReminder = require('./lib/reminder');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -143,7 +143,7 @@ exports.handler = async function (event) {
   }
 
   // Best-effort: a real login means any still-pending day-1 SMS reminder
-  // (see schedule-reminder.js's cancelPendingReminder) no longer needs
+  // (see lib/reminder.js's cancelPendingReminder) no longer needs
   // to fire — cancel it and clear the field. Never allowed to fail or
   // delay this login response; see that function's own comment for the
   // full Twilio-gated no-op story.

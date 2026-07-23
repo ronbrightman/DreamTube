@@ -3,7 +3,7 @@
 // POST { email } -> looks up whether a real, server-side account
 // (lib/account-store.js) is registered under this email and, if so,
 // generates a short-lived (15 min), single-use magic-link token (see
-// lib/magic-link.js — the SAME token mechanism ../schedule-reminder.js's
+// lib/magic-link.js — the SAME token mechanism lib/reminder.js's
 // SMS reminder reuses for its own link), and emails a login link via
 // Resend. Parallel structure to request-password-reset.js — read that
 // file's header comment for the full anti-enumeration/timing-side-

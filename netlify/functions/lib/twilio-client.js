@@ -1,7 +1,7 @@
 // netlify/functions/lib/twilio-client.js
 //
 // Thin wrapper around Twilio's REST API for scheduling/canceling the
-// day-1 SMS reminder (see ../schedule-reminder.js). Real Twilio
+// day-1 SMS reminder (see ./reminder.js). Real Twilio
 // credentials don't exist in this environment yet — the founder's A2P
 // 10DLC registration is still pending (his own no-EIN Sole Proprietor
 // path may not qualify without a US/Canada address; being worked out
@@ -37,7 +37,7 @@ function looksLikePlaceholder(value) {
 /**
  * True only when all three required env vars are present and none of
  * them looks like a leftover placeholder. This is the single gate every
- * function in this file (and schedule-reminder.js, which calls this
+ * function in this file (and lib/reminder.js, which calls this
  * indirectly) checks before ever attempting a real Twilio API call —
  * see the header comment above for why this is safe to ship now.
  */
@@ -57,7 +57,7 @@ function authHeader() {
 /**
  * Schedules an SMS via Twilio's native ScheduleType=fixed scheduling —
  * Twilio holds the timer, this backend stays stateless (see
- * schedule-reminder.js's header comment for the full mechanic). `opts`
+ * lib/reminder.js's header comment for the full mechanic). `opts`
  * is { to, body, sendAt } where sendAt is a real Date. Returns
  * { ok:true, sid } on success, { ok:false, skipped:true,
  * error:'twilio_not_configured' } when the env vars above aren't set

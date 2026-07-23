@@ -72,13 +72,13 @@
 // (login.html/start.html — see those files' own comments). No format
 // validation is applied to `phone` beyond trimming — an obviously
 // malformed value simply won't reach anyone real once Twilio is
-// configured (schedule-reminder.js's own Twilio call would fail
+// configured (lib/reminder.js's own Twilio call would fail
 // harmlessly), and rejecting signup over it would violate "never block
 // signup on this".
 //
 // The moment an account IS created with a phone + consent on file, this
 // function also best-effort schedules the day-1 SMS reminder (see
-// schedule-reminder.js's scheduleReminderForAccount) — Twilio-gated, and
+// lib/reminder.js's scheduleReminderForAccount) — Twilio-gated, and
 // never allowed to fail or delay this response past its own errors (see
 // that function's own header comment for the full no-op-until-Twilio-
 // is-configured story).
@@ -94,7 +94,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
-var scheduleReminder = require('./schedule-reminder');
+var scheduleReminder = require('./lib/reminder');
 
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
