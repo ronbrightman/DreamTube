@@ -69,9 +69,9 @@ function blockThirdParty(page) {
 var OWNER_EMAIL = 'owner@example.com';
 
 var SEED_ITEMS = [
-  { id: 'item-a', category: 'task', title: 'Item A', detail: 'Detail A.', priority: 'medium', done: false, comment: '' },
-  { id: 'item-b', category: 'task', title: 'Item B', detail: 'Detail B.', priority: 'medium', done: false, comment: '' },
-  { id: 'item-c', category: 'task', title: 'Item C', detail: 'Detail C.', priority: 'medium', done: false, comment: '' }
+  { id: 'item-a', category: 'task', title: 'Item A', detail: 'Detail A.', priority: 'medium', done: false, comments: [], createdAt: null, doneAt: null, startedAt: null },
+  { id: 'item-b', category: 'task', title: 'Item B', detail: 'Detail B.', priority: 'medium', done: false, comments: [], createdAt: null, doneAt: null, startedAt: null },
+  { id: 'item-c', category: 'task', title: 'Item C', detail: 'Detail C.', priority: 'medium', done: false, comments: [], createdAt: null, doneAt: null, startedAt: null }
 ];
 
 /** Seeds a logged-in owner account directly into js/store.js's localStorage state, then navigates to tracker.html — shortest path to a real, authenticated tracker.html render, same technique as ui-behavioral.test.js's seedResultPage. */

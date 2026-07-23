@@ -24,15 +24,17 @@
 //   cap-something-reasonable spirit as update-tracker-item.js's
 //   priority/done validation). priority is optional and defaults to
 //   "medium" if omitted; if present it must be one of high/medium/low.
-//   The created item always starts at done: false, comment: '' — its id
-//   is generated server-side (see tracker-store.js's generateId), never
-//   trusted from the client, so a caller can't collide with or silently
-//   overwrite an existing item by choosing its id. title/detail are
-//   validated against the raw string (so pure-whitespace input is
-//   correctly rejected as empty) but trimmed before being persisted —
-//   the length caps above are checked pre-trim, so a title/detail that's
-//   exactly at a cap plus surrounding whitespace is rejected rather than
-//   silently trimmed down to fit.
+//   The created item always starts at done: false, comments: [],
+//   doneAt: null, startedAt: null, and a real createdAt (the current
+//   server time — see tracker-store.js's addItem for why this differs
+//   from SEED_ITEMS' null fallback). Its id is generated server-side (see
+//   tracker-store.js's generateId), never trusted from the client, so a
+//   caller can't collide with or silently overwrite an existing item by
+//   choosing its id. title/detail are validated against the raw string
+//   (so pure-whitespace input is correctly rejected as empty) but trimmed
+//   before being persisted — the length caps above are checked pre-trim,
+//   so a title/detail that's exactly at a cap plus surrounding
+//   whitespace is rejected rather than silently trimmed down to fit.
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as update-tracker-item.js/admin-paywall-toggle.js — a new, standalone
