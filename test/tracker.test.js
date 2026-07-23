@@ -1050,3 +1050,82 @@ test('an addItem racing a deleteItem on a different item: the add survives and t
   assert.ok(finalItems.find(function (i) { return i.id === created.id; }), 'the item added mid-race must survive');
   assert.equal(finalItems.find(function (i) { return i.id === idToDelete; }), undefined, 'the item deleted mid-race must stay deleted');
 });
+
+// updateItem's own retry/verify loop had NO equivalent concurrency test
+// until now, despite being the exact function today's confirmed
+// production incident hit (a done:true write silently reverted by a
+// concurrent write from another caller) and the exact subject of the fix
+// landed on main just before this branch started (see updateItem's own
+// doc comment). addItem/deleteItem's races above only ever exercised
+// their own mutate/verify closures, never updateItem's -- these close
+// that gap, same direct-concurrency-via-Promise.all technique as the two
+// tests above rather than a static read of the fix.
+
+test('two concurrent updateItem(..., {done:true}) calls on the SAME item both survive -- the item ends up done, with a real doneAt, and nothing else in the store is lost', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var id = seeded[1].id; // starts done:false in SEED_ITEMS
+
+  var results = await Promise.all([
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { done: true }),
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { done: true })
+  ]);
+  assert.equal(results[0].done, true);
+  assert.equal(results[1].done, true);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var finalItem = finalItems.find(function (i) { return i.id === id; });
+  assert.equal(finalItem.done, true, 'the done:true write must not be silently reverted by the concurrent second write -- this is exactly the incident that motivated the fix this branch builds on');
+  assert.equal(typeof finalItem.doneAt, 'string', 'a real doneAt must have been set by one of the two concurrent transitions');
+  assert.equal(finalItems.length, seeded.length, 'no other item in the store may be lost or duplicated by the race');
+});
+
+test('two concurrent updateItem(..., {newComment}) calls (different comment ids) on the SAME item both survive -- neither append is lost', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var id = seeded[2].id;
+
+  var commentA = { id: 'race-comment-a', author: 'ron', text: 'first concurrent comment', timestamp: '2026-01-01T00:00:00.000Z' };
+  var commentB = { id: 'race-comment-b', author: 'claude', text: 'second concurrent comment', timestamp: '2026-01-01T00:00:01.000Z' };
+
+  await Promise.all([
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { newComment: commentA }),
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { newComment: commentB })
+  ]);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var finalItem = finalItems.find(function (i) { return i.id === id; });
+  var commentIds = finalItem.comments.map(function (c) { return c.id; });
+  assert.ok(commentIds.indexOf('race-comment-a') !== -1, "the first concurrent caller's comment must survive -- a naive unguarded read-mutate-write would let the second caller's write silently clobber it");
+  assert.ok(commentIds.indexOf('race-comment-b') !== -1, "the second concurrent caller's comment must survive too");
+  assert.equal(finalItems.length, seeded.length, 'no other item in the store may be lost or duplicated by the race');
+});
+
+// The "done:true" test above uses an IDENTICAL patch from both concurrent
+// callers, which converges to the same end state regardless of write
+// order and so can't actually distinguish a fixed retry/verify loop from
+// the old unguarded single read-mutate-write (confirmed by hand:
+// temporarily reverting updateItem to the old no-retry shape still
+// passes that test). This test instead mirrors the literal incident
+// shape ("a done:true update was silently reverted by a CONCURRENT WRITE
+// FROM ANOTHER CALLER") with two DIFFERENT concurrent patches on the same
+// item -- under the old unguarded implementation, both callers read the
+// same stale base and each write is a full-item overwrite, so whichever
+// finishes last silently discards the other's field entirely. Confirmed
+// this fails against the pre-fix shape and passes against the current
+// one.
+test('a concurrent done-change and priority-change on the SAME item both survive -- neither field is lost to the other', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var id = seeded[3].id; // starts done:false, priority whatever SEED_ITEMS[3] has
+
+  await Promise.all([
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { done: true }),
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { priority: 'high' })
+  ]);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var finalItem = finalItems.find(function (i) { return i.id === id; });
+  assert.equal(finalItem.done, true, "the concurrent priority-change must not silently revert the done-change -- this is the exact shape of today's confirmed production incident");
+  assert.equal(finalItem.priority, 'high', 'the concurrent done-change must not silently revert the priority-change either');
+});
