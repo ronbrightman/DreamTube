@@ -515,6 +515,89 @@ test('clicking "Start working on this" replaces the button with a Started timest
   }
 });
 
+// A genuine SAME-id "older request succeeds after a newer same-id request
+// has already succeeded, don't clobber Confirmed[id] with the stale
+// value" race (the exact second variant done/priority get below) is NOT
+// reachable for handleStartChange, unlike done/priority -- checked by
+// hand rather than assumed. handleStartChange's very first line is `if
+// (!item || item.startedAt) return;`, and the optimistic
+// `item.startedAt = ...` write happens SYNCHRONOUSLY, before the network
+// call is even issued and before control ever returns to the browser's
+// event loop. So there is no window in which a second click (or a second
+// direct call) can see `item.startedAt` still falsy while a first
+// request for the same id is in flight -- every subsequent click before
+// the first request resolves is a same-tick no-op, and once the first
+// request resolves (success OR failure-then-revert), only ONE request
+// can ever be in flight for a given id at a time. done/priority have no
+// equivalent single-flight guard (an item can toggle done true/false, or
+// priority high/medium/low, repeatedly, each toggle firing a fresh
+// request regardless of what's already in flight), which is exactly what
+// makes their two-request overlap reachable and worth testing. This is a
+// real, deliberate difference in handleStartChange's design (a one-way
+// signal only ever needs to fire once), not a coverage gap to fake a test
+// around.
+//
+// The closest genuinely reachable, meaningful concurrency test for start
+// is per-id isolation: two DIFFERENT items' start-clicks with requests
+// racing each other (one slow, one fast) must not cross-contaminate one
+// another's startChangeSeq/startedAtConfirmed state -- confirms the maps
+// are correctly keyed per-id rather than accidentally shared.
+test('starting two DIFFERENT items concurrently (one slow, one fast) does not cross-contaminate either item\'s started state', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var resolveSlow = null;
+    await setUpTrackerPage(page, function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === 'task-a') {
+        // Held open until after task-b's (fast) start has already landed.
+        new Promise(function (resolve) { resolveSlow = resolve; }).then(function () {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_A, { startedAt: '2026-03-01T00:00:00.000Z' }) }) });
+        });
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ item: Object.assign({}, ITEM_B, { startedAt: '2026-03-02T00:00:00.000Z' }) }) });
+      }
+    });
+
+    // Both items' <details> start closed -- the start button lives in the
+    // collapsible body, same as the comment compose areas, so each needs
+    // opening first (same as every other test here that reaches into an
+    // item's body).
+    await openItem(page, 'task-a');
+    await openItem(page, 'task-b');
+
+    await page.click('.tracker-item[data-id="task-a"] .tracker-start-btn'); // slow, still pending
+    await page.click('.tracker-item[data-id="task-b"] .tracker-start-btn'); // fast, resolves immediately
+
+    await page.waitForFunction(function () {
+      var el = document.querySelector('.tracker-item[data-id="task-b"] .tracker-item-meta');
+      return el && /Started/.test(el.textContent);
+    }, null, { timeout: 5000 });
+
+    // task-a's request is still in flight -- its own optimistic Started
+    // state must already be showing (set synchronously on click), and
+    // must not have been affected by task-b's unrelated request landing.
+    var aMetaMidway = await page.$eval('.tracker-item[data-id="task-a"] .tracker-item-meta', function (el) { return el.textContent; });
+    assert.match(aMetaMidway, /Started/, "task-a's own optimistic started state must show while its request is still in flight, unaffected by task-b's already-landed request");
+
+    resolveSlow();
+    await page.waitForFunction(function () {
+      var el = document.querySelector('.tracker-item[data-id="task-a"] .tracker-item-meta');
+      return el && /Started/.test(el.textContent);
+    }, null, { timeout: 5000 });
+
+    var aStartBtnGone = await page.$('.tracker-item[data-id="task-a"] .tracker-start-btn');
+    var bStartBtnGone = await page.$('.tracker-item[data-id="task-b"] .tracker-start-btn');
+    assert.equal(aStartBtnGone, null, 'task-a must end up started once its own (slower) request lands');
+    assert.equal(bStartBtnGone, null, 'task-b must stay started -- unaffected by task-a\'s later-landing request');
+  } finally {
+    await context.close();
+  }
+});
+
 // ===== Overlapping same-id request races: done-toggle, priority-change =====
 //
 // Unchanged bug class from before the comment schema change -- the
