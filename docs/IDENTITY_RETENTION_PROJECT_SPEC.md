@@ -1,9 +1,17 @@
 # DreamTube — Identity & Retention Project: Spec (v2, decided plan)
 
-Status: **planning only — nothing built yet.** For founder review before any
-code is written. Originated from a marketing/growth finding (in-app-browser
-retention leak on paid Meta traffic) plus explicit founder direction, not
-from the research/evaluation RICE pipeline — no RICE score applies.
+Status: **Phase 1 (Section 1) built, on branch `identity-retention-phase1`,
+pending review.** Phone capture + consent (1.1) and the email magic link
+(1.2) are fully functional now. The SMS day-1 reminder (1.3) is real,
+working code that's currently a clean no-op — it activates automatically
+the moment `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_PHONE_NUMBER`
+are set to real values in Netlify's environment (see
+`netlify/functions/lib/twilio-client.js`'s header comment), which depends
+on the founder's Twilio/A2P 10DLC setup (Section 2, still in progress as
+of this writing). Originated from a marketing/growth finding (in-app-
+browser retention leak on paid Meta traffic) plus explicit founder
+direction, not from the research/evaluation RICE pipeline — no RICE score
+applies.
 
 **This supersedes v1 of this spec.** v1's core mechanism (social login as the
 fix) was wrong and the founder correctly caught it — see Section 0.5.
