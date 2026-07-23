@@ -305,19 +305,10 @@ var SEED_ITEMS = [
     id: 'accounts-dont-sync-across-devices',
     category: 'task',
     priority: 'high',
-    done: true,
-    comment: '',
-    title: 'DONE: server-side account/password check, so login + forgot-password work across devices',
-    detail: "DECIDED: build the scoped fix now — move just the account check (username/email/password match) to a small server-side Blobs store, reusing the same lightweight keyed-lookup pattern already used by entitlements.js/paywall-settings.js/tracker-store.js (no sessions, no hashing infra, no new auth framework). This fixes login and forgot-password from any device. It deliberately does NOT sync dreams/characters themselves — see sync-private-dreams-videos-later for that, explicitly deferred and scoped separately. Built on branch cross-device-login: netlify/functions/lib/account-store.js (the store), register-account.js/account-login.js (new functions), verify-password-reset.js extended to apply the new password server-side in the same call that consumes the token, request-password-reset.js redesigned to look up the account itself (no longer trusts the client to gate the call). js/store.js's signup()/login()/resetPasswordLocally() are now async, calling these — login() falls back to the pre-fix local-only check (and opportunistically backfills the account server-side) only when the server has no record at all, never on a wrong password, so an existing local account keeps working on ITS OWN device either way. Caveat, not a bug: if the same username was independently created as two separate local-only accounts on two different devices before this fix existed, whichever backfills to the server first permanently wins that username, and the other device gets a genuine rejection if it's ever used somewhere its local cache doesn't cover — see lib/account-store.js's own header comment for the full writeup. Passed four review rounds: rate limiting (per-IP, plus per-identifier on login) added; account-store.js's two-key write race narrowed (read-back-and-verify on both keys, tested with real concurrent-write tests) and its remaining narrow residual edge case explicitly documented rather than fully eliminated. Ron approved merge 2026-07-22 — no need to worry about migrating existing users."
-  },
-  {
-    id: 'update-email-not-synced-server-side',
-    category: 'task',
-    priority: 'low',
     done: false,
     comment: '',
-    title: "js/store.js's updateEmail() still only changes the local copy, not the server-side account store",
-    detail: "Found while building the cross-device account-check fix (accounts-dont-sync-across-devices) — deliberately left out of that fix's scope. DreamStore.updateEmail() (used by profile.html's account sheet) still only writes to this browser's local `accounts` entry; it does not call register-account.js or otherwise update lib/account-store.js's email index. Practical effect: after changing your email in Settings, forgot-password/cross-device login still resolve by whichever email the server has on file (from the original signup, or from a prior successful login/reset that happened to backfill it) until this account goes through signup/login/reset again — not a regression (this was already 100% local before), just an inconsistency worth closing given the rest of the account model just went server-side. Small follow-on: have updateEmail() also POST to register-account.js (or a small dedicated endpoint) to keep the server-side email index in sync."
+    title: 'IN PROGRESS: server-side account/password check, so login + forgot-password work across devices',
+    detail: "DECIDED: build the scoped fix now — move just the account check (username/email/password match) to a small server-side Blobs store, reusing the same lightweight keyed-lookup pattern already used by entitlements.js/paywall-settings.js/tracker-store.js (no sessions, no hashing infra, no new auth framework). This fixes login and forgot-password from any device. It deliberately does NOT sync dreams/characters themselves — see sync-private-dreams-videos-later for that, explicitly deferred and scoped separately. Being built now; mark done once merged."
   },
   {
     id: 'sync-private-dreams-videos-later',
@@ -384,33 +375,49 @@ async function getItems(event) {
 }
 
 /**
- * Patches one item's `priority`/`done`/`comment` by id and persists the full
- * list. `patch` may set any subset of these three fields — callers
- * validate/coerce values before calling this (see update-tracker-item.js).
- * Returns the updated item, or `null` if no item with that id exists (store
- * is left untouched in that case — never partially written).
+ * Patches one item's `priority`/`done`/`comment` (or other owner-writable
+ * fields — see update-tracker-item.js) by id and persists the full list.
+ * `patch` may set any subset of fields — callers validate/coerce values
+ * before calling this. Returns the updated item, or `null` if no item with
+ * that id exists at the time of the first read.
+ *
+ * Goes through writeItemsWithRetry below — see the CONCURRENT-WRITE RACE
+ * comment for what this does and doesn't protect against. Before this fix,
+ * updateItem did a single read -> mutate -> write with no retry/verify at
+ * all (unlike addItem/deleteItem), and this was confirmed live: a `done:
+ * true` update was silently reverted by a concurrent write from another
+ * caller. mutate() here re-derives `updated` from whatever the latest read
+ * shows (not the stale `items` from the outer closure), so a retry patches
+ * the freshest state rather than replaying a stale one.
  */
 async function updateItem(event, id, patch) {
-  var items = await getItems(event);
-  var idx = -1;
-  for (var i = 0; i < items.length; i++) {
-    if (items[i].id === id) { idx = i; break; }
-  }
-  if (idx === -1) return null;
-
-  var updated = Object.assign({}, items[idx], patch);
-  items = items.slice();
-  items[idx] = updated;
-
-  connectLambda(event);
-  await store().setJSON(KEY, items);
+  var updated = null;
+  await writeItemsWithRetry(
+    event,
+    function (items) {
+      var idx = -1;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id === id) { idx = i; break; }
+      }
+      if (idx === -1) { updated = null; return items; }
+      updated = Object.assign({}, items[idx], patch);
+      var next = items.slice();
+      next[idx] = updated;
+      return next;
+    },
+    function (items) {
+      if (updated === null) return true;
+      var found = items.filter(function (item) { return item.id === id; })[0];
+      return !!found && Object.keys(patch).every(function (key) { return found[key] === patch[key]; });
+    }
+  );
   return updated;
 }
 
 // ---------------------------------------------------------------------
-// CONCURRENT-WRITE RACE — addItem()/deleteItem() below
+// CONCURRENT-WRITE RACE — addItem()/deleteItem()/updateItem() below
 //
-// Both do a read-the-full-array -> mutate -> setJSON-the-full-array-back
+// All three do a read-the-full-array -> mutate -> setJSON-the-full-array-back
 // cycle. The installed @netlify/blobs SDK (8.2.0 as of this writing — see
 // node_modules/@netlify/blobs/dist/main.d.ts) has no compare-and-swap or
 // conditional-write primitive: `set`/`setJSON` accept only a `metadata`
@@ -453,8 +460,8 @@ var MAX_WRITE_ATTEMPTS = 3;
 
 /**
  * Shared read -> mutate -> write -> verify retry loop for addItem/
- * deleteItem. See the CONCURRENT-WRITE RACE comment above for exactly
- * what this does and doesn't protect against.
+ * deleteItem/updateItem. See the CONCURRENT-WRITE RACE comment above for
+ * exactly what this does and doesn't protect against.
  *
  * `mutate(items)` takes the latest full array and returns the full new
  * array to persist. It's called again from scratch (against a fresh
