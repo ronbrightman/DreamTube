@@ -122,37 +122,40 @@ testing. To compensate:
   actually exercise the behavior they claim to, not just whether they
   exist.
 
-## Reading and contributing to dreamtube-signals
+## Reading and contributing to tracker.html
 
-`ronbrightman/dreamtube-signals` is a shared, git-tracked signal log read
-and written by agents across DreamTube, `dreamtube-growth`, and
-`agent-library` — see `AGENT_POLICY.md`'s "Companion signals repo"
-section and that repo's own `SCHEMA.md` for the full format. You have
-read-only tools, so you can't clone or commit anything yourself — do
-what you can with what you have:
+`ronbrightman/dreamtube-signals` (the shared signal log this section used
+to point you at) is **archived** — coordination now goes through
+`tracker.html` instead, this project's owner-only open-items list. See
+`AGENT_POLICY.md`'s "Cross-session coordination: tracker.html" section
+for the full shape. You have WebFetch, so you can read it directly even
+without Bash:
 
-- **Before reviewing**, if `/workspace/dreamtube-signals` already exists
-  on disk (it may, if `build` or another prior run set it up), skim
-  `signals/recurring-QA-issue/` and `signals/build-effort-actual-vs-estimate/`
-  (Read/Glob/Grep) for anything recent and relevant to this feature area
-  — a named class of mistake to check for specifically, a past gotcha in
-  similar code. If it's not present or not readable, don't try to work
-  around your lack of Bash/write tools — just proceed without it and note
-  in your output that you weren't able to check it.
+- **Before reviewing**, `WebFetch
+  https://dreamtube1.netlify.app/.netlify/functions/get-tracker-items` —
+  no auth required, returns `{ items: [...] }`. Skim it for anything
+  recent and relevant to this feature area — a named class of mistake to
+  check for specifically (this app has a documented recurring one: async
+  callbacks whose side effects aren't scoped to the sheet/instance that
+  started them — see any open/past tracker items naming it), a past
+  gotcha in similar code, a decision already on record. If the fetch
+  fails, don't try to work around it — proceed without it and note in
+  your output that you weren't able to check it.
 - **When you reach a verdict, only if you caught something recurring** —
   a bug/gap review has now flagged more than once, or a class of mistake
-  worth naming so it stops coming back — include a schema-compliant
-  `recurring-QA-issue` signal as an appendix to your output: full JSON,
-  ready to be written verbatim to
-  `signals/recurring-QA-issue/<ISO-timestamp>_dreamtube_review_<short-id>.json`
-  per `dreamtube-signals/SCHEMA.md`, `description` naming the recurring
-  pattern plainly. A plain PASS, or a FAIL whose issues are ordinary
-  one-off bugs, isn't itself a signal — per `SCHEMA.md`'s own convention,
-  write one file per meaningful factual finding, not one per review. You
-  are not persisting this yourself (you have no tool for it); whoever
-  invoked you (a human, or the session driving this pipeline) commits and
-  pushes it. Say plainly in your output that this is a draft for them to
-  persist, not something you've already written to the repo.
+  worth naming so it stops coming back — include a draft tracker item as
+  an appendix to your output: `{ category: "task", title, detail,
+  priority }` (title ≤200 chars, detail ≤4000, matching
+  `add-tracker-item.js`'s own validation), `detail` naming the recurring
+  pattern plainly and citing which reviews/branches it's shown up in. A
+  plain PASS, or a FAIL whose issues are ordinary one-off bugs, isn't
+  itself worth a tracker entry — same "one per meaningful factual
+  finding, not one per review" discipline signals used to follow. You
+  don't have the founder's owner email, so you can't call
+  `add-tracker-item.js` yourself; whoever invoked you (a human, or the
+  session driving this pipeline) adds it. Say plainly in your output that
+  this is a draft for them to add, not something you've already written
+  to the tracker.
 
 ## Boundaries — from AGENT_POLICY.md
 

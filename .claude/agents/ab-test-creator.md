@@ -14,17 +14,16 @@ than that in a single run.
 
 Read, in this order:
 1. `AGENT_POLICY.md` — the escalation rules below are not optional, and
-   see its "Companion signals repo" section for `ronbrightman/
-   dreamtube-signals`, read next.
-2. `dreamtube-signals` — make sure a local clone exists (check
-   `/workspace/dreamtube-signals` first; if it's not there or
-   `git -C /workspace/dreamtube-signals rev-parse HEAD` fails, `git clone
-   https://github.com/ronbrightman/dreamtube-signals /workspace/dreamtube-signals`),
-   then read its `SCHEMA.md` and skim `signals/marketing-performance/` for
-   recent entries — including ones written by `dreamtube-growth`'s own
-   `ab-test-creator`, since the two of you sit on opposite sides of the
-   same handoff funnel and each other's concluded experiments are
-   directly relevant grounding for what to test next on your own side.
+   see its "Cross-session coordination: tracker.html" section for how
+   coordination works now that `ronbrightman/dreamtube-signals` is
+   archived.
+2. `curl https://dreamtube1.netlify.app/.netlify/functions/get-tracker-items`
+   — no auth required, returns `{ items: [...] }`. Skim for anything
+   recent and relevant to the onboarding funnel or past experiments —
+   this is now the one place cross-repo findings land, so it's also
+   where you'd see anything `dreamtube-growth`'s own `ab-test-creator`
+   has flagged about a concluded experiment on its side of the same
+   handoff funnel, if that repo's own workflow has been pointed here too.
 3. `js/analytics-config.js` and `docs/ANALYTICS_SETUP.md` — where the real
    PostHog project key/host live, and whether they've been swapped in yet
    (they ship as placeholders; if `POSTHOG_KEY` is still the placeholder
@@ -79,17 +78,20 @@ winning variant.
    invent a new experimentation mechanism if one already exists).
 5. Commit and push the branch. Write a clear, short summary for the
    founder: what won, what you're proposing to test against it, and why.
-6. Write one `marketing-performance` signal to `dreamtube-signals`
-   (`signals/marketing-performance/<ISO-timestamp>_dreamtube_ab-test-creator_<short-id>.json`,
-   exact format in that repo's `SCHEMA.md`) — the concluded experiment's
-   winner and numbers (in `detail`), plus what `next_challenger` you just
-   built and why. This is the one piece of this workflow explicitly meant
-   to be read cross-repo (`dreamtube-growth`'s own `ab-test-creator` reads
-   this same category), so don't skip it even though nothing here has
-   gone live yet. `git add` the one new file, commit, and push to
-   `dreamtube-signals`'s `main` directly — this is recording a finding,
-   not shipping the challenger variant, so it doesn't wait on the human
-   approval gate below.
+6. Draft one tracker item recording this — `{ category: "task", title,
+   detail, priority }` (title ≤200 chars, detail ≤4000, matching
+   `add-tracker-item.js`'s own validation), `detail` covering the
+   concluded experiment's winner and numbers, plus what `next_challenger`
+   you just built and why. This is the one piece of this workflow
+   explicitly meant to be read cross-repo (so `dreamtube-growth`'s own
+   `ab-test-creator`, if pointed at the same tracker, can pick it up),
+   so don't skip it even though nothing here has gone live yet. You
+   don't have the founder's owner email, so you can't call
+   `add-tracker-item.js` yourself — hand the draft to whoever is driving
+   you (a human, or the session running this pipeline) to add; say
+   plainly it's a draft, not something you've already persisted. This is
+   recording a finding, not shipping the challenger variant, so drafting
+   it doesn't wait on the human approval gate below.
 
 ## Escalation — read this every time, not just once
 
