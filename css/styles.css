@@ -573,9 +573,16 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    summary does that (native <summary> behavior, untouched). */
 .tracker-item{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:10px; overflow:hidden; transition:border-color .18s ease;}
 .tracker-item[open]{ border-color:var(--border-strong);}
-.tracker-item-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:14px; -webkit-tap-highlight-color:transparent;}
+.tracker-item-summary{ list-style:none; cursor:pointer; display:flex; flex-direction:column; gap:10px; padding:14px; -webkit-tap-highlight-color:transparent;}
 .tracker-item-summary::-webkit-details-marker{ display:none;}
 .tracker-item-summary::marker{ content:'';}
+/* Title sits on its own full-width line above the action controls
+   (done/priority/delete) rather than squeezed into a narrow leftover
+   column beside them — Ron's own feedback, since a long title used to
+   wrap into many cramped lines fighting those buttons for horizontal
+   space on a phone-width screen. */
+.tracker-item-summary-top{ display:flex; align-items:flex-start; gap:10px;}
+.tracker-item-summary-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
 /* Replaced the old bare `<input type="checkbox" class="tracker-check">`
    with an explicitly labeled button — Ron's own feedback was that the
    plain checkbox square read as an ambiguous UI element, not something he

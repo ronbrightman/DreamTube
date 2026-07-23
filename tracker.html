@@ -337,11 +337,15 @@
     return '' +
       '<details class="tracker-item" data-id="' + esc(item.id) + '">' +
         '<summary class="tracker-item-summary">' +
-          doneBtn +
-          '<span class="tracker-item-title" dir="auto">' + categoryBadge + esc(item.title) + '</span>' +
-          '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
-          '<button type="button" class="tracker-delete-btn icon" aria-label="Delete item">' + Icons.trash + '</button>' +
-          '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
+          '<div class="tracker-item-summary-top">' +
+            '<span class="tracker-item-title" dir="auto">' + categoryBadge + esc(item.title) + '</span>' +
+            '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
+          '</div>' +
+          '<div class="tracker-item-summary-actions">' +
+            doneBtn +
+            '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
+            '<button type="button" class="tracker-delete-btn icon" aria-label="Delete item">' + Icons.trash + '</button>' +
+          '</div>' +
         '</summary>' +
         '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + metaHTML + '</div>' +
         (startControl ? '<div class="tracker-start-row">' + startControl + '</div>' : '') +
