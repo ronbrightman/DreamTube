@@ -63,25 +63,46 @@ that duplication is resolved. See `tracker.html`'s open
 unambiguous (the exact registered name, not just a close paraphrase) when
 naming an agent explicitly.
 
-## Companion signals repo
+## Cross-session coordination: tracker.html
 
-`ronbrightman/dreamtube-signals` is a shared, git-tracked signal log this
-project's agents read and write, alongside `ronbrightman/dreamtube-growth`
-(marketing, retrofitted separately by that repo's own session) and
-`ronbrightman/agent-library` (the portable research/evaluation/design/
-marketing agents used here). See its own `SCHEMA.md` for the entry
-format — every signal is one JSON file under `signals/<category>/`,
-never edited after it's written.
+`ronbrightman/dreamtube-signals` — the shared, git-tracked signal log this
+section used to point agents at — is **archived**. The founder's own
+instruction: all coordination that used to go through that repo (recurring
+QA issues, build-effort notes, marketing-experiment results, decisions)
+now goes through **`tracker.html`** instead, this project's owner-only
+open-items list, backed by `dreamtube-tracker` (Netlify Blobs) via
+`netlify/functions/lib/tracker-store.js`.
 
-`build`, `review`, and `ab-test-creator` here are retrofitted to read
-relevant signals before starting and write new ones when they finish
+`build`, `review`, and `ab-test-creator` here are retrofitted to use it
 (see each agent's own file for exactly how, given their different tool
-access). research/evaluation/design/marketing are portable agents used
-across projects, not DreamTube-specific — they resolve this repo via
-their own generic "check for a project's companion signals repo, named
-in its `AGENT_POLICY.md`" instruction rather than hardcoding this repo's
-name, so this same retrofit doesn't break when they run for a different
-project with no signals repo at all.
+access), but the shape is the same for all three:
+
+- **Reading, before starting**: `GET
+  https://dreamtube1.netlify.app/.netlify/functions/get-tracker-items` —
+  no auth required, returns `{ items: [...] }` (every open task/idea, plus
+  anything already marked done). Skim it for anything recent and relevant
+  to what you're about to do, the same spirit as skimming signals used to
+  be — a past gotcha in the same area, a decision already made that bears
+  on this. Fine to find nothing relevant and move on.
+- **Writing, when you finish**: you do NOT have the founder's owner email,
+  so you can't call `add-tracker-item.js` yourself (it's owner-gated —
+  see that function's own doc comment). Instead, **draft** a tracker item
+  — `{ category: "task"|"idea", title, detail, priority? }`, matching
+  `add-tracker-item.js`'s own validation (title ≤200 chars, detail ≤4000)
+  — and hand it to whoever is driving you (a human, or the orchestrating
+  Claude Code session) to actually add via that endpoint. Say plainly
+  that this is a draft for them to add, not something you've already
+  persisted. Only draft one when there's something worth a standing
+  tracker entry — a recurring pattern, a real decision, a flagged risk —
+  not for every routine run.
+
+research/evaluation/design/marketing are portable agents used across
+projects, not DreamTube-specific — they resolve this repo's coordination
+channel via their own generic "check for a project's designated
+coordination point, named in its `AGENT_POLICY.md`" instruction rather
+than hardcoding either the old signals-repo name or tracker.html, so
+this same retrofit doesn't break when they run for a different project
+with a different (or no) coordination mechanism.
 
 ## Getting research / marketing / evaluation / design in a new environment
 
