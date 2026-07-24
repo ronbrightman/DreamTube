@@ -666,3 +666,56 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .tracker-add-form{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:24px;}
 
 .spinner-inline{ display:inline-block; width:16px; height:16px; border-radius:50%; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; animation:spin .7s linear infinite;}
+
+/* ===== Settings (profile.html's #sheet-account-overlay) ===== */
+/* The sheet used to be one flat stack of fields/buttons with manual
+   height-spacer divs and no visual grouping at all — this groups it into
+   labeled sections (same .section-label already used for Profile's own
+   Shared/Private grid headers) so Account / Your data / Tokens / Support
+   & feedback read as distinct, scannable groups instead of one long list.
+   Purely a spacing/grouping wrapper — every control inside still uses
+   this app's existing .field/.btn/.auth-notice/.err-text primitives. */
+.settings-section{ margin-bottom:22px;}
+.settings-section:last-of-type{ margin-bottom:0;}
+.settings-section .section-label{ margin-top:0;}
+
+/* Support & feedback — the beta-feedback CTA reuses --gradient-ig, this
+   app's established "special, inviting, tap me" treatment (already used
+   for the token-balance chip and the profile insight card) rather than a
+   plain muted row, since this is explicitly meant to entice a tap, not
+   just sit there as one more settings option. */
+.feedback-cta{
+  display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:16px;
+  background:var(--gradient-ig); cursor:pointer; margin-bottom:10px;
+  box-shadow:0 10px 24px -12px rgba(253,29,29,.45);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+}
+.feedback-cta:hover{ filter:brightness(1.05);}
+.feedback-cta:active{ transform:scale(.98);}
+.feedback-cta-icon{ width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.22); display:flex; align-items:center; justify-content:center; flex:none; color:#fff;}
+.feedback-cta-icon svg{ width:19px; height:19px;}
+.feedback-cta-text{ flex:1; min-width:0;}
+.feedback-cta-title{ font-weight:800; font-size:14px; color:#fff;}
+.feedback-cta-sub{ font-size:11.5px; color:rgba(255,255,255,.88); margin-top:2px; line-height:1.35;}
+.feedback-cta-chevron{ width:15px; height:15px; color:#fff; opacity:.85; flex:none; transform:rotate(-90deg);}
+
+/* Contact support — a plainer row (same shell language as .choice-card,
+   just compact) since this is a utility action, not the enticing one. */
+.settings-row{
+  display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:14px;
+  background:var(--surface); border:1px solid var(--border); cursor:pointer;
+  transition:border-color .15s ease, background-color .15s ease, transform .12s ease;
+}
+.settings-row:hover{ border-color:var(--border-strong); background:var(--surface-alt);}
+.settings-row:active{ transform:scale(.99);}
+.settings-row-icon{ width:36px; height:36px; border-radius:50%; background:var(--surface-alt); display:flex; align-items:center; justify-content:center; flex:none; color:var(--text-primary);}
+.settings-row-icon svg{ width:17px; height:17px;}
+.settings-row-text{ flex:1; min-width:0;}
+.settings-row-title{ font-weight:700; font-size:13.5px;}
+.settings-row-sub{ font-size:11.5px; color:var(--text-muted); margin-top:2px; line-height:1.35;}
+.settings-row-chevron{ width:14px; height:14px; color:var(--text-faint); flex:none; transform:rotate(-90deg);}
+
+/* Shared compose area both the feedback CTA and the support row open
+   into (one form, a `type` distinction — see profile.html's script —
+   rather than two separate pipelines/forms). */
+.support-compose{ margin-top:12px;}

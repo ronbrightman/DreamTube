@@ -69,7 +69,7 @@
 <div id="app" class="scroll-shell">
   <div class="topbar">
     <div class="topbar-logo" style="font-size:16px;">Profile</div>
-    <div class="icon-btn" id="account-btn" title="Account settings"></div>
+    <div class="icon-btn" id="account-btn" title="Settings"></div>
   </div>
   <div class="scroll-area">
     <div class="profile-head">
@@ -112,23 +112,31 @@
   <div class="sheet-overlay" id="sheet-account-overlay">
     <div class="sheet">
       <div class="sheet-handle"></div>
-      <div class="sheet-title">Account</div>
-      <input class="field" id="account-username" disabled dir="auto">
-      <input class="field" id="account-email-input" placeholder="Email" type="email" autocomplete="email" dir="auto">
-      <div class="auth-sub" id="account-email-hint" style="margin:-4px 0 14px;">Add your email so you can reset your password if you ever forget it.</div>
-      <div class="err-text" id="account-error"></div>
-      <div class="auth-notice" id="account-success" style="display:none;">
-        <span class="icon" id="account-success-icon"></span>
-        <span>Email saved.</span>
+      <div class="sheet-title">Settings</div>
+
+      <div class="settings-section">
+        <div class="section-label">Account</div>
+        <input class="field" id="account-username" disabled dir="auto">
+        <input class="field" id="account-email-input" placeholder="Email" type="email" autocomplete="email" dir="auto">
+        <div class="auth-sub" id="account-email-hint" style="margin:-4px 0 14px;">Add your email so you can reset your password if you ever forget it.</div>
+        <div class="err-text" id="account-error"></div>
+        <div class="auth-notice" id="account-success" style="display:none;">
+          <span class="icon" id="account-success-icon"></span>
+          <span>Email saved.</span>
+        </div>
+        <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
       </div>
-      <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
 
-      <div style="height:20px;"></div>
-      <div class="auth-sub" style="margin-bottom:10px;">Your dreams currently live only on this device (your account itself works from anywhere) — export a backup so you can restore them if this browser's storage is ever cleared.</div>
-      <button class="btn btn-secondary btn-block" id="export-backup-btn"><span class="icon" id="export-backup-icon"></span> Export backup</button>
+      <div class="settings-section">
+        <div class="section-label">Your data</div>
+        <div class="auth-sub" style="margin-bottom:10px;">Your dreams currently live only on this device (your account itself works from anywhere) — export a backup so you can restore them if this browser's storage is ever cleared.</div>
+        <button class="btn btn-secondary btn-block" id="export-backup-btn"><span class="icon" id="export-backup-icon"></span> Export backup</button>
+      </div>
 
-      <div style="height:10px;"></div>
-      <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
+      <div class="settings-section">
+        <div class="section-label">Tokens</div>
+        <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
+      </div>
 
       <!-- Owner-only manual top-up — resolves the "owner bypass for the
            token gate" question the founder's own way: not an E112
@@ -139,16 +147,57 @@
            only shown once ownerTopupCheck below confirms, server-side,
            that the signed-in account's email is OWNER_EMAIL — never a
            hardcoded email comparison here. -->
-      <div id="owner-topup-block" style="display:none;">
-        <div style="height:10px;"></div>
-        <div class="auth-sub" style="margin-bottom:10px;">Owner tools — top up your own token balance for testing.</div>
-        <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <div id="owner-topup-block" class="settings-section" style="display:none;">
+        <div class="section-label">Owner tools</div>
+        <div class="auth-sub" style="margin-bottom:10px;">Top up your own token balance for testing.</div>
+        <div style="display:flex; gap:8px;">
           <input class="field" id="owner-topup-amount" type="number" min="1" max="5000" step="1" value="500" style="margin-bottom:0;" aria-label="Top-up amount">
           <button class="btn btn-secondary" id="owner-topup-btn" style="white-space:nowrap;">Top up my balance</button>
         </div>
       </div>
 
-      <div style="height:10px;"></div>
+      <!-- Support & feedback (tracker.html's support-and-feedback-atms4a
+           item) — one shared compose form/endpoint behind two entry
+           points: the feedback CTA (enticing, since DreamTube is in beta
+           and wants opinions) and the plainer "Contact support" row
+           (utility, for when something's actually wrong). Both just set
+           which `type` the same #support-compose panel below submits as
+           — see the script block's openSupportCompose(). -->
+      <div class="settings-section">
+        <div class="section-label">Support &amp; feedback</div>
+
+        <div class="feedback-cta" id="feedback-cta-btn">
+          <div class="feedback-cta-icon icon" id="feedback-cta-icon"></div>
+          <div class="feedback-cta-text">
+            <div class="feedback-cta-title">Help us improve</div>
+            <div class="feedback-cta-sub">DreamTube is in beta — tell us what you think.</div>
+          </div>
+          <div class="feedback-cta-chevron icon" id="feedback-cta-chevron"></div>
+        </div>
+
+        <div class="settings-row" id="support-row">
+          <div class="settings-row-icon icon" id="support-row-icon"></div>
+          <div class="settings-row-text">
+            <div class="settings-row-title">Contact support</div>
+            <div class="settings-row-sub">Something not working? Let us know and we'll help.</div>
+          </div>
+          <div class="settings-row-chevron icon" id="support-row-chevron"></div>
+        </div>
+
+        <div class="support-compose" id="support-compose" style="display:none;">
+          <textarea class="field" id="support-message-input" dir="auto" style="min-height:110px;"></textarea>
+          <div class="err-text" id="support-error"></div>
+          <div class="auth-notice" id="support-success" style="display:none;">
+            <span class="icon" id="support-success-icon"></span>
+            <span id="support-success-text">Thanks — we got your message.</span>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary" id="support-cancel-btn" style="flex:none;">Cancel</button>
+            <button class="btn btn-primary" id="support-send-btn" style="flex:1;">Send</button>
+          </div>
+        </div>
+      </div>
+
       <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
       <div style="height:8px;"></div>
       <span class="link-text" id="account-logout-link" style="cursor:pointer; color:var(--danger);">Log out</span>
@@ -206,6 +255,10 @@
   var navIcons = document.querySelectorAll('.nav-icon');
   navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
+  document.getElementById('feedback-cta-icon').innerHTML = Icons.megaphone;
+  document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
+  document.getElementById('support-row-chevron').innerHTML = Icons.chevronDown;
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
@@ -366,7 +419,7 @@
     // resizeImageFile is a real multi-step async chain (FileReader -> Image
     // decode -> canvas draw), easily slow enough to race a Cancel-then-
     // reopen of this sheet. Captured now and re-checked once it resolves,
-    // same tokenAtSave pattern as the generate-avatar call below -- without
+    // same tokenAtSave pattern as the generate-avatar call below — without
     // this, a stale resize from a cancelled instance can resolve after the
     // sheet's been reopened (same character or, on create.html, a different
     // one) and silently overwrite identityPendingPhotoDataUrl/the preview
@@ -391,7 +444,7 @@
   // started by one sheet "instance" can tell, once it resolves, whether
   // it's still talking about the instance that's still on screen. Cancel /
   // the overlay-backdrop click both route through closeIdentitySheet, so
-  // this is the single place that invalidates a pending call -- see the
+  // this is the single place that invalidates a pending call — see the
   // save handler's .then() below, which is the only reader of this token.
   var identitySheetToken = 0;
 
@@ -627,6 +680,11 @@
     document.getElementById('account-error').textContent = '';
     document.getElementById('account-success').style.display = 'none';
     ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
+    // Always reopen Settings with the support/feedback compose panel
+    // collapsed — never carries over a previous open/typed-into state
+    // from earlier in the session.
+    document.getElementById('support-compose').style.display = 'none';
+    document.getElementById('support-message-input').value = '';
     accountOverlay.classList.add('open');
   }
   function closeAccountSheet(){ accountOverlay.classList.remove('open'); }
@@ -655,7 +713,7 @@
   // tracker.html already established via admin-paywall-toggle.js's
   // ?email=... -> isOwner field (server-confirmed against OWNER_EMAIL,
   // itself a server-only env var the client has no other way to compare
-  // against) -- never a hardcoded ronbrightman@gmail.com literal here.
+  // against) — never a hardcoded ronbrightman@gmail.com literal here.
   // Checked once per page load; applied to the block's visibility whenever
   // the account sheet opens (see openAccountSheet above). Real enforcement
   // is owner-topup-tokens.js's own independent 403 check on every write --
@@ -677,7 +735,7 @@
         // the control to appear.
         if(accountOverlay.classList.contains('open')) ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
       })
-      .catch(function(){ /* stays hidden -- fails closed, same as admin.html */ });
+      .catch(function(){ /* stays hidden — fails closed, same as admin.html */ });
   })();
 
   document.getElementById('owner-topup-btn').addEventListener('click', function(){
@@ -716,6 +774,98 @@
     }
   });
 
+  // ===== Support & feedback (tracker.html's support-and-feedback-atms4a) =====
+  // One shared compose panel + endpoint (submit-support-message.js) behind
+  // two entry points — the feedback CTA and the Contact support row both
+  // just set which `type` this same panel submits as, rather than being
+  // two separate forms/pipelines. See that function's own header comment
+  // for the full design (email to the founder via Resend + a persisted
+  // record in Blobs for a later session to read back).
+  var supportComposeType = null;
+  var supportComposeEl = document.getElementById('support-compose');
+  var supportMessageInput = document.getElementById('support-message-input');
+  var supportErrorEl = document.getElementById('support-error');
+  var supportSuccessEl = document.getElementById('support-success');
+
+  function openSupportCompose(type){
+    supportComposeType = type;
+    supportMessageInput.placeholder = type === 'feedback'
+      ? "What's working, what's not, what would you love to see?"
+      : "Describe what's happening — we'll take a look.";
+    supportErrorEl.textContent = '';
+    supportSuccessEl.style.display = 'none';
+    supportComposeEl.style.display = 'block';
+    // Focus first, THEN scroll — focusing a textarea already triggers
+    // the browser's own implicit "scroll this into view" behavior, which
+    // was fighting a smooth scrollIntoView() called beforehand (the two
+    // competed and the explicit one usually lost, leaving the panel
+    // barely scrolled). Calling scrollIntoView after focus (and without
+    // 'smooth', so nothing can race it) makes it the final, deciding
+    // word: the WHOLE panel, including the Send/Cancel row below the
+    // textarea, ends up visible in the sheet's own scroll area (.sheet's
+    // max-height:88vh/overflow-y:auto in css/styles.css) rather than just
+    // the textarea's top edge peeking in.
+    supportMessageInput.focus();
+    supportComposeEl.scrollIntoView({ block: 'end' });
+  }
+  document.getElementById('feedback-cta-btn').addEventListener('click', function(){ openSupportCompose('feedback'); });
+  document.getElementById('support-row').addEventListener('click', function(){ openSupportCompose('support'); });
+  document.getElementById('support-cancel-btn').addEventListener('click', function(){
+    supportComposeEl.style.display = 'none';
+    supportMessageInput.value = '';
+  });
+
+  document.getElementById('support-success-icon').innerHTML = Icons.check;
+
+  document.getElementById('support-send-btn').addEventListener('click', function(){
+    var btn = this;
+    var message = supportMessageInput.value.trim();
+    if(!message){ supportErrorEl.textContent = 'Enter a message first.'; return; }
+    supportErrorEl.textContent = '';
+
+    var user = DreamStore.getCurrentUser();
+    // videoCount/daysSinceSignup are real client-side context (this app's
+    // dreams/signup-time live only in localStorage today, see
+    // js/store.js's getMyDreams/getAccountCreatedAt) — included so the
+    // founder sees real account context alongside the message, per the
+    // tracker item's own request. daysSinceSignup is null for an account
+    // created before getAccountCreatedAt existed — never fabricated.
+    var createdAt = DreamStore.getAccountCreatedAt();
+    var daysSinceSignup = createdAt != null ? Math.floor((Date.now() - createdAt) / 86400000) : null;
+    var videoCount = DreamStore.getMyDreams().length;
+
+    btn.disabled = true;
+    fetch('/.netlify/functions/submit-support-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: supportComposeType,
+        username: user ? user.username : '',
+        email: DreamStore.getAccountEmail(),
+        message: message,
+        videoCount: videoCount,
+        daysSinceSignup: daysSinceSignup
+      })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      btn.disabled = false;
+      if(!result.ok || !result.data || result.data.ok !== true){
+        supportErrorEl.textContent = "Couldn't send — try again.";
+        return;
+      }
+      supportMessageInput.value = '';
+      document.getElementById('support-success-text').textContent = supportComposeType === 'feedback'
+        ? 'Thanks for the feedback!'
+        : "Thanks — we got your message and will follow up by email.";
+      supportSuccessEl.style.display = 'flex';
+      showToast(supportComposeType === 'feedback' ? 'Feedback sent — thank you!' : 'Message sent');
+    }).catch(function(){
+      btn.disabled = false;
+      supportErrorEl.textContent = "Couldn't send — try again.";
+    });
+  });
+
   function showToast(msg){
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -725,11 +875,11 @@
 
   // Client-only mitigation for accounts/dreams living only in this
   // browser's localStorage (see AGENT_POLICY.md's server-options
-  // section) -- downloads everything DreamStore.getAccountBackup()
+  // section) — downloads everything DreamStore.getAccountBackup()
   // returns as a JSON file the user can restore from later via
   // login.html's "Restore from backup" flow. The file contains the
   // account password in plain text (same as how it's stored locally
-  // today), so it's treated as sensitive -- the button copy above this
+  // today), so it's treated as sensitive — the button copy above this
   // already says to keep it safe.
   document.getElementById('export-backup-icon').innerHTML = Icons.download;
   document.getElementById('export-backup-btn').addEventListener('click', function(){
