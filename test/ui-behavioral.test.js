@@ -1033,3 +1033,34 @@ test("style.html's out-of-tokens modal reads as a free/automatic wait state, nev
     await context.close();
   }
 });
+
+test("result.html has its own separate copy of the out-of-tokens modal (reached from Generate Again) and it must read the same free/automatic way, not as a payment prompt", async function (t) {
+  // Regression test for a review finding: result.html's #modal-quota (shown
+  // from the Edit sheet's "Generate Again", i.e. regenerating/editing an
+  // existing dream) is a SEPARATE copy of the same markup style.html has,
+  // not a shared component -- the style.html fix alone missed this one
+  // entirely, and it still read "You're out of tokens ... visit the shop to
+  // top up sooner" with no beta-free framing until this test/fix.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Zero balance forces the modal open on Generate Again -- same
+    // "why do I need to pay" risk moment as style.html's own modal.
+    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await seedResultPage(page, baseUrl, 'd-quota-modal-test');
+    await page.waitForSelector('#open-edit-sheet', { timeout: 5000 });
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#edit-generate-again', { timeout: 5000 });
+    await page.click('#edit-generate-again');
+    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
+
+    var modalText = await page.textContent('#modal-quota');
+    assert.match(modalText, /free during beta/i, 'the token wall must explicitly say this is free during beta');
+    assert.match(modalText, /no card needed/i);
+    assert.doesNotMatch(modalText, /\$\d/, 'no dollar amount should appear in the out-of-tokens modal -- there is no live payment flow to point to');
+  } finally {
+    await context.close();
+  }
+});
