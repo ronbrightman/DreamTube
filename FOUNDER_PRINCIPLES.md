@@ -219,7 +219,20 @@ review surface (the tracker doesn't push notifications; it's a mailbox you check
 
 **Autonomous cycle ORDER (founder rule 2026-07-24):**
 1. **First, work the existing tracker backlog** — at least all **high and
-   medium** priority tasks/ideas — before anything else.
+   medium** priority tasks/ideas — before anything else. This isn't
+   optional once the high-priority items are clear: **always continue
+   into medium priority too**, in the same pass, without waiting to be
+   told — unless a specific item looks like it should be reconsidered or
+   changed (stale, superseded, ambiguous, or a real decision only Ron can
+   make). In that case, flag it plainly on the tracker and move to the
+   next item, rather than either blindly executing it or silently
+   skipping it. (Learned 2026-07-24: after finishing two high-priority
+   items Ron was actively discussing live, the session reported "nothing
+   actionable" without re-checking the rest of the backlog — a real
+   high-priority item and a well-documented medium-priority one were
+   both sitting untouched. Re-check the full list before declaring
+   nothing's actionable; "I just finished what was in front of me" is
+   not the same as "the backlog is clear.")
 2. **Only then** generate your own new ideas (ideation → evaluation). But for
    now (next few days, until the cycle is tightened) **do NOT self-execute a
    new idea — add it to the tracker and WAIT for Ron's feedback/approval
