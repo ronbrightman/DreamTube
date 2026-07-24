@@ -1,0 +1,147 @@
+// test/wizard-chips.test.js
+//
+// Unit tests for js/wizard-chips.js's pure prompt-assembly logic — the
+// dream-builder wizard's core "chips only, zero typing" -> a real Veo
+// prompt pipeline (see dreamtube-growth/WIZARD_SPEC.md's "Prompt assembly"
+// section, and js/wizard-chips.js's own header comment for the
+// character-description-duplication rule this also covers).
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+
+var WizardChips = require('../js/wizard-chips');
+
+test('spec worked example: Me (text-described) + Sky + Flying + Dreamy + Cinematic', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'me',
+    character: { id: 'c1', isSelf: true, name: '', description: 'a man in his 30s in a grey hoodie' },
+    placeKey: 'sky',
+    actionKey: 'flying',
+    moodKey: 'dreamy',
+    style: 'Cinematic'
+  });
+  assert.match(result.caption, /^aerial wide shot of me, a man in his 30s in a grey hoodie, flying through an open sky, dreamy surreal mood, hazy ethereal light, Cinematic style, dreamlike\.$/);
+  // Description was baked into the caption text -- must NOT also ride
+  // along in characterIdsForGeneration, or generate-video.js's own
+  // buildPrompt would append a second, duplicate "Characters -- the
+  // dreamer ('me'): ..." clause.
+  assert.deepEqual(result.characterIdsForGeneration, []);
+});
+
+test('self character WITH a photo: no text description baked in, but the character id IS returned for generation (reference-to-video needs the photo attached)', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'me',
+    character: { id: 'c2', isSelf: true, name: '', description: '', photoDataUrl: 'data:image/jpeg;base64,xyz' },
+    actionKey: 'flying',
+    moodKey: 'dreamy',
+    style: 'Cinematic'
+  });
+  assert.equal(result.caption.indexOf('data:image'), -1);
+  assert.deepEqual(result.characterIdsForGeneration, ['c2']);
+  // Subject phrase is empty for a photo character -- generate-video.js's
+  // own reference-to-video path supplies "the dreamer ('me') appears as
+  // shown in the reference photo" instead.
+  assert.match(result.caption, /^aerial wide shot of the dream,/);
+});
+
+test('POV toggle wins over every other camera inference, even Epic mood + Flying action', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none',
+    actionKey: 'flying',
+    pov: true,
+    moodKey: 'epic',
+    style: 'Realistic'
+  });
+  assert.match(result.caption, /^first-person POV shot/);
+});
+
+test('Epic mood infers a sweeping crane shot when action is not Flying/Falling and POV is off', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'exploring', moodKey: 'epic', style: 'Cinematic' });
+  assert.match(result.caption, /^sweeping crane shot/);
+});
+
+test('Calm/Meeting actions infer an intimate close-up when mood is not Epic and POV is off', function () {
+  var calm = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'calm', moodKey: 'peaceful', style: 'Cinematic' });
+  assert.match(calm.caption, /^intimate close-up shot/);
+  var meeting = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'meeting', moodKey: 'peaceful', style: 'Cinematic' });
+  assert.match(meeting.caption, /^intimate close-up shot/);
+});
+
+test('everything else falls back to a medium tracking shot', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'joyful', style: 'Anime' });
+  assert.match(result.caption, /^medium tracking shot/);
+});
+
+test('lighting is inferred from mood by default', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'mysterious', style: 'Anime' });
+  assert.match(result.caption, /low-key moody light/);
+});
+
+test('an explicit Day/Night scenery chip OVERRIDES the mood-inferred lighting', function () {
+  var night = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'joyful', sceneryTime: 'Night', style: 'Anime' });
+  assert.match(night.caption, /nighttime lighting/);
+  assert.doesNotMatch(night.caption, /bright airy/);
+
+  var day = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'mysterious', sceneryTime: 'Day', style: 'Anime' });
+  assert.match(day.caption, /bright daylight/);
+  assert.doesNotMatch(day.caption, /low-key moody/);
+});
+
+test('subject "a stranger" / "an animal or creature" / "no people" produce plain literal phrases with no character id', function () {
+  assert.match(WizardChips.assembleCaption({ subjectKey: 'stranger', actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic' }).caption, /of a stranger,/);
+  assert.match(WizardChips.assembleCaption({ subjectKey: 'animal', actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic' }).caption, /of an animal or creature,/);
+  var none = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic' });
+  assert.match(none.caption, /of the dream,/);
+});
+
+test('"+ Something else" free-text escape hatches are honored for subject/place/action/mood', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'other', subjectOtherText: 'my grandmother',
+    placeKey: 'other', placeOtherText: 'a floating library',
+    actionKey: 'other', actionOtherText: 'reading an impossible book',
+    moodKey: 'other', moodOtherText: 'bittersweet',
+    style: 'Cinematic'
+  });
+  assert.match(result.caption, /of my grandmother,/);
+  assert.match(result.caption, /reading an impossible book a floating library,/);
+  assert.match(result.caption, /bittersweet mood,/);
+});
+
+test('optional free-text (Step 6) is appended verbatim after the assembled sentence', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy', style: 'Cinematic',
+    freeText: 'There was also a talking cat.'
+  });
+  assert.match(result.caption, /dreamlike\. There was also a talking cat\.$/);
+});
+
+test('unset action/mood/style fall back to the documented defaults (Flying, Dreamy/surreal, Cinematic)', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none' });
+  assert.match(result.caption, /^aerial wide shot/); // default action is flying
+  assert.match(result.caption, /dreamy surreal mood/);
+  assert.match(result.caption, /Cinematic style/);
+});
+
+test('a non-self "someone I know" character with a description bakes the name + description into the subject phrase', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'someone',
+    character: { id: 'c3', isSelf: false, name: 'Alex', description: 'tall with curly red hair' },
+    actionKey: 'meeting', moodKey: 'joyful', style: 'Realistic'
+  });
+  assert.match(result.caption, /of Alex, tall with curly red hair,/);
+  assert.deepEqual(result.characterIdsForGeneration, []);
+});
+
+test('style: null explicitly omits the style clause entirely (create.html\'s "Build it" retrofit, which hands off to style.html for the real choice — review finding, replacing a fragile literal string .replace())', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy', style: null
+  });
+  assert.doesNotMatch(result.caption, /style,/);
+  assert.doesNotMatch(result.caption, /Cinematic/);
+  assert.match(result.caption, /hazy ethereal light, dreamlike\.$/);
+});
+
+test('style omitted entirely (not explicitly null) still defaults to Cinematic, unchanged', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy' });
+  assert.match(result.caption, /Cinematic style, dreamlike\.$/);
+});

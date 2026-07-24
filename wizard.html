@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Build your dream — DreamTube</title>
+<meta name="theme-color" content="#FBEFEA">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
+     (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
+     load, no network call, no console error — until real keys are set in
+     js/analytics-config.js. See docs/ANALYTICS_SETUP.md for the full setup story. -->
+<script src="js/analytics-config.js"></script>
+<script>
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, { api_host: POSTHOG_HOST, defaults: '2026-05-30', session_recording: { maskAllInputs: true } });
+  }
+</script>
+<script>
+  if (typeof META_PIXEL_ID !== 'undefined' && META_PIXEL_ID !== 'REPLACE_WITH_REAL_PIXEL_ID') {
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', META_PIXEL_ID);
+    fbq('track', 'PageView');
+  }
+</script>
+
+<!--
+  Dream-builder wizard — chip-first, one-question-per-screen dream builder
+  that replaces the old free-text "describe your dream" box for brand-new
+  (pre-signup) visitors. See dreamtube-growth/WIZARD_SPEC.md for the full
+  spec this implements (steps/copy/chips, prompt-assembly logic, the
+  confirmed "build the dream first, sign up after" seam) and tracker items
+  for-product-build-the-dream-builder-wiza-28did1 /
+  for-product-generate-during-signup-aband-73jyud.
+
+  SEAM/ROUTING JUDGMENT CALL (flagged, not silently decided): the spec's
+  own tracker item left "confirm the funnel -> app seam" open. This file
+  is a brand-new, self-contained pre-signup entry point in THIS repo,
+  reachable from index.html's "Get Started" (changed to point here instead
+  of the external dreamtube-growth funnel) — it does NOT touch or replace
+  start.html, which keeps serving the existing external-growth-funnel
+  ?resume=1 handoff completely unchanged (that funnel's own hook/quiz/
+  dream-capture/style-picker screens live in the separate dreamtube-growth
+  repo, out of scope for this build). See this branch's PR description /
+  the build report for the full reasoning.
+
+  FLOW (steps, one screen each, chip-first / zero required typing):
+    0 Subject   ("Who's the dream about?")   — reuses the character sheet
+    1 Setting   ("Where does it take place?") — reuses+widens scenery chips
+    2 Action    ("What's happening?")         — NEW, required, no skip
+    3 Mood      ("What's the mood?")          — NEW
+    4 Style     ("Pick a look")               — reuses style.html's cards
+    5 Free text (optional escape hatch)       — the demoted old textarea
+    6 Contact capture (email + optional WhatsApp) — the retention pivot:
+      "we'll email/message you your dream the moment it's ready," fired
+      BEFORE the full signup gate. Kicks off generation in parallel
+      (start-pending-generation.js) the instant this step completes.
+    7 Signup    (username + password; email locked to what was captured)
+      -> on success, adopts the already-running generation job
+      (DreamStore.adoptPendingGeneration) and hands off straight to
+      processing.html, which resumes polling it with ZERO changes needed
+      there (it already checks DreamStore.getPendingJob() on load).
+
+  Camera chips are deliberately NOT a step here (see WIZARD_SPEC.md:
+  "demoted to inferred-not-asked") — js/wizard-chips.js infers camera +
+  lighting from the Action/Mood/POV selections and bakes them directly
+  into the assembled caption text (see that file's own doc comment for why
+  this does NOT also pass characterIds through the description-bearing
+  path, to avoid a doubled-up character description in the final prompt).
+-->
+</head>
+<body>
+
+<div id="app" class="funnel-app">
+  <div class="fn-topbar">
+    <button class="fn-back" id="fnBack" aria-label="Back" type="button"></button>
+    <div class="fn-progress" id="fnProgress"></div>
+    <div class="fn-topbar-spacer"></div>
+  </div>
+  <div class="fn-screen" id="fnScreen"></div>
+</div>
+
+<style>
+  /* Same "dawn" light funnel shell as start.html, copied verbatim (see
+     that file's own header comment for the full rationale) so this new
+     pre-signup flow looks and feels like one continuous piece of product
+     with the screens it hands off to, not a bolted-on new visual system. */
+  #app.funnel-app{
+    --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
+    --fn-ink:#3A3350; --fn-ink-soft:#6E6480; --fn-ink-faint:#9C93AC;
+    --fn-card:#FFFFFF; --fn-line:rgba(58,51,80,0.10);
+    --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
+    --fn-accent-solid:#7C82C4;
+    --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
+    --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+    background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3));
+    font-family:var(--fn-font-body);
+  }
+
+  .fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
+  .fn-back{ width:34px; height:34px; border-radius:50%; flex:none; cursor:pointer; background:var(--fn-card); border:1px solid var(--fn-line); color:var(--fn-ink); display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;}
+  .fn-back .icon, .fn-back svg{ width:15px; height:15px;}
+  .fn-topbar-spacer{ width:34px; flex:none;}
+  .fn-progress{ flex:1; display:flex; gap:4px;}
+  .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--fn-line); display:block;}
+  .fn-progress i.done{ background:var(--fn-ink); opacity:.55;}
+  .fn-progress i.now{ background:var(--fn-ink);}
+
+  .fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); position:relative; overflow-y:auto; min-height:0; color:var(--fn-ink);}
+
+  .fn-eyebrow{ font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--fn-ink-faint); margin-bottom:10px;}
+  .fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; margin-bottom:10px; color:var(--fn-ink);}
+  .fn-body-copy{ font-size:14.5px; color:var(--fn-ink-soft); line-height:1.55; margin-bottom:18px;}
+  .fn-mini-label{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--fn-ink-faint); margin:14px 0 8px;}
+  .fn-mini-label:first-child{ margin-top:0;}
+  .fn-spacer{ flex:1;}
+
+  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
+  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+
+  /* Character chips (Subject step) reuse create.html/start.html's exact
+     .char-chip/.char-chip-add classes, light-themed to match this shell —
+     see start.html's own identical override block for the same reasoning. */
+  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); color:#2C2846;}
+  #app.funnel-app .char-chip .chip-check{ border-color:var(--fn-ink-faint);}
+  #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
+  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:var(--fn-accent-solid);}
+  #app.funnel-app .char-chip .chip-edit{ color:var(--fn-ink-faint);}
+  #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
+  #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--fn-line); color:var(--fn-ink-soft);}
+  #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
+  #app.funnel-app .sheet{ background:var(--fn-card); color:#2C2846; border-top-color:var(--fn-line); box-shadow:0 -20px 50px rgba(58,51,80,.18);}
+  #app.funnel-app .sheet-handle{ background:var(--fn-line);}
+  #app.funnel-app .sheet-title{ color:#2C2846;}
+  #app.funnel-app .char-mode-row .char-mode-btn{ background:#F3F1FA; border-color:var(--fn-line); color:var(--fn-ink-soft);}
+  #app.funnel-app .char-mode-row .char-mode-btn.active{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  #app.funnel-app .char-photo-preview{ background:#F3F1FA; border-color:var(--fn-line);}
+  #app.funnel-app .char-photo-empty{ color:var(--fn-ink-faint);}
+  #app.funnel-app .char-photo-hint{ color:var(--fn-ink-soft);}
+  #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
+  #app.funnel-app .btn-secondary:hover{ background:#F3F1FA; border-color:var(--fn-ink-faint);}
+
+  /* Style step (Step 5) reuses style.html's real .style-card/.sc-* classes
+     from css/styles.css verbatim — same grid, same preview images. */
+  #app.funnel-app .style-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
+
+  textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
+  textarea.fn-field{ resize:none; line-height:1.5;}
+  textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
+  textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
+
+  .fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
+  .fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
+  .fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--fn-ink-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .fn-field-pw-toggle svg, .fn-field-pw-toggle .icon{ width:18px; height:18px;}
+
+  .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
+
+  .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
+  .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
+  .fn-small-link{ background:none; border:none; color:var(--fn-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
+
+  .fn-price-note{ font-size:12px; color:#6E6480; text-align:center; margin:2px 0 0;}
+
+  /* "+ Something else" progressive-disclosure reveal (per the spec: a
+     collapsed tap that reveals a small text input, not an always-visible
+     box) — shared across every step that has one. */
+  .fn-other-reveal{ margin:-6px 0 14px;}
+  .fn-other-reveal input{ margin-bottom:0;}
+
+  /* POV toggle (Action step) — a plain accessible checkbox styled as a
+     switch, off by default per the spec. */
+  .fn-toggle-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fn-card); border:1px solid var(--fn-line); margin-bottom:18px;}
+  .fn-toggle-row span{ font-size:13.5px; font-weight:700; color:#2C2846;}
+  .fn-switch{ position:relative; width:42px; height:24px; flex:none;}
+  .fn-switch input{ opacity:0; width:0; height:0;}
+  .fn-switch .fn-switch-track{ position:absolute; inset:0; background:var(--fn-line); border-radius:100px; transition:.15s; cursor:pointer;}
+  .fn-switch .fn-switch-track:before{ content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.15s; box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .fn-switch input:checked + .fn-switch-track{ background:var(--fn-accent-grad);}
+  .fn-switch input:checked + .fn-switch-track:before{ transform:translateX(18px);}
+
+  .fn-microcopy{ font-size:12.5px; color:var(--fn-ink-faint); margin:-8px 0 16px; line-height:1.5;}
+
+  .fn-spin{ width:44px; height:44px; border-radius:50%; border:3px solid var(--fn-line); border-top-color:var(--fn-accent-solid); margin:0 auto 20px; animation:fnspin 1s linear infinite;}
+  @keyframes fnspin{ to{ transform:rotate(360deg);} }
+  @media (prefers-reduced-motion: reduce){ .fn-spin{ animation:none;} }
+</style>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/wizard-chips.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the wizard */ }
+    }
+  }
+  function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+  // Already-signed-in visitors have no business in a PRE-signup wizard —
+  // send them to the normal logged-in "New Dream" flow instead (create.html's
+  // own chip wizard retrofit covers the same chip-first experience there).
+  if(DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
+
+  DreamStore.clearDraft();
+
+  // ===================================================================
+  // Character staging — identical pattern to start.html's own pre-signup
+  // character staging (see that file's head-of-file comment for the full
+  // rationale: DreamStore.saveCharacter requires a logged-in user, but
+  // signup doesn't happen until Step 7 here). Characters are staged
+  // locally and flushed into real DreamStore characters the moment signup
+  // succeeds, via flushStagedCharactersToStore below.
+  // ===================================================================
+  var staged = { characters: [], subjectCharacterId: null };
+  var charEditingId = null;
+  var charSubMode = 'describe';
+  var charPendingPhotoDataUrl = null;
+
+  // Non-character subject state ("A stranger" / "An animal or creature" /
+  // "No people" / "+ Something else"). Single-active-subject model (see
+  // this file's own design note below renderSubject) -- exactly ONE of
+  // {a staged+selected character} OR {one of these} is "the" subject at a
+  // time, resolved into WizardChips.assembleCaption's subjectKey/character/
+  // subjectOtherText inputs at hand-off time.
+  var subjectOtherKind = null; // 'stranger' | 'animal' | 'none' | 'other' | null
+  var subjectOtherText = '';
+
+  function resizeImageFile(file, maxDim, quality){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error('read_failed')); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error('decode_failed')); };
+        img.onload = function(){
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function localSaveCharacter(patch){
+    var name = (patch.name || '').trim();
+    var description = (patch.description || '').trim();
+    var isSelf = !!patch.isSelf;
+    var photoDataUrl = (isSelf && patch.photoDataUrl) ? patch.photoDataUrl : null;
+    if(!isSelf && !name) return { ok:false, error:'Give this character a name.' };
+    if(!description && !photoDataUrl) return { ok:false, error: isSelf ? 'Add a description or a photo.' : 'Add a short description.' };
+    var existing = patch.id ? staged.characters.filter(function(c){ return c.id === patch.id; })[0] : null;
+    if(!existing && isSelf) existing = staged.characters.filter(function(c){ return c.isSelf; })[0] || null;
+    if(existing){
+      existing.name = name;
+      existing.description = description;
+      if(isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
+      return { ok:true, character: existing };
+    }
+    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: name, isSelf: isSelf, description: description };
+    if(isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
+    staged.characters.push(character);
+    return { ok:true, character: character };
+  }
+  function localDeleteCharacter(id){
+    staged.characters = staged.characters.filter(function(c){ return c.id !== id; });
+    if(staged.subjectCharacterId === id) staged.subjectCharacterId = null;
+  }
+
+  /** Called once, right after real signup succeeds — turns staged local characters into real DreamStore characters and remaps the chosen subject character onto its real id. */
+  function flushStagedCharactersToStore(){
+    var idMap = {};
+    staged.characters.forEach(function(c){
+      var result = DreamStore.saveCharacter({ isSelf: c.isSelf, name: c.name, description: c.description, photoDataUrl: c.photoDataUrl || null });
+      if(result.ok) idMap[c.id] = result.character.id;
+    });
+    if(staged.subjectCharacterId && idMap[staged.subjectCharacterId]){
+      staged.subjectCharacterId = idMap[staged.subjectCharacterId];
+    }
+  }
+
+  function openCharSheet(mode, existing){
+    charEditingId = existing ? existing.id : null;
+    document.getElementById('char-sheet-title').textContent = mode === 'self'
+      ? (existing ? 'Edit yourself' : 'Add yourself')
+      : (existing ? 'Edit character' : 'Add a character');
+    var nameInput = document.getElementById('char-name-input');
+    nameInput.style.display = mode === 'self' ? 'none' : 'block';
+    nameInput.value = existing ? existing.name : '';
+    document.getElementById('char-desc-input').value = existing ? (existing.description || '') : '';
+    document.getElementById('char-desc-input').dataset.mode = mode;
+    document.getElementById('char-error').textContent = '';
+    document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
+    document.getElementById('char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
+    charPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
+    setCharSubMode(mode === 'self' && charPendingPhotoDataUrl ? 'photo' : 'describe');
+    document.getElementById('sheet-character-overlay').classList.add('open');
+  }
+  function closeCharSheet(){
+    document.getElementById('sheet-character-overlay').classList.remove('open');
+  }
+  function renderCharPhotoPreview(){
+    var preview = document.getElementById('char-photo-preview');
+    var removeLink = document.getElementById('char-photo-remove');
+    if(charPendingPhotoDataUrl){
+      preview.innerHTML = '<img src="' + charPendingPhotoDataUrl + '" alt="">';
+      removeLink.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
+      removeLink.style.display = 'none';
+    }
+  }
+  function setCharSubMode(mode){
+    charSubMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#char-mode-row .char-mode-btn'), function(b){
+      b.classList.toggle('active', b.dataset.charMode === mode);
+    });
+    document.getElementById('char-desc-input').style.display = mode === 'describe' ? 'block' : 'none';
+    document.getElementById('char-photo-area').style.display = mode === 'photo' ? 'block' : 'none';
+    renderCharPhotoPreview();
+  }
+
+  // ===================================================================
+  // Step 1 — Subject ("Who's the dream about?")
+  //
+  // DESIGN NOTE (judgment call, flagged per this task's own instruction):
+  // the spec calls this row "multi-select," but "A stranger" / "An animal
+  // or creature" / "No people — just a place/thing" are semantically
+  // mutually exclusive with each other AND with picking a real character
+  // — there's no sound rule for combining, say, "No people" with a
+  // selected character. This implements a single-active-subject model
+  // instead: exactly one of {a selected character} or {one of the other
+  // four chips} drives the assembled prompt's subject at a time. Tapping
+  // "Someone I know" can still be used repeatedly to build up a reusable
+  // roster of several saved characters (exactly like create.html today);
+  // only ONE of them is picked as the active chip at a time, same
+  // single-select semantics as the standalone chips.
+  // ===================================================================
+  function charChipDisplayName(c){ return c.name || (c.isSelf ? 'Me' : ''); }
+  function charChipHTML(c, selected){
+    return '<div class="char-chip' + (selected ? ' selected' : '') + '" data-char-select="' + c.id + '">' +
+      '<span class="chip-check"><span class="icon">' + Icons.check + '</span></span>' +
+      '<span class="chip-edit-area" data-char-edit="' + c.id + '">' +
+        '<span>' + esc(charChipDisplayName(c)) + '</span>' +
+        '<span class="chip-edit icon">' + Icons.pencil + '</span>' +
+      '</span>' +
+    '</div>';
+  }
+  function renderSubjectChips(){
+    var row = document.getElementById('subject-chip-row');
+    if(!row) return;
+    var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
+    var html = staged.characters.map(function(c){
+      return charChipHTML(c, staged.subjectCharacterId === c.id);
+    }).join('');
+    if(!hasSelf) html += '<div class="char-chip-add" id="subj-add-self"><span class="icon">' + Icons.userPlus + '</span> Me</div>';
+    html += '<div class="char-chip-add" id="subj-add-other"><span class="icon">' + Icons.plus + '</span> Someone I know</div>';
+    row.innerHTML = html;
+    var addSelfBtn = document.getElementById('subj-add-self');
+    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openCharSheet('self', null); });
+    document.getElementById('subj-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
+
+    Array.prototype.forEach.call(document.querySelectorAll('#subject-other-row .fn-chip'), function(chipEl){
+      chipEl.classList.toggle('sel', chipEl.dataset.subjOther === subjectOtherKind);
+    });
+    var otherReveal = document.getElementById('subject-other-reveal');
+    if(otherReveal) otherReveal.style.display = subjectOtherKind === 'other' ? 'block' : 'none';
+  }
+
+  function renderSubject(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 1 of 5</div>' +
+      '<div class="fn-headline">Who’s the dream about?</div>' +
+      '<div class="fn-microcopy">No writing needed — just tap. You can always add your own words.</div>' +
+      '<div class="char-chip-row" id="subject-chip-row"></div>' +
+      '<div class="fn-chip-row" id="subject-other-row">' +
+        '<span class="fn-chip" data-subj-other="stranger">A stranger</span>' +
+        '<span class="fn-chip" data-subj-other="animal">An animal or creature</span>' +
+        '<span class="fn-chip" data-subj-other="none">No people — just a place/thing</span>' +
+        '<span class="fn-chip" data-subj-other="other">+ Something else</span>' +
+      '</div>' +
+      '<div class="fn-other-reveal" id="subject-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-subject-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-subject-skip" style="cursor:pointer;">Skip</span>' +
+      '<div class="sheet-overlay" id="sheet-character-overlay">' +
+        '<div class="sheet">' +
+          '<div class="sheet-handle"></div>' +
+          '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
+          '<input class="fn-field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
+          '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
+            '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
+            '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
+          '</div>' +
+          '<textarea class="fn-field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
+          '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
+            '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
+            '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
+            '<input type="file" accept="image/*" id="char-photo-input" style="display:none;">' +
+            '<button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>' +
+            '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
+          '</div>' +
+          '<div class="err-text" id="char-error"></div>' +
+          '<button class="fn-btn-primary" id="char-save-btn" type="button">Save</button>' +
+          '<div style="height:10px;"></div>' +
+          '<span class="fn-small-link" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
+          '<div style="height:8px;"></div>' +
+          '<span class="fn-small-link" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('subject-chip-row').addEventListener('click', function(e){
+      var editTarget = e.target.closest('[data-char-edit]');
+      if(editTarget){
+        var c = staged.characters.filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
+        if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
+        return;
+      }
+      var chip = e.target.closest('[data-char-select]');
+      if(!chip) return;
+      staged.subjectCharacterId = chip.dataset.charSelect;
+      subjectOtherKind = null;
+      renderSubjectChips();
+    });
+    document.getElementById('subject-other-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      subjectOtherKind = subjectOtherKind === chip.dataset.subjOther ? null : chip.dataset.subjOther;
+      staged.subjectCharacterId = null;
+      renderSubjectChips();
+      if(subjectOtherKind === 'other') document.getElementById('subject-other-input').focus();
+    });
+    document.getElementById('subject-other-input').addEventListener('input', function(e){
+      subjectOtherText = e.target.value;
+    });
+    if(subjectOtherText) document.getElementById('subject-other-input').value = subjectOtherText;
+
+    document.getElementById('char-mode-row').addEventListener('click', function(e){
+      var btn = e.target.closest('.char-mode-btn');
+      if(btn) setCharSubMode(btn.dataset.charMode);
+    });
+    document.getElementById('char-photo-pick-btn').addEventListener('click', function(){
+      document.getElementById('char-photo-input').click();
+    });
+    document.getElementById('char-photo-input').addEventListener('change', function(e){
+      var file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if(!file) return;
+      document.getElementById('char-error').textContent = '';
+      resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+        charPendingPhotoDataUrl = dataUrl;
+        renderCharPhotoPreview();
+      }).catch(function(){
+        document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
+      });
+    });
+    document.getElementById('char-photo-remove').addEventListener('click', function(){
+      charPendingPhotoDataUrl = null;
+      renderCharPhotoPreview();
+    });
+    document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
+    document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
+      if(e.target.id === 'sheet-character-overlay') closeCharSheet();
+    });
+    document.getElementById('char-save-btn').addEventListener('click', function(){
+      var mode = document.getElementById('char-desc-input').dataset.mode;
+      var usingPhoto = mode === 'self' && charSubMode === 'photo';
+      var result = localSaveCharacter({
+        id: charEditingId,
+        isSelf: mode === 'self',
+        name: document.getElementById('char-name-input').value,
+        description: usingPhoto ? '' : document.getElementById('char-desc-input').value,
+        photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : null
+      });
+      if(!result.ok){
+        document.getElementById('char-error').textContent = result.error;
+        return;
+      }
+      staged.subjectCharacterId = result.character.id;
+      subjectOtherKind = null;
+      closeCharSheet();
+      renderSubjectChips();
+    });
+    document.getElementById('char-delete-link').addEventListener('click', function(){
+      if(!charEditingId) return;
+      if(!confirm('Delete this character?')) return;
+      localDeleteCharacter(charEditingId);
+      closeCharSheet();
+      renderSubjectChips();
+    });
+
+    renderSubjectChips();
+    document.getElementById('fn-subject-continue').addEventListener('click', next);
+    document.getElementById('fn-subject-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Step 2 — Setting ("Where does it take place?") — widened place chips
+  // + Day/Night, reusing DreamStore.getDraft()'s existing sceneryTime/
+  // sceneryPlace fields exactly like create.html/style.html always have.
+  // ===================================================================
+  var settingPlaceKey = null;
+  var settingOtherText = '';
+
+  function renderSetting(el){
+    var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
+      return '<span class="fn-chip" data-setting-place="' + c.key + '">' + esc(c.label) + '</span>';
+    }).join('');
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 2 of 5</div>' +
+      '<div class="fn-headline">Where does it take place?</div>' +
+      '<div class="fn-mini-label">Time of day</div>' +
+      '<div class="fn-chip-row" id="setting-time-row">' +
+        '<span class="fn-chip" data-scenery-time="Day">Day</span>' +
+        '<span class="fn-chip" data-scenery-time="Night">Night</span>' +
+      '</div>' +
+      '<div class="fn-mini-label">Place</div>' +
+      '<div class="fn-chip-row" id="setting-place-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="setting-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="setting-other-input" placeholder="Describe the place" dir="auto">' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-setting-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-setting-skip" style="cursor:pointer;">Skip</span>';
+
+    function renderTimeChips(){
+      var draft = DreamStore.getDraft();
+      Array.prototype.forEach.call(document.querySelectorAll('#setting-time-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.sceneryTime === draft.sceneryTime);
+      });
+    }
+    function renderPlaceChips(){
+      Array.prototype.forEach.call(document.querySelectorAll('#setting-place-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.settingPlace === settingPlaceKey);
+      });
+      document.getElementById('setting-other-reveal').style.display = settingPlaceKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('setting-time-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      var val = chip.dataset.sceneryTime;
+      var current = DreamStore.getDraft().sceneryTime;
+      DreamStore.setDraft({ sceneryTime: current === val ? null : val });
+      renderTimeChips();
+    });
+    document.getElementById('setting-place-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      settingPlaceKey = settingPlaceKey === chip.dataset.settingPlace ? null : chip.dataset.settingPlace;
+      renderPlaceChips();
+      if(settingPlaceKey === 'other') document.getElementById('setting-other-input').focus();
+    });
+    document.getElementById('setting-other-input').addEventListener('input', function(e){ settingOtherText = e.target.value; });
+    if(settingOtherText) document.getElementById('setting-other-input').value = settingOtherText;
+
+    renderTimeChips();
+    renderPlaceChips();
+    document.getElementById('fn-setting-continue').addEventListener('click', next);
+    document.getElementById('fn-setting-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Step 3 — Action ("What's happening?") — required, no skip. Default
+  // pre-highlighted to "Flying/floating" per the spec.
+  // ===================================================================
+  var actionKey = WizardChips.DEFAULT_ACTION;
+  var actionOtherText = '';
+  var povOn = false;
+
+  function renderAction(el){
+    var chips = WizardChips.ACTION_CHIPS.map(function(c){
+      return '<span class="fn-chip" data-action="' + c.key + '">' + esc(c.label) + '</span>';
+    }).join('');
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 3 of 5 &middot; Required</div>' +
+      '<div class="fn-headline">What’s happening?</div>' +
+      '<div class="fn-chip-row" id="action-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="action-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="action-other-input" placeholder="What happens?" dir="auto">' +
+      '</div>' +
+      '<label class="fn-toggle-row">' +
+        '<span>See it through their eyes (POV)</span>' +
+        '<span class="fn-switch"><input type="checkbox" id="pov-toggle"><span class="fn-switch-track"></span></span>' +
+      '</label>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-action-continue" type="button">Continue</button>';
+
+    function renderChips(){
+      Array.prototype.forEach.call(document.querySelectorAll('#action-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.action === actionKey);
+      });
+      document.getElementById('action-other-reveal').style.display = actionKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('action-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      actionKey = chip.dataset.action; // single-select, required -- no deselect-to-null
+      renderChips();
+      if(actionKey === 'other') document.getElementById('action-other-input').focus();
+    });
+    document.getElementById('action-other-input').addEventListener('input', function(e){ actionOtherText = e.target.value; });
+    if(actionOtherText) document.getElementById('action-other-input').value = actionOtherText;
+
+    var povInput = document.getElementById('pov-toggle');
+    povInput.checked = povOn;
+    povInput.addEventListener('change', function(){ povOn = povInput.checked; });
+
+    renderChips();
+    document.getElementById('fn-action-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Step 4 — Mood ("What's the mood?") — default pre-highlighted to
+  // "Dreamy/surreal" per the spec.
+  // ===================================================================
+  var moodKey = WizardChips.DEFAULT_MOOD;
+  var moodOtherText = '';
+
+  function renderMood(el){
+    var chips = WizardChips.MOOD_CHIPS.map(function(c){
+      return '<span class="fn-chip" data-mood="' + c.key + '">' + esc(c.label) + '</span>';
+    }).join('');
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 4 of 5</div>' +
+      '<div class="fn-headline">What’s the mood?</div>' +
+      '<div class="fn-chip-row" id="mood-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="mood-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="mood-other-input" placeholder="Describe the mood" dir="auto">' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-mood-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-mood-skip" style="cursor:pointer;">Skip</span>';
+
+    function renderChips(){
+      Array.prototype.forEach.call(document.querySelectorAll('#mood-row .fn-chip'), function(chipEl){
+        chipEl.classList.toggle('sel', chipEl.dataset.mood === moodKey);
+      });
+      document.getElementById('mood-other-reveal').style.display = moodKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('mood-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      moodKey = chip.dataset.mood;
+      renderChips();
+      if(moodKey === 'other') document.getElementById('mood-other-input').focus();
+    });
+    document.getElementById('mood-other-input').addEventListener('input', function(e){ moodOtherText = e.target.value; });
+    if(moodOtherText) document.getElementById('mood-other-input').value = moodOtherText;
+
+    renderChips();
+    document.getElementById('fn-mood-continue').addEventListener('click', next);
+    document.getElementById('fn-mood-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Step 5 — Style ("Pick a look") — reuses style.html's exact
+  // .style-card/.sc-* markup+CSS (css/styles.css), embedded directly here
+  // rather than navigating to style.html (which requires a logged-in
+  // user — there isn't one yet at this point in the flow). Default
+  // pre-selected: Cinematic, per the spec.
+  // ===================================================================
+  var chosenStyle = WizardChips.DEFAULT_STYLE;
+  var STYLE_CLASS = { Cartoon: 'sc-cartoon', Cinematic: 'sc-cinematic', Anime: 'sc-anime', Realistic: 'sc-realistic' };
+
+  function renderStyleStep(el){
+    var cards = WizardChips.STYLE_CHIPS.map(function(name){
+      return '<div class="style-card" data-style="' + name + '"><div class="sc-bg ' + STYLE_CLASS[name] + '"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">' + name + '</div></div></div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 5 of 5</div>' +
+      '<div class="fn-headline">Pick a look.</div>' +
+      '<div class="style-grid" id="style-grid">' + cards + '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-style-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-style-skip" style="cursor:pointer;">Skip</span>';
+
+    Array.prototype.forEach.call(document.querySelectorAll('.sc-icon'), function(iconEl){ iconEl.innerHTML = Icons.palette; });
+    Array.prototype.forEach.call(document.querySelectorAll('.sc-check'), function(checkEl){ checkEl.innerHTML = Icons.check; });
+    function renderSelection(){
+      Array.prototype.forEach.call(document.querySelectorAll('#style-grid .style-card'), function(card){
+        card.classList.toggle('selected', card.dataset.style === chosenStyle);
+      });
+    }
+    document.getElementById('style-grid').addEventListener('click', function(e){
+      var card = e.target.closest('.style-card');
+      if(!card) return;
+      chosenStyle = card.dataset.style;
+      renderSelection();
+    });
+    renderSelection();
+    document.getElementById('fn-style-continue').addEventListener('click', next);
+    document.getElementById('fn-style-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Step 6 (optional) — the demoted free-text escape hatch.
+  // ===================================================================
+  var freeText = '';
+  function renderFreeText(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Optional</div>' +
+      '<div class="fn-headline">Anything to add?</div>' +
+      '<div class="fn-body-copy">A few extra words, if you want them — totally optional.</div>' +
+      '<textarea class="fn-field" id="free-text-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-freetext-continue" type="button">Looks good →</button>' +
+      '<span class="fn-small-link" id="fn-freetext-skip" style="cursor:pointer;">Skip</span>';
+    var input = document.getElementById('free-text-input');
+    input.value = freeText;
+    input.addEventListener('input', function(){ freeText = input.value; });
+    document.getElementById('fn-freetext-continue').addEventListener('click', next);
+    document.getElementById('fn-freetext-skip').addEventListener('click', next);
+  }
+
+  // ===================================================================
+  // Prompt assembly — resolves the current wizard state into a final
+  // caption + which (if any) character id should ride along on the real
+  // generation request. See js/wizard-chips.js for the algorithm itself.
+  // ===================================================================
+  var assembled = null; // { caption, characterIdsForGeneration }
+  function assembleFromState(){
+    var subjectKey = 'none';
+    var character = null;
+    if(staged.subjectCharacterId){
+      character = staged.characters.filter(function(c){ return c.id === staged.subjectCharacterId; })[0] || null;
+      subjectKey = character && character.isSelf ? 'me' : 'someone';
+    } else if(subjectOtherKind){
+      subjectKey = subjectOtherKind;
+    }
+    assembled = WizardChips.assembleCaption({
+      subjectKey: subjectKey, character: character, subjectOtherText: subjectOtherText,
+      placeKey: settingPlaceKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
+      actionKey: actionKey, actionOtherText: actionOtherText, pov: povOn,
+      moodKey: moodKey, moodOtherText: moodOtherText,
+      style: chosenStyle, freeText: freeText
+    });
+    return assembled;
+  }
+
+  // ===================================================================
+  // Step 7 — Contact capture (the retention pivot). Email is required
+  // (it's also the token-economy identity generate-video.js's E112 gate
+  // keys on — see start-pending-generation.js); WhatsApp is optional.
+  // Kicks off generation the moment this completes ("generate during
+  // signup" — see start-pending-generation.js/dream-webhook.js).
+  // ===================================================================
+  var contactEmail = '';
+  var contactWhatsapp = '';
+  var pendingId = null;
+  var pendingOperationName = null;
+  var pendingStartedAt = null;
+  var pendingStartFailed = false;
+
+  function resolveCharactersForGeneration(){
+    if(!assembled || !assembled.characterIdsForGeneration.length) return [];
+    var id = assembled.characterIdsForGeneration[0];
+    var c = staged.characters.filter(function(x){ return x.id === id; })[0];
+    if(!c) return [];
+    var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
+    if(c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
+    return [resolved];
+  }
+
+  function renderContact(el){
+    assembleFromState();
+    el.innerHTML =
+      '<div class="fn-headline">Where should we send your dream?</div>' +
+      '<div class="fn-microcopy">We’ll email you your dream the moment it’s ready — even if you don’t finish signing up.</div>' +
+      '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
+      '<span class="fn-small-link" id="contact-whatsapp-toggle" style="cursor:pointer; text-align:left; padding:0 0 10px;">+ Also send on WhatsApp</span>' +
+      '<div id="contact-whatsapp-reveal" style="display:none;">' +
+        '<input class="fn-field" id="contact-whatsapp" type="tel" placeholder="WhatsApp number (with country code)" autocomplete="tel" dir="auto">' +
+      '</div>' +
+      '<div class="fn-err-text" id="contact-error"></div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Continue</button>';
+
+    document.getElementById('contact-email').value = contactEmail;
+    document.getElementById('contact-whatsapp').value = contactWhatsapp;
+    document.getElementById('contact-whatsapp-toggle').addEventListener('click', function(){
+      var reveal = document.getElementById('contact-whatsapp-reveal');
+      reveal.style.display = reveal.style.display === 'none' ? 'block' : 'none';
+      if(reveal.style.display === 'block') document.getElementById('contact-whatsapp').focus();
+    });
+
+    var continueBtn = document.getElementById('fn-contact-continue');
+    var errEl = document.getElementById('contact-error');
+    continueBtn.addEventListener('click', function(){
+      contactEmail = document.getElementById('contact-email').value.trim();
+      contactWhatsapp = document.getElementById('contact-whatsapp').value.trim();
+      errEl.textContent = '';
+      if(!contactEmail || contactEmail.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
+
+      continueBtn.disabled = true;
+      continueBtn.textContent = 'Starting your dream…';
+      track('wizard_contact_captured', { has_whatsapp: !!contactWhatsapp });
+
+      var characters = resolveCharactersForGeneration();
+      var startedAt = Date.now();
+      fetch('/.netlify/functions/start-pending-generation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: contactEmail, whatsapp: contactWhatsapp || null,
+          caption: assembled.caption, style: chosenStyle,
+          characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
+          sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey
+        })
+      }).then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+      }).then(function(result){
+        if(result.ok && result.data && result.data.pendingId){
+          pendingId = result.data.pendingId;
+          pendingOperationName = result.data.operationName;
+          pendingStartedAt = startedAt;
+          pendingStartFailed = false;
+        } else {
+          // Resilient fallback: generation just won't have a head start —
+          // the normal fresh-generation path at processing.html (draft
+          // caption/style are already set below) still works.
+          pendingStartFailed = true;
+        }
+        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
+        next();
+      }).catch(function(){
+        pendingStartFailed = true;
+        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
+        next();
+      });
+    });
+  }
+
+  // ===================================================================
+  // Step 8 — Signup (username + password; email locked to Step 7's
+  // capture). On success: flush staged characters, adopt the in-flight
+  // generation job (if the pre-signup start succeeded), best-effort mark
+  // it claimed server-side, then hand off straight to processing.html.
+  // ===================================================================
+  function deriveUsernameBase(email){
+    var local = (email.split('@')[0] || '').toLowerCase();
+    var sanitized = local.replace(/[^a-z0-9]/g, '');
+    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
+    return sanitized.slice(0, 20) || 'dreamer';
+  }
+  function attemptSignup(email, password, cb){
+    var base = deriveUsernameBase(email);
+    var attempts = 0;
+    var MAX_ATTEMPTS = 8;
+    function tryUsername(username){
+      DreamStore.signup(username, password, email).then(function(result){
+        if(result.ok){ cb(true, null); return; }
+        if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
+          attempts++;
+          tryUsername(base + Math.floor(1000 + Math.random() * 9000));
+          return;
+        }
+        cb(false, result.error);
+      });
+    }
+    tryUsername(base);
+  }
+
+  function renderSignup(el){
+    el.innerHTML =
+      '<div class="fn-headline">Create your account</div>' +
+      '<div class="fn-body-copy">Free to start — 200 tokens on signup, no card needed.</div>' +
+      '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
+      '<input class="fn-field" id="fn-username" placeholder="Choose a username" autocomplete="username" dir="auto">' +
+      '<div class="fn-field-pw-wrap">' +
+        '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
+        '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
+      '</div>' +
+      '<div class="fn-err-text" id="fn-signup-error"></div>' +
+      '<button class="fn-btn-primary" id="fn-signup-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
+      '<div class="fn-spacer"></div>';
+
+    var pwToggle = document.getElementById('fn-pw-toggle');
+    var pwInput = document.getElementById('fn-password');
+    pwToggle.innerHTML = Icons.eye;
+    pwToggle.addEventListener('click', function(){
+      var showing = pwInput.type === 'text';
+      pwInput.type = showing ? 'password' : 'text';
+      pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+    });
+
+    var continueBtn = document.getElementById('fn-signup-continue');
+    var errEl = document.getElementById('fn-signup-error');
+    continueBtn.addEventListener('click', function(){
+      var username = document.getElementById('fn-username').value.trim();
+      var password = pwInput.value;
+      errEl.textContent = '';
+      if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
+      if(!password){ errEl.textContent = 'Enter a password.'; return; }
+      continueBtn.disabled = true;
+      continueBtn.textContent = 'Creating your account…';
+      setTimeout(function(){
+        attemptSignup(contactEmail, password, function(ok, err){
+          if(!ok){
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue';
+            errEl.textContent = err;
+            return;
+          }
+          fireMetaConversion('CompleteRegistration', { email: contactEmail });
+          flushStagedCharactersToStore();
+          // Update the draft's characterIds to the now-real (flushed) id,
+          // in case the earlier pre-signup generation call already baked
+          // a "local..." staged id into what it sent server-side -- the
+          // server call itself only ever sent resolved character fields
+          // (name/description/photo), never the id, so this is purely for
+          // any LOCAL dream metadata display, not a correctness issue for
+          // the in-flight generation itself.
+          if(assembled && assembled.characterIdsForGeneration.length && staged.subjectCharacterId){
+            DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
+          }
+          if(pendingId && !pendingStartFailed){
+            // email is required now (see claim-pending-generation.js's
+            // ownership check, review finding) -- contactEmail is the
+            // exact same email start-pending-generation.js created this
+            // pending record under, so this always matches.
+            fetch('/.netlify/functions/claim-pending-generation', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
+            }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
+          }
+          if(pendingOperationName && !pendingStartFailed){
+            DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle);
+          }
+          track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
+          location.href = 'processing.html';
+        });
+      }, 0);
+    });
+  }
+
+  // ===================================================================
+  // Navigation engine — same shape as start.html's own goToStep/next/prev.
+  // ===================================================================
+  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderContact, renderSignup];
+  var cur = 0;
+  var screenEl = document.getElementById('fnScreen');
+  var progressEl = document.getElementById('fnProgress');
+  var backBtn = document.getElementById('fnBack');
+  backBtn.innerHTML = Icons.back;
+
+  function renderProgress(){
+    // Progress dots only cover the 5 core + optional steps (0-5) — the
+    // contact-capture/signup steps are their own distinct phase, same as
+    // start.html not counting its own signup/pricing/confirm screens
+    // against the earlier Advanced dots.
+    var coreCount = 6;
+    var dots = '';
+    for(var i = 0; i < coreCount; i++){
+      dots += '<i class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '"></i>';
+    }
+    progressEl.innerHTML = cur < coreCount ? dots : '';
+  }
+  function render(){
+    SCREEN_RENDERERS[cur](screenEl);
+    renderProgress();
+    screenEl.scrollTop = 0;
+    window.scrollTo(0, 0);
+    track('wizard_step_viewed', { step: cur + 1 });
+  }
+  function goToStep(n){
+    if(n < 0 || n >= SCREEN_RENDERERS.length) return;
+    cur = n;
+    render();
+  }
+  function next(){ goToStep(cur + 1); }
+  backBtn.addEventListener('click', function(){
+    if(cur > 0){ goToStep(cur - 1); return; }
+    location.href = 'index.html';
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

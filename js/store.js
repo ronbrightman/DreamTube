@@ -53,6 +53,12 @@
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
 //                                                result.html's call site + js/analytics-config.js)
+//   adoptPendingGeneration(operationName,startedAt,caption,style) -> local write, adopts an
+//       already-submitted (pre-signup) generation job as this browser's pendingJob — see
+//       wizard.html's "generate during signup" seam and start-pending-generation.js
+//   saveClaimedDream(caption,style,videoUrl) -> local write, materializes an
+//       already-finished dream (claim-dream.html, the abandoned-dream re-engagement
+//       email/WhatsApp link's landing page) into the current account's local dreams
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -1000,6 +1006,50 @@
 
     /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */
     getPendingJob: function () { return state.pendingJob; },
+
+    /**
+     * Adopts an ALREADY-SUBMITTED generation job as this browser's
+     * pendingJob — used by wizard.html's "generate during signup" seam
+     * (see start-pending-generation.js): the dream-builder wizard submits
+     * to fal.ai the moment its contact-capture step collects an email,
+     * before a real account exists, so by the time signup itself
+     * completes there's already a real operationName in flight. This is
+     * the exact same shape startGeneration's own savePendingJob call
+     * produces, so a redirect straight to processing.html right after
+     * signup "just works" with zero changes there: that page already
+     * checks DreamStore.getPendingJob() on load and resumes polling it via
+     * resumePendingJob(). Never re-submits to generate-video.js/
+     * start-pending-generation.js — operationName already exists.
+     */
+    adoptPendingGeneration: function (operationName, startedAt, caption, style) {
+      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, style: style, sourceDreamId: null, notify: false });
+    },
+
+    /**
+     * Materializes an already-finished dream (from claim-dream.html — the
+     * abandoned-dream re-engagement email/WhatsApp link's landing page,
+     * see verify-pending-claim.js) into the CURRENTLY signed-in account's
+     * local dreams. Requires a logged-in user (claim-dream.html signs one
+     * in — or up — first). Returns the new dream, same shape a normal
+     * generateVideo() completion produces, so result.html works unchanged
+     * for it.
+     */
+    saveClaimedDream: function (caption, style, videoUrl) {
+      if (!state.user) return null;
+      var dream = {
+        id: newId(),
+        ownerHandle: state.user.handle,
+        caption: caption, style: style,
+        likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
+        videoUrl: videoUrl
+      };
+      state.dreams.unshift(dream);
+      persist();
+      probeVideoDuration(videoUrl).then(function (dur) {
+        if (dur) { dream.dur = dur; persist(); }
+      });
+      return dream;
+    },
 
     /** Marks the pending job so its completion fires a real Notification wherever it resolves. */
     requestNotifyOnReady: function () {

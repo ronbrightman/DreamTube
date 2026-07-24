@@ -174,6 +174,20 @@ function resolveDuration() {
 }
 
 /**
+ * Appends fal's documented `fal_webhook` query param to a queue submission
+ * URL (see https://docs.fal.ai/model-endpoints/webhooks) — used only by
+ * start-pending-generation.js's pre-signup path (see that file and
+ * dream-webhook.js), so a generation started before/without a real signup
+ * can still notify the user once it finishes even if nobody's browser is
+ * left polling. Every other caller (generate-video.js's own handler, the
+ * normal logged-in path) passes no webhookUrl and this is a no-op —
+ * behavior for every existing call site is completely unchanged.
+ */
+function withWebhook(url, webhookUrl) {
+  return webhookUrl ? (url + '?fal_webhook=' + encodeURIComponent(webhookUrl)) : url;
+}
+
+/**
  * Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>".
  * generateAudio maps straight to fal's own `generate_audio` boolean
  * (confirmed via fal.ai's model API docs, 2026-07-20 — not guessed; same
@@ -183,9 +197,12 @@ function resolveDuration() {
  * and only when the prompt caption was condensed (see
  * lib/prompt-condenser.js) — narrating a condensed version would voice
  * words the user never actually wrote.
+ *
+ * webhookUrl (optional, 5th arg): see withWebhook above — unused by every
+ * call site in this file itself.
  */
-async function callFal(prompt, falKey, duration, generateAudio) {
-  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
+async function callFal(prompt, falKey, duration, generateAudio, webhookUrl) {
+  var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL, webhookUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -224,9 +241,12 @@ var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
  * video-status.js needs no changes for this: its falAppBase() already
  * derives the polling path from just the first two model segments
  * ("fal-ai/veo3.1"), which is identical across every veo3.1 variant.
+ *
+ * webhookUrl (optional, 5th arg): see callFal's own doc comment above —
+ * same withWebhook() no-op-unless-passed behavior.
  */
-async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio) {
-  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, {
+async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl) {
+  var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, webhookUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -611,3 +631,20 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
   }
 };
+
+// Named exports below are purely additive — exports.handler above (this
+// file's only export until now) is completely unchanged, and nothing here
+// alters its behavior. start-pending-generation.js (the dream-builder
+// wizard's pre-signup generation path — see that file and
+// dream-webhook.js) reuses these instead of re-implementing the same
+// prompt-assembly/fal-call logic a second time, so the two call sites can
+// never silently drift apart. Every function here is a plain, already-
+// pure top-level declaration (no closures over handler-local state), so
+// exporting them has no behavioral cost.
+exports.buildPrompt = buildPrompt;
+exports.callFal = callFal;
+exports.callFalReferenceToVideo = callFalReferenceToVideo;
+exports.resolveDuration = resolveDuration;
+exports.falErrorMessage = falErrorMessage;
+exports.FAL_MODEL = FAL_MODEL;
+exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;

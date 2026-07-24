@@ -71,6 +71,21 @@
 
   <div class="px" id="create-select" style="flex:1; padding-top:6px;">
     <div class="section-label" style="margin-top:10px;">Describe a dream</div>
+    <!-- "Build it" — the chip-first dream-builder wizard (see
+         dreamtube-growth/WIZARD_SPEC.md), retrofitted here for
+         already-signed-in users creating a 2nd/Nth dream. Reuses
+         js/wizard-chips.js's exact chip taxonomy/prompt-assembly logic as
+         wizard.html (the new pre-signup flow this same feature adds) —
+         see #create-build below. Placed first/flagship per the spec
+         ("replaces the intimidating free-text box"); "Write it" and
+         "Record it" are deliberately left untouched alongside it rather
+         than removed, so this is purely additive — a new, lower-risk
+         option next to two already-shipped, already-tested ones. -->
+    <div class="choice-card" id="choice-build">
+      <div class="choice-icon choice-icon-build"></div>
+      <div class="choice-text"><div class="choice-title">Build it</div><div class="choice-sub">Tap a few chips — no typing needed</div></div>
+      <div class="choice-chevron">›</div>
+    </div>
     <div class="choice-card" id="choice-write">
       <div class="choice-icon choice-icon-write"></div>
       <div class="choice-text"><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
@@ -82,6 +97,17 @@
       <div class="choice-chevron">›</div>
     </div>
     <div class="rec-error" id="select-error" style="display:none;"></div>
+  </div>
+
+  <!-- "Build it" panel — one question per screen, chip-first, reusing
+       DreamStore's REAL characters/draft (no pre-signup staging needed
+       here, unlike wizard.html — this user is already logged in). Its own
+       fully self-contained ids/state, deliberately not sharing any markup
+       with #create-write's Advanced accordion above, to keep this
+       addition isolated and risk-free against the existing, already-
+       tested Write/Record flows. -->
+  <div class="px" id="create-build" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto; min-height:0;">
+    <div id="build-step-body" style="flex:1; display:flex; flex-direction:column; min-height:0;"></div>
   </div>
 
   <div class="px" id="create-write" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto; min-height:0;">
@@ -183,14 +209,52 @@
       <span class="link-text" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
     </div>
   </div>
+
+  <!-- Build-it's OWN character sheet — a separate instance from
+       #sheet-character-overlay above, same "each page/flow gets its own
+       copy of this markup" precedent start.html's pre-signup character
+       sheet already follows (see that file's own header comment), just
+       within one page here rather than across two. Kept fully separate
+       (distinct ids) rather than shared, since Build-it's subject step
+       uses a single-active-subject model (see js/wizard-chips.js's own
+       doc comment) while the Advanced accordion's existing char-chip-row
+       above stays a plain multi-select against DreamStore's real
+       characters, unchanged. -->
+  <div class="sheet-overlay" id="build-sheet-character-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title" id="build-char-sheet-title">Add a character</div>
+      <input class="field" id="build-char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">
+      <div class="char-mode-row" id="build-char-mode-row" style="display:none;">
+        <div class="char-mode-btn" data-char-mode="describe">Describe</div>
+        <div class="char-mode-btn" data-char-mode="photo">Upload photo</div>
+      </div>
+      <textarea class="field" id="build-char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>
+      <div class="char-photo-area" id="build-char-photo-area" style="display:none;">
+        <div class="char-photo-preview" id="build-char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>
+        <div class="char-photo-hint">A photo of a child or teen can't be used for video generation — use Describe instead for them.</div>
+        <input type="file" accept="image/*" id="build-char-photo-input" style="display:none;">
+        <button type="button" class="btn btn-secondary btn-block" id="build-char-photo-pick-btn">Choose photo</button>
+        <span class="char-photo-remove" id="build-char-photo-remove" style="display:none;">Remove photo</span>
+      </div>
+      <div class="err-text" id="build-char-error"></div>
+      <button class="btn btn-primary btn-block" id="build-char-save-btn">Save</button>
+      <div style="height:10px;"></div>
+      <span class="link-text" id="build-char-cancel" style="cursor:pointer;">Cancel</span>
+      <div style="height:8px;"></div>
+      <span class="link-text" id="build-char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
+    </div>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/wizard-chips.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
   document.getElementById('create-back').innerHTML = Icons.back;
+  document.querySelector('.choice-icon-build').innerHTML = Icons.plus;
   document.querySelector('.choice-icon-write').innerHTML = Icons.pencil;
   document.querySelector('.choice-icon-record').innerHTML = Icons.mic;
   document.querySelector('.rec-dot').innerHTML = Icons.mic;
@@ -778,6 +842,13 @@
   document.getElementById('choice-record').addEventListener('click', startRecordingUI);
 
   document.getElementById('create-back').addEventListener('click', function(){
+    if(buildEl.style.display === 'flex'){
+      if(buildPrev()) return;
+      buildEl.style.display = 'none';
+      selectEl.style.display = 'block';
+      heading.textContent = 'New Dream';
+      return;
+    }
     var open = [writeEl, recordEl, reviewEl].some(function(el){ return el.style.display === 'flex'; });
     if(open){
       selectEl.style.display = 'block';
@@ -791,6 +862,405 @@
     } else {
       location.href = 'explore.html';
     }
+  });
+
+  // ===================================================================
+  // "Build it" — chip-first dream-builder wizard, logged-in retrofit of
+  // the pre-signup wizard.html flow (see that file and
+  // dreamtube-growth/WIZARD_SPEC.md). Reuses js/wizard-chips.js's exact
+  // taxonomy/prompt-assembly logic. Unlike wizard.html, there's no
+  // contact-capture/signup step here — this user is already signed in —
+  // so this hands off straight to style.html (Step 5, reused as-is)
+  // exactly like "Write it" already does.
+  // ===================================================================
+  var buildEl = document.getElementById('create-build');
+  var buildStepBody = document.getElementById('build-step-body');
+  var buildCur = 0;
+  var buildSubjectCharacterId = null;
+  var buildSubjectOtherKind = null;
+  var buildSubjectOtherText = '';
+  var buildSettingPlaceKey = null;
+  var buildSettingOtherText = '';
+  var buildActionKey = WizardChips.DEFAULT_ACTION;
+  var buildActionOtherText = '';
+  var buildPovOn = false;
+  var buildMoodKey = WizardChips.DEFAULT_MOOD;
+  var buildMoodOtherText = '';
+  var buildFreeText = '';
+  var buildCharEditingId = null;
+  var buildCharSubMode = 'describe';
+  var buildCharPendingPhotoDataUrl = null;
+
+  function buildCharChipDisplayName(c){ return c.name || (c.isSelf ? 'Me' : ''); }
+  function buildCharChipHTML(c, selected){
+    return '<div class="char-chip'+(selected?' selected':'')+'" data-build-char-select="'+c.id+'">' +
+      '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
+      '<span class="chip-edit-area" data-build-char-edit="'+c.id+'">' +
+        '<span>'+esc(buildCharChipDisplayName(c))+'</span>' +
+        '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
+      '</span>' +
+    '</div>';
+  }
+  function renderBuildSubjectChips(){
+    var row = document.getElementById('build-subject-chip-row');
+    if(!row) return;
+    var characters = DreamStore.getCharacters();
+    var hasSelf = characters.some(function(c){ return c.isSelf; });
+    var html = characters.map(function(c){ return buildCharChipHTML(c, buildSubjectCharacterId === c.id); }).join('');
+    if(!hasSelf) html += '<div class="char-chip-add" id="build-subj-add-self"><span class="icon">'+Icons.userPlus+'</span> Me</div>';
+    html += '<div class="char-chip-add" id="build-subj-add-other"><span class="icon">'+Icons.plus+'</span> Someone I know</div>';
+    row.innerHTML = html;
+    var addSelfBtn = document.getElementById('build-subj-add-self');
+    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openBuildCharSheet('self', null); });
+    document.getElementById('build-subj-add-other').addEventListener('click', function(){ openBuildCharSheet('other', null); });
+
+    Array.prototype.forEach.call(document.querySelectorAll('#build-subject-other-row .opt-chip'), function(chipEl){
+      chipEl.classList.toggle('selected', chipEl.dataset.buildSubjOther === buildSubjectOtherKind);
+    });
+    var reveal = document.getElementById('build-subject-other-reveal');
+    if(reveal) reveal.style.display = buildSubjectOtherKind === 'other' ? 'block' : 'none';
+  }
+
+  function openBuildCharSheet(mode, existing){
+    buildCharEditingId = existing ? existing.id : null;
+    document.getElementById('build-char-sheet-title').textContent = mode === 'self' ? (existing ? 'Edit yourself' : 'Add yourself') : (existing ? 'Edit character' : 'Add a character');
+    var nameInput = document.getElementById('build-char-name-input');
+    nameInput.style.display = mode === 'self' ? 'none' : 'block';
+    nameInput.value = existing ? existing.name : '';
+    document.getElementById('build-char-desc-input').value = existing ? (existing.description || '') : '';
+    document.getElementById('build-char-desc-input').dataset.mode = mode;
+    document.getElementById('build-char-error').textContent = '';
+    document.getElementById('build-char-delete-link').style.display = existing ? 'block' : 'none';
+    document.getElementById('build-char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
+    buildCharPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
+    setBuildCharSubMode(mode === 'self' && buildCharPendingPhotoDataUrl ? 'photo' : 'describe');
+    document.getElementById('build-sheet-character-overlay').classList.add('open');
+  }
+  function closeBuildCharSheet(){ document.getElementById('build-sheet-character-overlay').classList.remove('open'); }
+  function renderBuildCharPhotoPreview(){
+    var preview = document.getElementById('build-char-photo-preview');
+    var removeLink = document.getElementById('build-char-photo-remove');
+    if(buildCharPendingPhotoDataUrl){
+      preview.innerHTML = '<img src="'+buildCharPendingPhotoDataUrl+'" alt="">';
+      removeLink.style.display = 'block';
+    } else {
+      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
+      removeLink.style.display = 'none';
+    }
+  }
+  function setBuildCharSubMode(mode){
+    buildCharSubMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#build-char-mode-row .char-mode-btn'), function(b){
+      b.classList.toggle('active', b.dataset.charMode === mode);
+    });
+    document.getElementById('build-char-desc-input').style.display = mode === 'describe' ? 'block' : 'none';
+    document.getElementById('build-char-photo-area').style.display = mode === 'photo' ? 'block' : 'none';
+    renderBuildCharPhotoPreview();
+  }
+  document.getElementById('build-char-mode-row').addEventListener('click', function(e){
+    var btn = e.target.closest('.char-mode-btn');
+    if(btn) setBuildCharSubMode(btn.dataset.charMode);
+  });
+  document.getElementById('build-char-photo-pick-btn').addEventListener('click', function(){
+    document.getElementById('build-char-photo-input').click();
+  });
+  document.getElementById('build-char-photo-input').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    document.getElementById('build-char-error').textContent = '';
+    resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      buildCharPendingPhotoDataUrl = dataUrl;
+      renderBuildCharPhotoPreview();
+    }).catch(function(){
+      document.getElementById('build-char-error').textContent = "Couldn't read that photo — try a different image.";
+    });
+  });
+  document.getElementById('build-char-photo-remove').addEventListener('click', function(){
+    buildCharPendingPhotoDataUrl = null;
+    renderBuildCharPhotoPreview();
+  });
+  document.getElementById('build-char-cancel').addEventListener('click', closeBuildCharSheet);
+  document.getElementById('build-sheet-character-overlay').addEventListener('click', function(e){
+    if(e.target.id === 'build-sheet-character-overlay') closeBuildCharSheet();
+  });
+  document.getElementById('build-char-save-btn').addEventListener('click', function(){
+    var mode = document.getElementById('build-char-desc-input').dataset.mode;
+    var isSelf = mode === 'self';
+    var usingPhoto = isSelf && buildCharSubMode === 'photo';
+    var result = DreamStore.saveCharacter({
+      id: buildCharEditingId,
+      isSelf: isSelf,
+      name: document.getElementById('build-char-name-input').value,
+      description: usingPhoto ? '' : document.getElementById('build-char-desc-input').value,
+      photoDataUrl: usingPhoto ? buildCharPendingPhotoDataUrl : null
+    });
+    if(!result.ok){
+      document.getElementById('build-char-error').textContent = result.error;
+      return;
+    }
+    buildSubjectCharacterId = result.character.id;
+    buildSubjectOtherKind = null;
+    closeBuildCharSheet();
+    renderBuildSubjectChips();
+  });
+  document.getElementById('build-char-delete-link').addEventListener('click', function(){
+    if(!buildCharEditingId) return;
+    if(!confirm('Delete this character?')) return;
+    DreamStore.deleteCharacter(buildCharEditingId);
+    if(buildSubjectCharacterId === buildCharEditingId) buildSubjectCharacterId = null;
+    closeBuildCharSheet();
+    renderBuildSubjectChips();
+  });
+
+  function renderBuildSubject(el){
+    el.innerHTML =
+      '<div class="section-label" style="margin-top:0;">Who’s the dream about? &middot; Step 1 of 5</div>' +
+      '<div class="char-chip-row" id="build-subject-chip-row" style="margin:10px 0 14px;"></div>' +
+      '<div class="opt-chip-row" id="build-subject-other-row" style="margin-bottom:8px;">' +
+        '<div class="opt-chip" data-build-subj-other="stranger">A stranger</div>' +
+        '<div class="opt-chip" data-build-subj-other="animal">An animal or creature</div>' +
+        '<div class="opt-chip" data-build-subj-other="none">No people</div>' +
+        '<div class="opt-chip" data-build-subj-other="other">+ Something else</div>' +
+      '</div>' +
+      '<div id="build-subject-other-reveal" style="display:none;">' +
+        '<input class="field" id="build-subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
+      '</div>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary btn-block" id="build-subject-continue" style="margin-bottom:10px;">Continue</button>' +
+      '<span class="link-text" id="build-subject-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+
+    document.getElementById('build-subject-chip-row').addEventListener('click', function(e){
+      var editTarget = e.target.closest('[data-build-char-edit]');
+      if(editTarget){
+        var c = DreamStore.getCharacters().filter(function(x){ return x.id === editTarget.dataset.buildCharEdit; })[0];
+        if(c) openBuildCharSheet(c.isSelf ? 'self' : 'other', c);
+        return;
+      }
+      var chip = e.target.closest('[data-build-char-select]');
+      if(!chip) return;
+      buildSubjectCharacterId = chip.dataset.buildCharSelect;
+      buildSubjectOtherKind = null;
+      renderBuildSubjectChips();
+    });
+    document.getElementById('build-subject-other-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      buildSubjectOtherKind = buildSubjectOtherKind === chip.dataset.buildSubjOther ? null : chip.dataset.buildSubjOther;
+      buildSubjectCharacterId = null;
+      renderBuildSubjectChips();
+      if(buildSubjectOtherKind === 'other') document.getElementById('build-subject-other-input').focus();
+    });
+    document.getElementById('build-subject-other-input').addEventListener('input', function(e){ buildSubjectOtherText = e.target.value; });
+    if(buildSubjectOtherText) document.getElementById('build-subject-other-input').value = buildSubjectOtherText;
+
+    renderBuildSubjectChips();
+    document.getElementById('build-subject-continue').addEventListener('click', buildNext);
+    document.getElementById('build-subject-skip').addEventListener('click', buildNext);
+  }
+
+  function renderBuildSetting(el){
+    var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
+      return '<div class="opt-chip" data-build-place="'+c.key+'">'+esc(c.label)+'</div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="section-label" style="margin-top:0;">Where does it take place? &middot; Step 2 of 5</div>' +
+      '<div class="adv-sub-label">Time of day</div>' +
+      '<div class="opt-chip-row" id="build-time-row" style="margin-bottom:10px;">' +
+        '<div class="opt-chip" data-build-time="Day">Day</div>' +
+        '<div class="opt-chip" data-build-time="Night">Night</div>' +
+      '</div>' +
+      '<div class="adv-sub-label">Place</div>' +
+      '<div class="opt-chip-row" id="build-place-row">' + chips + '</div>' +
+      '<div id="build-place-other-reveal" style="display:none; margin-top:8px;">' +
+        '<input class="field" id="build-place-other-input" placeholder="Describe the place" dir="auto">' +
+      '</div>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary btn-block" id="build-setting-continue" style="margin-bottom:10px;">Continue</button>' +
+      '<span class="link-text" id="build-setting-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+
+    function renderTime(){
+      var draft = DreamStore.getDraft();
+      Array.prototype.forEach.call(document.querySelectorAll('#build-time-row .opt-chip'), function(el2){
+        el2.classList.toggle('selected', el2.dataset.buildTime === draft.sceneryTime);
+      });
+    }
+    function renderPlace(){
+      Array.prototype.forEach.call(document.querySelectorAll('#build-place-row .opt-chip'), function(el2){
+        el2.classList.toggle('selected', el2.dataset.buildPlace === buildSettingPlaceKey);
+      });
+      document.getElementById('build-place-other-reveal').style.display = buildSettingPlaceKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('build-time-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      var val = chip.dataset.buildTime;
+      var current = DreamStore.getDraft().sceneryTime;
+      DreamStore.setDraft({ sceneryTime: current === val ? null : val });
+      renderTime();
+    });
+    document.getElementById('build-place-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      buildSettingPlaceKey = buildSettingPlaceKey === chip.dataset.buildPlace ? null : chip.dataset.buildPlace;
+      renderPlace();
+      if(buildSettingPlaceKey === 'other') document.getElementById('build-place-other-input').focus();
+    });
+    document.getElementById('build-place-other-input').addEventListener('input', function(e){ buildSettingOtherText = e.target.value; });
+    if(buildSettingOtherText) document.getElementById('build-place-other-input').value = buildSettingOtherText;
+
+    renderTime();
+    renderPlace();
+    document.getElementById('build-setting-continue').addEventListener('click', buildNext);
+    document.getElementById('build-setting-skip').addEventListener('click', buildNext);
+  }
+
+  function renderBuildAction(el){
+    var chips = WizardChips.ACTION_CHIPS.map(function(c){
+      return '<div class="opt-chip" data-build-action="'+c.key+'">'+esc(c.label)+'</div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="section-label" style="margin-top:0;">What’s happening? &middot; Step 3 of 5 &middot; Required</div>' +
+      '<div class="opt-chip-row" id="build-action-row">' + chips + '</div>' +
+      '<div id="build-action-other-reveal" style="display:none; margin-top:8px;">' +
+        '<input class="field" id="build-action-other-input" placeholder="What happens?" dir="auto">' +
+      '</div>' +
+      '<label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); margin:14px 0;">' +
+        '<span style="font-size:13.5px; font-weight:700;">See it through their eyes (POV)</span>' +
+        '<input type="checkbox" id="build-pov-toggle">' +
+      '</label>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary btn-block" id="build-action-continue" style="margin-bottom:14px;">Continue</button>';
+
+    function renderChips(){
+      Array.prototype.forEach.call(document.querySelectorAll('#build-action-row .opt-chip'), function(el2){
+        el2.classList.toggle('selected', el2.dataset.buildAction === buildActionKey);
+      });
+      document.getElementById('build-action-other-reveal').style.display = buildActionKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('build-action-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      buildActionKey = chip.dataset.buildAction;
+      renderChips();
+      if(buildActionKey === 'other') document.getElementById('build-action-other-input').focus();
+    });
+    document.getElementById('build-action-other-input').addEventListener('input', function(e){ buildActionOtherText = e.target.value; });
+    if(buildActionOtherText) document.getElementById('build-action-other-input').value = buildActionOtherText;
+    var povInput = document.getElementById('build-pov-toggle');
+    povInput.checked = buildPovOn;
+    povInput.addEventListener('change', function(){ buildPovOn = povInput.checked; });
+
+    renderChips();
+    document.getElementById('build-action-continue').addEventListener('click', buildNext);
+  }
+
+  function renderBuildMood(el){
+    var chips = WizardChips.MOOD_CHIPS.map(function(c){
+      return '<div class="opt-chip" data-build-mood="'+c.key+'">'+esc(c.label)+'</div>';
+    }).join('');
+    el.innerHTML =
+      '<div class="section-label" style="margin-top:0;">What’s the mood? &middot; Step 4 of 5</div>' +
+      '<div class="opt-chip-row" id="build-mood-row">' + chips + '</div>' +
+      '<div id="build-mood-other-reveal" style="display:none; margin-top:8px;">' +
+        '<input class="field" id="build-mood-other-input" placeholder="Describe the mood" dir="auto">' +
+      '</div>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary btn-block" id="build-mood-continue" style="margin-bottom:10px;">Continue</button>' +
+      '<span class="link-text" id="build-mood-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+
+    function renderChips(){
+      Array.prototype.forEach.call(document.querySelectorAll('#build-mood-row .opt-chip'), function(el2){
+        el2.classList.toggle('selected', el2.dataset.buildMood === buildMoodKey);
+      });
+      document.getElementById('build-mood-other-reveal').style.display = buildMoodKey === 'other' ? 'block' : 'none';
+    }
+    document.getElementById('build-mood-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.opt-chip');
+      if(!chip) return;
+      buildMoodKey = chip.dataset.buildMood;
+      renderChips();
+      if(buildMoodKey === 'other') document.getElementById('build-mood-other-input').focus();
+    });
+    document.getElementById('build-mood-other-input').addEventListener('input', function(e){ buildMoodOtherText = e.target.value; });
+    if(buildMoodOtherText) document.getElementById('build-mood-other-input').value = buildMoodOtherText;
+
+    renderChips();
+    document.getElementById('build-mood-continue').addEventListener('click', buildNext);
+    document.getElementById('build-mood-skip').addEventListener('click', buildNext);
+  }
+
+  function renderBuildFreeText(el){
+    el.innerHTML =
+      '<div class="section-label" style="margin-top:0;">Anything to add? &middot; Optional</div>' +
+      '<textarea class="field" id="build-freetext-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary btn-block" id="build-freetext-continue" style="margin-bottom:10px;">Looks good</button>' +
+      '<span class="link-text" id="build-freetext-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+    var input = document.getElementById('build-freetext-input');
+    input.value = buildFreeText;
+    input.addEventListener('input', function(){ buildFreeText = input.value; });
+    document.getElementById('build-freetext-continue').addEventListener('click', finishBuildWizard);
+    document.getElementById('build-freetext-skip').addEventListener('click', finishBuildWizard);
+  }
+
+  /**
+   * Assembles the final caption and hands off to style.html — the real
+   * style choice happens THERE (Step 5, reused as-is per the spec), so
+   * this passes `style: null` explicitly (review finding — previously a
+   * fragile literal string .replace() against assembleCaption's OWN
+   * default phrasing, which would have silently stopped matching the
+   * moment that phrasing ever changed) telling WizardChips.assembleCaption
+   * itself to omit the style clause rather than baking in a default —
+   * see that function's own doc comment. generate-video.js's existing
+   * STYLE_MODIFIERS already appends the REAL style unconditionally for
+   * every create.html path once style.html's Generate button runs, so
+   * baking one in here too would double (and, for anyone who picks a
+   * style other than Cinematic, contradict) it.
+   */
+  function finishBuildWizard(){
+    var subjectKey = 'none';
+    var character = null;
+    if(buildSubjectCharacterId){
+      character = DreamStore.getCharacters().filter(function(c){ return c.id === buildSubjectCharacterId; })[0] || null;
+      subjectKey = character && character.isSelf ? 'me' : 'someone';
+    } else if(buildSubjectOtherKind){
+      subjectKey = buildSubjectOtherKind;
+    }
+    var assembled = WizardChips.assembleCaption({
+      subjectKey: subjectKey, character: character, subjectOtherText: buildSubjectOtherText,
+      placeKey: buildSettingPlaceKey, placeOtherText: buildSettingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
+      actionKey: buildActionKey, actionOtherText: buildActionOtherText, pov: buildPovOn,
+      moodKey: buildMoodKey, moodOtherText: buildMoodOtherText,
+      style: null, freeText: buildFreeText
+    });
+    DreamStore.setDraft({
+      caption: assembled.caption,
+      characterIds: assembled.characterIdsForGeneration,
+      sceneryPlace: buildSettingPlaceKey
+    });
+    location.href = 'style.html';
+  }
+
+  var BUILD_RENDERERS = [renderBuildSubject, renderBuildSetting, renderBuildAction, renderBuildMood, renderBuildFreeText];
+  function renderBuild(){
+    BUILD_RENDERERS[buildCur](buildStepBody);
+  }
+  function buildNext(){
+    if(buildCur < BUILD_RENDERERS.length - 1){ buildCur++; renderBuild(); }
+    else finishBuildWizard();
+  }
+  function buildPrev(){
+    if(buildCur > 0){ buildCur--; renderBuild(); return true; }
+    return false;
+  }
+
+  document.getElementById('choice-build').addEventListener('click', function(){
+    selectEl.style.display = 'none';
+    buildEl.style.display = 'flex';
+    heading.textContent = 'Build your dream';
+    buildCur = 0;
+    renderBuild();
   });
 
   writeContinue.addEventListener('click', function(){

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Your dream is ready — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!--
+  claim-dream.html — the page the abandoned-dream re-engagement email/
+  WhatsApp link (see dream-webhook.js's sendReadyEmail/sendReadyWhatsapp)
+  lands on. This is the whole point of the retention pivot: the finished
+  dream is the reason to return, and this link deliberately opens in a
+  REAL browser (escaping a Facebook/Instagram in-app webview, per
+  FOUNDER_PRINCIPLES.md's day-2 return-channel reasoning) with the video
+  already sitting there waiting, no login required to WATCH it — signup
+  is only needed to SAVE it to a real account.
+
+  Reads ?pending=<id>&token=<claim token> from the URL, verifies both via
+  verify-pending-claim.js (read-only, does not consume the token — see
+  that file's own doc comment for why this stays revisitable), then:
+    - already logged in on this browser -> one tap "Save to my account"
+      materializes it into their local dreams (DreamStore.saveClaimedDream)
+      and best-effort tells the server this pending dream is claimed.
+    - not logged in -> a short signup form (email locked to the address
+      this was sent to) creates the account, then does the same.
+  Watching the video itself never requires either of those — it's shown
+  immediately once the token verifies.
+-->
+
+<div id="app">
+  <div class="topbar"><div></div><div style="font-weight:700; font-size:14px;">Your dream</div><div style="width:36px;"></div></div>
+
+  <div class="px" id="loading-view" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="spinner-inline" style="width:32px; height:32px; border-width:3px;"></div>
+    <div style="color:var(--text-muted); font-size:13px; margin-top:14px;">Checking your link…</div>
+  </div>
+
+  <div class="px" id="error-view" style="flex:1; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 24px;">
+    <div class="proc-fail-icon" id="error-icon" style="margin-bottom:16px;"></div>
+    <div style="font-weight:700; font-size:16px; margin-bottom:8px;" id="error-title">This link isn't working</div>
+    <div style="color:var(--text-muted); font-size:13.5px; line-height:1.5;" id="error-body"></div>
+  </div>
+
+  <div class="px" id="ready-view" style="flex:1; display:none; flex-direction:column;">
+    <div style="border-radius:18px; overflow:hidden; margin:10px 0 16px; background:#000;">
+      <video id="ready-video" controls playsinline muted preload="metadata" style="width:100%; display:block; max-height:60vh;"></video>
+    </div>
+    <div style="font-weight:700; font-size:15px; margin-bottom:6px;">It's ready to watch.</div>
+    <div style="color:var(--text-muted); font-size:13px; line-height:1.5; margin-bottom:18px;" id="ready-caption"></div>
+
+    <div id="already-in-view" style="display:none;">
+      <button class="btn btn-primary btn-block" id="save-to-account-btn">Save to my account</button>
+    </div>
+
+    <!-- Ownership mismatch — review finding: this browser's currently
+         logged-in account is NOT the account this dream was sent to.
+         Shown instead of the one-tap "Save to my account" button (never
+         both) so a forwarded/shared "your dream is ready" link can never
+         silently absorb someone else's video into an unrelated,
+         already-logged-in account with one tap. -->
+    <div id="mismatch-view" style="display:none;">
+      <div class="auth-sub" id="mismatch-copy" style="margin-bottom:14px;"></div>
+      <button class="btn btn-secondary btn-block" id="mismatch-logout-btn">Log out and continue</button>
+    </div>
+
+    <div id="signup-view" style="display:none;">
+      <div class="auth-sub" style="margin-bottom:14px;">Save this dream (and keep making more) — create your free account.</div>
+      <input class="field" id="claim-email" type="email" disabled style="opacity:.7;">
+      <input class="field" id="claim-username" placeholder="Choose a username" autocomplete="username" dir="auto">
+      <div class="field-pw-wrap">
+        <input class="field" id="claim-password" placeholder="Create a password" type="password" autocomplete="new-password">
+        <button type="button" class="field-pw-toggle" id="claim-pw-toggle" tabindex="-1" aria-label="Show password"></button>
+      </div>
+      <div class="err-text" id="claim-error"></div>
+      <button class="btn btn-primary btn-block" id="claim-signup-btn" style="margin-top:2px;">Create account &amp; save</button>
+    </div>
+
+    <div style="flex:1"></div>
+    <span class="link-text" id="just-watch-link" style="cursor:pointer; margin-top:14px;">Just watching — maybe later</span>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  function getParam(name){
+    var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function showView(id){
+    ['loading-view', 'error-view', 'ready-view'].forEach(function(v){
+      document.getElementById(v).style.display = v === id ? 'flex' : 'none';
+    });
+  }
+  function showError(title, body){
+    document.getElementById('error-icon').innerHTML = Icons.warning;
+    document.getElementById('error-title').textContent = title;
+    document.getElementById('error-body').textContent = body;
+    showView('error-view');
+  }
+
+  var pendingId = getParam('pending');
+  var token = getParam('token');
+  if(!pendingId || !token){
+    showError("This link isn't working", 'The link is missing some information — try opening it again from the original email.');
+  } else {
+    fetch('/.netlify/functions/verify-pending-claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pendingId: pendingId, token: token })
+    }).then(function(res){ return res.json(); }).then(function(data){
+      if(!data.ok){
+        if(data.error && data.error.indexOf('E5') === 0){
+          showError('Almost ready', "Your dream hasn't quite finished generating yet — check back in a few minutes.");
+        } else {
+          showError("This link has expired", "Links like this stay valid a while, but this one didn't check out. If you still have the original email, try it again, or just sign up fresh.");
+        }
+        return;
+      }
+
+      document.getElementById('ready-video').src = data.videoUrl;
+      document.getElementById('ready-caption').textContent = data.caption || '';
+      showView('ready-view');
+
+      // Ownership check (review finding, fixed): the one-tap "already
+      // logged in" save path must never fire for an account whose email
+      // doesn't match the pending record's own email — otherwise a
+      // forwarded/shared re-engagement link, opened on a device already
+      // signed into a DIFFERENT account, would silently absorb someone
+      // else's finished video with one tap. Three distinct states:
+      //   1. not logged in at all -> signup-view (create/log into the
+      //      account this dream was actually sent to)
+      //   2. logged in AND the emails match -> already-in-view (the
+      //      original one-tap save, unchanged)
+      //   3. logged in as a DIFFERENT email -> mismatch-view (blocks the
+      //      one-tap save; offers to log out, which then falls through
+      //      to the signup-view for the correct account)
+      var loggedIn = !!DreamStore.getCurrentUser();
+      var loggedInEmail = (DreamStore.getAccountEmail() || '').trim().toLowerCase();
+      var pendingEmail = (data.email || '').trim().toLowerCase();
+      var emailMatches = loggedIn && loggedInEmail && pendingEmail && loggedInEmail === pendingEmail;
+      var mismatch = loggedIn && !emailMatches;
+
+      document.getElementById('already-in-view').style.display = emailMatches ? 'block' : 'none';
+      document.getElementById('mismatch-view').style.display = mismatch ? 'block' : 'none';
+      document.getElementById('signup-view').style.display = (!loggedIn) ? 'block' : 'none';
+
+      function finishClaim(){
+        var dream = DreamStore.saveClaimedDream(data.caption, data.style, data.videoUrl);
+        fetch('/.netlify/functions/claim-pending-generation', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pendingId: pendingId, email: data.email })
+        }).catch(function(){ /* best-effort */ });
+        if(dream){ location.href = 'result.html?id=' + dream.id; }
+      }
+
+      if(mismatch){
+        document.getElementById('mismatch-copy').textContent =
+          "You're logged in as " + (DreamStore.getAccountEmail() || 'a different account') +
+          ", but this dream was sent to " + data.email + ". Log out to save it to the right account.";
+        document.getElementById('mismatch-logout-btn').addEventListener('click', function(){
+          DreamStore.logout();
+          document.getElementById('mismatch-view').style.display = 'none';
+          document.getElementById('signup-view').style.display = 'block';
+          document.getElementById('claim-email').value = data.email || '';
+        });
+      }
+
+      if(emailMatches){
+        document.getElementById('save-to-account-btn').addEventListener('click', finishClaim);
+      }
+      if(!loggedIn){
+        document.getElementById('claim-email').value = data.email || '';
+        var pwToggle = document.getElementById('claim-pw-toggle');
+        var pwInput = document.getElementById('claim-password');
+        pwToggle.innerHTML = Icons.eye;
+        pwToggle.addEventListener('click', function(){
+          var showing = pwInput.type === 'text';
+          pwInput.type = showing ? 'password' : 'text';
+          pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+        });
+
+        document.getElementById('claim-signup-btn').addEventListener('click', function(){
+          var username = document.getElementById('claim-username').value.trim();
+          var password = pwInput.value;
+          var errEl = document.getElementById('claim-error');
+          errEl.textContent = '';
+          if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
+          if(!password){ errEl.textContent = 'Enter a password.'; return; }
+          var btn = document.getElementById('claim-signup-btn');
+          btn.disabled = true;
+          btn.textContent = 'Creating your account…';
+          DreamStore.signup(username, password, data.email).then(function(result){
+            if(!result.ok){
+              btn.disabled = false;
+              btn.textContent = 'Create account & save';
+              errEl.textContent = result.error;
+              return;
+            }
+            fireMetaConversionIfAvailable();
+            finishClaim();
+          });
+        });
+      }
+
+      document.getElementById('just-watch-link').addEventListener('click', function(){
+        document.getElementById('already-in-view').style.display = 'none';
+        document.getElementById('mismatch-view').style.display = 'none';
+        document.getElementById('signup-view').style.display = 'none';
+        document.getElementById('just-watch-link').style.display = 'none';
+      });
+    }).catch(function(){
+      showError("Couldn't load your dream", 'Check your connection and try opening the link again.');
+    });
+  }
+
+  // Meta Pixel/analytics are deliberately NOT loaded on this page (it's an
+  // unauthenticated, publicly-linked page reachable from an email/WhatsApp
+  // message, not part of the tracked funnel) -- this is a harmless no-op
+  // guard for the one CompleteRegistration-style call site above, matching
+  // every other page's "safe even if analytics isn't loaded" convention.
+  function fireMetaConversionIfAvailable(){
+    if(typeof fireMetaConversion === 'function'){
+      try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value }); }
+      catch(e){ /* analytics must never break account creation */ }
+    }
+  }
+})();
+</script>
+</body>
+</html>
