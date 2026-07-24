@@ -127,6 +127,7 @@
 // revisit strong consistency only after confirming it's supported in the
 // real target deploy environment, not before.
 
+var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 
@@ -379,6 +380,11 @@ function tokenPurchasesStore() {
   return getStore({ name: TOKEN_PURCHASES_STORE_NAME });
 }
 
+// Bounded attempts for the claim-token write-then-verify loop below — same
+// number and same "fail closed, don't hang" reasoning as tracker-store.js's
+// own MAX_WRITE_ATTEMPTS (see that file's CONCURRENT-WRITE RACE comment).
+var MAX_CREDIT_ATTEMPTS = 3;
+
 /**
  * Credits `tokens` onto `email`'s balance exactly once per Dodo
  * `paymentId` — see the doc block above. Returns { credited: boolean }:
@@ -386,19 +392,55 @@ function tokenPurchasesStore() {
  * error — dodo-webhook.js should still return 200 either way, since from
  * Dodo's perspective the event was handled successfully).
  *
- * Checks-then-marks-then-credits (in that order): the marker is written
- * BEFORE addTokens runs, so a crash between the two would under-credit
- * (lose one legitimate purchase) rather than over-credit on the next
- * retry — deliberately the safer failure direction for a payment webhook,
- * matching this codebase's existing preference (see owner-topup-tokens.js)
- * for a human-reconcilable gap over a silent double-grant. Same eventual-
- * consistency tradeoff already accepted by rate-limit.js's
- * checkAndIncrement (Netlify Blobs has no compare-and-swap): two
- * deliveries landing in the same narrow instant could both read "not yet
- * processed" and both credit, but Dodo's real-world retry cadence (seconds
- * to minutes apart, never simultaneous) makes that vanishingly unlikely,
- * and the impact if it ever happened is bounded to one extra pack's worth
- * of tokens, not unbounded.
+ * A plain "read marker -> if absent, write marker -> credit" (what this
+ * function used to do) is a straightforward TOCTOU: Netlify Blobs has no
+ * compare-and-swap, and this file's OWN header comment documents its
+ * reads as only eventually consistent (up to ~60s propagation) — so a
+ * webhook redelivery landing ANYWHERE in that window (not just a
+ * perfectly-simultaneous one), or a genuinely concurrent invocation of
+ * this handler, can both observe "not yet processed" before either write
+ * happens, and both go on to credit. That is a real double-grant of real
+ * money's worth of tokens, not a hypothetical.
+ *
+ * This adapts tracker-store.js's bounded read -> mutate -> write ->
+ * verify retry loop (writeItemsWithRetry / the CONCURRENT-WRITE RACE
+ * comment there) to a single dedup-marker key instead of a full array:
+ * each attempt writes a marker carrying a fresh random `claimId`, then
+ * immediately reads the key back. If the read-back marker's `claimId`
+ * matches the one this attempt just wrote, this call "won" the race (its
+ * write was the one left standing) and proceeds to credit. If the
+ * read-back shows a DIFFERENT claimId, some other caller's write landed
+ * either concurrently or in between — this call backs off without
+ * crediting and loops back to a fresh read, which (now that a marker
+ * genuinely exists) resolves as "already processed" on the next
+ * iteration, exactly like a real redelivery would. This closes the
+ * window where two callers could both observe "absent" *before* either
+ * write, which is the actual bug: only the write that's still visible at
+ * verify-time ever credits.
+ *
+ * Like tracker-store.js's own version, this NARROWS the race window but,
+ * per that file's own honest caveat about Blobs having no real
+ * compare-and-swap, does not mathematically eliminate it: two verify
+ * reads could in principle each observe their own write as still current
+ * under sufficiently pathological propagation timing (e.g. two different
+ * edge replicas each still showing their own local write). That residual
+ * window is now bounded to "both writes' verify-reads land before either
+ * write has propagated across the store," which is categorically
+ * narrower than the original bug ("both initial reads land before either
+ * write happens at all") — every real concurrent-redelivery scenario
+ * this function is actually exercised against (see
+ * test/entitlements-token-purchases.test.js's concurrency tests) resolves
+ * to exactly one credit. If item loss/duplication is ever actually
+ * observed in practice, revisit — same posture tracker-store.js already
+ * takes on its own residual race.
+ *
+ * Bounded (not infinite) attempts, same reasoning as tracker-store.js:
+ * a still-propagating read shouldn't hang the webhook response
+ * indefinitely. Exhausting all attempts without ever confirming a win
+ * fails CLOSED (no credit) rather than crediting anyway — deliberately
+ * the safer failure direction for a payment webhook (a human-reconcilable
+ * under-credit, not a silent double-grant), matching this codebase's
+ * existing preference (see owner-topup-tokens.js).
  *
  * A missing/falsy `paymentId` (shouldn't happen with a real Dodo payload,
  * but don't let that silently drop a legitimate purchase) skips the dedup
@@ -412,12 +454,25 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
 
   connectLambda(event);
   var s = tokenPurchasesStore();
-  var existing = await s.get(paymentId, { type: 'json' });
-  if (existing) return { credited: false };
 
-  await s.setJSON(paymentId, { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now() });
-  await addTokens(event, email, tokens);
-  return { credited: true };
+  for (var attempt = 0; attempt < MAX_CREDIT_ATTEMPTS; attempt++) {
+    var existing = await s.get(paymentId, { type: 'json' });
+    if (existing) return { credited: false };
+
+    var claimId = crypto.randomUUID();
+    await s.setJSON(paymentId, { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now(), claimId: claimId });
+
+    var verify = await s.get(paymentId, { type: 'json' });
+    if (verify && verify.claimId === claimId) {
+      await addTokens(event, email, tokens);
+      return { credited: true };
+    }
+    // Someone else's write is the one that's actually visible — don't
+    // credit. Loop back to a fresh read, which will very likely now see
+    // that marker directly and return credited:false above without ever
+    // reaching addTokens.
+  }
+  return { credited: false };
 }
 
 module.exports = {
