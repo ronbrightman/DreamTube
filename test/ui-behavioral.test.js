@@ -549,7 +549,7 @@ test('result.html topbar title stays on one line and does not overlap the back b
 // Advanced screen (9) / pricing screen (14) fixes -- commit ae7da62.
 // ===========================================================================
 
-test('Advanced screens (characters/camera/scenery): all three render the light "dawn" phase -- light background, dark readable ink text -- never the removed dark-mode special case', async function (t) {
+test('Advanced screen (characters): renders the light "dawn" phase -- light background, dark readable ink text -- never the removed dark-mode special case (camera/scenery screens are parked as of the 2026-07-24 founder decision, see tracker item for-product-two-post-handoff-app-pages-p-atr0r7, so only the characters screen remains in this family)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -558,39 +558,29 @@ test('Advanced screens (characters/camera/scenery): all three render the light "
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
-    async function assertLightDawnScreen() {
-      var appClasses = await page.$eval('#app', function (el) { return el.className; });
-      assert.match(appClasses, /\bfunnel-app\b/);
-      assert.ok(!/\bfn-dark-mode\b/.test(appClasses), 'the removed dark-mode special case must never apply to an Advanced screen');
+    var appClasses = await page.$eval('#app', function (el) { return el.className; });
+    assert.match(appClasses, /\bfunnel-app\b/);
+    assert.ok(!/\bfn-dark-mode\b/.test(appClasses), 'the removed dark-mode special case must never apply to an Advanced screen');
 
-      // #FBEFEA (the dawn gradient's first stop, same value as the base
-      // --dawn-1 token) as rgb -- confirms the real light gradient is
-      // applied via applyPhase(), not just "isn't black".
-      var bgImage = await page.$eval('#app', function (el) { return getComputedStyle(el).backgroundImage; });
-      assert.match(bgImage, /251,\s*239,\s*234/, 'expected the dawn gradient (#FBEFEA) as the background');
+    // #FBEFEA (the dawn gradient's first stop, same value as the base
+    // --dawn-1 token) as rgb -- confirms the real light gradient is
+    // applied via applyPhase(), not just "isn't black".
+    var bgImage = await page.$eval('#app', function (el) { return getComputedStyle(el).backgroundImage; });
+    assert.match(bgImage, /251,\s*239,\s*234/, 'expected the dawn gradient (#FBEFEA) as the background');
 
-      // #3A3350 / rgb(58, 51, 80) -- the light-phase --fn-ink color. Must
-      // NOT be the real app's white --text-primary (the old fn-dark-mode
-      // headline override), which combined with the light background here
-      // would be a near-invisible white-on-white regression.
-      var headlineColor = await page.$eval('.fn-headline', function (el) { return getComputedStyle(el).color; });
-      assert.equal(headlineColor, 'rgb(58, 51, 80)', 'expected the dawn-phase --fn-ink color');
-      assert.notEqual(headlineColor, 'rgb(255, 255, 255)', 'must not still be the removed dark-mode --text-primary override');
-    }
-
-    await assertLightDawnScreen();
-    await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
-    await assertLightDawnScreen();
-    await page.click('#fn-adv-camera-continue');
-    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
-    await assertLightDawnScreen();
+    // #3A3350 / rgb(58, 51, 80) -- the light-phase --fn-ink color. Must
+    // NOT be the real app's white --text-primary (the old fn-dark-mode
+    // headline override), which combined with the light background here
+    // would be a near-invisible white-on-white regression.
+    var headlineColor = await page.$eval('.fn-headline', function (el) { return getComputedStyle(el).color; });
+    assert.equal(headlineColor, 'rgb(58, 51, 80)', 'expected the dawn-phase --fn-ink color');
+    assert.notEqual(headlineColor, 'rgb(255, 255, 255)', 'must not still be the removed dark-mode --text-primary override');
   } finally {
     await context.close();
   }
 });
 
-test('Advanced screens (characters/camera/scenery): 7-dot progress bar, and Continue advances one step at a time through all three screens into the transition screen', async function (t) {
+test('Advanced screen (characters) + transition: 5-dot progress bar, and Continue on the characters screen advances straight into the transition screen -- camera/scenery are parked (2026-07-24 founder decision) and no longer sit in between', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -600,69 +590,35 @@ test('Advanced screens (characters/camera/scenery): 7-dot progress bar, and Cont
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 7, 'expected 7 progress dots -- characters/camera/scenery + transition + email + pricing + confirmation');
+    assert.equal(dotCount, 5, 'expected 5 progress dots -- characters + transition + email + pricing + confirmation (camera/scenery parked)');
 
     await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
-    await page.click('#fn-adv-camera-continue');
-    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
-    await page.click('#fn-adv-scenery-continue');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    var cameraScreenRendered = await page.$('#fn-adv-camera-continue');
+    var sceneryScreenRendered = await page.$('#fn-adv-scenery-continue');
+    assert.equal(cameraScreenRendered, null, 'the parked camera screen must never render in between');
+    assert.equal(sceneryScreenRendered, null, 'the parked scenery screen must never render in between');
+  } finally {
+    await context.close();
+  }
+});
+
+test('Advanced screen (characters): Skip jumps straight to the transition screen (regression check for the dynamic PREPARING_STEP lookup now that camera/scenery are parked and removed from SCREEN_RENDERERS)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   } finally {
     await context.close();
   }
 });
 
-test('Advanced screens (characters/camera/scenery): Skip on any of the 3 screens jumps straight to the transition screen, not just past that one screen', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-
-  // Skip from Characters (1 of 3) -- straight to the transition screen.
-  var contextA = await browser.newContext();
-  try {
-    var pageA = await contextA.newPage();
-    await blockThirdParty(pageA);
-    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await pageA.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await pageA.click('#fn-adv-chars-skip');
-    await pageA.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  } finally {
-    await contextA.close();
-  }
-
-  // Skip from Camera (2 of 3) -- straight to the transition screen, not to Scenery.
-  var contextB = await browser.newContext();
-  try {
-    var pageB = await contextB.newPage();
-    await blockThirdParty(pageB);
-    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await pageB.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-    await pageB.click('#fn-adv-chars-continue');
-    await pageB.waitForSelector('#fn-adv-camera-skip', { timeout: 5000 });
-    await pageB.click('#fn-adv-camera-skip');
-    await pageB.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  } finally {
-    await contextB.close();
-  }
-
-  // Skip from Scenery (3 of 3) -- straight to the transition screen.
-  var contextC = await browser.newContext();
-  try {
-    var pageC = await contextC.newPage();
-    await blockThirdParty(pageC);
-    await pageC.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await pageC.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-    await pageC.click('#fn-adv-chars-continue');
-    await pageC.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
-    await pageC.click('#fn-adv-camera-continue');
-    await pageC.waitForSelector('#fn-adv-scenery-skip', { timeout: 5000 });
-    await pageC.click('#fn-adv-scenery-skip');
-    await pageC.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  } finally {
-    await contextC.close();
-  }
-});
-
-test('Advanced screens (characters/camera/scenery): the character add/select/edit, camera selection, and scenery selection interactions on each screen still write into DreamStore/staged state exactly as before', async function (t) {
+test('Advanced screen (characters): the character add/select/edit interactions still write into staged state exactly as before (camera/scenery interactions are no longer reachable through the live flow -- see the parked-screens tests below)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -687,30 +643,74 @@ test('Advanced screens (characters/camera/scenery): the character add/select/edi
     assert.equal(buddySelectedAfterToggle, false, 'clicking the chip (outside the edit area) should toggle its selection off');
 
     await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
 
-    // --- Camera view: single-select .fn-chip row on its own screen, writes
-    // straight into DreamStore's draft. ---
-    await page.click('#camera-chip-row [data-camera="Wide shot"]');
-    var cameraSelected = await page.$eval('#camera-chip-row [data-camera="Wide shot"]', function (el) { return el.classList.contains('sel'); });
-    assert.equal(cameraSelected, true);
-    var cameraDraftValue = await page.evaluate(function () { return DreamStore.getDraft().cameraView; });
-    assert.equal(cameraDraftValue, 'Wide shot');
+// ===========================================================================
+// Camera/scenery screens PARKED (founder decision 2026-07-24, tracker item
+// for-product-two-post-handoff-app-pages-p-atr0r7): every real visitor
+// reaching start.html's funnel tail arrives via ?resume=1 (a bare visit
+// redirects to the marketing funnel before ever reaching these screens --
+// see start.html's Entry guard), and the marketing funnel already folds
+// camera/scenery info into the assembled caption text, so these two
+// screens were pure redundant clicks. They're intentionally left in the
+// file (parked, not deleted) for a later pass that folds them into the
+// wizard, but must never appear in the live funnel tail.
+// ===========================================================================
 
-    await page.click('#fn-adv-camera-continue');
-    await page.waitForSelector('#fn-adv-scenery-continue', { timeout: 5000 });
+test('parked camera/scenery screens: the funnel tail never renders "Pick a camera view" or "Set the scene" for a caption WITH people-indicating language -- goes characters -> transition -> email directly', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-camera-continue'), null);
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
 
-    // --- Scenery: two independent single-select .fn-chip rows (time, place)
-    // on its own screen. ---
-    await page.click('#scenery-time-row [data-scenery-time="Night"]');
-    await page.click('#scenery-place-row [data-scenery-place="Nature"]');
-    var sceneryTimeSelected = await page.$eval('#scenery-time-row [data-scenery-time="Night"]', function (el) { return el.classList.contains('sel'); });
-    var sceneryPlaceSelected = await page.$eval('#scenery-place-row [data-scenery-place="Nature"]', function (el) { return el.classList.contains('sel'); });
-    assert.equal(sceneryTimeSelected, true);
-    assert.equal(sceneryPlaceSelected, true);
+    await page.click('#fn-adv-chars-continue');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-camera-continue'), null);
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
+
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-camera-continue'), null);
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
+
+    // cameraView/sceneryTime/sceneryPlace are never set for a funnel-resumed
+    // visitor now (their collection screens are parked) -- confirms the
+    // draft is left at its default null shape rather than something
+    // downstream (start-pending-generation.js's POST body) would choke on.
     var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
-    assert.equal(draft.sceneryTime, 'Night');
-    assert.equal(draft.sceneryPlace, 'Nature');
+    assert.equal(draft.cameraView, null);
+    assert.equal(draft.sceneryTime, null);
+    assert.equal(draft.sceneryPlace, null);
+  } finally {
+    await context.close();
+  }
+});
+
+test('parked camera/scenery screens: the funnel tail never renders "Pick a camera view" or "Set the scene" for a caption with NO people-indicating language -- goes straight from load to the transition screen', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-chars-continue'), null, 'no people-indicating language -- characters screen must not render');
+    assert.equal(await page.$('#fn-adv-camera-continue'), null, 'camera screen is parked -- must never render');
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null, 'scenery screen is parked -- must never render');
+
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-camera-continue'), null);
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
   } finally {
     await context.close();
   }
@@ -723,24 +723,24 @@ test('Advanced screens (characters/camera/scenery): the character add/select/edi
 // (d) the pencil edit tap target.
 // ===========================================================================
 
-test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on camera with 6 (not 7) progress dots', async function (t) {
+test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on the transition screen with 4 (not 5) progress dots (camera/scenery are parked as of the 2026-07-24 founder decision, so there is no longer a camera screen to land on)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     var charScreenEverRendered = await page.$('#fn-adv-chars-continue');
     assert.equal(charScreenEverRendered, null, 'the characters screen must not have rendered when the caption has no people-indicating language');
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 6, 'expected 6 progress dots -- camera/scenery + transition + email + pricing + confirmation, characters screen skipped');
+    assert.equal(dotCount, 4, 'expected 4 progress dots -- transition + email + pricing + confirmation, characters/camera/scenery all skipped');
   } finally {
     await context.close();
   }
 });
 
-test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 7 progress dots, and Skip from the LAST Advanced screen still lands on the correct transition screen when the characters screen was skipped (regression test for the dynamic PREPARING_STEP lookup)', async function (t) {
+test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 5 progress dots, and Skip from it still lands on the correct transition screen when the characters screen was NOT skipped (regression test for the dynamic PREPARING_STEP lookup, now that camera/scenery are permanently absent from SCREEN_RENDERERS)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var contextA = await browser.newContext();
   try {
@@ -749,23 +749,31 @@ test('character screen (fix 1a): a caption WITH people-indicating language still
     await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
     await pageA.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
     var dotCount = await pageA.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 7, 'expected all 7 progress dots when the characters screen is shown ("we" is people-indicating)');
+    assert.equal(dotCount, 5, 'expected all 5 progress dots when the characters screen is shown ("we" is people-indicating)');
+
+    // PREPARING_STEP must resolve to index 1 here (characters screen is
+    // index 0) -- Skip must land on the transition screen, not accidentally
+    // skip past it to email capture. This is exactly the bug a hardcoded
+    // goToStep(N) would reintroduce once the characters screen's presence
+    // shifts every later index by one.
+    await pageA.click('#fn-adv-chars-skip');
+    await pageA.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    var onEmailScreenAlready = await pageA.$('#fn-email');
+    assert.equal(onEmailScreenAlready, null, 'must land on the transition screen, not skip straight past it to email capture');
   } finally {
     await contextA.close();
   }
 
-  // When the characters screen IS skipped, Skip from whatever the new first
-  // Advanced screen (camera) still needs to land on the transition screen,
-  // not accidentally skip past it to email capture -- this is exactly the
-  // bug a hardcoded goToStep(3) would reintroduce once the characters
-  // screen (formerly always index 0) can be absent.
+  // When the characters screen IS skipped (no people-indicating language),
+  // PREPARING_STEP must resolve to index 0 -- the transition screen is now
+  // the very first screen rendered, with no Advanced screen before it at
+  // all (camera/scenery are parked, so nothing sits between "page load" and
+  // the transition screen for this caption shape).
   var contextB = await browser.newContext();
   try {
     var pageB = await contextB.newPage();
     await blockThirdParty(pageB);
     await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
-    await pageB.waitForSelector('#fn-adv-camera-skip', { timeout: 5000 });
-    await pageB.click('#fn-adv-camera-skip');
     await pageB.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     var onEmailScreenAlready = await pageB.$('#fn-email');
     assert.equal(onEmailScreenAlready, null, 'must land on the transition screen, not skip straight past it to email capture');
