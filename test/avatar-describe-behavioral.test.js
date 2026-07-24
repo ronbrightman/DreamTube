@@ -189,7 +189,12 @@ test('profile.html: Describe mode calls generate-avatar.js and stores the return
     // Since a photoDataUrl is now present, the sheet opens in "Upload photo"
     // mode showing that image -- indistinguishable from a real upload, per
     // generate-avatar.js's own design intent.
-    assert.equal(await page.locator('[data-char-mode="photo"]').evaluate(function (el) { return el.classList.contains('active'); }), true);
+    // Scoped to #char-mode-row specifically (not a bare [data-char-mode]
+    // selector) -- create.html now has a SECOND, separate character sheet
+    // for the "Build it" chip-wizard flow (#build-char-mode-row) with the
+    // same data-char-mode="photo" marker, so an unscoped selector would
+    // match both and fail Playwright's strict-mode uniqueness check.
+    assert.equal(await page.locator('#char-mode-row [data-char-mode="photo"]').evaluate(function (el) { return el.classList.contains('active'); }), true);
     assert.equal(await page.locator('#char-photo-preview img').getAttribute('src'), GENERATED_AVATAR);
   } finally {
     await page.close();
