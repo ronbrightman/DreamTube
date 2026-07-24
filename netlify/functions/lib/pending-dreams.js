@@ -82,6 +82,7 @@
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 var crypto = require('crypto');
+var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-pending-dreams';
 
@@ -156,7 +157,14 @@ var MAX_TRANSITION_ATTEMPTS = 3;
  * `toStatus` while racing a concurrent writer — see the CONCURRENT-WRITE
  * RACE comment at the top of this file for the full incident this fixes
  * and the precedent it adapts (entitlements.js's creditTokenPackOnce /
- * tracker-store.js's writeItemsWithRetry).
+ * tracker-store.js's writeItemsWithRetry). The actual read -> mutate ->
+ * write -> verify mechanics live in the shared lib/blobs-retry.js
+ * (extracted once a fourth store reimplemented this same pattern — see
+ * that file's own header comment) — this stays a thin domain-specific
+ * wrapper: "mutate" bails out (SKIP) once the record's current status is
+ * no longer one this call expects, otherwise it builds the patched
+ * record plus a fresh claim marker; "verify" confirms THIS attempt's
+ * marker is the one actually visible.
  *
  * Each attempt: read the record fresh, bail out immediately (no write at
  * all) if its CURRENT status isn't one of `fromStatuses` (someone else
@@ -178,33 +186,34 @@ var MAX_TRANSITION_ATTEMPTS = 3;
  * it claimed?") without being allowed to treat that as a green light.
  */
 async function tryTransition(event, id, fromStatuses, toStatus, patch) {
-  connectLambda(event);
-  var s = store();
-  var lastSeen = null;
-  for (var attempt = 0; attempt < MAX_TRANSITION_ATTEMPTS; attempt++) {
-    var existing = await s.get(id, { type: 'json' });
-    lastSeen = existing;
-    if (!existing) return { ok: false, record: null };
-    if (fromStatuses.indexOf(existing.status) === -1) {
-      // Already moved past a state this call expected — either a
-      // concurrent writer got there first, or a previous attempt of
-      // ours already succeeded and this is a false-negative-triggered
-      // retry. Either way, nothing for THIS call to do.
-      return { ok: false, record: existing };
-    }
+  var claimToken; // set fresh inside mutate() on whichever attempt actually writes
 
-    var claimToken = crypto.randomBytes(12).toString('hex');
-    var candidate = Object.assign({}, existing, patch, { status: toStatus, _transitionClaim: claimToken });
-    await s.setJSON(id, candidate);
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, id, {
+    maxAttempts: MAX_TRANSITION_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return store().get(id, { type: 'json' }).then(function (v) { return v || null; });
+    },
+    mutate: function (existing) {
+      // Not found, or already moved past a state this call expected —
+      // either a concurrent writer got there first, or a previous
+      // attempt of ours already succeeded and this is a false-negative-
+      // triggered retry. Either way, this is terminal: nothing for THIS
+      // call to do, and retrying won't change it. See blobs-retry.js's
+      // SKIP doc comment.
+      if (!existing) return blobsRetry.SKIP;
+      if (fromStatuses.indexOf(existing.status) === -1) return blobsRetry.SKIP;
 
-    var verify = await s.get(id, { type: 'json' });
-    if (verify && verify._transitionClaim === claimToken) {
-      return { ok: true, record: candidate };
+      claimToken = crypto.randomBytes(12).toString('hex');
+      return Object.assign({}, existing, patch, { status: toStatus, _transitionClaim: claimToken });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead._transitionClaim === claimToken);
     }
-    // Someone else's write is the one actually visible — loop back to a
-    // fresh read rather than trusting our own candidate.
-  }
-  return { ok: false, record: lastSeen };
+  });
+
+  if (result.ok) return { ok: true, record: result.value };
+  return { ok: false, record: result.current };
 }
 
 /**

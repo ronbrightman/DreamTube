@@ -135,6 +135,7 @@
 var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
+var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-entitlements';
 
@@ -388,6 +389,12 @@ function tokenPurchasesStore() {
 // Bounded attempts for the claim-token write-then-verify loop below — same
 // number and same "fail closed, don't hang" reasoning as tracker-store.js's
 // own MAX_WRITE_ATTEMPTS (see that file's CONCURRENT-WRITE RACE comment).
+// The actual read -> mutate -> write -> verify mechanics live in the shared
+// lib/blobs-retry.js (extracted once a fourth store reimplemented this same
+// pattern — see that file's own header comment) — this stays a thin
+// domain-specific wrapper around it: the "mutate" step is "write a fresh
+// claim marker unless one already exists" (SKIP if it does — see below),
+// and "verify" is "is MY claimId the one that's actually visible".
 var MAX_CREDIT_ATTEMPTS = 3;
 
 /**
@@ -457,26 +464,40 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
     return { credited: true };
   }
 
-  connectLambda(event);
-  var s = tokenPurchasesStore();
+  var claimId; // set fresh inside mutate() on whichever attempt actually writes
 
-  for (var attempt = 0; attempt < MAX_CREDIT_ATTEMPTS; attempt++) {
-    var existing = await s.get(paymentId, { type: 'json' });
-    if (existing) return { credited: false };
-
-    var claimId = crypto.randomUUID();
-    await s.setJSON(paymentId, { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now(), claimId: claimId });
-
-    var verify = await s.get(paymentId, { type: 'json' });
-    if (verify && verify.claimId === claimId) {
-      await addTokens(event, email, tokens);
-      return { credited: true };
+  var result = await blobsRetry.retryingWrite(event, TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return tokenPurchasesStore().get(paymentId, { type: 'json' });
+    },
+    mutate: function (existing) {
+      // Already processed (by an earlier attempt of ours, or a genuinely
+      // separate caller) — this is a terminal "already handled" outcome,
+      // not something retrying can change, so abort immediately without
+      // writing. See blobs-retry.js's SKIP doc comment.
+      if (existing) return blobsRetry.SKIP;
+      claimId = crypto.randomUUID();
+      return { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now(), claimId: claimId };
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.claimId === claimId);
     }
-    // Someone else's write is the one that's actually visible — don't
-    // credit. Loop back to a fresh read, which will very likely now see
-    // that marker directly and return credited:false above without ever
-    // reaching addTokens.
+  });
+
+  if (result.ok) {
+    await addTokens(event, email, tokens);
+    return { credited: true };
   }
+  // Either SKIP (already processed) or attempts exhausted without ever
+  // confirming our own write won — both fail CLOSED (no credit), the
+  // deliberately safer direction for a payment webhook (a human-
+  // reconcilable under-credit, never a silent double-grant). On the
+  // exhausted-attempts path, someone else's write was the one actually
+  // visible on every verify — looping back to a fresh read makes the
+  // NEXT attempt very likely see that marker directly and SKIP, exactly
+  // like a real redelivery would.
   return { credited: false };
 }
 

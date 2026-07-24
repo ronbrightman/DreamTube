@@ -84,6 +84,7 @@
 // is purely additive on top of it.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
+var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-tracker';
 var KEY = 'items';
@@ -794,6 +795,14 @@ async function updateItem(event, id, patch) {
 // or a still-propagating eventually-consistent read, fails open (falls
 // through and returns the last attempt's result anyway) rather than
 // hanging the request indefinitely.
+//
+// The actual read -> mutate -> write -> verify loop mechanics now live in
+// the shared lib/blobs-retry.js (extracted once a fourth store
+// independently reimplemented this same pattern — see that file's own
+// header comment and tracker.html's
+// extract-shared-lib-blobs-retry-js-now-th-p1avvq item) — this file keeps
+// only what's specific to it: the "items" key's read function (getItems,
+// with its seed/migrate behavior) and MAX_WRITE_ATTEMPTS.
 // ---------------------------------------------------------------------
 
 var MAX_WRITE_ATTEMPTS = 3;
@@ -819,22 +828,20 @@ var MAX_WRITE_ATTEMPTS = 3;
  * Returns whatever was persisted on the attempt whose verify passed, or
  * — if every attempt's verify failed — the last attempt's array anyway
  * (see the comment above for why this fails open instead of throwing).
+ * Thin wrapper over blobs-retry.js's retryingWrite: `read` is getItems
+ * itself (so a retry re-runs the same seed/migrate-aware read this file
+ * always used, not a plain raw get), and this always fails open by
+ * returning `value` regardless of `ok` — same fail-open posture the
+ * original hand-rolled loop had.
  */
 async function writeItemsWithRetry(event, mutate, verify) {
-  var result = null;
-  for (var attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
-    var items = await getItems(event);
-    var mutated = mutate(items);
-    result = mutated;
-
-    connectLambda(event);
-    await store().setJSON(KEY, mutated);
-
-    connectLambda(event);
-    var verifyItems = await store().get(KEY, { type: 'json' });
-    if (verify(verifyItems || [])) return mutated;
-  }
-  return result;
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, KEY, {
+    maxAttempts: MAX_WRITE_ATTEMPTS,
+    read: getItems,
+    mutate: mutate,
+    verify: function (verifyItems) { return verify(verifyItems || []); }
+  });
+  return result.value;
 }
 
 /**
