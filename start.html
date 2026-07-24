@@ -796,6 +796,15 @@
       '<div class="fn-headline">Where should we send your first dream?</div>' +
       '<div class="fn-body-copy">' + "Free to start — 200 tokens on signup, no card needed." + '</div>' +
       '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:14px;">' +
+      // Reassurance microcopy directly under the email field — a real user's
+      // session replay showed a drop-off right at this exact ask (dream text
+      // + character screens completed, then abandoned here). The theory:
+      // handing over an email feels like a real cost with no visible payoff.
+      // This states WHY (so we can deliver the video) and WHAT happens next
+      // (it gets emailed once ready), reusing the funnel's existing
+      // (previously unused) .fn-price-note treatment left-aligned instead of
+      // its default centered layout.
+      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + "We’ll email you your dream the moment it’s ready — that’s the only reason we ask." + '</div>' +
       '<div class="fn-field-pw-wrap">' +
         '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
         '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +

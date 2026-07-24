@@ -236,8 +236,14 @@
 
   <div class="modal-overlay" id="modal-quota">
     <div class="modal-card">
-      <div class="modal-title">You're out of tokens</div>
-      <div class="modal-body">Generating a video costs 100 tokens. You'll get 100 more automatically within 24 hours, or visit the shop to top up sooner.</div>
+      <div class="modal-title">Out of tokens for now</div>
+      <!-- Same fix as style.html's #modal-quota (reachable from the initial
+           generate flow) -- this is result.html's own separate copy of the
+           same modal, reached from "Generate Again" on an existing dream.
+           Never frame running out of tokens as "pay to continue" (no live
+           payment flow exists at all right now) -- purely a wait-a-bit
+           state: the daily free grant refills automatically. -->
+      <div class="modal-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 100 more automatically within 24 hours.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
         <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>

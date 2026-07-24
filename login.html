@@ -76,6 +76,13 @@
 
     <input class="field" id="login-username" placeholder="Username" autocomplete="username" dir="auto">
     <input class="field" id="login-email" placeholder="Email" type="email" autocomplete="email" dir="auto" style="display:none;">
+    <!-- Same reassurance as start.html's funnel email-capture screen (screen
+         13) — a real user's session replay showed a drop-off right at the
+         email ask, right after finishing the dream-text + character screens.
+         Explains WHY (so we can send the finished video) rather than leaving
+         email collection unexplained. Toggled alongside login-email itself
+         in syncAuthUI() below, never shown for the login (non-signup) case. -->
+    <div class="auth-sub" id="email-hint" style="display:none; margin:-8px 0 12px; font-size:12.5px;">We'll email you your dream the moment it's ready — that's the only reason we ask.</div>
     <div class="field-pw-wrap">
       <input class="field" id="login-password" placeholder="Password" type="password" autocomplete="current-password">
       <button type="button" class="field-pw-toggle" id="pw-toggle" tabindex="-1" aria-label="Show password"></button>
@@ -199,6 +206,7 @@
       : 'Log in to keep making dreams.';
     toggle.innerHTML = isSignup ? 'Already have an account? <b>Log in</b>' : 'New here? <b>Sign up</b>';
     emailField.style.display = isSignup ? 'block' : 'none';
+    document.getElementById('email-hint').style.display = isSignup ? 'block' : 'none';
     usernameField.placeholder = isSignup ? 'Username' : 'Username or email';
     forgotLink.style.display = isSignup ? 'none' : 'block';
     document.getElementById('local-only-note').style.display = isSignup ? 'block' : 'none';

@@ -93,6 +93,27 @@ function mockGetFeed(page, feed, opts) {
   });
 }
 
+/** Intercepts get-token-status.js's underlying fetch so tests can force a specific balance/countdown without a real Netlify Functions runtime -- used by the shop.html/style.html beta-messaging tests below. */
+function mockTokenStatus(page, status) {
+  return page.route('**/.netlify/functions/get-token-status*', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status) });
+  });
+}
+
+/** Seeds js/store.js's localStorage state with a logged-in user (and account), then navigates to `path` -- the shortest way to reach an authenticated page (shop.html, style.html, ...) without driving signup for real. Mirrors seedResultPage's own seeding step below, minus the dream record that's specific to result.html. */
+async function seedLoggedInUserAt(page, baseUrl, username, path) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (u) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + u, username: u };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[u] = { password: 'testpass1', email: u + '@example.com' };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, username);
+  await page.goto(baseUrl + path, { waitUntil: 'domcontentloaded' });
+}
+
 /** Seeds js/store.js's localStorage state with a logged-in user and one of their own dreams (with a fake videoUrl), then navigates to result.html for it -- the shortest path to a real, authenticated result.html render without driving the whole create/processing flow. */
 async function seedResultPage(page, baseUrl, dreamId) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
@@ -895,6 +916,150 @@ test('pricing screen (14, now the token intro): renders the value bullets and th
 
     var priceCardCount = await page.$$eval('.fn-price-card', function (els) { return els.length; });
     assert.equal(priceCardCount, 0, 'no plan cards should be rendered anymore');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Tracker items for-product-add-we-will-email-your-dream-z63dy2 (email
+// reassurance microcopy) and for-product-beta-free-offer-in-app-short-jaalf6
+// (beta/free mode + shortened onboarding) -- both founder-approved,
+// coordinated via tracker.html by the growth session. Real user replay
+// evidence showed a drop-off exactly at the funnel's email-capture screen
+// (13) right after finishing the dream-text + character screens; separately,
+// a founder test flagged the app's own paywall/pricing surfaces as needing
+// explicit "free during beta, no card needed" framing (most of that turned
+// out to already be shipped by the token-economy pivot -- these tests cover
+// the specific gaps that were still open: the email-ask reassurance line,
+// and the beta-free framing on shop.html/style.html's out-of-tokens modal).
+// ===========================================================================
+
+test('email capture screen (13) shows the reassurance microcopy explaining why email is asked', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+
+    var bodyText = await page.textContent('#app');
+    assert.match(bodyText, /email you your dream the moment it.s ready/i, 'expected the WHY/what-happens-next reassurance line right on the email-capture screen');
+  } finally {
+    await context.close();
+  }
+});
+
+test('login.html signup mode shows the same email reassurance microcopy, hidden entirely in login mode', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // Login mode (default, no ?mode=signup): no email field at all, so the
+    // reassurance tied to it must not be visible either.
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    var hintVisibleInLoginMode = await page.isVisible('#email-hint');
+    assert.equal(hintVisibleInLoginMode, false, 'the email reassurance line must not show up in login mode, where there is no email field');
+
+    // Signup mode: email field appears, and so should the reassurance
+    // right alongside it.
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    var hintVisibleInSignupMode = await page.isVisible('#email-hint');
+    assert.equal(hintVisibleInSignupMode, true);
+    var hintText = await page.textContent('#email-hint');
+    assert.match(hintText, /email you your dream the moment it.s ready/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html leads with an explicit "Free during beta, no card needed" banner', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await seedLoggedInUserAt(page, baseUrl, 'shopbetatester', '/shop.html');
+    await page.waitForSelector('#shop-beta-banner', { timeout: 5000 });
+
+    var bannerText = await page.textContent('#shop-beta-banner');
+    assert.match(bannerText, /free during beta/i);
+    assert.match(bannerText, /no card needed/i);
+
+    // The disabled token packs must read as "not needed right now", not as
+    // a payment wall a new user has to get past -- see AGENT_POLICY.md's
+    // escalation policy on why they're still disabled (no payment provider
+    // chosen yet).
+    var packText = await page.textContent('.token-pack-card');
+    assert.match(packText, /not needed during the free beta|optional/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test("style.html's out-of-tokens modal reads as a free/automatic wait state, never a payment prompt", async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Zero balance forces the modal open on Generate -- the exact moment a
+    // confused "why do I need to pay" reaction would occur if the copy read
+    // as a paywall instead of a free, automatic refill.
+    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await seedLoggedInUserAt(page, baseUrl, 'quotamodaltester', '/create.html');
+    await page.click('#choice-write');
+    await page.fill('#dream-text', 'A dream about flying over a glowing city at night');
+    await page.click('#write-continue');
+    await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
+    await page.click('.style-card[data-style="Cartoon"]');
+    await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
+    await page.click('#generate-btn');
+    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
+
+    var modalText = await page.textContent('#modal-quota');
+    assert.match(modalText, /free during beta/i, 'the token wall must explicitly say this is free during beta');
+    assert.match(modalText, /no card needed/i);
+    assert.doesNotMatch(modalText, /\$\d/, 'no dollar amount should appear in the out-of-tokens modal -- there is no live payment flow to point to');
+  } finally {
+    await context.close();
+  }
+});
+
+test("result.html has its own separate copy of the out-of-tokens modal (reached from Generate Again) and it must read the same free/automatic way, not as a payment prompt", async function (t) {
+  // Regression test for a review finding: result.html's #modal-quota (shown
+  // from the Edit sheet's "Generate Again", i.e. regenerating/editing an
+  // existing dream) is a SEPARATE copy of the same markup style.html has,
+  // not a shared component -- the style.html fix alone missed this one
+  // entirely, and it still read "You're out of tokens ... visit the shop to
+  // top up sooner" with no beta-free framing until this test/fix.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Zero balance forces the modal open on Generate Again -- same
+    // "why do I need to pay" risk moment as style.html's own modal.
+    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await seedResultPage(page, baseUrl, 'd-quota-modal-test');
+    await page.waitForSelector('#open-edit-sheet', { timeout: 5000 });
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#edit-generate-again', { timeout: 5000 });
+    await page.click('#edit-generate-again');
+    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
+
+    var modalText = await page.textContent('#modal-quota');
+    assert.match(modalText, /free during beta/i, 'the token wall must explicitly say this is free during beta');
+    assert.match(modalText, /no card needed/i);
+    assert.doesNotMatch(modalText, /\$\d/, 'no dollar amount should appear in the out-of-tokens modal -- there is no live payment flow to point to');
   } finally {
     await context.close();
   }

@@ -81,8 +81,13 @@
 
   <div class="modal-overlay" id="modal-quota">
     <div class="modal-card">
-      <div class="modal-title">You're out of tokens</div>
-      <div class="modal-body">Generating a video costs 100 tokens. You'll get 100 more automatically within 24 hours, or visit the shop to top up sooner.</div>
+      <div class="modal-title">Out of tokens for now</div>
+      <!-- Free during beta — this deliberately never frames running out of
+           tokens as "pay to continue" (there's no live payment flow at all
+           right now). It's purely a wait-a-bit state: the daily free grant
+           refills automatically, no purchase required. See shop.html's own
+           beta banner for the same framing. -->
+      <div class="modal-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 100 more automatically within 24 hours.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
         <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
