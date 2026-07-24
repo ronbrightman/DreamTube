@@ -264,6 +264,139 @@ test('creditTokenPackAmountOnce is idempotent per paymentId when called directly
   assert.deepEqual(record.appliedTokenPackPaymentIds, [paymentId], 'paymentId should be recorded exactly once, not duplicated');
 });
 
+// ----- Round-2 review findings: stale-read balance clobber, and exhaustion-must-throw -----
+//
+// These use mock-blobs.js's setReadOverride/clearReadOverride to simulate
+// hazards the plain in-memory Map can't otherwise reproduce: a read that
+// lands behind a write that already happened (Blobs has no
+// read-your-own-write guarantee — see this file's own header comment on
+// the strong-consistency incident), and a verify read that never
+// converges within the bounded attempt count.
+//
+// NOTE on an earlier, broken version of these tests: the first attempt at
+// this monkeypatched `require('@netlify/blobs').getStore` directly, but
+// entitlements.js/blobs-retry.js both do `var { getStore } =
+// require('@netlify/blobs')` at module-load time, copying the function
+// reference into a local binding — reassigning the exports property
+// afterward never reaches those already-bound locals, so the override
+// silently had no effect at all (every test using it "passed" or "failed"
+// for the wrong reason — the real, un-intercepted store was used
+// throughout). setReadOverride fixes this by living inside fakeGetStore's
+// own closure instead, which every caller already holds a reference to
+// regardless of when they destructured it.
+
+test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returned value, not a stale independent re-read (a stale re-read would silently discard a just-applied signup grant)", async function () {
+  // Against a brand-new email, two STORE_NAME reads happen BEFORE
+  // creditTokenPackAmountOnce's own independent retryingWrite `read()`
+  // ever runs: syncTokens' own getEntitlement (call #1, genuinely sees
+  // nothing) and, once that decides to apply the first-ever signup grant,
+  // setEntitlement's own internal existing-read as part of persisting it
+  // (call #2). Call #3 is the one this test actually targets —
+  // creditTokenPackAmountOnce's own read, landing (in this simulation)
+  // BEFORE syncTokens' just-completed signup-grant write has propagated
+  // to it. Every later get() call (the verify-read, and any retry) sees
+  // the real current state.
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 3) {
+      return { value: { email: key, tokens: { balance: 0, lastGrantAt: Date.now() - 100000 } } };
+    }
+    return null; // fall through to the real stored value for every other call
+  });
+
+  try {
+    // Deliberately brand-new/unseeded: syncTokens (called first, inside
+    // creditTokenPackAmountOnce) applies the one-time 290-token signup
+    // grant as part of this very call.
+    var applyResult = await entitlements.creditTokenPackAmountOnce({}, 'staleread@example.com', 'pay_stale_read', 100);
+    assert.equal(applyResult.ok, true);
+
+    var record = await entitlements.getEntitlement({}, 'staleread@example.com');
+    assert.equal(record.tokens.balance, 290 + 100, "balance must be 290 (signup grant, from syncTokens' own in-memory return value) + 100 (this credit) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+});
+
+test('genuine exhaustion writing the initial pending marker (verify never confirms a winner) throws instead of silently returning credited:false', async function () {
+  var email = 'exhaustion1@example.com';
+  var paymentId = 'pay_exhaustion_1';
+  await seedZeroBalance(email);
+
+  // setJSON still actually writes; get() always reports "nothing here" --
+  // simulates reads that never converge on our own write within the
+  // bounded attempt count, a real (if rare) propagation-lag scenario this
+  // file's own header comment already accepts as possible.
+  mockBlobs.setReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME, function () {
+    return { value: undefined };
+  });
+
+  try {
+    await assert.rejects(
+      entitlements.creditTokenPackOnce({}, email, paymentId, 100),
+      /exhausted attempts/,
+      'genuine exhaustion writing the initial pending marker must throw, not silently return credited:false with nothing durably recorded and no future retry'
+    );
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME);
+  }
+});
+
+test("genuine exhaustion applying the balance credit (creditTokenPackAmountOnce's own retry loop) throws too", async function () {
+  var email = 'exhaustion2@example.com';
+  var paymentId = 'pay_exhaustion_2';
+  await seedZeroBalance(email);
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email, tokens: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
+  });
+
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function () {
+    return { value: undefined };
+  });
+
+  try {
+    await assert.rejects(
+      entitlements.creditTokenPackOnce({}, email, paymentId, 100),
+      /exhausted attempts crediting/,
+      'genuine exhaustion applying the balance credit must throw too, not leave the marker pending forever with no way to resume'
+    );
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+});
+
+test('genuine exhaustion flipping the marker to committed (bookkeeping-only failure, balance already landed) also throws', async function () {
+  var email = 'exhaustion3@example.com';
+  var paymentId = 'pay_exhaustion_3';
+  await seedZeroBalance(email);
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email, tokens: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
+  });
+
+  // Let the very first read through (the outer marker lookup that
+  // discovers the seeded 'pending' marker and lets the balance credit
+  // proceed normally) -- every read after that belongs to the
+  // flip-to-committed attempt itself, simulated as permanently stale.
+  mockBlobs.setReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) return null; // real value
+    return { value: undefined };
+  });
+
+  try {
+    await assert.rejects(
+      entitlements.creditTokenPackOnce({}, email, paymentId, 100),
+      /exhausted attempts flipping the marker/,
+      'genuine exhaustion flipping the marker to committed must throw, not silently leave it pending forever'
+    );
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME);
+  }
+
+  // The balance credit itself must still be correct despite the flip
+  // failing to confirm — this specific failure mode is bookkeeping-only.
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'the balance credit must still have landed even though the flip-to-committed write could not be confirmed');
+});
+
 test('concurrent races on DIFFERENT payment_ids for the same email both go through the dedup guard independently (both credited:true)', async function () {
   // Deliberately does NOT assert the exact resulting balance. Once both
   // payment_ids clear the dedup-marker guard (this test's actual point —
