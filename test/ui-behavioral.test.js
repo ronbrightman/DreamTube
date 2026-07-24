@@ -1619,3 +1619,95 @@ test("result.html has its own separate copy of the out-of-tokens modal (reached 
     await context.close();
   }
 });
+
+/**
+ * Bug report (profile-improvements-kwivqb): "+100 in now" (the token
+ * countdown) never resets once it reaches "now" -- because profile.html's
+ * 60s setInterval only re-rendered the SAME cached tokenStatus object, it
+ * never re-fetched get-token-status.js, so once nextGrantAt passed, the
+ * displayed balance/countdown froze there forever even though a real grant
+ * had already landed server-side. Fix: once nextGrantAt has passed, the
+ * interval callback re-fetches instead of just re-formatting. Uses
+ * page.clock to fast-forward past both the grant time and the 60s interval
+ * without a real wait, and a second get-token-status.js route response
+ * (a distinctly different balance) to prove a genuine second fetch
+ * happened, not just a re-render of the first response.
+ */
+test('profile.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.clock.install({ time: Date.now() });
+
+    var callCount = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      callCount++;
+      var body = callCount === 1
+        ? { balance: 90, nextGrantAt: Date.now() + 30000, dailyGrantAmount: 10 } // grant due in 30s
+        : { balance: 100, nextGrantAt: Date.now() + 86400000, dailyGrantAmount: 10 }; // post-grant state
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await seedLoggedInUserAt(page, baseUrl, 'countdownstuck', '/profile.html');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('profile-tokens-balance');
+      return el && el.textContent.indexOf('90') !== -1;
+    }, null, { timeout: 5000 });
+    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
+
+    // Advance past the 30s grant time, then past the 60s interval tick --
+    // the interval callback should notice nextGrantAt already passed and
+    // re-fetch, landing on the second (post-grant) mocked response.
+    await page.clock.fastForward(65000);
+    await page.waitForFunction(function () {
+      var el = document.getElementById('profile-tokens-balance');
+      return el && el.textContent.indexOf('100') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
+    var metaText = await page.textContent('#profile-tokens-meta');
+    assert.doesNotMatch(metaText, /in now/i, 'must not still read "in now" after the re-fetch picks up the new nextGrantAt');
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.clock.install({ time: Date.now() });
+
+    var callCount = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      callCount++;
+      var body = callCount === 1
+        ? { balance: 90, nextGrantAt: Date.now() + 30000, dailyGrantAmount: 10 }
+        : { balance: 100, nextGrantAt: Date.now() + 86400000, dailyGrantAmount: 10 };
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await seedLoggedInUserAt(page, baseUrl, 'shopcountdownstuck', '/shop.html');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-balance');
+      return el && el.textContent.indexOf('90') !== -1;
+    }, null, { timeout: 5000 });
+    assert.equal(callCount, 1);
+
+    await page.clock.fastForward(65000);
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-balance');
+      return el && el.textContent.indexOf('100') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
+    var countdownText = await page.textContent('#shop-countdown');
+    assert.doesNotMatch(countdownText, /in now/i, 'must not still read "in now" after the re-fetch picks up the new nextGrantAt');
+  } finally {
+    await context.close();
+  }
+});

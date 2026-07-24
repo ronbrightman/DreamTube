@@ -223,7 +223,15 @@
     }).catch(function(){ balanceEl.textContent = '–'; countdownEl.textContent = ''; });
   }
   loadBalance();
-  setInterval(renderBalance, 60000);
+  // Once the countdown reaches "now" (nextGrantAt has passed), a real
+  // grant has actually landed server-side — re-rendering from the same
+  // cached tokenStatus forever would leave the balance/countdown stuck
+  // showing "now" (same bug reported on profile.html's copy of this
+  // pattern). Re-fetch in that case instead of just re-formatting.
+  setInterval(function(){
+    if(tokenStatus && tokenStatus.nextGrantAt && tokenStatus.nextGrantAt <= Date.now()) loadBalance();
+    else renderBalance();
+  }, 60000);
 
   // ============================================================================
   // Returning from a Dodo Checkout redirect (?checkout=success|cancelled)

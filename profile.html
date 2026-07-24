@@ -675,9 +675,18 @@
   }
   renderTokens();
   // Countdown only needs to move visibly once a minute — no reason to
-  // re-fetch from the server that often, just re-render from the balance
-  // already cached in tokenStatus.
-  setInterval(renderTokenText, 60000);
+  // re-fetch from the server that often in the common case, just
+  // re-render from the balance already cached in tokenStatus. BUT once
+  // the countdown reaches "now" (nextGrantAt has passed), a real grant
+  // has actually landed server-side — re-render-from-cache alone would
+  // leave the balance/countdown stuck showing "now" forever, since
+  // nothing else ever refreshes tokenStatus (bug report: "+100 in now"
+  // never resetting). Re-fetch in that case so the new balance and next
+  // countdown target actually show up.
+  setInterval(function(){
+    if(tokenStatus && tokenStatus.nextGrantAt && tokenStatus.nextGrantAt <= Date.now()) renderTokens();
+    else renderTokenText();
+  }, 60000);
 
   document.getElementById('account-success-icon').innerHTML = Icons.mail;
   var accountOverlay = document.getElementById('sheet-account-overlay');
