@@ -164,6 +164,24 @@ tight (curate, don't dump).
   worktree whenever more than one agent might touch the repo
   concurrently.
 
+## Model selection (founder delegated this call 2026-07-23)
+
+Default to the **cheapest model that does the job well**; reserve the strong
+model for where quality genuinely pays off. Bias autonomous/background tasks
+toward cheaper models (cost over speed — they run in the background).
+- **Lead / main session (this one): Opus** — strategy, coordination, founder
+  conversation, judgment calls. Highest leverage; keep quality high.
+- **Autonomous subagents — default Sonnet** (the workhorse: build, review,
+  research, creative orchestration) — strong quality at a fraction of Opus
+  cost/time.
+- **Haiku** for clearly mechanical/light autonomous work: data pulls,
+  monitoring, status checks, triage, simple edits, tracker housekeeping.
+- **Opus** only for subagents doing genuinely hard reasoning: novel design,
+  security/compliance/high-stakes review, thorny strategy.
+- Rule of thumb: **mechanical → Haiku; substantive build/verify/research →
+  Sonnet; hard-reasoning or high-stakes → Opus.** Set the model EXPLICITLY on
+  each Agent/workflow spawn — don't let background tasks silently inherit Opus.
+
 ## Business logic / monetization
 
 - **Token economy** is the gating + monetization mechanism; tune grants to
@@ -194,7 +212,10 @@ tracker, titled with an `[auto]` tag, and keep its status current** (e.g.
 `done` toggled, or a status note in the item). That makes the tracker the
 founder's single review surface for "what did the agent do on its own." Also
 **run these self-working cycles on the existing tracker backlog**, not just new
-work — pick up open items you can own and move them.
+work — pick up open items you can own and move them. **Trigger phrase: when Ron
+writes "check tracker", immediately GET the tracker and act on his latest
+comments / `[auto]` feedback / new items** — his manual nudge for the async
+review surface (the tracker doesn't push notifications; it's a mailbox you check).
 
 ## Improvement cycle (cadence)
 
