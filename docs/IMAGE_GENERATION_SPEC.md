@@ -1,6 +1,14 @@
 # Image Generation Spec — cheap image tier + image-first onboarding pivot
 
-**Status:** design pass, ready for build. Grounds every number in this codebase's real current state (read directly, not assumed) plus fal.ai's real, current published pricing (fetched 2026-07-24). Two design directions are offered for the human to pick between per `AGENT_POLICY.md` — build should not proceed on the UI portion until one is chosen; the backend/token-economy portion is direction-independent and can be built regardless.
+**Status:** design pass complete, both open decisions resolved by Ron (2026-07-24) — ready for build. Grounds every number in this codebase's real current state (read directly, not assumed) plus fal.ai's real, current published pricing (fetched 2026-07-24).
+
+**Ron's decisions (2026-07-24), superseding the two open questions this spec originally posed:**
+
+1. **Picker UI: Direction A (segmented toggle)** — see §9, resolved.
+2. **Onboarding does NOT change** — `wizard.html`'s first-entry flow keeps auto-generating a free VIDEO exactly as it does today. The original "auto-image on first entry" pivot (§6 below) is **not being built** — image generation ships as a new, cheaper *option* available everywhere via the §5 picker (first-run included, once the wizard reaches `style.html`/an equivalent choice point — see §6-revised), but the wizard's automatic first-touch generation stays a video.
+3. **Token economics, corrected** — Ron wants new users to still get a free video through the funnel, then be left with a balance of **190 tokens**, with the daily top-up reduced from 100/day to **10/day** (same existing countdown UI, just a smaller number). Working backward: video costs 100 tokens, 190 left afterward → **`INITIAL_GRANT` = 290** (290 − 100 = 190). `DAILY_GRANT_AMOUNT`: 100 → **10**. `GRANT_CEILING` (500) is unchanged — nothing suggested otherwise. See §2b-revised for the full table.
+
+§2b and §6 below are the ORIGINAL design-pass proposal, kept for record/context; §2b-revised and §6-revised (added below each) are what's actually being built.
 
 Companion signals: this repo's coordination channel is `tracker.html` (Netlify Blobs), not a separate signals repo — see `AGENT_POLICY.md`. The idea this spec implements is already logged there as `for-product-add-image-generation-option--fax6h8` (idea, medium priority, not done) — that item **is** the decision-made record for "which idea got picked"; no RICE score is attached to it in the tracker payload I read. A second decision-made-style tracker entry should be drafted once Ron actually picks one of the two directions below (draft included at the end of this doc) — not before, since I don't know which one he'll choose.
 
@@ -52,6 +60,20 @@ Check against Ron's own worked example (`image = 10 tokens, initial ~20 tokens`)
 - 20 tokens is less than the 100-token video cost, so a brand-new account cannot generate a video (or a 3rd image) from its initial grant alone — it must either wait 24h for the +100 daily drip, or (once live) buy a pack.
 - This is a deliberate, explicit monetization change: the free ride on signup drops from "2 free videos worth ~$1.60–3.20 of real fal cost" to "2 free images worth ~$0.05–0.10 of real fal cost." This is exactly what Ron's tracker item asked for, not a judgment call being made here.
 - "Turn this into a video" and any 2nd+ video always cost the same flat 100 tokens — no discount for having already paid for the image. Flagged as a possible future lever (e.g. 90 tokens as a loyalty nudge), not built now.
+
+### 2b-revised — ACTUAL numbers to build (Ron's correction, 2026-07-24)
+
+Supersedes §2b above. The wizard keeps giving new users a free video (not an image) on first entry — the free-tier tightening happens entirely through the initial grant + daily trickle, not through an onboarding media-type switch.
+
+| Constant | Old value | **New value (build this)** | File |
+|---|---|---|---|
+| `INITIAL_GRANT` | 200 | **290** | `netlify/functions/lib/entitlements.js:189` |
+| `DAILY_GRANT_AMOUNT` | 100 | **10** | same file |
+| `GRANT_CEILING` | 500 | unchanged (500) | same file |
+| Video generation cost | 100 tokens | unchanged (100 tokens) | `generate-video.js` |
+| Image generation cost | n/a | **10 tokens flat** (unchanged from §2b) | `generate-image.js` (new) |
+
+Check: a new signup gets 290 tokens, the wizard's free onboarding video costs 100, leaving exactly **190 tokens** — matches Ron's own number precisely. From there: another video (100) is still affordable (90 left), or up to 19 images (10 each), or a mix — same flexibility as today's model, just re-based on 290/10 instead of 200/100. The real tightening is the **daily trickle drop from 100/day to 10/day** — today a lapsed user re-fills to the 500 ceiling in 3 days; under the new numbers it takes ~21 days, making the free tier meaningfully less generous over time without changing the first-touch experience at all.
 
 ## 3. Data model changes
 
@@ -132,6 +154,12 @@ Record shape gains `mediaType` (default `'video'` in `create()` if the caller do
 - **On success:** `finalizeDream` is called with `sourceDreamId = dream.id`, `mediaType: 'video'` — upgrades the existing dream record in place (same id): `videoUrl` gets set, `imageUrl` is kept (provenance — not required for v1 UI, but free to keep), `mediaType` flips to `'video'`, so it renders as a normal video dream everywhere from then on.
 - **Known limitation, flagged (not silently dropped):** if a user's "Me" character was set up via photo only (no text description) before ever reaching Step 7, the auto-generated first-run image cannot reflect their likeness — `flux/dev` is pure text-to-image, no photo-conditioning support, unlike the video path's `reference-to-video` model. `buildImagePrompt` therefore omits the "the dreamer appears as shown in reference photo" pointer line entirely for the image path (a pure text prompt referencing a photo the model never sees would just confuse it). The subsequent "Turn this into a video" call still correctly uses the real self-photo via `reference-to-video`'s own existing flow if the user has that character selected again on a later, separate video generation — but note that `sourceImageUrl`'s `callFalImageToVideo` path and the self-photo `reference-to-video` path are two different fal calls and mutually exclusive per request in this spec (a "turn this into a video" call is always the image-to-video path, never blended with a separate self-photo reference in the same call). If this gap proves to matter in practice (real users complaining their auto-image doesn't look like them), a later pass could investigate flux's image-conditioning variants (e.g. `flux-pro/kontext` or a redux/img2img flow) — explicitly out of scope for pass 1.
 
+## 6-revised — ACTUAL onboarding flow to build (Ron's correction, 2026-07-24)
+
+Supersedes §6 above. **`wizard.html`'s first-entry flow is NOT changed at all** — Step 7 keeps sending no `mediaType` (or an explicit `mediaType: 'video'`) to `start-pending-generation.js`, exactly as it does today; the copy at line 893 is untouched; `processing.html`/`result.html` render the wizard's output exactly as they do today. New users still get a real free video as their first-touch "wow" moment.
+
+What's actually new for a first-time user: once they land on `result.html` with that free video, there is **no** "Turn this into a video" CTA (that only shows for `imageUrl && !videoUrl` dreams, and their dream already has a video) — nothing changes on their very first result screen. The image-generation feature becomes available to them the next time they create a *new* dream and reach `style.html`, where the §5 picker (segmented toggle, Video pre-selected) lets them choose Image for 10 tokens instead of Video for 100 — this is the only place `mediaType` becomes a real user choice anywhere in the app. §4's file list is unchanged except item 8 (`wizard.html`) is **dropped entirely** — no wizard.html changes ship in this build.
+
 ## 7. Explicitly out of scope for this pass
 
 1. **Image storage/hosting beyond fal's own ≥7-day retention.** No Netlify Blobs re-hosting of generated images in pass 1 — flagged as its own future decision if longer-than-7-day persistence (e.g. permanently published Explore images, or a "turn into video weeks later" use case) is ever needed. If this becomes real, it's a small additive change mirroring `video-status.js`'s dormant `checkVeoStatus` Blobs-download pattern, not a redesign.
@@ -141,13 +169,13 @@ Record shape gains `mediaType` (default `'video'` in `create()` if the caller do
 5. **Photo-conditioned image generation** (the "Me + photo" limitation in §6) — flagged as a candidate follow-up, not attempted here.
 6. **`flux/schnell` as the default model.** `flux/dev` is the pass-1 default for quality on this "wow" first-impression moment; `schnell` is documented as a one-line-swap cost lever if Ron wants to cut cost further later.
 
-## 8. Needs Ron's explicit confirmation
+## 8. Confirmed by Ron (2026-07-24) — no longer open
 
-- **`INITIAL_GRANT: 200 → 20`** (§2b) — this is the one real monetization-tightening number in this whole spec. It's exactly what his own tracker item asked for, worked out against this codebase's real constants rather than his illustrative 10/20 example, so it's built in as spec'd rather than treated as an open question — but it's flagged here plainly since it is, concretely, "less free stuff for every new signup" and worth his eyes before merge.
-- **Which design direction (§9)** — per `AGENT_POLICY.md`, this is always a human pick, not the agent's to make.
-- **`flux/dev` vs `flux/schnell`** as the default image model — `dev` is recommended for quality on the onboarding "wow" moment given both are negligible cost next to video; flag if Ron would rather default to the even-cheaper `schnell` from day one.
+- ~~`INITIAL_GRANT: 200 → 20`~~ — **superseded, see §2b-revised: `290`**, paired with `DAILY_GRANT_AMOUNT: 100 → 10`. Confirmed explicitly.
+- ~~Which design direction (§9)~~ — **Direction A (segmented toggle), confirmed explicitly.**
+- **`flux/dev` vs `flux/schnell`** as the default image model — still open, not asked. `dev` is recommended for quality on the "wow" first-image moment given both are negligible cost next to video; build proceeds with `dev` as the default, flag to Ron if a cheaper default is wanted later — this one lever doesn't block the build.
 
-## 9. Design directions — the image-vs-video picker (`style.html`)
+## 9. Design direction — the image-vs-video picker (`style.html`) — Direction A confirmed
 
 Both directions share every backend/copy/token spec above; they differ only in the picker's interaction pattern on `style.html`. Both are grounded in real, current app patterns researched today (2026-07-24), not a from-memory guess.
 
