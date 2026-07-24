@@ -207,7 +207,14 @@
   function renderBalance(){
     if(!tokenStatus) return;
     balanceEl.textContent = tokenStatus.balance;
-    countdownEl.textContent = tokenStatus.nextGrantAt ? ('Next 100 free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt)) : '';
+    // Reads the daily-grant amount live off tokenStatus (see
+    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 10 as of 2026-07-24's
+    // token-economy retune) rather than a hardcoded number — a review
+    // finding on the image-generation branch: this line, plus
+    // profile.html's own copy of the same countdown, both hardcoded "100"
+    // and went stale silently the moment that constant changed, since
+    // neither is scoped to the image feature at all.
+    countdownEl.textContent = tokenStatus.nextGrantAt ? ('Next ' + tokenStatus.dailyGrantAmount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt)) : '';
   }
   function loadBalance(){
     DreamStore.getTokenStatus().then(function(status){

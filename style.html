@@ -99,8 +99,11 @@
            refills automatically, no purchase required. See shop.html's own
            beta banner for the same framing. id'd (modal-quota-body) so the
            image-vs-video picker below can swap this copy in place — see
-           updateMediaTypeUI(). -->
-      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 100 more automatically within 24 hours.</div>
+           updateMediaTypeUI(). This static text is a pre-JS placeholder
+           only (updateMediaTypeUI() overwrites it synchronously on load,
+           before this modal is ever shown) — its daily-grant number is
+           kept in sync with DEFAULT_DAILY_GRANT_AMOUNT below by hand. -->
+      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 10 more automatically within 24 hours.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
         <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
@@ -131,6 +134,23 @@
     genBtn.disabled = false;
   });
 
+  // ===== Token balance pre-check =====
+  // Convenience-only, client-side pre-check (see js/store.js's
+  // getTokenStatus doc comment) — fetched once on load, never awaited at
+  // click time, so a slow/failed/never-resolving fetch simply leaves
+  // tokenStatus null and the generate button behaves exactly as it does
+  // today (fail open). The real enforcement is generate-video.js's
+  // server-side E112 check (or generate-image.js's E412) — the threshold
+  // checked below reacts to whichever media type is currently selected.
+  // Declared before the media-type picker below since its quota copy reads
+  // tokenStatus.dailyGrantAmount live (see DEFAULT_DAILY_GRANT_AMOUNT's own
+  // comment for why a hardcoded number is exactly the bug class this fixes).
+  var tokenStatus = null;
+  DreamStore.getTokenStatus().then(function(status){
+    tokenStatus = status;
+    updateMediaTypeUI(); // refresh the quota copy below with the real daily-grant number, in case it rendered first with the fallback
+  }).catch(function(){ tokenStatus = null; });
+
   // ===== Image-vs-video picker (Direction A — segmented toggle) =====
   // Video is pre-selected on every visit to this screen (not a remembered
   // preference across sessions) — see docs/IMAGE_GENERATION_SPEC.md §5:
@@ -141,15 +161,27 @@
   var mediaTypeRow = document.getElementById('media-type-row');
   var quotaBody = document.getElementById('modal-quota-body');
 
-  var VIDEO_QUOTA_COPY = 'Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get 100 more automatically within 24 hours.';
-  var IMAGE_QUOTA_COPY = 'Generating an image costs 10 tokens. Free during beta — no card needed — you\'ll get 100 more automatically within 24 hours.';
+  // Fallback only for the brief window before the async getTokenStatus()
+  // call above resolves (this screen's copy is re-rendered the instant it
+  // does) — mirrors entitlements.js's real DAILY_GRANT_AMOUNT (10 as of
+  // 2026-07-24's token-economy retune) and js/store.js's own no-email
+  // fallback of the same value, so this never goes stale on its own if
+  // that constant changes again without every hardcoded copy of the
+  // number being hunted down by hand (the actual bug this replaces).
+  var DEFAULT_DAILY_GRANT_AMOUNT = 10;
+  function dailyGrantAmountText(){
+    return (tokenStatus && tokenStatus.dailyGrantAmount) || DEFAULT_DAILY_GRANT_AMOUNT;
+  }
 
   function updateMediaTypeUI(){
     Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){
       b.classList.toggle('active', b.dataset.mediaType === selectedMediaType);
     });
     genBtn.textContent = selectedMediaType === 'image' ? 'Generate Image' : 'Generate Video';
-    quotaBody.textContent = selectedMediaType === 'image' ? IMAGE_QUOTA_COPY : VIDEO_QUOTA_COPY;
+    var grant = dailyGrantAmountText();
+    quotaBody.textContent = selectedMediaType === 'image'
+      ? ('Generating an image costs 10 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.')
+      : ('Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.');
   }
   mediaTypeRow.addEventListener('click', function(e){
     var btn = e.target.closest('.media-type-btn');
@@ -158,17 +190,6 @@
     updateMediaTypeUI();
   });
   updateMediaTypeUI();
-
-  // ===== Token balance pre-check =====
-  // Convenience-only, client-side pre-check (see js/store.js's
-  // getTokenStatus doc comment) — fetched once on load, never awaited at
-  // click time, so a slow/failed/never-resolving fetch simply leaves
-  // tokenStatus null and the generate button behaves exactly as it does
-  // today (fail open). The real enforcement is generate-video.js's
-  // server-side E112 check (or generate-image.js's E412) — the threshold
-  // checked below reacts to whichever media type is currently selected.
-  var tokenStatus = null;
-  DreamStore.getTokenStatus().then(function(status){ tokenStatus = status; }).catch(function(){ tokenStatus = null; });
 
   function tokensBlockGeneration(){
     var cost = selectedMediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
