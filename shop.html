@@ -109,9 +109,55 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script>
+  // ============================================================================
+  // Shop palette A/B test — docs/SHOP_PALETTE_REDESIGN_SPEC.md §8
+  // ----------------------------------------------------------------------------
+  // No in-app A/B assignment mechanism exists elsewhere in this codebase, so
+  // this is a small, local, additive assignment layer rather than a shared
+  // one. Sticky per-browser (not per-account): sampled once via
+  // Math.random() < 0.5 the first time this page loads with no stored
+  // variant, persisted in localStorage, and never reassigned after that —
+  // every later visit from this browser reads the same stored value. Applied
+  // as a body-level class (shop-variant-a / shop-variant-b) that
+  // css/styles.css's .shop-variant-a/.shop-variant-b rules key off of for
+  // just the "best value" pack's border/badge color; everything else on the
+  // page is identical between variants (see the shared baseline fix in that
+  // same CSS section).
+  // ============================================================================
+  var SHOP_VARIANT_KEY = 'dreamtube_shop_variant';
+  var shopVariant = localStorage.getItem(SHOP_VARIANT_KEY);
+  if(shopVariant !== 'a' && shopVariant !== 'b'){
+    shopVariant = Math.random() < 0.5 ? 'a' : 'b';
+    localStorage.setItem(SHOP_VARIANT_KEY, shopVariant);
+  }
+  document.body.classList.add('shop-variant-' + shopVariant);
+
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('shop-back').innerHTML = Icons.back;
   document.getElementById('shop-beta-icon').innerHTML = Icons.check;
+
+  // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
+  // every other page's inline funnel script already defines locally (see
+  // result.html/start.html/wizard.html) — this page didn't have one yet. =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
+  // Registers shop_palette_variant on every load (using the persisted value,
+  // not just on first assignment — simpler and idempotent) so it rides along
+  // on every later PostHog event/person property from this browser, including
+  // whatever fires on a completed Dodo purchase. As of 2026-07-24, shop.html
+  // itself doesn't fire any purchase-completion PostHog event on
+  // ?checkout=success (only a toast + balance re-poll — see
+  // handleCheckoutReturn below); register() still runs on that later page
+  // load same as any other, so if/when a purchase-conversion event is added
+  // here this property will already be attached.
+  if(window.posthog && typeof window.posthog.register === 'function'){
+    try{ posthog.register({ shop_palette_variant: shopVariant }); }catch(e){ /* analytics must never break the app */ }
+  }
+  track('shop_palette_variant_shown', { variant: shopVariant });
 
   // ============================================================================
   // Token packs — wired to the live Dodo Payments checkout

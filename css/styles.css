@@ -19,6 +19,17 @@
      places: the "+" create button in the bottom nav, and the ring around the
      user's own avatar on Profile. Nowhere else. */
   --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  /* Shop palette A/B test (docs/SHOP_PALETTE_REDESIGN_SPEC.md) — two new,
+     narrowly-scoped accent hues, extending the token system rather than
+     replacing it. Direction A ("quiet ledger", calm periwinkle-blue) vs.
+     Direction B ("premium currency", muted warm gold); shop.html assigns a
+     visitor to one via a body-level .shop-variant-a/.shop-variant-b class.
+     Used ONLY for the "best value" token-pack card border/badge — see
+     .token-pack-card.best and .token-pack-badge below. */
+  --accent-trust:#6C8CFF;
+  --accent-trust-soft:rgba(108,140,255,.12);
+  --accent-value:#D9A653;
+  --accent-value-soft:rgba(217,166,83,.12);
   --border:rgba(255,255,255,0.08);
   --border-strong:rgba(255,255,255,0.16);
   --radius-lg:28px;
@@ -575,21 +586,34 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .token-chip-meta{ font-size:11px; font-weight:600; color:rgba(255,255,255,.82); white-space:nowrap;}
 .token-chip-cta{ font-size:11px; font-weight:800; color:#fff; white-space:nowrap; border-left:1px solid rgba(255,255,255,.35); padding-left:8px;}
 
-/* ===== Token shop (shop.html) ===== */
-.token-balance-card{ position:relative; background:var(--gradient-ig); border-radius:20px; padding:2px; margin:6px 0 22px;}
-.token-balance-card::before{ content:""; position:absolute; inset:2px; border-radius:18px; background:var(--surface);}
-.token-balance-card > *{ position:relative;}
-.token-balance-inner{ padding:20px; text-align:center;}
-.token-balance-amt{ font-size:36px; font-weight:800; line-height:1.1; background:var(--gradient-ig); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+/* ===== Token shop (shop.html) =====
+   Palette per docs/SHOP_PALETTE_REDESIGN_SPEC.md — the shop used to be the
+   one place besides the two documented --gradient-ig spots (bottom-nav "+",
+   Profile avatar ring) that borrowed the hot IG gradient, which read as
+   loud/urgent rather than calm. Baseline fix below (plain card border, plain
+   white balance numeral matching .rec-timer's existing big-number pattern)
+   applies to every visitor, no variant condition. Only the "best value" pack
+   card's border/badge color is a live in-product A/B test — see
+   .token-pack-card.best / .token-pack-badge and the .shop-variant-a/
+   .shop-variant-b rules further down, which shop.html's inline script
+   assigns once per browser and persists in localStorage. */
+.token-balance-card{ position:relative; background:var(--surface); border:1px solid var(--border-strong); border-radius:20px; padding:20px; margin:6px 0 22px;}
+.token-balance-inner{ text-align:center;}
+.token-balance-amt{ font-size:36px; font-weight:800; line-height:1.1; color:var(--text-primary);}
 .token-balance-sub{ font-size:12.5px; color:var(--text-faint); margin-top:6px;}
 .token-pack-card{ position:relative; background:var(--surface); border:1px solid var(--border-strong); border-radius:18px; padding:18px 20px; margin-bottom:14px; transition:border-color .15s ease;}
-.token-pack-card.best{ border-color:#FD1D1D;}
 .token-pack-row{ display:flex; align-items:baseline; justify-content:space-between;}
 .token-pack-amt{ font-weight:800; font-size:18px;}
 .token-pack-price{ font-weight:800; font-size:20px;}
 .token-pack-sub{ font-size:12.5px; color:var(--text-faint); margin-top:4px;}
-.token-pack-badge{ position:absolute; top:-10px; right:16px; background:var(--gradient-ig); color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
+.token-pack-badge{ position:absolute; top:-10px; right:16px; color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
 .token-pack-card .btn{ margin-top:14px;}
+/* Direction A — "quiet ledger" (calm periwinkle-blue). */
+.shop-variant-a .token-pack-card.best{ border-color:var(--accent-trust);}
+.shop-variant-a .token-pack-badge{ background:var(--accent-trust);}
+/* Direction B — "premium currency" (muted warm gold). */
+.shop-variant-b .token-pack-card.best{ border-color:var(--accent-value);}
+.shop-variant-b .token-pack-badge{ background:var(--accent-value);}
 
 /* ===== Tracker (tracker.html) ===== */
 /* One item = one native <details>/<summary> — the summary row (always
