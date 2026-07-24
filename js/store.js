@@ -642,6 +642,7 @@
     code = code || '';
     if (code.indexOf('email_taken') !== -1) return 'An account with that email already exists.';
     if (code.indexOf('invalid_username') !== -1) return 'Username must be at least 3 characters.';
+    if (code.indexOf('suspicious_username') !== -1) return "That username doesn't look right — please type your own username.";
     if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 3 characters.';
     if (code.indexOf('invalid_email') !== -1) return 'Enter a valid email address.';
     if (code.indexOf('rate_limited') !== -1) return "Too many signups from this network today — try again tomorrow.";
@@ -741,6 +742,16 @@
       var key = username.toLowerCase();
       email = (email || '').trim();
       if (username.length < 3) return Promise.resolve({ ok: false, error: 'Username must be at least 3 characters.' });
+      // Real users never type a name wrapped in double underscores this
+      // way — this exact shape (__word_word__) is the signature of a
+      // privacy-focused mobile browser/extension auto-injecting a synthetic
+      // placeholder into a field it detects via autocomplete="username"
+      // (see the #fn-username/#login-username inputs), before the user
+      // gets a chance to type their real choice. A real founder account
+      // was created with the literal username "__probe_throwaway_user__"
+      // this way. Rejecting the pattern outright can never false-positive
+      // on a genuine human-chosen username.
+      if (/^__.+__$/.test(username)) return Promise.resolve({ ok: false, error: "That username doesn't look right — please type your own username." });
       if (!password) return Promise.resolve({ ok: false, error: 'Enter a password.' });
       if (password.length < 3) return Promise.resolve({ ok: false, error: 'Password must be at least 3 characters.' });
       if (!EMAIL_RE.test(email)) return Promise.resolve({ ok: false, error: 'Enter a valid email address.' });

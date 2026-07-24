@@ -198,6 +198,39 @@ test('signup with a 2-character password shows the new 3-char-minimum error text
   }
 });
 
+/**
+ * Real incident (mobile founder test, 2026-07-24): a real account got
+ * created with the literal username "__probe_throwaway_user__" -- the
+ * signature shape a privacy-focused mobile browser/extension injects into
+ * a field it detects via autocomplete="username" (both #login-username
+ * here and wizard.html's #fn-username carry that attribute), before the
+ * real user gets a chance to type their own choice. Confirms the new
+ * client-side rejection (js/store.js's signup()) catches it before ever
+ * reaching the server.
+ */
+test('signup with a __word__-shaped username (privacy-browser autofill-probe signature) is rejected client-side, not silently accepted', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', '__probe_throwaway_user__');
+    await page.fill('#login-email', 'realuser@example.com');
+    await page.fill('#login-password', 'longenoughpassword1');
+    await page.click('#login-submit');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('login-error');
+      return !!(el && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    var errorText = await page.textContent('#login-error');
+    assert.match(errorText, /doesn't look right/i);
+    assert.match(page.url(), /login\.html/, 'never actually signed up / navigated away');
+  } finally {
+    await context.close();
+  }
+});
+
 test('signup with an exactly-3-character password succeeds (friction-reduction: minimum lowered from 8 to 3)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

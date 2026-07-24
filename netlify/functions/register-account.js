@@ -61,6 +61,12 @@
 //   E7 username_taken       — already registered under a different account
 //   E8 email_taken          — already registered under a different account
 //   E9 rate_limited         — MAX_REGISTRATIONS_PER_IP_PER_DAY exceeded for today
+//   E10 suspicious_username — matches the __word__ shape a browser/
+//                              extension's autofill-probing injects into a
+//                              field it detects via autocomplete="username"
+//                              (see js/store.js's signup() for the client-
+//                              side mirror of this same check, and its own
+//                              comment for the real incident this closes)
 //
 // Rate limiting: this is a brand-new, fully anonymous, unauthenticated
 // endpoint, so it gets the same per-IP daily cap every other public
@@ -98,6 +104,9 @@ exports.handler = async function (event) {
   }
   if (username.length < 3) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E4: invalid_username' }) };
+  }
+  if (/^__.+__$/.test(username)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E10: suspicious_username' }) };
   }
   if (password.length < 3) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: invalid_password' }) };

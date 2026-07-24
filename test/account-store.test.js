@@ -335,6 +335,18 @@ test('register-account: validates shape before ever touching the account store (
   assert.match(JSON.parse(badEmail.body).error, /^E6: invalid_email/);
 });
 
+test('register-account: rejects a __word__-shaped username (E10) -- the exact pattern a privacy browser/extension injects into an autocomplete="username" field, closing a real incident (a founder account was created with the literal username "__probe_throwaway_user__")', async function () {
+  var handler = require('../netlify/functions/register-account').handler;
+
+  var probe = await handler(fakeEvent({ method: 'POST', body: { username: '__probe_throwaway_user__', password: 'longenoughpw1', email: 'probe@example.com' } }));
+  assert.equal(probe.statusCode, 400);
+  assert.match(JSON.parse(probe.body).error, /^E10: suspicious_username/);
+
+  // Sanity: a real, ordinary username is never caught by this pattern.
+  var real = await handler(fakeEvent({ method: 'POST', body: { username: 'jack_underscore', password: 'longenoughpw1', email: 'jack_underscore@example.com' } }));
+  assert.equal(JSON.parse(real.body).ok, true);
+});
+
 test('register-account: exceeding MAX_REGISTRATIONS_PER_IP_PER_DAY is rejected with E9 rate_limited (429, ok:false)', async function () {
   process.env.MAX_REGISTRATIONS_PER_IP_PER_DAY = '1';
   var handler = require('../netlify/functions/register-account').handler;
