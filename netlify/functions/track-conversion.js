@@ -65,7 +65,7 @@
 var metaCapi = require('./lib/meta-capi');
 var rateLimit = require('./lib/rate-limit');
 
-var ALLOWED_EVENT_NAMES = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe', 'FirstVideoCreated'];
+var ALLOWED_EVENT_NAMES = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe', 'FirstVideoCreated', 'ReachedEmailEntry'];
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {

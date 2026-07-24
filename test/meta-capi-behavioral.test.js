@@ -175,6 +175,48 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
   }
 });
 
+test('start.html: reaching the email-entry screen (13) fires exactly one ReachedEmailEntry custom event, sharing event_id between fbq and track-conversion, before signup completes', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    // This lands on screen 13 (email_capture) WITHOUT submitting the
+    // signup form -- confirms ReachedEmailEntry fires on reaching the
+    // screen, independent of and prior to CompleteRegistration.
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+
+    var fbqReachedEmailEntry = fbqCalls.filter(function (args) {
+      return args[0] === 'trackCustom' && args[1] === 'ReachedEmailEntry';
+    });
+    assert.equal(fbqReachedEmailEntry.length, 1, 'expected exactly one fbq trackCustom ReachedEmailEntry call');
+    var fbqEventId = fbqReachedEmailEntry[0][3] && fbqReachedEmailEntry[0][3].eventID;
+    assert.ok(fbqEventId, 'fbq ReachedEmailEntry call should carry an eventID');
+
+    var reachedEmailEntryConversions = conversionCalls.filter(function (body) {
+      return body && body.event_name === 'ReachedEmailEntry';
+    });
+    assert.equal(reachedEmailEntryConversions.length, 1, 'expected exactly one ReachedEmailEntry POST to track-conversion');
+    assert.equal(reachedEmailEntryConversions[0].event_id, fbqEventId, 'track-conversion event_id must match the fbq trackCustom call\'s eventID, so Meta can dedupe them');
+
+    var fbqCompleteRegistration = fbqCalls.filter(function (args) {
+      return args[0] === 'track' && args[1] === 'CompleteRegistration';
+    });
+    assert.equal(fbqCompleteRegistration.length, 0, 'CompleteRegistration must not have fired yet -- signup was never submitted');
+  } finally {
+    await context.close();
+  }
+});
+
 test('login.html without ?mode=signup: logging in fires zero conversion events (no track-conversion POST, no fbq conversion call)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

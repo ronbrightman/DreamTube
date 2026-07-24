@@ -135,3 +135,23 @@ platform. `email` is included when the account has one on file (via
 - `js/store.js` — `markFirstVideoCreatedIfEligible(dreamId)`
 - `processing.html` — sets the `dreamtube_just_generated_id` sessionStorage marker
 - `result.html` — new local `track()` PostHog helper + the call site
+
+### ReachedEmailEntry / funnel_step_viewed(email_capture)
+
+Requested by Growth: `CompleteRegistration` only fires on signup
+*completion*, which is too low-volume a signal to optimize Meta delivery
+against this early. This fires on merely *reaching* the email-entry
+screen — everyone who gets this far is a real, higher-volume mid-funnel
+intent signal, upstream of the eventual conversion event.
+
+| | |
+|---|---|
+| **Trigger** | The funnel's email-entry screen (screen 13, `TAGS[cur] === 'email_capture'`) renders |
+| **Fires from** | `start.html`'s `render()`, right after the existing generic `funnel_step_viewed` PostHog capture |
+| **Vendors** | Meta Pixel (**custom** event — `fbq('trackCustom', 'ReachedEmailEntry', ...)`) + Meta CAPI (via `track-conversion.js`, added to `ALLOWED_EVENT_NAMES`) + PostHog (already covered — `funnel_step_viewed` with `screen: 'email_capture'` is the paired capture, no separate PostHog event needed) |
+| **Guard** | None — fires every time this screen renders, same as every other `funnel_step_viewed` step. Re-visiting (browser back) re-fires; that's expected for a volume/reach metric, not a one-time conversion |
+
+**Files touched:**
+
+- `start.html` — the `TAGS[cur] === 'email_capture'` check in `render()`
+- `netlify/functions/track-conversion.js` — `ReachedEmailEntry` added to `ALLOWED_EVENT_NAMES`

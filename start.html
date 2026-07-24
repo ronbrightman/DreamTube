@@ -991,6 +991,14 @@
     screenEl.scrollTop = 0;
     window.scrollTo(0, 0);
     track('funnel_step_viewed', { step: cur + 1, screen: TAGS[cur] });
+    // Higher-volume mid-funnel signal than CompleteRegistration (fires on
+    // reaching the ask, not just on completing it) — Growth wants this as
+    // an optimization target with more volume. Custom event (not a
+    // standard Pixel event), same event_id/CAPI pairing as
+    // CompleteRegistration above (see fireMetaConversion).
+    if(TAGS[cur] === 'email_capture'){
+      fireMetaConversion('ReachedEmailEntry', {}, true);
+    }
   }
 
   function goToStep(n){
