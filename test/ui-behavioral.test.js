@@ -1359,6 +1359,122 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
   }
 });
 
+test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-generation response for an ABANDONED email must not clobber the shared pending state once a newer call (for a changed email) has already started, even if the stale one resolves LAST', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+
+    // All three of these are held open (not fulfilled inline) so the test
+    // -- not real timing -- controls the exact settlement order: both
+    // start-pending-generation calls resolve (reordered, second-email's
+    // FIRST, first-email's abandoned one LAST) BEFORE the second signup
+    // attempt is allowed to succeed. This matters because the vulnerable
+    // read only happens once signup succeeds (see renderScreen13's click
+    // handler: pendingPromise.then(claim/adopt/next) runs inside
+    // attemptSignup's success callback) -- an earlier version of this test
+    // fulfilled the two start-pending-generation routes back-to-back
+    // without gating signup on anything, and it passed even against the
+    // unfixed code, because the current click's own promise chain always
+    // finished consuming the correct value microtasks before the abandoned
+    // response was even sent. Only forcing the abandoned response to land
+    // AFTER the correct one but BEFORE signup's own success is delivered
+    // actually exercises the vulnerable window.
+    var capturedPendingRoutes = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      capturedPendingRoutes.push({ body: body, route: route });
+    });
+    var claimCalls = [];
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    var signupAttempts = 0;
+    var secondSignupRoute = null;
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      signupAttempts++;
+      if (signupAttempts === 1) {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E8: email_taken' }) });
+      } else {
+        secondSignupRoute = route; // held open -- fulfilled explicitly below
+      }
+    });
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'first-email@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    // Signup for "first-email" is rejected quickly (a fast DB check) --
+    // its own start-pending-generation call, deliberately held open above,
+    // is still "in flight" from the test's perspective (unfulfilled).
+    await page.waitForFunction(function () {
+      var el = document.getElementById('fn-signup-error');
+      return !!(el && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+
+    // Visitor corrects to a different email BEFORE the first call has
+    // resolved at all -- exactly the trigger condition from the review.
+    await page.fill('#fn-email', 'second-email@example.com');
+    await page.click('#fn-s13-continue');
+
+    /** Polls a Node-side condition -- there's no in-app hook exposing these closure-private variables, so this is the only way to know each held-open route has actually arrived. */
+    function waitFor(conditionFn, what) {
+      return new Promise(function (resolve, reject) {
+        var deadline = Date.now() + 5000;
+        (function poll() {
+          if (conditionFn()) { resolve(); return; }
+          if (Date.now() > deadline) { reject(new Error(what + ' never arrived')); return; }
+          setTimeout(poll, 25);
+        })();
+      });
+    }
+
+    await waitFor(function () { return capturedPendingRoutes.length >= 2; }, 'both start-pending-generation requests');
+    assert.equal(capturedPendingRoutes[0].body.email, 'first-email@example.com');
+    assert.equal(capturedPendingRoutes[1].body.email, 'second-email@example.com');
+    await waitFor(function () { return !!secondSignupRoute; }, 'the second register-account request');
+
+    // Resolve the SECOND (current) pending-generation call first, with the
+    // correct data...
+    await capturedPendingRoutes[1].route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ pendingId: 'pd-second-real', operationName: 'fal:fake-model:req-second-real' })
+    });
+    // ...then the FIRST (abandoned) call resolves LAST, out of order,
+    // BEFORE signup itself is allowed to succeed. A correct fix discards
+    // this write because a newer attempt has since started; a buggy one
+    // lets it silently overwrite the shared state that signup's own
+    // success handler is about to read.
+    await capturedPendingRoutes[0].route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ pendingId: 'pd-first-abandoned', operationName: 'fal:fake-model:req-first-abandoned' })
+    });
+    // Only NOW does signup for "second-email" succeed -- this is what
+    // actually triggers the vulnerable read (pendingPromise.then(claim/
+    // adopt/next) in the click handler).
+    await secondSignupRoute.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'reorderedtester', email: 'second-email@example.com' }) });
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJob, 'a pending job must have been adopted');
+    assert.equal(pendingJob.operationName, 'fal:fake-model:req-second-real', 'REGRESSION GUARD: the adopted job must be the SECOND (current) email\'s, never the first, abandoned email\'s -- even though the abandoned response arrived last, right before signup succeeded');
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (second) pending job');
+    assert.equal(claimCalls[0].pendingId, 'pd-second-real');
+    assert.equal(claimCalls[0].email, 'second-email@example.com');
+  } finally {
+    await context.close();
+  }
+});
+
 // ===========================================================================
 // Tracker items for-product-add-we-will-email-your-dream-z63dy2 (email
 // reassurance microcopy) and for-product-beta-free-offer-in-app-short-jaalf6

@@ -836,6 +836,24 @@
   var pendingGenerationEmail = null;
   var pendingGenerationPromise = null;
   var pendingGenerationSettled = false;
+  // Per-attempt token (review finding round 2, 2026-07-24) — same pattern
+  // already used elsewhere in this codebase for "an async callback's side
+  // effects aren't scoped to the instance/attempt that started them" (see
+  // profile.html's identitySheetToken / create.html's charSheetToken).
+  // Without this, startPendingGeneration's .then()/.catch() wrote straight
+  // to the shared pending* vars unconditionally: if a visitor typed email
+  // A (real fal.ai submission starts, can take seconds), got rejected
+  // quickly ("email already taken"), corrected to email B BEFORE A's call
+  // resolved (firing a fresh call for B, correctly, per
+  // pendingGenerationEmail above) — A's abandoned response could still
+  // land AFTER B's, silently overwriting pendingId/pendingOperationName
+  // back to A's stale job right as B's own signup-success handler was
+  // about to read them, orphaning B's real, billed generation via a
+  // different-email race instead of the original same-email one. Bumped
+  // only when a genuinely NEW call is fired (getOrStartPendingGeneration's
+  // "fire fresh" branch) — never on a reused call, which must still be
+  // able to write once it eventually settles.
+  var pendingGenerationToken = 0;
 
   /** Mirrors js/store.js's own resolveCharacters(ids), just resolving against the local `staged` characters instead of DreamStore's real ones — same {name, description, isSelf, photoDataUrl?} shape start-pending-generation.js/generate-video.js expect, and (unlike wizard.html's single-subject version) resolves every selected staged character, matching start.html's own multi-select character screen. */
   function resolveStagedCharactersForGeneration(){
@@ -848,8 +866,8 @@
     });
   }
 
-  /** Fires start-pending-generation.js (see that file's own doc comment for the guardrails/error codes) and updates the pending* vars above on settlement. Always resolves (never rejects) — a failure just leaves pendingStartFailed true, same fallback shape as wizard.html's own version. Not called directly from the click handler — see getOrStartPendingGeneration() below, which adds the retry guard. */
-  function startPendingGeneration(email){
+  /** Fires start-pending-generation.js (see that file's own doc comment for the guardrails/error codes) and updates the pending* vars above on settlement — but ONLY if `token` (captured by the caller at fire time, see getOrStartPendingGeneration) still matches pendingGenerationToken; a mismatch means a newer attempt has since started, so this stale response's data is discarded rather than clobbering the current attempt's state. Always resolves (never rejects) — a failure just leaves pendingStartFailed true, same fallback shape as wizard.html's own version. Not called directly from the click handler — see getOrStartPendingGeneration() below, which adds both the retry guard and the token. */
+  function startPendingGeneration(email, token){
     var draft = DreamStore.getDraft();
     var startedAt = Date.now();
     return fetch('/.netlify/functions/start-pending-generation', {
@@ -864,6 +882,7 @@
     }).then(function(res){
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
+      if(token !== pendingGenerationToken) return; // stale -- a newer attempt has since started, discard
       if(result.ok && result.data && result.data.pendingId){
         pendingId = result.data.pendingId;
         pendingOperationName = result.data.operationName;
@@ -873,6 +892,7 @@
         pendingStartFailed = true;
       }
     }).catch(function(){
+      if(token !== pendingGenerationToken) return;
       pendingStartFailed = true;
     });
   }
@@ -895,8 +915,14 @@
     if(reusable) return pendingGenerationPromise;
     pendingGenerationEmail = email;
     pendingGenerationSettled = false;
-    pendingGenerationPromise = startPendingGeneration(email).then(function(){
-      pendingGenerationSettled = true;
+    pendingGenerationToken++;
+    var myToken = pendingGenerationToken;
+    pendingGenerationPromise = startPendingGeneration(email, myToken).then(function(){
+      // Same staleness guard as startPendingGeneration's own writes above —
+      // an abandoned call's belated settlement must not flip this flag for
+      // whatever the CURRENT attempt is, or a later retry's reuse check
+      // could wrongly treat a still-in-flight current attempt as settled.
+      if(myToken === pendingGenerationToken) pendingGenerationSettled = true;
     });
     return pendingGenerationPromise;
   }
