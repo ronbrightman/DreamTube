@@ -815,6 +815,28 @@
   var pendingStartedAt = null;
   var pendingStartFailed = false;
 
+  // Guards against re-firing a real, billed start-pending-generation call
+  // on a signup RETRY (review finding, 2026-07-24) — "email already taken",
+  // a wrong-password-style rejection, or a transient network error are all
+  // normal things that happen on a live signup screen, and without this
+  // guard every Continue click unconditionally called startPendingGeneration
+  // again (see the click handler below), each one a real fal.ai submission
+  // + a real 100-token spend + a new pending-dreams record — with the
+  // PRIOR attempt's job never claimed and pending-dreams.js having no TTL/
+  // cleanup, so every retry silently orphaned and permanently wrote off the
+  // one before it. wizard.html never had this problem because its
+  // pending-generation call lives on a separate screen a signup-only retry
+  // never re-touches; start.html's parallel adaptation (email+password on
+  // ONE screen) traded that isolation away, so the guard is reconstructed
+  // here instead. Tracks the email the current pendingId/pendingOperationName
+  // (if any) actually belongs to — reusing across a DIFFERENT email would
+  // silently fail claim-pending-generation.js's ownership check (it
+  // requires an exact email match) and adopt a job tied to the wrong
+  // address, so a genuine email change still gets its own fresh call.
+  var pendingGenerationEmail = null;
+  var pendingGenerationPromise = null;
+  var pendingGenerationSettled = false;
+
   /** Mirrors js/store.js's own resolveCharacters(ids), just resolving against the local `staged` characters instead of DreamStore's real ones — same {name, description, isSelf, photoDataUrl?} shape start-pending-generation.js/generate-video.js expect, and (unlike wizard.html's single-subject version) resolves every selected staged character, matching start.html's own multi-select character screen. */
   function resolveStagedCharactersForGeneration(){
     return staged.selectedIds.map(function(id){
@@ -826,7 +848,7 @@
     });
   }
 
-  /** Fires start-pending-generation.js (see that file's own doc comment for the guardrails/error codes) and updates the pending* vars above on settlement. Always resolves (never rejects) — a failure just leaves pendingStartFailed true, same fallback shape as wizard.html's own version. */
+  /** Fires start-pending-generation.js (see that file's own doc comment for the guardrails/error codes) and updates the pending* vars above on settlement. Always resolves (never rejects) — a failure just leaves pendingStartFailed true, same fallback shape as wizard.html's own version. Not called directly from the click handler — see getOrStartPendingGeneration() below, which adds the retry guard. */
   function startPendingGeneration(email){
     var draft = DreamStore.getDraft();
     var startedAt = Date.now();
@@ -853,6 +875,30 @@
     }).catch(function(){
       pendingStartFailed = true;
     });
+  }
+
+  /**
+   * Retry-safe wrapper around startPendingGeneration() — this is what the
+   * click handler actually calls. Reuses the existing in-flight-or-
+   * succeeded call when it's for the SAME email (covers both "still
+   * in-flight, a second rapid click shouldn't race a duplicate request in"
+   * and "already succeeded, a signup retry shouldn't re-submit"). Only
+   * fires a fresh call when the email has genuinely changed, or the prior
+   * attempt for this exact email definitively failed (nothing was spent on
+   * a failed attempt — see start-pending-generation.js's own handler,
+   * tokens are only spent after a successful fal submission — so retrying
+   * a failure is safe/correct, not a double-spend risk).
+   */
+  function getOrStartPendingGeneration(email){
+    var reusable = pendingGenerationEmail === email && pendingGenerationPromise &&
+      (!pendingGenerationSettled || !pendingStartFailed);
+    if(reusable) return pendingGenerationPromise;
+    pendingGenerationEmail = email;
+    pendingGenerationSettled = false;
+    pendingGenerationPromise = startPendingGeneration(email).then(function(){
+      pendingGenerationSettled = true;
+    });
+    return pendingGenerationPromise;
   }
 
   // ===================================================================
@@ -939,7 +985,11 @@
       var email = document.getElementById('fn-email').value.trim();
       var password = pwInput.value;
       errEl.textContent = '';
-      if(!email){ errEl.textContent = 'Enter your email address.'; return; }
+      // Format check (not just presence) — matches wizard.html's own
+      // renderContact check on the equivalent field. Without this, a
+      // malformed email used to reach both attemptSignup AND
+      // startPendingGeneration before either could reject it server-side.
+      if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
       if(!password){ errEl.textContent = 'Enter a password.'; return; }
       continueBtn.disabled = true;
       continueBtn.textContent = 'Creating your account…';
@@ -954,10 +1004,13 @@
         // Generate-during-signup: fired in parallel with attemptSignup
         // below, not after it, so the video gets a head start on whatever
         // is left of the funnel (screens 14/15) instead of only starting
-        // once the visitor reaches processing.html. See
-        // startPendingGeneration()'s own comment for the full rationale/
-        // fallback behavior.
-        var pendingPromise = startPendingGeneration(email);
+        // once the visitor reaches processing.html. Goes through
+        // getOrStartPendingGeneration() (not startPendingGeneration()
+        // directly) so a signup retry with the same email — "email already
+        // taken", a transient network error, anything — reuses the
+        // already-in-flight-or-succeeded call instead of firing a second
+        // real, billed generation. See that function's own comment.
+        var pendingPromise = getOrStartPendingGeneration(email);
         attemptSignup(email, password, function(ok, err){
           if(!ok){
             continueBtn.disabled = false;

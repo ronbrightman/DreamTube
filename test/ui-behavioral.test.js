@@ -1230,6 +1230,135 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
   }
 });
 
+test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the parallel pending-generation call already succeeded must NOT re-fire a second real, billed generation when the visitor retries with the same email', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+
+    var startPendingCalls = [];
+    var claimCalls = [];
+    var signupAttempts = 0;
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-retry-test-1', operationName: 'fal:fake-model:req-retry-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    // register-account: reject the FIRST attempt (the real shape
+    // DreamStore.signup expects -- see js/store.js's mapRegisterError),
+    // succeed the second -- this is exactly the scenario the review
+    // flagged: signup fails AFTER the parallel pending-generation call
+    // already succeeded (a real fal submission + real 100-token spend).
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      signupAttempts++;
+      if (signupAttempts === 1) {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E8: email_taken' }) });
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'retrytester', email: 'retry-same-email@example.com' }) });
+      }
+    });
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'retry-same-email@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // First attempt: signup rejected, error shown -- pending-generation
+    // already fired once (and succeeded, per the mock above).
+    await page.waitForFunction(function () {
+      var el = document.getElementById('fn-signup-error');
+      return !!(el && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'start-pending-generation should have fired exactly once so far');
+
+    // Retry with the SAME email -- an entirely normal thing to do after a
+    // rejected signup attempt -- must NOT fire a second real, billed
+    // generation call; the already-succeeded pending job must be reused.
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+
+    assert.equal(startPendingCalls.length, 1, 'REGRESSION GUARD: start-pending-generation must still have fired only once -- reusing the already-succeeded pending job on retry, never re-submitting a second real generation for the same email');
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, using the already-started pending job');
+    assert.equal(claimCalls[0].pendingId, 'pd-retry-test-1');
+
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJob, 'the single pending job from the first attempt must still be the one adopted');
+    assert.equal(pendingJob.operationName, 'fal:fake-model:req-retry-1');
+  } finally {
+    await context.close();
+  }
+});
+
+test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT email after a rejected signup gets a fresh pending-generation call for the new email (not silently reusing the old one, which would fail claim-pending-generation\'s ownership check)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+
+    var startPendingCalls = [];
+    var signupAttempts = 0;
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      var n = startPendingCalls.length;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-email-change-' + n, operationName: 'fal:fake-model:req-email-change-' + n }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      signupAttempts++;
+      if (signupAttempts === 1) {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E8: email_taken' }) });
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'emailchanger', email: 'second-email@example.com' }) });
+      }
+    });
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'first-email@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('fn-signup-error');
+      return !!(el && el.textContent.trim().length);
+    }, null, { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1);
+
+    // Change to a genuinely different email and retry.
+    await page.fill('#fn-email', 'second-email@example.com');
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+
+    assert.equal(startPendingCalls.length, 2, 'a genuinely different email must get its own fresh pending-generation call, not reuse the first email\'s');
+    assert.equal(startPendingCalls[1].email, 'second-email@example.com');
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.equal(pendingJob.operationName, 'fal:fake-model:req-email-change-2', 'the adopted job must be the one started for the email signup actually succeeded under');
+  } finally {
+    await context.close();
+  }
+});
+
 // ===========================================================================
 // Tracker items for-product-add-we-will-email-your-dream-z63dy2 (email
 // reassurance microcopy) and for-product-beta-free-offer-in-app-short-jaalf6
