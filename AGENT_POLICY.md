@@ -53,15 +53,26 @@ the wrong agent, with nothing throwing an error to flag it. Founder's own
 standing instruction: lean into explicit naming, always, not just when it
 happens to be convenient.
 
-One live caveat this depends on: `research`/`evaluation`/`design`/
-`marketing` are currently registered twice in this environment — once as
-a raw local copy (`~/.claude/agents/`) and once via the installed
-`product-agents` marketplace plugin (`product-agents:research`, etc.) —
-so even an explicit name can still have two matching candidates until
-that duplication is resolved. See `tracker.html`'s open
-`agent-skill-duplication` task; until it's closed, prefer being fully
-unambiguous (the exact registered name, not just a close paraphrase) when
-naming an agent explicitly.
+**Resolved (2026-07-23):** `research`/`evaluation`/`design`/`marketing`
+used to be registered twice in this environment — a raw local copy
+(`~/.claude/agents/`) and the installed `product-agents` marketplace
+plugin. The real problem wasn't the duplication itself; it was that the
+two copies had silently **drifted**: the plugin was pinned to
+`product-agents` version 1.1.0, but `agent-library`'s actual source
+picked up three real commits after that content was cached (the
+signals-repo retrofit, a category-name fix, decision-made wiring)
+without the plugin's version number ever being bumped — so Claude
+Code's version-keyed plugin cache had no signal to ever refetch, and
+kept serving stale pre-retrofit content indefinitely. The raw local
+copies happened to already match `agent-library`'s true current
+content (kept in sync by hand). Fixed both ends: bumped
+`product-agents` to 1.2.0 and pushed to `agent-library` (so a *new*
+environment following the install instructions below gets current
+content, not the stale cache), and removed this environment's own
+plugin-marketplace registration from Claude Code's settings (raw
+`~/.claude/agents/` copies are this environment's sole, canonical
+source now). A fresh environment should still install via the plugin
+below — that mechanism itself is what got fixed.
 
 ## Cross-session coordination: tracker.html
 
