@@ -52,7 +52,7 @@ forwarding, etc.).
 | **Vendors** | Meta Pixel (standard) + Meta CAPI |
 | **Guard** | None — fires every time screen 14 renders (once per funnel run, since the funnel doesn't allow re-visiting an earlier screen after signup) |
 
-### Purchase / Subscribe
+### Purchase / Subscribe (Stripe, server-side)
 
 | | |
 |---|---|
@@ -60,7 +60,17 @@ forwarding, etc.).
 | **Fires from** | `netlify/functions/stripe-webhook.js` |
 | **Vendors** | Meta CAPI only — server-to-server, no client-side Pixel call for these (no browser page/tab is guaranteed to still be open when a webhook lands) |
 | **Guard** | None beyond Stripe's own webhook delivery guarantees |
-| **Status** | **Currently dormant** — nothing in this codebase calls `create-checkout-session.js` yet (`start.html`'s pricing screen is a temporary payment bypass); wired and tested, but won't fire in production until a real checkout flow exists |
+| **Status** | **Currently dormant** — Stripe was superseded by Dodo Payments as the live processor (see `Purchase / purchase_completed` below for the checkout flow actually in use); this path is unused code left in place, not the live purchase signal |
+
+### Purchase / purchase_completed (Dodo, client-side return trip)
+
+| | |
+|---|---|
+| **Trigger** | The browser lands back on `shop.html?checkout=success` after a real Dodo Payments checkout, AND the `dreamtube_pending_purchase` sessionStorage marker set right before the outbound redirect to Dodo is still present |
+| **Fires from** | `shop.html`'s `handleCheckoutReturn` IIFE, in the `checkout === 'success'` branch |
+| **Vendors** | Meta Pixel (standard event, `fbq('track', 'Purchase', ...)`) + Meta CAPI (via `track-conversion.js`, already in `ALLOWED_EVENT_NAMES`) + PostHog (`purchase_completed`, via the page's local `track()` helper) — and since `shop_palette_variant` is registered as a PostHog super-property on every event from this browser (see the shop-palette A/B test comment further up this file), this is the event that lets that experiment be scored by conversion, not just exposure |
+| **Guard** | `sessionStorage.dreamtube_pending_purchase` — `purchasePack()` sets it (`{ pack, tokens, price }`, derived from the same `PACK_INFO` map as the visible price tags) immediately before `location.href = data.url` redirects to Dodo, and `handleCheckoutReturn` reads + unconditionally removes it exactly once. Without this, the event would fire off the bare `?checkout=success` query param alone, which anyone can produce by hand (stale bookmark, shared link, manual URL edit) with no real payment behind it — same reasoning as `FirstVideoCreated`'s `dreamtube_just_generated_id` marker below. A reload of the success page, or a cross-device/cross-browser return, has no marker and fires nothing |
+| **What's sent** | `value`/`price` and `tokens` come from `PACK_INFO`, not from anything Dodo returns on the redirect — this is a client-side approximation for analytics, not the credited amount (that's decided server-side by `dodo-webhook.js`, independent of this event entirely) |
 
 ### FirstVideoCreated / first_video_created
 

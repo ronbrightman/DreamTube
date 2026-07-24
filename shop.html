@@ -200,6 +200,23 @@
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
+  // sessionStorage key handleCheckoutReturn below reads/consumes on a
+  // ?checkout=success return — see purchasePack()'s doc comment on why this
+  // exists at all.
+  var PENDING_PURCHASE_KEY = 'dreamtube_pending_purchase';
+
+  // Mirrors the pricing shown in this page's own markup above (100
+  // tokens/$1.99, 500 tokens/$8.95) — kept as one small local map right next
+  // to purchasePack rather than re-deriving/hardcoding these numbers a
+  // second time somewhere disconnected from the visible price tags (same
+  // "one local helper, not a shared module" convention as this file's own
+  // formatTokenCountdown). See the "Token packs" header comment above for
+  // where the $8.95 number itself came from.
+  var PACK_INFO = {
+    pack100: { tokens: 100, price: 1.99 },
+    pack500: { tokens: 500, price: 8.95 }
+  };
+
   function purchasePack(pack, button){
     var email = DreamStore.getAccountEmail();
     if(!email){
@@ -223,6 +240,14 @@
       .then(function(res){ return res.json(); })
       .then(function(data){
         if(data.error || !data.url) throw new Error(data.error || 'no_checkout_url');
+        // Stashed right before the actual outbound redirect (not earlier,
+        // e.g. on click) so the marker only ever exists for a checkout
+        // attempt that genuinely left this page for Dodo — a failed
+        // create-checkout-session call above never sets it.
+        try {
+          var info = PACK_INFO[pack];
+          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price }));
+        } catch(e) { /* sessionStorage unavailable (e.g. private mode) — worst case the return trip just won't fire the conversion events */ }
         location.href = data.url;
       })
       .catch(function(){
@@ -311,6 +336,32 @@
         loadBalance();
         if(attempts >= 5) clearInterval(poll);
       }, 3000);
+
+      // ===== Purchase conversion event =====
+      // Fires the Purchase conversion (PostHog + Meta) exactly once, only
+      // when this ?checkout=success load is paired with the
+      // dreamtube_pending_purchase sessionStorage marker purchasePack() set
+      // right before redirecting to Dodo. The bare ?checkout=success query
+      // param alone is NOT trusted as proof of a real purchase — it's a
+      // plain URL anyone could visit by hand (a stale bookmark, a shared
+      // link, or just typing it in) with no payment ever having happened,
+      // and firing a spoofable Purchase event would corrupt both the
+      // shop_palette_variant A/B readout and real Meta ad spend decisions.
+      // The marker is consumed (read + removed) unconditionally, exactly
+      // like result.html's dreamtube_just_generated_id pattern, so a reload
+      // of this same success page — the marker already gone — never re-fires
+      // it. Token crediting itself is untouched by any of this: it happens
+      // server-side, independently, off Dodo's own signed webhook (see the
+      // header comment above) — these events are analytics-only.
+      try {
+        var pendingRaw = sessionStorage.getItem(PENDING_PURCHASE_KEY);
+        sessionStorage.removeItem(PENDING_PURCHASE_KEY); // consume once regardless of outcome below
+        if(pendingRaw){
+          var pending = JSON.parse(pendingRaw);
+          track('purchase_completed', { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' });
+          fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } });
+        }
+      } catch(e) { /* analytics must never break the app */ }
     } else if(checkout === 'cancelled'){
       showToast('Checkout cancelled — no charge made');
     }

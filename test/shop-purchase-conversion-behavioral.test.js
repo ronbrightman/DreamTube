@@ -1,0 +1,261 @@
+// test/shop-purchase-conversion-behavioral.test.js
+//
+// Real browser-driven coverage for the Purchase conversion event added to
+// shop.html's ?checkout=success return trip (see docs/EVENT_TAXONOMY.md's
+// "Purchase / purchase_completed" entry). Before this, a real Dodo Payments
+// purchase completing and redirecting back here fired zero conversion
+// events -- no PostHog capture, no Meta Pixel/CAPI event -- which meant (1)
+// the shop-palette A/B test (test/shop-palette-variant-behavioral.test.js)
+// could show variant exposure but never which variant actually converts,
+// and (2) Meta ad spend had no Purchase signal at all.
+//
+// The fix is a sessionStorage marker (dreamtube_pending_purchase),
+// following the exact spoofing-resistance pattern
+// test/first-video-created-behavioral.test.js already covers for
+// result.html's dreamtube_just_generated_id: purchasePack() stashes
+// {pack, tokens, price} right before the real outbound redirect to Dodo,
+// and handleCheckoutReturn reads + unconditionally removes it exactly once
+// on a ?checkout=success load. Without the marker present, the bare query
+// param alone must not be enough to fire a Purchase event -- otherwise
+// anyone could fake a conversion by hand-visiting the URL.
+//
+// Follows test/shop-behavioral.test.js's seedShopPage/mockTokenStatus/
+// blockThirdParty conventions, test/meta-capi-behavioral.test.js's
+// installFbqRecorder/captureTrackConversion pattern for the standard
+// (non-custom) fbq('track', ...) call Purchase uses, and
+// test/shop-palette-variant-behavioral.test.js's/
+// test/first-video-created-behavioral.test.js's approach of reading
+// PostHog calls straight out of the stub's own pending-call queue.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+var staticServer = require('./helpers/static-server');
+
+var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+
+var playwright = null;
+var unavailableReason = null;
+try {
+  playwright = require('playwright');
+} catch (e1) {
+  try {
+    playwright = require('/opt/node22/lib/node_modules/playwright');
+  } catch (e2) {
+    unavailableReason = 'Playwright is not resolvable in this environment (' + e2.message + ')';
+  }
+}
+
+var server = null;
+var browser = null;
+var baseUrl = null;
+
+test.before(async function () {
+  if (unavailableReason) return;
+  server = await staticServer.start();
+  baseUrl = server.url;
+  try {
+    browser = await playwright.chromium.launch({ executablePath: CHROMIUM_PATH });
+  } catch (e) {
+    unavailableReason = 'Could not launch Chromium at ' + CHROMIUM_PATH + ': ' + e.message;
+  }
+});
+
+test.after(async function () {
+  if (browser) await browser.close();
+  if (server) await server.close();
+});
+
+function blockThirdParty(page) {
+  return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
+    route.abort();
+  });
+}
+
+function mockTokenStatus(page, status) {
+  return page.route('**/.netlify/functions/get-token-status*', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 }) });
+  });
+}
+
+/** Same recorder as test/meta-capi-behavioral.test.js -- must be installed on the context before any page.goto(). */
+async function installFbqRecorder(context) {
+  var calls = [];
+  await context.exposeBinding('__recordFbqCall', function (source, args) {
+    calls.push(args);
+  });
+  await context.addInitScript(function () {
+    var wrapped = null;
+    Object.defineProperty(window, 'fbq', {
+      configurable: true,
+      get: function () { return wrapped; },
+      set: function (fn) {
+        wrapped = function () {
+          try { window.__recordFbqCall(Array.prototype.slice.call(arguments)); } catch (e) { /* recording must never break the real fbq call below */ }
+          return fn.apply(this, arguments);
+        };
+      }
+    });
+  });
+  return calls;
+}
+
+/** Intercepts every POST to track-conversion, recording each parsed body and fulfilling with a 200 success response. */
+function captureTrackConversion(page) {
+  var calls = [];
+  return page.route('**/.netlify/functions/track-conversion', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    calls.push(body);
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+  }).then(function () { return calls; });
+}
+
+/** Reads every posthog call made during this page load straight out of the PostHog stub's own pending-call queue -- see test/first-video-created-behavioral.test.js's header comment for why this is more reliable here than a monkeypatch. */
+function readPostHogCalls(page) {
+  return page.evaluate(function () {
+    var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+    return queue;
+  });
+}
+
+function fbqTrackCalls(fbqCalls, eventName) {
+  return fbqCalls.filter(function (args) { return args[0] === 'track' && args[1] === eventName; });
+}
+
+/** Logs a shopper account into localStorage, same shape as test/shop-behavioral.test.js's seedShopPage. */
+async function seedAccount(page) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function () {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@shopper', username: 'shopper' };
+    if (!state.accounts) state.accounts = {};
+    state.accounts.shopper = { password: 'testpass1', email: 'shopper@example.com' };
+    if (!state.dreams) state.dreams = [];
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  });
+}
+
+/** Sets the dreamtube_pending_purchase sessionStorage marker purchasePack() writes right before redirecting to Dodo. Must run on a page already on this origin. */
+function markPendingPurchase(page, info) {
+  return page.evaluate(function (o) {
+    sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify(o));
+  }, info);
+}
+
+test('a real checkout return (marker present) fires purchase_completed on PostHog and Purchase on Meta, with the correct pack/value, and consumes the marker', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    // Land directly on the success URL first so sessionStorage is set on
+    // the right origin/page before the marker-checking navigation -- same
+    // two-step approach test/first-video-created-behavioral.test.js uses
+    // for its sessionStorage marker (seed, then navigate to the page that
+    // consumes it). Here we seed via an initial shop.html visit, set the
+    // marker, then navigate again with ?checkout=success so
+    // handleCheckoutReturn's IIFE runs fresh with the marker already in
+    // place.
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+    await markPendingPurchase(page, { pack: 'pack500', tokens: 500, price: 8.95 });
+
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    // fireMetaConversion's CAPI POST is fire-and-forget -- give it a moment
+    // to land on the intercepted route before asserting on conversionCalls.
+    await page.waitForTimeout(300);
+
+    var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
+    assert.equal(fbqPurchaseCalls.length, 1, 'expected exactly one fbq track Purchase call');
+    var eventId = fbqPurchaseCalls[0][3] && fbqPurchaseCalls[0][3].eventID;
+    assert.ok(eventId, 'the fbq Purchase call should carry an eventID');
+
+    var purchaseConversions = conversionCalls.filter(function (body) { return body && body.event_name === 'Purchase'; });
+    assert.equal(purchaseConversions.length, 1, 'expected exactly one Purchase POST to track-conversion');
+    assert.equal(purchaseConversions[0].event_id, eventId, 'track-conversion event_id must match the fbq call\'s eventID, so Meta can dedupe them');
+    assert.deepEqual(purchaseConversions[0].custom_data, { value: 8.95, currency: 'USD' });
+
+    var phCalls = await readPostHogCalls(page);
+    var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
+    assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack500', tokens: 500, value: 8.95, currency: 'USD' });
+
+    var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
+    assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
+  } finally {
+    await context.close();
+  }
+});
+
+test('landing on ?checkout=success WITHOUT the marker (stale bookmark / manual visit) fires neither conversion event', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    // Deliberately NOT calling markPendingPurchase -- simulates a stale
+    // bookmark, a shared link, or someone hand-typing the query param with
+    // no real checkout ever having happened.
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    assert.equal(fbqTrackCalls(fbqCalls, 'Purchase').length, 0, 'no marker must mean no fbq Purchase call');
+    assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length, 0, 'no marker must mean no Purchase POST to track-conversion');
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; }).length, 0, 'no marker must mean no posthog purchase_completed capture');
+
+    // The existing toast + query-param-clearing behavior must be
+    // unaffected either way -- this feature is additive only.
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show') && /payment received/i.test(t.textContent);
+    }, null, { timeout: 5000 });
+    assert.doesNotMatch(page.url(), /checkout=success/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a reload after a successful first fire does not re-fire (marker already consumed)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+    await markPendingPurchase(page, { pack: 'pack100', tokens: 100, price: 1.99 });
+
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+    assert.equal(fbqTrackCalls(fbqCalls, 'Purchase').length, 1, 'sanity check: the first load fired once');
+
+    // history.replaceState already cleared ?checkout=success from the URL
+    // (existing behavior), so reload the plain shop.html the browser is
+    // now actually sitting on -- a real user hitting refresh here would do
+    // exactly this.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    assert.equal(fbqTrackCalls(fbqCalls, 'Purchase').length, 1, 'a reload must not re-fire the Pixel Purchase event');
+    assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length, 1, 'a reload must not re-fire the CAPI Purchase event');
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; }).length, 0, 'a reload gets a fresh PostHog queue (new page load) and must not queue a new purchase_completed call either');
+  } finally {
+    await context.close();
+  }
+});
