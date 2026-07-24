@@ -1,7 +1,7 @@
 // test/ui-behavioral.test.js
 //
 // Real browser-driven coverage for the four "mechanical correctness"
-// fixes in commit 8842015 (js/store.js's 8-char signup password minimum,
+// fixes in commit 8842015 (js/store.js's signup password minimum,
 // profile.html's account-settings rename, explore.html's disabled-icon
 // removal, start.html's real dreams-this-month stat) plus the follow-up
 // fix to resetPasswordLocally() (js/store.js) that enforces the same
@@ -138,24 +138,43 @@ async function seedResultPage(page, baseUrl, dreamId) {
   await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
 }
 
+/**
+ * screen 13's continue handler now also fires start-pending-generation.js
+ * in parallel with signup (see start.html's startPendingGeneration()) --
+ * without a route registered, that request 404s against the plain static
+ * file server, which the app already treats as a safe failure, so this is
+ * optional for correctness. Registered anyway for determinism/speed,
+ * matching test/wizard-ui-behavioral.test.js's convention of explicit
+ * routes over incidental 404 fallthrough. Fulfills as a failure (no
+ * pendingId) -- tests using goToPricingScreen care about the screens
+ * themselves, not the generate-during-signup mechanism (see the dedicated
+ * "generate during signup" tests below for that coverage).
+ */
+function stubPendingGenerationAsUnavailable(page) {
+  return page.route('**/.netlify/functions/start-pending-generation', function (route) {
+    route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+  });
+}
+
 /** Drives start.html's funnel tail (Advanced screens/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. Skipping on the first Advanced screen (characters) jumps straight past camera/scenery too -- see the "Skip on any of the 3 screens" test below -- so one skip click is enough to reach the transition screen from here. */
 async function goToPricingScreen(page, email) {
-  await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+  await stubPendingGenerationAsUnavailable(page);
+  await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
   await page.click('#fn-adv-chars-skip');
   await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
   await page.fill('#fn-email', email);
-  // 20 chars -- comfortably past the 8-char minimum this same commit
-  // enforces in DreamStore.signup(), so this helper doesn't itself trip
-  // over the finding this file is also verifying.
+  // 20 chars -- comfortably past the 3-char minimum DreamStore.signup()
+  // enforces, so this helper doesn't itself trip over the finding this
+  // file is also verifying.
   await page.fill('#fn-password', 'longenoughpassword1');
   await page.click('#fn-s13-continue');
   await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 }
 
-test('signup with a 7-character password shows the new 8-char-minimum error text', async function (t) {
+test('signup with a 2-character password shows the new 3-char-minimum error text', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -164,14 +183,14 @@ test('signup with a 7-character password shows the new 8-char-minimum error text
     await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
     await page.fill('#login-username', 'shortpwuser');
     await page.fill('#login-email', 'shortpw@example.com');
-    await page.fill('#login-password', '1234567'); // 7 chars -- one short of the minimum
+    await page.fill('#login-password', '12'); // 2 chars -- one short of the minimum
     await page.click('#login-submit');
     await page.waitForFunction(function () {
       var el = document.getElementById('login-error');
       return !!(el && el.textContent.trim().length);
     }, null, { timeout: 5000 });
     var errorText = await page.textContent('#login-error');
-    assert.equal(errorText, 'Password must be at least 8 characters.');
+    assert.equal(errorText, 'Password must be at least 3 characters.');
     // Never actually signed up / navigated away.
     assert.match(page.url(), /login\.html/);
   } finally {
@@ -179,7 +198,25 @@ test('signup with a 7-character password shows the new 8-char-minimum error text
   }
 });
 
-test('a pre-existing account with a sub-8-character password still logs in (no retroactive lockout)', async function (t) {
+test('signup with an exactly-3-character password succeeds (friction-reduction: minimum lowered from 8 to 3)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'threecharpwuser');
+    await page.fill('#login-email', 'threecharpw@example.com');
+    await page.fill('#login-password', 'abc'); // exactly 3 chars -- previously would have failed at the old 8-char minimum
+    await page.click('#login-submit');
+    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+    assert.match(page.url(), /explore\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a pre-existing account with a sub-3-character password still logs in (no retroactive lockout)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -191,17 +228,17 @@ test('a pre-existing account with a sub-8-character password still logs in (no r
       var raw = localStorage.getItem('dreamtube_state_v1');
       var state = raw ? JSON.parse(raw) : {};
       if (!state.accounts) state.accounts = {};
-      // Simulates an account created before the 8-char minimum existed --
+      // Simulates an account created before the 3-char minimum existed --
       // signup() itself would reject a password this short today, but
       // login() (and resetPasswordLocally's new check) must never
       // retroactively lock out an account that already has a short
       // password on file.
-      state.accounts.legacyuser = { password: 'abc', email: 'legacy@example.com' };
+      state.accounts.legacyuser = { password: 'ab', email: 'legacy@example.com' };
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.fill('#login-username', 'legacyuser');
-    await page.fill('#login-password', 'abc');
+    await page.fill('#login-password', 'ab');
     await page.click('#login-submit');
     await page.waitForURL(/explore\.html/, { timeout: 5000 });
     assert.match(page.url(), /explore\.html/);
@@ -259,7 +296,7 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
     await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
@@ -268,7 +305,12 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
 
     var bodyText = await page.textContent('#app');
     assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b|plans from/i, 'no subscription pricing should remain on the email capture screen');
-    assert.match(bodyText, /200 tokens/i, 'expected the honest free-tokens copy on the email capture screen');
+    // Mobile-test fix (2026-07-24): the old mixed "200 tokens on signup" +
+    // "we'll email your dream" copy is down to ONE message now -- the
+    // token-count line is gone entirely from this screen (screen 14 still
+    // mentions being free, just not in token-count terms here).
+    assert.doesNotMatch(bodyText, /200 tokens/i, 'the token-count line must no longer appear on the email capture screen -- only one message belongs here now');
+    assert.match(bodyText, /free to start/i, 'expected the screen to still mention it\'s free, just as part of the single remaining message');
   } finally {
     await context.close();
   }
@@ -513,7 +555,7 @@ test('Advanced screens (characters/camera/scenery): all three render the light "
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     async function assertLightDawnScreen() {
@@ -554,7 +596,7 @@ test('Advanced screens (characters/camera/scenery): 7-dot progress bar, and Cont
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
@@ -579,7 +621,7 @@ test('Advanced screens (characters/camera/scenery): Skip on any of the 3 screens
   try {
     var pageA = await contextA.newPage();
     await blockThirdParty(pageA);
-    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await pageA.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
     await pageA.click('#fn-adv-chars-skip');
     await pageA.waitForSelector('#fn-s11-continue', { timeout: 5000 });
@@ -592,7 +634,7 @@ test('Advanced screens (characters/camera/scenery): Skip on any of the 3 screens
   try {
     var pageB = await contextB.newPage();
     await blockThirdParty(pageB);
-    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await pageB.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
     await pageB.click('#fn-adv-chars-continue');
     await pageB.waitForSelector('#fn-adv-camera-skip', { timeout: 5000 });
@@ -607,7 +649,7 @@ test('Advanced screens (characters/camera/scenery): Skip on any of the 3 screens
   try {
     var pageC = await contextC.newPage();
     await blockThirdParty(pageC);
-    await pageC.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await pageC.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await pageC.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
     await pageC.click('#fn-adv-chars-continue');
     await pageC.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
@@ -626,7 +668,7 @@ test('Advanced screens (characters/camera/scenery): the character add/select/edi
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     // --- Characters: add a character via the sheet, confirm it's rendered
@@ -669,6 +711,157 @@ test('Advanced screens (characters/camera/scenery): the character add/select/edi
     var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
     assert.equal(draft.sceneryTime, 'Night');
     assert.equal(draft.sceneryPlace, 'Nature');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Founder mobile-test fix (2026-07-24), item (4): the "Add the people in
+// your dream" characters screen. (a) only shows when the caption plausibly
+// involves people; (c) the "Me" chip bug (saved but not auto-selected);
+// (d) the pencil edit tap target.
+// ===========================================================================
+
+test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on camera with 6 (not 7) progress dots', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-camera-continue', { timeout: 5000 });
+    var charScreenEverRendered = await page.$('#fn-adv-chars-continue');
+    assert.equal(charScreenEverRendered, null, 'the characters screen must not have rendered when the caption has no people-indicating language');
+    var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
+    assert.equal(dotCount, 6, 'expected 6 progress dots -- camera/scenery + transition + email + pricing + confirmation, characters screen skipped');
+  } finally {
+    await context.close();
+  }
+});
+
+test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 7 progress dots, and Skip from the LAST Advanced screen still lands on the correct transition screen when the characters screen was skipped (regression test for the dynamic PREPARING_STEP lookup)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var contextA = await browser.newContext();
+  try {
+    var pageA = await contextA.newPage();
+    await blockThirdParty(pageA);
+    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
+    await pageA.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
+    var dotCount = await pageA.$$eval('.fn-progress i', function (els) { return els.length; });
+    assert.equal(dotCount, 7, 'expected all 7 progress dots when the characters screen is shown ("we" is people-indicating)');
+  } finally {
+    await contextA.close();
+  }
+
+  // When the characters screen IS skipped, Skip from whatever the new first
+  // Advanced screen (camera) still needs to land on the transition screen,
+  // not accidentally skip past it to email capture -- this is exactly the
+  // bug a hardcoded goToStep(3) would reintroduce once the characters
+  // screen (formerly always index 0) can be absent.
+  var contextB = await browser.newContext();
+  try {
+    var pageB = await contextB.newPage();
+    await blockThirdParty(pageB);
+    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
+    await pageB.waitForSelector('#fn-adv-camera-skip', { timeout: 5000 });
+    await pageB.click('#fn-adv-camera-skip');
+    await pageB.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    var onEmailScreenAlready = await pageB.$('#fn-email');
+    assert.equal(onEmailScreenAlready, null, 'must land on the transition screen, not skip straight past it to email capture');
+  } finally {
+    await contextB.close();
+  }
+});
+
+test('character screen (fix 1c): saving "Me" for the first time auto-selects its chip immediately, even when the caption has no literal "I"/"me" word (the original bug)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // "We" triggers the people heuristic (so this screen renders) but does
+    // NOT literally contain "I" or "me" -- exactly the caption shape that
+    // exposed the original bug (the old code only auto-selected "Me" when
+    // the caption literally contained the word "I" or "me").
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#char-add-self', { timeout: 5000 });
+    await page.click('#char-add-self');
+    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
+    await page.fill('#char-desc-input', 'A tall woman with curly brown hair');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('.char-chip:has-text("Me")', { timeout: 5000 });
+    var meSelected = await page.$eval('.char-chip:has-text("Me")', function (el) { return el.classList.contains('selected'); });
+    assert.equal(meSelected, true, 'the Me chip must be selected right after its first save, regardless of caption wording');
+  } finally {
+    await context.close();
+  }
+});
+
+test('character screen (fix 1c): re-saving an existing character after deliberately deselecting it does NOT silently re-select it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#char-add-other', { timeout: 5000 });
+    await page.click('#char-add-other');
+    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
+    await page.fill('#char-name-input', 'Buddy');
+    await page.fill('#char-desc-input', 'A friendly golden retriever');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('.char-chip:has-text("Buddy")', { timeout: 5000 });
+    var selectedAfterAdd = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
+    assert.equal(selectedAfterAdd, true, 'sanity check: a brand-new character is auto-selected on its first save');
+
+    // Deliberately deselect it by tapping the chip itself (not the edit area).
+    await page.click('.char-chip:has-text("Buddy") .chip-check');
+    var deselected = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
+    assert.equal(deselected, false);
+
+    // Reopen it to edit (via the chip-edit-area, which opens the sheet) and
+    // save again with no real change.
+    await page.click('.char-chip:has-text("Buddy") .chip-edit-area');
+    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: 5000 });
+
+    var selectedAfterReSave = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
+    assert.equal(selectedAfterReSave, false, 'editing and re-saving an already-deselected character must not silently re-select it');
+  } finally {
+    await context.close();
+  }
+});
+
+test('character chip edit tap target (fix 1d): .chip-edit-area\'s padding is comfortably close to the ~44px mobile tap-target guideline, not the old ~32px version', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#char-add-other', { timeout: 5000 });
+    await page.click('#char-add-other');
+    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
+    await page.fill('#char-name-input', 'Buddy');
+    await page.fill('#char-desc-input', 'A friendly golden retriever');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('.char-chip:has-text("Buddy")', { timeout: 5000 });
+
+    var box = await page.$eval('.char-chip:has-text("Buddy") .chip-edit-area', function (el) {
+      var r = el.getBoundingClientRect();
+      var cs = getComputedStyle(el);
+      return { height: r.height, paddingTop: parseFloat(cs.paddingTop), paddingBottom: parseFloat(cs.paddingBottom) };
+    });
+    // The element's own rendered box already includes its padding (the
+    // matching negative margin only affects position/overlap with
+    // neighbors, not the box's own size) -- confirms the padding bump from
+    // 8px to 14px top/bottom actually landed, not just that some padding
+    // exists at all.
+    assert.ok(box.paddingTop >= 13, 'expected the bumped top padding (was 8px, now 14px) on .chip-edit-area, got ' + box.paddingTop);
+    assert.ok(box.paddingBottom >= 13, 'expected the bumped bottom padding (was 8px, now 14px) on .chip-edit-area, got ' + box.paddingBottom);
+    assert.ok(box.height >= 40, 'expected a tap target comfortably close to the ~44px mobile guideline, got ' + box.height + 'px (was ~32px before this fix)');
   } finally {
     await context.close();
   }
@@ -888,7 +1081,7 @@ test('pricing screen (14, now the token intro): Continue advances to the confirm
   }
 });
 
-test('pricing screen (14, now the token intro): renders the value bullets and the free-tokens copy, with no plan cards or payment/checkout language left behind', async function (t) {
+test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullets + token-math card + "coming soon" pack pricing) is gone, replaced with one short beta message, with no plan cards or payment/checkout language left behind', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -896,26 +1089,142 @@ test('pricing screen (14, now the token intro): renders the value bullets and th
     await blockThirdParty(page);
     await mockGetFeed(page, []);
     await goToPricingScreen(page, 'paywall-content@example.com');
-    await page.waitForSelector('.fn-value-card', { timeout: 5000 });
+    await page.waitForSelector('.fn-token-free-card', { timeout: 5000 });
 
-    var valueText = await page.textContent('.fn-value-card');
-    assert.match(valueText, /Turn your dream descriptions into AI-generated videos/);
-    assert.match(valueText, /Personalize with your own style and characters/);
-    assert.match(valueText, /Save your dreams and publish them to Explore/);
+    var cardText = await page.textContent('.fn-token-free-card');
+    assert.match(cardText, /still in beta/i, 'expected the simple beta message');
+    assert.match(cardText, /free to try/i);
+    assert.match(cardText, /no card needed/i);
 
     var bodyText = await page.textContent('#app');
-    assert.match(bodyText, /200 tokens/i, 'expected the honest free-tokens headline');
-    assert.match(bodyText, /100 more free every day/i);
-    assert.match(bodyText, /no card needed/i);
-    assert.match(bodyText, /coming soon/i);
-    // The pack-price preview added alongside the free-tier card (founder
-    // feedback: make pricing genuinely clear here, not just a text note).
-    assert.match(bodyText, /\$1\.99/);
-    assert.match(bodyText, /\$8\.95/);
+    // The dense value-prop checklist, token-math breakdown, and "coming
+    // soon" token-pack tiles are gone entirely per founder feedback ("too
+    // much text ... reads as scary") -- replaced with the one short
+    // message above.
+    assert.doesNotMatch(bodyText, /200 tokens/i, 'the token-count breakdown must be gone from this screen');
+    assert.doesNotMatch(bodyText, /100 more free every day/i);
+    assert.doesNotMatch(bodyText, /coming soon/i);
+    assert.doesNotMatch(bodyText, /\$1\.99|\$8\.95/, 'the token-pack price tiles must be gone from this pre-signup screen');
     assert.doesNotMatch(bodyText, /\$9\.99|\$5\.00|\/mo\b/, 'no subscription pricing should remain on this screen');
 
+    var valueCardCount = await page.$$eval('.fn-value-card', function (els) { return els.length; });
+    assert.equal(valueCardCount, 0, 'the old value-bullet card must no longer render');
+    var packRowCount = await page.$$eval('.fn-pack-row', function (els) { return els.length; });
+    assert.equal(packRowCount, 0, 'the old token-pack price tiles must no longer render');
     var priceCardCount = await page.$$eval('.fn-price-card', function (els) { return els.length; });
     assert.equal(priceCardCount, 0, 'no plan cards should be rendered anymore');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Founder mobile-test fix (2026-07-24), item (7): generate-during-signup.
+// Ported from wizard.html's renderContact/renderSignup mechanism (see
+// test/wizard-ui-behavioral.test.js for that file's own coverage) --
+// start.html has no separate contact-only step, so screen 13's Continue
+// fires start-pending-generation.js in PARALLEL with the real signup call
+// instead of sequentially after it. See start.html's startPendingGeneration()
+// for the full rationale/fallback behavior.
+// ===========================================================================
+
+test('start.html: generate-during-signup -- screen 13\'s Continue starts a pending generation in parallel with signup, and success adopts + resumes it straight through processing.html with no second submission', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+
+    var startPendingCalls = [];
+    var claimCalls = [];
+    var videoStatusCalls = 0;
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-test-1', operationName: 'fal:fake-model:req-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    // processing.html resumes the adopted pendingJob by polling video-status
+    // with the SAME operationName the pre-signup call returned above --
+    // resolving it immediately proves no second generate-video.js/
+    // start-pending-generation.js submission ever happened.
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      videoStatusCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });
+    });
+    await page.route('https://example.com/fake-video.mp4', function (route) {
+      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('x') });
+    });
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'start-pending-test@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // Must reach screen 14 -- proves signup succeeded AND the pending call
+    // was awaited (both settle before Continue advances the funnel).
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'start-pending-generation must be called exactly once, from screen 13\'s Continue');
+    assert.equal(startPendingCalls[0].email, 'start-pending-test@example.com');
+    assert.equal(startPendingCalls[0].caption, 'I had a dream about flying');
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, right after signup succeeds');
+    assert.equal(claimCalls[0].pendingId, 'pd-start-test-1');
+
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJob, 'the pending job must already be adopted into DreamStore by the time screen 14 renders');
+    assert.equal(pendingJob.operationName, 'fal:fake-model:req-1');
+
+    // Click through pricing + confirmation to processing.html, and confirm
+    // it resumes the ALREADY-adopted job rather than submitting a fresh one.
+    await page.click('#fn-s14-continue');
+    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    await page.click('#fn-s15-continue');
+    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
+    assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');
+  } finally {
+    await context.close();
+  }
+});
+
+test('start.html: generate-during-signup -- if the pre-signup generation call fails, signup still completes normally and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+    });
+
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
+    await page.click('#fn-adv-chars-skip');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'start-pending-fallback@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // Must still reach screen 14 despite the pre-signup call failing.
+    await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.equal(pendingJob, null, 'no pendingJob should have been adopted since the pre-signup call failed');
+    var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
+    assert.ok(draft.caption, 'draft caption must still be set for the fallback fresh-generation path at processing.html');
   } finally {
     await context.close();
   }
@@ -941,7 +1250,7 @@ test('email capture screen (13) shows the reassurance microcopy explaining why e
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
     await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });

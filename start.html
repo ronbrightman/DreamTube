@@ -114,9 +114,15 @@
      screens — one per section (renderScreenAdvChars/AdvCamera/AdvScenery)
      — instead of the one crowded screen 9 used to be. Continue on each
      advances one step; Skip on any of the three jumps straight past all
-     three, to the transition screen (goToStep(3)) — "skip" means "stop
-     customizing", not "skip this one section". Camera/scenery chips call
-     DreamStore.setDraft directly (login-independent). Characters are the
+     three, to the transition screen (goToStep(PREPARING_STEP)) — "skip"
+     means "stop customizing", not "skip this one section". As of the
+     2026-07-24 mobile-test fixes, renderScreenAdvChars itself may not even
+     be in SCREEN_RENDERERS at all — see captionSuggestsPeople() and the
+     SCREEN_RENDERERS/TAGS/PHASE_BY_STEP construction below — so
+     PREPARING_STEP is looked up dynamically rather than hardcoded, since
+     its index shifts depending on whether that screen is present. Camera/
+     scenery chips call DreamStore.setDraft directly (login-independent).
+     Characters are the
      one exception: DreamStore.saveCharacter() requires a logged-in user,
      but signup doesn't happen until screen 13 — by design, per the
      approved funnel order (dream input + Advanced moved early, paywall
@@ -126,13 +132,25 @@
      moment signup succeeds on screen 13, before the funnel continues.
    - Screen 13 derives a username from the email's local part automatically
      (per the task spec — visitor never picks a username) and calls the
-     real DreamStore.signup(username, password, email).
+     real DreamStore.signup(username, password, email). As of the
+     2026-07-24 mobile-test fixes, it ALSO fires start-pending-generation.js
+     the moment Continue is clicked, in parallel with the signup call
+     itself (not after it) — the same "generate during signup" mechanism
+     wizard.html's renderContact/renderSignup steps use, ported here since
+     start.html has no separate contact-only step to hang the kickoff off
+     of. See startPendingGeneration()'s own comment for the full flow.
    - Screen 14 (pricing) has a deliberate, clearly-marked payment bypass —
      see the big comment above proceedPastPricing() below. There is no
      payment provider integrated yet; do not "finish" this without a human
      vendor decision (see AGENT_POLICY.md escalation policy).
-   - Screen 15 hands off to the real, unmodified processing.html, which
-     reads the now-fully-populated draft and starts real generation.
+   - Screen 15 hands off to the real, unmodified processing.html. Most of
+     the time by this point generation is already RUNNING, not starting —
+     screen 13 already adopted it as this browser's pendingJob (see
+     DreamStore.adoptPendingGeneration), and processing.html already knows
+     how to resume a pendingJob on load with zero changes needed there. If
+     the pre-signup kickoff failed or never got a head start, this falls
+     back to processing.html's normal fresh-generation path exactly as
+     before — see startPendingGeneration()'s own comment.
 -->
 </head>
 <body>
@@ -249,29 +267,25 @@
   .fn-proof-strip .avatars i:first-child{ margin-left:0;}
   .fn-proof-strip span{ font-size:11.5px; font-weight:700; color:#6E6480;}
 
-  .fn-price-note{ font-size:12px; color:#6E6480; text-align:center; margin:2px 0 0;}
+  /* Bumped from 12px/--fn-ink-soft (#6E6480) to a larger size + the
+     darkest ink token — founder feedback on a real mobile test called
+     this "small faint helper text" that needed to read clearly, not as
+     fine print, especially on screen 13 where it's the funnel's only
+     reassurance for handing over an email. */
+  .fn-price-note{ font-size:14px; font-weight:600; color:var(--phase-ink, var(--fn-ink)); text-align:center; margin:2px 0 0; line-height:1.45;}
 
-  /* Screen 14's token-pricing display — replaces a small text-note-only
-     treatment (found unclear enough that the founder asked for pricing
-     to be genuinely clear here, not just mentioned) with the same visual
-     weight the old Monthly/Yearly subscription cards used to get, so
-     pricing reads as a real, considered part of the screen rather than a
-     footnote. See renderScreen14 below for the markup this styles. */
-  .fn-token-free-card{ background:#fff; border-radius:16px; padding:14px 16px; margin-bottom:12px; border:1.5px solid var(--fn-accent-solid);}
-  .fn-token-free-card .title{ font-weight:800; font-size:14px; color:var(--fn-ink); margin-bottom:4px;}
-  .fn-token-free-card .body{ font-size:13px; color:var(--fn-ink-soft); line-height:1.5;}
+  /* Screen 14's beta message card. Used to hold a dense token-math/pack-
+     pricing wall of text (Yearly/Monthly-card-style value props, a free-
+     token breakdown, and two "coming soon" token-pack price tiles) — a
+     real mobile test found it read as "too much text" and "scary" right
+     before signup. Replaced with one short, honest beta statement; this
+     card styling (and class name) is kept as-is since it already reads
+     as a calm, considered callout, just pointed at simpler copy now. See
+     renderScreen14 below for the markup this styles. */
+  .fn-token-free-card{ background:#fff; border-radius:16px; padding:16px; margin-bottom:14px; border:1.5px solid var(--fn-accent-solid); text-align:center;}
+  .fn-token-free-card .title{ font-weight:800; font-size:15px; color:var(--fn-ink); margin-bottom:6px;}
+  .fn-token-free-card .body{ font-size:13.5px; color:var(--fn-ink-soft); line-height:1.55;}
   .fn-token-free-card .body b{ color:var(--fn-ink); font-weight:700;}
-
-  .fn-pack-row{ display:flex; gap:9px; margin-bottom:10px;}
-  .fn-pack-card{ flex:1; background:#fff; border-radius:14px; padding:11px; text-align:center; position:relative; border:1px solid rgba(58,51,80,0.1);}
-  .fn-pack-badge{ position:absolute; top:-8px; right:9px; background:var(--fn-accent-grad); color:#fff; font-size:9.5px; font-weight:800; padding:3px 8px; border-radius:100px;}
-  .fn-pack-amt{ font-weight:700; font-size:13px; color:var(--fn-ink);}
-  .fn-pack-price{ font-weight:800; font-size:17px; color:var(--fn-ink); margin-top:1px;}
-
-  .fn-value-card{ background:#fff; border-radius:16px; padding:13px 15px 9px; margin-bottom:14px; border:1px solid rgba(58,51,80,0.1);}
-  .fn-value-item{ display:flex; align-items:flex-start; gap:9px; font-size:13px; font-weight:600; color:#3A3350; padding-bottom:9px;}
-  .fn-value-item .icon{ width:14px; height:14px; flex:none; margin-top:2px; color:var(--fn-accent-solid);}
-  .fn-value-foot{ font-size:11.5px; color:var(--phase-soft, var(--fn-ink-soft)); margin-bottom:12px; line-height:1.6;}
 
   .fn-check-badge{ width:72px; height:72px; border-radius:50%; background:rgba(255,255,255,.12); border:1.5px solid #fff; display:flex; align-items:center; justify-content:center; font-size:30px; margin:0 auto 18px; color:#fff;}
 
@@ -371,12 +385,26 @@
     motivations: (getParam('motivations') || '').split(',').filter(Boolean)
   };
   var chosenStyle = getParam('style') || null;
+  var captionText = getParam('caption') || '';
   var staged = { characters: [], selectedIds: [] };
   track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
 
   var cur = 0;
 
-  var TAGS = ['advanced_characters', 'advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation'];
+  /**
+   * Best-effort heuristic (mobile-test fix, 2026-07-24) for whether the
+   * dream text plausibly involves any people at all — used to decide
+   * whether to show the "Add the people in your dream" Advanced screen at
+   * all (see SCREEN_RENDERERS below). Deliberately simple: a first-person/
+   * people-indicating word-boundary check, plus two generic people nouns.
+   * NOT correctness-critical — a false positive (showing the screen when
+   * it isn't really needed) is totally fine; the only goal is catching the
+   * obvious no-people case ("Standing on a mountain watching the sunset")
+   * so that visitor isn't asked to define characters for nobody.
+   */
+  function captionSuggestsPeople(text){
+    return /\b(i|i'm|im|me|my|myself|we|our|us|person|someone)\b/i.test(text || '');
+  }
 
   // Phase color system — ported verbatim from funnel-mockup.html's PHASES
   // map, plus 'dawn' (the base #app.funnel-app pastel gradient/ink tokens
@@ -394,7 +422,11 @@
     'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
     'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
-  var PHASE_BY_STEP = ['dawn', 'dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night'];
+  // TAGS and PHASE_BY_STEP are built alongside SCREEN_RENDERERS, further
+  // down this file, once the "show the characters screen at all?" decision
+  // is made — all three arrays must stay entry-for-entry in sync with each
+  // other (cur/goToStep index into all three the same way), so they're
+  // constructed together in one place rather than declared separately here.
 
   var appEl = document.getElementById('app');
   var screenEl = document.getElementById('fnScreen');
@@ -606,6 +638,12 @@
     document.getElementById('char-save-btn').addEventListener('click', function(){
       var mode = document.getElementById('char-desc-input').dataset.mode;
       var usingPhoto = mode === 'self' && charSubMode === 'photo';
+      // Captured BEFORE localSaveCharacter runs — charEditingId is only
+      // set when this sheet was opened via an existing chip's edit tap
+      // (see openCharSheet), so a falsy value here means this save is
+      // genuinely creating a brand-new character, including the very
+      // first "Me" save.
+      var isNewChar = !charEditingId;
       var result = localSaveCharacter({
         id: charEditingId,
         isSelf: mode === 'self',
@@ -617,13 +655,19 @@
         document.getElementById('char-error').textContent = result.error;
         return;
       }
-      if(mode !== 'self' && staged.selectedIds.indexOf(result.character.id) === -1){
-        staged.selectedIds.push(result.character.id);
-      }
-      // Same intent as create.html's autoSelectSelfIfMentioned, just
-      // triggered here at save time — "Me" doesn't exist as a character
-      // until this screen, unlike create.html where it may already exist.
-      if(mode === 'self' && /\b(i|me)\b/i.test(DreamStore.getDraft().caption || '') && staged.selectedIds.indexOf(result.character.id) === -1){
+      // BUG FIX (mobile-test, 2026-07-24): a character's FIRST save always
+      // lands it selected — this used to unconditionally auto-select
+      // "other" characters on any save, but only auto-select "self" when
+      // the caption already literally contained "I"/"me", which missed
+      // the common case of a dream with no explicit first-person word
+      // (e.g. "Standing on a mountain watching the sunset") — so the "Me"
+      // chip rendered unchecked right after someone filled in their own
+      // details for the first time, even though they'd just entered them.
+      // Re-saving an EXISTING character (reopening it to edit) deliberately
+      // does NOT force it back into selectedIds — if the user had
+      // unchecked that chip before editing it again, saving again must not
+      // silently re-check it for them.
+      if(isNewChar && staged.selectedIds.indexOf(result.character.id) === -1){
         staged.selectedIds.push(result.character.id);
       }
       closeCharSheet();
@@ -640,7 +684,7 @@
     renderStagedCharacterChips();
 
     document.getElementById('fn-adv-chars-continue').addEventListener('click', next);
-    document.getElementById('fn-adv-chars-skip').addEventListener('click', function(){ goToStep(3); });
+    document.getElementById('fn-adv-chars-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
   function renderScreenAdvCamera(el){
@@ -674,7 +718,7 @@
     renderCameraChips();
 
     document.getElementById('fn-adv-camera-continue').addEventListener('click', next);
-    document.getElementById('fn-adv-camera-skip').addEventListener('click', function(){ goToStep(3); });
+    document.getElementById('fn-adv-camera-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
   function renderScreenAdvScenery(el){
@@ -724,7 +768,7 @@
     renderSceneryChips();
 
     document.getElementById('fn-adv-scenery-continue').addEventListener('click', next);
-    document.getElementById('fn-adv-scenery-skip').addEventListener('click', function(){ goToStep(3); });
+    document.getElementById('fn-adv-scenery-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
   // ===================================================================
@@ -747,6 +791,68 @@
     });
     clearTimeout(prepTimer);
     prepTimer = setTimeout(function(){ if(cur === thisStep) next(); }, 2200);
+  }
+
+  // ===================================================================
+  // Generate-during-signup — ported from wizard.html's renderContact/
+  // renderSignup (its own contact-capture step fires start-pending-
+  // generation.js, and its later signup step adopts the result via
+  // DreamStore.adoptPendingGeneration once signup succeeds). start.html
+  // has no separate contact-only step — email and password are one screen
+  // (13) — so here both the pending-generation submission and the real
+  // signup call fire in PARALLEL from the same Continue click, instead of
+  // sequentially one after the other. Whichever finishes first, we wait
+  // for both to settle before advancing past screen 13, so pendingId/
+  // pendingOperationName are always known (one way or the other) before
+  // the visitor can reach screen 15. Purely a resilient head start: if the
+  // pending-generation call fails for any reason, pendingStartFailed stays
+  // true and processing.html's normal fresh-generation path (unchanged)
+  // just runs as it always did — nothing about this can block or break
+  // the funnel, only speed it up when it works.
+  // ===================================================================
+  var pendingId = null;
+  var pendingOperationName = null;
+  var pendingStartedAt = null;
+  var pendingStartFailed = false;
+
+  /** Mirrors js/store.js's own resolveCharacters(ids), just resolving against the local `staged` characters instead of DreamStore's real ones — same {name, description, isSelf, photoDataUrl?} shape start-pending-generation.js/generate-video.js expect, and (unlike wizard.html's single-subject version) resolves every selected staged character, matching start.html's own multi-select character screen. */
+  function resolveStagedCharactersForGeneration(){
+    return staged.selectedIds.map(function(id){
+      return staged.characters.filter(function(c){ return c.id === id; })[0];
+    }).filter(Boolean).map(function(c){
+      var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
+      if(c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
+      return resolved;
+    });
+  }
+
+  /** Fires start-pending-generation.js (see that file's own doc comment for the guardrails/error codes) and updates the pending* vars above on settlement. Always resolves (never rejects) — a failure just leaves pendingStartFailed true, same fallback shape as wizard.html's own version. */
+  function startPendingGeneration(email){
+    var draft = DreamStore.getDraft();
+    var startedAt = Date.now();
+    return fetch('/.netlify/functions/start-pending-generation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email,
+        caption: draft.caption, style: chosenStyle,
+        characters: resolveStagedCharactersForGeneration(), characterIdsForGeneration: staged.selectedIds,
+        cameraView: draft.cameraView, sceneryTime: draft.sceneryTime, sceneryPlace: draft.sceneryPlace
+      })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(result.ok && result.data && result.data.pendingId){
+        pendingId = result.data.pendingId;
+        pendingOperationName = result.data.operationName;
+        pendingStartedAt = startedAt;
+        pendingStartFailed = false;
+      } else {
+        pendingStartFailed = true;
+      }
+    }).catch(function(){
+      pendingStartFailed = true;
+    });
   }
 
   // ===================================================================
@@ -794,8 +900,7 @@
   function renderScreen13(el){
     el.innerHTML =
       '<div class="fn-headline">Where should we send your first dream?</div>' +
-      '<div class="fn-body-copy">' + "Free to start — 200 tokens on signup, no card needed." + '</div>' +
-      '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:14px;">' +
+      '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;">' +
       // Reassurance microcopy directly under the email field — a real user's
       // session replay showed a drop-off right at this exact ask (dream text
       // + character screens completed, then abandoned here). The theory:
@@ -803,8 +908,13 @@
       // This states WHY (so we can deliver the video) and WHAT happens next
       // (it gets emailed once ready), reusing the funnel's existing
       // (previously unused) .fn-price-note treatment left-aligned instead of
-      // its default centered layout.
-      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + "We’ll email you your dream the moment it’s ready — that’s the only reason we ask." + '</div>' +
+      // its default centered layout. Per founder feedback this used to run
+      // alongside a separate "200 tokens on signup" body-copy line above the
+      // field -- two different messages competing for attention right where
+      // the funnel most needs a single, clear reason to hand over an email.
+      // That line is gone; this is now the ONLY message here, and still
+      // mentions "free" so nothing about cost is lost.
+      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + "Free to start — we’ll email you your dream the moment it’s ready, that’s the only reason we ask." + '</div>' +
       '<div class="fn-field-pw-wrap">' +
         '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
         '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
@@ -841,6 +951,13 @@
       // no artificial minimum-delay to simulate on top of the real network
       // latency this now already has.
       setTimeout(function(){
+        // Generate-during-signup: fired in parallel with attemptSignup
+        // below, not after it, so the video gets a head start on whatever
+        // is left of the funnel (screens 14/15) instead of only starting
+        // once the visitor reaches processing.html. See
+        // startPendingGeneration()'s own comment for the full rationale/
+        // fallback behavior.
+        var pendingPromise = startPendingGeneration(email);
         attemptSignup(email, password, function(ok, err){
           if(!ok){
             continueBtn.disabled = false;
@@ -849,7 +966,25 @@
             return;
           }
           flushStagedCharactersToStore();
-          next();
+          // Waits for the (already in-flight, possibly already finished)
+          // pending-generation call to settle before adopting it — always
+          // resolves, win or lose, so this never hangs the funnel.
+          pendingPromise.then(function(){
+            if(pendingId && !pendingStartFailed){
+              // Best-effort — see claim-pending-generation.js's own doc
+              // comment. email is required by its ownership check; this is
+              // the exact same email start-pending-generation.js created
+              // the pending record under, so it always matches.
+              fetch('/.netlify/functions/claim-pending-generation', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pendingId: pendingId, email: email })
+              }).catch(function(){ /* best-effort — see that file's own doc comment */ });
+            }
+            if(pendingOperationName && !pendingStartFailed){
+              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, captionText, chosenStyle);
+            }
+            next();
+          });
         });
       }, 0);
     });
@@ -867,8 +1002,17 @@
   // getTokenStatus), so this screen is now a plain, honest acknowledgment/
   // continue step, not a paywall to get past. shop.html (linked from
   // profile.html once signed in) is where token packs will eventually be
-  // purchased — "Coming soon" until a payment processor is chosen (see
-  // AGENT_POLICY.md's escalation policy).
+  // purchased for real.
+  //
+  // Per a real mobile-test founder pass, the earlier version of this
+  // screen (value-prop checklist + a token-math card + two "coming soon"
+  // token-pack price tiles) read as "too much text" and "scary" right
+  // before signup — replaced with one short, honest beta statement
+  // instead, matching the tone already used for the same idea on
+  // shop.html/style.html's out-of-tokens messaging ("Free during beta —
+  // no card needed"). This is deliberately NOT wired to real purchasing —
+  // this screen is mid-funnel, pre-signup; shop.html (post-signup) is
+  // where token packs are actually sold now that Dodo Payments is live.
   var MOTIVATION_HEADLINES = {
     'Capture dreams before they fade': 'Never lose a dream again.',
     'Turn them into videos': 'See your dreams, not just remember them.',
@@ -887,33 +1031,9 @@
       (dreamsThisMonthCount !== null ?
         '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>' :
         '') +
-      // Real, current capabilities only — no invented generation-count
-      // limits, since there's no live usage cap yet (see AGENT_POLICY.md /
-      // task spec: describe what DreamTube actually does today).
-      '<div class="fn-value-card">' +
-        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Turn your dream descriptions into AI-generated videos</span></div>' +
-        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Personalize with your own style and characters</span></div>' +
-        '<div class="fn-value-item"><span class="icon">' + Icons.check + '</span><span>Save your dreams and publish them to Explore</span></div>' +
-      '</div>' +
       '<div class="fn-token-free-card">' +
-        '<div class="title">Free to start</div>' +
-        '<div class="body">' +
-          '<b>200 tokens</b> when you sign up, plus <b>100 more free every day</b> — no card needed. Each dream video costs <b>100 tokens</b>, whether it\'s a new one, an edit, or a redo.' +
-        '</div>' +
-      '</div>' +
-      '<div class="fn-pack-row">' +
-        '<div class="fn-pack-card">' +
-          '<div class="fn-pack-amt">100 tokens</div>' +
-          '<div class="fn-pack-price">$1.99</div>' +
-        '</div>' +
-        '<div class="fn-pack-card">' +
-          '<div class="fn-pack-badge">10% off</div>' +
-          '<div class="fn-pack-amt">500 tokens</div>' +
-          '<div class="fn-pack-price">$8.95</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="fn-value-foot">' +
-        '<div>Need more later? Token packs above — coming soon.</div>' +
+        '<div class="title">Still in beta</div>' +
+        '<div class="body">Free to try and enjoy right now — no card needed.</div>' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue</button>';
@@ -962,7 +1082,32 @@
   // ===================================================================
   // Navigation / phase engine
   // ===================================================================
-  var SCREEN_RENDERERS = [renderScreenAdvChars, renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
+  // SCREEN_RENDERERS/TAGS/PHASE_BY_STEP are built together, entry-for-entry
+  // in lock step, so cur/goToStep/renderProgress/applyPhase all index into
+  // the same set of screens no matter which set actually got built. The
+  // "characters" screen (renderScreenAdvChars) is included only when
+  // captionSuggestsPeople(captionText) finds first-person/people-indicating
+  // language in the dream text — see that function's own comment. This is
+  // a best-effort UX heuristic, not a correctness gate: showing the screen
+  // unnecessarily (a false positive) is completely fine, the only thing
+  // that matters is not asking someone to define characters for a dream
+  // that obviously has none (e.g. "Standing on a mountain watching the
+  // sunset").
+  var showCharsScreen = captionSuggestsPeople(captionText);
+  var SCREEN_RENDERERS = showCharsScreen
+    ? [renderScreenAdvChars, renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
+    : [renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
+  var TAGS = showCharsScreen
+    ? ['advanced_characters', 'advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation']
+    : ['advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation'];
+  var PHASE_BY_STEP = showCharsScreen
+    ? ['dawn', 'dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night']
+    : ['dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night'];
+  // Skip handlers on all three Advanced screens jump straight to the
+  // "preparing" transition screen (renderScreen11) — looked up dynamically
+  // here instead of a hardcoded index, since that index shifts by one
+  // depending on whether the characters screen above is present.
+  var PREPARING_STEP = SCREEN_RENDERERS.indexOf(renderScreen11);
 
   function renderProgress(){
     var dots = '';
@@ -1031,7 +1176,7 @@
   // — now that they run in a different origin with no DreamStore at all,
   // the funnel carries their answers here as URL params instead, and
   // this is where they finally land in the real draft.
-  DreamStore.setDraft({ caption: getParam('caption') || '', style: chosenStyle, sourceDreamId: null });
+  DreamStore.setDraft({ caption: captionText, style: chosenStyle, sourceDreamId: null });
   render();
 })();
 </script>

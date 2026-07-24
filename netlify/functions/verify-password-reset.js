@@ -41,7 +41,7 @@
 //   E3 token_required
 //   E4 invalid_or_expired
 //   E5 invalid_new_password  — newPassword was provided but wasn't a
-//                               string of at least 8 characters (same
+//                               string of at least 3 characters (same
 //                               minimum register-account.js enforces on
 //                               signup) — checked before the token is
 //                               even looked up, so a malformed request
@@ -71,7 +71,7 @@ exports.handler = async function (event) {
 
   var newPassword = payload.newPassword;
   var applyingNewPassword = newPassword !== undefined && newPassword !== null;
-  if (applyingNewPassword && (typeof newPassword !== 'string' || newPassword.length < 8)) {
+  if (applyingNewPassword && (typeof newPassword !== 'string' || newPassword.length < 3)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: invalid_new_password' }) };
   }
 

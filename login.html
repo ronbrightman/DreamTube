@@ -368,7 +368,7 @@
       // for real, server-side (see DreamStore.resetPasswordLocally) — no
       // separate "wrong device" case anymore, since the account this
       // resets is no longer tied to a single browser. Any failure here
-      // (expired/invalid link, or resetPasswordLocally's own 8-character
+      // (expired/invalid link, or resetPasswordLocally's own 3-character
       // minimum) is shown the same way, inline, with the form left in
       // place to retry.
       DreamStore.resetPasswordLocally(resetToken, newPassword).then(function(applied){

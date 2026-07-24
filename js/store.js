@@ -595,7 +595,7 @@
     code = code || '';
     if (code.indexOf('email_taken') !== -1) return 'An account with that email already exists.';
     if (code.indexOf('invalid_username') !== -1) return 'Username must be at least 3 characters.';
-    if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 8 characters.';
+    if (code.indexOf('invalid_password') !== -1) return 'Password must be at least 3 characters.';
     if (code.indexOf('invalid_email') !== -1) return 'Enter a valid email address.';
     if (code.indexOf('rate_limited') !== -1) return "Too many signups from this network today — try again tomorrow.";
     // Default covers username_taken and anything else unexpected — matches
@@ -695,7 +695,7 @@
       email = (email || '').trim();
       if (username.length < 3) return Promise.resolve({ ok: false, error: 'Username must be at least 3 characters.' });
       if (!password) return Promise.resolve({ ok: false, error: 'Enter a password.' });
-      if (password.length < 8) return Promise.resolve({ ok: false, error: 'Password must be at least 8 characters.' });
+      if (password.length < 3) return Promise.resolve({ ok: false, error: 'Password must be at least 3 characters.' });
       if (!EMAIL_RE.test(email)) return Promise.resolve({ ok: false, error: 'Enter a valid email address.' });
       if (state.accounts[key]) return Promise.resolve({ ok: false, error: 'That username is already taken.' });
       if (findAccountKeyByEmail(email)) return Promise.resolve({ ok: false, error: 'An account with that email already exists.' });
@@ -822,7 +822,7 @@
      */
     resetPasswordLocally: function (token, newPassword) {
       if (!newPassword) return Promise.resolve({ ok: false, error: 'Enter a new password.' });
-      if (newPassword.length < 8) return Promise.resolve({ ok: false, error: 'Password must be at least 8 characters.' });
+      if (newPassword.length < 3) return Promise.resolve({ ok: false, error: 'Password must be at least 3 characters.' });
 
       return fetch('/.netlify/functions/verify-password-reset', {
         method: 'POST',

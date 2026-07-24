@@ -313,8 +313,15 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .char-chip.selected .chip-check .icon{ opacity:1; color:#fff;}
 /* Padding + matching negative margin grows the tap target around the name
    + pencil icon without changing the chip's visual size or its gap to the
-   checkmark — the pencil alone was too small a target on a phone. */
-.char-chip .chip-edit-area{ display:flex; align-items:center; gap:7px; padding:8px 8px 8px 0; margin:-8px -8px -8px 0;}
+   checkmark — the pencil alone was too small a target on a phone. A real
+   mobile test (Facebook Messenger in-app browser) found the original 8px
+   version (~32px effective tap height, given the chip's 13px font/~16px
+   line height) still "very hard to tap" — bumped to comfortably clear the
+   ~44px mobile tap-target guideline; the name text + pencil together were
+   already the whole tap target (data-char-edit is on this element, not on
+   the pencil icon alone), so this only had to grow the invisible padding,
+   not change what element the click listener is bound to. */
+.char-chip .chip-edit-area{ display:flex; align-items:center; gap:7px; padding:14px 10px 14px 0; margin:-14px -10px -14px 0;}
 .char-chip .chip-edit{ color:var(--text-faint); width:13px; height:13px; flex:none;}
 .char-chip.selected .chip-edit{ color:#000; opacity:.5;}
 .char-chip-add{

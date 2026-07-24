@@ -56,7 +56,7 @@
 //   E2 invalid_json         — POST body wasn't valid JSON
 //   E3 missing_fields       — username/password/email not all present
 //   E4 invalid_username     — username shorter than 3 characters
-//   E5 invalid_password     — password shorter than 8 characters
+//   E5 invalid_password     — password shorter than 3 characters
 //   E6 invalid_email        — not a plausible email address
 //   E7 username_taken       — already registered under a different account
 //   E8 email_taken          — already registered under a different account
@@ -99,7 +99,7 @@ exports.handler = async function (event) {
   if (username.length < 3) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E4: invalid_username' }) };
   }
-  if (password.length < 8) {
+  if (password.length < 3) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: invalid_password' }) };
   }
   if (!EMAIL_RE.test(email)) {
