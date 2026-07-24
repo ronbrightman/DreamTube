@@ -6,6 +6,12 @@ a localStorage-backed fake client-side "backend" for auth/state, and
 Netlify Blobs for the real cross-browser shared feed. See `README.md`
 for the fuller technical rundown.
 
+**Read `FOUNDER_PRINCIPLES.md` first, every session, before acting.**
+It's the durable "founder brain" — how Ron thinks and operates, plus
+the concrete right/wrong calls made and the lesson each taught —
+mirrored between this repo and `dreamtube-growth`. It complements, and
+never overrides, this file and `AGENT_POLICY.md`.
+
 ## Multi-agent product-improvement workflow
 
 This repo uses a five-agent pipeline — **research → evaluation → design
@@ -62,7 +68,7 @@ scheduled or automatically triggered.
   until he says otherwise. This bullet exists because of exactly that
   kind of instruction.
 - Cross-session coordination (this session and the separate
-  `dreamtube-growth` marketing session) runs entirely through
+  `dreamtube-growth` marketing/growth session) runs entirely through
   `tracker.html` — no other channel. This failed once already: Ron
   resolved something directly in conversation with the growth session
   (a paused ad campaign), and since that resolution never went through
@@ -76,3 +82,16 @@ scheduled or automatically triggered.
   may have updated it since. Per Ron's own decision, the existing
   tracker is sufficient for this — no new coordination tooling, just
   tighter discipline using what's already there.
+- **As of 2026-07-23, Growth is the lead/coordinator across both
+  repos.** This session still owns the app repo and acts autonomously
+  on it, but cross-session work flows through the tracker: a `[for
+  product]` tag on a clear, actionable tracker item is itself the
+  go-ahead — it does not require Ron to also click "Start working on
+  this" per item. Run full cycles (build → review → merge) on anything
+  actionable without waiting for a per-item nudge, still respecting
+  every existing approval gate (no spending, no vendor picks, no
+  auth-sensitive merges without explicit sign-off). Log self-driven
+  work to the tracker tagged `[auto]` with live status, so the tracker
+  stays Ron's one review surface for what got done without him. See
+  `FOUNDER_PRINCIPLES.md`'s "Autonomous work" and "Cross-session
+  working" sections for the fuller model.
