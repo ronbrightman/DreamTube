@@ -129,6 +129,22 @@ tight (curate, don't dump).
 
 ## Design & engineering process
 
+- **STANDING RULE (founder said ALWAYS, 2026-07-24): before laying out any
+  SUBSTANTIAL new user-facing feature or screen, run research → design
+  first, build second** — research agent + skills, then design agent +
+  skills (referencing how comparable/established products solve the same
+  screen), reviewed BEFORE the build agent implements it. Do not let build
+  improvise feature UI ad-hoc. **Exception**: smaller design tasks (e.g.
+  just adding a page/screen to an existing flow) go straight to build —
+  this rule is for substantial new features/screens (e.g. a redesigned
+  shop), not every UI tweak. Growth applies the same discipline for
+  funnel UI, on its own copy of this rule.
+- **Never interrupt the other session for non-urgent items** — cross-session
+  standing rule. Route non-urgent findings through the tracker
+  (`[for product]`/`[for growth]`) on the other session's own cadence,
+  same as this file's own "Cross-session working" section already
+  establishes; this just makes explicit that urgency is opt-in, not
+  default.
 - **Reuse proven components** over reinventing (e.g. the small-thumbnail video
   carousel from the processing page beat two rounds of a custom lazy slider).
 - **Light media over heavy on mobile** — small thumbnails, poster-first,
