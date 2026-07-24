@@ -121,6 +121,11 @@ tight (curate, don't dump).
   AI-rendered text/audio (unreliable).
 - Frame dreams as **visualized, never interpreted/therapeutic** (compliance:
   avoids reclassifying the ad account into restricted health advertising).
+- **Multi-variant sets (2+, especially A/B tests on real data) must be
+  SIGNIFICANTLY different from each other** — always. Near-duplicate
+  variants waste a test slot without producing a real learning.
+- **Do not use a specific ethnic group as the main person in creative**, for
+  now.
 
 ## Design & engineering process
 
