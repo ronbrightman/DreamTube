@@ -17,7 +17,12 @@
 // and handleCheckoutReturn reads + unconditionally removes it exactly once
 // on a ?checkout=success load. Without the marker present, the bare query
 // param alone must not be enough to fire a Purchase event -- otherwise
-// anyone could fake a conversion by hand-visiting the URL.
+// anyone could fake a conversion by hand-visiting the URL. The marker is
+// ALSO cleared on ?checkout=cancelled (a review finding on the first pass
+// of this branch: cancelled attempts set the exact same marker on their
+// way to Dodo, so leaving it in place would let a later, unrelated
+// ?checkout=success visit in the same tab consume a stale marker from an
+// attempt that never actually completed).
 //
 // Follows test/shop-behavioral.test.js's seedShopPage/mockTokenStatus/
 // blockThirdParty conventions, test/meta-capi-behavioral.test.js's
@@ -221,6 +226,42 @@ test('landing on ?checkout=success WITHOUT the marker (stale bookmark / manual v
       return t && t.classList.contains('show') && /payment received/i.test(t.textContent);
     }, null, { timeout: 5000 });
     assert.doesNotMatch(page.url(), /checkout=success/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a cancelled checkout clears the marker, so a LATER bare/bookmarked ?checkout=success visit in the same tab does not fire a false Purchase', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    // Same marker purchasePack() would have set right before redirecting to
+    // Dodo -- but this attempt gets cancelled, not completed.
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+    await markPendingPurchase(page, { pack: 'pack500', tokens: 500, price: 8.95 });
+
+    await page.goto(baseUrl + '/shop.html?checkout=cancelled', { waitUntil: 'domcontentloaded' });
+    var markerAfterCancel = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
+    assert.equal(markerAfterCancel, null, 'a cancelled checkout must clear the marker too, not just a successful one');
+
+    // Same tab, later, lands on a bare ?checkout=success -- e.g. a stale
+    // bookmark from a PREVIOUS successful purchase, or someone hand-typing
+    // it. With the marker already gone from the cancel above, this must not
+    // be mistaken for proof the cancelled attempt actually went through.
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    assert.equal(fbqTrackCalls(fbqCalls, 'Purchase').length, 0, 'the stale-cleared marker must not produce a false Purchase fbq call');
+    assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length, 0, 'the stale-cleared marker must not produce a false Purchase CAPI POST');
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; }).length, 0, 'the stale-cleared marker must not produce a false posthog purchase_completed capture');
   } finally {
     await context.close();
   }

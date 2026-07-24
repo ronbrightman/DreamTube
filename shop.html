@@ -363,6 +363,14 @@
         }
       } catch(e) { /* analytics must never break the app */ }
     } else if(checkout === 'cancelled'){
+      // A cancelled attempt went through the exact same "set marker, then
+      // redirect to Dodo" step in purchasePack() as a successful one — if
+      // this marker were left in place, a LATER bare/bookmarked visit to
+      // ?checkout=success in this same tab would incorrectly consume it and
+      // fire a real Purchase conversion for a purchase that never happened.
+      // Clearing it here is what makes the success branch's "marker present
+      // = a real purchase just completed" guarantee actually hold.
+      sessionStorage.removeItem(PENDING_PURCHASE_KEY);
       showToast('Checkout cancelled — no charge made');
     }
   })();
