@@ -217,6 +217,19 @@ writes "check tracker", immediately GET the tracker and act on his latest
 comments / `[auto]` feedback / new items** — his manual nudge for the async
 review surface (the tracker doesn't push notifications; it's a mailbox you check).
 
+**Autonomous cycle ORDER (founder rule 2026-07-24):**
+1. **First, work the existing tracker backlog** — at least all **high and
+   medium** priority tasks/ideas — before anything else.
+2. **Only then** generate your own new ideas (ideation → evaluation). But for
+   now (next few days, until the cycle is tightened) **do NOT self-execute a
+   new idea — add it to the tracker and WAIT for Ron's feedback/approval
+   first.** Existing approved tasks you execute; self-generated ideas you
+   propose and hold.
+3. **Notify + reviewed-flow:** when you complete work and mark it `done`,
+   surface the list of what got done so Ron can review it, and it should carry
+   a founder-clickable **"reviewed"** marker (product to build the reviewed
+   flag on the tracker) so Ron can clear what he's already reviewed.
+
 ## Improvement cycle (cadence)
 
 Run the reflection pass **after each significant change — especially ones that
