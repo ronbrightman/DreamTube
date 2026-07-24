@@ -110,18 +110,28 @@
 
   Real-integration notes still relevant to what's left here:
    - Advanced (characters/camera/scenery) is a real functional port of
-     create.html's Advanced section, now split into three separate funnel
+     create.html's Advanced section, split into three separate funnel
      screens — one per section (renderScreenAdvChars/AdvCamera/AdvScenery)
-     — instead of the one crowded screen 9 used to be. Continue on each
-     advances one step; Skip on any of the three jumps straight past all
-     three, to the transition screen (goToStep(PREPARING_STEP)) — "skip"
-     means "stop customizing", not "skip this one section". As of the
-     2026-07-24 mobile-test fixes, renderScreenAdvChars itself may not even
-     be in SCREEN_RENDERERS at all — see captionSuggestsPeople() and the
-     SCREEN_RENDERERS/TAGS/PHASE_BY_STEP construction below — so
+     — instead of the one crowded screen 9 used to be. As of a 2026-07-24
+     founder decision (tracker item
+     for-product-two-post-handoff-app-pages-p-atr0r7), only
+     renderScreenAdvChars is still live — renderScreenAdvCamera/
+     renderScreenAdvScenery are PARKED (intentionally kept, not deleted,
+     but omitted from SCREEN_RENDERERS so they never render) because the
+     marketing funnel that hands off here already assembles camera/scenery
+     info into captionText, making those two screens redundant for every
+     real visitor. See the SCREEN_RENDERERS/TAGS/PHASE_BY_STEP
+     construction below for the parked-screens comment and the "PARKED"
+     comment on each function itself. Continue on the characters screen
+     advances one step; Skip jumps straight to the transition screen
+     (goToStep(PREPARING_STEP)) — "skip" means "stop customizing". As of
+     the 2026-07-24 mobile-test fixes, renderScreenAdvChars itself may not
+     even be in SCREEN_RENDERERS at all — see captionSuggestsPeople() and
+     the SCREEN_RENDERERS/TAGS/PHASE_BY_STEP construction below — so
      PREPARING_STEP is looked up dynamically rather than hardcoded, since
-     its index shifts depending on whether that screen is present. Camera/
-     scenery chips call DreamStore.setDraft directly (login-independent).
+     its index shifts depending on whether that screen is present. The
+     parked camera/scenery screens' chips still call DreamStore.setDraft
+     directly (login-independent) in their own dead code, unchanged.
      Characters are the
      one exception: DreamStore.saveCharacter() requires a logged-in user,
      but signup doesn't happen until screen 13 — by design, per the
@@ -559,7 +569,7 @@
 
   function renderScreenAdvChars(el){
     el.innerHTML =
-      '<div class="fn-eyebrow">Optional &middot; 1 of 3</div>' +
+      '<div class="fn-eyebrow">Optional</div>' +
       '<div class="fn-headline">Add the people in your dream.</div>' +
       '<div class="fn-body-copy">Define characters once, reuse them anytime.</div>' +
       '<div class="char-chip-row" id="char-chip-row"></div>' +
@@ -687,6 +697,11 @@
     document.getElementById('fn-adv-chars-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
+  // PARKED (founder decision 2026-07-24, tracker item
+  // for-product-two-post-handoff-app-pages-p-atr0r7): no longer in
+  // SCREEN_RENDERERS, so this never renders in the live funnel tail —
+  // kept intact, not deleted, for a later pass that folds it into the
+  // wizard instead. See the SCREEN_RENDERERS comment above for why.
   function renderScreenAdvCamera(el){
     el.innerHTML =
       '<div class="fn-eyebrow">Optional &middot; 2 of 3</div>' +
@@ -721,6 +736,11 @@
     document.getElementById('fn-adv-camera-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
+  // PARKED (founder decision 2026-07-24, tracker item
+  // for-product-two-post-handoff-app-pages-p-atr0r7): no longer in
+  // SCREEN_RENDERERS, so this never renders in the live funnel tail —
+  // kept intact, not deleted, for a later pass that folds it into the
+  // wizard instead. See the SCREEN_RENDERERS comment above for why.
   function renderScreenAdvScenery(el){
     el.innerHTML =
       '<div class="fn-eyebrow">Optional &middot; 3 of 3</div>' +
@@ -1172,20 +1192,36 @@
   // that matters is not asking someone to define characters for a dream
   // that obviously has none (e.g. "Standing on a mountain watching the
   // sunset").
+  //
+  // renderScreenAdvCamera/renderScreenAdvScenery are deliberately PARKED,
+  // not deleted — founder decision 2026-07-24 (tracker item
+  // for-product-two-post-handoff-app-pages-p-atr0r7): every real visitor
+  // reaching this file's funnel tail arrives via ?resume=1 (see the Entry
+  // guard above — a bare visit redirects away before ever reaching these
+  // arrays), so skipping the two screens unconditionally here *is*
+  // "skip them for funnel-resumed users," with no separate gate needed.
+  // The marketing funnel already assembles camera/scenery info into
+  // captionText before handoff, so these two screens were pure
+  // redundant clicks for every live visitor. Their function bodies,
+  // markup, and DreamStore.setDraft(cameraView/sceneryTime/sceneryPlace)
+  // wiring are left fully intact below (see the "PARKED" comments on
+  // each) for when they get folded into the wizard proper later — just
+  // omitted from the arrays that actually drive navigation.
   var showCharsScreen = captionSuggestsPeople(captionText);
   var SCREEN_RENDERERS = showCharsScreen
-    ? [renderScreenAdvChars, renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
-    : [renderScreenAdvCamera, renderScreenAdvScenery, renderScreen11, renderScreen13, renderScreen14, renderScreen15];
+    ? [renderScreenAdvChars, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
+    : [renderScreen11, renderScreen13, renderScreen14, renderScreen15];
   var TAGS = showCharsScreen
-    ? ['advanced_characters', 'advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation']
-    : ['advanced_camera', 'advanced_scenery', 'preparing', 'email_capture', 'pricing', 'confirmation'];
+    ? ['advanced_characters', 'preparing', 'email_capture', 'pricing', 'confirmation']
+    : ['preparing', 'email_capture', 'pricing', 'confirmation'];
   var PHASE_BY_STEP = showCharsScreen
-    ? ['dawn', 'dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night']
-    : ['dawn', 'dawn', 'transition', 'dusk', 'dusk-deep', 'night'];
-  // Skip handlers on all three Advanced screens jump straight to the
-  // "preparing" transition screen (renderScreen11) — looked up dynamically
-  // here instead of a hardcoded index, since that index shifts by one
-  // depending on whether the characters screen above is present.
+    ? ['dawn', 'transition', 'dusk', 'dusk-deep', 'night']
+    : ['transition', 'dusk', 'dusk-deep', 'night'];
+  // Skip handler on the (now sole, when shown) Advanced screen jumps
+  // straight to the "preparing" transition screen (renderScreen11) —
+  // looked up dynamically here instead of a hardcoded index, since that
+  // index shifts by one depending on whether the characters screen above
+  // is present.
   var PREPARING_STEP = SCREEN_RENDERERS.indexOf(renderScreen11);
 
   function renderProgress(){
