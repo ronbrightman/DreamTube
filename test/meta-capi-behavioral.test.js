@@ -131,6 +131,25 @@ function captureTrackConversion(page) {
   }).then(function () { return calls; });
 }
 
+/**
+ * start.html's screen 13 continue handler now also fires
+ * start-pending-generation.js in parallel with signup (see that file's
+ * own comment) -- without a route registered for it here, the request
+ * would hit the plain static file server and 404, which the app's own
+ * code already treats as a safe failure (see startPendingGeneration's
+ * .catch()), so this is optional for correctness. Registered anyway for
+ * determinism, matching test/wizard-ui-behavioral.test.js's convention of
+ * explicit routes over incidental 404 fallthrough. Deliberately fulfills
+ * as a failure (no pendingId) -- these CAPI tests care about signup/
+ * conversion-tracking timing, not the generate-during-signup mechanism
+ * itself (see test/ui-behavioral.test.js for that coverage).
+ */
+function stubPendingGenerationAsUnavailable(page) {
+  return page.route('**/.netlify/functions/start-pending-generation', function (route) {
+    route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+  });
+}
+
 test('start.html: completing funnel signup fires exactly one CompleteRegistration track-conversion call, sharing event_id with the fbq Pixel call', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -139,8 +158,9 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
     var page = await context.newPage();
     await blockThirdParty(page);
     var conversionCalls = await captureTrackConversion(page);
+    await stubPendingGenerationAsUnavailable(page);
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
 
     await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
     await page.click('#fn-adv-chars-skip');
@@ -148,7 +168,7 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
     await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await page.fill('#fn-email', 'signup-behavioral@example.com');
-    await page.fill('#fn-password', 'longenoughpassword1'); // past DreamStore.signup's 8-char minimum
+    await page.fill('#fn-password', 'longenoughpassword1'); // past DreamStore.signup's 3-char minimum
     await page.click('#fn-s13-continue');
     // Screen 14 (pricing) renders right after a successful signup -- its
     // own render fires a *different* conversion event (InitiateCheckout),
@@ -184,7 +204,7 @@ test('start.html: reaching the email-entry screen (13) fires exactly one Reached
     await blockThirdParty(page);
     var conversionCalls = await captureTrackConversion(page);
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A test dream'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
 
     await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
     await page.click('#fn-adv-chars-skip');

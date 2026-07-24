@@ -326,7 +326,7 @@ test('register-account: validates shape before ever touching the account store (
   assert.equal(shortUsername.statusCode, 400);
   assert.match(JSON.parse(shortUsername.body).error, /^E4: invalid_username/);
 
-  var shortPassword = await handler(fakeEvent({ method: 'POST', body: { username: 'jack', password: 'short1', email: 'jack@example.com' } }));
+  var shortPassword = await handler(fakeEvent({ method: 'POST', body: { username: 'jack', password: 'ab', email: 'jack@example.com' } }));
   assert.equal(shortPassword.statusCode, 400);
   assert.match(JSON.parse(shortPassword.body).error, /^E5: invalid_password/);
 

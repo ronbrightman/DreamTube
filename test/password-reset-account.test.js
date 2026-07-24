@@ -248,11 +248,11 @@ test('verify-password-reset: an invalid/expired token is rejected the same way r
   assert.match(body.error, /^E4: invalid_or_expired/);
 });
 
-test('verify-password-reset: newPassword shorter than 8 characters is rejected with E5 before the token is even looked up', async function () {
+test('verify-password-reset: newPassword shorter than 3 characters is rejected with E5 before the token is even looked up', async function () {
   // Deliberately no token seeded at all -- if this reached the token
   // lookup it would hit E4 instead, so E5 proves the shape check runs first.
   var handler = require('../netlify/functions/verify-password-reset').handler;
-  var res = await handler(fakeEvent({ method: 'POST', body: { token: 'irrelevant-token', consume: true, newPassword: 'short1' } }));
+  var res = await handler(fakeEvent({ method: 'POST', body: { token: 'irrelevant-token', consume: true, newPassword: 'ab' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E5: invalid_new_password/);
 });
