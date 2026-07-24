@@ -30,6 +30,7 @@
 //       device never had this account locally at all — same placeholder
 //       shape login() creates, dreams/characters left empty by design).
 //   getAccountEmail() / updateEmail(email) -> local-only, lets an existing account gain/change its email
+//   getAccountCreatedAt()        -> local read, epoch-ms signup timestamp (null for pre-existing accounts, see its own comment) — feeds Settings' support/feedback form
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
 //   getMyDreams()               -> GET  /api/users/me/dreams
@@ -200,6 +201,14 @@
     if (!state.user) return null;
     var key = state.user.username.toLowerCase();
     return state.accounts[key] ? state.accounts[key].email : null;
+  }
+
+  /** The current user's account-creation timestamp (epoch ms), or null — either not logged in, or (see getAccountCreatedAt's own doc comment) a pre-existing account from before this field existed. */
+  function currentAccountCreatedAt() {
+    if (!state.user) return null;
+    var key = state.user.username.toLowerCase();
+    var account = state.accounts[key];
+    return account && account.createdAt ? account.createdAt : null;
   }
 
   function findAccountKeyByEmail(email) {
@@ -571,10 +580,10 @@
   // tracker.html's sync-private-dreams-videos-later item for that, explicitly
   // deferred and out of scope here.
 
-  /** Writes a brand-new local account entry + signs in, exactly as signup() always has — used both when the server confirms the account was created, and as the offline/unreachable-server fallback below. */
+  /** Writes a brand-new local account entry + signs in, exactly as signup() always has — used both when the server confirms the account was created, and as the offline/unreachable-server fallback below. `createdAt` (epoch ms) is new — this is the ONLY moment a brand-new account is ever created, so it's the one place that can stamp a real signup time; see getAccountCreatedAt's own doc comment for why a pre-existing account (created before this field existed) simply has none rather than a fabricated one. */
   function commitLocalSignup(username, password, email) {
     var key = username.toLowerCase();
-    state.accounts[key] = { password: password, email: email.toLowerCase() };
+    state.accounts[key] = { password: password, email: email.toLowerCase(), createdAt: Date.now() };
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -842,6 +851,11 @@
     /** The current user's email on file, or null — accounts created before email was required migrated with no email at all. */
     getAccountEmail: function () {
       return currentAccountEmail();
+    },
+
+    /** The current user's account-creation timestamp (epoch ms), or null if unknown — either not logged in, or (the common case for now) an account that was created before this field existed, since there's no real history to backfill for those (same "don't fabricate" reasoning as tracker-store.js's createdAt/doneAt/startedAt). Used by the Settings support/feedback form to report "days since signup" as real context, never a guessed one. */
+    getAccountCreatedAt: function () {
+      return currentAccountCreatedAt();
     },
 
     /**

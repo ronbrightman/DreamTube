@@ -81,6 +81,11 @@
 
     volumeMuted: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
 
-    award: svg('<circle cx="12" cy="8" r="6" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8.5 13.2L7 21l5-2.5 5 2.5-1.5-7.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
+    award: svg('<circle cx="12" cy="8" r="6" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8.5 13.2L7 21l5-2.5 5 2.5-1.5-7.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+    // Added for the Settings redesign's Support row (idea-support-contact-form).
+    messageCircle: svg('<path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+    // Added for the Settings redesign's beta-feedback CTA (tracker.html's
+    // support-and-feedback-atms4a item).
+    megaphone: svg('<path d="M3 11v2a2 2 0 002 2h1l4.5 4.5V4.5L6 9H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16 8a4.5 4.5 0 010 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 5a8.5 8.5 0 010 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>')
   };
 })();
