@@ -19,6 +19,19 @@
 
 var stores = {};
 
+// Per-store read overrides, for tests simulating a hazard the plain
+// synchronous in-memory Map can't otherwise reproduce (e.g. Blobs' lack
+// of a read-your-own-write guarantee, or a read that never converges
+// within a bounded retry loop) — see setReadOverride's own doc comment.
+// Keyed by storeName -> { fn, callCount }. This lives INSIDE
+// fakeGetStore's own closure, not on the exports object, deliberately:
+// every lib/*.js module destructures `var { getStore } = require(...)`
+// at require-time, copying a reference to this exact `fakeGetStore`
+// function — reassigning a property on the exports object afterward
+// would never reach those already-bound locals, only mutating this
+// function's own behavior does.
+var readOverrides = {};
+
 function storeFor(name) {
   if (!stores[name]) stores[name] = new Map();
   return stores[name];
@@ -33,6 +46,15 @@ function fakeGetStore(opts) {
   var map = storeFor(name);
   return {
     get: async function (key) {
+      var override = readOverrides[name];
+      if (override) {
+        override.callCount++;
+        var result = override.fn(key, override.callCount);
+        // `result` is `{ value }` to substitute a value (possibly
+        // `undefined`, to simulate "not visible yet"), or a falsy
+        // non-object to fall through to the real stored value.
+        if (result) return result.value;
+      }
       return map.has(key) ? map.get(key) : undefined;
     },
     setJSON: async function (key, value) {
@@ -42,6 +64,34 @@ function fakeGetStore(opts) {
       map.delete(key);
     }
   };
+}
+
+/**
+ * Installs a temporary override on every get() call against `storeName`:
+ * `fn(key, callIndex)` (callIndex starts at 1, incrementing per get()
+ * against this store since the override was installed) is called on
+ * every read; if it returns `{ value }`, that value is returned instead
+ * of whatever is actually in the store (use `{ value: undefined }` to
+ * simulate "this read doesn't see it yet"); returning a falsy value
+ * falls through to the real stored value for that call. setJSON/delete
+ * are never intercepted — only reads, since the hazards this exists to
+ * simulate (stale/lagging reads, reads that never converge) are read-side
+ * phenomena in real Blobs, not write-side ones.
+ *
+ * Used for exercising exactly the class of bug the mock's normal
+ * perfectly-consistent synchronous Map can't otherwise reproduce: a read
+ * landing behind a write that already happened, or a verify-read that
+ * never converges within a bounded retry loop. Call clearReadOverride
+ * (or reset(), which clears all overrides too) when done — a stray
+ * override lingering into a later test would silently corrupt it.
+ */
+function setReadOverride(storeName, fn) {
+  readOverrides[storeName] = { fn: fn, callCount: 0 };
+}
+
+/** Removes a single store's read override, if any. */
+function clearReadOverride(storeName) {
+  delete readOverrides[storeName];
 }
 
 function fakeConnectLambda() {
@@ -55,9 +105,10 @@ function seed(storeName, key, value) {
   storeFor(storeName).set(key, value);
 }
 
-/** Clears all fake store state. Call between tests. */
+/** Clears all fake store state, including any read overrides. Call between tests. */
 function reset() {
   stores = {};
+  readOverrides = {};
 }
 
 /** Installs the fake in place of the real @netlify/blobs for the rest of this process. Call once, before requiring any module that (transitively) requires('@netlify/blobs'). */
@@ -71,4 +122,4 @@ function install() {
   };
 }
 
-module.exports = { install, reset, seed };
+module.exports = { install, reset, seed, setReadOverride, clearReadOverride };
