@@ -25,9 +25,9 @@
 //   priority/done validation). priority is optional and defaults to
 //   "medium" if omitted; if present it must be one of high/medium/low.
 //   The created item always starts at done: false, comments: [],
-//   doneAt: null, startedAt: null, and a real createdAt (the current
-//   server time — see tracker-store.js's addItem for why this differs
-//   from SEED_ITEMS' null fallback). Its id is generated server-side (see
+//   doneAt: null, startedAt: null, reviewedAt: null, and a real createdAt
+//   (the current server time — see tracker-store.js's addItem for why
+//   this differs from SEED_ITEMS' null fallback). Its id is generated server-side (see
 //   tracker-store.js's generateId), never trusted from the client, so a
 //   caller can't collide with or silently overwrite an existing item by
 //   choosing its id. title/detail are validated against the raw string

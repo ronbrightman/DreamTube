@@ -1,20 +1,29 @@
 // netlify/functions/update-tracker-item.js
 //
 // Owner-only write for tracker.html: updates one item's `priority`/`done`,
-// flips its one-way `started` signal, and/or appends one new entry to its
-// `comments` list, by id. Deliberately does NOT allow editing
+// flips its one-way `started`/`reviewed` signals, and/or appends one new
+// entry to its `comments` list, by id. Deliberately does NOT allow editing
 // title/detail/category through this endpoint — that's seed-authored-or-
 // added content, not something this endpoint should let anyone
 // accidentally mutate. Adding/removing whole items is add-tracker-item.js/
 // delete-tracker-item.js's job now, not a hypothetical this endpoint is
 // expected to grow into.
 //
-// `started` is a new, one-way "go ahead and start this" signal, distinct
-// from `done` — Ron clicks it to tell whoever/whatever is picking up an
-// item that it's approved to begin, without that meaning the item is
+// `started` is a one-way "go ahead and start this" signal, distinct from
+// `done` — Ron clicks it to tell whoever/whatever is picking up an item
+// that it's approved to begin, without that meaning the item is
 // finished. There's no "un-start" exposed here at all: once `startedAt`
 // is set, a later `started: true` on the same item is a no-op (see
 // tracker-store.js's updateItem for exactly how).
+//
+// `reviewed` is a second one-way signal, added alongside `started`'s own
+// precedent: Ron clicks "Reviewed" on a done item to mark that he's
+// actually looked at it, so tracker.html can distinguish "done" from
+// "done AND the founder has seen it" (see tracker.html's Done section for
+// the unreviewed-count digest this enables). Same shape as `started`:
+// this endpoint never accepts `reviewed: false` — there is no un-review
+// operation, and once `reviewedAt` is set, a later `reviewed: true` is a
+// no-op (see tracker-store.js's updateItem).
 //
 // `comment` here means "one new entry to append", not "the new value of
 // a field" — see tracker-store.js's own SCHEMA CHANGE comment above
@@ -45,18 +54,19 @@
 // reuses the existing owner-email check rather than inventing new auth
 // for a second "identity".
 //
-// POST { id, email, priority?, done?, started?, comment?, commentAuthor?
-//   } -> { item } (the full updated item)
-//   At least one of priority/done/started/comment must be present.
-//   priority must be one of "high"/"medium"/"low" if present; done must
-//   be a real boolean if present; started, if present, must be exactly
-//   `true` (this endpoint never accepts `started: false` — there is no
-//   un-start operation). comment, if present, must be a non-empty string
-//   of at most MAX_COMMENT_LENGTH characters (unlike the old single
-//   `comment` field, an empty string is no longer meaningful here —
-//   there's nothing to "clear", appending an empty note isn't a valid
-//   entry) and commentAuthor must be present and be exactly "ron" or
-//   "claude".
+// POST { id, email, priority?, done?, started?, reviewed?, comment?,
+//   commentAuthor? } -> { item } (the full updated item)
+//   At least one of priority/done/started/reviewed/comment must be
+//   present. priority must be one of "high"/"medium"/"low" if present;
+//   done must be a real boolean if present; started, if present, must be
+//   exactly `true` (this endpoint never accepts `started: false` — there
+//   is no un-start operation); reviewed, if present, must likewise be
+//   exactly `true` (same no-un-review reasoning). comment, if present,
+//   must be a non-empty string of at most MAX_COMMENT_LENGTH characters
+//   (unlike the old single `comment` field, an empty string is no longer
+//   meaningful here — there's nothing to "clear", appending an empty note
+//   isn't a valid entry) and commentAuthor must be present and be exactly
+//   "ron" or "claude".
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as admin-paywall-toggle.js — a new, standalone function, not part of
@@ -68,7 +78,7 @@
 //   E3  invalid_json        — POST body wasn't valid JSON
 //   E4  missing_id          — POST body had no `id`
 //   E5  no_fields_to_update — none of `priority`/`done`/`started`/
-//                              `comment` was present
+//                              `reviewed`/`comment` was present
 //   E6  invalid_priority    — `priority` present but not high/medium/low
 //   E7  invalid_done        — `done` present but not a real boolean
 //   E8  forbidden           — POST body's `email` (normalized) didn't
@@ -79,6 +89,7 @@
 //                              characters, or `commentAuthor` isn't
 //                              present/valid alongside it
 //   E11 invalid_started     — `started` present but not exactly `true`
+//   E12 invalid_reviewed    — `reviewed` present but not exactly `true`
 
 var { normalizeEmail } = require('./lib/entitlements');
 var trackerStore = require('./lib/tracker-store');
@@ -115,8 +126,9 @@ exports.handler = async function (event) {
   var hasPriority = Object.prototype.hasOwnProperty.call(payload, 'priority');
   var hasDone = Object.prototype.hasOwnProperty.call(payload, 'done');
   var hasStarted = Object.prototype.hasOwnProperty.call(payload, 'started');
+  var hasReviewed = Object.prototype.hasOwnProperty.call(payload, 'reviewed');
   var hasComment = Object.prototype.hasOwnProperty.call(payload, 'comment');
-  if (!hasPriority && !hasDone && !hasStarted && !hasComment) {
+  if (!hasPriority && !hasDone && !hasStarted && !hasReviewed && !hasComment) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: no_fields_to_update' }) };
   }
   if (hasPriority && VALID_PRIORITIES.indexOf(payload.priority) === -1) {
@@ -139,6 +151,9 @@ exports.handler = async function (event) {
   if (hasStarted && payload.started !== true) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E11: invalid_started' }) };
   }
+  if (hasReviewed && payload.reviewed !== true) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E12: invalid_reviewed' }) };
+  }
 
   var requestEmail = normalizeEmail(payload.email);
   if (!requestEmail || requestEmail !== ownerEmail) {
@@ -149,6 +164,7 @@ exports.handler = async function (event) {
   if (hasPriority) patch.priority = payload.priority;
   if (hasDone) patch.done = payload.done;
   if (hasStarted) patch.started = true;
+  if (hasReviewed) patch.reviewed = true;
   if (hasComment) {
     patch.newComment = {
       id: generateCommentId(),

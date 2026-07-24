@@ -622,6 +622,19 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .tracker-item-meta{ display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:8px; font-size:11px; color:var(--text-faint);}
 .tracker-start-row{ padding:0 14px 14px;}
 .tracker-start-btn{ padding:8px 14px; font-size:12px; font-weight:600;}
+/* "Reviewed" control shares the start button's row styling — same
+   secondary-button treatment, just a different one-way signal (see
+   tracker.html's reviewControl/handleReviewChange). */
+.tracker-review-btn{ padding:8px 14px; font-size:12px; font-weight:600;}
+/* Small inline pill marking a done-but-not-yet-reviewed item, shown next
+   to its title only within the Done section's "Needs review" group (see
+   itemHTML's needsReviewBadge in tracker.html) — reuses the same accent
+   red as the high-priority pill (.tracker-pri-btn.active[data-priority
+   ="high"]) so it reads as "needs founder attention" at a glance. */
+.tracker-needs-review-badge{
+  display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase;
+  color:#fff; background:var(--danger); border-radius:6px; padding:2px 6px; margin-right:7px; vertical-align:middle;
+}
 .tracker-comment-list{ padding:0 14px; display:flex; flex-direction:column; gap:8px; margin-bottom:14px;}
 .tracker-comment-entry{ background:var(--surface-alt); border-radius:10px; padding:10px 12px;}
 .tracker-comment-entry-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:3px;}
@@ -643,12 +656,36 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    doneSectionHTML() in tracker.html; this replaced two separate
    per-category done-<details> per Ron's own feedback. */
 .tracker-done-details{ margin-top:2px; margin-bottom:18px;}
-.tracker-done-summary{ list-style:none; cursor:pointer; display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.03em; color:var(--text-faint); padding:8px 4px; -webkit-tap-highlight-color:transparent;}
+.tracker-done-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:700; letter-spacing:.03em; color:var(--text-faint); padding:8px 4px; -webkit-tap-highlight-color:transparent;}
 .tracker-done-summary::-webkit-details-marker{ display:none;}
 .tracker-done-summary::marker{ content:'';}
+/* "N new" pill next to the Done summary count, only rendered when at
+   least one done item is still unreviewed (see doneSectionHTML). */
+.tracker-review-count-badge{
+  display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase;
+  color:#fff; background:var(--danger); border-radius:100px; padding:2px 8px;
+}
+/* One-sentence completion digest ("N items done since your last
+   review") — Ron's own lightweight-digest ask, deliberately just a
+   count sentence rather than a richer report (see doneSectionHTML's own
+   comment for why). Sits above the Needs review sub-section, inside the
+   collapsible Done <details> so it doesn't clutter the page when
+   collapsed. */
+.tracker-review-digest{ font-size:12px; color:var(--text-muted); padding:2px 4px 10px;}
+/* "Needs review" / "Reviewed" sub-section labels inside the Done list —
+   same visual language as .section-label (Open Tasks/Ideas headings)
+   but smaller, since these are one level deeper (sub-groups of Done,
+   not top-level page sections). */
+.tracker-done-subhead{ font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--text-faint); padding:10px 4px 4px;}
 .tracker-done-list{ margin-top:8px;}
 .tracker-done-list .tracker-item{ opacity:.68;}
 .tracker-done-list .tracker-item-title{ text-decoration:line-through;}
+/* Needs-review items stay at full opacity (unlike every other done
+   item, dimmed at .68 above) so a new completion the founder hasn't
+   seen yet doesn't visually recede the same way an already-reviewed one
+   does — the whole point of this sub-group is to stand out until it's
+   cleared. */
+.tracker-done-list .tracker-item.needs-review{ opacity:1;}
 .tracker-empty{ font-size:12.5px; color:var(--text-faint); padding:2px 2px 16px;}
 /* Delete button lives in the summary row alongside the priority buttons —
    same stopPropagation()-on-its-own-click treatment so clicking it doesn't

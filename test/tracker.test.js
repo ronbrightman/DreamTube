@@ -147,6 +147,7 @@ test('a legacy item with a non-empty `comment` string is migrated into a single 
   assert.equal(migrated.createdAt, null);
   assert.equal(migrated.doneAt, null);
   assert.equal(migrated.startedAt, null);
+  assert.equal(migrated.reviewedAt, null, 'reviewedAt did not exist yet at all when this legacy shape was written -- must backfill to null, same as the other missing timestamp fields');
 });
 
 test('a legacy item with an empty-string `comment` migrates to an empty `comments` array, not a spurious entry', async function () {
@@ -172,12 +173,31 @@ test('migration persists -- a second GET does not re-derive from the legacy shap
 
 test('an item already in the new shape is left untouched by migration (no unnecessary re-write)', async function () {
   var trackerStore = require('../netlify/functions/lib/tracker-store');
-  var modernItem = { id: 'modern-1', category: 'task', title: 'Modern item', detail: 'Detail.', priority: 'medium', done: false, comments: [{ id: 'c-1', author: 'ron', text: 'hi', timestamp: '2026-01-01T00:00:00.000Z' }], createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null };
+  var modernItem = { id: 'modern-1', category: 'task', title: 'Modern item', detail: 'Detail.', priority: 'medium', done: false, comments: [{ id: 'c-1', author: 'ron', text: 'hi', timestamp: '2026-01-01T00:00:00.000Z' }], createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null, reviewedAt: null };
   mockBlobs.seed(trackerStore.STORE_NAME, trackerStore.KEY, [modernItem]);
 
   var items = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
   var got = items.find(function (i) { return i.id === 'modern-1'; });
   assert.deepEqual(got, modernItem);
+});
+
+// This is the exact real-world shape of the LIVE store as of this build:
+// createdAt/doneAt/startedAt already exist (added in an earlier branch),
+// but reviewedAt does not yet, since it's brand new here. getItems()'s
+// migrateItem() must backfill it to null on read (same self-heal path as
+// every other field addition this file has gone through), not require a
+// manual one-off migration script against production data.
+test('an item with createdAt/doneAt/startedAt but no reviewedAt at all (the real pre-this-build live shape) gets reviewedAt backfilled to null, and everything else is left alone', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var preReviewedItem = { id: 'pre-reviewed-1', category: 'task', title: 'Done before Reviewed existed', detail: 'Detail.', priority: 'high', done: true, comments: [], createdAt: '2026-01-01T00:00:00.000Z', doneAt: '2026-02-01T00:00:00.000Z', startedAt: '2026-01-15T00:00:00.000Z' };
+  mockBlobs.seed(trackerStore.STORE_NAME, trackerStore.KEY, [preReviewedItem]);
+
+  var items = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var migrated = items.find(function (i) { return i.id === 'pre-reviewed-1'; });
+  assert.equal(migrated.reviewedAt, null);
+  assert.equal(migrated.done, true);
+  assert.equal(migrated.doneAt, preReviewedItem.doneAt, 'an unrelated already-set field must survive the backfill untouched');
+  assert.equal(migrated.startedAt, preReviewedItem.startedAt);
 });
 
 // ===== update-tracker-item.js =====
@@ -481,6 +501,89 @@ test('POST with started:true from a non-owner email is rejected with 403 and doe
   });
 });
 
+// ===== `reviewed` (founder's one-way "I've seen this done item" signal) =====
+
+test('POST with reviewed:true sets reviewedAt, and a second reviewed:true is a no-op on the timestamp', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[7].id;
+
+    var res1 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, reviewed: true } }));
+    assert.equal(res1.statusCode, 200);
+    var body1 = JSON.parse(res1.body);
+    assert.equal(typeof body1.item.reviewedAt, 'string');
+
+    var res2 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, reviewed: true } }));
+    var body2 = JSON.parse(res2.body);
+    assert.equal(body2.item.reviewedAt, body1.item.reviewedAt, 'a second reviewed:true on an already-reviewed item must not bump the timestamp -- there is no "un-review", so this must stay idempotent');
+  });
+});
+
+test('reviewed:true does not require the item to be done -- tracker-store.js trusts its caller, tracker.html\'s own UI is what gates the button to done items', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    // SEED_ITEMS[1] starts done:false.
+    var id = trackerStore.SEED_ITEMS[1].id;
+
+    var res = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, reviewed: true } }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(typeof JSON.parse(res.body).item.reviewedAt, 'string');
+  });
+});
+
+test('POST with reviewed:false is rejected with 400 -- this endpoint never accepts un-reviewing', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, reviewed: false }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E12: invalid_reviewed/);
+  });
+});
+
+test('POST with reviewed:true from a non-owner email is rejected with 403 and does not write anything', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[8].id;
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: 'not-the-owner@example.com', reviewed: true }
+    }));
+    assert.equal(res.statusCode, 403);
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var untouched = getBody.items.find(function (i) { return i.id === id; });
+    assert.equal(untouched.reviewedAt, null);
+  });
+});
+
+test('reviewed and started can both be set independently on the same item without clobbering each other', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[9].id;
+
+    var res1 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, started: true } }));
+    var body1 = JSON.parse(res1.body);
+    assert.equal(typeof body1.item.startedAt, 'string');
+    assert.equal(body1.item.reviewedAt, null);
+
+    var res2 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, reviewed: true } }));
+    var body2 = JSON.parse(res2.body);
+    assert.equal(body2.item.startedAt, body1.item.startedAt, 'setting reviewed must not disturb an already-set startedAt');
+    assert.equal(typeof body2.item.reviewedAt, 'string');
+  });
+});
+
 test('POST from a non-owner email is rejected with 403 and does not write anything', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var getHandler = require('../netlify/functions/get-tracker-items').handler;
@@ -588,6 +691,18 @@ test('POST with only `comment` present does not trip the no_fields_to_update che
     var res = await updateHandler(fakeEvent({
       method: 'POST',
       body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, comment: 'just a note', commentAuthor: 'ron' }
+    }));
+    assert.equal(res.statusCode, 200);
+  });
+});
+
+test('POST with only `reviewed` present does not trip the no_fields_to_update check', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, reviewed: true }
     }));
     assert.equal(res.statusCode, 200);
   });
@@ -1128,4 +1243,44 @@ test('a concurrent done-change and priority-change on the SAME item both survive
   var finalItem = finalItems.find(function (i) { return i.id === id; });
   assert.equal(finalItem.done, true, "the concurrent priority-change must not silently revert the done-change -- this is the exact shape of today's confirmed production incident");
   assert.equal(finalItem.priority, 'high', 'the concurrent done-change must not silently revert the priority-change either');
+});
+
+// `reviewed` is new in this build, going through the exact same
+// writeItemsWithRetry path as done/started/newComment above -- same
+// direct-concurrency-via-Promise.all coverage, so this new field doesn't
+// slip through as the one patch shape never actually exercised against
+// the real race.
+
+test('two concurrent updateItem(..., {reviewed:true}) calls on the SAME item both survive -- the item ends up with a real reviewedAt, and nothing else in the store is lost', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var id = seeded[4].id;
+
+  var results = await Promise.all([
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { reviewed: true }),
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { reviewed: true })
+  ]);
+  assert.equal(typeof results[0].reviewedAt, 'string');
+  assert.equal(typeof results[1].reviewedAt, 'string');
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var finalItem = finalItems.find(function (i) { return i.id === id; });
+  assert.equal(typeof finalItem.reviewedAt, 'string', 'a real reviewedAt must have been set by one of the two concurrent transitions');
+  assert.equal(finalItems.length, seeded.length, 'no other item in the store may be lost or duplicated by the race');
+});
+
+test('a concurrent done-change and reviewed-change on the SAME item both survive -- neither field is lost to the other', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var seeded = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var id = seeded[5].id;
+
+  await Promise.all([
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { done: true }),
+    trackerStore.updateItem(fakeEvent({ method: 'POST' }), id, { reviewed: true })
+  ]);
+
+  var finalItems = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var finalItem = finalItems.find(function (i) { return i.id === id; });
+  assert.equal(finalItem.done, true, 'the concurrent reviewed-change must not silently revert the done-change');
+  assert.equal(typeof finalItem.reviewedAt, 'string', 'the concurrent done-change must not silently revert the reviewed-change either');
 });

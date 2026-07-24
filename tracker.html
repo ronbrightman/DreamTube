@@ -104,7 +104,7 @@
 
   function esc(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
-  /** Formats an ISO timestamp for display, e.g. "Jul 23, 2026, 3:45 PM". Returns '' for a missing/invalid value — every caller only appends this into the DOM when it's non-empty, so a pre-existing item with no real historical timestamp (createdAt/doneAt/startedAt all default to null — see tracker-store.js) simply omits that line entirely rather than showing a fabricated date. */
+  /** Formats an ISO timestamp for display, e.g. "Jul 23, 2026, 3:45 PM". Returns '' for a missing/invalid value — every caller only appends this into the DOM when it's non-empty, so a pre-existing item with no real historical timestamp (createdAt/doneAt/startedAt/reviewedAt all default to null — see tracker-store.js) simply omits that line entirely rather than showing a fabricated date. */
   function fmtDate(iso) {
     if (!iso) return '';
     var d = new Date(iso);
@@ -186,6 +186,7 @@
   var doneChangeSeq = {};
   var priorityChangeSeq = {};
   var startChangeSeq = {};
+  var reviewChangeSeq = {};
 
   // Per-id last known SERVER-CONFIRMED value for each field -- populated
   // from the initial get-tracker-items load, then kept in sync on every
@@ -198,7 +199,7 @@
   // because "previous" is just the prior optimistic in-memory value
   // (itself never confirmed by the server, since the older request that
   // set it also failed), not the actual last-good server state. Reverting
-  // to {done,doneAt,priority,startedAt}Confirmed[id] instead means a
+  // to {done,doneAt,priority,startedAt,reviewedAt}Confirmed[id] instead means a
   // revert can only ever land on a value the server has actually
   // acknowledged, no matter how many same-id requests are chained and
   // failing.
@@ -216,6 +217,7 @@
   var doneAtConfirmed = {};
   var priorityConfirmed = {};
   var startedAtConfirmed = {};
+  var reviewedAtConfirmed = {};
 
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
@@ -315,10 +317,18 @@
       ? '<span class="tracker-category-badge">' + (item.category === 'task' ? 'Task' : 'Idea') + '</span>'
       : '';
 
+    // Only reachable when this item is actually in the Done list (see
+    // doneSectionHTML below — the only place that ever calls itemHTML with
+    // a done item at all), so no need to also check item.done here.
+    var needsReviewBadge = (!item.reviewedAt && item.done)
+      ? '<span class="tracker-needs-review-badge">Needs review</span>'
+      : '';
+
     var metaParts = [];
     if (item.createdAt) metaParts.push('Created ' + esc(fmtDate(item.createdAt)));
     if (item.startedAt) metaParts.push('Started ' + esc(fmtDate(item.startedAt)));
     if (item.done && item.doneAt) metaParts.push('Done ' + esc(fmtDate(item.doneAt)));
+    if (item.reviewedAt) metaParts.push('Reviewed ' + esc(fmtDate(item.reviewedAt)));
     var metaHTML = metaParts.length ? '<div class="tracker-item-meta">' + metaParts.map(function (p) { return '<span>' + p + '</span>'; }).join('') + '</div>' : '';
 
     // "Start working on this" only makes sense for an item that hasn't
@@ -329,16 +339,27 @@
       ? '<button type="button" class="btn btn-secondary tracker-start-btn">Start working on this</button>'
       : '';
 
+    // "Reviewed" only makes sense once an item is actually done — mirrors
+    // startControl's own not-yet-started/not-yet-done gating above, just
+    // the opposite way round (this is a control for the founder to clear
+    // a done item off his own review radar, so it has nothing to show
+    // until there's something TO review). Once reviewedAt is set it shows
+    // in metaParts above instead (a one-way signal, same as startedAt —
+    // see tracker-store.js's updateItem — no "un-review" control at all).
+    var reviewControl = (item.done && !item.reviewedAt)
+      ? '<button type="button" class="btn btn-secondary tracker-review-btn">Mark Reviewed</button>'
+      : '';
+
     var comments = item.comments || [];
     var commentsListHTML = comments.length
       ? '<div class="tracker-comment-list">' + comments.map(commentEntryHTML).join('') + '</div>'
       : '<div class="tracker-comment-empty">No comments yet.</div>';
 
     return '' +
-      '<details class="tracker-item" data-id="' + esc(item.id) + '">' +
+      '<details class="tracker-item' + (needsReviewBadge ? ' needs-review' : '') + '" data-id="' + esc(item.id) + '">' +
         '<summary class="tracker-item-summary">' +
           '<div class="tracker-item-summary-top">' +
-            '<span class="tracker-item-title" dir="auto">' + categoryBadge + esc(item.title) + '</span>' +
+            '<span class="tracker-item-title" dir="auto">' + categoryBadge + needsReviewBadge + esc(item.title) + '</span>' +
             '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
           '</div>' +
           '<div class="tracker-item-summary-actions">' +
@@ -349,6 +370,7 @@
         '</summary>' +
         '<div class="tracker-item-detail" dir="auto">' + esc(item.detail) + metaHTML + '</div>' +
         (startControl ? '<div class="tracker-start-row">' + startControl + '</div>' : '') +
+        (reviewControl ? '<div class="tracker-start-row">' + reviewControl + '</div>' : '') +
         commentsListHTML +
         '<div class="tracker-comment-compose-group">' +
           commentComposeHTML(item, 'ron') +
@@ -364,13 +386,54 @@
       : '<div class="tracker-empty">Nothing open here.</div>';
   }
 
-  /** ONE combined Done section spanning both Tasks and Ideas, collapsed by default (doneSectionOpen starts false) — includes items marked done however they got there (Ron checking the box, or a done:true set directly through the API), sorted most-recently-done first. Returns '' (renders nothing) when there are no done items at all yet. */
+  /**
+   * ONE combined Done section spanning both Tasks and Ideas, collapsed by
+   * default (doneSectionOpen starts false) — includes items marked done
+   * however they got there (Ron checking the box, or a done:true set
+   * directly through the API), sorted most-recently-done first. Returns
+   * '' (renders nothing) when there are no done items at all yet.
+   *
+   * Split into two groups so Ron can tell at a glance what's new since he
+   * last looked: "Needs review" (done, but reviewedAt is still null —
+   * i.e. built and marked done by an agent, not yet seen by the founder)
+   * sorted to the very top, then the rest ("Reviewed") below. This is the
+   * "Done -> unreviewed" surfacing the Reviewed-marker feature asked for,
+   * built as a sub-section rather than a separate toggle/filter control —
+   * simplest option that still puts new work where it can't be missed,
+   * no extra state to track beyond what needsReview/reviewed already
+   * derive fresh from `items` on every render(). The digest line above
+   * the sub-section is the same count, phrased as a sentence — Ron's own
+   * "count of items marked done since last review" ask; deliberately NOT
+   * a separate persisted "last reviewed at" timestamp (that would need
+   * its own storage + endpoint), since done-and-not-yet-reviewed is
+   * already exactly that count.
+   */
   function doneSectionHTML() {
-    var done = sortDoneItems(items.filter(function (i) { return i.done; }));
+    var done = items.filter(function (i) { return i.done; });
     if (!done.length) return '';
+    var needsReview = sortDoneItems(done.filter(function (i) { return !i.reviewedAt; }));
+    var reviewed = sortDoneItems(done.filter(function (i) { return i.reviewedAt; }));
+
+    var digestHTML = needsReview.length
+      ? '<div class="tracker-review-digest">' + needsReview.length + ' item' + (needsReview.length === 1 ? '' : 's') + ' done since your last review</div>'
+      : '';
+    var needsReviewHTML = needsReview.length
+      ? '<div class="tracker-done-subhead">Needs review (' + needsReview.length + ')</div>' +
+        '<div class="tracker-done-list">' + needsReview.map(function (i) { return itemHTML(i, true); }).join('') + '</div>'
+      : '';
+    // Only label the rest "Reviewed" once there's something unreviewed
+    // above to distinguish it from — with nothing left to review, this
+    // just renders as the same single plain list it always has.
+    var reviewedHTML = reviewed.length
+      ? (needsReview.length ? '<div class="tracker-done-subhead">Reviewed</div>' : '') +
+        '<div class="tracker-done-list">' + reviewed.map(function (i) { return itemHTML(i, true); }).join('') + '</div>'
+      : '';
+
     return '<details class="tracker-done-details" id="tracker-done-details">' +
-      '<summary class="tracker-done-summary">Done (' + done.length + ')</summary>' +
-      '<div class="tracker-done-list">' + done.map(function (i) { return itemHTML(i, true); }).join('') + '</div>' +
+      '<summary class="tracker-done-summary">Done (' + done.length + ')' +
+        (needsReview.length ? ' <span class="tracker-review-count-badge">' + needsReview.length + ' new</span>' : '') +
+      '</summary>' +
+      digestHTML + needsReviewHTML + reviewedHTML +
     '</details>';
   }
 
@@ -408,6 +471,14 @@
         startBtn.addEventListener('click', function (e) {
           e.stopPropagation();
           handleStartChange(id);
+        });
+      }
+
+      var reviewBtn = el.querySelector('.tracker-review-btn');
+      if (reviewBtn) {
+        reviewBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleReviewChange(id);
         });
       }
 
@@ -572,6 +643,42 @@
   }
 
   /**
+   * "Mark Reviewed" -- the founder's own one-way "I've seen this
+   * completed item" signal (see update-tracker-item.js's own doc comment
+   * for why it's separate from `done`). Same shape as handleStartChange
+   * immediately above, for the same reasons: no-ops entirely if the item
+   * has no reviewedAt yet AND isn't actually done (there's no "un-review"
+   * UI at all, and reviewControl in itemHTML only ever renders this
+   * button on a done, not-yet-reviewed item in the first place -- the
+   * guard here is belt-and-suspenders against a stale click landing after
+   * a render already flipped the button away, same reasoning as
+   * handleStartChange's own guard comment).
+   */
+  function handleReviewChange(id) {
+    var item = findItem(id);
+    if (!item || item.reviewedAt || !item.done) return;
+    if (!reviewChangeSeq[id]) reviewChangeSeq[id] = 0;
+    var mySeq = ++reviewChangeSeq[id];
+    var optimisticTimestamp = new Date().toISOString();
+    item.reviewedAt = optimisticTimestamp;
+    captureDrafts();
+    render();
+    postUpdate(id, { reviewed: true }).then(function (data) {
+      if (reviewChangeSeq[id] !== mySeq) return;
+      // Adopt the server's own timestamp as authoritative, same
+      // non-intrusive-success pattern as handleStartChange's own .then.
+      item.reviewedAt = data.item.reviewedAt;
+      reviewedAtConfirmed[id] = data.item.reviewedAt;
+    }).catch(function () {
+      if (reviewChangeSeq[id] !== mySeq) return;
+      item.reviewedAt = Object.prototype.hasOwnProperty.call(reviewedAtConfirmed, id) ? reviewedAtConfirmed[id] : null;
+      captureDrafts();
+      render();
+      showToast("Couldn't mark reviewed — try again.");
+    });
+  }
+
+  /**
    * Saves one new comment entry for one item, from one compose area
    * ("ron" or "claude" — see commentComposeHTML above). Unlike
    * handleDoneChange/handlePriorityChange/handleStartChange, this is NOT
@@ -690,6 +797,7 @@
       doneAtConfirmed[created.id] = created.doneAt;
       priorityConfirmed[created.id] = created.priority;
       startedAtConfirmed[created.id] = created.startedAt;
+      reviewedAtConfirmed[created.id] = created.reviewedAt;
       // captureDrafts() before render(), same as
       // handleDelete/handleDoneChange/handlePriorityChange/
       // handleStartChange/handleCommentSave — without it, adding a new
@@ -774,6 +882,7 @@
               doneAtConfirmed[item.id] = item.doneAt;
               priorityConfirmed[item.id] = item.priority;
               startedAtConfirmed[item.id] = item.startedAt;
+              reviewedAtConfirmed[item.id] = item.reviewedAt;
             });
             render();
           })
