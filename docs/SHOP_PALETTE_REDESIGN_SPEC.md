@@ -1,8 +1,9 @@
 # Shop Palette & Visual Redesign Spec — calming the token shop's red/hot look
 
-**Status:** design pass complete — two directions proposed below, pending founder
-pick per `AGENT_POLICY.md`'s escalation policy ("choosing a design or creative
-direction" always requires human approval). Not yet built.
+**Status:** design pass complete, decision made. Ron's call (2026-07-24, in
+chat): don't pick one direction — run **both as an in-product A/B test** and
+let real purchase data decide instead of guessing. Now in build. See §9 for
+the A/B mechanics.
 
 **Trigger:** explicit founder feedback from a real mobile test — the shop's
 current visual palette (a red-gradient "1600" token count, red card borders,
@@ -20,10 +21,7 @@ founder env setup), which is why this spec treats the purchase flow as real,
 not a placeholder. This task came from direct founder feedback on a mobile
 test, not from the research→evaluation ranked-list pipeline, so there's no
 RICE score / "idea chosen from a ranked list" decision-made entry to draft
-for it. Once Ron picks Direction A or B, that choice gets logged as a tracker
-item (`[auto] Shop redesign: Direction <A|B> chosen (palette)`, priority
-medium, detail referencing this spec + his stated reason) before build picks
-it up.
+for it.
 
 ## 1. What exists today (read directly from the code, 2026-07-24)
 
@@ -210,7 +208,67 @@ but this is exactly the kind of call reserved for Ron, not for an agent.
 - Pricing, token economics, or purchase-flow UX changes — none proposed or
   needed.
 
-## 8. Files read to ground this spec
+## 8. A/B test mechanics (Ron's decision: ship both, let data decide)
+
+DreamTube has no in-app A/B assignment mechanism today — grep for
+`getFeatureFlag`/`variant` across every page turns up nothing but the
+PostHog snippet's own method allowlist. `POSTHOG_KEY` in
+`js/analytics-config.js` is a real, live key already (not the placeholder),
+so PostHog itself is live — this just needs a lightweight assignment layer,
+matching this codebase's existing "small, additive, no-bundler" conventions
+(see `js/store.js`'s own localStorage-backed fake-backend pattern).
+
+- **Assignment**: on `shop.html` load, read a new localStorage key
+  (`dreamtube_shop_variant`). If unset, assign `'a'` or `'b'` via
+  `Math.random() < 0.5`, persist it (`localStorage.setItem`), and use it from
+  then on — sticky per-browser, sampled once, never reassigned. Per-browser
+  (not per-account) is a deliberate, acceptable simplification: this is a
+  low-stakes visual palette test, not an identity-sensitive feature, and
+  DreamTube's account records aren't consistently synced cross-device for
+  non-token/non-entitlement fields today (see `register-account.js`'s own
+  doc comment on the local-mirror-only parts of state) — building real
+  cross-device sticky assignment would be new backend work disproportionate
+  to what this test needs.
+- **Applying the variant**: both variants share the baseline fix (drop the
+  `--gradient-ig` border on `.token-balance-card`, plain white
+  `.token-balance-amt`, plain-bordered pack cards) — only the "best value"
+  pack's accent hue differs. Add a `shop-variant-a`/`shop-variant-b` class to
+  `<body>` (or `#app`) based on the assigned variant; CSS selectors like
+  `.shop-variant-a .token-pack-card.best` / `.shop-variant-b
+  .token-pack-card.best` pick `var(--accent-trust)` vs `var(--accent-value)`
+  for the border and badge fill.
+  `.token-balance-card`/`.token-balance-amt`'s baseline (gradient-removed)
+  styling is NOT variant-conditional — it's identical in both, so it can be
+  the new unconditional default rule, with only the "best" pack border/badge
+  behind the variant classes.
+- **Tracking**: reuse the exact guarded `track(name, props)` wrapper pattern
+  already duplicated per-page in `result.html`/`start.html`/`wizard.html`
+  (`if(window.posthog && typeof window.posthog.capture === 'function')`,
+  try/catch, fire-and-forget) — `shop.html` doesn't have one yet, add it the
+  same way `result.html`'s own header comment describes doing for itself.
+  On assignment (or on every load, using the persisted value — simpler and
+  idempotent), call `posthog.register({ shop_palette_variant: variant })`
+  so the property rides along on every subsequent PostHog event from that
+  browser (including whatever event already fires on a completed Dodo
+  purchase — check `shop.html`'s own `?checkout=success` handling for the
+  existing Purchase/conversion tracking call site and confirm this property
+  is present by the time that call fires, since registration happens on
+  page load and the purchase redirect is a later page load of the same
+  page). Also fire one explicit `track('shop_palette_variant_shown', {
+  variant: variant })` per page view for a direct funnel-independent count.
+  No new backend/tracker-store work needed — this all rides on the PostHog
+  properties/events pipeline that's already live.
+- **Reading results**: this is a PostHog-side analysis (funnel or trend
+  split by the `shop_palette_variant` person/event property against the
+  purchase event) — not something this app's own code needs to compute or
+  display. Out of scope for the build itself.
+- **Explicitly NOT built now**: any UI to change/reset a browser's assigned
+  variant, a kill-switch to force one variant off, or a formal
+  significance/stopping-rule calculation — small-scale beta traffic doesn't
+  need any of this yet; add later if the test needs to run at real volume
+  for a long time.
+
+## 9. Files read to ground this spec
 
 `shop.html`, `css/styles.css` (full token block plus all `.token-balance-*`/
 `.token-pack-*`/`.adv-*`/`.char-chip*` rules), `profile.html` (`.token-chip`
