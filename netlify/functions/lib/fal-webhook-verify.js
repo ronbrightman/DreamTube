@@ -29,12 +29,57 @@ var crypto = require('crypto');
 var JWKS_URL = 'https://rest.alpha.fal.ai/.well-known/jwks.json';
 var MAX_CLOCK_SKEW_SECONDS = 300;
 
-/** Fetches fal's current JWKS. Separated purely so tests can substitute a fixed local keypair instead of a real network call. */
+// Short-TTL in-memory cache (review finding, fixed) — fetchJwks() used to
+// hit the network on EVERY single webhook delivery with no caching at
+// all, so a transient fal JWKS outage/hiccup lasting longer than fal's own
+// webhook retry window (10 attempts over ~2h, per fal's docs) could
+// permanently prevent an otherwise-legitimate webhook from ever being
+// trusted — every retry would independently re-fail the same fetch.
+// Caching for a while, and falling back to a still-cached (if stale) key
+// set on a fetch failure rather than throwing outright, closes that gap.
+// Module-level (persists only for a warm Netlify Function instance's
+// lifetime — a cold start just re-fetches once, no different from
+// before this existed). TTL chosen well under fal's own documented JWKS
+// max-24h cache guidance, short enough that a real key rotation is still
+// picked up promptly.
+var JWKS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+var cachedJwks = null;
+var cachedAt = 0;
+
+/**
+ * Fetches fal's current JWKS, serving a cached copy for up to
+ * JWKS_CACHE_TTL_MS. On a fetch failure, falls back to a still-cached
+ * (even if past its TTL) key set rather than failing verification
+ * outright — see the header comment above for the outage-resilience
+ * reasoning. Only throws if there's truly nothing cached yet AND the
+ * fetch itself failed.
+ */
 async function fetchJwks() {
-  var res = await fetch(JWKS_URL);
-  if (!res.ok) throw new Error('jwks_fetch_failed: http ' + res.status);
-  var data = await res.json();
-  return Array.isArray(data && data.keys) ? data.keys : [];
+  var now = Date.now();
+  if (cachedJwks && (now - cachedAt) < JWKS_CACHE_TTL_MS) {
+    return cachedJwks;
+  }
+  try {
+    var res = await fetch(JWKS_URL);
+    if (!res.ok) throw new Error('jwks_fetch_failed: http ' + res.status);
+    var data = await res.json();
+    var keys = Array.isArray(data && data.keys) ? data.keys : [];
+    cachedJwks = keys;
+    cachedAt = now;
+    return keys;
+  } catch (e) {
+    if (cachedJwks) {
+      console.warn('fal-webhook-verify: JWKS refetch failed, serving stale cache (' + (e && e.message) + ')');
+      return cachedJwks;
+    }
+    throw e;
+  }
+}
+
+/** Test-only: clears the module-level JWKS cache so each test file's own keypair/fetch stub starts from a known-empty cache rather than depending on process/module-load isolation between test files. Harmless in production (nothing calls this outside test/dream-webhook.test.js). */
+function resetJwksCacheForTests() {
+  cachedJwks = null;
+  cachedAt = 0;
 }
 
 /** Converts a JWKS OKP/Ed25519 entry's base64url `x` field into a Node KeyObject usable with crypto.verify. */
@@ -104,4 +149,4 @@ function verifySignature(headers, rawBody, jwks, nowSeconds) {
   return { ok: false, error: 'signature_verification_failed' };
 }
 
-module.exports = { fetchJwks, verifySignature, publicKeyFromJwk, JWKS_URL, MAX_CLOCK_SKEW_SECONDS };
+module.exports = { fetchJwks, verifySignature, publicKeyFromJwk, resetJwksCacheForTests, JWKS_URL, MAX_CLOCK_SKEW_SECONDS };

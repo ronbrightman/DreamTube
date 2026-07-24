@@ -59,6 +59,7 @@ function webhookEvent(opts) {
 
 test.beforeEach(function () {
   mockBlobs.reset();
+  falWebhookVerify.resetJwksCacheForTests();
   global.fetch = async function (url) {
     if (String(url).indexOf('jwks') !== -1) {
       return { ok: true, status: 200, json: async function () { return { keys: [publicJwk()] }; } };

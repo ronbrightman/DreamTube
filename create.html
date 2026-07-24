@@ -1207,11 +1207,14 @@
   /**
    * Assembles the final caption and hands off to style.html — the real
    * style choice happens THERE (Step 5, reused as-is per the spec), so
-   * this deliberately strips WizardChips.assembleCaption's own default
-   * ("Cinematic style, dreamlike.") style clause rather than baking in a
-   * style that hasn't actually been chosen yet — generate-video.js's
-   * existing STYLE_MODIFIERS already appends the REAL style unconditionally
-   * for every create.html path once style.html's Generate button runs, so
+   * this passes `style: null` explicitly (review finding — previously a
+   * fragile literal string .replace() against assembleCaption's OWN
+   * default phrasing, which would have silently stopped matching the
+   * moment that phrasing ever changed) telling WizardChips.assembleCaption
+   * itself to omit the style clause rather than baking in a default —
+   * see that function's own doc comment. generate-video.js's existing
+   * STYLE_MODIFIERS already appends the REAL style unconditionally for
+   * every create.html path once style.html's Generate button runs, so
    * baking one in here too would double (and, for anyone who picks a
    * style other than Cinematic, contradict) it.
    */
@@ -1229,11 +1232,10 @@
       placeKey: buildSettingPlaceKey, placeOtherText: buildSettingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: buildActionKey, actionOtherText: buildActionOtherText, pov: buildPovOn,
       moodKey: buildMoodKey, moodOtherText: buildMoodOtherText,
-      freeText: buildFreeText
+      style: null, freeText: buildFreeText
     });
-    var caption = assembled.caption.replace(WizardChips.DEFAULT_STYLE + ' style, dreamlike.', 'dreamlike.');
     DreamStore.setDraft({
-      caption: caption,
+      caption: assembled.caption,
       characterIds: assembled.characterIdsForGeneration,
       sceneryPlace: buildSettingPlaceKey
     });

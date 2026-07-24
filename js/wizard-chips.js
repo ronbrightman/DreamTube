@@ -13,6 +13,24 @@
 // Plain script (no ES modules — matches every other file in this
 // codebase, see CLAUDE.md), attaches window.WizardChips.
 //
+// ── Open item: no per-chip icons yet (review finding) ──
+// WIZARD_SPEC.md's "Global" bullet calls for icons on chips. Only the
+// Style step (reusing style.html's real .sc-icon/Icons.palette) and the
+// character add-tiles (Icons.userPlus/Icons.plus, reused from
+// create.html/start.html's existing character sheet) have one — the
+// Subject/Setting/Action/Mood standalone chips (js/icons.js's ~30-icon
+// library) don't yet, because there is no honest semantic match in that
+// library for "Flying/floating," "A calm still moment," "Mysterious,"
+// "Somewhere unreal," etc. — this was checked, not skipped by oversight.
+// Forcing a mismatched existing icon (e.g. Icons.globe for "Somewhere
+// unreal") onto a chip whose actual meaning is different would read as
+// sloppy rather than helpful, which is worse than no icon for a
+// tap-target that already carries a clear text label. Real per-chip
+// icons need ~15-20 new bespoke SVGs matching js/icons.js's existing
+// 24x24 line style (see that file's own header) — genuine design/asset
+// work, not a mechanical fix to bolt onto this branch; flagged as a
+// follow-up rather than done here with wrong icons.
+//
 // ── Why character description is NOT baked into the assembled caption
 //    for a "Me"/"Someone I know" subject picked from a saved character ──
 // The spec's own worked example ("Me 'man 30s grey hoodie' + Sky + Flying
@@ -163,7 +181,9 @@
    *   pov: boolean
    *   moodKey: one of MOOD_CHIPS[].key
    *   moodOtherText: string, only for moodKey==='other'
-   *   style: one of STYLE_CHIPS
+   *   style: one of STYLE_CHIPS, or explicitly `null` to omit the style
+   *     clause entirely (see below) — omitting the property altogether
+   *     (undefined) still defaults to DEFAULT_STYLE, same as before.
    *   freeText: optional trailing free-text addendum (the demoted Step 6 box)
    * @returns {{ caption: string, characterIdsForGeneration: string[] }}
    */
@@ -171,7 +191,15 @@
     input = input || {};
     var actionKey = input.actionKey || DEFAULT_ACTION;
     var moodKey = input.moodKey || DEFAULT_MOOD;
-    var style = input.style || DEFAULT_STYLE;
+    // `style: null` EXPLICITLY (not just omitted/undefined) means "the
+    // real style choice hasn't happened yet" — used by create.html's
+    // "Build it" retrofit, whose Subject/Setting/Action/Mood steps hand
+    // off to style.html (reused as-is per the spec) for the actual style
+    // pick, same as "Write it" already does. Omitting the property
+    // entirely still defaults to DEFAULT_STYLE (wizard.html always
+    // supplies a real chosen style itself, so this never applies there).
+    var styleOmitted = input.style === null;
+    var style = styleOmitted ? null : (input.style || DEFAULT_STYLE);
 
     var camera = inferCamera(actionKey, !!input.pov, moodKey);
     var lighting = inferLighting(moodKey, input.sceneryTime || null);
@@ -197,7 +225,13 @@
     parts.push(actionPhrase + (placePhrase ? ' ' + placePhrase : '') + ',');
     if (moodForPrompt) parts.push(moodForPrompt + ' mood,');
     parts.push(lighting + ',');
-    parts.push(style + ' style, dreamlike.');
+    // A real style choice hasn't happened yet (styleOmitted) -- omit the
+    // clause entirely rather than baking in a default that a later,
+    // real style pick (style.html) would then contradict/duplicate. See
+    // generate-video.js's own STYLE_MODIFIERS, which unconditionally
+    // appends the REAL chosen style for every create.html path once
+    // style.html's Generate button runs.
+    parts.push(styleOmitted ? 'dreamlike.' : (style + ' style, dreamlike.'));
 
     var caption = parts.join(' ').replace(/\s+/g, ' ').replace(/,\s*,/g, ',').trim();
     if (input.freeText && input.freeText.trim()) {

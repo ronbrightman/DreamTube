@@ -61,6 +61,17 @@
       <button class="btn btn-primary btn-block" id="save-to-account-btn">Save to my account</button>
     </div>
 
+    <!-- Ownership mismatch — review finding: this browser's currently
+         logged-in account is NOT the account this dream was sent to.
+         Shown instead of the one-tap "Save to my account" button (never
+         both) so a forwarded/shared "your dream is ready" link can never
+         silently absorb someone else's video into an unrelated,
+         already-logged-in account with one tap. -->
+    <div id="mismatch-view" style="display:none;">
+      <div class="auth-sub" id="mismatch-copy" style="margin-bottom:14px;"></div>
+      <button class="btn btn-secondary btn-block" id="mismatch-logout-btn">Log out and continue</button>
+    </div>
+
     <div id="signup-view" style="display:none;">
       <div class="auth-sub" style="margin-bottom:14px;">Save this dream (and keep making more) — create your free account.</div>
       <input class="field" id="claim-email" type="email" disabled style="opacity:.7;">
@@ -123,22 +134,54 @@
       document.getElementById('ready-caption').textContent = data.caption || '';
       showView('ready-view');
 
+      // Ownership check (review finding, fixed): the one-tap "already
+      // logged in" save path must never fire for an account whose email
+      // doesn't match the pending record's own email — otherwise a
+      // forwarded/shared re-engagement link, opened on a device already
+      // signed into a DIFFERENT account, would silently absorb someone
+      // else's finished video with one tap. Three distinct states:
+      //   1. not logged in at all -> signup-view (create/log into the
+      //      account this dream was actually sent to)
+      //   2. logged in AND the emails match -> already-in-view (the
+      //      original one-tap save, unchanged)
+      //   3. logged in as a DIFFERENT email -> mismatch-view (blocks the
+      //      one-tap save; offers to log out, which then falls through
+      //      to the signup-view for the correct account)
       var loggedIn = !!DreamStore.getCurrentUser();
-      document.getElementById('already-in-view').style.display = loggedIn ? 'block' : 'none';
-      document.getElementById('signup-view').style.display = loggedIn ? 'none' : 'block';
+      var loggedInEmail = (DreamStore.getAccountEmail() || '').trim().toLowerCase();
+      var pendingEmail = (data.email || '').trim().toLowerCase();
+      var emailMatches = loggedIn && loggedInEmail && pendingEmail && loggedInEmail === pendingEmail;
+      var mismatch = loggedIn && !emailMatches;
+
+      document.getElementById('already-in-view').style.display = emailMatches ? 'block' : 'none';
+      document.getElementById('mismatch-view').style.display = mismatch ? 'block' : 'none';
+      document.getElementById('signup-view').style.display = (!loggedIn) ? 'block' : 'none';
 
       function finishClaim(){
         var dream = DreamStore.saveClaimedDream(data.caption, data.style, data.videoUrl);
         fetch('/.netlify/functions/claim-pending-generation', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pendingId: pendingId })
+          body: JSON.stringify({ pendingId: pendingId, email: data.email })
         }).catch(function(){ /* best-effort */ });
         if(dream){ location.href = 'result.html?id=' + dream.id; }
       }
 
-      if(loggedIn){
+      if(mismatch){
+        document.getElementById('mismatch-copy').textContent =
+          "You're logged in as " + (DreamStore.getAccountEmail() || 'a different account') +
+          ", but this dream was sent to " + data.email + ". Log out to save it to the right account.";
+        document.getElementById('mismatch-logout-btn').addEventListener('click', function(){
+          DreamStore.logout();
+          document.getElementById('mismatch-view').style.display = 'none';
+          document.getElementById('signup-view').style.display = 'block';
+          document.getElementById('claim-email').value = data.email || '';
+        });
+      }
+
+      if(emailMatches){
         document.getElementById('save-to-account-btn').addEventListener('click', finishClaim);
-      } else {
+      }
+      if(!loggedIn){
         document.getElementById('claim-email').value = data.email || '';
         var pwToggle = document.getElementById('claim-pw-toggle');
         var pwInput = document.getElementById('claim-password');
@@ -174,6 +217,7 @@
 
       document.getElementById('just-watch-link').addEventListener('click', function(){
         document.getElementById('already-in-view').style.display = 'none';
+        document.getElementById('mismatch-view').style.display = 'none';
         document.getElementById('signup-view').style.display = 'none';
         document.getElementById('just-watch-link').style.display = 'none';
       });

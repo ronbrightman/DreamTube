@@ -131,3 +131,17 @@ test('a non-self "someone I know" character with a description bakes the name + 
   assert.match(result.caption, /of Alex, tall with curly red hair,/);
   assert.deepEqual(result.characterIdsForGeneration, []);
 });
+
+test('style: null explicitly omits the style clause entirely (create.html\'s "Build it" retrofit, which hands off to style.html for the real choice — review finding, replacing a fragile literal string .replace())', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy', style: null
+  });
+  assert.doesNotMatch(result.caption, /style,/);
+  assert.doesNotMatch(result.caption, /Cinematic/);
+  assert.match(result.caption, /hazy ethereal light, dreamlike\.$/);
+});
+
+test('style omitted entirely (not explicitly null) still defaults to Cinematic, unchanged', function () {
+  var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy' });
+  assert.match(result.caption, /Cinematic style, dreamlike\.$/);
+});

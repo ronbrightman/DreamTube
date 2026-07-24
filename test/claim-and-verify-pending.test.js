@@ -5,6 +5,12 @@
 // dream-webhook.js skips the re-engagement email) and
 // netlify/functions/verify-pending-claim.js (claim-dream.html's read-only
 // token check, for the abandoned-dream re-engagement email's link).
+//
+// claim-pending-generation.js now REQUIRES an `email` matching the
+// pending record's own email before it will actually claim anything
+// (ownership check, review finding — see that file's header comment and
+// lib/pending-dreams.js's markClaimed doc comment) — every test below
+// that expects a real claim to succeed passes the matching email.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -30,24 +36,46 @@ test('claim: wrong method -> E1', async function () {
 });
 
 test('claim: missing pendingId -> E3', async function () {
-  var res = await claimHandler(fakeEvent({ method: 'POST', body: {} }));
+  var res = await claimHandler(fakeEvent({ method: 'POST', body: { email: 'a@example.com' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E3:/);
 });
 
-test('claim: marks a real pending record claimed', async function () {
+test('claim: missing email -> E4 (ownership check requires it, review finding)', async function () {
   var record = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon' });
   var res = await claimHandler(fakeEvent({ method: 'POST', body: { pendingId: record.id } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E4:/);
+});
+
+test('claim: marks a real pending record claimed when the email matches', async function () {
+  var record = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon' });
+  var res = await claimHandler(fakeEvent({ method: 'POST', body: { pendingId: record.id, email: 'a@example.com' } }));
   assert.equal(res.statusCode, 200);
-  assert.equal(JSON.parse(res.body).found, true);
+  var data = JSON.parse(res.body);
+  assert.equal(data.found, true);
+  assert.equal(data.claimed, true);
   var updated = await pendingDreams.get({}, record.id);
   assert.equal(updated.status, 'claimed');
 });
 
-test('claim: an unknown pendingId is a harmless no-op, not an error', async function () {
-  var res = await claimHandler(fakeEvent({ method: 'POST', body: { pendingId: 'nope' } }));
+test('claim: an EMAIL MISMATCH does not claim the record (ownership check, review finding — prevents anyone who merely knows/guesses a pendingId from suppressing an unrelated person\'s re-engagement email)', async function () {
+  var record = await pendingDreams.create({}, { email: 'owner@example.com', caption: 'x', style: 'Cartoon' });
+  var res = await claimHandler(fakeEvent({ method: 'POST', body: { pendingId: record.id, email: 'attacker@example.com' } }));
   assert.equal(res.statusCode, 200);
-  assert.equal(JSON.parse(res.body).found, false);
+  var data = JSON.parse(res.body);
+  assert.equal(data.found, true); // the record DOES exist...
+  assert.equal(data.claimed, false); // ...but was NOT claimed, since the email didn't match
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.status, 'pending', 'a mismatched-email claim attempt must not mutate the record at all');
+});
+
+test('claim: an unknown pendingId is a harmless no-op, not an error', async function () {
+  var res = await claimHandler(fakeEvent({ method: 'POST', body: { pendingId: 'nope', email: 'anyone@example.com' } }));
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.equal(data.found, false);
+  assert.equal(data.claimed, false);
 });
 
 // ----- verify-pending-claim.js -----

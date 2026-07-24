@@ -39,32 +39,39 @@
 // standing between this endpoint and someone forging a fake "your dream
 // is ready" completion for an arbitrary pendingId.
 //
-// Idempotency: fal retries a webhook delivery (up to 10 times over ~2h)
-// until it gets a 2xx back — this handler always returns 200 for any
-// request whose pendingId resolves to a real record and whose signature
-// verifies, whether or not it's a duplicate of a delivery already
-// processed (checked via the record's own status — see below), so fal
-// stops retrying promptly either way. A record already in 'notified' or
-// 'failed' status is a known duplicate/resolved delivery and is a no-op.
-// A record already 'claimed' (a real signup completed before this fired —
-// see claim-pending-generation.js) still records the finished video for
-// bookkeeping but deliberately skips sending the re-engagement email —
-// the person already made it into the app on their own, texting/emailing
-// them "come back" would be a confusing, unnecessary send.
+// Idempotency AND the "don't send to someone who just claimed it" gate are
+// the SAME mechanism now, deliberately: this handler never makes a plain
+// read-then-decide check against the record's status (a fal generation
+// takes 1-6 minutes per this codebase's own documented Veo range — plenty
+// of time for a real signup to complete in between a plain read and
+// whatever this handler does next). Instead it goes straight to
+// pendingDreams.markReady(), a guarded, verify-after-write transition (see
+// lib/pending-dreams.js's own CONCURRENT-WRITE RACE comment for the full
+// incident this fixes and the entitlements.js/tracker-store.js precedent
+// it adapts) — the email is only ever sent when that transition itself
+// reports `ok: true`, i.e. THIS call's write is the one that actually won,
+// never based on a status value read moments (or minutes) earlier. A
+// duplicate fal redelivery (up to 10 times over ~2h) for an
+// already-'notified'/'failed' record, or one that arrives after a real
+// claim already landed, both correctly fail that same guarded transition
+// and skip the send — see markReady's own doc comment for exactly which
+// prior statuses are eligible.
 //
-// Known accepted race (same shape as every other Blobs-backed store in
-// this codebase — see lib/account-store.js's header comment): two
-// near-simultaneous webhook deliveries for the same pendingId, arriving
-// before the first one's markNotified() write has landed, could both pass
-// the "not already notified" check and both send the email. Narrow,
-// low-likelihood (fal doesn't fire the SAME completion callback twice in
-// quick succession under normal operation — retries only happen on a
-// non-2xx response, and the first success returns 200 immediately), and
-// bounded in impact (a duplicate "your dream is ready" email at worst),
-// not worth the complexity of a real compare-and-swap this Blobs SDK
-// doesn't expose anyway.
+// Residual race (same posture entitlements.js's creditTokenPackOnce fix
+// documents, not eliminated down to zero): two verify-reads could in
+// principle each observe their own write as still current under
+// sufficiently pathological Blobs propagation timing. This is a
+// categorically narrower window than the bug it replaces (a plain,
+// unguarded read-then-act with no re-verification at all) — see
+// lib/pending-dreams.js's header comment and
+// test/pending-dreams.test.js's/test/dream-webhook.test.js's concurrency
+// tests for the actual coverage.
 //
-// Error codes (E1xx range — this file's own namespace):
+// Error codes — this file's own small per-file namespace (bare E1-E4, not
+// a padded "E1xx" range — matching this codebase's smaller per-file
+// error-code files like request-magic-link.js/verify-magic-link.js, not
+// the zero-padded per-hundred convention generate-video.js/interpret-dream.js
+// use):
 //   E1 method_not_allowed
 //   E2 pending_id_required
 //   E3 invalid_signature
@@ -159,18 +166,8 @@ exports.handler = async function (event) {
   }
 
   try {
-    var record = await pendingDreams.get(event, pendingId);
-    if (!record) {
-      // Unknown/already-cleaned-up id — nothing to do, but still ack so
-      // fal stops retrying a callback for a record that will never exist.
-      return { statusCode: 200, body: JSON.stringify({ ok: true }) };
-    }
-
-    if (record.status === 'notified' || record.status === 'failed') {
-      return { statusCode: 200, body: JSON.stringify({ ok: true, alreadyProcessed: true }) };
-    }
-
     var isSuccess = body.status === 'OK' && body.payload && body.payload.video && body.payload.video.url;
+
     if (!isSuccess) {
       var reason = body.error || (body.payload_error ? 'payload_serialization_error: ' + body.payload_error : 'generation_failed');
       await pendingDreams.markFailed(event, pendingId, reason);
@@ -179,18 +176,42 @@ exports.handler = async function (event) {
 
     var videoUrl = body.payload.video.url;
 
-    if (record.status === 'claimed') {
-      // A real signup already completed for this pending dream (see
-      // claim-pending-generation.js) — the person is already in the app;
-      // record the finished video for bookkeeping but skip the
-      // re-engagement send entirely (see header comment).
-      await pendingDreams.update(event, pendingId, { videoUrl: videoUrl, readyAt: Date.now() });
-      return { statusCode: 200, body: JSON.stringify({ ok: true, claimed: true }) };
+    // The ONLY safe gate for "is it OK to send the re-engagement email" —
+    // see the header comment and lib/pending-dreams.js's own doc comment
+    // on markReady/tryTransition for why this must be a guarded,
+    // verify-after-write transition rather than a status value read
+    // separately (a claim can land any time in a 1-6 minute window).
+    var transition = await pendingDreams.markReady(event, pendingId, videoUrl);
+
+    if (!transition.ok) {
+      if (!transition.record) {
+        // Unknown/already-cleaned-up id — nothing to do, but still ack so
+        // fal stops retrying a callback for a record that will never exist.
+        return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+      }
+      if (transition.record.status === 'claimed') {
+        // A real signup already completed for this pending dream (see
+        // claim-pending-generation.js) — the person is already in the
+        // app; record the finished video for bookkeeping (this is a
+        // plain, non-side-effect-gating patch, safe as a blind update —
+        // see lib/pending-dreams.js's own doc comment on `update`) but
+        // skip the re-engagement send entirely.
+        await pendingDreams.update(event, pendingId, { videoUrl: videoUrl, readyAt: Date.now() });
+        return { statusCode: 200, body: JSON.stringify({ ok: true, claimed: true }) };
+      }
+      // 'notified' or 'failed' — an already-fully-processed, harmless
+      // duplicate delivery.
+      return { statusCode: 200, body: JSON.stringify({ ok: true, alreadyProcessed: true }) };
     }
 
-    var readyRecord = await pendingDreams.markReady(event, pendingId, videoUrl);
-    await sendReadyEmail(event, readyRecord);
-    await sendReadyWhatsapp(event, readyRecord);
+    // transition.ok === true: THIS call's write is the one that actually
+    // won the race — safe to send. See markReady's own doc comment.
+    await sendReadyEmail(event, transition.record);
+    await sendReadyWhatsapp(event, transition.record);
+    // Allowed to fail (ok: false) harmlessly if a claim landed in the
+    // narrow window since markReady's own verify — see markNotified's
+    // own doc comment for why that's fine (the email decision was
+    // already correctly made above; this is bookkeeping only).
     await pendingDreams.markNotified(event, pendingId);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };

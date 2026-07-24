@@ -32,9 +32,11 @@
 // gets the exact same protection generate-video.js already has, not a
 // lighter version.
 //
-// Error codes (E6xx range — this file's own small namespace, unrelated to
-// generate-video.js's E1xx, per this codebase's per-file bare-code
-// convention):
+// Error codes — this file's own small per-file namespace (bare E1-E11, not
+// a padded "E6xx" range — matching this codebase's smaller per-file
+// error-code files like generate-avatar.js/request-magic-link.js, not the
+// zero-padded per-hundred convention generate-video.js/interpret-dream.js
+// use):
 //   E1 method_not_allowed
 //   E2 missing_api_key       — FAL_KEY not configured (mock mode exempt)
 //   E3 invalid_json

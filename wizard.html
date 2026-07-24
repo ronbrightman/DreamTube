@@ -941,9 +941,13 @@
             DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
           }
           if(pendingId && !pendingStartFailed){
+            // email is required now (see claim-pending-generation.js's
+            // ownership check, review finding) -- contactEmail is the
+            // exact same email start-pending-generation.js created this
+            // pending record under, so this always matches.
             fetch('/.netlify/functions/claim-pending-generation', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pendingId: pendingId })
+              body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
             }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
           }
           if(pendingOperationName && !pendingStartFailed){
