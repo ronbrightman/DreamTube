@@ -55,6 +55,18 @@
   </div>
 
   <div class="px" style="flex:1; padding-bottom:30px;">
+    <!-- Beta/free-mode banner — this is the app's own "pricing screen"
+         equivalent (pricing.html was removed; the funnel's screen 14 says
+         the same thing pre-signup). Leads with the plain, unambiguous
+         claim first so nobody scanning this page for "how much does this
+         cost" gets even a moment of paywall anxiety before reaching the
+         free-tokens explanation below. See netlify/functions/lib/
+         entitlements.js for the real mechanics this describes. -->
+    <div class="auth-notice" id="shop-beta-banner">
+      <span class="icon" id="shop-beta-icon"></span>
+      <span><b>Free during beta — no card needed.</b> Every account gets tokens automatically; there's nothing to buy right now.</span>
+    </div>
+
     <div class="token-balance-card">
       <div class="token-balance-inner">
         <div class="token-balance-amt" id="shop-balance">–</div>
@@ -63,17 +75,20 @@
       </div>
     </div>
 
-    <div class="section-label" style="padding:0;">Need more?</div>
+    <div class="section-label" style="padding:0;">Token packs (optional)</div>
 
     <!-- Neither pack has a real checkout yet — see the header comment in
          the script block below for why both buttons are deliberately
-         disabled "Coming soon", not wired to any backend call. -->
+         disabled "Coming soon", not wired to any backend call. Framed as
+         "not needed during the free beta" rather than a bare "Coming
+         soon" so a new user who lands here mid-onboarding reads this as
+         a future option, not a wall blocking today's free usage. -->
     <div class="token-pack-card">
       <div class="token-pack-row">
         <div class="token-pack-amt">100 tokens</div>
         <div class="token-pack-price">$1.99</div>
       </div>
-      <div class="token-pack-sub">Enough for 1 more generation.</div>
+      <div class="token-pack-sub">Not needed during the free beta — your daily free tokens cover this.</div>
       <button class="btn btn-secondary btn-block" disabled>Coming soon</button>
     </div>
 
@@ -83,7 +98,7 @@
         <div class="token-pack-amt">500 tokens</div>
         <div class="token-pack-price">$8.95</div>
       </div>
-      <div class="token-pack-sub">Enough for 5 more generations.</div>
+      <div class="token-pack-sub">For when you want extra, later — optional, not required now.</div>
       <button class="btn btn-secondary btn-block" disabled>Coming soon</button>
     </div>
 
@@ -96,6 +111,7 @@
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('shop-back').innerHTML = Icons.back;
+  document.getElementById('shop-beta-icon').innerHTML = Icons.check;
 
   // ============================================================================
   // Token packs — no payment processor is wired up yet (a vendor choice per
