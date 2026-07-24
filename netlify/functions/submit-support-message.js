@@ -17,13 +17,17 @@
 //   2. Emails OWNER_EMAIL via Resend (same provider/pattern as
 //      request-password-reset.js) with the message plus real user
 //      context (username, email, videoCount, daysSinceSignup) folded
-//      into the body. The email's `reply_to` is set to the USER's own
-//      email — not DreamTube's from-address — so Ron can hit "Reply" in
-//      his own inbox and land directly on a message to that user, per
-//      his own request. This is a manual step by design for now:
-//      reply-capture/threading back into this app ("we will try to
-//      automate this process" — Ron's own words) is explicitly deferred,
-//      not built here.
+//      into the body. Whenever `username` resolves to a real, VERIFIED
+//      server-side account, the email's `reply_to` is set to that
+//      account's own email — not DreamTube's from-address — so Ron can
+//      hit "Reply" in his own inbox and land directly on a message to
+//      that user, per his own request. See the "Server-side email
+//      resolution + reply_to" section below for why an unverified
+//      client-supplied email is never used as `reply_to` (only shown,
+//      clearly labeled, in the email body). This reply is a manual step
+//      by design for now: reply-capture/threading back into this app
+//      ("we will try to automate this process" — Ron's own words) is
+//      explicitly deferred, not built here.
 //
 // `type` distinguishes Support ("something's wrong, help me") from
 // Feedback ("here's a product opinion, unprompted") — both go through
@@ -41,17 +45,27 @@
 // daysSinceSignup: null, rendered as "unknown" in the email rather than a
 // fabricated number.
 //
-// Server-side email resolution: if `username` resolves to a real,
-// server-side account (lib/account-store.js), that account's own email
-// is used instead of the client-supplied `email` — same defense-in-depth
-// reasoning admin-paywall-toggle.js/generate-video.js already apply
-// elsewhere in this codebase to client-supplied identity: a request
-// naming someone else's real username can't misdirect the reply-to onto
-// an attacker-chosen address for a genuinely registered account. Falls
-// back to the client-supplied email only when no server-side account
-// record exists yet (a legacy, not-yet-backfilled local-only account —
-// see account-store.js's own header comment on this being a normal,
-// still-open gap, not a bug this function is responsible for closing).
+// Server-side email resolution + reply_to: if `username` resolves to a
+// real, server-side account (lib/account-store.js), that account's own
+// (VERIFIED) email is used as the Resend `reply_to`. This is a public,
+// unauthenticated POST gated only by a per-IP rate limit — a request
+// naming a `username` that ISN'T a real registered account is trivial for
+// anyone to send, so falling back to the raw client-supplied `email` as
+// `reply_to` (an earlier version of this function did exactly that) would
+// let anyone make Ron's "Reply" button land on an arbitrary third party's
+// address with attacker-chosen message content — a real impersonation/
+// harassment vector, not theoretical, since this is a mail header on an
+// email that actually reaches his inbox. So `reply_to` is ONLY ever the
+// verified account email — the key is omitted from the Resend call
+// entirely when no verified account exists (see the `resendPayload`
+// build below), never a fallback to unverified input. The unverified
+// client-supplied email is still accepted for `contactEmail` (persisted
+// in the Blobs record, and shown in the email BODY, clearly labeled
+// "unverified", for human context only — never as a header) — a legacy,
+// not-yet-backfilled local-only account (see account-store.js's own
+// header comment on this being a normal, still-open gap) still gets its
+// message through and its self-reported contact address shown, just
+// without the reply-to convenience a verified account gets.
 //
 // Error codes (local to this function, same small-number-scheme
 // reasoning as admin-paywall-toggle.js/owner-topup-tokens.js):
@@ -135,10 +149,13 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E8: rate_limited' }) };
   }
 
-  // Defense-in-depth email resolution — see header comment above.
+  // Server-side email resolution — see header comment above for why
+  // `verifiedEmail` (never the raw client-supplied one) is the only thing
+  // that may ever become the Resend `reply_to`.
   var account = await accountStore.getByUsername(event, username);
-  var email = account ? account.email : normalizeEmail(payload.email);
-  if (!email) {
+  var verifiedEmail = account ? account.email : null;
+  var contactEmail = verifiedEmail || normalizeEmail(payload.email);
+  if (!contactEmail) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: email_required' }) };
   }
 
@@ -153,7 +170,7 @@ exports.handler = async function (event) {
     id: crypto.randomBytes(8).toString('hex'),
     type: type,
     username: username,
-    email: email,
+    email: contactEmail,
     message: message,
     videoCount: videoCount,
     daysSinceSignup: daysSinceSignup,
@@ -168,8 +185,14 @@ exports.handler = async function (event) {
     try {
       var label = type === 'feedback' ? 'Feedback' : 'Support';
       var subject = 'DreamTube ' + label + ' — ' + username;
+      // "(unverified)" whenever contactEmail didn't come from a real,
+      // server-side account — Ron should be able to tell at a glance
+      // that this address is exactly what the client claimed, not
+      // something this function confirmed, since it's deliberately NOT
+      // wired up as reply_to below (see header comment).
+      var emailLabel = verifiedEmail ? esc(contactEmail) : (esc(contactEmail) + ' — unverified');
       var html =
-        '<p><b>' + label + ' message from @' + esc(username) + '</b> (' + esc(email) + ')</p>' +
+        '<p><b>' + label + ' message from @' + esc(username) + '</b> (' + emailLabel + ')</p>' +
         '<p style="white-space:pre-wrap;">' + esc(message) + '</p>' +
         '<hr>' +
         '<p style="color:#666;font-size:13px;">' +
@@ -177,18 +200,25 @@ exports.handler = async function (event) {
         'Days since signup: ' + (daysSinceSignup == null ? 'unknown' : daysSinceSignup) + '<br>' +
         'Submitted: ' + entry.submittedAt +
         '</p>' +
-        '<p style="color:#666;font-size:13px;">Reply to this email to respond to ' + esc(username) + ' directly.</p>';
+        (verifiedEmail
+          ? '<p style="color:#666;font-size:13px;">Reply to this email to respond to ' + esc(username) + ' directly.</p>'
+          : '<p style="color:#666;font-size:13px;">This contact email is unverified (self-reported, no matching account found) — Reply on this email will NOT reach ' + esc(username) + '.</p>');
+
+      var resendPayload = {
+        from: FROM_ADDRESS,
+        to: [ownerEmail],
+        subject: subject,
+        html: html
+      };
+      // Only ever set reply_to to a VERIFIED account email — see header
+      // comment for why an unverified client-supplied address must never
+      // become a mail header, regardless of how convincing it looks.
+      if (verifiedEmail) resendPayload.reply_to = verifiedEmail;
 
       var res = await fetch(RESEND_API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resendKey },
-        body: JSON.stringify({
-          from: FROM_ADDRESS,
-          to: [ownerEmail],
-          reply_to: email,
-          subject: subject,
-          html: html
-        })
+        body: JSON.stringify(resendPayload)
       });
       if (!res.ok) console.error('submit-support-message: Resend rejected the send', res.status);
     } catch (sendErr) {

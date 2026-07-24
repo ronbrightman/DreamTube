@@ -74,12 +74,26 @@ async function getMessages(event) {
  * stored. Goes through a bounded read-mutate-write-then-verify retry
  * loop — see the CONCURRENT-WRITE RACE comment above for what this does
  * and doesn't protect against.
+ *
+ * Each attempt checks `alreadyPresent` (by `entry.id`) against the FRESH
+ * read before concatenating — mirrors tracker-store.js's addItem, and
+ * for the exact same reason: a retry here isn't only triggered by a real
+ * clobber from another writer, it's also triggered by our own verify-read
+ * getting a false negative (this store's eventual consistency means a
+ * read immediately after our own write isn't guaranteed to see it yet).
+ * Without this check, that false-negative case would retry into a
+ * SECOND, genuinely successful write of the same message once the first
+ * write actually does propagate — i.e. `entry` landing twice in the
+ * array, not just once. Checking `alreadyPresent` first makes a retry
+ * against an already-landed entry a no-op (re-persists the same array
+ * unchanged) instead of a duplicate append.
  */
 async function appendMessage(event, entry) {
   var result = entry;
   for (var attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
     var messages = await getMessages(event);
-    var next = messages.concat([entry]);
+    var alreadyPresent = messages.some(function (m) { return m.id === entry.id; });
+    var next = alreadyPresent ? messages : messages.concat([entry]);
 
     connectLambda(event);
     await store().setJSON(KEY, next);

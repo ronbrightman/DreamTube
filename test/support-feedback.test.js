@@ -142,7 +142,7 @@ test('submit-support-message: server-side account email wins over a spoofed clie
   });
 });
 
-test('submit-support-message: a username with no server-side account record falls back to the client-supplied email (legacy local-only account)', function () {
+test('submit-support-message: a username with no server-side account record falls back to the client-supplied email for the PERSISTED record and email BODY, but never sets it as reply_to (unverified, not a real account)', function () {
   return withEnv(ENV, async function () {
     var sentCalls = installFetchSpy(true);
     var handler = require('../netlify/functions/submit-support-message').handler;
@@ -152,7 +152,35 @@ test('submit-support-message: a username with no server-side account record fall
       body: { type: 'support', username: 'legacyuser', email: 'legacy@example.com', message: 'still here' }
     }));
     assert.equal(res.statusCode, 200);
-    assert.equal(sentCalls[0].body.reply_to, 'legacy@example.com');
+
+    // reply_to must be ABSENT entirely, not the client-supplied address --
+    // this is the exact security fix: an unverified email must never
+    // become a mail header, regardless of how plausible it looks.
+    assert.equal(Object.prototype.hasOwnProperty.call(sentCalls[0].body, 'reply_to'), false, 'reply_to must not be set at all for an unverified contact email');
+    // The unverified address is still shown in the body (for human
+    // context), clearly labeled so Ron isn't misled into treating it as
+    // confirmed/trustworthy.
+    assert.match(sentCalls[0].body.html, /legacy@example\.com/);
+    assert.match(sentCalls[0].body.html, /unverified/i);
+
+    var supportStore = require('../netlify/functions/lib/support-store');
+    var messages = await supportStore.getMessages(fakeEvent({ method: 'GET' }));
+    assert.equal(messages[0].email, 'legacy@example.com', 'the unverified contact email is still persisted in the record for human context');
+  });
+});
+
+test('submit-support-message: an attacker naming a username that is NOT a real account cannot get their own chosen email set as reply_to (the exact impersonation vector the security fix closes)', function () {
+  return withEnv(ENV, async function () {
+    var sentCalls = installFetchSpy(true);
+    var handler = require('../netlify/functions/submit-support-message').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      ip: '4.4.4.9',
+      body: { type: 'support', username: 'not-a-real-account-at-all', email: 'attacker@example.com', message: 'make Ron reply to me instead' }
+    }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(Object.prototype.hasOwnProperty.call(sentCalls[0].body, 'reply_to'), false, 'an unregistered username must never get its self-reported email wired up as reply_to');
+    assert.equal(sentCalls[0].body.to[0], OWNER_EMAIL, 'the email still only ever goes TO the owner, never anywhere else');
   });
 });
 
@@ -224,6 +252,48 @@ test('submit-support-message: per-IP daily cap rejects further submissions with 
     assert.equal(third.statusCode, 429);
     assert.match(JSON.parse(third.body).error, /^E8: rate_limited/);
   });
+});
+
+// ===== lib/support-store.js: appendMessage idempotency =====
+//
+// Review finding: appendMessage's read-mutate-write-then-verify retry loop
+// (mirroring tracker-store.js's addItem/deleteItem) unconditionally did
+// `messages.concat([entry])` on every attempt, with no `alreadyPresent`
+// check before concatenating -- unlike tracker-store.js's addItem, which
+// does check. A retry here isn't only triggered by a real concurrent
+// writer; it's also triggered by our OWN verify-read getting a false
+// negative (this store's eventual consistency means a read immediately
+// after our own write isn't guaranteed to see it yet) -- and without the
+// check, that false-negative case would retry into a SECOND real write of
+// the same message once it does propagate, landing `entry` twice.
+//
+// This test doesn't need to fake real Blobs eventual-consistency timing to
+// prove the fix: calling appendMessage twice with the EXACT SAME entry
+// (same id) is exactly the observable symptom a retry-without-the-check
+// would produce (the entry landing in the array more than once) --
+// regardless of what actually triggered the second call in production,
+// the store must never end up with two copies of the same id.
+test('lib/support-store.js appendMessage: calling it twice with the SAME entry id (simulating a retry after a verify-read false negative) never duplicates the message', async function () {
+  var supportStore = require('../netlify/functions/lib/support-store');
+  var event = fakeEvent({ method: 'GET' });
+
+  var entry = {
+    id: 'fixed-test-id-123',
+    type: 'support',
+    username: 'idempotency-tester',
+    email: 'idempotency@example.com',
+    message: 'this must only ever appear once',
+    videoCount: null,
+    daysSinceSignup: null,
+    submittedAt: new Date().toISOString()
+  };
+
+  await supportStore.appendMessage(event, entry);
+  await supportStore.appendMessage(event, entry); // same id -- simulates a retry landing after the first write already succeeded
+
+  var messages = await supportStore.getMessages(event);
+  var matching = messages.filter(function (m) { return m.id === 'fixed-test-id-123'; });
+  assert.equal(matching.length, 1, 'the same entry id must be persisted exactly once, never duplicated by a retry');
 });
 
 // ===== get-support-messages.js =====
