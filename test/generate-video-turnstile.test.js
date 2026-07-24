@@ -172,7 +172,7 @@ test('secret key configured + a valid token: tokens are still spent normally (E1
   var res = await handler(genEvent({ body: { email: 'turnstilespend@example.com', turnstileToken: 'good-token' } }));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'turnstilespend@example.com');
-  assert.equal(record.tokens.balance, 200);
+  assert.equal(record.tokens.balance, 200); // explicit 300 balance set above, -100 spent = 200 (unaffected by INITIAL_GRANT)
 });
 
 // ----- Placement relative to the other guardrails -----

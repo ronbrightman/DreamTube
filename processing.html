@@ -70,7 +70,7 @@
   <div class="proc-wrap">
     <div class="proc-live" id="proc-live">
       <div class="proc-orb"></div>
-      <div class="proc-title">Turning your dream<br>into a video…</div>
+      <div class="proc-title" id="proc-title">Turning your dream<br>into a video…</div>
       <div class="proc-sub" id="proc-sub">Video generation takes about 1-2 minutes.</div>
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
       <div class="proc-checklist" id="proc-checklist"></div>
@@ -108,7 +108,40 @@
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
 
+  // ===== Media-type-aware copy/checklist =====
+  // Resolves from whichever source actually has it: a resuming pendingJob
+  // (its own mediaType, stamped by js/store.js's savePendingJob) takes
+  // priority since it reflects the generation actually in flight; otherwise
+  // the draft (style.html's picker, or turnImageIntoVideo's own draft set)
+  // — defaulting 'video' for full backward compat with every existing
+  // caller (in particular wizard.html, which never sets draft.mediaType at
+  // all — see docs/IMAGE_GENERATION_SPEC.md §6-revised).
+  function currentMediaType(){
+    var pending = DreamStore.getPendingJob();
+    if(pending && pending.mediaType) return pending.mediaType;
+    return DreamStore.getDraft().mediaType === 'image' ? 'image' : 'video';
+  }
+
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
+  // Deliberately drops "Adding motion…" and "Composing the soundtrack…" —
+  // neither applies to a still image (see docs/IMAGE_GENERATION_SPEC.md §6).
+  var IMAGE_CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding detail…', 'Almost dreaming…'];
+
+  function activeCaptions(){
+    return currentMediaType() === 'image' ? IMAGE_CAPTIONS : CAPTIONS;
+  }
+
+  function applyMediaTypeCopy(){
+    var isImage = currentMediaType() === 'image';
+    document.getElementById('proc-title').innerHTML = isImage
+      ? 'Turning your dream<br>into a picture…'
+      : 'Turning your dream<br>into a video…';
+    document.getElementById('proc-sub').textContent = isImage
+      ? 'Image generation only takes a few seconds.'
+      : 'Video generation takes about 1-2 minutes.';
+  }
+  applyMediaTypeCopy();
+
   var progInterval;
 
   // Real Veo generation takes minutes, not seconds, and there's no real
@@ -122,28 +155,30 @@
   // resetting back to step 1 — so it keeps visibly moving no matter how
   // long the real call takes.
   function renderChecklist(currentIdx, maxReached){
+    var captions = activeCaptions();
     var html = '';
     for(var i = 0; i <= maxReached; i++){
       if(i === currentIdx){
-        html += '<div class="proc-check-item current"><span class="spinner-inline"></span><span class="proc-check-label">' + CAPTIONS[i] + '</span></div>';
+        html += '<div class="proc-check-item current"><span class="spinner-inline"></span><span class="proc-check-label">' + captions[i] + '</span></div>';
       } else {
-        html += '<div class="proc-check-item done"><span class="proc-check-mark">' + Icons.check + '</span><span class="proc-check-label">' + CAPTIONS[i] + '</span></div>';
+        html += '<div class="proc-check-item done"><span class="proc-check-mark">' + Icons.check + '</span><span class="proc-check-label">' + captions[i] + '</span></div>';
       }
     }
     document.getElementById('proc-checklist').innerHTML = html;
   }
   function startFakeProgress(){
+    var captions = activeCaptions();
     var tickCount = 0, maxReached = 0;
     clearInterval(progInterval);
     renderChecklist(0, 0);
     progInterval = setInterval(function(){
       tickCount++;
       var currentIdx;
-      if(tickCount < CAPTIONS.length){
+      if(tickCount < captions.length){
         currentIdx = tickCount;
       } else {
-        var overflow = tickCount - CAPTIONS.length;
-        var lastTwo = [CAPTIONS.length - 2, CAPTIONS.length - 1];
+        var overflow = tickCount - captions.length;
+        var lastTwo = [captions.length - 2, captions.length - 1];
         currentIdx = lastTwo[overflow % 2];
       }
       maxReached = Math.max(maxReached, currentIdx);
@@ -220,14 +255,16 @@
     document.getElementById('proc-fail').style.display = 'none';
     tokenFailContext = false;
     retryBtn.textContent = 'Try Again';
+    applyMediaTypeCopy();
     startFakeProgress();
     renderPreview();
 
     var pending = DreamStore.getPendingJob();
     if(pending){
-      // Resuming an in-flight job never re-submits to generate-video (the
-      // operationName already exists from whenever it was first submitted),
-      // so there's no new request here for a turnstileToken to attach to.
+      // Resuming an in-flight job never re-submits to generate-video/
+      // generate-image (the operationName already exists from whenever it
+      // was first submitted), so there's no new request here for a
+      // turnstileToken to attach to.
       attachTaskHandlers(DreamStore.resumePendingJob());
     } else {
       // getTurnstileToken() (js/turnstile-config.js) resolves immediately
@@ -238,14 +275,18 @@
       // resolution isn't user-visible as a distinct wait.
       getTurnstileToken().then(function(turnstileToken){
         var d = DreamStore.getDraft();
+        var mediaType = d.mediaType === 'image' ? 'image' : 'video';
         var advancedOpts = {
           characterIds: d.characterIds, cameraView: d.cameraView,
           sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace,
-          turnstileToken: turnstileToken
+          turnstileToken: turnstileToken,
+          mediaType: mediaType, sourceImageUrl: d.sourceImageUrl || null
         };
         var freshTask = d.sourceDreamId
           ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
-          : DreamStore.generateVideo(d.caption, d.style, advancedOpts);
+          : (mediaType === 'image'
+              ? DreamStore.generateImage(d.caption, d.style, advancedOpts)
+              : DreamStore.generateVideo(d.caption, d.style, advancedOpts));
         attachTaskHandlers(freshTask);
       });
     }
@@ -296,7 +337,10 @@
       // generation — same pattern the old E111 handling used, just pointing
       // at shop.html instead of an inline top-up sheet (there's no
       // backend purchase call yet, see shop.html's own header comment).
-      if(match && match[1] === 'E112'){
+      // E412 is generate-image.js's own insufficient-tokens code (see that
+      // file's error-code doc block) — same "an immediate retry would just
+      // fail the same way again" reasoning as E112, just on the image path.
+      if(match && (match[1] === 'E112' || match[1] === 'E412')){
         tokenFailContext = true;
         retryBtn.textContent = 'Get more tokens';
       }

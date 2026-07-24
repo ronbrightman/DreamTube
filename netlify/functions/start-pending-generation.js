@@ -2,12 +2,15 @@
 //
 // POST { email, whatsapp?, caption, style, characters?, cameraView?,
 //        sceneryTime?, sceneryPlace?, characterIdsForGeneration?,
-//        turnstileToken? }
+//        turnstileToken?, mediaType? }
 // -> the dream-builder wizard's "generate during signup" + abandoned-dream
 // re-engagement seam (see wizard.html, dream-webhook.js,
 // docs/IDENTITY_RETENTION_PROJECT_SPEC.md's email+WhatsApp pivot, and
 // tracker items for-product-build-the-dream-builder-wiza-28did1 /
-// for-product-generate-during-signup-aband-73jyud).
+// for-product-generate-during-signup-aband-73jyud) — AND, as of
+// docs/IMAGE_GENERATION_SPEC.md, the general-purpose "start a generation for
+// a pending (not-yet-adopted) dream" entry point style.html's image-vs-video
+// picker uses for ANY generation, not just first-run onboarding.
 //
 // Called the moment the wizard's contact-capture step collects an email
 // (and optionally a WhatsApp number) — BEFORE the user has created a real
@@ -21,9 +24,22 @@
 // completes) both read/write — generate-video.js has no such record and
 // shouldn't grow one bolted on for a caller shape it was never designed
 // for. The actual prompt-assembly/fal-submission logic is NOT duplicated
-// here — it's required straight from generate-video.js (see that file's
-// named exports, added specifically for this reuse) so the two paths can
-// never silently drift apart.
+// here — it's required straight from generate-video.js/generate-image.js
+// (see those files' named exports, added specifically for this reuse) so
+// the paths can never silently drift apart.
+//
+// mediaType ('image'|'video', default 'video' — fully backward compatible,
+// see docs/IMAGE_GENERATION_SPEC.md §4/§6-revised): when 'image', this
+// routes to genImage.buildImagePrompt/genImage.callFalImage instead of
+// genVideo's equivalents, token-gates/spends against 10 instead of 100, and
+// deliberately does NOT pass a webhookUrl to the fal submission — see the
+// image branch below for the full reasoning (flux/dev typically finishes in
+// low single-digit seconds, well inside the time a user takes to complete
+// the very next signup step, so the abandoned-generation re-engagement
+// machinery this file's webhookUrl exists for doesn't apply the same way).
+// wizard.html itself is UNCHANGED and never sends mediaType at all — it
+// still always requests a free video, per Ron's explicit correction (see
+// the spec's §6-revised) — this plumbing exists for style.html's picker.
 //
 // Guardrails: identical set to generate-video.js's own handler (Turnstile
 // if configured, per-IP/per-email rate limit, the token balance gate,
@@ -43,7 +59,7 @@
 //   E4 email_required
 //   E5 caption_and_style_required
 //   E6 rate_limited          — same per-IP/per-email daily cap as generate-video.js's E109
-//   E7 insufficient_tokens   — same token gate as generate-video.js's E112
+//   E7 insufficient_tokens   — same token gate as generate-video.js's E112/generate-image.js's E412
 //   E8 daily_spend_cap_exceeded — same circuit breaker as generate-video.js's E110
 //   E9 turnstile_verification_failed — same conditional check as generate-video.js's E113
 //   E10 fal rejected the submission (bad params, content policy, rate limit, etc.)
@@ -57,6 +73,7 @@ var promptCondenser = require('./lib/prompt-condenser');
 var turnstile = require('./lib/turnstile');
 var pendingDreams = require('./lib/pending-dreams');
 var genVideo = require('./generate-video');
+var genImage = require('./generate-image');
 
 var TURNSTILE_SECRET_PLACEHOLDER = 'REPLACE_WITH_REAL_TURNSTILE_SECRET_KEY';
 
@@ -103,6 +120,11 @@ exports.handler = async function (event) {
   var sceneryTime = payload.sceneryTime || null;
   var sceneryPlace = payload.sceneryPlace || null;
   var turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
+  // Default 'video' — fully backward compatible with every existing caller
+  // (wizard.html never sends this at all). See this file's own header
+  // comment for the full mediaType story.
+  var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
+  var tokenCost = mediaType === 'image' ? genImage.IMAGE_TOKEN_COST : 100;
 
   var ip = rateLimit.clientIp(event);
 
@@ -127,8 +149,9 @@ exports.handler = async function (event) {
   }
 
   var tokenStatus = await entitlements.getTokenStatus(event, email);
-  if (tokenStatus.balance < 100) {
-    return { statusCode: 402, body: JSON.stringify({ error: 'E7: insufficient_tokens: not enough tokens to generate a video' }) };
+  if (tokenStatus.balance < tokenCost) {
+    var insufficientMsg = mediaType === 'image' ? 'not enough tokens to generate an image' : 'not enough tokens to generate a video';
+    return { statusCode: 402, body: JSON.stringify({ error: 'E7: insufficient_tokens: ' + insufficientMsg }) };
   }
 
   var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);
@@ -142,19 +165,54 @@ exports.handler = async function (event) {
   // Create the pending-dream record now, before submitting to fal, so its
   // id exists to embed in the fal_webhook URL (dream-webhook.js correlates
   // the eventual callback back to this record purely via that query param
-  // — see that file's header comment).
+  // — see that file's header comment). mediaType is stamped onto the
+  // record itself (see lib/pending-dreams.js) purely for bookkeeping —
+  // nothing downstream of this file currently reads it back off a pending
+  // record (see the image branch's own webhookUrl comment below for why).
   var pending = await pendingDreams.create(event, {
     email: email, whatsapp: whatsapp, caption: caption, style: style,
     characterIdsForGeneration: characterIdsForGeneration,
-    cameraView: cameraView, sceneryTime: sceneryTime, sceneryPlace: sceneryPlace
+    cameraView: cameraView, sceneryTime: sceneryTime, sceneryPlace: sceneryPlace,
+    mediaType: mediaType
   });
-  var webhookUrl = webhookUrlFor(event, pending.id);
+  // Only the video path ever gets a webhookUrl — see the image branch
+  // below (docs/IMAGE_GENERATION_SPEC.md §7's explicit scope cut) for why
+  // an image submission deliberately never receives one.
+  var webhookUrl = mediaType === 'video' ? webhookUrlFor(event, pending.id) : null;
 
   if (mockMode) {
-    await entitlements.spendTokens(event, email, 100);
+    await entitlements.spendTokens(event, email, tokenCost);
     var mockOp = mockOperationName();
     await pendingDreams.update(event, pending.id, { operationName: mockOp });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: mockOp }) };
+  }
+
+  if (mediaType === 'image') {
+    // No prompt condensing here — unlike video's fixed ~8s clip, a still
+    // image has no duration constraint to condense a long caption against
+    // (see generate-image.js's own header comment, which makes the same
+    // call). No fal_webhook either (webhookUrl is null above): flux/dev
+    // typically completes in low single-digit seconds, well inside the
+    // time a user takes to complete the very next signup step, so the
+    // abandoned-generation re-engagement machinery dream-webhook.js exists
+    // for doesn't meaningfully apply here — this pending-dreams record is
+    // still created (for durability/bookkeeping) but deliberately never
+    // transitions past 'pending' for an image-mode record, a documented,
+    // intentional dead end (see docs/IMAGE_GENERATION_SPEC.md §7).
+    var imagePrompt = genImage.buildImagePrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
+    try {
+      var imageResult = await genImage.callFalImage(imagePrompt, falKey);
+      if (!imageResult.ok) {
+        await pendingDreams.markFailed(event, pending.id, imageResult.error);
+        return { statusCode: imageResult.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + imageResult.error }) };
+      }
+      await entitlements.spendTokens(event, email, tokenCost);
+      await pendingDreams.update(event, pending.id, { operationName: imageResult.operationName });
+      return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: imageResult.operationName }) };
+    } catch (e) {
+      await pendingDreams.markFailed(event, pending.id, 'fal_request_failed');
+      return { statusCode: 500, body: JSON.stringify({ error: 'E11: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
+    }
   }
 
   var condensed = await promptCondenser.condenseIfNeeded(caption, process.env.GEM_API_KEY);
@@ -173,7 +231,7 @@ exports.handler = async function (event) {
       await pendingDreams.markFailed(event, pending.id, result.error);
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + result.error }) };
     }
-    await entitlements.spendTokens(event, email, 100);
+    await entitlements.spendTokens(event, email, tokenCost);
     await pendingDreams.update(event, pending.id, { operationName: result.operationName });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: result.operationName }) };
   } catch (e) {

@@ -18,11 +18,15 @@
 // ----------------------------------------------------------------------------
 // DreamTube's launch monetization model is consumption-based, not
 // subscription-based: every user spends from a single "tokens" balance
-// (100 tokens = one generation, uniformly for a brand-new generation, an
-// edit/regenerate, or a style change — all three already funnel through the
-// same generate-video.js call site, see that file). Balance is earned for
-// free (200 on first read of a never-before-seen email, +100 every 24h,
-// lazily, see below) — this remains true even now that shop.html's token
+// (100 tokens = one video generation, uniformly for a brand-new generation,
+// an edit/regenerate, or a style change — all three already funnel through
+// the same generate-video.js call site, see that file; a cheaper 10-token
+// image generation was added later, see generate-image.js). Balance is
+// earned for free (290 on first read of a never-before-seen email, +10
+// every 24h, lazily, see below — retuned 2026-07-24 from the original
+// 200/+100 so a new signup nets exactly 190 tokens after its one free
+// onboarding video, and the free tier tightens meaningfully over time via a
+// much smaller daily trickle) — this remains true even now that shop.html's token
 // packs are a live, real purchase (see creditTokenPackOnce below and
 // docs/PAYWALL_SETUP.md): the free grant and paid packs are both additive
 // to the same balance, never either/or. Because every token anyone can
@@ -56,8 +60,8 @@
 // the only thing that keeps it from growing unbounded for an idle account.
 //
 // tokens.lastGrantAt: epoch-ms timestamp of the most recent grant this
-// record actually received — either the one-time 200-token signup grant, or
-// the most recent +100 daily drip. getTokenStatus lazily compares this
+// record actually received — either the one-time 290-token signup grant, or
+// the most recent +10 daily drip. getTokenStatus lazily compares this
 // against "now" on every read to decide whether a daily grant is due — the
 // entire reset/grant mechanism, no scheduled function involved (this
 // codebase has none and none should be added, see AGENT_POLICY.md), same
@@ -65,22 +69,23 @@
 // system's monthly quota reset.
 //
 // Why a single lazy grant per read, not a multi-day catch-up loop: if an
-// email goes unread for, say, 5 days, a strict "credit +100 for every full
-// 24h elapsed" reading would hand it +500 in one shot. This file
-// deliberately does the simpler thing instead — one +100 grant per lazy
+// email goes unread for, say, 5 days, a strict "credit +10 for every full
+// 24h elapsed" reading would hand it +50 in one shot. This file
+// deliberately does the simpler thing instead — one +10 grant per lazy
 // check, then lastGrantAt snaps to "now" — mirroring exactly how the old
 // monthly quota reset never compounded across multiple skipped months
 // either, it just snapped `used` to 0 once. This is the more conservative
-// (cheaper, simpler to reason about) of the two readings of "100 tokens
+// (cheaper, simpler to reason about) of the two readings of "10 tokens
 // every 24 hours, granted lazily on read" and was chosen deliberately for
 // that reason.
 //
-// ≥500 grant ceiling: getTokenStatus skips the +100 daily grant entirely
+// ≥500 grant ceiling: getTokenStatus skips the +10 daily grant entirely
 // (leaving lastGrantAt untouched, so the very next read re-checks
 // immediately once the balance actually drops) once balance is already
-// ≥500 (5 generations' worth) — an idle account that never spends must not
-// silently accumulate unbounded free value while still fully honoring
-// "100/day" for anyone actually using the product. See getTokenStatus.
+// ≥500 (5 video generations' worth, or 50 image generations' worth) — an
+// idle account that never spends must not silently accumulate unbounded
+// free value while still fully honoring "10/day" for anyone actually using
+// the product. See getTokenStatus.
 //
 // Per-IP daily cap on brand-new signup-bonus grants: see the big comment
 // on syncTokens below for what this raises the cost of and why it's
@@ -196,8 +201,8 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-var INITIAL_GRANT = 200;
-var DAILY_GRANT_AMOUNT = 100;
+var INITIAL_GRANT = 290;
+var DAILY_GRANT_AMOUNT = 10;
 var GRANT_CEILING = 500;
 var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -206,12 +211,12 @@ var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // js/store.js's signup() is 100% client-side (localStorage only, confirmed
 // by reading it — there is no server touchpoint at account-creation time at
 // all today), so a scripted attacker can create unlimited accounts purely
-// to farm the 200-token signup bonus, each one worth ~$1.60-3.20 of real
-// fal.ai generation cost with no payment and no email verification.
+// to farm the 290-token signup bonus, each one worth up to ~$1.60-3.20 of
+// real fal.ai generation cost with no payment and no email verification.
 //
 // Rather than inventing new server-side signup-registration plumbing just
 // to enforce a rate limit (a new, wider surface for a narrow problem), this
-// gates the actual moment the 200-token grant becomes real cost exposure:
+// gates the actual moment the 290-token grant becomes real cost exposure:
 // the first time syncTokens below ever materializes a balance for a given
 // email (the `!record.tokens` branch), regardless of which caller triggered
 // it (get-token-status.js's read, or generate-video.js's gate on a client
@@ -225,7 +230,7 @@ var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // A NEW email whose IP is already over today's cap does not get hard-
 // blocked forever — it gets 0 tokens today (not the usual E112 rejection,
 // since this isn't the generation gate) with lastGrantAt stamped to now, so
-// the normal +100/24h lazy drip picks it up starting tomorrow exactly like
+// the normal +10/24h lazy drip picks it up starting tomorrow exactly like
 // any other account. This only ever runs once per email (the branch it's
 // in is only reached while `tokens` has never been set), so a legitimate
 // user is never repeatedly rate-limited just for reading their own
@@ -282,8 +287,8 @@ async function syncTokens(event, email) {
 }
 
 /**
- * Reads this email's current token status, applying the lazy 200-token
- * first-ever-read grant and/or the lazy +100/24h drip (with its ≥500
+ * Reads this email's current token status, applying the lazy 290-token
+ * first-ever-read grant and/or the lazy +10/24h drip (with its ≥500
  * ceiling) as needed — see the doc blocks above for the full mechanism.
  * Returns { balance, nextGrantAt, dailyGrantAmount }. nextGrantAt is an
  * epoch-ms timestamp (lastGrantAt + 24h) for the UI's live countdown (see

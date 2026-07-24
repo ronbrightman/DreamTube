@@ -18,9 +18,23 @@
 //   {
 //     id, email, whatsapp (optional), caption, style,
 //     characterIdsForGeneration, cameraView, sceneryTime, sceneryPlace,
+//     mediaType: 'video'|'image' (default 'video' — see below),
 //     operationName, status: 'pending'|'ready'|'notified'|'claimed'|'failed',
-//     videoUrl, createdAt, readyAt, notifiedAt, claimedAt, failedReason
+//     videoUrl, imageUrl, createdAt, readyAt, notifiedAt, claimedAt, failedReason
 //   }
+//
+// mediaType/imageUrl were added for style.html's image-vs-video picker (see
+// start-pending-generation.js and docs/IMAGE_GENERATION_SPEC.md) — default
+// 'video'/null respectively so every existing caller/record that predates
+// these fields (in particular wizard.html's own pre-signup flow, which is
+// deliberately unchanged and never passes mediaType at all — see
+// IMAGE_GENERATION_SPEC.md §6-revised) keeps working exactly as before.
+// videoUrl/imageUrl are independent fields — a 'video' record only ever
+// populates videoUrl, an 'image' record only ever populates imageUrl (there
+// is currently no server-side "turn this into a video" path that upgrades a
+// pending-dreams record in place; that upsell — see js/store.js's
+// turnImageIntoVideo — operates on a real dream.id after the pending record
+// has already resolved into one, not on the pending record itself).
 //
 // ============================================================================
 // CONCURRENT-WRITE RACE (fixed per review — was a real TOCTOU bug, not a
@@ -93,9 +107,11 @@ async function create(event, data) {
     cameraView: data.cameraView || null,
     sceneryTime: data.sceneryTime || null,
     sceneryPlace: data.sceneryPlace || null,
+    mediaType: data.mediaType === 'image' ? 'image' : 'video',
     operationName: data.operationName || null,
     status: 'pending',
     videoUrl: null,
+    imageUrl: null,
     createdAt: Date.now(),
     readyAt: null,
     notifiedAt: null,

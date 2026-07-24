@@ -71,7 +71,7 @@ test('missing caption/style -> E5', async function () {
   assert.match(JSON.parse(res.body).error, /^E5:/);
 });
 
-test('a brand-new email gets the 200-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
+test('a brand-new email gets the 290-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'fresh-wizard@example.com' } }));
   assert.equal(res.statusCode, 200);
@@ -80,7 +80,7 @@ test('a brand-new email gets the 200-token signup grant and a successful submiss
   assert.match(data.operationName, /^fal:/);
 
   var status = await entitlements.getTokenStatus({}, 'fresh-wizard@example.com');
-  assert.equal(status.balance, 100); // 200 granted - 100 spent
+  assert.equal(status.balance, 190); // 290 granted - 100 spent
 
   var record = await pendingDreams.get({}, data.pendingId);
   assert.equal(record.status, 'pending');
@@ -134,7 +134,7 @@ test('GENERATION_MOCK_MODE=true skips fal entirely and still returns a working p
   assert.match(data.operationName, /^mock:/);
   assert.equal(calls, 0);
   var status = await entitlements.getTokenStatus({}, 'mock-wizard@example.com');
-  assert.equal(status.balance, 100);
+  assert.equal(status.balance, 190); // 290 granted - 100 spent
 });
 
 test('rate limit (E6) is enforced per-IP, same cap as generate-video.js', async function () {
@@ -146,4 +146,86 @@ test('rate limit (E6) is enforced per-IP, same cap as generate-video.js', async 
   var second = await handler(genEvent({ ip: ip, body: { email: 'ratelimit-b@example.com' } }));
   assert.equal(second.statusCode, 429);
   assert.match(JSON.parse(second.body).error, /^E6:/);
+});
+
+// ----- mediaType: 'image' (docs/IMAGE_GENERATION_SPEC.md §4) -----
+// Default 'video' is exercised by every test above (none of them pass
+// mediaType at all) — these cover the new branch specifically.
+
+test('mediaType omitted -> pending record defaults to mediaType "video" (backward compat)', async function () {
+  stubFetchOk();
+  var res = await handler(genEvent({ body: { email: 'default-media@example.com' } }));
+  var data = JSON.parse(res.body);
+  var record = await pendingDreams.get({}, data.pendingId);
+  assert.equal(record.mediaType, 'video');
+});
+
+test('mediaType "image": a brand-new email gets the 290-token signup grant and a successful submission spends only 10 of it', async function () {
+  stubFetchOk();
+  var res = await handler(genEvent({ body: { email: 'fresh-image@example.com', mediaType: 'image' } }));
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.ok(data.pendingId);
+  assert.match(data.operationName, /^fal:/);
+
+  var status = await entitlements.getTokenStatus({}, 'fresh-image@example.com');
+  assert.equal(status.balance, 280); // 290 granted - 10 spent
+
+  var record = await pendingDreams.get({}, data.pendingId);
+  assert.equal(record.mediaType, 'image');
+  assert.equal(record.operationName, data.operationName);
+});
+
+test('mediaType "image": balance under 10 -> E7 insufficient_tokens with image-specific copy, fal never called', async function () {
+  var calls = 0;
+  global.fetch = async function () { calls++; return { ok: true, status: 200, json: async function () { return {}; } }; };
+  await balance('broke-image@example.com', 5);
+  var res = await handler(genEvent({ body: { email: 'broke-image@example.com', mediaType: 'image' } }));
+  assert.equal(res.statusCode, 402);
+  assert.match(JSON.parse(res.body).error, /^E7: insufficient_tokens: not enough tokens to generate an image/);
+  assert.equal(calls, 0);
+});
+
+test('mediaType "image": balance exactly 10 proceeds (the flat cost of one image)', async function () {
+  stubFetchOk();
+  await balance('exact-image@example.com', 10);
+  var res = await handler(genEvent({ body: { email: 'exact-image@example.com', mediaType: 'image' } }));
+  assert.equal(res.statusCode, 200);
+});
+
+test('mediaType "image": GENERATION_MOCK_MODE=true skips fal entirely, still spends only 10 tokens', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  var calls = 0;
+  global.fetch = async function () { calls++; return { ok: true, status: 200, json: async function () { return {}; } }; };
+  var res = await handler(genEvent({ body: { email: 'mock-image@example.com', mediaType: 'image' } }));
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.match(data.operationName, /^mock:/);
+  assert.equal(calls, 0);
+  var status = await entitlements.getTokenStatus({}, 'mock-image@example.com');
+  assert.equal(status.balance, 280); // 290 granted - 10 spent
+});
+
+test('mediaType "image": the fal submission URL never carries a fal_webhook query param (unlike the video path) — see docs/IMAGE_GENERATION_SPEC.md §7', async function () {
+  var capturedUrl = null;
+  global.fetch = async function (url) {
+    capturedUrl = url;
+    return { ok: true, status: 200, json: async function () { return { request_id: 'req-image-abc' }; } };
+  };
+  await handler(genEvent({ body: { email: 'webhook-check-image@example.com', mediaType: 'image' }, headers: { host: 'my-real-host.netlify.app' } }));
+  assert.ok(capturedUrl, 'fal should have been called');
+  assert.equal(capturedUrl.indexOf('fal_webhook='), -1, 'image submissions must never include a fal_webhook param');
+});
+
+test('mediaType "image": a fal rejection marks the pending record failed and never spends tokens', async function () {
+  await balance('rejected-image@example.com', 500);
+  global.fetch = async function () {
+    return { ok: false, status: 422, json: async function () { return { detail: 'nope' }; } };
+  };
+  var res = await handler(genEvent({ body: { email: 'rejected-image@example.com', mediaType: 'image' } }));
+  assert.equal(res.statusCode, 422);
+  assert.match(JSON.parse(res.body).error, /^E10:/);
+
+  var status = await entitlements.getTokenStatus({}, 'rejected-image@example.com');
+  assert.equal(status.balance, 500); // untouched -- no spend on rejection
 });

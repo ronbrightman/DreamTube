@@ -41,6 +41,10 @@
 //   getDream(id)                -> GET  /api/dreams/:id
 //   toggleLike(id)               -> POST /api/dreams/:id/like
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
+//   generateImage(caption,style,opts) -> POST /.netlify/functions/generate-image (cheap
+//       still-image alternative, 10 tokens flat — see docs/IMAGE_GENERATION_SPEC.md)
+//   turnImageIntoVideo(dreamId)  -> local write (sets a draft), the "Turn this into a
+//       video" upsell on an image-type dream — see result.html's CTA
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
 //   unpublishDream(id)              -> POST /api/dreams/:id/unpublish
@@ -104,7 +108,7 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null },
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
       dreams: [],
       pendingJob: null,
       charactersByUser: {}, // lowercased username -> array of character objects. Private
@@ -178,6 +182,8 @@
       if (parsed.draft.cameraView === undefined) parsed.draft.cameraView = null;
       if (parsed.draft.sceneryTime === undefined) parsed.draft.sceneryTime = null;
       if (parsed.draft.sceneryPlace === undefined) parsed.draft.sceneryPlace = null;
+      if (parsed.draft.mediaType === undefined) parsed.draft.mediaType = null;
+      if (parsed.draft.sourceImageUrl === undefined) parsed.draft.sourceImageUrl = null;
       if (!parsed.likedIds) parsed.likedIds = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
@@ -325,7 +331,8 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
-        style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl
+        style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
+        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video'
       })
     }).catch(function () { /* best-effort — see comment above */ });
   }
@@ -350,20 +357,25 @@
     try { already = localStorage.getItem(FEED_BACKFILL_KEY); } catch (e) { return; }
     if (already) return;
     state.dreams.forEach(function (d) {
-      if (d.isPublished && d.videoUrl) syncPublishedDreamToFeed(d);
+      if (d.isPublished && (d.videoUrl || d.imageUrl)) syncPublishedDreamToFeed(d);
     });
     try { localStorage.setItem(FEED_BACKFILL_KEY, '1'); } catch (e) { /* storage unavailable — will just retry next load */ }
   }
 
-  function pollUntilDone(operationName, startedAt) {
+  /** The status-polling endpoint for a given mediaType — video-status.js (returns videoUrl) or image-status.js (returns imageUrl). Default 'video' matches every other mediaType default in this file. */
+  function statusEndpointFor(mediaType) {
+    return mediaType === 'image' ? '/.netlify/functions/image-status' : '/.netlify/functions/video-status';
+  }
+
+  function pollUntilDone(operationName, startedAt, mediaType) {
     return new Promise(function (resolve, reject) {
       function poll() {
         if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('E301: generation_timeout')); return; }
-        fetch('/.netlify/functions/video-status?name=' + encodeURIComponent(operationName))
+        fetch(statusEndpointFor(mediaType) + '?name=' + encodeURIComponent(operationName))
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (data.error) { reject(new Error(data.error)); return; }
-            if (data.done) { resolve(data.videoUrl); return; }
+            if (data.done) { resolve(mediaType === 'image' ? data.imageUrl : data.videoUrl); return; }
             setTimeout(poll, POLL_INTERVAL_MS);
           })
           .catch(function (err) { reject(new Error('E302: network_error_during_status_check' + (err && err.message ? ': ' + err.message : ''))); });
@@ -409,7 +421,21 @@
     });
   }
 
-  function finalizeDream(videoUrl, caption, style, sourceDreamId) {
+  /**
+   * mediaUrl is the finished videoUrl OR imageUrl, whichever mediaType
+   * actually produced (see pollUntilDone above) — mediaType (default
+   * 'video') decides which dream field it's stamped onto. For a
+   * sourceDreamId regenerate, ONLY the field matching this mediaType is
+   * ever touched — the "Turn this into a video" upsell (see
+   * js/store.js's turnImageIntoVideo/result.html's CTA) relies on this:
+   * it regenerates an existing image-type dream with mediaType:'video',
+   * so this stamps videoUrl and flips mediaType to 'video', but
+   * deliberately leaves the dream's original imageUrl in place
+   * (provenance — not required for the v1 UI, but free to keep, per
+   * docs/IMAGE_GENERATION_SPEC.md §6).
+   */
+  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType) {
+    mediaType = mediaType === 'image' ? 'image' : 'video';
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -422,15 +448,21 @@
       // back in the "never generated" state, so result.html shows the
       // plain CTA again and a fresh opt-in tap is required, per the design
       // spec's privacy/data-model section.
-      Object.assign(dream, { caption: caption, style: style, videoUrl: videoUrl, interpretationText: null, interpretationAt: null });
+      var patch = { caption: caption, style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null };
+      if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
+      Object.assign(dream, patch);
     } else {
       dream = {
         id: newId(),
         ownerHandle: state.user ? state.user.handle : '@you',
-        caption: caption, style: style,
-        likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
-        videoUrl: videoUrl
+        caption: caption, style: style, mediaType: mediaType,
+        likes: 0, likedByMe: false, isPublished: false,
+        videoUrl: mediaType === 'video' ? mediaUrl : null,
+        imageUrl: mediaType === 'image' ? mediaUrl : null
       };
+      // Images never set a duration — there's no clip length concept for a
+      // still image (see explore.html/profile.html's guarded d.dur render).
+      if (mediaType === 'video') dream.dur = '0:08';
       state.dreams.unshift(dream);
     }
     clearPendingJob();
@@ -454,33 +486,43 @@
     var sourceDreamId = opts.sourceDreamId || null;
     var resume = opts.resume;
     var characters = resolveCharacters(opts.characterIds);
+    // Default 'video' — every existing caller (generateVideo, and any
+    // resumed pendingJob predating this field) keeps working unchanged.
+    var mediaType = opts.mediaType === 'image' ? 'image' : 'video';
+    // Only meaningful (and only ever sent) on the video path — the "Turn
+    // this into a video" upsell (see turnImageIntoVideo below). An image
+    // generation never takes a sourceImageUrl (there is no "image-to-image"
+    // concept here).
+    var sourceImageUrl = (mediaType === 'video' && opts.sourceImageUrl) ? opts.sourceImageUrl : null;
+    var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
 
     var operationPromise = resume
       ? Promise.resolve(resume.operationName)
-      : fetch('/.netlify/functions/generate-video', {
+      : fetch(submitUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(Object.assign({
             caption: caption, style: style, characters: characters,
             cameraView: opts.cameraView || null,
             sceneryTime: opts.sceneryTime || null,
             sceneryPlace: opts.sceneryPlace || null,
             // Sent whenever the browser knows it (logged-in account with an
             // email on file) — this is load-bearing, not opportunistic: the
-            // server-side E112 token gate (see lib/entitlements.js and the
-            // doc block above generate-video.js's guardrails) is
+            // server-side E112/E412 token gate (see lib/entitlements.js and
+            // the doc block above generate-video.js's guardrails) is
             // unconditional and always on, and identifies the caller's token
             // balance by this email. No email means no way to look up a
-            // balance, so an anonymous/logged-out call here fails E112.
+            // balance, so an anonymous/logged-out call here fails the gate.
             email: currentAccountEmail(),
             // Best-effort Cloudflare Turnstile token, resolved client-side by
-            // processing.html before calling generateVideo/regenerateDream
-            // (see js/turnstile-config.js's getTurnstileToken()) — null
-            // until a real TURNSTILE_SITE_KEY is configured there. Only
-            // actually checked server-side (E113) once TURNSTILE_SECRET_KEY
-            // is likewise configured — see generate-video.js's doc block.
+            // processing.html before calling generateVideo/generateImage/
+            // regenerateDream (see js/turnstile-config.js's
+            // getTurnstileToken()) — null until a real TURNSTILE_SITE_KEY is
+            // configured there. Only actually checked server-side (E113/
+            // E413) once TURNSTILE_SECRET_KEY is likewise configured — see
+            // generate-video.js's doc block.
             turnstileToken: opts.turnstileToken || null
-          })
+          }, sourceImageUrl ? { sourceImageUrl: sourceImageUrl } : {}))
         }).then(function (res) {
           return res.json().then(function (data) {
             if (!res.ok) throw new Error(data.error || 'E399: generation_failed');
@@ -495,18 +537,23 @@
       savePendingJob({
         operationName: operationName, startedAt: startedAt,
         caption: caption, style: style, sourceDreamId: sourceDreamId,
+        mediaType: mediaType,
         notify: (resume && state.pendingJob && state.pendingJob.notify) || false
       });
-      return pollUntilDone(operationName, startedAt);
-    }).then(function (videoUrl) {
-      var dream = finalizeDream(videoUrl, caption, style, sourceDreamId);
-      // Don't make the user wait on this — probing needs a real network
-      // round trip to the video itself and can be slow (or time out) for
-      // reasons that have nothing to do with generation being done. Patch
-      // the duration in once it's known instead of blocking completion.
-      probeVideoDuration(videoUrl).then(function (dur) {
-        if (dur) { dream.dur = dur; persist(); }
-      });
+      return pollUntilDone(operationName, startedAt, mediaType);
+    }).then(function (mediaUrl) {
+      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType);
+      // No duration concept applies to a still image — only probe/patch
+      // dream.dur on the video path. Don't make the user wait on this —
+      // probing needs a real network round trip to the video itself and
+      // can be slow (or time out) for reasons that have nothing to do with
+      // generation being done. Patch the duration in once it's known
+      // instead of blocking completion.
+      if (mediaType === 'video') {
+        probeVideoDuration(mediaUrl).then(function (dur) {
+          if (dur) { dream.dur = dur; persist(); }
+        });
+      }
       return dream;
     }).catch(function (err) {
       clearPendingJob();
@@ -997,9 +1044,9 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null }; persist(); },
 
-    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken }. */
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
       opts = opts || {};
       return startGeneration(caption, style, {
@@ -1009,13 +1056,72 @@
       });
     },
 
-    /** Re-runs generation on an existing dream (Edit Dream / Try Again), including any selected Advanced fields. */
+    /**
+     * Creates a brand new dream as a cheap still image instead of a video
+     * (fal-ai/flux/dev, 10 tokens flat — see generate-image.js) — the
+     * image-vs-video picker on style.html (see docs/IMAGE_GENERATION_SPEC.md
+     * §5/§9). Thin wrapper: forwards every opt straight through to
+     * startGeneration, just forcing mediaType to 'image'.
+     */
+    generateImage: function (caption, style, opts) {
+      opts = opts || {};
+      return startGeneration(caption, style, Object.assign({}, opts, { mediaType: 'image' }));
+    },
+
+    /**
+     * Re-runs generation on an existing dream (Edit Dream / Try Again, or
+     * the "Turn this into a video" upsell — see turnImageIntoVideo below),
+     * including any selected Advanced fields. mediaType/sourceImageUrl are
+     * forwarded straight through from patch — the caller decides both (see
+     * result.html's proceedWithGenerateAgain, which explicitly carries the
+     * target dream's own existing mediaType forward since there is no
+     * media-type picker on regenerate, per docs/IMAGE_GENERATION_SPEC.md
+     * §7's explicit scope cut) — startGeneration defaults a missing/absent
+     * mediaType to 'video', same backward-compat default as everywhere else.
+     */
     regenerateDream: function (id, patch) {
       return startGeneration(patch.caption, patch.style, {
         sourceDreamId: id, characterIds: patch.characterIds,
         cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace,
-        turnstileToken: patch.turnstileToken
+        turnstileToken: patch.turnstileToken,
+        mediaType: patch.mediaType, sourceImageUrl: patch.sourceImageUrl
       });
+    },
+
+    /**
+     * "Turn this into a video" upsell (result.html's CTA, shown only when
+     * dream.imageUrl && !dream.videoUrl — see docs/IMAGE_GENERATION_SPEC.md
+     * §6's exact spec). Sets a draft that routes back through
+     * processing.html's existing regenerate machinery — mirrors the
+     * existing "Generate Again" (Edit sheet) pattern exactly, reusing the
+     * full-screen progress/fail-state machinery already built and tested
+     * rather than inventing a new inline long-wait spinner here.
+     * sourceDreamId ties this to the EXISTING dream record (finalizeDream
+     * upgrades it in place rather than creating a new one — same id,
+     * imageUrl kept for provenance, videoUrl gets set, mediaType flips to
+     * 'video'). sourceImageUrl is fal's own hosted URL from the original
+     * image generation, passed straight through to generate-video.js's
+     * callFalImageToVideo as image_url — no re-hosting/new storage needed
+     * (fal retains generated files for >=7 days, see generate-image.js's
+     * header comment). mediaType:'video' means processing.html renders its
+     * normal video copy/checklist with zero special-casing there.
+     *
+     * Returns true if the draft was set (a real image-type dream was
+     * found), false otherwise (nothing to turn into a video — e.g. the
+     * dream doesn't exist, or has no imageUrl) — the caller (result.html)
+     * only navigates to processing.html on true. Matches this file's
+     * existing layering: store.js is model/logic only, every navigation in
+     * this app happens in the HTML file that calls it, never here.
+     */
+    turnImageIntoVideo: function (dreamId) {
+      var dream = findDream(dreamId);
+      if (!dream || !dream.imageUrl) return false;
+      Object.assign(state.draft, {
+        caption: dream.caption, style: dream.style, sourceDreamId: dream.id,
+        sourceImageUrl: dream.imageUrl, mediaType: 'video', restore: false
+      });
+      persist();
+      return true;
     },
 
     /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */
@@ -1034,9 +1140,17 @@
      * checks DreamStore.getPendingJob() on load and resumes polling it via
      * resumePendingJob(). Never re-submits to generate-video.js/
      * start-pending-generation.js — operationName already exists.
+     *
+     * mediaType (optional 5th arg, default 'video' — fully backward
+     * compatible) mirrors start-pending-generation.js's own mediaType
+     * support (see docs/IMAGE_GENERATION_SPEC.md §4/§6-revised). wizard.html
+     * itself never passes this — its onboarding flow is deliberately
+     * unchanged and always adopts a video — this parameter exists purely so
+     * this method stays consistent with the rest of this file's mediaType
+     * plumbing for any future caller of the pending-generation seam.
      */
-    adoptPendingGeneration: function (operationName, startedAt, caption, style) {
-      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, style: style, sourceDreamId: null, notify: false });
+    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType) {
+      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
     },
 
     /**
@@ -1053,7 +1167,7 @@
       var dream = {
         id: newId(),
         ownerHandle: state.user.handle,
-        caption: caption, style: style,
+        caption: caption, style: style, mediaType: 'video',
         likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
         videoUrl: videoUrl
       };
@@ -1076,6 +1190,7 @@
       if (!job) return Promise.reject(new Error('no_pending_job'));
       return startGeneration(job.caption, job.style, {
         sourceDreamId: job.sourceDreamId,
+        mediaType: job.mediaType,
         resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },
@@ -1333,9 +1448,9 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * grant mechanism (200 on first-ever read, +100/24h lazily thereafter,
+     * grant mechanism (290 on first-ever read, +10/24h lazily thereafter,
      * capped once balance is already ≥500). Resolves to
-     * { balance:0, nextGrantAt:null, dailyGrantAmount:100 } with no network
+     * { balance:0, nextGrantAt:null, dailyGrantAmount:10 } with no network
      * call at all when there's no logged-in account or no email on file
      * (a legacy account that never added one — signup requires an email
      * today, see signup() above) since the server side has nothing to key
@@ -1346,7 +1461,9 @@
      */
     getTokenStatus: function () {
       var email = currentAccountEmail();
-      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 100 });
+      // dailyGrantAmount here mirrors entitlements.js's real
+      // DAILY_GRANT_AMOUNT (10 as of 2026-07-24's token-economy retune).
+      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 10 });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })
         .then(function (data) {

@@ -101,9 +101,15 @@
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
   function cardHTML(d){
+    // Three-way: video -> image -> gradient fallback (was two-way) — see
+    // docs/IMAGE_GENERATION_SPEC.md §4. .home-card-video's layout rules
+    // (position/inset/object-fit) are generic enough to reuse verbatim for
+    // the <img> case too, same as the existing video/gradient reuse below.
     var media = d.videoUrl
       ? '<video class="home-card-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
-      : '<div class="home-card-video" style="background:'+DreamStore.gradientFor(d)+'"></div>';
+      : d.imageUrl
+        ? '<img class="home-card-video" src="'+esc(d.imageUrl)+'" alt="">'
+        : '<div class="home-card-video" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<a class="home-card" href="explore.html?id='+d.id+'">' +
       '<div class="home-card-art">'+media+'</div>' +
       '<div class="home-card-scrim"></div>' +

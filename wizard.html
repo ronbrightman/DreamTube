@@ -890,7 +890,18 @@
   function renderSignup(el){
     el.innerHTML =
       '<div class="fn-headline">Create your account</div>' +
-      '<div class="fn-body-copy">Free to start — 200 tokens on signup, no card needed.</div>' +
+      // 290 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
+      // 2026-07-24 alongside DAILY_GRANT_AMOUNT 100->10 — see
+      // docs/IMAGE_GENERATION_SPEC.md §2b-revised). Hardcoded, not fetched
+      // live: this screen renders before a real account exists, so there's
+      // no logged-in DreamStore.getTokenStatus() call to make here (that
+      // method needs state.user to be set at all — see js/store.js), and
+      // INITIAL_GRANT itself is a private constant in entitlements.js,
+      // never exposed via get-token-status.js's response shape
+      // ({balance, nextGrantAt, dailyGrantAmount} only, no separate
+      // "signup grant" field). If this constant changes again, this line
+      // must be updated by hand, same as before this comment existed.
+      '<div class="fn-body-copy">Free to start — 290 tokens on signup, no card needed.</div>' +
       '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
       '<input class="fn-field" id="fn-username" placeholder="Choose a username" autocomplete="username" dir="auto">' +
       '<div class="fn-field-pw-wrap">' +

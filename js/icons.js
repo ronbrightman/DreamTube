@@ -86,6 +86,13 @@
     messageCircle: svg('<path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
     // Added for the Settings redesign's beta-feedback CTA (tracker.html's
     // support-and-feedback-atms4a item).
-    megaphone: svg('<path d="M3 11v2a2 2 0 002 2h1l4.5 4.5V4.5L6 9H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16 8a4.5 4.5 0 010 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 5a8.5 8.5 0 010 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>')
+    megaphone: svg('<path d="M3 11v2a2 2 0 002 2h1l4.5 4.5V4.5L6 9H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16 8a4.5 4.5 0 010 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 5a8.5 8.5 0 010 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'),
+    // Added for the image-generation feature's "Turn this into a video"
+    // upsell CTA (result.html) and the style.html media-type picker — no
+    // existing icon in this file fit a video/camera concept, confirmed by
+    // grep. A simple line-art video-camera: a body rectangle + the lens
+    // trapezoid, same 24x24/currentColor/stroke-only convention as every
+    // other entry here.
+    video: svg('<rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 10l5-3v10l-5-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>')
   };
 })();

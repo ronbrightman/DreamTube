@@ -41,6 +41,25 @@ test('create() returns a fresh record in "pending" status with a real id', async
   assert.equal(record.operationName, null);
 });
 
+// ----- mediaType / imageUrl (docs/IMAGE_GENERATION_SPEC.md §3) -----
+
+test('create() defaults mediaType to "video" and imageUrl to null when the caller does not pass either — fully backward compatible', async function () {
+  var record = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon' });
+  assert.equal(record.mediaType, 'video');
+  assert.equal(record.imageUrl, null);
+});
+
+test('create() honors an explicit mediaType: "image"', async function () {
+  var record = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon', mediaType: 'image' });
+  assert.equal(record.mediaType, 'image');
+  assert.equal(record.imageUrl, null);
+});
+
+test('create() treats any non-"image" mediaType value as "video" (defensive, not just undefined)', async function () {
+  var record = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon', mediaType: 'bogus' });
+  assert.equal(record.mediaType, 'video');
+});
+
 test('get() round-trips a created record; returns null for an unknown id', async function () {
   var created = await pendingDreams.create({}, { email: 'a@example.com', caption: 'x', style: 'Cartoon' });
   var fetched = await pendingDreams.get({}, created.id);
