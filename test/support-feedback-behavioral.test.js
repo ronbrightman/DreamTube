@@ -69,6 +69,16 @@ async function safeGoto(page, url) {
   }
 }
 
+/** Polls `conditionFn` (sync, Node-side) until it returns truthy or `timeoutMs` elapses -- condition-based waiting instead of a fixed sleep, since route interception is async relative to a page.click() call. Throws on timeout. */
+async function waitFor(conditionFn, timeoutMs) {
+  var deadline = Date.now() + (timeoutMs || 2000);
+  while (Date.now() < deadline) {
+    if (conditionFn()) return;
+    await new Promise(function (r) { setTimeout(r, 20); });
+  }
+  if (!conditionFn()) throw new Error('waitFor: condition never became true within ' + timeoutMs + 'ms');
+}
+
 /** Mocks the real admin-paywall-toggle GET the page fires on load to decide whether to show owner tools — always answers isOwner:false so tests never depend on OWNER_EMAIL config, unless overridden. */
 function mockOwnerCheck(page, isOwner) {
   return page.route('**/.netlify/functions/admin-paywall-toggle*', function (route) {
@@ -99,6 +109,34 @@ function mockSubmitSupport(page, opts) {
         }
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
       });
+    }
+  };
+}
+
+/**
+ * Intercepts submit-support-message.js WITHOUT resolving it immediately —
+ * each call's route is held open until the test explicitly calls
+ * releaseNext(), giving deterministic, condition-based control over exactly
+ * when a request resolves relative to other UI actions (switching compose
+ * type, cancelling, etc.) rather than racing an arbitrary setTimeout. Used
+ * by the stale-async-response regression test below.
+ */
+function mockSubmitSupportControllable(page) {
+  var calls = [];
+  var pendingRoutes = [];
+  return {
+    calls: calls,
+    install: function () {
+      return page.route('**/.netlify/functions/submit-support-message', function (route) {
+        calls.push(JSON.parse(route.request().postData() || '{}'));
+        pendingRoutes.push(route);
+      });
+    },
+    /** Resolves the oldest still-held request with a real ok:true response. */
+    releaseNext: function () {
+      var route = pendingRoutes.shift();
+      if (!route) throw new Error('releaseNext() called with no pending submit-support-message request');
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     }
   };
 }
@@ -280,6 +318,75 @@ test('profile.html Settings: a legacy account with no recorded signup timestamp 
     assert.equal(mock.calls.length, 1);
     assert.equal(mock.calls[0].daysSinceSignup, null);
     assert.equal(mock.calls[0].videoCount, 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test('profile.html Settings: a stale in-flight send from an ABANDONED compose session must not clobber a NEW session the user has already switched to and is actively typing into (review finding: async callback side effects must be scoped to the session that started them, same class as identitySheetToken/charSheetToken)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockOwnerCheck(page, false);
+  await mockTokenStatus(page);
+  var mock = mockSubmitSupportControllable(page);
+  await mock.install();
+  try {
+    await seedUser(page, { dreams: [] });
+    await safeGoto(page, baseUrl + '/profile.html');
+    await page.click('#account-btn');
+    await page.waitForSelector('#sheet-account-overlay.open');
+
+    // 1. Start a Feedback submission -- the request is sent but deliberately
+    //    held (not resolved yet) via mockSubmitSupportControllable.
+    await page.click('#feedback-cta-btn');
+    await page.waitForSelector('#support-compose', { state: 'visible' });
+    await page.fill('#support-message-input', 'first feedback message, still in flight');
+    await page.click('#support-send-btn');
+    await waitFor(function () { return mock.calls.length === 1; });
+    assert.equal(mock.calls[0].type, 'feedback');
+
+    // 2. Before that request resolves, the user backs out of it entirely --
+    //    Cancel, then opens the OTHER entry point (Support) and starts
+    //    typing a brand-new, unrelated, unsent message.
+    await page.click('#support-cancel-btn');
+    await page.click('#support-row');
+    await page.waitForSelector('#support-compose', { state: 'visible' });
+    var newMessage = 'second message, actively being typed, must survive';
+    await page.fill('#support-message-input', newMessage);
+
+    // 3. ONLY NOW does the abandoned Feedback request resolve.
+    await mock.releaseNext();
+    // This assertion is inherently "prove nothing happened" -- there's no
+    // DOM mutation to positively poll for on the discard path (that's the
+    // whole point of the fix), so a short bounded wait is the honest way
+    // to give the stale .then() chain (route.fulfill -> fetch resolves ->
+    // res.json() -> .then()) real ticks to run before checking. The
+    // fully-positive assertion for "the fix actually reset the button" and
+    // "a real new send still works afterward" comes from step 4 below.
+    await page.waitForTimeout(150);
+
+    // The new session's typed-but-unsent message must be untouched --
+    // the exact corruption the review flagged (a stale resolution wiping
+    // the CURRENT session's input).
+    assert.equal(await page.locator('#support-message-input').inputValue(), newMessage);
+    // No success banner for a submission that is no longer the one on
+    // screen -- discarded silently, same precedent as identitySheetToken's
+    // own stale-save handling.
+    assert.equal(await page.locator('#support-success').isVisible(), false);
+    // The Send button must still be usable (not stuck disabled forever) --
+    // the stale .then() still clears the button state even though it
+    // discards the rest of its side effects.
+    assert.equal(await page.locator('#support-send-btn').isDisabled(), false);
+
+    // 4. The new (support) session can still be sent normally afterward.
+    await page.click('#support-send-btn');
+    await mock.releaseNext();
+    await page.waitForSelector('#support-success', { state: 'visible' });
+    assert.equal(mock.calls.length, 2);
+    assert.equal(mock.calls[1].type, 'support');
+    assert.equal(mock.calls[1].message, newMessage);
+    assert.equal(await page.locator('#support-success-text').textContent(), "Thanks — we got your message and will follow up by email.");
   } finally {
     await page.close();
   }

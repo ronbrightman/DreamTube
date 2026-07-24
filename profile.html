@@ -682,12 +682,19 @@
     ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
     // Always reopen Settings with the support/feedback compose panel
     // collapsed — never carries over a previous open/typed-into state
-    // from earlier in the session.
+    // from earlier in the session. Also bumps supportComposeToken (see
+    // that variable's own comment below) so a submit-support-message
+    // call still in flight from before Settings was last closed can
+    // never touch this fresh reopen's DOM once it resolves.
+    supportComposeToken++;
     document.getElementById('support-compose').style.display = 'none';
     document.getElementById('support-message-input').value = '';
     accountOverlay.classList.add('open');
   }
-  function closeAccountSheet(){ accountOverlay.classList.remove('open'); }
+  function closeAccountSheet(){
+    supportComposeToken++;
+    accountOverlay.classList.remove('open');
+  }
 
   document.getElementById('account-btn').addEventListener('click', openAccountSheet);
   document.getElementById('account-cancel').addEventListener('click', closeAccountSheet);
@@ -786,15 +793,41 @@
   var supportMessageInput = document.getElementById('support-message-input');
   var supportErrorEl = document.getElementById('support-error');
   var supportSuccessEl = document.getElementById('support-success');
+  var supportSendBtn = document.getElementById('support-send-btn');
+
+  // Bumped on every open (a fresh compose "session" — whether reopening
+  // the same type or switching to the other one) AND on Cancel/whenever
+  // Settings itself opens or closes (see openAccountSheet/closeAccountSheet
+  // above) — same tokenAtSave pattern this file already uses for
+  // identitySheetToken (create.html has its own copy, charSheetToken).
+  // Without this, a submit-support-message request started under one
+  // compose session (e.g. Feedback) that's still in flight when the user
+  // cancels and opens the OTHER session (e.g. Support) and starts typing
+  // a new message resolves LATE and — reading the live, now-changed
+  // supportComposeType/DOM instead of what was true when IT was sent —
+  // would clear the new session's just-typed message and show a success
+  // banner for a submission that isn't the one on screen. See the send
+  // handler below (tokenAtSend/typeAtSend), which is the only reader of
+  // this token, for exactly how a stale result is discarded.
+  var supportComposeToken = 0;
 
   function openSupportCompose(type){
+    supportComposeToken++;
     supportComposeType = type;
+    supportMessageInput.value = '';
     supportMessageInput.placeholder = type === 'feedback'
       ? "What's working, what's not, what would you love to see?"
       : "Describe what's happening — we'll take a look.";
     supportErrorEl.textContent = '';
     supportSuccessEl.style.display = 'none';
     supportComposeEl.style.display = 'block';
+    // Unconditionally reset Send to its ready state on every open,
+    // regardless of whether a stale submit-support-message call from a
+    // previously-cancelled session might still be outstanding — that
+    // call's own .then()/.catch() reset this too, but only once it
+    // resolves, which can be well after this reopen (same reasoning as
+    // openIdentitySheet's own unconditional Save-button reset above).
+    supportSendBtn.disabled = false;
     // Focus first, THEN scroll — focusing a textarea already triggers
     // the browser's own implicit "scroll this into view" behavior, which
     // was fighting a smooth scrollIntoView() called beforehand (the two
@@ -811,13 +844,14 @@
   document.getElementById('feedback-cta-btn').addEventListener('click', function(){ openSupportCompose('feedback'); });
   document.getElementById('support-row').addEventListener('click', function(){ openSupportCompose('support'); });
   document.getElementById('support-cancel-btn').addEventListener('click', function(){
+    supportComposeToken++;
     supportComposeEl.style.display = 'none';
     supportMessageInput.value = '';
   });
 
   document.getElementById('support-success-icon').innerHTML = Icons.check;
 
-  document.getElementById('support-send-btn').addEventListener('click', function(){
+  supportSendBtn.addEventListener('click', function(){
     var btn = this;
     var message = supportMessageInput.value.trim();
     if(!message){ supportErrorEl.textContent = 'Enter a message first.'; return; }
@@ -834,12 +868,26 @@
     var daysSinceSignup = createdAt != null ? Math.floor((Date.now() - createdAt) / 86400000) : null;
     var videoCount = DreamStore.getMyDreams().length;
 
+    // Captured now, checked once this (real, network) call resolves — if
+    // Cancel, a reopen (same type or the other one), or Settings itself
+    // closing/reopening happened in the meantime, supportComposeToken has
+    // moved on and this result is stale: discard it silently (no input
+    // clear, no success banner, no toast for a submission that's no
+    // longer the one on screen) — same discard-on-staleness behavior as
+    // identitySheetToken/charSheetToken's own save handlers. typeAtSend
+    // (not the live, possibly-since-changed supportComposeType) is what
+    // decides the success copy so a late-but-not-stale resolution (the
+    // ordinary case — nothing else happened while this was in flight)
+    // still reports the type that was ACTUALLY sent.
+    var tokenAtSend = supportComposeToken;
+    var typeAtSend = supportComposeType;
+
     btn.disabled = true;
     fetch('/.netlify/functions/submit-support-message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: supportComposeType,
+        type: typeAtSend,
         username: user ? user.username : '',
         email: DreamStore.getAccountEmail(),
         message: message,
@@ -849,19 +897,21 @@
     }).then(function(res){
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
-      btn.disabled = false;
+      if(tokenAtSend === supportComposeToken) btn.disabled = false;
+      if(tokenAtSend !== supportComposeToken) return;
       if(!result.ok || !result.data || result.data.ok !== true){
         supportErrorEl.textContent = "Couldn't send — try again.";
         return;
       }
       supportMessageInput.value = '';
-      document.getElementById('support-success-text').textContent = supportComposeType === 'feedback'
+      document.getElementById('support-success-text').textContent = typeAtSend === 'feedback'
         ? 'Thanks for the feedback!'
         : "Thanks — we got your message and will follow up by email.";
       supportSuccessEl.style.display = 'flex';
-      showToast(supportComposeType === 'feedback' ? 'Feedback sent — thank you!' : 'Message sent');
+      showToast(typeAtSend === 'feedback' ? 'Feedback sent — thank you!' : 'Message sent');
     }).catch(function(){
-      btn.disabled = false;
+      if(tokenAtSend === supportComposeToken) btn.disabled = false;
+      if(tokenAtSend !== supportComposeToken) return;
       supportErrorEl.textContent = "Couldn't send — try again.";
     });
   });
