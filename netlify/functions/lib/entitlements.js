@@ -11,7 +11,18 @@
 // Backed by a single Netlify Blobs store ("dreamtube-entitlements"),
 // ONE RECORD PER NORMALIZED EMAIL:
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
-//     tokens: { balance, lastGrantAt } }
+//     tokens: { balance, lastGrantAt },
+//     appliedTokenPackPaymentIds }
+//
+// appliedTokenPackPaymentIds: a short-lived array of Dodo payment_ids whose
+// token-pack credit has already been applied to `tokens.balance` — see
+// creditTokenPackAmountOnce below for why this needs to live in the SAME
+// record (and get written in the SAME setJSON call) as the balance it
+// guards. Nothing else about it is interesting on its own:
+// forgetAppliedTokenPack prunes an entry the moment its purchase is fully
+// committed (see creditTokenPackOnce), so in steady state this array is
+// normally empty — it only holds entries while a credit is genuinely
+// in-flight or was interrupted mid-way.
 //
 // ============================================================================
 // TOKEN ECONOMY — replaces the old quota/subscription-entitlement model
@@ -457,6 +468,61 @@ var MAX_CREDIT_ATTEMPTS = 3;
  * A missing/falsy `paymentId` (shouldn't happen with a real Dodo payload,
  * but don't let that silently drop a legitimate purchase) skips the dedup
  * check entirely and just credits once, uncached.
+ *
+ * ----------------------------------------------------------------------
+ * TWO-PHASE MARKER (status: 'pending' -> 'committed') — fixes tracker
+ * item dodo-payment-webhook-marker-before-credi-kz94cx
+ * ----------------------------------------------------------------------
+ * The version of this function described above (and originally shipped)
+ * wrote the dedup marker as its own terminal state: once the write-then-
+ * verify race above declared a winner, THAT marker's mere existence was
+ * treated as "fully processed" forever after. That's a real gap: if
+ * `addTokens` threw right after the marker committed (a transient Blobs
+ * write failure at exactly the wrong moment — rare, but real, and a
+ * webhook 500 in response is expected/correct so Dodo retries), every
+ * subsequent redelivery would see the already-written marker, SKIP, and
+ * report `credited: false` — permanently. A real charge would have gone
+ * through with its tokens silently, permanently uncredited, with no way
+ * for a retry to ever self-heal it.
+ *
+ * The fix is a marker with an explicit `status` field, not treated as
+ * terminal until `status === 'committed'`:
+ *   1. The write-then-verify race above now writes `status: 'pending'`
+ *      (not yet terminal) instead of treating existence-of-any-marker as
+ *      done.
+ *   2. If the marker we find already exists with `status === 'committed'`,
+ *      that's a genuine redelivery of an already-fully-processed
+ *      payment — SKIP, `credited: false`, exactly like before.
+ *   3. If the marker (ours or a pre-existing one) has `status ===
+ *      'pending'`, this is either a fresh attempt or a RESUME of an
+ *      earlier attempt that was interrupted somewhere between writing
+ *      the marker and finishing the credit. Either way the remaining
+ *      work is identical: make sure the balance credit has actually
+ *      landed, then flip the marker to `'committed'`. The flip is a
+ *      plain overwrite (not the full retry-race machinery) — by this
+ *      point this call has already proven the marker is genuinely
+ *      "ours to finish" (either it just won the race above, or it read
+ *      an existing marker whose only possible next state is committed),
+ *      so there is no race left to defend against on this specific
+ *      write, only ordinary Blobs write flakiness (handled by returning
+ *      `credited: false` and leaving the marker `'pending'` for the next
+ *      retry to pick back up, rather than throwing).
+ *
+ * The subtle part `status: 'pending'` alone does NOT solve: on resume,
+ * this function cannot tell from the marker alone whether `addTokens`
+ * already ran during the interrupted attempt (it could have thrown
+ * mid-write, OR it could have succeeded and only the flip-to-committed
+ * write afterward failed). Since a plain balance increment is not
+ * idempotent, blindly calling it again on every resume would re-open
+ * the exact double-credit hazard the original TOCTOU fix above exists to
+ * prevent — just moved one step later. `creditTokenPackAmountOnce` below
+ * closes THIS gap: it records `paymentId` as applied in the SAME single
+ * Blobs write that bumps the balance, so "was this payment's credit
+ * already applied" can be answered with certainty by reading the
+ * entitlement record, not guessed at from a separate marker whose write
+ * could itself have failed independently. See that function's own doc
+ * comment for why putting both facts in one write is what actually makes
+ * this safe, rather than just narrowing the window.
  */
 async function creditTokenPackOnce(event, email, paymentId, tokens) {
   if (!paymentId) {
@@ -473,32 +539,217 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
       return tokenPurchasesStore().get(paymentId, { type: 'json' });
     },
     mutate: function (existing) {
-      // Already processed (by an earlier attempt of ours, or a genuinely
-      // separate caller) — this is a terminal "already handled" outcome,
-      // not something retrying can change, so abort immediately without
-      // writing. See blobs-retry.js's SKIP doc comment.
+      // A marker already exists — either from an earlier attempt of ours
+      // within this same loop (verify lagged, so we looped back and now
+      // see our own write) or a genuinely separate caller/redelivery.
+      // Either way there's nothing new to write here: SKIP and let the
+      // caller decide what the existing marker's `status` means.
       if (existing) return blobsRetry.SKIP;
       claimId = crypto.randomUUID();
-      return { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now(), claimId: claimId };
+      return { email: normalizeEmail(email), tokens: tokens, status: 'pending', claimId: claimId, createdAt: Date.now() };
     },
     verify: function (verifyRead) {
       return !!(verifyRead && verifyRead.claimId === claimId);
     }
   });
 
+  var marker;
   if (result.ok) {
-    await addTokens(event, email, tokens);
-    return { credited: true };
+    marker = result.value; // our freshly-written 'pending' marker just won the race
+  } else if (result.skipped) {
+    marker = result.current; // a pre-existing marker (pending or committed)
+  } else {
+    // Attempts exhausted without our write ever being confirmed as the
+    // one that won — fail CLOSED (no credit), same deliberately safer
+    // direction as before: a human-reconcilable under-credit, never a
+    // silent double-grant. Looping back to a fresh read on a later retry
+    // makes it very likely to see whichever marker actually won directly
+    // and proceed from there, exactly like a real redelivery would.
+    return { credited: false };
   }
-  // Either SKIP (already processed) or attempts exhausted without ever
-  // confirming our own write won — both fail CLOSED (no credit), the
-  // deliberately safer direction for a payment webhook (a human-
-  // reconcilable under-credit, never a silent double-grant). On the
-  // exhausted-attempts path, someone else's write was the one actually
-  // visible on every verify — looping back to a fresh read makes the
-  // NEXT attempt very likely see that marker directly and SKIP, exactly
-  // like a real redelivery would.
-  return { credited: false };
+
+  if (!marker || marker.status === 'committed') {
+    // A fully-processed payment — genuine redelivery, nothing to do.
+    return { credited: false };
+  }
+
+  // marker.status === 'pending': either freshly created above, or a
+  // resume of an interrupted earlier attempt. creditTokenPackAmountOnce
+  // is idempotent per paymentId (see its own doc comment), so it's safe
+  // to call again here even if an earlier, interrupted attempt already
+  // applied this exact credit — it will report `ok: true` without
+  // touching the balance a second time.
+  var applyResult = await creditTokenPackAmountOnce(event, email, paymentId, tokens);
+  if (!applyResult.ok) {
+    // Could not confirm the balance credit landed even after
+    // creditTokenPackAmountOnce's own bonus confirmatory read — leave the
+    // marker `'pending'` (do NOT flip to committed) so the next retry
+    // resumes cleanly from here rather than either losing the credit or
+    // risking a double-credit by assuming success.
+    return { credited: false };
+  }
+
+  // At this point the balance credit is guaranteed to have landed exactly
+  // once (creditTokenPackAmountOnce's own guarantee), regardless of how
+  // many callers reach this line concurrently — a 'pending' marker CAN
+  // legitimately be resumed by more than one near-simultaneous redelivery
+  // (see creditTokenPackAmountOnce's doc comment). But `credited: true`
+  // is a signal a future caller might reasonably treat as "fire a
+  // one-time side effect" (a receipt email, an analytics event) — so,
+  // same as the initial marker write above, this flip is ALSO raced
+  // rather than a blind overwrite: exactly one of several concurrent
+  // resumers should be the one that reports `credited: true`, the rest
+  // should see it's already been finished and report `credited: false`
+  // (a safe, expected no-op — the money is correct either way, this is
+  // only about which single call gets to say "I was the one").
+  var finishClaimId;
+  var finishResult = await blobsRetry.retryingWrite(event, TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return tokenPurchasesStore().get(paymentId, { type: 'json' });
+    },
+    mutate: function (existing) {
+      if (existing && existing.status === 'committed') return blobsRetry.SKIP; // someone else already finished this resume
+      finishClaimId = crypto.randomUUID();
+      return Object.assign({}, existing || marker, { status: 'committed', creditedAt: Date.now(), finishClaimId: finishClaimId });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.finishClaimId === finishClaimId);
+    }
+  });
+
+  if (!finishResult.ok) {
+    // Either someone else's concurrent resume already flipped it (SKIP),
+    // or attempts were exhausted without confirming a win — either way
+    // this specific call isn't the one that gets to report `credited:
+    // true`. The credit itself already landed (applyResult.ok above), so
+    // this is not a lost credit: at worst the marker stays 'pending' a
+    // little longer for a future call to flip, which is harmless since
+    // creditTokenPackAmountOnce is idempotent.
+    return { credited: false };
+  }
+
+  // Best-effort cleanup of the short-lived per-email applied-paymentId
+  // record now that the payment marker itself is committed (see
+  // forgetAppliedTokenPack's doc comment) — not required for correctness
+  // (a lingering entry is harmless), so a failure here must not turn an
+  // already-successful credit into a 500/retry.
+  try {
+    await forgetAppliedTokenPack(event, email, paymentId);
+  } catch (e) {
+    // Swallowed deliberately — see comment above.
+  }
+
+  return { credited: true };
+}
+
+/**
+ * Credits `amount` tokens onto `email`'s balance for a specific Dodo
+ * `paymentId`, idempotently: calling this twice for the same paymentId
+ * only ever applies the balance increment once. Used by creditTokenPackOnce
+ * to make its 'pending'-marker resume path safe (see that function's doc
+ * comment for the hazard this closes).
+ *
+ * WHY THIS NEEDS ITS OWN WRITE, NOT JUST "check a flag, then call
+ * addTokens": recording "this paymentId's tokens were applied" and
+ * actually applying them are two facts that, if written separately (e.g.
+ * a marker write before/after a plain addTokens() call), can end up
+ * disagreeing with each other exactly the same way the original
+ * marker-before-credit bug did — whichever one is written second is
+ * still vulnerable to a crash in between, just with the hazard moved to
+ * a new pair of writes instead of eliminated. A single Netlify Blobs
+ * `setJSON` call for one key IS all-or-nothing (the whole record
+ * replaces in one write, even though there's still no cross-key
+ * transaction and no compare-and-swap — see blobs-retry.js's header
+ * comment) — so folding both facts into ONE write (the entitlement
+ * record's `tokens.balance` and its `appliedTokenPackPaymentIds` array)
+ * means they can never end up recorded inconsistently with each other.
+ * Resuming just has to read that one record and check whether
+ * `paymentId` is already in the list — no guessing required.
+ *
+ * Reuses blobs-retry.js's bounded read -> mutate -> write -> verify loop
+ * (same shape as creditTokenPackOnce's own dedup guard above) rather than
+ * a plain check-then-write, because a 'pending' marker CAN legitimately
+ * be resumed by more than one caller close together (e.g. two Dodo
+ * redeliveries of the same interrupted payment arriving near-
+ * simultaneously) — without this, two concurrent resumes could both read
+ * "not yet applied" before either writes, and both credit. `verify`
+ * checks the SAME thing `mutate` checks: that `paymentId` is now present
+ * in the record's `appliedTokenPackPaymentIds`. Fails CLOSED on
+ * exhausted attempts (`ok: false`, no credit assumed) EXCEPT for one
+ * bonus, unhurried confirmatory read afterward — since a failed verify
+ * can mean either a real clobber (someone else's write is the one
+ * visible) or just our own write not yet propagating to the verify-read
+ * in time (see blobs-retry.js's own honest caveat about this), and only
+ * the former is actually "still not applied". That final read resolves
+ * the ambiguity in the common case without ever reporting `ok: true`
+ * when nothing was actually confirmed.
+ */
+async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false };
+
+  // Apply any due lazy grant first, same sequencing as addTokens, so the
+  // balance we add onto is current.
+  await syncTokens(event, key);
+
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return store().get(key, { type: 'json' });
+    },
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var appliedList = rec.appliedTokenPackPaymentIds || [];
+      if (appliedList.indexOf(paymentId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
+      var tok = rec.tokens || { balance: 0, lastGrantAt: Date.now() };
+      var newBalance = Math.min(MAX_TOKEN_BALANCE, tok.balance + amount);
+      return Object.assign({}, rec, {
+        email: key,
+        tokens: { balance: newBalance, lastGrantAt: tok.lastGrantAt },
+        appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
+        updatedAt: Date.now()
+      });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.appliedTokenPackPaymentIds && verifyRead.appliedTokenPackPaymentIds.indexOf(paymentId) !== -1);
+    }
+  });
+
+  if (result.ok || result.skipped) return { ok: true }; // credited just now, or already applied by an earlier attempt
+
+  // Attempts exhausted without our write ever being confirmed — take one
+  // more plain, unhurried read before giving up: see doc comment above
+  // for why this isn't just "try again forever" (the ambiguity it
+  // resolves is propagation lag, not an infinite retry).
+  var finalRead = await getEntitlement(event, key);
+  var finalApplied = (finalRead && finalRead.appliedTokenPackPaymentIds) || [];
+  return { ok: finalApplied.indexOf(paymentId) !== -1 };
+}
+
+/**
+ * Removes `paymentId` from `email`'s short-lived `appliedTokenPackPaymentIds`
+ * list once its purchase marker has been safely flipped to `'committed'`
+ * (see creditTokenPackOnce) — at that point the marker record is the sole
+ * source of truth for "already processed" and this per-email array no
+ * longer needs to remember it too. Purely a housekeeping step to keep the
+ * array from growing across a long-lived paying account's lifetime; NOT
+ * required for correctness (a lingering entry is harmless — it just means
+ * a paymentId that will never be looked up again stays idempotency-marked
+ * forever), so callers should treat a failure here as non-fatal. No-ops
+ * for an empty/missing email or a paymentId that isn't present.
+ */
+async function forgetAppliedTokenPack(event, email, paymentId) {
+  var key = normalizeEmail(email);
+  if (!key) return;
+  var record = await getEntitlement(event, key);
+  var applied = (record && record.appliedTokenPackPaymentIds) || [];
+  if (applied.indexOf(paymentId) === -1) return;
+  await setEntitlement(event, key, {
+    appliedTokenPackPaymentIds: applied.filter(function (id) { return id !== paymentId; })
+  });
 }
 
 module.exports = {
@@ -511,5 +762,7 @@ module.exports = {
   getTokenStatus,
   spendTokens,
   addTokens,
-  creditTokenPackOnce
+  creditTokenPackOnce,
+  creditTokenPackAmountOnce,
+  forgetAppliedTokenPack
 };

@@ -134,6 +134,136 @@ test('three CONCURRENT calls for the SAME payment_id still credit exactly once',
   assert.equal(record.tokens.balance, 500);
 });
 
+// ----- Interrupted-credit resume (dodo-payment-webhook-marker-before-credi-kz94cx) -----
+//
+// These simulate an earlier call that got interrupted somewhere between
+// writing the dedup marker and finishing the credit — e.g. addTokens threw
+// on a transient Blobs write failure — by directly seeding the mock Blobs
+// stores into that exact intermediate shape, then confirming a later call
+// (a Dodo webhook redelivery, in reality) completes the credit exactly
+// once: not zero times (the original bug this fixes — a real charge with
+// tokens silently, permanently unaccounted for) and not twice (a double
+// credit, which the naive "credit first, mark second" reorder would risk
+// instead).
+
+test('a marker left "pending" with the balance NOT yet applied (addTokens never ran) resumes and completes the credit exactly once', async function () {
+  var email = 'interrupted1@example.com';
+  var paymentId = 'pay_interrupted_1';
+  await seedZeroBalance(email);
+
+  // Seed exactly the state an interrupted first attempt would have left:
+  // the dedup marker committed as 'pending', but the entitlement record
+  // has no record of this paymentId's credit ever being applied (addTokens
+  // threw before it could run).
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email,
+    tokens: 100,
+    status: 'pending',
+    claimId: 'stale-claim-from-interrupted-attempt',
+    createdAt: Date.now() - 5000
+  });
+
+  var result = await entitlements.creditTokenPackOnce({}, email, paymentId, 100);
+  assert.equal(result.credited, true, 'a resumed pending marker with no applied credit must complete the credit and report credited:true');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'the balance must reflect exactly one credit');
+});
+
+test('a marker left "pending" where the balance was ALREADY applied (only the flip-to-committed write was interrupted) does not double-credit on resume', async function () {
+  var email = 'interrupted2@example.com';
+  var paymentId = 'pay_interrupted_2';
+  await seedZeroBalance(email);
+
+  // Seed the OTHER interrupted state: an earlier attempt's
+  // creditTokenPackAmountOnce actually succeeded (balance already bumped,
+  // paymentId recorded in appliedTokenPackPaymentIds) but the marker never
+  // got flipped to 'committed' — e.g. the process died between the two
+  // writes. This is the specific ambiguous case creditTokenPackAmountOnce's
+  // idempotency check exists to resolve correctly.
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 100, lastGrantAt: Date.now() },
+    appliedTokenPackPaymentIds: [paymentId]
+  });
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email,
+    tokens: 100,
+    status: 'pending',
+    claimId: 'stale-claim-from-interrupted-attempt-2',
+    createdAt: Date.now() - 5000
+  });
+
+  var result = await entitlements.creditTokenPackOnce({}, email, paymentId, 100);
+  assert.equal(result.credited, true, 'resuming a pending marker whose balance was already applied should still report credited:true (finishing the interrupted work, i.e. flipping the marker) — not an error');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'the balance must NOT be credited a second time — this is the double-credit hazard the fix exists to close');
+});
+
+test('a marker already "committed" is a genuine redelivery and is never resumed (credited:false, no change to balance)', async function () {
+  var email = 'committed1@example.com';
+  var paymentId = 'pay_committed_1';
+  await seedZeroBalance(email);
+
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastGrantAt: Date.now() } });
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email,
+    tokens: 100,
+    status: 'committed',
+    claimId: 'old-claim',
+    createdAt: Date.now() - 60000,
+    creditedAt: Date.now() - 59000
+  });
+
+  var result = await entitlements.creditTokenPackOnce({}, email, paymentId, 100);
+  assert.equal(result.credited, false, 'a committed marker means this payment was already fully processed — a redelivery must be a no-op');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'balance must be untouched by a redelivery of an already-committed payment');
+});
+
+test('a fresh interrupted-credit call flips the marker to status "committed" so a later redelivery is recognized as already processed', async function () {
+  var email = 'interrupted3@example.com';
+  var paymentId = 'pay_interrupted_3';
+  await seedZeroBalance(email);
+
+  mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
+    email: email,
+    tokens: 100,
+    status: 'pending',
+    claimId: 'stale-claim-3',
+    createdAt: Date.now() - 5000
+  });
+
+  var first = await entitlements.creditTokenPackOnce({}, email, paymentId, 100);
+  assert.equal(first.credited, true);
+
+  // A THIRD delivery now, after the resume above already completed and
+  // (per creditTokenPackOnce's own doc comment) flipped the marker to
+  // 'committed' — this must behave exactly like the existing "already
+  // processed" dedup case, not attempt yet another resume.
+  var second = await entitlements.creditTokenPackOnce({}, email, paymentId, 100);
+  assert.equal(second.credited, false, 'once resumed and committed, a further redelivery must be a no-op');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'balance must reflect exactly one credit across all three deliveries (interrupted + resume + redelivery)');
+});
+
+test('creditTokenPackAmountOnce is idempotent per paymentId when called directly twice', async function () {
+  var email = 'directamount@example.com';
+  var paymentId = 'pay_direct_amount';
+  await seedZeroBalance(email);
+
+  var first = await entitlements.creditTokenPackAmountOnce({}, email, paymentId, 100);
+  var second = await entitlements.creditTokenPackAmountOnce({}, email, paymentId, 100);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true, 'a second call for the same paymentId must still report ok:true (already applied) without crediting again');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100, 'balance must reflect exactly one credit despite two calls');
+  assert.deepEqual(record.appliedTokenPackPaymentIds, [paymentId], 'paymentId should be recorded exactly once, not duplicated');
+});
+
 test('concurrent races on DIFFERENT payment_ids for the same email both go through the dedup guard independently (both credited:true)', async function () {
   // Deliberately does NOT assert the exact resulting balance. Once both
   // payment_ids clear the dedup-marker guard (this test's actual point —
