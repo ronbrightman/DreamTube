@@ -76,6 +76,17 @@
       <div class="style-card" data-style="Realistic"><div class="sc-bg sc-realistic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Realistic</div></div></div>
     </div>
     <div style="flex:1"></div>
+    <!-- Image-vs-video picker — Direction A, the segmented toggle (Ron's
+         confirmed choice, see docs/IMAGE_GENERATION_SPEC.md §5/§9). Video
+         is pre-selected so existing behavior is unchanged unless a user
+         deliberately picks Image. Reuses the char-mode-row/char-mode-btn
+         visual pattern under new class names (.media-type-row/
+         .media-type-btn) to avoid coupling this to the character sheet's
+         own Describe/Upload-photo toggle. -->
+    <div class="media-type-row" id="media-type-row">
+      <div class="media-type-btn" data-media-type="image">Image</div>
+      <div class="media-type-btn active" data-media-type="video">Video</div>
+    </div>
     <button class="btn btn-primary btn-block" id="generate-btn" disabled style="margin-bottom:22px;">Generate Video</button>
   </div>
 
@@ -86,8 +97,10 @@
            tokens as "pay to continue" (there's no live payment flow at all
            right now). It's purely a wait-a-bit state: the daily free grant
            refills automatically, no purchase required. See shop.html's own
-           beta banner for the same framing. -->
-      <div class="modal-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 100 more automatically within 24 hours.</div>
+           beta banner for the same framing. id'd (modal-quota-body) so the
+           image-vs-video picker below can swap this copy in place — see
+           updateMediaTypeUI(). -->
+      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 100 more automatically within 24 hours.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
         <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
@@ -118,23 +131,52 @@
     genBtn.disabled = false;
   });
 
+  // ===== Image-vs-video picker (Direction A — segmented toggle) =====
+  // Video is pre-selected on every visit to this screen (not a remembered
+  // preference across sessions) — see docs/IMAGE_GENERATION_SPEC.md §5:
+  // existing behavior is unchanged unless a user deliberately taps Image.
+  var IMAGE_TOKEN_COST = 10;
+  var VIDEO_TOKEN_COST = 100;
+  var selectedMediaType = 'video';
+  var mediaTypeRow = document.getElementById('media-type-row');
+  var quotaBody = document.getElementById('modal-quota-body');
+
+  var VIDEO_QUOTA_COPY = 'Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get 100 more automatically within 24 hours.';
+  var IMAGE_QUOTA_COPY = 'Generating an image costs 10 tokens. Free during beta — no card needed — you\'ll get 100 more automatically within 24 hours.';
+
+  function updateMediaTypeUI(){
+    Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){
+      b.classList.toggle('active', b.dataset.mediaType === selectedMediaType);
+    });
+    genBtn.textContent = selectedMediaType === 'image' ? 'Generate Image' : 'Generate Video';
+    quotaBody.textContent = selectedMediaType === 'image' ? IMAGE_QUOTA_COPY : VIDEO_QUOTA_COPY;
+  }
+  mediaTypeRow.addEventListener('click', function(e){
+    var btn = e.target.closest('.media-type-btn');
+    if(!btn) return;
+    selectedMediaType = btn.dataset.mediaType;
+    updateMediaTypeUI();
+  });
+  updateMediaTypeUI();
+
   // ===== Token balance pre-check =====
   // Convenience-only, client-side pre-check (see js/store.js's
   // getTokenStatus doc comment) — fetched once on load, never awaited at
   // click time, so a slow/failed/never-resolving fetch simply leaves
   // tokenStatus null and the generate button behaves exactly as it does
   // today (fail open). The real enforcement is generate-video.js's
-  // server-side E112 check. One generation always costs 100 tokens flat —
-  // see generate-video.js's E112 doc block.
+  // server-side E112 check (or generate-image.js's E412) — the threshold
+  // checked below reacts to whichever media type is currently selected.
   var tokenStatus = null;
   DreamStore.getTokenStatus().then(function(status){ tokenStatus = status; }).catch(function(){ tokenStatus = null; });
 
   function tokensBlockGeneration(){
-    return !!(tokenStatus && tokenStatus.balance < 100);
+    var cost = selectedMediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
+    return !!(tokenStatus && tokenStatus.balance < cost);
   }
 
   function proceedToGenerate(){
-    DreamStore.setDraft({ style: selected });
+    DreamStore.setDraft({ style: selected, mediaType: selectedMediaType, sourceImageUrl: null });
     location.href = 'processing.html';
   }
 

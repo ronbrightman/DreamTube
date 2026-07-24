@@ -271,14 +271,28 @@ async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, g
   return { ok: true, operationName: 'fal:' + FAL_MODEL_REFERENCE_TO_VIDEO + ':' + data.request_id };
 }
 
-// Unused fallback path — kept in case a future feature wants literal photo
-// animation (e.g. "bring this exact photo to life") rather than using a
-// photo's subject within an independently-described scene, which is what
-// the self-photo character feature actually needs (see
-// callFalReferenceToVideo above, the active path for that).
+// ACTIVE PATH when the request carries a sourceImageUrl (the "Turn this
+// into a video" upsell — see js/store.js's turnImageIntoVideo and
+// result.html's CTA, plus docs/IMAGE_GENERATION_SPEC.md §6). Reactivated
+// 2026-07-24 — previously dormant/unused (kept only "in case a future
+// feature wants literal photo animation"), which is exactly the feature
+// this is now: animating the flat image generate-image.js produced (fal's
+// own hosted URL, not a data URI — unlike callFalReferenceToVideo's
+// selfPhoto.photoDataUrl, since there's no client-side upload step here)
+// as the video's literal starting frame. This is deliberately
+// image_url (singular, a starting frame) not callFalReferenceToVideo's
+// image_urls (plural, subject-identity references) — see that function's
+// own doc comment for why those two are semantically different fal
+// concepts, not interchangeable.
+//
+// Signature brought in line with callFal/callFalReferenceToVideo above as
+// part of this reactivation (duration/generateAudio/webhookUrl, using
+// resolveDuration() and the generate_audio param instead of the previous
+// hardcoded duration: '8s' and no audio param) — a consistency fix, no new
+// behavior beyond what reactivating this path requires.
 var FAL_MODEL_IMAGE_TO_VIDEO = 'fal-ai/veo3.1/fast/image-to-video';
-async function callFalImageToVideo(prompt, imageDataUrl, falKey) {
-  var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_TO_VIDEO, {
+async function callFalImageToVideo(prompt, imageUrl, falKey, duration, generateAudio, webhookUrl) {
+  var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_TO_VIDEO, webhookUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -286,10 +300,11 @@ async function callFalImageToVideo(prompt, imageDataUrl, falKey) {
     },
     body: JSON.stringify({
       prompt: prompt,
-      image_url: imageDataUrl,
+      image_url: imageUrl,
       aspect_ratio: '9:16',
-      duration: '8s',
-      resolution: '720p'
+      duration: duration || DEFAULT_DURATION,
+      resolution: '720p',
+      generate_audio: generateAudio !== false
     })
   });
 
@@ -373,6 +388,12 @@ async function callVeoDirect(prompt, apiKey) {
 //   E105 fal rejected the text-to-video submission (bad params, content policy, rate limit, etc.)
 //   E106 fal rejected the reference-to-video submission (same causes, self-photo path)
 //   E107 couldn't reach fal at all (network failure before any response came back)
+//   E114 fal rejected the image-to-video submission (the "Turn this into a video" upsell path —
+//                                     see callFalImageToVideo above and js/store.js's turnImageIntoVideo.
+//                                     Deliberately NOT E108 or E111 — those two are retired/renamed
+//                                     from this file's old subscription-paywall gate (see the E112 doc
+//                                     block below) and reusing either would confuse anyone grepping old
+//                                     support tickets for what those codes used to mean.)
 //   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
 //                                     exceeded for today. Cost/abuse safety net, unrelated to E112's
 //                                     token balance below — see lib/rate-limit.js.
@@ -500,7 +521,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -511,6 +532,12 @@ exports.handler = async function (event) {
     sceneryPlace = payload.sceneryPlace || null;
     email = entitlements.normalizeEmail(payload.email);
     turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
+    // Optional — the "Turn this into a video" upsell (see js/store.js's
+    // turnImageIntoVideo and result.html's CTA). When present, this request
+    // routes through callFalImageToVideo instead of the normal text-to-video/
+    // reference-to-video paths below — see the branch right before the fal
+    // call itself.
+    sourceImageUrl = typeof payload.sourceImageUrl === 'string' && payload.sourceImageUrl.trim() ? payload.sourceImageUrl.trim() : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
@@ -617,14 +644,24 @@ exports.handler = async function (event) {
   var duration = resolveDuration();
 
   try {
-    var result = selfPhoto
-      ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
-      : await callFal(prompt, falKey, duration, generateAudio);
+    // sourceImageUrl (the "Turn this into a video" upsell) takes priority
+    // over the self-photo reference-to-video path — these are two
+    // different fal concepts and mutually exclusive per request (see
+    // callFalImageToVideo's own doc comment and
+    // docs/IMAGE_GENERATION_SPEC.md §6's known-limitation writeup): a
+    // "turn this into a video" call always animates the already-generated
+    // image, it never also blends in a separate self-photo reference in
+    // the same call.
+    var result = sourceImageUrl
+      ? await callFalImageToVideo(prompt, sourceImageUrl, falKey, duration, generateAudio)
+      : selfPhoto
+        ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
+        : await callFal(prompt, falKey, duration, generateAudio);
     if (!result.ok) {
       // No real spend happened — a rejected submission must NOT spend
       // tokens, so spendTokens is deliberately not called on this path
       // (see the E112 doc block above).
-      var rejectCode = selfPhoto ? 'E106' : 'E105';
+      var rejectCode = sourceImageUrl ? 'E114' : (selfPhoto ? 'E106' : 'E105');
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, 100);
@@ -646,7 +683,9 @@ exports.handler = async function (event) {
 exports.buildPrompt = buildPrompt;
 exports.callFal = callFal;
 exports.callFalReferenceToVideo = callFalReferenceToVideo;
+exports.callFalImageToVideo = callFalImageToVideo;
 exports.resolveDuration = resolveDuration;
 exports.falErrorMessage = falErrorMessage;
 exports.FAL_MODEL = FAL_MODEL;
 exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;
+exports.FAL_MODEL_IMAGE_TO_VIDEO = FAL_MODEL_IMAGE_TO_VIDEO;

@@ -1,10 +1,22 @@
 // netlify/functions/publish-dream.js
 //
-// POST { id, ownerHandle, caption, style, dur, videoUrl } -> upserts a dream
-// into the shared feed-index blob (see get-feed.js). Called both when a
-// dream is first published, and again if an already-published dream is
-// later edited/regenerated (store.js's finalizeDream re-syncs so the shared
-// copy doesn't go stale) — same upsert either way, keyed on id.
+// POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType }
+// -> upserts a dream into the shared feed-index blob (see get-feed.js).
+// Called both when a dream is first published, and again if an
+// already-published dream is later edited/regenerated (store.js's
+// finalizeDream re-syncs so the shared copy doesn't go stale) — same
+// upsert either way, keyed on id.
+//
+// videoUrl/imageUrl/mediaType (added for the image-generation feature — see
+// docs/IMAGE_GENERATION_SPEC.md): a dream needs EITHER a videoUrl or an
+// imageUrl to publish, not both — the old `!videoUrl` requirement below
+// used to hard-block an image-type dream from ever reaching the shared
+// feed at all (silently, since js/store.js's syncPublishedDreamToFeed is
+// fire-and-forget). mediaType is passed through mostly for forward
+// compatibility/debugging — get-feed.js's own consumers (explore.html/
+// profile.html) render off videoUrl/imageUrl presence directly, the same
+// three-way fallback pattern used everywhere else in this codebase, not
+// off this field.
 //
 // No ownership check: this app has no real server-side auth (client-side
 // localStorage only, same as every other write in this codebase), so this
@@ -30,8 +42,10 @@ exports.handler = async function (event) {
   var caption = payload.caption;
   var style = payload.style;
   var dur = payload.dur;
-  var videoUrl = payload.videoUrl;
-  if (!id || !ownerHandle || !caption || !style || !videoUrl) {
+  var videoUrl = payload.videoUrl || null;
+  var imageUrl = payload.imageUrl || null;
+  var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
+  if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'missing_fields' }) };
   }
 
@@ -42,7 +56,8 @@ exports.handler = async function (event) {
     var idx = feed.findIndex(function (d) { return d.id === id; });
 
     var record = {
-      id: id, ownerHandle: ownerHandle, caption: caption, style: style, dur: dur, videoUrl: videoUrl,
+      id: id, ownerHandle: ownerHandle, caption: caption, style: style, dur: dur,
+      videoUrl: videoUrl, imageUrl: imageUrl, mediaType: mediaType,
       likes: idx === -1 ? 0 : (feed[idx].likes || 0),
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt
     };

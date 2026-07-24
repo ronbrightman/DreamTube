@@ -69,6 +69,7 @@
 <div id="app" class="fill" style="position:relative;">
   <div class="result-bg" id="result-bg"></div>
   <video class="result-video" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
+  <img class="result-image" id="result-image" alt="" style="display:none;">
   <div class="result-scrim"></div>
   <div class="play-badge result-play" id="result-play-badge"><div class="badge-circle"><span class="icon" id="result-play-icon"></span></div></div>
   <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
@@ -88,6 +89,15 @@
       <span class="feed-tag" id="result-style-tag">Style: —</span>
       <span class="feed-tag" id="result-privacy-tag">Private</span>
     </div>
+    <!-- "Turn this into a video" upsell — shown only when this dream has an
+         image but no video yet (dream.imageUrl && !dream.videoUrl), the
+         single most prominent action on the screen at that point. See
+         docs/IMAGE_GENERATION_SPEC.md §6 and js/store.js's
+         turnImageIntoVideo. -->
+    <button class="btn btn-warm btn-block turn-video-cta" id="turn-video-btn" style="display:none;" title="Turn this into a video">
+      <span class="interp-cta-label"><span class="icon" id="turn-video-icon"></span>Turn this into a video</span>
+      <span class="feed-tag">100 tokens</span>
+    </button>
     <div class="action-row-compact">
       <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
       <button class="btn btn-secondary" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
@@ -284,6 +294,7 @@
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
+  document.getElementById('turn-video-icon').innerHTML = Icons.video;
   document.getElementById('interp-lock-icon').innerHTML = Icons.lock;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
@@ -563,22 +574,40 @@
     dream = DreamStore.getDream(dreamId);
     if(!dream) return; // not found — the guard above is already redirecting to explore.html
     var video = document.getElementById('result-video');
+    var image = document.getElementById('result-image');
     var playBadge = document.getElementById('result-play-badge');
     var muteBtn = document.getElementById('mute-btn');
+    // Three-way: video (existing <video>) -> image (new <img>, same panel
+    // position) -> gradient fallback (unchanged) — see
+    // docs/IMAGE_GENERATION_SPEC.md §6. video always takes rendering
+    // priority once a dream has both (post "Turn this into a video").
     if(dream.videoUrl){
       video.src = dream.videoUrl;
       delete video.dataset.retried; // new src — the one-retry-on-error budget resets
       video.style.display = 'block';
+      image.removeAttribute('src');
+      image.style.display = 'none';
       playBadge.style.display = 'flex';
       muteBtn.style.display = 'flex';
+      document.getElementById('result-bg').style.background = 'transparent';
+    } else if(dream.imageUrl){
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      image.src = dream.imageUrl;
+      image.style.display = 'block';
+      playBadge.style.display = 'none';
+      muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = 'transparent';
     } else {
       video.removeAttribute('src');
       video.style.display = 'none';
+      image.removeAttribute('src');
+      image.style.display = 'none';
       playBadge.style.display = 'none';
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
+    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl) ? 'flex' : 'none';
     document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
     quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
     setupExpandableQuote();
@@ -836,7 +865,14 @@
     var text = document.getElementById('edit-text').value.trim();
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
-    DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false });
+    // Regenerating keeps the dream's existing mediaType — there is
+    // deliberately no media-type picker on the Edit sheet (see
+    // docs/IMAGE_GENERATION_SPEC.md §7's explicit scope cut: switching type
+    // mid-edit is "start a fresh dream" instead, via Make another dream).
+    // sourceImageUrl is explicitly cleared so a stale value from an earlier
+    // "Turn this into a video" attempt on a DIFFERENT dream this session
+    // can never leak into an unrelated regenerate.
+    DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
     location.href = 'processing.html';
   }
 
@@ -849,6 +885,21 @@
   });
   document.getElementById('quota-buy').addEventListener('click', function(){
     location.href = 'shop.html';
+  });
+
+  // ===== "Turn this into a video" upsell =====
+  // Same client-side token pre-check as Generate Again above (100 tokens —
+  // a video costs the same flat 100 regardless of how it was triggered),
+  // reusing the same #modal-quota (its existing "Generating a video costs
+  // 100 tokens..." copy already reads correctly for this trigger — see
+  // docs/IMAGE_GENERATION_SPEC.md §6, no change needed there). On enough
+  // tokens: DreamStore.turnImageIntoVideo sets the draft, then this
+  // navigates to processing.html — mirroring proceedWithGenerateAgain
+  // exactly, reusing the full-screen progress/fail-state machinery already
+  // built and tested rather than a new inline spinner.
+  document.getElementById('turn-video-btn').addEventListener('click', function(){
+    if(tokensBlockGeneration()){ quotaModal.classList.add('open'); return; }
+    if(DreamStore.turnImageIntoVideo(dream.id)){ location.href = 'processing.html'; }
   });
 
   function showToast(msg){
