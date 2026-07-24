@@ -51,6 +51,7 @@
 // exactly as it already is for the tracker.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
+var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-support-messages';
 var KEY = 'messages';
@@ -73,37 +74,41 @@ async function getMessages(event) {
  * caller's job — see submit-support-message.js). Returns the entry as
  * stored. Goes through a bounded read-mutate-write-then-verify retry
  * loop — see the CONCURRENT-WRITE RACE comment above for what this does
- * and doesn't protect against.
+ * and doesn't protect against. The actual loop mechanics live in the
+ * shared lib/blobs-retry.js (extracted once this became the fourth store
+ * to reimplement the same pattern — see that file's own header comment)
+ * — this stays a thin domain-specific wrapper: "mutate" is "append
+ * unless already present" and "verify" is "is the entry now present".
  *
- * Each attempt checks `alreadyPresent` (by `entry.id`) against the FRESH
- * read before concatenating — mirrors tracker-store.js's addItem, and
- * for the exact same reason: a retry here isn't only triggered by a real
- * clobber from another writer, it's also triggered by our own verify-read
- * getting a false negative (this store's eventual consistency means a
- * read immediately after our own write isn't guaranteed to see it yet).
- * Without this check, that false-negative case would retry into a
- * SECOND, genuinely successful write of the same message once the first
- * write actually does propagate — i.e. `entry` landing twice in the
- * array, not just once. Checking `alreadyPresent` first makes a retry
- * against an already-landed entry a no-op (re-persists the same array
- * unchanged) instead of a duplicate append.
+ * Each attempt's mutate checks `alreadyPresent` (by `entry.id`) against
+ * the FRESH read before concatenating — mirrors tracker-store.js's
+ * addItem, and for the exact same reason: a retry here isn't only
+ * triggered by a real clobber from another writer, it's also triggered
+ * by our own verify-read getting a false negative (this store's eventual
+ * consistency means a read immediately after our own write isn't
+ * guaranteed to see it yet). Without this check, that false-negative
+ * case would retry into a SECOND, genuinely successful write of the same
+ * message once the first write actually does propagate — i.e. `entry`
+ * landing twice in the array, not just once. Checking `alreadyPresent`
+ * first makes a retry against an already-landed entry a no-op
+ * (re-persists the same array unchanged) instead of a duplicate append.
+ * Same fail-open posture as tracker-store.js's writeItemsWithRetry: the
+ * returned `entry` is handed back regardless of whether verify ever
+ * actually confirmed it landed.
  */
 async function appendMessage(event, entry) {
-  var result = entry;
-  for (var attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
-    var messages = await getMessages(event);
-    var alreadyPresent = messages.some(function (m) { return m.id === entry.id; });
-    var next = alreadyPresent ? messages : messages.concat([entry]);
-
-    connectLambda(event);
-    await store().setJSON(KEY, next);
-
-    connectLambda(event);
-    var verifyMessages = await store().get(KEY, { type: 'json' });
-    var landed = (verifyMessages || []).some(function (m) { return m.id === entry.id; });
-    if (landed) return result;
-  }
-  return result;
+  await blobsRetry.retryingWrite(event, STORE_NAME, KEY, {
+    maxAttempts: MAX_WRITE_ATTEMPTS,
+    read: getMessages,
+    mutate: function (messages) {
+      var alreadyPresent = messages.some(function (m) { return m.id === entry.id; });
+      return alreadyPresent ? messages : messages.concat([entry]);
+    },
+    verify: function (verifyMessages) {
+      return (verifyMessages || []).some(function (m) { return m.id === entry.id; });
+    }
+  });
+  return entry;
 }
 
 module.exports = { STORE_NAME, KEY, getMessages, appendMessage };
