@@ -99,14 +99,19 @@ setup was the only manual step; everything else is code, already wired:
   `?mode=signup` path (both → `CompleteRegistration`), `start.html`'s
   `renderScreen14()` pricing screen (→ `InitiateCheckout`),
   `netlify/functions/stripe-webhook.js`'s `checkout.session.completed`
-  handler (→ `Purchase` + `Subscribe`, currently dormant — see that
-  file's comment — because no real checkout flow calls
-  `create-checkout-session.js` yet; nothing fires these two events from
-  `start.html`'s temporary payment bypass, deliberately), and
-  `result.html` (→ `FirstVideoCreated`, a Meta *custom* event — fires once
-  per account, the moment a user's actual first-ever completed dream
-  video shows here fresh off `processing.html`; see
-  `docs/EVENT_TAXONOMY.md` for the full fire-once mechanics).
+  handler (→ `Purchase` + `Subscribe`, still dormant — see that file's
+  comment — this was the old subscription-model path, superseded by the
+  one-time token-pack model below), `shop.html`'s `handleCheckoutReturn`
+  on a real Dodo Payments `?checkout=success` return (→ `Purchase`, the
+  live path — client-fired, gated by a sessionStorage marker
+  `purchasePack()` sets right before the outbound Dodo redirect so the
+  bare query param alone can never fake a conversion; see
+  `docs/EVENT_TAXONOMY.md`'s "Purchase / purchase_completed" entry for
+  the full mechanics), and `result.html` (→ `FirstVideoCreated`, a Meta
+  *custom* event — fires once per account, the moment a user's actual
+  first-ever completed dream video shows here fresh off
+  `processing.html`; see `docs/EVENT_TAXONOMY.md` for the full fire-once
+  mechanics).
 
 If a custom_data field beyond Meta's standard set is ever needed (e.g.
 which A/B variant a converting user saw), add it to the `custom_data`
