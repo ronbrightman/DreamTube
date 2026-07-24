@@ -390,16 +390,18 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     the old E108/E111 subscription-paywall gate this replaces: that
 //                                     one stayed default-off until a real Stripe checkout existed,
 //                                     because being entitled there required having actually paid.
-//                                     Here every token anyone can spend is free-earned (200 on first
-//                                     read of a never-before-seen email, +100 every 24h — see
-//                                     getTokenStatus) until shop.html's token packs go live, so
-//                                     there's no "before checkout exists" state to protect against —
-//                                     this is a cost/usage safeguard, not a payment gate, and nobody
-//                                     is ever hard-blocked forever (the daily drip guarantees
-//                                     continued access), just rate-limited to a sustainable free
-//                                     tier. A request with no email at all has no way to be
-//                                     identified for a balance, so it's treated as balance 0 (blocked)
-//                                     — see the handler below.
+//                                     Every token anyone can spend is either free-earned (200 on
+//                                     first read of a never-before-seen email, +100 every 24h — see
+//                                     getTokenStatus) or purchased via shop.html's token packs (live
+//                                     via Dodo Payments — see create-checkout-session-dodo.js /
+//                                     dodo-webhook.js / docs/PAYWALL_SETUP.md), and this gate doesn't
+//                                     distinguish between the two — a balance is a balance regardless
+//                                     of how it was earned. This is a cost/usage safeguard, not a
+//                                     payment gate, and nobody is ever hard-blocked forever (the daily
+//                                     drip guarantees continued access even with zero purchases), just
+//                                     rate-limited to a sustainable free tier. A request with no email
+//                                     at all has no way to be identified for a balance, so it's
+//                                     treated as balance 0 (blocked) — see the handler below.
 //   E113 turnstile_verification_failed — Cloudflare Turnstile bot-abuse check (see
 //                                     lib/turnstile.js) rejected the request: the client-supplied
 //                                     turnstileToken was missing, or Cloudflare's siteverify call

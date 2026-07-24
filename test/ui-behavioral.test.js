@@ -994,12 +994,13 @@ test('shop.html leads with an explicit "Free during beta, no card needed" banner
     assert.match(bannerText, /free during beta/i);
     assert.match(bannerText, /no card needed/i);
 
-    // The disabled token packs must read as "not needed right now", not as
-    // a payment wall a new user has to get past -- see AGENT_POLICY.md's
-    // escalation policy on why they're still disabled (no payment provider
-    // chosen yet).
-    var packText = await page.textContent('.token-pack-card');
-    assert.match(packText, /not needed during the free beta|optional/i);
+    // Token packs are real, live purchases now (Dodo Payments, merged
+    // 2026-07-24 per Ron's explicit go-ahead) -- see
+    // test/shop-behavioral.test.js for full "Buy" button coverage. This
+    // banner's own job is just making sure a beta user reads the free
+    // tier as the default, not a wall -- the packs being real doesn't
+    // change that framing (see "Token packs (optional)" label above them).
+    assert.match(bannerText, /nothing to buy right now/i);
   } finally {
     await context.close();
   }

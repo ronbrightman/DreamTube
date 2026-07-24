@@ -77,19 +77,17 @@
 
     <div class="section-label" style="padding:0;">Token packs (optional)</div>
 
-    <!-- Neither pack has a real checkout yet — see the header comment in
-         the script block below for why both buttons are deliberately
-         disabled "Coming soon", not wired to any backend call. Framed as
-         "not needed during the free beta" rather than a bare "Coming
-         soon" so a new user who lands here mid-onboarding reads this as
-         a future option, not a wall blocking today's free usage. -->
+    <!-- Both packs now call the live Dodo Payments checkout (see the
+         header comment in the script block below) — no longer disabled
+         "Coming soon" placeholders. data-pack identifies which one to
+         POST to create-checkout-session-dodo.js. -->
     <div class="token-pack-card">
       <div class="token-pack-row">
         <div class="token-pack-amt">100 tokens</div>
         <div class="token-pack-price">$1.99</div>
       </div>
-      <div class="token-pack-sub">Not needed during the free beta — your daily free tokens cover this.</div>
-      <button class="btn btn-secondary btn-block" disabled>Coming soon</button>
+      <div class="token-pack-sub">Enough for 1 more generation.</div>
+      <button class="btn btn-secondary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
     </div>
 
     <div class="token-pack-card best">
@@ -98,13 +96,15 @@
         <div class="token-pack-amt">500 tokens</div>
         <div class="token-pack-price">$8.95</div>
       </div>
-      <div class="token-pack-sub">For when you want extra, later — optional, not required now.</div>
-      <button class="btn btn-secondary btn-block" disabled>Coming soon</button>
+      <div class="token-pack-sub">Enough for 5 more generations.</div>
+      <button class="btn btn-secondary btn-block" id="shop-buy-pack500" data-pack="pack500">Buy</button>
     </div>
 
-    <div class="auth-sub" style="margin-top:8px;">You'll always get 100 free tokens every 24 hours, whether or not you buy a pack — see your balance above.</div>
+    <div class="auth-sub" style="margin-top:8px;">Free tokens are capped — 100 every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.</div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
@@ -114,13 +114,26 @@
   document.getElementById('shop-beta-icon').innerHTML = Icons.check;
 
   // ============================================================================
-  // Token packs — no payment processor is wired up yet (a vendor choice per
-  // AGENT_POLICY.md's escalation policy, not something a build pass makes on
-  // its own) so both buttons above are static and disabled. Do not wire a
-  // real checkout call here without that human decision having happened
-  // first — see start.html's proceedPastPricing() and the old
-  // grant-topup-bonus.js (now deleted) for the same "flag, don't fake it"
-  // rule this follows.
+  // Token packs — wired to the live Dodo Payments checkout
+  // ----------------------------------------------------------------------------
+  // Dodo Payments is the founder's chosen + approved processor (see
+  // AGENT_POLICY.md's escalation policy for why that choice itself needed
+  // human sign-off, and the tracker for the "approved + live" decision
+  // record) — create-checkout-session-dodo.js creates a one-time-purchase
+  // Checkout Session for whichever pack was clicked, and this redirects
+  // the browser there. Tokens are NOT granted here or by that function —
+  // only dodo-webhook.js, on Dodo's own signed payment.succeeded
+  // confirmation, actually credits the balance. That's the durable source
+  // of truth; a client-side "I just paid" signal can't be trusted (see
+  // that file's header comment).
+  //
+  // Both buttons call the same purchasePack() below with their own
+  // data-pack ("pack100"/"pack500"). A failure here (most likely: Dodo's
+  // real API key/product-id env vars aren't configured in this
+  // environment yet — see docs/PAYWALL_SETUP.md's "what a human still
+  // needs to do" checklist) degrades to a toast and a re-enabled button,
+  // never a stuck/broken UI, same "flag, don't fake it" rule this file
+  // followed while the buttons were still disabled placeholders.
   //
   // Pricing (founder-specified): 100 tokens for $1.99, 500 tokens for
   // $8.95. The 500-pack price is a 10% discount off the naive 5x bundle
@@ -128,8 +141,53 @@
   // two-decimal price ($8.95) rather than the exact $8.955 — a deliberate
   // but arbitrary rounding choice, not a fixed one. Revisit/adjust freely;
   // it was never re-derived from a pricing model, just picked to look clean
-  // on a price tag.
+  // on a price tag. The actual amount charged is whatever the Dodo product
+  // behind DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 is configured for —
+  // nothing here enforces these two stay in sync; keep them matched by
+  // hand when setting up (or changing) those Dodo products.
   // ============================================================================
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  function purchasePack(pack, button){
+    var email = DreamStore.getAccountEmail();
+    if(!email){
+      // Legacy accounts that predate email being required (see js/store.js's
+      // getAccountEmail doc comment) have nowhere for a Dodo receipt/
+      // confirmation to go — same reasoning generate-video.js's own
+      // opportunistic email already relies on elsewhere in this codebase.
+      showToast('Add an email to your account first (Profile) to buy tokens');
+      return;
+    }
+
+    var originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Redirecting…';
+
+    fetch('/.netlify/functions/create-checkout-session-dodo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, pack: pack })
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(data.error || !data.url) throw new Error(data.error || 'no_checkout_url');
+        location.href = data.url;
+      })
+      .catch(function(){
+        button.disabled = false;
+        button.textContent = originalLabel;
+        showToast("Checkout isn't available right now — try again soon");
+      });
+  }
+
+  document.getElementById('shop-buy-pack100').addEventListener('click', function(){ purchasePack('pack100', this); });
+  document.getElementById('shop-buy-pack500').addEventListener('click', function(){ purchasePack('pack500', this); });
 
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
@@ -159,6 +217,43 @@
   }
   loadBalance();
   setInterval(renderBalance, 60000);
+
+  // ============================================================================
+  // Returning from a Dodo Checkout redirect (?checkout=success|cancelled)
+  // ----------------------------------------------------------------------------
+  // create-checkout-session-dodo.js's default return_url/cancel_url both
+  // point back here with this query param. On success, the webhook that
+  // actually credits tokens is asynchronous and Blobs is only eventually
+  // consistent (up to ~60s — see lib/entitlements.js's own doc comment on
+  // this), so the balance card may not reflect the purchase for a few
+  // seconds after landing back here even though the payment already
+  // succeeded. Rather than claim an exact balance that might still be
+  // stale, show a plain "received" toast and re-poll the balance a few
+  // times over the window where the webhook is most likely to have landed
+  // — renderBalance() above already re-renders whatever loadBalance() last
+  // fetched, so this just fetches a few extra times without any new UI
+  // path. history.replaceState clears the query param so a manual refresh
+  // of this page doesn't re-show the toast.
+  // ============================================================================
+  (function handleCheckoutReturn(){
+    var params = new URLSearchParams(location.search);
+    var checkout = params.get('checkout');
+    if(!checkout) return;
+
+    history.replaceState(null, '', location.pathname);
+
+    if(checkout === 'success'){
+      showToast('Payment received — your tokens will appear shortly');
+      var attempts = 0;
+      var poll = setInterval(function(){
+        attempts++;
+        loadBalance();
+        if(attempts >= 5) clearInterval(poll);
+      }, 3000);
+    } else if(checkout === 'cancelled'){
+      showToast('Checkout cancelled — no charge made');
+    }
+  })();
 </script>
 </body>
 </html>

@@ -22,25 +22,34 @@
 // edit/regenerate, or a style change — all three already funnel through the
 // same generate-video.js call site, see that file). Balance is earned for
 // free (200 on first read of a never-before-seen email, +100 every 24h,
-// lazily, see below) until a payment processor exists — see shop.html and
-// its "Coming soon" buttons. Because every token anyone can ever spend is
-// free-earned today, this gate is UNCONDITIONAL AND LIVE FROM THE START,
-// unlike the old subscription paywall (PAYWALL_ENABLED, E108/E111) which
-// stayed default-off until real Stripe checkout existed — being entitled
-// there required having actually paid, so gating on it before a checkout
-// flow existed would have hard-blocked everyone. This model can never fully
+// lazily, see below) — this remains true even now that shop.html's token
+// packs are a live, real purchase (see creditTokenPackOnce below and
+// docs/PAYWALL_SETUP.md): the free grant and paid packs are both additive
+// to the same balance, never either/or. Because every token anyone can
+// ever spend was, from day one, either free-earned or (now) purchased —
+// never gated behind a subscription that had to exist first — this gate
+// is UNCONDITIONAL AND LIVE FROM THE START, unlike the old subscription
+// paywall (PAYWALL_ENABLED, E108/E111) which stayed default-off until real
+// Stripe checkout existed — being entitled there required having actually
+// paid, so gating on it before a checkout flow existed would have
+// hard-blocked everyone. This model can never fully
 // block anyone (the daily drip guarantees continued access), it just rate-
 // limits free usage to a sustainable level. See generate-video.js's E112
 // doc block and AGENT_POLICY.md for the full reasoning.
 //
 // `active`/`plan`/`stripeCustomerId`/`stripeSubscriptionId` are kept on the
 // record shape but are NOT read by the generation gate anymore — the
-// dormant Dodo/Stripe backend (see the claude/dodo-payments-backend branch)
-// may still be reused later for one-time token-pack checkouts (see
-// shop.html's $1.99/$8.95 packs) instead of subscriptions, so these fields
-// stay meaningful for that, just unused here. isEntitled() below is kept
-// for that same future reuse, even though nothing in this codebase calls it
-// today.
+// dormant Stripe subscription backend (create-checkout-session.js /
+// stripe-webhook.js) stays inert code-wise, so these fields stay meaningful
+// for that if it's ever revived, just unused here. isEntitled() below is
+// kept for that same reason, even though nothing in this codebase calls it
+// today. The Dodo Payments backend (create-checkout-session-dodo.js /
+// dodo-webhook.js), by contrast, is now LIVE and wired to shop.html's
+// $1.99/$8.95 one-time token-pack purchases — see creditTokenPackOnce
+// below, which is what dodo-webhook.js actually calls on a confirmed
+// payment. It does not touch `active`/`plan` at all (that's a subscription
+// concept); a token-pack purchase is a straight balance credit via
+// addTokens.
 //
 // tokens.balance: the email's current spendable token count. Never goes
 // negative (spendTokens floors at 0); the ≥500 daily-grant ceiling below is
@@ -118,6 +127,7 @@
 // revisit strong consistency only after confirming it's supported in the
 // real target deploy environment, not before.
 
+var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 
@@ -344,13 +354,136 @@ async function addTokens(event, email, amount) {
   return setEntitlement(event, key, { tokens: { balance: newBalance, lastGrantAt: tokens.lastGrantAt } });
 }
 
+// ============================================================================
+// Token-pack purchase crediting (Dodo Payments) — idempotent by payment id
+// ----------------------------------------------------------------------------
+// Backed by a SEPARATE Blobs store ("dreamtube-token-purchases"), one record
+// per Dodo payment_id: { email, tokens, creditedAt }. Deliberately its own
+// store rather than folding into the per-email entitlement record above —
+// this one is keyed by payment, not by email, since its whole job is
+// deduplicating *events*, not describing a user's current state.
+//
+// Why this needs its own dedup guard at all: unlike setEntitlement (an
+// idempotent overwrite — replaying the same subscription event twice
+// produces the same end state), addTokens is NOT idempotent — calling it
+// twice for the same payment credits tokens twice. Dodo's webhook delivery,
+// like every mainstream webhook provider (Stripe included), is at-least-
+// once: a slow response, a transient 5xx, or a delivery timeout can cause
+// the same payment.succeeded event to arrive more than once. Without a
+// guard, a redelivered event would double-grant tokens for a single real
+// charge.
+// ============================================================================
+
+var TOKEN_PURCHASES_STORE_NAME = 'dreamtube-token-purchases';
+
+function tokenPurchasesStore() {
+  return getStore({ name: TOKEN_PURCHASES_STORE_NAME });
+}
+
+// Bounded attempts for the claim-token write-then-verify loop below — same
+// number and same "fail closed, don't hang" reasoning as tracker-store.js's
+// own MAX_WRITE_ATTEMPTS (see that file's CONCURRENT-WRITE RACE comment).
+var MAX_CREDIT_ATTEMPTS = 3;
+
+/**
+ * Credits `tokens` onto `email`'s balance exactly once per Dodo
+ * `paymentId` — see the doc block above. Returns { credited: boolean }:
+ * `false` means this paymentId was already processed (a no-op, not an
+ * error — dodo-webhook.js should still return 200 either way, since from
+ * Dodo's perspective the event was handled successfully).
+ *
+ * A plain "read marker -> if absent, write marker -> credit" (what this
+ * function used to do) is a straightforward TOCTOU: Netlify Blobs has no
+ * compare-and-swap, and this file's OWN header comment documents its
+ * reads as only eventually consistent (up to ~60s propagation) — so a
+ * webhook redelivery landing ANYWHERE in that window (not just a
+ * perfectly-simultaneous one), or a genuinely concurrent invocation of
+ * this handler, can both observe "not yet processed" before either write
+ * happens, and both go on to credit. That is a real double-grant of real
+ * money's worth of tokens, not a hypothetical.
+ *
+ * This adapts tracker-store.js's bounded read -> mutate -> write ->
+ * verify retry loop (writeItemsWithRetry / the CONCURRENT-WRITE RACE
+ * comment there) to a single dedup-marker key instead of a full array:
+ * each attempt writes a marker carrying a fresh random `claimId`, then
+ * immediately reads the key back. If the read-back marker's `claimId`
+ * matches the one this attempt just wrote, this call "won" the race (its
+ * write was the one left standing) and proceeds to credit. If the
+ * read-back shows a DIFFERENT claimId, some other caller's write landed
+ * either concurrently or in between — this call backs off without
+ * crediting and loops back to a fresh read, which (now that a marker
+ * genuinely exists) resolves as "already processed" on the next
+ * iteration, exactly like a real redelivery would. This closes the
+ * window where two callers could both observe "absent" *before* either
+ * write, which is the actual bug: only the write that's still visible at
+ * verify-time ever credits.
+ *
+ * Like tracker-store.js's own version, this NARROWS the race window but,
+ * per that file's own honest caveat about Blobs having no real
+ * compare-and-swap, does not mathematically eliminate it: two verify
+ * reads could in principle each observe their own write as still current
+ * under sufficiently pathological propagation timing (e.g. two different
+ * edge replicas each still showing their own local write). That residual
+ * window is now bounded to "both writes' verify-reads land before either
+ * write has propagated across the store," which is categorically
+ * narrower than the original bug ("both initial reads land before either
+ * write happens at all") — every real concurrent-redelivery scenario
+ * this function is actually exercised against (see
+ * test/entitlements-token-purchases.test.js's concurrency tests) resolves
+ * to exactly one credit. If item loss/duplication is ever actually
+ * observed in practice, revisit — same posture tracker-store.js already
+ * takes on its own residual race.
+ *
+ * Bounded (not infinite) attempts, same reasoning as tracker-store.js:
+ * a still-propagating read shouldn't hang the webhook response
+ * indefinitely. Exhausting all attempts without ever confirming a win
+ * fails CLOSED (no credit) rather than crediting anyway — deliberately
+ * the safer failure direction for a payment webhook (a human-reconcilable
+ * under-credit, not a silent double-grant), matching this codebase's
+ * existing preference (see owner-topup-tokens.js).
+ *
+ * A missing/falsy `paymentId` (shouldn't happen with a real Dodo payload,
+ * but don't let that silently drop a legitimate purchase) skips the dedup
+ * check entirely and just credits once, uncached.
+ */
+async function creditTokenPackOnce(event, email, paymentId, tokens) {
+  if (!paymentId) {
+    await addTokens(event, email, tokens);
+    return { credited: true };
+  }
+
+  connectLambda(event);
+  var s = tokenPurchasesStore();
+
+  for (var attempt = 0; attempt < MAX_CREDIT_ATTEMPTS; attempt++) {
+    var existing = await s.get(paymentId, { type: 'json' });
+    if (existing) return { credited: false };
+
+    var claimId = crypto.randomUUID();
+    await s.setJSON(paymentId, { email: normalizeEmail(email), tokens: tokens, creditedAt: Date.now(), claimId: claimId });
+
+    var verify = await s.get(paymentId, { type: 'json' });
+    if (verify && verify.claimId === claimId) {
+      await addTokens(event, email, tokens);
+      return { credited: true };
+    }
+    // Someone else's write is the one that's actually visible — don't
+    // credit. Loop back to a fresh read, which will very likely now see
+    // that marker directly and return credited:false above without ever
+    // reaching addTokens.
+  }
+  return { credited: false };
+}
+
 module.exports = {
   STORE_NAME,
+  TOKEN_PURCHASES_STORE_NAME,
   normalizeEmail,
   getEntitlement,
   isEntitled,
   setEntitlement,
   getTokenStatus,
   spendTokens,
-  addTokens
+  addTokens,
+  creditTokenPackOnce
 };
