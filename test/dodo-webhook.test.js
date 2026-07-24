@@ -234,6 +234,46 @@ test('a payment with no resolvable token amount is acknowledged but credits noth
   assert.equal(await entitlements.getEntitlement({}, 'notokens@example.com'), null);
 });
 
+test('creditTokenPackOnce genuinely exhausting its retries (not a legitimate already-processed SKIP) surfaces as a real 500 E5 through the actual webhook handler, so Dodo redelivers', async function () {
+  // The exhaustion-throws fix in lib/entitlements.js (creditTokenPackOnce /
+  // creditTokenPackAmountOnce) was previously only exercised by calling
+  // those functions directly (test/entitlements-token-purchases.test.js),
+  // skipping the webhook layer entirely — this proves the thrown error
+  // actually propagates all the way out through dodo-webhook.js's real
+  // handler() and its existing try/catch, not just out of the library
+  // function in isolation.
+  await seedZeroBalance('exhaustionwebhook@example.com');
+
+  // Same technique as the entitlements-level exhaustion tests: setJSON
+  // still actually writes, but get() always reports "nothing here" for
+  // the token-purchases store, so the write-then-verify race inside
+  // creditTokenPackOnce's marker write can never confirm a winner within
+  // its bounded attempts.
+  mockBlobs.setReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME, function () {
+    return { value: undefined };
+  });
+
+  try {
+    var res = await handler(signedEvent(paymentPayload({
+      payment_id: 'pay_exhaustion_webhook',
+      product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+      customer: { customer_id: 'cus_exhaustion', email: 'exhaustionwebhook@example.com' }
+    })));
+    assert.equal(res.statusCode, 500, 'genuine exhaustion must surface as a real 500, not a 200 that leaves Dodo believing the event was handled');
+    assert.match(JSON.parse(res.body).error, /^E5: processing_failed/);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.TOKEN_PURCHASES_STORE_NAME);
+  }
+
+  // No credit landed, and nothing durable was left claiming otherwise —
+  // consistent with dodo-webhook.js's own E5 doc comment: "our own write
+  // is what failed, not the event itself being invalid", so Dodo
+  // redelivering is expected to (eventually) succeed once the transient
+  // condition clears.
+  var record = await entitlements.getEntitlement({}, 'exhaustionwebhook@example.com');
+  assert.equal(record.tokens.balance, 0, 'no credit should have landed given the marker write never confirmed a winner');
+});
+
 test('non-payment.succeeded event types (payment.failed, subscription.*, refund.*) are acknowledged and ignored', async function () {
   var res1 = await handler(signedEvent({
     business_id: 'biz_test',
