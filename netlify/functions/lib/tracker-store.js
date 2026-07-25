@@ -26,17 +26,38 @@
 // "materialize on first read" pattern for a never-before-seen email.
 //
 // Item shape: { id, category: "task"|"idea", title, detail,
-//   priority: "high"|"medium"|"low", done: boolean,
+//   priority: "high"|"medium"|"low",
+//   waitingFor: "product"|"growth"|"ron"|"none", done: boolean,
 //   comments: [{ id, author: "ron"|"claude", text, timestamp }],
 //   createdAt: string|null, doneAt: string|null, startedAt: string|null,
 //   reviewedAt: string|null }
 //
-// update-tracker-item.js only ever patches `priority`/`done`/`started`/
-// `reviewed` (both `started` and `reviewed` are one-way signals — see
-// updateItem's own doc comment) and appends one new entry to `comments`
-// on an existing item — id/category/title/detail are seed-authored-or-
-// added content, not something that endpoint's PATCH-style write lets
-// anyone mutate (see that function's own doc comment for why).
+// `waitingFor` is the founder's own "at a glance, who is this item
+// blocked on" marker (tracker item
+// for-product-tracker-add-a-visible-waitin-9zdkb8) — replaces the
+// narrower `[for product]`-in-title / last-comment-from-'claude'
+// derivation tracker.html used to lean on entirely for its own
+// "Needs your input" badge (that badge and its dedicated CSS class are
+// gone — see tracker.html's itemHTML/waitingForBadge and this build's own
+// commit for the removal). Same lowercase-string-enum convention as
+// `priority`/`category` above, direct-replace patchable like `priority`
+// (NOT a one-way signal like `started`/`reviewed` — Ron or growth may
+// need to hand an item back and forth as work progresses). Defaults to
+// "none" for both brand-new items (see addItem below) and any
+// pre-existing item that predates this field (see migrateItem below) —
+// tracker.html is deliberately the only place that ever infers
+// product/growth/ron from an old item's title tag or last comment for
+// DISPLAY purposes; nothing here guesses at that server-side, since a
+// wrong guess baked into stored data would be harder to undo than a
+// purely client-side display fallback.
+//
+// update-tracker-item.js only ever patches `priority`/`waitingFor`/
+// `done`/`started`/`reviewed` (both `started` and `reviewed` are one-way
+// signals — see updateItem's own doc comment) and appends one new entry
+// to `comments` on an existing item — id/category/title/detail are
+// seed-authored-or-added content, not something that endpoint's
+// PATCH-style write lets anyone mutate (see that function's own doc
+// comment for why).
 //
 // `reviewedAt` is the founder's own "I've seen this completed item"
 // marker — set the moment Ron clicks "Reviewed" on a done item (see
@@ -97,6 +118,7 @@ var SEED_ITEMS = [
     id: 'token-refund-gap',
     category: 'task',
     priority: 'high',
+    waitingFor: 'none',
     done: true,
     comments: [],
     createdAt: null,
@@ -110,6 +132,7 @@ var SEED_ITEMS = [
     id: 'env-vars-confirm',
     category: 'task',
     priority: 'high',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -123,6 +146,7 @@ var SEED_ITEMS = [
     id: 'agent-skill-duplication',
     category: 'task',
     priority: 'high',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -136,6 +160,7 @@ var SEED_ITEMS = [
     id: 'dodo-merge-decision',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -149,6 +174,7 @@ var SEED_ITEMS = [
     id: 'payment-provider-final',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -162,6 +188,7 @@ var SEED_ITEMS = [
     id: 'wire-real-shop-checkout',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -175,6 +202,7 @@ var SEED_ITEMS = [
     id: 'tighten-descriptions',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -188,6 +216,7 @@ var SEED_ITEMS = [
     id: 'prompt-marketing-audit',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -201,6 +230,7 @@ var SEED_ITEMS = [
     id: 'delete-stale-branch',
     category: 'task',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -214,6 +244,7 @@ var SEED_ITEMS = [
     id: 'idea-weekly-recap',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -227,6 +258,7 @@ var SEED_ITEMS = [
     id: 'idea-remix-style',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -240,6 +272,7 @@ var SEED_ITEMS = [
     id: 'idea-referral-credit',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -253,6 +286,7 @@ var SEED_ITEMS = [
     id: 'idea-unified-me-identity',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -266,6 +300,7 @@ var SEED_ITEMS = [
     id: 'idea-notify-likes',
     category: 'idea',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -279,6 +314,7 @@ var SEED_ITEMS = [
     id: 'idea-friend-cameos',
     category: 'idea',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -292,6 +328,7 @@ var SEED_ITEMS = [
     id: 'idea-fingerprint-email-verify',
     category: 'idea',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -305,6 +342,7 @@ var SEED_ITEMS = [
     id: 'idea-generate-before-paywall',
     category: 'idea',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -318,6 +356,7 @@ var SEED_ITEMS = [
     id: 'idea-auto-refund-policy',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -331,6 +370,7 @@ var SEED_ITEMS = [
     id: 'idea-support-contact-form',
     category: 'idea',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -344,6 +384,7 @@ var SEED_ITEMS = [
     id: 'idea-faq-section',
     category: 'idea',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -377,6 +418,7 @@ var SEED_ITEMS = [
     id: 'confirm-account-deletion-flow',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -390,6 +432,7 @@ var SEED_ITEMS = [
     id: 'confirm-fal-credit-balance',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -403,6 +446,7 @@ var SEED_ITEMS = [
     id: 'decide-blobs-lazy-seed-race',
     category: 'task',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -416,6 +460,7 @@ var SEED_ITEMS = [
     id: 'tracker-store-concurrent-write-race',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -429,6 +474,7 @@ var SEED_ITEMS = [
     id: 'tracker-needs-real-add-delete',
     category: 'task',
     priority: 'medium',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -442,6 +488,7 @@ var SEED_ITEMS = [
     id: 'accounts-dont-sync-across-devices',
     category: 'task',
     priority: 'high',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -455,6 +502,7 @@ var SEED_ITEMS = [
     id: 'sync-private-dreams-videos-later',
     category: 'task',
     priority: 'low',
+    waitingFor: 'none',
     done: false,
     comments: [],
     createdAt: null,
@@ -530,6 +578,11 @@ function generateId(items, title) {
 //     before that field existed, so this self-heal path is exactly what
 //     backfills it on every real, already-deployed item, not just a
 //     hypothetical.
+//   - a missing `waitingFor` defaults to `"none"` (not `null` — this one
+//     always has a real, defined value once this build ships, same as
+//     `priority`; see this file's own item-shape doc comment above for
+//     why nothing here tries to guess product/growth/ron for an old
+//     item — that inference is tracker.html's job, at display time only).
 //
 // getItems() below runs every item it reads through this and re-persists
 // once if anything actually needed migrating, so it's a one-time cost
@@ -561,6 +614,11 @@ function migrateItem(item) {
       changed = true;
     }
   });
+  if (!Object.prototype.hasOwnProperty.call(next, 'waitingFor')) {
+    next = Object.assign({}, next);
+    next.waitingFor = 'none';
+    changed = true;
+  }
 
   return { item: next, changed: changed };
 }
@@ -607,6 +665,11 @@ async function getItems(event) {
  * list — see update-tracker-item.js for the full accepted request shape.
  * `patch` may include any subset of:
  *   priority: "high"|"medium"|"low" — replaces it directly.
+ *   waitingFor: "product"|"growth"|"ron"|"none" — replaces it directly,
+ *     same shape as `priority` immediately above (NOT a one-way signal
+ *     like `started`/`reviewed` below — who an item is waiting on can
+ *     genuinely change back and forth as work progresses, so there's no
+ *     "already set, ignore" special case here the way there is for those).
  *   done: boolean — also derives `doneAt`: set to the current server
  *     time the moment `done` actually transitions false -> true, reset
  *     to `null` the moment it goes back to false. A `done: true` patch
@@ -681,6 +744,9 @@ async function updateItem(event, id, patch) {
       if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
         next.priority = patch.priority;
       }
+      if (Object.prototype.hasOwnProperty.call(patch, 'waitingFor')) {
+        next.waitingFor = patch.waitingFor;
+      }
       if (Object.prototype.hasOwnProperty.call(patch, 'done')) {
         next.done = patch.done;
         if (patch.done && !current.done) {
@@ -730,6 +796,7 @@ async function updateItem(event, id, patch) {
       // instead of asserting an invariant that doesn't hold for
       // already-done legacy items.
       if (Object.prototype.hasOwnProperty.call(patch, 'priority') && found.priority !== updated.priority) return false;
+      if (Object.prototype.hasOwnProperty.call(patch, 'waitingFor') && found.waitingFor !== updated.waitingFor) return false;
       if (Object.prototype.hasOwnProperty.call(patch, 'done')) {
         if (found.done !== updated.done) return false;
         if (found.doneAt !== updated.doneAt) return false;
@@ -846,8 +913,11 @@ async function writeItemsWithRetry(event, mutate, verify) {
 
 /**
  * Appends a brand-new item built from `patch` ({ category, title, detail,
- * priority }) — shape/value validation is the caller's job (see
- * add-tracker-item.js), this trusts what it's given. Generates the id
+ * priority, waitingFor }) — shape/value validation is the caller's job
+ * (see add-tracker-item.js), this trusts what it's given. `waitingFor`
+ * defaults to `"none"` when the caller doesn't supply it, same
+ * optional-with-default pattern add-tracker-item.js already uses for
+ * `priority` defaulting to `"medium"`. Generates the id
  * server-side (see generateId above, from a first, non-retried read —
  * good enough since this only needs to be unique against whatever set of
  * ids the id-collision check inside generateId actually saw, not a
@@ -870,6 +940,7 @@ async function addItem(event, patch) {
     title: patch.title,
     detail: patch.detail,
     priority: patch.priority,
+    waitingFor: patch.waitingFor || 'none',
     done: false,
     comments: [],
     createdAt: new Date().toISOString(),
