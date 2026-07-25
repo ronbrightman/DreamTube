@@ -782,6 +782,20 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   transition:color .15s ease;
 }
 .tracker-delete-btn:hover{ color:var(--danger);}
+/* "Read aloud" toggle (tracker.html's handleSpeakToggle) — same bare-icon
+   sizing/hover treatment as .tracker-delete-btn right next to it, but its
+   own accent color while active so the founder can tell at a glance which
+   item (if any) is currently speaking and that clicking it again stops
+   it. Reuses --accent-trust (blue), same color already used for the
+   "Waiting Ron" badge elsewhere on this page — no new brand color needed
+   for a purely-local playing/not-playing state. */
+.tracker-speak-btn{
+  width:24px; height:24px; flex:none; border:none; background:transparent; color:var(--text-faint);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  transition:color .15s ease;
+}
+.tracker-speak-btn:hover{ color:var(--text-primary);}
+.tracker-speak-btn.is-speaking{ color:var(--accent-trust);}
 /* Add-item form sits above the Open Tasks/Ideas sections, inside the same
    owner-gated #tracker-content — a plain card using the same .field/.btn
    primitives every other form on this site already uses, not new form

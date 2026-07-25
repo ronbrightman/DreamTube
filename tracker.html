@@ -219,6 +219,24 @@
   var startedAtConfirmed = {};
   var reviewedAtConfirmed = {};
 
+  // Text-to-speech "play" button — tracker item
+  // for-product-tracker-add-a-text-to-speech-wq7nzo: "so he can hear an
+  // item read aloud instead of reading a long thread." Runs entirely in
+  // the browser via the standard window.speechSynthesis API (no library,
+  // no backend, no cost). SPEECH_SUPPORTED is computed once at load —
+  // itemHTML below renders no button at all when it's false (some
+  // browsers/embedded contexts don't implement the Web Speech API), same
+  // "optional feature must never break the app" convention as e.g.
+  // js/analytics-config.js's guarded fireMetaConversion, rather than
+  // rendering a button that would throw or silently no-op on click.
+  // speakingId tracks which single item (if any) is currently being read
+  // aloud — speechSynthesis has no built-in queueing story we want here,
+  // so starting a new utterance always cancels whatever's already
+  // playing first (see handleSpeakToggle), and there is deliberately only
+  // ever at most one speakingId at a time.
+  var SPEECH_SUPPORTED = typeof window !== 'undefined' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function';
+  var speakingId = null;
+
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
   var COMMENT_AUTHOR_LABEL = { ron: 'Ron', claude: 'Claude' };
@@ -316,6 +334,18 @@
       : 'Mark Done';
     var doneBtn = '<button type="button" class="tracker-done-btn' + (item.done ? ' is-done' : '') +
       '" aria-pressed="' + item.done + '" aria-label="' + (item.done ? 'Mark not done' : 'Mark as done') + '">' + doneBtnLabel + '</button>';
+
+    // "Read aloud" toggle — see SPEECH_SUPPORTED/speakingId's own comment
+    // above. Omitted entirely (not just disabled) when the browser has no
+    // speechSynthesis at all. Toggles to a stop/pause icon + pressed state
+    // while this exact item is the one currently speaking, so it's always
+    // visually obvious which item (if any) is playing and how to stop it.
+    var isSpeaking = speakingId === item.id;
+    var speakBtn = SPEECH_SUPPORTED
+      ? '<button type="button" class="tracker-speak-btn icon' + (isSpeaking ? ' is-speaking' : '') +
+        '" aria-pressed="' + isSpeaking + '" aria-label="' + (isSpeaking ? 'Stop reading aloud' : 'Read aloud') + '">' +
+        (isSpeaking ? Icons.pause : Icons.play) + '</button>'
+      : '';
 
     var categoryBadge = showCategoryBadge
       ? '<span class="tracker-category-badge">' + (item.category === 'task' ? 'Task' : 'Idea') + '</span>'
@@ -417,6 +447,7 @@
           '<div class="tracker-item-summary-actions">' +
             doneBtn +
             '<span class="tracker-pri-group" role="group" aria-label="Priority">' + priButtons + '</span>' +
+            speakBtn +
             '<button type="button" class="tracker-delete-btn icon" aria-label="Delete item">' + Icons.trash + '</button>' +
           '</div>' +
         '</summary>' +
@@ -517,6 +548,14 @@
         e.stopPropagation();
         handleDelete(id);
       });
+
+      var speakBtn = el.querySelector('.tracker-speak-btn');
+      if (speakBtn) {
+        speakBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleSpeakToggle(id);
+        });
+      }
 
       var startBtn = el.querySelector('.tracker-start-btn');
       if (startBtn) {
@@ -728,6 +767,73 @@
       render();
       showToast("Couldn't mark reviewed — try again.");
     });
+  }
+
+  /** Builds the text read aloud for one item: title, then detail, then the single most recent comment (if any) prefixed with its author — matches Ron's own wording for this feature ("Read the title + latest comments") literally: the *latest* (singular) comment, not the full thread, since the whole point is a shortcut past reading a long thread. Detail is included (not just title) because the title alone rarely explains what the item IS — see this feature's own tracker item for the reasoning. filter(Boolean) drops detail if it's ever empty rather than reading a stray trailing period. */
+  function buildSpeechText(item) {
+    var parts = [item.title, item.detail];
+    var comments = item.comments || [];
+    if (comments.length) {
+      var latest = comments[comments.length - 1];
+      parts.push('Latest comment, from ' + (COMMENT_AUTHOR_LABEL[latest.author] || latest.author) + ': ' + latest.text);
+    }
+    return parts.filter(Boolean).join('. ');
+  }
+
+  /**
+   * Toggles read-aloud for one item via window.speechSynthesis — see
+   * SPEECH_SUPPORTED/speakingId's own comment above for why this is a
+   * no-op (never even reachable — no button rendered at all) when the
+   * browser has no Web Speech API.
+   *
+   * speechSynthesis.cancel() unconditionally before doing anything else
+   * covers both cases the founder's own ask called out: clicking the
+   * SAME item's button again while it's speaking (stop), and clicking a
+   * DIFFERENT item's button while another is speaking (cancel the first,
+   * start the second) — no queue, matching the standard/simple fix this
+   * feature's own spec called for. speakingId is reset to null
+   * immediately after cancel() (before any cancel-triggered onerror on
+   * the OLD utterance can run) so a stale callback from the utterance
+   * being cancelled can never re-null an id that's already moved on.
+   *
+   * onend/onerror both reset speakingId + re-render so the button
+   * reliably reverts to its not-speaking state whenever speech actually
+   * stops, whatever the reason — natural completion, an error, or a
+   * cancel() from elsewhere — rather than relying on a fixed timeout.
+   */
+  function handleSpeakToggle(id) {
+    if (!SPEECH_SUPPORTED) return;
+    var item = findItem(id);
+    if (!item) return;
+
+    var wasSpeakingThis = speakingId === id;
+    window.speechSynthesis.cancel();
+    speakingId = null;
+
+    if (wasSpeakingThis) {
+      captureDrafts();
+      render();
+      return;
+    }
+
+    var utterance = new SpeechSynthesisUtterance(buildSpeechText(item));
+    utterance.onend = function () {
+      if (speakingId !== id) return;
+      speakingId = null;
+      captureDrafts();
+      render();
+    };
+    utterance.onerror = function () {
+      if (speakingId !== id) return;
+      speakingId = null;
+      captureDrafts();
+      render();
+    };
+
+    speakingId = id;
+    captureDrafts();
+    render();
+    window.speechSynthesis.speak(utterance);
   }
 
   /**
