@@ -324,6 +324,25 @@
       ? '<span class="tracker-needs-review-badge">Needs review</span>'
       : '';
 
+    // "Needs your input" — Ron's own ask: a clear visual marker on OPEN
+    // items that are waiting on him specifically (an unanswered Claude
+    // question, an [auto] status update nobody's replied to yet, etc.),
+    // purely additive/visual — see sortItems() above, deliberately
+    // untouched: this must never change render ORDER, only decorate it.
+    // Derived signal, no new tracker-store.js field needed: an item whose
+    // MOST RECENT comment (if any) was authored by 'claude' means Claude
+    // left the last word and nothing from 'ron' has followed it yet —
+    // exactly this session's own established convention of leaving a
+    // tracker comment when something needs Ron's decision, then moving
+    // on. Distinct from needsReviewBadge above: that one is done-only
+    // ("built, hasn't been looked at"); this one is open-only ("still
+    // open, and the ball's in Ron's court"). An item with no comments at
+    // all has no "last comment" to check, so it never shows this badge.
+    var lastComment = item.comments && item.comments.length ? item.comments[item.comments.length - 1] : null;
+    var needsInputBadge = (!item.done && lastComment && lastComment.author === 'claude')
+      ? '<span class="tracker-needs-input-badge">Needs your input</span>'
+      : '';
+
     var metaParts = [];
     if (item.createdAt) metaParts.push('Created ' + esc(fmtDate(item.createdAt)));
     if (item.startedAt) metaParts.push('Started ' + esc(fmtDate(item.startedAt)));
@@ -359,7 +378,7 @@
       '<details class="tracker-item' + (needsReviewBadge ? ' needs-review' : '') + '" data-id="' + esc(item.id) + '">' +
         '<summary class="tracker-item-summary">' +
           '<div class="tracker-item-summary-top">' +
-            '<span class="tracker-item-title" dir="auto">' + categoryBadge + needsReviewBadge + esc(item.title) + '</span>' +
+            '<span class="tracker-item-title" dir="auto">' + categoryBadge + needsReviewBadge + needsInputBadge + esc(item.title) + '</span>' +
             '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
           '</div>' +
           '<div class="tracker-item-summary-actions">' +
