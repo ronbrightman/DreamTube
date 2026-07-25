@@ -17,13 +17,18 @@
 // terms regardless of who sent it, before authorization even becomes the
 // question.
 //
-// POST { email, category, title, detail, priority? } -> { item } (the
-//   full created item, including its server-generated id)
+// POST { email, category, title, detail, priority?, waitingFor? } -> { item }
+//   (the full created item, including its server-generated id)
 //   category must be "task" or "idea". title/detail must be non-empty
 //   strings, capped at 200/4000 chars respectively (same
 //   cap-something-reasonable spirit as update-tracker-item.js's
 //   priority/done validation). priority is optional and defaults to
 //   "medium" if omitted; if present it must be one of high/medium/low.
+//   waitingFor is optional and defaults to "none" if omitted (same
+//   optional-with-default pattern as priority) — Ron's own "who is this
+//   blocked on" marker (tracker item
+//   for-product-tracker-add-a-visible-waitin-9zdkb8), rendered as a badge
+//   on tracker.html; if present it must be one of product/growth/ron/none.
 //   The created item always starts at done: false, comments: [],
 //   doneAt: null, startedAt: null, reviewedAt: null, and a real createdAt
 //   (the current server time — see tracker-store.js's addItem for why
@@ -53,12 +58,15 @@
 //   E7 invalid_priority    — `priority` present but not high/medium/low
 //   E8 forbidden           — POST body's `email` (normalized) didn't
 //                             match OWNER_EMAIL (normalized)
+//   E9 invalid_waiting_for — `waitingFor` present but not one of
+//                             product/growth/ron/none
 
 var { normalizeEmail } = require('./lib/entitlements');
 var trackerStore = require('./lib/tracker-store');
 
 var VALID_CATEGORIES = ['task', 'idea'];
 var VALID_PRIORITIES = ['high', 'medium', 'low'];
+var VALID_WAITING_FOR = ['product', 'growth', 'ron', 'none'];
 var MAX_TITLE_LENGTH = 200;
 var MAX_DETAIL_LENGTH = 4000;
 
@@ -96,6 +104,11 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E7: invalid_priority' }) };
   }
 
+  var hasWaitingFor = Object.prototype.hasOwnProperty.call(payload, 'waitingFor');
+  if (hasWaitingFor && VALID_WAITING_FOR.indexOf(payload.waitingFor) === -1) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E9: invalid_waiting_for' }) };
+  }
+
   var requestEmail = normalizeEmail(payload.email);
   if (!requestEmail || requestEmail !== ownerEmail) {
     return { statusCode: 403, body: JSON.stringify({ error: 'E8: forbidden' }) };
@@ -105,7 +118,8 @@ exports.handler = async function (event) {
     category: payload.category,
     title: payload.title.trim(),
     detail: payload.detail.trim(),
-    priority: hasPriority ? payload.priority : 'medium'
+    priority: hasPriority ? payload.priority : 'medium',
+    waitingFor: hasWaitingFor ? payload.waitingFor : 'none'
   });
 
   return { statusCode: 200, body: JSON.stringify({ item: created }) };

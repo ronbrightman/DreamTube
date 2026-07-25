@@ -65,11 +65,19 @@ test('GET seeds the store on first call and returns every seed item', async func
     assert.equal(got.title, seedItem.title);
     assert.equal(got.detail, seedItem.detail);
     assert.equal(got.priority, seedItem.priority);
+    assert.equal(got.waitingFor, seedItem.waitingFor);
     assert.equal(got.done, seedItem.done);
     assert.deepEqual(got.comments, seedItem.comments);
     assert.equal(got.createdAt, seedItem.createdAt);
     assert.equal(got.doneAt, seedItem.doneAt);
     assert.equal(got.startedAt, seedItem.startedAt);
+  });
+});
+
+test('every seed item defaults to waitingFor:"none" — no pre-guessed product/growth/ron baked into stored seed data', function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  trackerStore.SEED_ITEMS.forEach(function (seedItem) {
+    assert.equal(seedItem.waitingFor, 'none');
   });
 });
 
@@ -173,7 +181,7 @@ test('migration persists -- a second GET does not re-derive from the legacy shap
 
 test('an item already in the new shape is left untouched by migration (no unnecessary re-write)', async function () {
   var trackerStore = require('../netlify/functions/lib/tracker-store');
-  var modernItem = { id: 'modern-1', category: 'task', title: 'Modern item', detail: 'Detail.', priority: 'medium', done: false, comments: [{ id: 'c-1', author: 'ron', text: 'hi', timestamp: '2026-01-01T00:00:00.000Z' }], createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null, reviewedAt: null };
+  var modernItem = { id: 'modern-1', category: 'task', title: 'Modern item', detail: 'Detail.', priority: 'medium', waitingFor: 'none', done: false, comments: [{ id: 'c-1', author: 'ron', text: 'hi', timestamp: '2026-01-01T00:00:00.000Z' }], createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null, reviewedAt: null };
   mockBlobs.seed(trackerStore.STORE_NAME, trackerStore.KEY, [modernItem]);
 
   var items = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
@@ -198,6 +206,24 @@ test('an item with createdAt/doneAt/startedAt but no reviewedAt at all (the real
   assert.equal(migrated.done, true);
   assert.equal(migrated.doneAt, preReviewedItem.doneAt, 'an unrelated already-set field must survive the backfill untouched');
   assert.equal(migrated.startedAt, preReviewedItem.startedAt);
+});
+
+// This is the real pre-this-build live shape once more (see the test
+// above): an item that already has createdAt/doneAt/startedAt/reviewedAt
+// but no waitingFor at all, since that field is brand new here.
+// migrateItem() must backfill it to "none" (NOT null — see this file's
+// own item-shape doc comment for why waitingFor's missing-value default
+// differs from the timestamp fields' null default) on read, same
+// self-heal path as every other field addition.
+test('an item with no waitingFor at all (the real pre-this-build live shape) gets waitingFor backfilled to "none", and everything else is left alone', async function () {
+  var trackerStore = require('../netlify/functions/lib/tracker-store');
+  var preWaitingForItem = { id: 'pre-waiting-for-1', category: 'task', title: 'Item from before waitingFor existed', detail: 'Detail.', priority: 'high', done: false, comments: [], createdAt: '2026-01-01T00:00:00.000Z', doneAt: null, startedAt: null, reviewedAt: null };
+  mockBlobs.seed(trackerStore.STORE_NAME, trackerStore.KEY, [preWaitingForItem]);
+
+  var items = await trackerStore.getItems(fakeEvent({ method: 'GET' }));
+  var migrated = items.find(function (i) { return i.id === 'pre-waiting-for-1'; });
+  assert.equal(migrated.waitingFor, 'none');
+  assert.equal(migrated.priority, preWaitingForItem.priority, 'an unrelated already-set field must survive the backfill untouched');
 });
 
 // ===== update-tracker-item.js =====
@@ -290,6 +316,115 @@ test('POST updating only `done` leaves priority untouched, and vice versa', func
     var body2 = JSON.parse(res2.body);
     assert.equal(body2.item.priority, 'high');
     assert.equal(body2.item.done, true, 'done must survive an update that only touches priority');
+  });
+});
+
+// ===== `waitingFor` (direct-replace, unlike started/reviewed can change
+// back and forth) =====
+
+test('POST with waitingFor patches it directly, and it persists across a later GET', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[0].id;
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: OWNER_EMAIL, waitingFor: 'growth' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.waitingFor, 'growth');
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var persisted = getBody.items.find(function (i) { return i.id === id; });
+    assert.equal(persisted.waitingFor, 'growth');
+  });
+});
+
+test('waitingFor can be changed back and forth on the same item, unlike started/reviewed\'s one-way signals', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[1].id;
+
+    var res1 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, waitingFor: 'product' } }));
+    assert.equal(JSON.parse(res1.body).item.waitingFor, 'product');
+
+    var res2 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, waitingFor: 'ron' } }));
+    assert.equal(JSON.parse(res2.body).item.waitingFor, 'ron', 'must be able to change waitingFor to a different value on the same item');
+
+    var res3 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, waitingFor: 'product' } }));
+    assert.equal(JSON.parse(res3.body).item.waitingFor, 'product', 'must be able to change it back to a PREVIOUSLY set value too — no one-way lock like started/reviewed');
+
+    var res4 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, waitingFor: 'none' } }));
+    assert.equal(JSON.parse(res4.body).item.waitingFor, 'none', 'must also be settable back to "none"');
+  });
+});
+
+test('POST updating only `waitingFor` leaves priority/done untouched, and vice versa', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[2].id;
+    var originalPriority = trackerStore.SEED_ITEMS[2].priority;
+
+    var res1 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, waitingFor: 'growth' } }));
+    var body1 = JSON.parse(res1.body);
+    assert.equal(body1.item.waitingFor, 'growth');
+    assert.equal(body1.item.priority, originalPriority);
+
+    var res2 = await updateHandler(fakeEvent({ method: 'POST', body: { id: id, email: OWNER_EMAIL, priority: 'high' } }));
+    var body2 = JSON.parse(res2.body);
+    assert.equal(body2.item.priority, 'high');
+    assert.equal(body2.item.waitingFor, 'growth', 'waitingFor must survive an update that only touches priority');
+  });
+});
+
+test('POST with an invalid waitingFor value is rejected with 400', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, waitingFor: 'design' }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E13: invalid_waiting_for/);
+  });
+});
+
+test('POST with only `waitingFor` present does not trip the no_fields_to_update check', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: trackerStore.SEED_ITEMS[0].id, email: OWNER_EMAIL, waitingFor: 'ron' }
+    }));
+    assert.equal(res.statusCode, 200);
+  });
+});
+
+test('POST with waitingFor from a non-owner email is rejected with 403 and does not write anything', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var updateHandler = require('../netlify/functions/update-tracker-item').handler;
+    var trackerStore = require('../netlify/functions/lib/tracker-store');
+    var id = trackerStore.SEED_ITEMS[3].id;
+
+    var res = await updateHandler(fakeEvent({
+      method: 'POST',
+      body: { id: id, email: 'not-the-owner@example.com', waitingFor: 'growth' }
+    }));
+    assert.equal(res.statusCode, 403);
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var untouched = getBody.items.find(function (i) { return i.id === id; });
+    assert.equal(untouched.waitingFor, trackerStore.SEED_ITEMS[3].waitingFor);
   });
 });
 
@@ -807,6 +942,50 @@ test('POST with priority omitted defaults to medium', function () {
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
     assert.equal(body.item.priority, 'medium');
+  });
+});
+
+test('POST with waitingFor omitted defaults to "none"', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var addHandler = require('../netlify/functions/add-tracker-item').handler;
+    var res = await addHandler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, category: 'idea', title: 'An idea', detail: 'Some detail.' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.waitingFor, 'none');
+  });
+});
+
+test('POST with an explicit waitingFor is accepted and stored', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var getHandler = require('../netlify/functions/get-tracker-items').handler;
+    var addHandler = require('../netlify/functions/add-tracker-item').handler;
+    var res = await addHandler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, category: 'task', title: 'Waiting on growth', detail: 'Detail.', waitingFor: 'growth' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.item.waitingFor, 'growth');
+
+    var getRes = await getHandler(fakeEvent({ method: 'GET' }));
+    var getBody = JSON.parse(getRes.body);
+    var persisted = getBody.items.find(function (i) { return i.id === body.item.id; });
+    assert.equal(persisted.waitingFor, 'growth');
+  });
+});
+
+test('POST with an invalid waitingFor value is rejected with 400', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var addHandler = require('../netlify/functions/add-tracker-item').handler;
+    var res = await addHandler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, category: 'task', title: 'Title', detail: 'Detail.', waitingFor: 'design' }
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E9: invalid_waiting_for/);
   });
 });
 

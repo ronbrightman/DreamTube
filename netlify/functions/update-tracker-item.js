@@ -1,13 +1,21 @@
 // netlify/functions/update-tracker-item.js
 //
-// Owner-only write for tracker.html: updates one item's `priority`/`done`,
-// flips its one-way `started`/`reviewed` signals, and/or appends one new
-// entry to its `comments` list, by id. Deliberately does NOT allow editing
-// title/detail/category through this endpoint — that's seed-authored-or-
-// added content, not something this endpoint should let anyone
-// accidentally mutate. Adding/removing whole items is add-tracker-item.js/
-// delete-tracker-item.js's job now, not a hypothetical this endpoint is
-// expected to grow into.
+// Owner-only write for tracker.html: updates one item's `priority`/
+// `waitingFor`/`done`, flips its one-way `started`/`reviewed` signals,
+// and/or appends one new entry to its `comments` list, by id.
+// Deliberately does NOT allow editing title/detail/category through this
+// endpoint — that's seed-authored-or-added content, not something this
+// endpoint should let anyone accidentally mutate. Adding/removing whole
+// items is add-tracker-item.js/delete-tracker-item.js's job now, not a
+// hypothetical this endpoint is expected to grow into.
+//
+// `waitingFor` ("product"|"growth"|"ron"|"none") is a direct-replace
+// field, same shape as `priority` — NOT a one-way signal like `started`/
+// `reviewed` below. Who an item is blocked on can genuinely change back
+// and forth as work actually progresses (Ron answers a question and it
+// becomes Product's turn again, growth picks something back up, etc.), so
+// unlike those two there's no "already set once, further attempts are a
+// no-op" special case here.
 //
 // `started` is a one-way "go ahead and start this" signal, distinct from
 // `done` — Ron clicks it to tell whoever/whatever is picking up an item
@@ -54,11 +62,14 @@
 // reuses the existing owner-email check rather than inventing new auth
 // for a second "identity".
 //
-// POST { id, email, priority?, done?, started?, reviewed?, comment?,
-//   commentAuthor? } -> { item } (the full updated item)
-//   At least one of priority/done/started/reviewed/comment must be
-//   present. priority must be one of "high"/"medium"/"low" if present;
-//   done must be a real boolean if present; started, if present, must be
+// POST { id, email, priority?, waitingFor?, done?, started?, reviewed?,
+//   comment?, commentAuthor? } -> { item } (the full updated item)
+//   At least one of priority/waitingFor/done/started/reviewed/comment must
+//   be present. priority must be one of "high"/"medium"/"low" if present;
+//   waitingFor must be one of "product"/"growth"/"ron"/"none" if present
+//   (direct replace, same as priority — see this file's own header
+//   comment above for why it's unlike started/reviewed); done must be a
+//   real boolean if present; started, if present, must be
 //   exactly `true` (this endpoint never accepts `started: false` — there
 //   is no un-start operation); reviewed, if present, must likewise be
 //   exactly `true` (same no-un-review reasoning). comment, if present,
@@ -77,8 +88,8 @@
 //                              authorized
 //   E3  invalid_json        — POST body wasn't valid JSON
 //   E4  missing_id          — POST body had no `id`
-//   E5  no_fields_to_update — none of `priority`/`done`/`started`/
-//                              `reviewed`/`comment` was present
+//   E5  no_fields_to_update — none of `priority`/`waitingFor`/`done`/
+//                              `started`/`reviewed`/`comment` was present
 //   E6  invalid_priority    — `priority` present but not high/medium/low
 //   E7  invalid_done        — `done` present but not a real boolean
 //   E8  forbidden           — POST body's `email` (normalized) didn't
@@ -90,11 +101,14 @@
 //                              present/valid alongside it
 //   E11 invalid_started     — `started` present but not exactly `true`
 //   E12 invalid_reviewed    — `reviewed` present but not exactly `true`
+//   E13 invalid_waiting_for — `waitingFor` present but not one of
+//                              product/growth/ron/none
 
 var { normalizeEmail } = require('./lib/entitlements');
 var trackerStore = require('./lib/tracker-store');
 
 var VALID_PRIORITIES = ['high', 'medium', 'low'];
+var VALID_WAITING_FOR = ['product', 'growth', 'ron', 'none'];
 var VALID_COMMENT_AUTHORS = ['ron', 'claude'];
 var MAX_COMMENT_LENGTH = 2000;
 
@@ -124,11 +138,12 @@ exports.handler = async function (event) {
   }
 
   var hasPriority = Object.prototype.hasOwnProperty.call(payload, 'priority');
+  var hasWaitingFor = Object.prototype.hasOwnProperty.call(payload, 'waitingFor');
   var hasDone = Object.prototype.hasOwnProperty.call(payload, 'done');
   var hasStarted = Object.prototype.hasOwnProperty.call(payload, 'started');
   var hasReviewed = Object.prototype.hasOwnProperty.call(payload, 'reviewed');
   var hasComment = Object.prototype.hasOwnProperty.call(payload, 'comment');
-  if (!hasPriority && !hasDone && !hasStarted && !hasReviewed && !hasComment) {
+  if (!hasPriority && !hasWaitingFor && !hasDone && !hasStarted && !hasReviewed && !hasComment) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: no_fields_to_update' }) };
   }
   if (hasPriority && VALID_PRIORITIES.indexOf(payload.priority) === -1) {
@@ -136,6 +151,9 @@ exports.handler = async function (event) {
   }
   if (hasDone && typeof payload.done !== 'boolean') {
     return { statusCode: 400, body: JSON.stringify({ error: 'E7: invalid_done' }) };
+  }
+  if (hasWaitingFor && VALID_WAITING_FOR.indexOf(payload.waitingFor) === -1) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E13: invalid_waiting_for' }) };
   }
   // A new comment entry is never an empty string (nothing to "clear" —
   // this is an append-only log, not an overwritable field) and always
@@ -162,6 +180,7 @@ exports.handler = async function (event) {
 
   var patch = {};
   if (hasPriority) patch.priority = payload.priority;
+  if (hasWaitingFor) patch.waitingFor = payload.waitingFor;
   if (hasDone) patch.done = payload.done;
   if (hasStarted) patch.started = true;
   if (hasReviewed) patch.reviewed = true;

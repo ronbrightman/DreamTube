@@ -222,6 +222,10 @@
   var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'H', medium: 'M', low: 'L' };
   var COMMENT_AUTHOR_LABEL = { ron: 'Ron', claude: 'Claude' };
+  // Labels for the "Waiting for" badge (see itemHTML's waitingForBadge) —
+  // 'none' is deliberately absent, since 'none' never renders a badge at
+  // all.
+  var WAITING_FOR_LABEL = { product: 'Product', growth: 'Growth', ron: 'Ron' };
 
   /**
    * Not-done first, then High -> Medium -> Low. Array.prototype.sort has
@@ -324,23 +328,52 @@
       ? '<span class="tracker-needs-review-badge">Needs review</span>'
       : '';
 
-    // "Needs your input" — Ron's own ask: a clear visual marker on OPEN
-    // items that are waiting on him specifically (an unanswered Claude
-    // question, an [auto] status update nobody's replied to yet, etc.),
-    // purely additive/visual — see sortItems() above, deliberately
-    // untouched: this must never change render ORDER, only decorate it.
-    // Derived signal, no new tracker-store.js field needed: an item whose
-    // MOST RECENT comment (if any) was authored by 'claude' means Claude
-    // left the last word and nothing from 'ron' has followed it yet —
-    // exactly this session's own established convention of leaving a
-    // tracker comment when something needs Ron's decision, then moving
-    // on. Distinct from needsReviewBadge above: that one is done-only
-    // ("built, hasn't been looked at"); this one is open-only ("still
-    // open, and the ball's in Ron's court"). An item with no comments at
-    // all has no "last comment" to check, so it never shows this badge.
-    var lastComment = item.comments && item.comments.length ? item.comments[item.comments.length - 1] : null;
-    var needsInputBadge = (!item.done && lastComment && lastComment.author === 'claude')
-      ? '<span class="tracker-needs-input-badge">Needs your input</span>'
+    // "Waiting for: Product / Growth / Ron" — Ron's own ask (tracker item
+    // for-product-tracker-add-a-visible-waitin-9zdkb8): "at-a-glance
+    // visibility of who each item is blocked on ... could not tell who
+    // owes what." SUPERSEDES the earlier, narrower "Needs your input"
+    // badge (see git history for its removal) — this is the same "purely
+    // additive/visual, open-only" spirit, generalized from "waiting on Ron"
+    // to "waiting on Product/Growth/Ron/nobody". Purely additive/visual,
+    // never touches sortItems() above (deliberately untouched — Ron's own
+    // explicit "keep the existing PRIORITY sort" requirement).
+    //
+    // item.waitingFor is the real, stored, explicit value now (see
+    // tracker-store.js) — but the ~35 items that existed before this field
+    // shipped all read back as 'none' (tracker-store.js's own backfill),
+    // so a stored 'none' isn't necessarily "nobody's waiting on anything",
+    // it can also just mean "predates this field". For DISPLAY only (never
+    // written back to the store — see tracker-store.js's own item-shape
+    // comment for why that inference stays client-side), derive a
+    // best-effort value from signals already on the item, in this order,
+    // and ONLY when the stored value is genuinely 'none':
+    //   1. title contains the literal '[for product]' tag -> 'product'
+    //   2. title contains the literal '[for growth]' tag -> 'growth'
+    //   3. item is open (not done) and its most recent comment (if any)
+    //      was authored by 'claude' -> 'ron' (this is exactly the old
+    //      "Needs your input" badge's own condition, preserved here as
+    //      the fallback for the Ron case)
+    //   4. otherwise -> 'none' (no badge)
+    // An EXPLICITLY stored non-'none' value always wins over all of this —
+    // the derivation only ever runs when the stored value is 'none'.
+    var displayWaitingFor = item.waitingFor;
+    if (displayWaitingFor === 'none' || !displayWaitingFor) {
+      if (item.title && item.title.indexOf('[for product]') !== -1) {
+        displayWaitingFor = 'product';
+      } else if (item.title && item.title.indexOf('[for growth]') !== -1) {
+        displayWaitingFor = 'growth';
+      } else {
+        var lastComment = item.comments && item.comments.length ? item.comments[item.comments.length - 1] : null;
+        displayWaitingFor = (!item.done && lastComment && lastComment.author === 'claude') ? 'ron' : 'none';
+      }
+    }
+    // Done-only concern per needsReviewBadge above vs. open-only concern
+    // here: an item nobody's actively waiting ON anymore once it's done
+    // (per Ron's own framing of this ask) never shows this badge, even if
+    // its stored/derived value is still non-'none' from before it was
+    // marked done.
+    var waitingForBadge = (!item.done && displayWaitingFor !== 'none')
+      ? '<span class="tracker-waiting-badge" data-for="' + displayWaitingFor + '">Waiting ' + WAITING_FOR_LABEL[displayWaitingFor] + '</span>'
       : '';
 
     var metaParts = [];
@@ -378,7 +411,7 @@
       '<details class="tracker-item' + (needsReviewBadge ? ' needs-review' : '') + '" data-id="' + esc(item.id) + '">' +
         '<summary class="tracker-item-summary">' +
           '<div class="tracker-item-summary-top">' +
-            '<span class="tracker-item-title" dir="auto">' + categoryBadge + needsReviewBadge + needsInputBadge + esc(item.title) + '</span>' +
+            '<span class="tracker-item-title" dir="auto">' + categoryBadge + needsReviewBadge + waitingForBadge + esc(item.title) + '</span>' +
             '<span class="icon tracker-chevron">' + Icons.chevronDown + '</span>' +
           '</div>' +
           '<div class="tracker-item-summary-actions">' +
