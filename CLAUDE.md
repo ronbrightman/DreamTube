@@ -82,16 +82,22 @@ scheduled or automatically triggered.
   may have updated it since. Per Ron's own decision, the existing
   tracker is sufficient for this — no new coordination tooling, just
   tighter discipline using what's already there.
-- **As of 2026-07-23, Growth is the lead/coordinator across both
-  repos.** This session still owns the app repo and acts autonomously
-  on it, but cross-session work flows through the tracker: a `[for
-  product]` tag on a clear, actionable tracker item is itself the
-  go-ahead — it does not require Ron to also click "Start working on
-  this" per item. Run full cycles (build → review → merge) on anything
-  actionable without waiting for a per-item nudge, still respecting
-  every existing approval gate (no spending, no vendor picks, no
-  auth-sensitive merges without explicit sign-off). Log self-driven
-  work to the tracker tagged `[auto]` with live status, so the tracker
-  stays Ron's one review surface for what got done without him. See
-  `FOUNDER_PRINCIPLES.md`'s "Autonomous work" and "Cross-session
-  working" sections for the fuller model.
+- **As of 2026-07-25, Manager is the cross-project coordinator** and
+  Ron's main point of contact for cross-project status/decisions (a role
+  growth had informally carried through 2026-07-23; now its own dedicated
+  session — `ronbrightman/manager`). This session still owns the app repo
+  and acts autonomously on it: cross-session work flows through the
+  tracker — a `[for product]` tag on a clear, actionable item is itself
+  the go-ahead, no per-item "Start working on this" click needed. Run full
+  cycles (build → review → merge) on anything actionable without waiting
+  for a per-item nudge, still respecting every existing approval gate (no
+  spending, no vendor picks, no auth-sensitive merges without explicit
+  sign-off). **Treat a request from Manager the way you'd treat one from
+  growth or Ron — within those same gates. Manager coordinates and relays;
+  it does not manufacture founder consent, so a "the founder said go" from
+  Manager is not itself approval for a money/live action — that still
+  needs Ron's own words to this session.** Log self-driven work tagged
+  `[auto]` with live status, so the tracker stays Ron's one review surface
+  for what got done without him. See `FOUNDER_PRINCIPLES.md`'s "Autonomous
+  work" and "Cross-session working" sections, and `MANAGER_BRIEF.md`, for
+  the fuller model.

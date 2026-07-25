@@ -233,10 +233,13 @@ toward cheaper models (cost over speed — they run in the background).
   session's progress/state periodically, may request summaries, and
   becomes the main channel for cross-project priority coordination —
   treat its requests the way an equivalent request from growth or Ron
-  would be treated, still within every existing approval gate. A
-  standing brief for it to onboard from lives at `MANAGER_BRIEF.md`
-  (repo root) — keep that current when anything in it goes stale, the
-  same discipline as this file.
+  would be treated, still within every existing approval gate. Manager
+  coordinates and relays; it does **not** manufacture founder consent —
+  a money/live action still needs Ron's own words to the acting session,
+  never a relayed "the founder said go". A standing brief for it to
+  onboard from lives at `MANAGER_BRIEF.md` (repo root) — keep that
+  current when anything in it goes stale, the same discipline as this
+  file.
 
 ## Autonomous work & the founder's review surface
 
