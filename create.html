@@ -1398,6 +1398,14 @@
     textArea.value = draft.caption;
     updateCharCount();
     DreamStore.setDraft({ restore: false });
+  } else if(new URLSearchParams(location.search).get('record') === '1'){
+    // Record-it handoff from the marketing funnel's Record-it path (see
+    // start.html's completeFunnel()/isRecordMode — funnel visitor signed
+    // up via start.html screen 13 with no caption recorded yet, so lands
+    // here with ?record=1 to jump straight into the mic-record flow
+    // instead of the Build/Write/Record choice screen). Calls the exact
+    // same function the #choice-record card's own click handler calls.
+    startRecordingUI();
   }
 </script>
 </body>

@@ -396,6 +396,21 @@
   };
   var chosenStyle = getParam('style') || null;
   var captionText = getParam('caption') || '';
+  // Record-it handoff (growth-confirmed contract, tracker item
+  // for-product-funnel-is-getting-its-own-co-pihldm): the funnel's
+  // redirectToApp() sends this additive optional param for the Record-it
+  // choice specifically — same base resume params as Build/Write, but
+  // WITHOUT caption/style since nothing has been recorded yet. Read here,
+  // once, and threaded through renderScreen13's continue handler (skips
+  // generate-during-signup — there's no real caption to submit) and
+  // completeFunnel (redirects into create.html's Record UI instead of
+  // processing.html — there's no generation in flight to show/poll for).
+  // Deliberately a plain top-level `mode` query param read directly off
+  // start.html's own location.search — this never collides with
+  // login.html's unrelated ?mode=signup/login param because start.html
+  // never navigates through login.html in this flow (signup here goes
+  // straight through attemptSignup() -> DreamStore.signup(), see below).
+  var isRecordMode = getParam('mode') === 'record';
   var staged = { characters: [], selectedIds: [] };
   track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
 
@@ -1056,7 +1071,17 @@
         // taken", a transient network error, anything — reuses the
         // already-in-flight-or-succeeded call instead of firing a second
         // real, billed generation. See that function's own comment.
-        var pendingPromise = getOrStartPendingGeneration(email);
+        //
+        // Record-it (isRecordMode) skips this entirely — captionText is
+        // empty (nothing has been recorded yet), so there's no real dream
+        // to submit; firing this here would start a real, billed fal.ai
+        // generation off an empty caption. pendingPromise stays a resolved
+        // no-op promise instead of undefined so the `.then()` below still
+        // works — pendingId/pendingOperationName are simply never set in
+        // this path (they stay at their null initial values), so the
+        // claim-pending-generation call and DreamStore.adoptPendingGeneration
+        // downstream both naturally no-op too (see their own `if` guards).
+        var pendingPromise = isRecordMode ? Promise.resolve() : getOrStartPendingGeneration(email);
         attemptSignup(email, password, function(ok, err){
           if(!ok){
             continueBtn.disabled = false;
@@ -1173,8 +1198,21 @@
       style: chosenStyle,
       recall: quiz.recall,
       dream_types: quiz.dreamTypes,
-      motivations: quiz.motivations
+      motivations: quiz.motivations,
+      mode: isRecordMode ? 'record' : null
     });
+    // Record-it (isRecordMode): there's no generation in flight — the
+    // generate-during-signup call was deliberately skipped above (no real
+    // caption to submit) — so processing.html (which assumes an adopted
+    // generation to poll for) would be wrong here. Send the visitor straight
+    // into create.html's Record UI instead, via a param create.html checks
+    // on load to auto-open the mic-record flow (skipping the Build/Write/
+    // Record choice screen — the account already exists from screen 13's
+    // signup, so create.html's own auth guard passes).
+    if(isRecordMode){
+      location.href = 'create.html?record=1';
+      return;
+    }
     location.href = 'processing.html';
   }
 

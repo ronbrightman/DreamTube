@@ -1,0 +1,254 @@
+// test/record-mode-behavioral.test.js
+//
+// Real browser-driven coverage for the Record-it handoff from the
+// marketing funnel (dreamtube-growth) into this app's start.html/
+// create.html — tracker item for-product-funnel-is-getting-its-own-co-pihldm.
+// Growth-confirmed contract: the funnel's redirectToApp() for the
+// Record-it path sends the standard resume params (recall/types/
+// motivations) PLUS an additive optional query param mode=record, and
+// WITHOUT caption/style (nothing has been recorded yet). start.html reads
+// this as isRecordMode and:
+//   1. skips the generate-during-signup call entirely on screen 13's
+//      Continue (there's no real caption to submit a billed generation
+//      for), and
+//   2. redirects to create.html?record=1 instead of processing.html once
+//      the funnel's confirmation screen (15) completes (there's no
+//      generation in flight to show/poll for).
+// create.html, in turn, auto-invokes its existing startRecordingUI() (the
+// same function the #choice-record card's own click handler calls) when
+// ?record=1 is present, landing the visitor directly in the mic-recording
+// UI with zero extra taps.
+//
+// Follows test/meta-capi-behavioral.test.js's and
+// test/image-generation-style-toggle-behavioral.test.js's conventions:
+// real Chromium via Playwright against this repo's static file server
+// (test/helpers/static-server.js), page.route() interception in place of
+// any real Netlify Functions runtime, node:test/assert. No real fal.ai
+// generation or transcription cost anywhere in this file.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+var staticServer = require('./helpers/static-server');
+
+var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+
+var playwright = null;
+var unavailableReason = null;
+try {
+  playwright = require('playwright');
+} catch (e1) {
+  try {
+    playwright = require('/opt/node22/lib/node_modules/playwright');
+  } catch (e2) {
+    unavailableReason = 'Playwright is not resolvable in this environment (' + e2.message + ')';
+  }
+}
+
+var server = null;
+var browser = null;
+var baseUrl = null;
+
+test.before(async function () {
+  if (unavailableReason) return;
+  server = await staticServer.start();
+  baseUrl = server.url;
+  try {
+    browser = await playwright.chromium.launch({ executablePath: CHROMIUM_PATH });
+  } catch (e) {
+    unavailableReason = 'Could not launch Chromium at ' + CHROMIUM_PATH + ': ' + e.message;
+  }
+});
+
+test.after(async function () {
+  if (browser) await browser.close();
+  if (server) await server.close();
+});
+
+/** Aborts requests to third-party hosts every page here loads (fonts, PostHog, Meta Pixel's real CDN script) -- see CLAUDE.md on this sandbox's outbound network. */
+function blockThirdParty(page) {
+  return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
+    route.abort();
+  });
+}
+
+/** Records every POST to start-pending-generation (the generate-during-signup call) without letting it hang -- fulfills as a definitive failure (no pendingId) since these tests care about whether the call fires at all, not the generate-during-signup mechanism itself (see test/ui-behavioral.test.js for that coverage). */
+function trackPendingGenerationCalls(page) {
+  var calls = [];
+  return page.route('**/.netlify/functions/start-pending-generation', function (route) {
+    calls.push(true);
+    route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+  }).then(function () { return calls; });
+}
+
+test('start.html: a mode=record visitor\'s signup never calls start-pending-generation, and completing the funnel redirects to create.html?record=1 (not processing.html)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var pendingGenerationCalls = await trackPendingGenerationCalls(page);
+
+    // Same base resume params a Build/Write handoff would carry (recall/
+    // types/motivations), but deliberately no caption/style -- nothing has
+    // been recorded yet -- plus the additive mode=record flag.
+    await page.goto(
+      baseUrl + '/start.html?resume=1&mode=record&recall=vividly&types=flying,falling&motivations=' + encodeURIComponent('Turn them into videos'),
+      { waitUntil: 'domcontentloaded' }
+    );
+
+    // captionText is empty, so captionSuggestsPeople(captionText) is false
+    // and the characters screen is skipped -- the funnel tail starts
+    // directly on renderScreen11 ("preparing").
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'record-mode-behavioral@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // Screen 14 (token intro) rendering confirms signup succeeded.
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    assert.equal(pendingGenerationCalls.length, 0, 'mode=record must never call start-pending-generation -- there is no real caption to submit a billed generation for');
+
+    await page.click('#fn-s14-continue');
+    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    await page.click('#fn-s15-continue');
+
+    await page.waitForURL('**/create.html?record=1', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    assert.match(page.url(), /create\.html\?record=1$/, 'mode=record must redirect into create.html\'s Record UI, not processing.html');
+
+    // Still no start-pending-generation call anywhere in the whole flow.
+    assert.equal(pendingGenerationCalls.length, 0, 'still zero start-pending-generation calls after the full mode=record flow completes');
+  } finally {
+    await context.close();
+  }
+});
+
+test('start.html: a normal (no mode=record) Build/Write visitor is completely unchanged -- generate-during-signup still fires and completing the funnel still redirects to processing.html', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var pendingGenerationCalls = await trackPendingGenerationCalls(page);
+
+    // A caption with no first-person/people-indicating language, so this
+    // also skips straight to renderScreen11 like the mode=record case
+    // above -- isolates the assertions to the mode=record branch instead
+    // of the (unrelated, untouched) characters-screen heuristic.
+    await page.goto(
+      baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
+      { waitUntil: 'domcontentloaded' }
+    );
+
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.click('#fn-s11-continue');
+
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    await page.fill('#fn-email', 'normal-mode-behavioral@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    assert.equal(pendingGenerationCalls.length, 1, 'a normal Build/Write signup must still fire exactly one start-pending-generation call');
+
+    await page.click('#fn-s14-continue');
+    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    await page.click('#fn-s15-continue');
+
+    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    assert.match(page.url(), /processing\.html/, 'a normal Build/Write funnel completion must still redirect to processing.html, unchanged');
+  } finally {
+    await context.close();
+  }
+});
+
+/** Installs a minimal fake navigator.mediaDevices.getUserMedia + window.MediaRecorder before any page script runs, so create.html's real startRecordingUI() (unchanged by this feature) can run end to end without touching a real microphone. Records whether getUserMedia was actually invoked. */
+async function installMediaRecorderMock(context) {
+  await context.addInitScript(function () {
+    window.__getUserMediaCalls = 0;
+    var fakeStream = { getTracks: function () { return []; } };
+    if (!navigator.mediaDevices) navigator.mediaDevices = {};
+    navigator.mediaDevices.getUserMedia = function () {
+      window.__getUserMediaCalls++;
+      return Promise.resolve(fakeStream);
+    };
+    function FakeMediaRecorder(stream, opts) {
+      this.stream = stream;
+      this.state = 'inactive';
+      this.mimeType = (opts && opts.mimeType) || 'audio/webm';
+      this._listeners = {};
+    }
+    FakeMediaRecorder.prototype.addEventListener = function (evt, cb) {
+      this._listeners[evt] = this._listeners[evt] || [];
+      this._listeners[evt].push(cb);
+    };
+    FakeMediaRecorder.prototype.start = function () { this.state = 'recording'; };
+    FakeMediaRecorder.prototype.stop = function () {
+      this.state = 'inactive';
+      (this._listeners.stop || []).forEach(function (cb) { cb(); });
+    };
+    FakeMediaRecorder.isTypeSupported = function () { return true; };
+    window.MediaRecorder = FakeMediaRecorder;
+  });
+}
+
+async function seedLoggedInUserAt(page, username, path) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (u) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + u, username: u };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[u] = { password: 'testpass1', email: u + '@example.com' };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, username);
+  await page.goto(baseUrl + path, { waitUntil: 'domcontentloaded' });
+}
+
+test('create.html: ?record=1 auto-invokes the mic-record flow (startRecordingUI) on load, skipping the Build/Write/Record choice screen', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await seedLoggedInUserAt(page, 'recordparamtester', '/create.html?record=1');
+
+    await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
+
+    var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
+    assert.equal(getUserMediaCalls, 1, 'landing on create.html?record=1 must call getUserMedia exactly once, with no extra tap');
+
+    var selectDisplay = await page.locator('#create-select').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(selectDisplay, 'none', 'the Build/Write/Record choice screen must be hidden -- the visitor lands directly in Record');
+
+    var heading = await page.textContent('#create-heading');
+    assert.equal(heading, 'Record your dream');
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html: without ?record=1, a normal visit still shows the Build/Write/Record choice screen and never calls getUserMedia', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await seedLoggedInUserAt(page, 'norecordparamtester', '/create.html');
+
+    await page.waitForSelector('#choice-record', { timeout: 5000 });
+    var selectDisplay = await page.locator('#create-select').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(selectDisplay, 'none', 'without ?record=1 the choice screen must still show, unchanged');
+
+    var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
+    assert.equal(getUserMediaCalls, 0, 'without ?record=1, getUserMedia must never be called automatically');
+  } finally {
+    await context.close();
+  }
+});
