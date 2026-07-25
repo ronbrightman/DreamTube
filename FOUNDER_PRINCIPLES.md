@@ -263,6 +263,18 @@ review surface (the tracker doesn't push notifications; it's a mailbox you check
    surface the list of what got done so Ron can review it, and it should carry
    a founder-clickable **"reviewed"** marker (product to build the reviewed
    flag on the tracker) so Ron can clear what he's already reviewed.
+4. **Always summarize, don't make him read the thread (founder rule
+   2026-07-25):** when a tracker item is genuinely waiting on Ron's input
+   (whether or not `waitingFor`/the old "needs your input" signal marks
+   it as such), the comment that leaves it in that state must end with a
+   short, plain summary — what's actually on the line, and exactly what
+   he needs to do or decide — not just another status update he has to
+   scroll a long thread to piece together himself. His own words, after
+   a 15-comment ad-optimization thread: "This thread is much too long
+   for me to read through so since this task says that it needs my
+   input then you must always summarize at the end." "Always" — durable,
+   not a one-off. Applies to both sessions on any item they hand back to
+   him for a real decision.
 
 ## Improvement cycle (cadence)
 
