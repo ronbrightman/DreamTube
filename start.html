@@ -424,12 +424,16 @@
   // ever set _fbp) is turned into fbc using Meta's own documented
   // creation format (fb.<subdomain-index>.<creation-time-ms>.<fbclid>);
   // subdomain-index is always 1 here per growth's own contract for this
-  // handoff, not computed from the actual hostname. Never overwrites an
-  // fbc/fbp this browser already has from a genuine prior visit to this
-  // domain, and — same as the distinct_id block above — a completely
-  // absent param set means zero behavior change from before this fix.
+  // handoff, not computed from the actual hostname. An explicit fbc/fbp
+  // param always overwrites whatever's already on this browser (correct
+  // last-click-attribution behavior for a fresh ad click); only the
+  // fbclid-constructed fallback checks for and skips an existing _fbc
+  // first, since it's a synthesized value standing in for a real one
+  // that might already be there. Same as the distinct_id block above, a
+  // completely absent param set means zero behavior change from before
+  // this fix.
   function setFirstPartyCookie(name, value){
-    try { document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + (90 * 24 * 60 * 60) + '; SameSite=Lax'; } catch(e) { /* analytics must never break the app */ }
+    try { document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + (90 * 24 * 60 * 60) + '; SameSite=Lax; Secure'; } catch(e) { /* analytics must never break the app */ }
   }
   (function persistMetaAttributionCookies(){
     try {
