@@ -82,16 +82,23 @@ scheduled or automatically triggered.
   may have updated it since. Per Ron's own decision, the existing
   tracker is sufficient for this — no new coordination tooling, just
   tighter discipline using what's already there.
-- **As of 2026-07-23, Growth is the lead/coordinator across both
-  repos.** This session still owns the app repo and acts autonomously
-  on it, but cross-session work flows through the tracker: a `[for
-  product]` tag on a clear, actionable tracker item is itself the
-  go-ahead — it does not require Ron to also click "Start working on
-  this" per item. Run full cycles (build → review → merge) on anything
-  actionable without waiting for a per-item nudge, still respecting
-  every existing approval gate (no spending, no vendor picks, no
-  auth-sensitive merges without explicit sign-off). Log self-driven
-  work to the tracker tagged `[auto]` with live status, so the tracker
-  stays Ron's one review surface for what got done without him. See
+- **As of 2026-07-25, Manager is live and is the coordinator across
+  both repos**, taking over the cross-project coordination role Growth
+  had informally been carrying since 2026-07-23. This session's own
+  work, agents, caps, and policies are unchanged by this — it still
+  owns the app repo and acts autonomously on it, cross-session work
+  still flows through the shared tracker (a `[for product]` tag on a
+  clear, actionable tracker item is itself the go-ahead — it does not
+  require Ron to also click "Start working on this" per item), and
+  Manager's own requests get treated the way an equivalent request from
+  Ron or Growth would be — still within every existing approval gate
+  (no spending, no vendor picks, no auth-sensitive merges without
+  explicit sign-off). Run full cycles (build → review → merge) on
+  anything actionable without waiting for a per-item nudge. Log
+  self-driven work to the tracker tagged `[auto]` with live status, so
+  the tracker stays the one review surface for what got done without
+  direct involvement — for Ron and now for Manager too. `MANAGER_BRIEF.md`
+  (repo root) is the standing onboarding snapshot for Manager to read
+  and dig into further from — keep it current. See
   `FOUNDER_PRINCIPLES.md`'s "Autonomous work" and "Cross-session
   working" sections for the fuller model.

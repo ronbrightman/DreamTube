@@ -223,18 +223,18 @@ toward cheaper models (cost over speed — they run in the background).
 - **This file is mirrored in both repos.** When either session graduates a new
   principle, update its copy AND post a `[for product]`/`[for growth]` tracker
   note so the other mirrors it.
-- **Manager (introduced 2026-07-25):** a new, separate entity/session
-  overseeing both product and growth, coordinating between them and
-  acting as Ron's main point of contact for cross-project status and
-  decisions — a role growth had informally been carrying, now split
-  out into its own dedicated session. Day-to-day for this session:
-  nothing changes — same work, same agents, same caps, same policies,
-  same tracker-driven workflow. What's new: Manager will review this
-  session's progress/state periodically, may request summaries, and
-  becomes the main channel for cross-project priority coordination —
-  treat its requests the way an equivalent request from growth or Ron
-  would be treated, still within every existing approval gate. A
-  standing brief for it to onboard from lives at `MANAGER_BRIEF.md`
+- **Manager (introduced 2026-07-25, live as of the same day):** a
+  separate entity/session overseeing both product and growth,
+  coordinating between them and acting as Ron's main point of contact
+  for cross-project status and decisions — a role growth had informally
+  been carrying, now fully handed off to its own dedicated session.
+  Day-to-day for this session: nothing changes — same work, same
+  agents, same caps, same policies, same tracker-driven workflow. What's
+  new: Manager reviews this session's progress/state, may request
+  summaries, and is now the main channel for cross-project priority
+  coordination — treat its requests the way an equivalent request from
+  Ron would be treated, still within every existing approval gate. The
+  standing brief it onboarded from lives at `MANAGER_BRIEF.md`
   (repo root) — keep that current when anything in it goes stale, the
   same discipline as this file.
 
