@@ -407,6 +407,43 @@
     try { posthog.identify(handoffDistinctId); } catch(e) { /* analytics must never break the app */ }
   }
 
+  // Meta click-attribution cookie handoff (tracker item
+  // for-product-high-read-meta-fbc-fbp-fbcli-agr639): the ad click lands
+  // on the FUNNEL domain (dreamtubeapp.netlify.app), so Meta's own _fbc/
+  // _fbp cookies never exist on THIS domain — js/analytics-config.js's
+  // getMetaCookies() only ever reads document.cookie, so every mid-funnel
+  // CAPI conversion fired from this file (ReachedEmailEntry,
+  // CompleteRegistration, and later FirstVideoCreated on result.html)
+  // was landing at Meta with no fbc/fbp match keys at all, unattributable
+  // to any ad. Growth's redirectToApp() now appends fbc/fbp/fbclid (from
+  // its OWN _fbc/_fbp cookies, set on the funnel domain where the ad
+  // click actually landed) to this handoff URL — persist them here, as
+  // real first-party cookies on THIS domain, before anything below can
+  // fire a conversion, so getMetaCookies() picks them up for every one
+  // of them. fbclid alone (no fbc — e.g. an ad-network variant that only
+  // ever set _fbp) is turned into fbc using Meta's own documented
+  // creation format (fb.<subdomain-index>.<creation-time-ms>.<fbclid>);
+  // subdomain-index is always 1 here per growth's own contract for this
+  // handoff, not computed from the actual hostname. Never overwrites an
+  // fbc/fbp this browser already has from a genuine prior visit to this
+  // domain, and — same as the distinct_id block above — a completely
+  // absent param set means zero behavior change from before this fix.
+  function setFirstPartyCookie(name, value){
+    try { document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + (90 * 24 * 60 * 60) + '; SameSite=Lax'; } catch(e) { /* analytics must never break the app */ }
+  }
+  (function persistMetaAttributionCookies(){
+    try {
+      var handoffFbc = getParam('fbc');
+      var handoffFbp = getParam('fbp');
+      var handoffFbclid = getParam('fbclid');
+      if(handoffFbc) setFirstPartyCookie('_fbc', handoffFbc);
+      if(handoffFbp) setFirstPartyCookie('_fbp', handoffFbp);
+      if(handoffFbclid && !handoffFbc && !getMetaCookies().fbc){
+        setFirstPartyCookie('_fbc', 'fb.1.' + Date.now() + '.' + handoffFbclid);
+      }
+    } catch(e) { /* analytics must never break the app */ }
+  })();
+
   // ===== Funnel-local state, hydrated from the marketing funnel's
   // handoff URL params, plus pre-signup character staging — see the
   // head-of-file comment for why characters can't just call
