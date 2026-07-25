@@ -211,7 +211,7 @@ toward cheaper models (cost over speed — they run in the background).
 - Keep internal strategy docs out of the public site (they're 404'd in
   `netlify.toml`) — add new internal docs to that list.
 
-## Cross-session working (growth ⇄ product)
+## Cross-session working (growth ⇄ product ⇄ Manager)
 
 - The **shared tracker** (`dreamtube1.netlify.app/tracker.html`, owner-gated
   API) is the live channel. Log anything open — including anything you're
@@ -223,6 +223,20 @@ toward cheaper models (cost over speed — they run in the background).
 - **This file is mirrored in both repos.** When either session graduates a new
   principle, update its copy AND post a `[for product]`/`[for growth]` tracker
   note so the other mirrors it.
+- **Manager (introduced 2026-07-25):** a new, separate entity/session
+  overseeing both product and growth, coordinating between them and
+  acting as Ron's main point of contact for cross-project status and
+  decisions — a role growth had informally been carrying, now split
+  out into its own dedicated session. Day-to-day for this session:
+  nothing changes — same work, same agents, same caps, same policies,
+  same tracker-driven workflow. What's new: Manager will review this
+  session's progress/state periodically, may request summaries, and
+  becomes the main channel for cross-project priority coordination —
+  treat its requests the way an equivalent request from growth or Ron
+  would be treated, still within every existing approval gate. A
+  standing brief for it to onboard from lives at `MANAGER_BRIEF.md`
+  (repo root) — keep that current when anything in it goes stale, the
+  same discipline as this file.
 
 ## Autonomous work & the founder's review surface
 
