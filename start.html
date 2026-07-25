@@ -385,6 +385,28 @@
     return;
   }
 
+  // Cross-app PostHog identity linking (tracker item
+  // for-product-pass-distinct-id-on-funnel-a-9nfxd8): the funnel
+  // (dreamtubeapp.netlify.app) and this app run as separate PostHog
+  // anonymous sessions today — every post-handoff pageview here starts a
+  // brand-new distinct_id, so growth can't see one joined funnel from
+  // welcome through signup/video. Fix: if the funnel's redirectToApp()
+  // appends its own posthog.get_distinct_id() as a `distinct_id` URL
+  // param, call posthog.identify() with it here so this browser's events
+  // on THIS app merge into the SAME PostHog person the funnel side
+  // already created, instead of starting a second, disconnected one.
+  // Deliberately a no-op (nothing to identify, funnel and app sessions
+  // just stay separate as they do today) if the param is absent — the
+  // funnel doesn't need to send it for this page to keep working exactly
+  // as before; this is purely additive measurement plumbing, never a
+  // functional gate. Fires once, right after the resume guard passes, so
+  // it identifies before any of this page's own funnel_resumed_from_marketing
+  // etc. events fire below.
+  var handoffDistinctId = getParam('distinct_id');
+  if(handoffDistinctId && window.posthog && typeof window.posthog.identify === 'function'){
+    try { posthog.identify(handoffDistinctId); } catch(e) { /* analytics must never break the app */ }
+  }
+
   // ===== Funnel-local state, hydrated from the marketing funnel's
   // handoff URL params, plus pre-signup character staging — see the
   // head-of-file comment for why characters can't just call
