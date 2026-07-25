@@ -1006,6 +1006,14 @@
     if (!removed) return;
     if (!confirm('Delete this item?')) return;
 
+    // Deleting the item currently being read aloud removes its speak
+    // button/UI, but window.speechSynthesis has no idea the item is gone
+    // and would otherwise keep talking with nothing on screen to stop it.
+    if (speakingId === id && SPEECH_SUPPORTED) {
+      window.speechSynthesis.cancel();
+      speakingId = null;
+    }
+
     items = items.filter(function (i) { return i.id !== id; });
     captureDrafts();
     render();

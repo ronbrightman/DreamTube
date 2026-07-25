@@ -269,6 +269,70 @@ test('the playing state reverts to not-playing when the utterance\'s onend fires
   }
 });
 
+test('the playing state reverts to not-playing when the utterance\'s onerror fires (mirrors the onend path)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installSpeechSynthesisMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedOwnerAndGoToTracker(page);
+
+    await page.click('[data-id="item-a"] .tracker-speak-btn');
+    var pressedWhilePlaying = await page.getAttribute('[data-id="item-a"] .tracker-speak-btn', 'aria-pressed');
+    assert.equal(pressedWhilePlaying, 'true');
+
+    // Simulate the browser failing mid-speech -- onerror shares onend's
+    // reset logic, but nothing else in this suite actually triggers it.
+    await page.evaluate(function () { window.__lastUtterance.onerror(); });
+
+    await page.waitForFunction(function () {
+      var btn = document.querySelector('[data-id="item-a"] .tracker-speak-btn');
+      return btn && btn.getAttribute('aria-pressed') === 'false';
+    }, { timeout: 5000 });
+
+    var isSpeakingClass = await page.evaluate(function () {
+      var btn = document.querySelector('[data-id="item-a"] .tracker-speak-btn');
+      return btn.classList.contains('is-speaking');
+    });
+    assert.equal(isSpeakingClass, false, 'the is-speaking visual class must be removed once onerror fires');
+  } finally {
+    await context.close();
+  }
+});
+
+test('deleting the item currently being read aloud stops the speech, not just the UI', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installSpeechSynthesisMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    page.on('dialog', function (dialog) { dialog.accept(); });
+
+    var deleteCalled = false;
+    await page.route('**/.netlify/functions/delete-tracker-item', function (route) {
+      deleteCalled = true;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await seedOwnerAndGoToTracker(page);
+
+    await page.click('[data-id="item-a"] .tracker-speak-btn');
+    var cancelCallsBeforeDelete = await page.evaluate(function () { return window.__cancelCalls; });
+    assert.equal(cancelCallsBeforeDelete, 1, 'sanity: speak() already issued its own leading cancel() call');
+
+    await page.click('[data-id="item-a"] .tracker-delete-btn');
+    await page.waitForFunction(function () { return document.querySelector('[data-id="item-a"]') === null; }, { timeout: 5000 });
+
+    var cancelCallsAfterDelete = await page.evaluate(function () { return window.__cancelCalls; });
+    assert.equal(cancelCallsAfterDelete, cancelCallsBeforeDelete + 1, 'deleting the currently-speaking item must call speechSynthesis.cancel() again, not just remove its UI');
+    assert.equal(deleteCalled, true, 'sanity: the delete itself still went through');
+  } finally {
+    await context.close();
+  }
+});
+
 test('an item with no comments still speaks its title + detail only, with no error', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
