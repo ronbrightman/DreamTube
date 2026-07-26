@@ -128,6 +128,15 @@
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
+  // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
+  // every other page's inline funnel script defines locally (see
+  // result.html/start.html) — this page didn't have one yet. =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
   function cardHTML(d, isFirst, isDreamOfDay){
     // No autoplay attribute — every card would otherwise start playing the
     // instant it's inserted into the DOM regardless of whether it's the
@@ -373,13 +382,45 @@
   if(pending){
     var banner = document.getElementById('gen-banner');
     banner.style.display = 'flex';
-    DreamStore.resumePendingJob().then(function(){
+    DreamStore.resumePendingJob().then(function(dream){
       banner.style.display = 'none';
       loadFeed();
       showToast('Your dream is ready!');
+      fireFirstVideoCreatedIfEligible(dream);
     }).catch(function(){
       banner.style.display = 'none';
     });
+  }
+
+  // ===== "First video created" conversion event — resume-completion path =====
+  // Mirrors result.html's own call site (see that page's identical-purpose
+  // comment + docs/EVENT_TAXONOMY.md's "FirstVideoCreated" section), for the
+  // OTHER place a generation can finish: a pending job left running when the
+  // user navigated away from processing.html, resumed and completed right
+  // here instead (see the resumePendingJob() call above). Without this, an
+  // account whose first-ever completed dream finishes via THIS path never
+  // fires the event at all, and — because DreamStore.markFirstVideoCreatedIfEligible
+  // gates on the account's dream count being exactly 1 — never gets a
+  // second chance: by the time they generate dream #2 and (maybe) land on
+  // result.html for it, the count is already 2 and the eligibility check
+  // correctly (but permanently) declines to fire retroactively for dream #1.
+  //
+  // Deliberately does NOT need result.html's extra sessionStorage
+  // "dreamtube_just_generated_id" guard: that marker exists there solely to
+  // distinguish a fresh post-generation redirect from a later plain
+  // revisit/reload of an old result.html?id= URL (see
+  // docs/EVENT_TAXONOMY.md). There's no equivalent revisit risk here — this
+  // function only ever runs inside resumePendingJob()'s own .then(), which
+  // resolves exactly once, only on a genuine, just-happened completion of a
+  // job that was actually in flight. markFirstVideoCreatedIfEligible's own
+  // atomic account-flag + dream-count check is sufficient on its own to
+  // guarantee "exactly once, only for the real first video."
+  function fireFirstVideoCreatedIfEligible(dream){
+    try {
+      if(!dream || !DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
+      track('first_video_created', { style: dream.style });
+      fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
+    } catch (e) { /* analytics must never break the app */ }
   }
 
   chip.addEventListener('click', function(){

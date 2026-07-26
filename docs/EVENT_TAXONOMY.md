@@ -74,14 +74,12 @@ forwarding, etc.).
 
 ### FirstVideoCreated / first_video_created
 
-The newest event, added alongside this doc.
-
 | | |
 |---|---|
-| **Trigger** | A user's first-ever dream video finishes generating and shows on `result.html` |
-| **Fires from** | `result.html`, in the IIFE right after the page's first `render()` call |
-| **Vendors** | Meta Pixel (**custom** event — `fbq('trackCustom', 'FirstVideoCreated', ...)`) + Meta CAPI (via `track-conversion.js`, same `ALLOWED_EVENT_NAMES` allowlist as the four events above) + **PostHog** (`first_video_created`, via `posthog.capture()`) |
-| **Guard** | Two independent checks must both pass — see below |
+| **Trigger** | A user's first-ever dream video finishes generating and shows on `result.html` **OR** finishes via `explore.html`'s resume-completion path (a pending job left running when the user navigated away from `processing.html`, picked back up and completed there instead — see `resumePendingJob()`) |
+| **Fires from** | Two sites, both required for reliable coverage — see `for-product-make-firstvideocreated-relia-5i9o0t` on `tracker.html` for why a second site was needed: (1) `result.html`, in the IIFE right after the page's first `render()` call; (2) `explore.html`'s `fireFirstVideoCreatedIfEligible()`, called from `resumePendingJob().then()` |
+| **Vendors** | Meta Pixel (**custom** event — `fbq('trackCustom', 'FirstVideoCreated', ...)`) + Meta CAPI (via `track-conversion.js`, same `ALLOWED_EVENT_NAMES` allowlist as the four events above) + **PostHog** (`first_video_created`, via `posthog.capture()`) — identical at both fire sites |
+| **Guard** | `result.html` requires two independent checks to both pass — see below. `explore.html`'s resume-completion path only needs the second (account-level) one — see the "Why explore.html doesn't need the sessionStorage guard" note below |
 
 **Why two guards, not one:**
 
@@ -130,12 +128,31 @@ this feature shipped (their flag stays unset until they generate their
 *next* video, at which point the dream count is 2 and the eligibility
 check correctly declines to fire at all).
 
+**Why `explore.html` doesn't need the sessionStorage guard:** the
+sessionStorage marker on `result.html` exists purely to distinguish a
+fresh post-generation redirect from a later plain revisit/reload of an
+old `result.html?id=...` URL for the same dream — see the "Why two
+guards, not one" reasoning above. `explore.html`'s resume-completion
+call site has no equivalent revisit risk: `fireFirstVideoCreatedIfEligible`
+only ever runs inside `resumePendingJob().then()`, which resolves exactly
+once, only on a genuine, just-happened completion of a job that was
+actually in flight (never on a page reload or revisit). So the
+account-level `markFirstVideoCreatedIfEligible` check alone is sufficient
+there to guarantee "exactly once, only for the real first video." This
+also means `explore.html`'s fire site has no sessionStorage-availability
+dependency at all — a real advantage on traffic where sessionStorage may
+not survive (e.g. Meta/Instagram in-app browser webviews), though
+`result.html`'s own direct-landing path still carries that dependency;
+see `for-product-make-firstvideocreated-relia-5i9o0t` on `tracker.html`
+for the fuller history of why this event needed hardening.
+
 **What's sent:** `style` only (`{ style: dream.style }`), never the dream
 caption — the caption is personal, sometimes vulnerable free-text content
 (same reasoning as `create.html`'s `#dream-text` session-replay masking,
 see `docs/ANALYTICS_SETUP.md`), not something to forward to an ad
 platform. `email` is included when the account has one on file (via
-`DreamStore.getAccountEmail()`), same as the other events above.
+`DreamStore.getAccountEmail()`), same as the other events above. Identical
+at both fire sites.
 
 **Files touched:**
 
@@ -145,6 +162,9 @@ platform. `email` is included when the account has one on file (via
 - `js/store.js` — `markFirstVideoCreatedIfEligible(dreamId)`
 - `processing.html` — sets the `dreamtube_just_generated_id` sessionStorage marker
 - `result.html` — new local `track()` PostHog helper + the call site
+- `explore.html` — new local `track()` PostHog helper +
+  `fireFirstVideoCreatedIfEligible()`, called from the resume-completion
+  path (`resumePendingJob().then()`)
 
 ### ReachedEmailEntry / funnel_step_viewed(email_capture)
 
