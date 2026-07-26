@@ -411,10 +411,20 @@
   // revisit/reload of an old result.html?id= URL (see
   // docs/EVENT_TAXONOMY.md). There's no equivalent revisit risk here — this
   // function only ever runs inside resumePendingJob()'s own .then(), which
-  // resolves exactly once, only on a genuine, just-happened completion of a
-  // job that was actually in flight. markFirstVideoCreatedIfEligible's own
-  // atomic account-flag + dream-count check is sufficient on its own to
-  // guarantee "exactly once, only for the real first video."
+  // resolves only on a genuine, just-happened completion of a job that was
+  // actually in flight, never on a page reload/revisit.
+  // markFirstVideoCreatedIfEligible's own account-flag + dream-count check
+  // is sufficient on its own to cover that revisit risk. NOT an unqualified
+  // "fires exactly once no matter what" guarantee, though: that check is
+  // only atomic within a single JS execution context, same as it always
+  // was on result.html's own call site — two tabs open on the same
+  // account's pendingJob at once (e.g. one here, one on
+  // processing.html/result.html) could both read the flag as unset before
+  // either write lands, and both fire. Pre-existing limitation in
+  // markFirstVideoCreatedIfEligible's own design, not something this
+  // call site introduces, but this second call site does add a second
+  // independent poller against the same shared state, which widens that
+  // latent window. Accepted/tracked, not fixed here.
   function fireFirstVideoCreatedIfEligible(dream){
     try {
       if(!dream || !DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;

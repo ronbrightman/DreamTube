@@ -328,15 +328,24 @@ test('cross-path: an account whose first video completes via explore.html\'s res
     });
     assert.ok(dreamId, 'sanity check: the resumed job should have produced a real completed dream');
 
-    // Leg 2: the user later opens result.html for that same dream -- no
-    // "just generated" sessionStorage marker this time (an ordinary
-    // revisit, not a fresh redirect from processing.html), and the
-    // account-level flag from leg 1 must block any re-fire regardless.
+    // Leg 2: the user later opens result.html for that same dream. The
+    // "just generated" sessionStorage marker IS set here, deliberately --
+    // this test exists to prove the shared account-level
+    // markFirstVideoCreatedIfEligible flag (set by leg 1) is what blocks
+    // the re-fire, not result.html's separate, unrelated sessionStorage
+    // guard. Without setting this marker, result.html's own guard would
+    // return early before ever reaching markFirstVideoCreatedIfEligible,
+    // and the "no double-fire" assertion below would pass for the wrong
+    // reason -- it would stop catching a real regression in the
+    // account-level flag's own cross-path sufficiency. Passing the
+    // sessionStorage guard through to the eligibility check is exactly
+    // what makes this a genuine test of that flag.
+    await markJustGenerated(page, dreamId);
     await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
 
-    assert.equal(fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length, 1, 'visiting result.html afterwards for the same already-counted dream must not add a second fbq trackCustom call');
-    assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length, 1, 'visiting result.html afterwards for the same already-counted dream must not add a second CAPI POST');
+    assert.equal(fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length, 1, 'visiting result.html afterwards for the same already-counted dream must not add a second fbq trackCustom call, even past the sessionStorage guard');
+    assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length, 1, 'visiting result.html afterwards for the same already-counted dream must not add a second CAPI POST, even past the sessionStorage guard');
   } finally {
     await context.close();
   }

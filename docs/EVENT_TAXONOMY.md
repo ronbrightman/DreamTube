@@ -134,17 +134,31 @@ fresh post-generation redirect from a later plain revisit/reload of an
 old `result.html?id=...` URL for the same dream — see the "Why two
 guards, not one" reasoning above. `explore.html`'s resume-completion
 call site has no equivalent revisit risk: `fireFirstVideoCreatedIfEligible`
-only ever runs inside `resumePendingJob().then()`, which resolves exactly
-once, only on a genuine, just-happened completion of a job that was
-actually in flight (never on a page reload or revisit). So the
-account-level `markFirstVideoCreatedIfEligible` check alone is sufficient
-there to guarantee "exactly once, only for the real first video." This
-also means `explore.html`'s fire site has no sessionStorage-availability
-dependency at all — a real advantage on traffic where sessionStorage may
-not survive (e.g. Meta/Instagram in-app browser webviews), though
-`result.html`'s own direct-landing path still carries that dependency;
-see `for-product-make-firstvideocreated-relia-5i9o0t` on `tracker.html`
-for the fuller history of why this event needed hardening.
+only ever runs inside `resumePendingJob().then()`, which resolves only on
+a genuine, just-happened completion of a job that was actually in flight
+(never on a page reload or revisit). So the account-level
+`markFirstVideoCreatedIfEligible` check alone is sufficient to cover that
+specific revisit risk, without needing a second, sessionStorage-based
+guard. This also means `explore.html`'s fire site has no
+sessionStorage-availability dependency at all — a real advantage on
+traffic where sessionStorage may not survive (e.g. Meta/Instagram
+in-app browser webviews), though `result.html`'s own direct-landing path
+still carries that dependency; see
+`for-product-make-firstvideocreated-relia-5i9o0t` on `tracker.html` for
+the fuller history of why this event needed hardening.
+
+**Known limitation, not fixed by the above (tracked separately):**
+`markFirstVideoCreatedIfEligible`'s account-flag check is only atomic
+within a single JS execution context, not across tabs/devices — two tabs
+open on the same account's pendingJob at once (e.g. one on
+`explore.html`, one on `processing.html`/`result.html`) could in theory
+both read the flag as unset before either write lands, and both fire.
+This is a pre-existing property of the flag's own design, not introduced
+by adding the `explore.html` call site — but that call site does add a
+second independent poller against the same shared state, which widens
+the window this could occur in. Neither fire site claims an unqualified
+"fires exactly once no matter what" guarantee; both rely on this being
+rare in practice.
 
 **What's sent:** `style` only (`{ style: dream.style }`), never the dream
 caption — the caption is personal, sometimes vulnerable free-text content
