@@ -69,10 +69,12 @@
 //       (a client-claimed identity alone isn't enough for something this
 //       destructive, same bar as every other password-gated flow here).
 //       Permanently deletes the account server-side (see that file for
-//       exactly what), then, only once that succeeds, wipes this browser's
-//       ENTIRE local app state (not just the account fields — see
-//       wipeAllLocalState's own comment for why this goes further than
-//       logout()).
+//       exactly what), then, only once that succeeds, wipes THIS account's
+//       own slice of local state (its accounts[]/charactersByUser[]
+//       entries, its own dreams) — scoped to just this account, not a
+//       wholesale wipe, since state.dreams/charactersByUser/accounts are
+//       shared across every account that's ever used this browser (see
+//       wipeAllLocalState's own comment for the full reasoning).
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -1182,21 +1184,26 @@
      * netlify/functions/delete-account.js's own header comment for exactly
      * what that deletes: the account record, the shared-feed's copy of any
      * published dreams, and the token ledger) and, ONLY once that server
-     * call actually confirms success, this browser's own entire local app
-     * state (see wipeAllLocalState above — this goes further than logout(),
-     * which only ever clears state.user). Requires the account's real
-     * current password — the same re-check every other destructive/
-     * password-gated flow in this codebase requires (see
+     * call actually confirms success, THIS account's own slice of local
+     * state (see wipeAllLocalState above — scoped to just this account,
+     * not a wholesale wipe; still goes further than logout(), which only
+     * ever clears state.user and leaves this account's own dreams/
+     * characters/credentials in place for a later re-login). Requires the
+     * account's real current password — the same re-check every other
+     * destructive/password-gated flow in this codebase requires (see
      * delete-account.js's own header comment on why a client-claimed
      * username/email alone isn't enough here).
      *
-     * Returns a Promise of { ok:true } or { ok:false, error }. Never falls
-     * back to a local-only deletion the way signup()/login() fall back to
-     * a local-only check on a server outage — unlike those, there is no
-     * meaningful "local-only" version of permanently destroying an account
-     * that might still be registered server-side; a network failure here
-     * must surface as a real error, not silently pretend to have deleted
-     * anything.
+     * Returns a Promise of { ok:true } or { ok:false, error } — error is
+     * always a human-readable string, never a raw internal code (a
+     * genuine network failure is mapped to a friendly message here, not
+     * left as the literal 'network_error' for the caller to display
+     * as-is). Never falls back to a local-only deletion the way signup()/
+     * login() fall back to a local-only check on a server outage — unlike
+     * those, there is no meaningful "local-only" version of permanently
+     * destroying an account that might still be registered server-side; a
+     * network failure here must surface as a real error, not silently
+     * pretend to have deleted anything.
      */
     deleteAccount: function (password) {
       if (!state.user) return Promise.resolve({ ok: false, error: 'not_logged_in' });
@@ -1218,7 +1225,7 @@
         }
         return { ok: false, error: mapDeleteAccountError(data && data.error) };
       }).catch(function () {
-        return { ok: false, error: 'network_error' };
+        return { ok: false, error: "Couldn't reach the server — check your connection and try again." };
       });
     },
 

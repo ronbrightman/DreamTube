@@ -237,6 +237,58 @@ test('profile.html: deleting one account on a browser that has a SECOND local ac
   }
 });
 
+test('profile.html: deleting an account clears ITS OWN pendingJob, but leaves a DIFFERENT account\'s pendingJob (however unusual) untouched', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    mockDeleteAccount(page, { body: { ok: true } });
+    await seedUser(page);
+    await page.evaluate(function () {
+      var s = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      s.pendingJob = { operationName: 'fal:abc', ownerHandle: '@tester', startedAt: Date.now() };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(s));
+    });
+
+    await safeGoto(page, baseUrl + '/profile.html');
+    await openSettingsAndDangerZone(page);
+    await page.fill('#delete-account-password', 'realpassword1');
+    await page.click('#delete-account-confirm');
+    await page.waitForSelector('#account-deleted-overlay.open');
+
+    var s = await page.evaluate(function () { return JSON.parse(localStorage.getItem('dreamtube_state_v1')); });
+    assert.equal(s.pendingJob, null, "the deleted account's own in-flight job must be cleared, not left dangling");
+  } finally {
+    await page.close();
+  }
+});
+
+test('profile.html: a pendingJob belonging to a DIFFERENT account survives this account\'s deletion', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    mockDeleteAccount(page, { body: { ok: true } });
+    await seedUser(page);
+    await page.evaluate(function () {
+      var s = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      s.pendingJob = { operationName: 'fal:xyz', ownerHandle: '@otheruser', startedAt: Date.now() };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(s));
+    });
+
+    await safeGoto(page, baseUrl + '/profile.html');
+    await openSettingsAndDangerZone(page);
+    await page.fill('#delete-account-password', 'realpassword1');
+    await page.click('#delete-account-confirm');
+    await page.waitForSelector('#account-deleted-overlay.open');
+
+    var s = await page.evaluate(function () { return JSON.parse(localStorage.getItem('dreamtube_state_v1')); });
+    assert.equal(s.pendingJob && s.pendingJob.operationName, 'fal:xyz', "a job that isn't this account's own must survive -- scopedPendingJob already hides it from anyone but @otheruser, but deleting tester has no reason to destroy the data outright");
+  } finally {
+    await page.close();
+  }
+});
+
 test('profile.html: a WRONG password shows an inline error, never navigates away, and never touches local state', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
@@ -266,6 +318,28 @@ test('profile.html: a WRONG password shows an inline error, never navigates away
 
     var state = await page.evaluate(function () { return JSON.parse(localStorage.getItem('dreamtube_state_v1')); });
     assert.equal(state.dreams.length, 1, 'dreams must be untouched after a failed attempt');
+  } finally {
+    await page.close();
+  }
+});
+
+test('profile.html: a server-side deletion FAILURE (E7 -- password verified, but the delete itself failed) shows a distinct message, not the "incorrect password"/generic text', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    mockDeleteAccount(page, { body: { ok: false, error: 'E7: deletion_failed: blobs unavailable' } });
+    await seedUser(page);
+    await safeGoto(page, baseUrl + '/profile.html');
+    await openSettingsAndDangerZone(page);
+
+    await page.fill('#delete-account-password', 'realpassword1');
+    await page.click('#delete-account-confirm');
+
+    await page.waitForFunction(function () {
+      return document.getElementById('delete-account-error').textContent.length > 0;
+    });
+    assert.equal(await page.locator('#delete-account-error').textContent(), 'Something went wrong deleting your account — please try again.', 'E7 means the PASSWORD was fine but the delete itself failed -- must not tell the user to re-check credentials that already checked out');
   } finally {
     await page.close();
   }

@@ -184,6 +184,22 @@ test('delete-account: exceeding MAX_DELETE_ACCOUNT_ATTEMPTS_PER_IDENTIFIER_PER_D
   assert.equal(JSON.parse(loginStillWorks.body).ok, true);
 });
 
+test('delete-account: a Blobs error partway through (the feed sweep) is reported as E7 deletion_failed, not swallowed into a false success', async function () {
+  await registerAndLogin('roger', 'realpassword1', 'roger@example.com');
+  mockBlobs.setReadOverride('dreamtube-feed', function (key) {
+    if (key === 'feed-index') throw new Error('blobs unavailable');
+  });
+  try {
+    var res = await deleteAccountHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'roger', password: 'realpassword1' } }));
+    assert.equal(res.statusCode, 500);
+    var body = JSON.parse(res.body);
+    assert.equal(body.ok, undefined, 'must not report ok:true when a real step failed');
+    assert.match(body.error, /^E7: deletion_failed/, 'a failure partway through the delete must surface as E7, distinct from E4/E5 (which are about the password check, not the deletion itself)');
+  } finally {
+    mockBlobs.clearReadOverride('dreamtube-feed');
+  }
+});
+
 // ===== lib/account-store.js's deleteAccount directly =====
 
 test('account-store: deleteAccount removes both the "u:" record and the "e:" index, and is a safe no-op for a username that never existed', async function () {
