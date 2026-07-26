@@ -307,3 +307,53 @@ test('a reload after a successful first fire does not re-fire (marker already co
     await context.close();
   }
 });
+
+test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries create-checkout-session-dodo.js\'s own returned eventId all the way through to both the Meta and PostHog Purchase fires (Phase 1 reporting instrumentation\'s server-side dedup id)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    // Mock the real endpoint create-checkout-session-dodo.js exposes --
+    // this is the exact link that silently broke once already (an edit
+    // made but never actually committed to its branch): the endpoint
+    // mints an eventId and returns it, purchasePack() has to actually
+    // read data.eventId and store it, and the eventual Purchase fire has
+    // to actually use it. A hand-seeded marker (as the other tests in
+    // this file use) skips over purchasePack() entirely and can't catch
+    // a regression in that specific reading/storing step.
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_real_flow', eventId: 'evt-real-server-eventid' })
+      });
+    });
+
+    await page.click('#shop-buy-pack500');
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+    await page.waitForTimeout(300);
+
+    var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
+    assert.equal(fbqPurchaseCalls.length, 1);
+    var usedEventId = fbqPurchaseCalls[0][3] && fbqPurchaseCalls[0][3].eventID;
+    assert.equal(usedEventId, 'evt-real-server-eventid', 'the REAL server-returned eventId must be what the Meta Pixel call actually uses, proving create-checkout-session-dodo.js\'s response -> purchasePack() -> the pending-purchase marker -> the Purchase fire all genuinely connect end to end');
+
+    var purchaseConversions = conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; });
+    assert.equal(purchaseConversions.length, 1);
+    assert.equal(purchaseConversions[0].event_id, 'evt-real-server-eventid');
+
+    var phCalls = await readPostHogCalls(page);
+    var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
+    assert.equal(purchaseCaptures.length, 1);
+    assert.equal(purchaseCaptures[0][2].$insert_id, 'evt-real-server-eventid', 'PostHog\'s $insert_id must also be the real server-returned eventId, not a client-generated fallback, so dodo-webhook.js\'s own server-side Purchase fire can actually dedupe against this one');
+  } finally {
+    await context.close();
+  }
+});
