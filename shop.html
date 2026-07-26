@@ -388,7 +388,16 @@
           // session-dodo.js's response omitted it for any reason) — in
           // that case each side just falls back to its own independent id,
           // same as before this instrumentation existed.
-          track('purchase_completed', { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD', $insert_id: pending.eventId || undefined });
+          // Build props with a real object key only when an eventId
+          // actually exists -- `$insert_id: undefined` would still be an
+          // OWN enumerable property on the object (unlike a key that's
+          // simply absent), which is both semantically sloppy and (this
+          // codebase's own pre-existing purchase-conversion test caught
+          // it) breaks a strict deep-equal check on the exact PostHog
+          // properties shape.
+          var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' };
+          if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
+          track('purchase_completed', purchaseProps);
           fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);
         }
       } catch(e) { /* analytics must never break the app */ }
