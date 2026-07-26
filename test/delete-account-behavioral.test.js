@@ -345,6 +345,41 @@ test('profile.html: a server-side deletion FAILURE (E7 -- password verified, but
   }
 });
 
+test('profile.html: a real network-level failure (the fetch itself rejecting, not a server response) shows a friendly message, never the raw "network_error" code', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // Unlike mockDeleteAccount's route.fulfill (a server response, even if
+    // it's an error body), route.abort() makes the underlying fetch() call
+    // itself reject -- this is the ONLY way to exercise DreamStore.
+    // deleteAccount's .catch() branch (js/store.js), as opposed to its
+    // .then(data => ...) branch that mapDeleteAccountError already covers.
+    await page.route('**/.netlify/functions/delete-account', function (route) {
+      route.abort('failed');
+    });
+    await seedUser(page);
+    await safeGoto(page, baseUrl + '/profile.html');
+    await openSettingsAndDangerZone(page);
+
+    await page.fill('#delete-account-password', 'realpassword1');
+    await page.click('#delete-account-confirm');
+
+    await page.waitForFunction(function () {
+      return document.getElementById('delete-account-error').textContent.length > 0;
+    });
+    var shown = await page.locator('#delete-account-error').textContent();
+    assert.equal(shown, "Couldn't reach the server — check your connection and try again.", 'a real network failure must show a friendly message, not leak the raw internal "network_error" code');
+    assert.notEqual(shown, 'network_error');
+
+    // Nothing destructive happened -- still logged in, state untouched.
+    var stillLoggedIn = await page.evaluate(function () { return window.DreamStore.getCurrentUser(); });
+    assert.deepEqual(stillLoggedIn, { handle: '@tester', username: 'tester' });
+  } finally {
+    await page.close();
+  }
+});
+
 test('js/store.js: DreamStore.deleteAccount rejects locally (no network call at all) when not logged in, and requires a non-empty password before even trying', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

@@ -936,12 +936,14 @@
       if(result.ok){
         // The account is genuinely, permanently deleted server-side by
         // this point, and DreamStore.deleteAccount has already wiped this
-        // browser's entire local state — that's real and irreversible
-        // regardless of anything that happened to this dialog in the
-        // meantime (a Cancel tap, a reopen), so this always proceeds even
-        // for what would otherwise look like a "stale" session. Nothing
-        // left to clean up in this sheet since the whole page is about to
-        // navigate away.
+        // account's own local state (its accounts/characters/dreams
+        // entries — see wipeAllLocalState's own comment for why that's
+        // scoped rather than a wholesale wipe) — that's real and
+        // irreversible regardless of anything that happened to this
+        // dialog in the meantime (a Cancel tap, a reopen), so this always
+        // proceeds even for what would otherwise look like a "stale"
+        // session. Nothing left to clean up in this sheet since the whole
+        // page is about to navigate away.
         deleteAccountModal.classList.remove('open');
         accountOverlay.classList.remove('open');
         document.getElementById('account-deleted-overlay').classList.add('open');
