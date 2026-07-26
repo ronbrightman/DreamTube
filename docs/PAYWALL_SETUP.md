@@ -14,10 +14,12 @@
 > switch currently has no effect on whether generation is allowed.
 >
 > **Dodo Payments (below the Stripe section) is different: it is LIVE**,
-> wired to `shop.html`'s $1.99/$8.95 one-time token-pack purchases. See
-> "Dodo Payments — one-time token-pack purchases" further down for what
-> that involves and what a human still needs to set up before it can
-> actually process a payment.
+> wired to `shop.html`'s 3-pack ($2.99/$7.99/$14.99) one-time token-pack
+> purchases ("Token Economy C", founder-approved 2026-07-26 night — this
+> replaced the earlier 2-pack $1.99/$8.95 lineup). See "Dodo Payments —
+> one-time token-pack purchases" further down for what that involves and
+> what a human still needs to set up before it can actually process a
+> payment.
 
 This document covers the Stripe subscription paywall backend added in this
 branch: what it is, every new environment variable it introduces, and
@@ -230,9 +232,10 @@ exist here. Once a human has done the setup above:
 ## Dodo Payments — one-time token-pack purchases (LIVE)
 
 Separate from everything above: Dodo Payments is DreamTube's real,
-chosen-and-approved payment processor for `shop.html`'s two token packs
-(100 tokens/$1.99, 500 tokens/$8.95) — a genuine one-time purchase, not a
-subscription. The vendor decision itself (Dodo over Paddle/2Checkout/
+chosen-and-approved payment processor for `shop.html`'s three token packs
+(100 tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99 — "Token Economy
+C", founder-approved 2026-07-26 night) — a genuine one-time purchase, not
+a subscription. The vendor decision itself (Dodo over Paddle/2Checkout/
 BlueSnap/Xsolla) was already made and approved by the founder — see the
 tracker — this section is the engineering setup that follows from it, per
 `AGENT_POLICY.md`'s "creating any account or signing up for any service is
@@ -241,15 +244,19 @@ could not, create the Dodo account itself).
 
 **What this is:**
 - `netlify/functions/create-checkout-session-dodo.js` — creates a Dodo
-  Checkout Session for a token pack (`pack100` or `pack500`) and returns
-  its URL; `shop.html`'s two buttons call this directly and redirect the
-  browser there.
+  Checkout Session for a token pack (`pack100`, `pack300`, or `pack700`)
+  and returns its URL; `shop.html`'s three buttons call this directly and
+  redirect the browser there.
 - `netlify/functions/dodo-webhook.js` — verifies Dodo's webhook signature
   (Standard Webhooks spec) and, on a confirmed `payment.succeeded` event,
   credits the buyer's token balance via `lib/entitlements.js`'s
   `creditTokenPackOnce` (idempotent by Dodo `payment_id`, so a redelivered
   webhook event can't double-credit — see that function's own doc
-  comment).
+  comment). A user's first-ever successful pack purchase additionally
+  credits +50% tokens, decided and applied entirely server-side by
+  `creditTokenPackAmountOnce` (keyed off the entitlement record's
+  `firstPackPurchaseAt` field) — no setup step needed for this, it's
+  automatic from the moment this branch is live.
 - This is intentionally NOT the same shape as the Stripe subscription
   backend above: no `active`/`plan` entitlement fields are touched at all.
   A token-pack purchase is a straight, one-time balance credit, exactly
@@ -265,17 +272,25 @@ could not, create the Dodo account itself).
 |---|---|---|
 | `DODO_API_KEY` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Dodo's bearer API key. Used to create Checkout Sessions; also passed to the SDK client `dodo-webhook.js` constructs (not actually used for signature verification itself, but the SDK constructor requires *some* value). |
 | `DODO_WEBHOOK_SECRET` | `dodo-webhook.js` | The signing key Dodo gives you when you register the webhook endpoint. Used to verify an incoming payload genuinely came from Dodo (Standard Webhooks signature, never trust an unverified payload). |
-| `DODO_PRODUCT_PACK_100` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | The Dodo product id (`pdt_...`) for the 100-token/$1.99 one-time-purchase product. No amount or id is hardcoded anywhere in this code. |
-| `DODO_PRODUCT_PACK_500` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 500-token/$8.95 pack. |
+| `DODO_PRODUCT_PACK_100` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | The Dodo product id (`pdt_...`) for the 100-token/$2.99 one-time-purchase product. No amount or id is hardcoded anywhere in this code. |
+| `DODO_PRODUCT_PACK_300` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 300-token/$7.99 pack ("Most popular" on `shop.html`). |
+| `DODO_PRODUCT_PACK_700` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 700-token/$14.99 pack ("Best value" on `shop.html`). |
 | `DODO_ENVIRONMENT` | both | `live_mode` (default) or `test_mode` — passed straight to the Dodo SDK client. Leave unset once real payments should actually go through. |
+
+Each pack degrades independently and gracefully if its own env var isn't
+set yet: `create-checkout-session-dodo.js` returns `E6 missing_product_id`
+for that specific pack only — the other two packs keep working normally.
+So the three Dodo products don't all need to exist at once; add them as
+you go and each pack lights up as soon as its own env var is set.
 
 **What a human still needs to do before this can process a real payment:**
 
-1. **Create the two one-time-purchase products** in the Dodo dashboard —
-   100 tokens at $1.99, 500 tokens at $8.95 (or whatever price is
-   currently live on `shop.html` — keep them matched by hand, nothing
-   enforces it). Copy their product ids into `DODO_PRODUCT_PACK_100` /
-   `DODO_PRODUCT_PACK_500`.
+1. **Create the three one-time-purchase products** in the Dodo dashboard —
+   100 tokens at $2.99, 300 tokens at $7.99, 700 tokens at $14.99 (or
+   whatever price is currently live on `shop.html` — keep them matched by
+   hand, nothing enforces it). Copy their product ids into
+   `DODO_PRODUCT_PACK_100` / `DODO_PRODUCT_PACK_300` /
+   `DODO_PRODUCT_PACK_700`.
 2. **Copy the Dodo API key** into `DODO_API_KEY`.
 3. **Register the webhook endpoint** in the Dodo dashboard, pointing at
    `https://<your-site>/.netlify/functions/dodo-webhook`, subscribed to at
@@ -291,9 +306,10 @@ docs, and against `test/create-checkout-session-dodo.test.js` /
 `test/dodo-webhook.test.js`, which mock the API boundary the same way
 this codebase already mocks fal.ai/Twilio/Resend elsewhere):
 
-- **Checkout session creation**: on `shop.html`, click either pack button
-  while logged in with an account that has an email on file; confirm it
-  redirects to a real Dodo Checkout page for the right product/amount.
+- **Checkout session creation**: on `shop.html`, click any of the three
+  pack buttons while logged in with an account that has an email on file;
+  confirm it redirects to a real Dodo Checkout page for the right
+  product/amount.
 - **Webhook flow**: use Dodo's dashboard "send test webhook" (or trigger a
   real test-mode payment) and confirm the buyer's email shows the correct
   new balance via `get-token-status.js` shortly after — Blobs is only
@@ -302,7 +318,11 @@ this codebase already mocks fal.ai/Twilio/Resend elsewhere):
   rather than assuming it's already updated.
 - **Idempotency**: resend the same test webhook event a second time (same
   `payment_id`) and confirm the balance does NOT increase again.
-- **A real end-to-end $1.99/$8.95 charge** is the only way to fully
+- **First-purchase bonus**: confirm a brand-new account's first successful
+  pack purchase credits 1.5x the pack's base tokens (e.g. `pack100` credits
+  150, not 100), and that a SECOND purchase from that same account credits
+  the plain base amount with no bonus.
+- **A real end-to-end $2.99/$7.99/$14.99 charge** is the only way to fully
   confirm the amount actually charged matches what the product's Dodo
   configuration says — nothing in this codebase enforces or checks that
   from the DreamTube side.

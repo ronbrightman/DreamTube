@@ -124,19 +124,30 @@
     <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
     <div class="wm-subcopy">Turn your dreams into videos.</div>
     <div class="wm-foot">
-      <!-- Deliberately still pointing at the external growth funnel, not
-           the new pre-signup wizard.html built alongside it — the build
-           agent's own branch proposed switching this, on the reasoning
-           that WIZARD_SPEC.md's confirmed "build the dream first, sign
-           up after" seam makes wizard.html the more direct destination
-           for an organic/direct visitor. That's a real, shared-surface
-           routing decision (this button currently feeds the growth
-           funnel's own traffic story), so it's deliberately held out of
-           this merge pending explicit founder/growth confirmation —
-           see the for-product-build-the-dream-builder-wiza-28did1
-           tracker item. wizard.html itself is fully live at /wizard.html
-           for direct/organic testing in the meantime. -->
-      <a class="btn btn-primary btn-block" href="https://dreamtubeapp.netlify.app/">Get Started</a>
+      <!-- Founder decision 2026-07-26 (tracker item
+           for-product-route-organic-direct-visitor-olu8md): organic/direct
+           visitors landing here now go straight into the pre-signup
+           wizard.html dream-builder instead of the external growth funnel
+           (https://dreamtubeapp.netlify.app/), per WIZARD_SPEC.md's
+           confirmed "build the dream first, sign up after" seam. This is
+           routing-only — wizard.html itself is unchanged, and does not
+           read any URL params, so it works identically whether reached
+           from here or hit directly.
+
+           The PAID growth-funnel handoff is completely untouched by this:
+           paid/ad traffic never passes through this button at all — ads
+           land visitors directly on the external funnel
+           (https://dreamtubeapp.netlify.app/), whose own hook/quiz/style
+           screens (a separate dreamtube-growth repo) still hand off into
+           start.html?resume=1&... exactly as before (see start.html's own
+           "Entry guard" comment). Previously this button pointed at that
+           same external funnel for EVERY visitor, organic included; per
+           this decision organic/direct traffic is redirected to wizard.html
+           while the paid path (which never touches index.html) is
+           unaffected. See the for-product-build-the-dream-builder-wiza-28did1
+           tracker item for the earlier, held-back proposal of this exact
+           change. -->
+      <a class="btn btn-primary btn-block" href="wizard.html">Get Started</a>
       <span class="link-text">Already have an account? <a href="login.html" style="color:var(--fn-ink); text-decoration:underline;">Log in</a></span>
     </div>
   </div>

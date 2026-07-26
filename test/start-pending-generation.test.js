@@ -71,7 +71,7 @@ test('missing caption/style -> E5', async function () {
   assert.match(JSON.parse(res.body).error, /^E5:/);
 });
 
-test('a brand-new email gets the 290-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
+test('a brand-new email gets the 220-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'fresh-wizard@example.com' } }));
   assert.equal(res.statusCode, 200);
@@ -80,7 +80,7 @@ test('a brand-new email gets the 290-token signup grant and a successful submiss
   assert.match(data.operationName, /^fal:/);
 
   var status = await entitlements.getTokenStatus({}, 'fresh-wizard@example.com');
-  assert.equal(status.balance, 190); // 290 granted - 100 spent
+  assert.equal(status.balance, 120); // 220 granted - 100 spent
 
   var record = await pendingDreams.get({}, data.pendingId);
   assert.equal(record.status, 'pending');
@@ -134,7 +134,7 @@ test('GENERATION_MOCK_MODE=true skips fal entirely and still returns a working p
   assert.match(data.operationName, /^mock:/);
   assert.equal(calls, 0);
   var status = await entitlements.getTokenStatus({}, 'mock-wizard@example.com');
-  assert.equal(status.balance, 190); // 290 granted - 100 spent
+  assert.equal(status.balance, 120); // 220 granted - 100 spent
 });
 
 test('rate limit (E6) is enforced per-IP, same cap as generate-video.js', async function () {
@@ -160,7 +160,7 @@ test('mediaType omitted -> pending record defaults to mediaType "video" (backwar
   assert.equal(record.mediaType, 'video');
 });
 
-test('mediaType "image": a brand-new email gets the 290-token signup grant and a successful submission spends only 10 of it', async function () {
+test('mediaType "image": a brand-new email gets the 220-token signup grant and a successful submission spends only 10 of it', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'fresh-image@example.com', mediaType: 'image' } }));
   assert.equal(res.statusCode, 200);
@@ -169,7 +169,7 @@ test('mediaType "image": a brand-new email gets the 290-token signup grant and a
   assert.match(data.operationName, /^fal:/);
 
   var status = await entitlements.getTokenStatus({}, 'fresh-image@example.com');
-  assert.equal(status.balance, 280); // 290 granted - 10 spent
+  assert.equal(status.balance, 210); // 220 granted - 10 spent
 
   var record = await pendingDreams.get({}, data.pendingId);
   assert.equal(record.mediaType, 'image');
@@ -203,7 +203,7 @@ test('mediaType "image": GENERATION_MOCK_MODE=true skips fal entirely, still spe
   assert.match(data.operationName, /^mock:/);
   assert.equal(calls, 0);
   var status = await entitlements.getTokenStatus({}, 'mock-image@example.com');
-  assert.equal(status.balance, 280); // 290 granted - 10 spent
+  assert.equal(status.balance, 210); // 220 granted - 10 spent
 });
 
 test('mediaType "image": the fal submission URL never carries a fal_webhook query param (unlike the video path) — see docs/IMAGE_GENERATION_SPEC.md §7', async function () {

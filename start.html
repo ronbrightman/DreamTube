@@ -106,7 +106,8 @@
   ?resume=1 (stale bookmark, old link) redirects straight back to the
   funnel — see the "Entry guard" block below. There is no organic
   in-app entry point into this file anymore; index.html's "Get Started"
-  links to the marketing funnel directly.
+  now routes organic/direct visitors to wizard.html instead (see that
+  file), and only the paid growth-funnel handoff still lands here.
 
   Real-integration notes still relevant to what's left here:
    - Advanced (characters/camera/scenery) is a real functional port of
@@ -1308,7 +1309,7 @@
   // block for the full model. There is no plan to choose here anymore (no
   // Yearly/Monthly cards, no MOTIVATION_PLAN recommendation, no
   // "Continue to payment") — every visitor gets the same free starting
-  // balance (290 tokens on signup, +200 every 24h automatically, see
+  // balance (220 tokens on signup, +20 every 24h automatically, see
   // getTokenStatus), so this screen is now a plain, honest acknowledgment/
   // continue step, not a paywall to get past. shop.html (linked from
   // profile.html once signed in) is where token packs will eventually be

@@ -22,9 +22,13 @@
 // hardcoded literal (see js/store.js's getTokenStatus / get-token-status.js
 // / lib/entitlements.js's getTokenStatus, which already return this field
 // for exactly this purpose). These tests mock a deliberately distinctive
-// dailyGrantAmount (7 -- not 10, not 100, and not 200 as of the 2026-07-26
-// retune) so a pass actually proves the copy is read live, not
-// coincidentally matching whatever the real constant happens to be today.
+// dailyGrantAmount (7 -- not 10, not 100, and not 20/200 as of the
+// 2026-07-26 night "Token Economy C" retune) so a pass actually proves the
+// copy is read live, not coincidentally matching whatever the real
+// constant happens to be today. The "up to N banked" grant-ceiling literal
+// (shop.html's #shop-cap-note) is NOT read live -- see that page's own
+// comment on why -- so its test below asserts the real current ceiling
+// value (200) directly rather than mocking it.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -199,7 +203,7 @@ test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmou
     var capNote = await page.textContent('#shop-cap-note');
     assert.match(capNote, new RegExp(DISTINCTIVE_GRANT + ' every 24 hours'));
     assert.doesNotMatch(capNote, /100 every 24 hours/);
-    assert.match(capNote, /up to 500 banked/, 'the grant ceiling (500, unchanged by this branch) should still be present');
+    assert.match(capNote, /up to 200 banked/, 'the grant ceiling (200 as of Token Economy C) should still be present');
   } finally {
     await context.close();
   }
