@@ -263,7 +263,7 @@
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero (the ≥500-balance-ceiling case, see entitlements.js) reads as "now": a grant is genuinely pending as soon as balance drops, not overdue. */
+  /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero (the ≥200-balance-ceiling case, see entitlements.js) reads as "now": a grant is genuinely pending as soon as balance drops, not overdue. */
   function formatTokenCountdown(nextGrantAt){
     if(nextGrantAt == null) return '';
     var ms = nextGrantAt - Date.now();
