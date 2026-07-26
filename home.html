@@ -73,10 +73,6 @@
     <div class="icon-btn" id="search-toggle"></div>
   </div>
   <div class="scroll-area">
-    <div class="gen-banner" id="gen-banner" style="display:none;">
-      <div class="spinner-inline"></div>
-      <div class="gen-banner-text">Your dream is still generating…</div>
-    </div>
     <div class="section-label" style="padding:0 18px; margin-top:2px;">For you</div>
     <div class="home-feed" id="home-grid"></div>
   </div>
@@ -175,25 +171,17 @@
   });
   searchInput.addEventListener('input', renderGrid);
 
-  function fireNotification(dream){
-    if('Notification' in window && Notification.permission === 'granted'){
-      try{ new Notification('Your dream is ready!', { body: '"' + dream.caption + '" finished generating.', icon: 'assets/logo-v2.png' }); }catch(e){ /* notification unsupported/blocked — banner clearing is enough */ }
-    }
-  }
-
-  var pending = DreamStore.getPendingJob();
-  if(pending){
-    var banner = document.getElementById('gen-banner');
-    banner.style.display = 'flex';
-    var shouldNotify = !!pending.notify;
-    DreamStore.resumePendingJob().then(function(dream){
-      banner.style.display = 'none';
-      renderGrid();
-      if(shouldNotify) fireNotification(dream);
-    }).catch(function(){
-      banner.style.display = 'none';
-    });
-  }
+  // home.html is retired (see README.md — "unreferenced, kept on disk,
+  // not linked from anywhere live") and no longer the surface a resumed
+  // generation completes on; that responsibility moved to explore.html
+  // (see its own getPendingJob/resumePendingJob handling + the
+  // FirstVideoCreated conversion firing there). This page used to have
+  // its own independent copy of that same resume-completion handling,
+  // but it never fired any analytics and, being unreachable from
+  // anywhere live, had no way to ever run for a real user anyway — dead
+  // code kept here would just be a third latent, never-firing
+  // FirstVideoCreated path sitting around for no reason. Removed rather
+  // than left in place, per CLAUDE.md's "no dead code left behind" rule.
 </script>
 </body>
 </html>
