@@ -81,8 +81,8 @@
 // attacker-chosen caption/video content AND silently, permanently disable
 // that account's own legitimate future retention email, with no recovery
 // path. Requires the account's real current password -- the same bar
-// delete-account.js already uses for a destructive/side-effecting action
-// against a real account, verified via accountStore.verifyLogin BEFORE
+// account-login.js already uses for password-gated access to a real
+// account, verified via accountStore.verifyLogin BEFORE
 // resolving the account's email or touching the idempotency guard (so a
 // wrong-password attempt never poisons the real "already sent" flag for
 // that account either). js/store.js's sendFirstDreamEmailBestEffort
@@ -101,14 +101,14 @@
 // bounds the worst case to one email per real account ever, and the
 // password check above closes the spoofing vector, but a per-IP cap still
 // bounds how many password-guessing attempts one source can make in a
-// single day (same two-bucket reasoning as account-login.js/delete-
-// account.js, simplified to per-IP only here since this isn't itself a
+// single day (same two-bucket reasoning as account-login.js's own rate
+// limiting, simplified to per-IP only here since this isn't itself a
 // login endpoint -- a wrong guess here doesn't unlock anything beyond
 // this one email).
 //
 // Error codes (this file's own small namespace, matching
-// dream-webhook.js's/request-magic-link.js's bare-number convention for a
-// small file, not generate-video.js's zero-padded E1xx range):
+// dream-webhook.js's bare-number convention for a small file, not
+// generate-video.js's zero-padded E1xx range):
 //   E1 method_not_allowed
 //   E2 invalid_json
 //   E3 missing_fields  -- username/dreamId/videoUrl/password not all present
