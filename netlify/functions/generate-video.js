@@ -485,6 +485,26 @@ var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var promptCondenser = require('./lib/prompt-condenser');
 var turnstile = require('./lib/turnstile');
+var jobOwners = require('./lib/job-owners');
+
+/**
+ * Records that `email` submitted `operationName`, best-effort — see
+ * lib/job-owners.js's own header comment for the full mechanism and the
+ * vulnerability this closes (auto-refund's own round-2 review finding: an
+ * unauthenticated caller could otherwise redirect a stranger's refund by
+ * supplying their operationName with a different email). Wrapped so a
+ * transient Blobs write failure here can never turn an already-successful,
+ * already-paid-for submission into a 500 — the only consequence of a
+ * failed write is that a LATER refund attempt for this job fails closed
+ * (see refundTokensOnce), never that this submission itself breaks.
+ */
+async function recordJobOwnerBestEffort(event, operationName, email) {
+  try {
+    await jobOwners.recordJobOwner(event, operationName, email);
+  } catch (e) {
+    console.error('generate-video: failed to record job owner (refund auth binding) for ' + operationName + ' — a later refund attempt for this job will fail closed', e);
+  }
+}
 
 // Same placeholder-string convention as js/analytics-config.js's
 // POSTHOG_KEY/META_PIXEL_ID and js/turnstile-config.js's TURNSTILE_SITE_KEY
@@ -607,7 +627,9 @@ exports.handler = async function (event) {
     // doc comment for why a rejection (E105-E107) never reaches this point
     // but every 200 does, mock or real.
     await entitlements.spendTokens(event, email, 100);
-    return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
+    var mockOpName = mockOperationName();
+    await recordJobOwnerBestEffort(event, mockOpName, email);
+    return { statusCode: 200, body: JSON.stringify({ operationName: mockOpName }) };
   }
 
   // Long captions get cut off mid-narrative otherwise: the model only has
@@ -665,6 +687,7 @@ exports.handler = async function (event) {
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, 100);
+    await recordJobOwnerBestEffort(event, result.operationName, email);
     return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };

@@ -26,6 +26,7 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var jobOwners = require('../netlify/functions/lib/job-owners');
 var handler = require('../netlify/functions/video-status').handler;
 
 var realFetch = global.fetch;
@@ -74,11 +75,26 @@ async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
 }
 
+/**
+ * Seeds a job-owners record binding `jobId` to `email` — the real
+ * equivalent of generate-video.js's own recordJobOwnerBestEffort at
+ * submission time (round-2 review security fix: refundTokensOnce now
+ * requires this to exist and match before ever refunding, see
+ * entitlements-refund.test.js's own SECURITY tests for the direct unit
+ * coverage). Every test below that expects an actual refund to land must
+ * seed this first, exactly like the real flow requires a real prior
+ * submission.
+ */
+async function seedJobOwner(email, jobId) {
+  await jobOwners.recordJobOwner({}, jobId, email);
+}
+
 // ----- E205 (fal itself marked the job failed) -- refund-eligible -----
 
 test('E205 (fal marked the job failed) refunds 100 tokens, sets tokensRefunded:true, and fires tokens_refunded with the right properties', async function () {
   var email = 'e205refund@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'fal:fal-ai/veo3.1/fast:req1');
   var posthogCalls = stubFalAndPosthog({ status: 'FAILED' }, {});
 
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast:req1', email));
@@ -106,6 +122,7 @@ test('E205 (fal marked the job failed) refunds 100 tokens, sets tokensRefunded:t
 test('E208 (COMPLETED with no video URL) also refunds 100 tokens and sets tokensRefunded:true', async function () {
   var email = 'e208refund@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'fal:fal-ai/veo3.1/fast:req2');
   stubFalAndPosthog({ status: 'COMPLETED' }, { video: null });
 
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast:req2', email));
@@ -167,6 +184,7 @@ test('a refund-eligible failure with NO email query param still returns the erro
 test('polling the SAME failed job id twice (e.g. a page reload resuming the poll) only refunds once', async function () {
   var email = 'resumedpoll@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'fal:fal-ai/veo3.1/fast:req-resume');
   var posthogCalls = stubFalAndPosthog({ status: 'FAILED' }, {});
 
   var first = await handler(statusEvent('fal:fal-ai/veo3.1/fast:req-resume', email));
@@ -185,6 +203,7 @@ test('polling the SAME failed job id twice (e.g. a page reload resuming the poll
 test('a refund attempt that genuinely fails (Blobs exhaustion) is caught -- the generation-failure response still reaches the client normally', async function () {
   var email = 'refundattemptfails@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'fal:fal-ai/veo3.1/fast:req-fails');
   stubFalAndPosthog({ status: 'FAILED' }, {});
 
   // Simulate refundTokensOnce's own outer-marker write never confirming a
@@ -203,4 +222,39 @@ test('a refund attempt that genuinely fails (Blobs exhaustion) is caught -- the 
   } finally {
     mockBlobs.clearReadOverride(entitlements.REFUNDED_JOBS_STORE_NAME);
   }
+});
+
+// ----- SECURITY (round-2 review finding): email/jobId ownership, exercised
+// through the real HTTP handler, not just the underlying entitlements.js
+// unit -- proves the fix actually closes the endpoint-level attack, not
+// just the library function in isolation. -----
+
+test('SECURITY: GET /video-status?name=<victim job>&email=<attacker email> does NOT refund the attacker, even though the job genuinely failed', async function () {
+  var victimEmail = 'httpvictim@example.com';
+  var attackerEmail = 'httpattacker@example.com';
+  var jobId = 'fal:fal-ai/veo3.1/fast:req-victim';
+  await seedZeroBalance(victimEmail);
+  await seedZeroBalance(attackerEmail);
+  // The real submission was the victim's -- generate-video.js's own
+  // recordJobOwnerBestEffort would have written exactly this.
+  await seedJobOwner(victimEmail, jobId);
+  var posthogCalls = stubFalAndPosthog({ status: 'FAILED' }, {});
+
+  // The attacker polls the VICTIM's jobId with their OWN email.
+  var attackRes = await handler(statusEvent(jobId, attackerEmail));
+  var attackBody = JSON.parse(attackRes.body);
+  assert.match(attackBody.error, /^E205:/, 'the real fal failure is still reported (this endpoint has no auth to reject the request outright)');
+  assert.equal(attackBody.tokensRefunded, undefined, 'the response must NOT claim a refund landed for the attacker');
+
+  var attackerRecord = await entitlements.getEntitlement({}, attackerEmail);
+  assert.equal(attackerRecord.tokens.balance, 0, "the attacker's balance must be completely untouched");
+  assert.equal(posthogCalls.length, 0, 'no tokens_refunded event should fire for a rejected mismatched attempt');
+
+  // The real owner must still be able to poll and get their own refund
+  // afterward -- the attacker's attempt must have left no side effects.
+  var victimRes = await handler(statusEvent(jobId, victimEmail));
+  assert.equal(JSON.parse(victimRes.body).tokensRefunded, true, "the real owner's own poll must still succeed after the attacker's rejected attempt");
+
+  var victimRecord = await entitlements.getEntitlement({}, victimEmail);
+  assert.equal(victimRecord.tokens.balance, 100, 'the real owner must receive their own refund in full');
 });

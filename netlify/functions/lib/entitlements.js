@@ -184,6 +184,7 @@ var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 var blobsRetry = require('./blobs-retry');
+var jobOwners = require('./job-owners');
 
 var STORE_NAME = 'dreamtube-entitlements';
 
@@ -1049,7 +1050,51 @@ function refundedJobsStore() {
  * — mirrors creditTokenPackOnce's own documented `!paymentId` escape
  * hatch. Shouldn't happen in practice (every real generation always has an
  * operationName), but this must not silently drop a legitimate refund if
- * it somehow did.
+ * it somehow did. NOT reachable via the real HTTP-exposed status endpoints
+ * (video-status.js/image-status.js both require a non-empty `name` before
+ * ever calling this — see either file's own E202/E502 validation), so this
+ * escape hatch is not itself part of the ownership-check surface below —
+ * there is no jobId for an attacker to spoof ownership of in this branch.
+ *
+ * ----------------------------------------------------------------------
+ * SECURITY: email/jobId ownership check (round-2 review finding, fixes a
+ * real vulnerability, not a hypothetical)
+ * ----------------------------------------------------------------------
+ * `email` and `jobId` both arrive here as plain, unauthenticated
+ * arguments — video-status.js/image-status.js pass through whatever the
+ * request's own query string said, with no session/auth token to check
+ * either against (this codebase has none — every request is identified
+ * purely by a client-supplied email throughout, see generate-video.js's
+ * own E112 doc block). Before this check existed, that meant `GET
+ * /video-status?name=<victim's in-flight operationName>&email=
+ * <attacker's email>` would credit the ATTACKER's balance for a
+ * STRANGER's failed job the instant it failed — and PERMANENTLY lock the
+ * real owner out of ever being refunded for their own job, since the
+ * marker below commits to 'committed' on the first successful claim,
+ * regardless of who made it. This was a genuine, not merely theoretical,
+ * gap: nothing before this line verified the caller was actually the
+ * account that submitted `jobId`.
+ *
+ * jobOwners.getJobOwnerEmail(jobId) (lib/job-owners.js) answers exactly
+ * that — a record written once, at generation-submission time, by
+ * generate-video.js's/generate-image.js's own recordJobOwnerBestEffort,
+ * binding the job id to the email that actually paid for it. This check
+ * runs BEFORE this function ever touches REFUNDED_JOBS_STORE_NAME's
+ * marker or any balance, so a mismatched/unauthorized attempt has ZERO
+ * side effects — it never creates, resumes, or interferes with a marker
+ * the real owner's later, correctly-authenticated poll would still need
+ * to see fresh.
+ *
+ * Fails CLOSED, not open, when no owner record exists at all (a write
+ * failure at submission time, or a job that predates this store): refuses
+ * to refund rather than falling back to trusting the caller's claimed
+ * email. The support-form fallback (per the founder's own spec) is the
+ * correct route for that rare case — silently trusting an unverifiable
+ * email here would just reopen the exact vulnerability this check exists
+ * to close, for the same convenience "auto-refund still works one way or
+ * another" reasoning; this codebase already accepts that a security
+ * boundary degrades to "the automatic path doesn't fire" rather than "the
+ * automatic path fires for someone unverified."
  */
 async function refundTokensOnce(event, email, jobId, amount) {
   var key = normalizeEmail(email);
@@ -1058,6 +1103,16 @@ async function refundTokensOnce(event, email, jobId, amount) {
   if (!jobId) {
     await addTokens(event, key, amount);
     return { ok: true, refunded: true };
+  }
+
+  var ownerEmail = await jobOwners.getJobOwnerEmail(event, jobId);
+  if (!ownerEmail) {
+    console.error('refundTokensOnce: no recorded owner for jobId ' + jobId + ' — refusing to refund (fails closed; the support form is the fallback)');
+    return { ok: true, refunded: false };
+  }
+  if (ownerEmail !== key) {
+    console.error('refundTokensOnce: email/jobId mismatch — refusing to refund. jobId=' + jobId + ' requested-by=' + key + ' actual-owner=' + ownerEmail);
+    return { ok: true, refunded: false };
   }
 
   var claimId; // set fresh inside mutate() on whichever attempt actually writes

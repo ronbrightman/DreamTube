@@ -21,6 +21,20 @@
 // array-membership `verify()` reported success for both, since whichever
 // write landed last still contained the job id either way. The
 // concurrency tests below are what catch that class of bug.
+//
+// ROUND-2 REVIEW FINDING (fixed, covered below): refundTokensOnce also
+// used to trust `email`/`jobId` outright with no check that the caller
+// was actually the account that submitted that job — since both arrive
+// as plain, unauthenticated query-string values on video-status.js/
+// image-status.js, that meant anyone who learned/guessed a stranger's
+// in-flight operationName could redirect that job's one-time refund to
+// their own balance, and PERMANENTLY lock the real owner out (the outer
+// marker commits on first successful claim, regardless of who claimed
+// it). Fixed via lib/job-owners.js: generate-video.js/generate-image.js
+// now record which email actually submitted a job id at generation time,
+// and refundTokensOnce checks that record BEFORE ever touching the
+// marker or a balance. The "email/jobId ownership" tests below are what
+// catch a regression of that vulnerability.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -29,6 +43,7 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var entitlements = require('../netlify/functions/lib/entitlements');
+var jobOwners = require('../netlify/functions/lib/job-owners');
 
 test.beforeEach(function () {
   mockBlobs.reset();
@@ -46,8 +61,24 @@ async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
 }
 
+/**
+ * Seeds a job-owners record binding `jobId` to `email` — the real
+ * production equivalent of generate-video.js's/generate-image.js's own
+ * recordJobOwnerBestEffort call, made once at generation-submission time.
+ * Every test below that expects refundTokensOnce to actually succeed must
+ * call this first (mirroring the real flow: a job is only ever
+ * refund-eligible because it was legitimately submitted by someone) —
+ * this is deliberate, not incidental test setup: it's what the
+ * "ownership" security tests further down prove is actually enforced,
+ * not just assumed.
+ */
+async function seedJobOwner(email, jobId) {
+  await jobOwners.recordJobOwner({}, jobId, email);
+}
+
 test('refunds tokens onto a fresh email and reports refunded:true', async function () {
   await seedZeroBalance('refund1@example.com');
+  await seedJobOwner('refund1@example.com', 'job_1');
   var result = await entitlements.refundTokensOnce({}, 'refund1@example.com', 'job_1', 100);
   assert.equal(result.ok, true);
   assert.equal(result.refunded, true);
@@ -71,6 +102,7 @@ async function mockBlobsRead(storeName, key) {
 
 test('a second sequential call for the SAME job id does not double-refund', async function () {
   await seedZeroBalance('refund2@example.com');
+  await seedJobOwner('refund2@example.com', 'job_2');
   var first = await entitlements.refundTokensOnce({}, 'refund2@example.com', 'job_2', 100);
   var second = await entitlements.refundTokensOnce({}, 'refund2@example.com', 'job_2', 100);
   assert.equal(first.refunded, true);
@@ -82,6 +114,8 @@ test('a second sequential call for the SAME job id does not double-refund', asyn
 
 test('a DIFFERENT job id for the same email refunds again (dedup is per-job, not per-email)', async function () {
   await seedZeroBalance('refund3@example.com');
+  await seedJobOwner('refund3@example.com', 'job_a');
+  await seedJobOwner('refund3@example.com', 'job_b');
   await entitlements.refundTokensOnce({}, 'refund3@example.com', 'job_a', 100);
   await entitlements.refundTokensOnce({}, 'refund3@example.com', 'job_b', 10);
   var record = await entitlements.getEntitlement({}, 'refund3@example.com');
@@ -90,16 +124,18 @@ test('a DIFFERENT job id for the same email refunds again (dedup is per-job, not
 
 test('the image cost (10) and video cost (100) both refund correctly for their own job ids', async function () {
   await seedZeroBalance('refund4@example.com');
+  await seedJobOwner('refund4@example.com', 'video-job');
   await entitlements.refundTokensOnce({}, 'refund4@example.com', 'video-job', 100);
   var afterVideo = await entitlements.getEntitlement({}, 'refund4@example.com');
   assert.equal(afterVideo.tokens.balance, 100);
 
+  await seedJobOwner('refund4@example.com', 'image-job');
   await entitlements.refundTokensOnce({}, 'refund4@example.com', 'image-job', 10);
   var afterImage = await entitlements.getEntitlement({}, 'refund4@example.com');
   assert.equal(afterImage.tokens.balance, 110);
 });
 
-test('a missing/falsy job id skips the dedup guard entirely and always refunds (documented escape hatch)', async function () {
+test('a missing/falsy job id skips the dedup guard (and the ownership check, which has nothing to check without a job id) entirely and always refunds (documented escape hatch, unreachable via the real HTTP status endpoints)', async function () {
   await seedZeroBalance('refund5@example.com');
   var first = await entitlements.refundTokensOnce({}, 'refund5@example.com', undefined, 100);
   var second = await entitlements.refundTokensOnce({}, 'refund5@example.com', undefined, 100);
@@ -118,6 +154,7 @@ test('an empty/missing email is a safe no-op (never throws, never touches any ba
 test('refundedJobIds (per-email) and appliedTokenPackPaymentIds (per-email) are kept as SEPARATE lists, and REFUNDED_JOBS_STORE_NAME / TOKEN_PURCHASES_STORE_NAME are kept as separate stores', async function () {
   var email = 'refund6@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'job_1');
   await entitlements.creditTokenPackOnce({}, email, 'pay_1', 500);
   await entitlements.refundTokensOnce({}, email, 'job_1', 100);
 
@@ -140,6 +177,7 @@ test('two CONCURRENT calls for the SAME job id refund exactly once between them,
   var email = 'refundrace1@example.com';
   var jobId = 'job_race_1';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
 
   // Promise.all starts both calls before either awaits through to
   // completion, interleaving at each internal await point exactly the way
@@ -162,6 +200,7 @@ test('three CONCURRENT calls for the SAME job id still refund exactly once', asy
   var email = 'refundrace2@example.com';
   var jobId = 'job_race_2';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
 
   var results = await Promise.all([
     entitlements.refundTokensOnce({}, email, jobId, 100),
@@ -179,6 +218,8 @@ test('three CONCURRENT calls for the SAME job id still refund exactly once', asy
 test('concurrent races on DIFFERENT job ids for the same email both go through the dedup guard independently (both refunded:true)', async function () {
   var email = 'refundracediff@example.com';
   await seedZeroBalance(email);
+  await seedJobOwner(email, 'job_diff_a');
+  await seedJobOwner(email, 'job_diff_b');
 
   var results = await Promise.all([
     entitlements.refundTokensOnce({}, email, 'job_diff_a', 100),
@@ -197,6 +238,7 @@ test('a marker left "pending" with the balance NOT yet applied (refundTokenAmoun
   var email = 'refundinterrupted1@example.com';
   var jobId = 'job_interrupted_1';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
 
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
     email: email,
@@ -217,6 +259,7 @@ test('a marker left "pending" where the balance was ALREADY applied (only the fl
   var email = 'refundinterrupted2@example.com';
   var jobId = 'job_interrupted_2';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
 
   // Simulates: an earlier attempt's refundTokenAmountOnce actually
   // succeeded (balance already bumped, jobId recorded in
@@ -244,6 +287,7 @@ test('a marker already "committed" is a genuine redelivery and is never resumed 
   var email = 'refundcommitted1@example.com';
   var jobId = 'job_committed_1';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId); // must pass the ownership check to actually reach the marker logic this test is about
 
   await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastGrantAt: Date.now() } });
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
@@ -311,6 +355,7 @@ test('genuine exhaustion writing the initial pending marker (verify never confir
   var email = 'refundexhaustion1@example.com';
   var jobId = 'job_exhaustion_1';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
 
   mockBlobs.setReadOverride(entitlements.REFUNDED_JOBS_STORE_NAME, function () {
     return { value: undefined };
@@ -331,6 +376,7 @@ test("genuine exhaustion applying the balance credit (refundTokenAmountOnce's ow
   var email = 'refundexhaustion2@example.com';
   var jobId = 'job_exhaustion_2';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
     email: email, amount: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
@@ -354,6 +400,7 @@ test('genuine exhaustion flipping the marker to committed (bookkeeping-only fail
   var email = 'refundexhaustion3@example.com';
   var jobId = 'job_exhaustion_3';
   await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
     email: email, amount: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
@@ -381,4 +428,89 @@ test('genuine exhaustion flipping the marker to committed (bookkeeping-only fail
   // failing to confirm -- this specific failure mode is bookkeeping-only.
   var record = await entitlements.getEntitlement({}, email);
   assert.equal(record.tokens.balance, 100, 'the balance credit must still have landed even though the flip-to-committed write could not be confirmed');
+});
+
+// ============================================================================
+// SECURITY: email/jobId ownership check (round-2 review finding)
+// ----------------------------------------------------------------------------
+// Direct regression coverage for the vulnerability described in this file's
+// own header comment: video-status.js/image-status.js pass `email` and
+// `jobId` straight from the request query string, unauthenticated. Without
+// the ownership check, an attacker who merely knows/guesses a stranger's
+// operationName could call refundTokensOnce with their OWN email and the
+// VICTIM's jobId and steal that refund -- permanently, since the marker
+// commits on first successful claim. These tests prove the fix actually
+// blocks that, and that a legitimate, correctly-matched request still
+// works.
+// ============================================================================
+
+test('SECURITY: an email that never submitted this jobId is refused a refund, even though the job genuinely failed and would otherwise be refund-eligible', async function () {
+  var victimEmail = 'refundvictim@example.com';
+  var attackerEmail = 'refundattacker@example.com';
+  var jobId = 'job_victim_1';
+  await seedZeroBalance(victimEmail);
+  await seedZeroBalance(attackerEmail);
+  // The real submission was made by the victim -- generate-video.js's own
+  // recordJobOwnerBestEffort would have written exactly this at
+  // submission time.
+  await seedJobOwner(victimEmail, jobId);
+
+  // The attacker's request claims the victim's jobId but their OWN email
+  // -- exactly the GET /video-status?name=<victim's job>&email=<attacker's
+  // email> attack described above.
+  var attackResult = await entitlements.refundTokensOnce({}, attackerEmail, jobId, 100);
+  assert.equal(attackResult.refunded, false, 'a mismatched email/jobId pair must never be refunded');
+
+  var attackerRecord = await entitlements.getEntitlement({}, attackerEmail);
+  assert.equal(attackerRecord.tokens.balance, 0, "the attacker's balance must be completely untouched");
+
+  // Critically: the REAL owner must still be able to claim their own
+  // refund afterward -- the attacker's rejected attempt must have left
+  // zero side effects (no marker created/consumed) for the legitimate
+  // owner's later, correctly-authenticated poll to trip over.
+  var victimResult = await entitlements.refundTokensOnce({}, victimEmail, jobId, 100);
+  assert.equal(victimResult.refunded, true, "the real owner's own refund must still succeed after an attacker's rejected attempt for the same jobId");
+
+  var victimRecord = await entitlements.getEntitlement({}, victimEmail);
+  assert.equal(victimRecord.tokens.balance, 100, 'the real owner must receive their own refund in full');
+});
+
+test('SECURITY: a jobId with NO recorded owner at all refuses to refund (fails closed) rather than trusting the caller-supplied email', async function () {
+  var email = 'refundnoowner@example.com';
+  var jobId = 'job_no_owner_record';
+  await seedZeroBalance(email);
+  // Deliberately no seedJobOwner call -- simulates a job that predates
+  // this store, or whose recordJobOwner write failed at submission time.
+
+  var result = await entitlements.refundTokensOnce({}, email, jobId, 100);
+  assert.equal(result.refunded, false, 'no owner record must mean no refund -- the caller-supplied email is never trusted on its own');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 0, 'balance must be untouched when there is no owner record to verify against');
+});
+
+test('SECURITY: the ownership check runs BEFORE the outer marker is ever touched -- a rejected mismatched attempt leaves no marker behind', async function () {
+  var victimEmail = 'refundvictim2@example.com';
+  var attackerEmail = 'refundattacker2@example.com';
+  var jobId = 'job_victim_2';
+  await seedZeroBalance(victimEmail);
+  await seedJobOwner(victimEmail, jobId);
+
+  await entitlements.refundTokensOnce({}, attackerEmail, jobId, 100);
+
+  var marker = await mockBlobsRead(entitlements.REFUNDED_JOBS_STORE_NAME, jobId);
+  assert.equal(marker, undefined, "a rejected mismatched attempt must not create ANY marker for this jobId -- proves the check happens before the two-phase-marker logic, not just before the balance credit");
+});
+
+test('a correctly-matched email/jobId pair (the legitimate, common case) still refunds normally -- the ownership check is not overly strict', async function () {
+  var email = 'reallegituser@example.com';
+  var jobId = 'job_legit_1';
+  await seedZeroBalance(email);
+  await seedJobOwner(email, jobId);
+
+  var result = await entitlements.refundTokensOnce({}, email, jobId, 100);
+  assert.equal(result.refunded, true);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100);
 });
