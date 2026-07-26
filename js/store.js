@@ -64,6 +64,15 @@
 //   saveClaimedDream(caption,style,videoUrl) -> local write, materializes an
 //       already-finished dream (claim-dream.html, the abandoned-dream re-engagement
 //       email/WhatsApp link's landing page) into the current account's local dreams
+//   deleteAccount(password) -> Promise, POST /.netlify/functions/delete-account
+//       {username,password} -- requires the account's real current password
+//       (a client-claimed identity alone isn't enough for something this
+//       destructive, same bar as every other password-gated flow here).
+//       Permanently deletes the account server-side (see that file for
+//       exactly what), then, only once that succeeds, wipes this browser's
+//       ENTIRE local app state (not just the account fields — see
+//       wipeAllLocalState's own comment for why this goes further than
+//       logout()).
 
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
@@ -236,6 +245,49 @@
 
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable, e.g. private mode — state still works for this page load */ }
+  }
+
+  /**
+   * The client-side half of DreamStore.deleteAccount, called only AFTER
+   * delete-account.js has confirmed the real, server-side deletion
+   * succeeded (never before — this must not run just because the user
+   * clicked a confirm button, only once the destructive server call
+   * actually completed). Goes further than logout() (which only ever
+   * clears state.user and re-persists the rest of the blob unchanged,
+   * since state.dreams/charactersByUser/accounts are deliberately shared
+   * across every account that's ever used this browser — see logout's own
+   * comment): this instead REMOVES the entire localStorage key outright,
+   * exactly the "delete key vs. just clearing state.user" distinction an
+   * account deletion needs — once the account itself is gone server-side,
+   * there's no reason for this browser to go on holding a local mirror of
+   * its dreams/characters/draft/pendingJob (some of which may be OTHER
+   * accounts' data that happened to share this browser, but none of which
+   * should still reference a signed-in user that no longer exists).
+   *
+   * Resets the in-memory `state` to a fresh seed too (not just the
+   * on-disk key) — this script instance stays alive until the page
+   * actually navigates away, so any DreamStore call made in that window
+   * (however unlikely) must see a clean, logged-out state rather than the
+   * stale in-memory object from before deletion.
+   *
+   * Deliberately narrow: only removes the one blob this file itself
+   * owns (KEY) plus the two backfill/persist "have I already done this"
+   * flags below, since both refer to account/dream data that's just been
+   * wiped — leaving them set would incorrectly skip that logic for a
+   * brand-new account created later on this same browser (backfillSharedFeed
+   * would think there's nothing to backfill, maybeRequestPersistentStorage
+   * would think it already asked). Deliberately does NOT touch the
+   * genuinely device-level prefs (dreamtube_sound_on, dreamtube_dod_seen_id,
+   * shop.html's own dreamtube_shop_variant) — those aren't account data at
+   * all (see getSoundPref's own comment: "like a volume setting, it should
+   * stick regardless of who's signed in"), so an account deletion has no
+   * more reason to reset them than logging out already does.
+   */
+  function wipeAllLocalState() {
+    try { localStorage.removeItem(KEY); } catch (e) { /* storage unavailable — in-memory reset below still takes effect for this page load */ }
+    try { localStorage.removeItem(FEED_BACKFILL_KEY); } catch (e) { /* best-effort */ }
+    try { localStorage.removeItem(PERSIST_ASKED_KEY); } catch (e) { /* best-effort */ }
+    state = seed();
   }
 
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -793,6 +845,18 @@
     return 'That username is already taken.';
   }
 
+  /** Maps delete-account.js's error codes to human-readable strings — same shape as mapRegisterError above. */
+  function mapDeleteAccountError(code) {
+    code = code || '';
+    if (code.indexOf('incorrect_password') !== -1) return 'Incorrect password.';
+    if (code.indexOf('rate_limited') !== -1) return 'Too many attempts — please wait and try again.';
+    // not_found and anything else unexpected: this device's own local
+    // account cache could in principle be stale (e.g. this account was
+    // already deleted from a different device/tab) — surface a generic
+    // message rather than implying the password itself was the problem.
+    return "Couldn't verify your account — try again.";
+  }
+
   /**
    * The pre-fix, fully-local login check — kept as the fallback for an
    * account that was created before the server-side store existed and was
@@ -1095,6 +1159,49 @@
       state.accounts[key].email = email.toLowerCase();
       persist();
       return { ok: true };
+    },
+
+    /**
+     * Permanently deletes the signed-in account — both server-side (see
+     * netlify/functions/delete-account.js's own header comment for exactly
+     * what that deletes: the account record, the shared-feed's copy of any
+     * published dreams, and the token ledger) and, ONLY once that server
+     * call actually confirms success, this browser's own entire local app
+     * state (see wipeAllLocalState above — this goes further than logout(),
+     * which only ever clears state.user). Requires the account's real
+     * current password — the same re-check every other destructive/
+     * password-gated flow in this codebase requires (see
+     * delete-account.js's own header comment on why a client-claimed
+     * username/email alone isn't enough here).
+     *
+     * Returns a Promise of { ok:true } or { ok:false, error }. Never falls
+     * back to a local-only deletion the way signup()/login() fall back to
+     * a local-only check on a server outage — unlike those, there is no
+     * meaningful "local-only" version of permanently destroying an account
+     * that might still be registered server-side; a network failure here
+     * must surface as a real error, not silently pretend to have deleted
+     * anything.
+     */
+    deleteAccount: function (password) {
+      if (!state.user) return Promise.resolve({ ok: false, error: 'not_logged_in' });
+      if (!password) return Promise.resolve({ ok: false, error: 'Enter your password to confirm.' });
+      var username = state.user.username;
+
+      return fetch('/.netlify/functions/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (data && data.ok) {
+          wipeAllLocalState();
+          return { ok: true };
+        }
+        return { ok: false, error: mapDeleteAccountError(data && data.error) };
+      }).catch(function () {
+        return { ok: false, error: 'network_error' };
+      });
     },
 
     // Does NOT clear state.pendingJob — same account-scoping bug class as

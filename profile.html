@@ -198,6 +198,28 @@
         </div>
       </div>
 
+      <!-- Danger zone (tracker.html's confirm-account-deletion-flow item —
+           account deletion didn't exist anywhere in this codebase before
+           this; the draft FAQ's "yes, you can delete your account" answer
+           was false until now). Visually distinct from every other row
+           above (--danger border/icon/title, own section, its own
+           "Danger zone" label) rather than styled like an ordinary
+           settings action — this is genuinely irreversible. Opens a
+           confirmation modal requiring a real password re-entry (see
+           #modal-delete-account below) before anything destructive fires;
+           tapping this row alone does nothing destructive by itself. -->
+      <div class="settings-section">
+        <div class="section-label" style="color:var(--danger);">Danger zone</div>
+        <div class="settings-row" id="delete-account-row" style="border-color:var(--danger);">
+          <div class="settings-row-icon icon" id="delete-account-icon" style="color:var(--danger);"></div>
+          <div class="settings-row-text">
+            <div class="settings-row-title" style="color:var(--danger);">Delete account</div>
+            <div class="settings-row-sub">Permanently deletes your account, dreams, characters, and token balance. Can't be undone.</div>
+          </div>
+          <div class="settings-row-chevron icon" id="delete-account-chevron"></div>
+        </div>
+      </div>
+
       <span class="link-text" id="account-cancel" style="cursor:pointer;">Close</span>
       <div style="height:8px;"></div>
       <span class="link-text" id="account-logout-link" style="cursor:pointer; color:var(--danger);">Log out</span>
@@ -239,6 +261,50 @@
       <button class="btn btn-primary btn-block" id="identity-save-btn">Save</button>
       <div style="height:10px;"></div>
       <span class="link-text" id="identity-cancel" style="cursor:pointer;">Close</span>
+    </div>
+  </div>
+
+  <!-- Delete-account confirmation — the deliberate-action gate itself
+       (see js/store.js's deleteAccount / netlify/functions/delete-account.js
+       for the server-side password re-check this mirrors). Tapping the
+       Danger-zone row above only opens this; nothing destructive happens
+       until a REAL password is typed here and Delete permanently is
+       explicitly tapped — a single stray tap anywhere can never trigger a
+       real deletion. -->
+  <div class="modal-overlay" id="modal-delete-account">
+    <div class="modal-card">
+      <div class="modal-title">Delete your account?</div>
+      <div class="modal-body">
+        This is permanent and can't be undone. Deleting your account removes, from DreamTube's systems:
+        <ul style="margin:8px 0 0; padding-left:18px; line-height:1.6;">
+          <li>Every dream you've created — private and published</li>
+          <li>Your saved characters</li>
+          <li>Your token balance</li>
+        </ul>
+        <div style="margin-top:10px;">Billing records for any token purchases are retained separately by our payment processor, per standard practice, and aren't affected by this.</div>
+        <div style="margin-top:10px;">Enter your password to confirm.</div>
+      </div>
+      <div class="field-pw-wrap">
+        <input class="field" id="delete-account-password" placeholder="Password" type="password" autocomplete="current-password">
+        <button type="button" class="field-pw-toggle" id="delete-account-pw-toggle" tabindex="-1" aria-label="Show password"></button>
+      </div>
+      <div class="err-text" id="delete-account-error"></div>
+      <div class="modal-row">
+        <button class="btn btn-ghost" style="flex:1;" id="delete-account-cancel">Cancel</button>
+        <button class="btn" style="flex:1; background:var(--danger); color:#fff;" id="delete-account-confirm" disabled>Delete permanently</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shown right after a real deletion succeeds server-side, before the
+       final redirect — js/store.js's deleteAccount only wipes local state
+       once delete-account.js has actually confirmed success, so reaching
+       this overlay means the account is genuinely gone, not just "about
+       to be." Not dismissible — it's a brief confirmation, not a dialog. -->
+  <div class="modal-overlay" id="account-deleted-overlay" style="z-index:30;">
+    <div class="modal-card" style="text-align:center;">
+      <div class="modal-title">Your account has been deleted</div>
+      <div class="modal-body">Everything's been permanently removed. Taking you home…</div>
     </div>
   </div>
 
@@ -796,6 +862,101 @@
       DreamStore.logout();
       location.href = 'index.html';
     }
+  });
+
+  // ===== Delete account (tracker.html's confirm-account-deletion-flow) =====
+  // Danger-zone row only OPENS the confirmation modal below — nothing
+  // destructive happens from this tap alone. The modal itself requires a
+  // real, typed password plus an explicit tap on "Delete permanently"
+  // before DreamStore.deleteAccount (which re-checks that password
+  // server-side — see delete-account.js) is ever called, so a single
+  // stray tap anywhere in this flow can never delete anything.
+  document.getElementById('delete-account-icon').innerHTML = Icons.trash;
+  document.getElementById('delete-account-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('delete-account-pw-toggle').innerHTML = Icons.eye;
+
+  var deleteAccountModal = document.getElementById('modal-delete-account');
+  var deleteAccountPasswordInput = document.getElementById('delete-account-password');
+  var deleteAccountPwToggle = document.getElementById('delete-account-pw-toggle');
+  var deleteAccountError = document.getElementById('delete-account-error');
+  var deleteAccountConfirmBtn = document.getElementById('delete-account-confirm');
+  var deleteAccountInFlight = false;
+
+  // Bumped on every open and on Cancel — same "abandon whatever's in
+  // flight" idiom this file's own supportComposeToken already uses (see
+  // that variable's comment). Needed because a rejected (wrong-password/
+  // rate-limited) network call can still be in flight when the user
+  // cancels, reopens, and starts typing a fresh attempt — without this, a
+  // late-arriving rejection for the ABANDONED attempt could clobber the
+  // error text/enabled-state of the NEW attempt the user is now looking
+  // at. A genuine SUCCESS result is deliberately exempt from this check
+  // (see the confirm handler below) — by the time that resolves, the
+  // account is really, permanently gone server-side no matter what
+  // happened to this dialog in the meantime, so there is no "stale" case
+  // to discard.
+  var deleteAccountToken = 0;
+
+  deleteAccountPwToggle.addEventListener('click', function(){
+    var showing = deleteAccountPasswordInput.type === 'text';
+    deleteAccountPasswordInput.type = showing ? 'password' : 'text';
+    deleteAccountPwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+    deleteAccountPwToggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
+  document.getElementById('delete-account-row').addEventListener('click', function(){
+    deleteAccountToken++;
+    deleteAccountPasswordInput.value = '';
+    deleteAccountPasswordInput.type = 'password';
+    deleteAccountPwToggle.innerHTML = Icons.eye;
+    deleteAccountError.textContent = '';
+    deleteAccountConfirmBtn.disabled = true;
+    deleteAccountModal.classList.add('open');
+    deleteAccountPasswordInput.focus();
+  });
+
+  document.getElementById('delete-account-cancel').addEventListener('click', function(){
+    deleteAccountToken++;
+    deleteAccountModal.classList.remove('open');
+  });
+
+  // Confirm only ever becomes tappable once a real password has actually
+  // been typed — an empty field can never reach the destructive call.
+  deleteAccountPasswordInput.addEventListener('input', function(){
+    deleteAccountConfirmBtn.disabled = !deleteAccountPasswordInput.value;
+  });
+
+  deleteAccountConfirmBtn.addEventListener('click', function(){
+    if(deleteAccountInFlight || !deleteAccountPasswordInput.value) return;
+    var tokenAtSend = deleteAccountToken;
+    deleteAccountInFlight = true;
+    deleteAccountConfirmBtn.disabled = true;
+    deleteAccountError.textContent = '';
+    DreamStore.deleteAccount(deleteAccountPasswordInput.value).then(function(result){
+      deleteAccountInFlight = false;
+      if(result.ok){
+        // The account is genuinely, permanently deleted server-side by
+        // this point, and DreamStore.deleteAccount has already wiped this
+        // browser's entire local state — that's real and irreversible
+        // regardless of anything that happened to this dialog in the
+        // meantime (a Cancel tap, a reopen), so this always proceeds even
+        // for what would otherwise look like a "stale" session. Nothing
+        // left to clean up in this sheet since the whole page is about to
+        // navigate away.
+        deleteAccountModal.classList.remove('open');
+        accountOverlay.classList.remove('open');
+        document.getElementById('account-deleted-overlay').classList.add('open');
+        setTimeout(function(){ location.href = 'index.html'; }, 1800);
+        return;
+      }
+      // A rejection is purely a UI concern — nothing destructive happened
+      // server-side. If the user has since cancelled and reopened this
+      // dialog (deleteAccountToken has moved on), this result belongs to
+      // an attempt they've already abandoned and must not clobber
+      // whatever they're doing now — see deleteAccountToken's own comment.
+      if(tokenAtSend !== deleteAccountToken) return;
+      deleteAccountConfirmBtn.disabled = !deleteAccountPasswordInput.value;
+      deleteAccountError.textContent = result.error;
+    });
   });
 
   // ===== Support & feedback (tracker.html's support-and-feedback-atms4a) =====

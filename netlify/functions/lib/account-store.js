@@ -274,6 +274,42 @@ async function applyPasswordReset(event, account) {
   return { ok: true, record: record };
 }
 
+/**
+ * Permanently deletes an account record — the server-side half of
+ * delete-account.js's account-deletion flow (see that file for the
+ * password re-check this is only ever reached after). Removes BOTH keys
+ * this store keeps for the account: the "u:" record itself, and the "e:"
+ * email index, but ONLY if that index still points at THIS username —
+ * mirrors getByEmail's own "never trust an index blindly" defense-in-depth
+ * check above, just in the opposite direction: deleting someone else's
+ * still-valid "e:" entry because it happens to share a key computation
+ * would be a real bug (their email/login would silently break), not a
+ * theoretical one, given this file's own header comment already documents
+ * these two keys as non-atomic writes that can drift apart.
+ *
+ * Always succeeds (returns { ok:true }) even if no "u:" record existed —
+ * deleting something that's already gone is a safe no-op, same as
+ * @netlify/blobs' own store.delete() semantics for a missing key
+ * (verify-password-reset.js relies on this same no-op-on-missing shape for
+ * its own store.delete(token) calls).
+ */
+async function deleteAccount(event, username) {
+  var key = normalizeUsername(username);
+  if (!key) return { ok: false, error: 'username_required' };
+  connectLambda(event);
+  var s = store();
+
+  var record = await s.get('u:' + key, { type: 'json' });
+  if (record && record.email) {
+    var emailKey = 'e:' + normalizeEmail(record.email);
+    var currentIndexTarget = await s.get(emailKey, { type: 'json' });
+    if (currentIndexTarget === key) await s.delete(emailKey);
+  }
+  await s.delete('u:' + key);
+
+  return { ok: true };
+}
+
 module.exports = {
   STORE_NAME,
   normalizeUsername,
@@ -281,5 +317,6 @@ module.exports = {
   getByEmail,
   createAccount,
   verifyLogin,
-  applyPasswordReset
+  applyPasswordReset,
+  deleteAccount
 };
