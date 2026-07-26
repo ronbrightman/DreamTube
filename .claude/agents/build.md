@@ -43,6 +43,22 @@ this repo instead of at user level).
 
 - All work happens on a feature branch. Create one if you're not already
   on one (never work directly on `main`).
+- **Work in your OWN isolated git worktree, never the shared main
+  checkout.** Multiple build/review agents can run concurrently against
+  this same repo, and a shared checkout has no way to keep two agents'
+  uncommitted edits apart — this has already caused a near-miss (one
+  agent's `git status`/`git stash` mixing in another agent's unrelated
+  in-progress files, and a real orphaned-file bug where one agent's edit
+  to a shared file never made it into its own branch's commits because it
+  landed in a checkout a different agent had already moved on from).
+  Before writing any code: `git worktree add ../<something-unique>
+  -b <your-branch-name>` (or check whether you were already launched into
+  one — `git rev-parse --show-toplevel` vs. the repo's own known root is
+  a quick tell) and do ALL your work there. If, on starting, `git status`
+  in your working directory already shows changes you didn't make, that's
+  a sign you're in a shared/reused checkout — stop and create your own
+  worktree immediately rather than continuing on top of someone else's
+  in-progress state.
 - Commit and push to that feature branch as you go.
 - **Never merge into `main`. Never push to `main`. Never open a PR
   intending it to be merged without a human doing that step.** Per
