@@ -145,11 +145,28 @@ test('variant "a" applies shop-variant-a to the body and the accent-trust color 
     var hasOtherClass = await page.evaluate(function () { return document.body.classList.contains('shop-variant-b'); });
     assert.equal(hasOtherClass, false);
 
+    // .token-pack-card has `transition: border-color .15s ease` (css/styles.css)
+    // for a smooth swap between the shared default border and whichever
+    // variant color applies — real, intentional UI polish, not a bug. That
+    // means the class above is applied synchronously, but the *computed*
+    // border-top-color animates toward its target over ~150ms rather than
+    // snapping instantly, so reading it immediately after navigation is
+    // inherently racy: under light/isolated load there's enough wall-clock
+    // gap before this evaluate() runs for the transition to have already
+    // finished, but under heavy concurrent Chromium load (full suite run)
+    // the render pipeline can fall behind enough that the color is still
+    // mid-transition when read, intermittently failing the exact-rgb match.
+    // Poll for the final value instead of a fixed sleep/magic timeout.
+    // --accent-trust: #6C8CFF -> rgb(108, 140, 255)
+    await page.waitForFunction(function () {
+      var el = document.querySelector('.token-pack-card.best');
+      return el && getComputedStyle(el).borderTopColor === 'rgb(108, 140, 255)';
+    }, null, { timeout: 5000 });
+
     var borderColor = await page.evaluate(function () {
       var el = document.querySelector('.token-pack-card.best');
       return getComputedStyle(el).borderTopColor;
     });
-    // --accent-trust: #6C8CFF -> rgb(108, 140, 255)
     assert.equal(borderColor, 'rgb(108, 140, 255)');
   } finally {
     await context.close();
@@ -170,11 +187,21 @@ test('variant "b" applies shop-variant-b to the body and the accent-value color 
     var hasOtherClass = await page.evaluate(function () { return document.body.classList.contains('shop-variant-a'); });
     assert.equal(hasOtherClass, false);
 
+    // See the equivalent wait in the "variant a" test above for why this
+    // polls instead of reading getComputedStyle immediately: .token-pack-card
+    // has `transition: border-color .15s ease`, so the computed color is
+    // still animating toward its target for a moment after the
+    // shop-variant-b class is applied.
+    // --accent-value: #D9A653 -> rgb(217, 166, 83)
+    await page.waitForFunction(function () {
+      var el = document.querySelector('.token-pack-card.best');
+      return el && getComputedStyle(el).borderTopColor === 'rgb(217, 166, 83)';
+    }, null, { timeout: 5000 });
+
     var borderColor = await page.evaluate(function () {
       var el = document.querySelector('.token-pack-card.best');
       return getComputedStyle(el).borderTopColor;
     });
-    // --accent-value: #D9A653 -> rgb(217, 166, 83)
     assert.equal(borderColor, 'rgb(217, 166, 83)');
   } finally {
     await context.close();
