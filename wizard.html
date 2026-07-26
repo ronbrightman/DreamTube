@@ -786,6 +786,24 @@
   // comparing against it (alone, without pendingStartFailed) safe.
   // See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
   var lastPendingSubmissionKey = null;
+  // Per-attempt token (review round 3) — same "an async callback's side
+  // effects aren't scoped to the attempt that started them" pattern as
+  // start.html's own pendingGenerationToken (see that file's doc
+  // comment). Bumped on EVERY Continue click here, not just when a
+  // fresh POST fires (unlike start.html's version): reverting to
+  // already-succeeded content takes the synchronous skip path below
+  // with no new POST at all, but it's still a newer attempt that must
+  // invalidate whatever's still in flight from an abandoned edit in
+  // between. Repro this closes: submit A (succeeds, pendingId=X) ->
+  // edit to B, Continue (fires a real POST, doesn't land yet) -> Back,
+  // revert to A exactly, Continue (guard matches, skips re-POST,
+  // advances carrying X — correct) -> B's POST finally resolves. Without
+  // this token, B's belated .then() would unconditionally overwrite
+  // pendingId/pendingOperationName back to B's job well after the user
+  // already moved on with A, orphaning X. With it, B's captured token no
+  // longer matches (the revert-to-A click bumped it), so B's settlement
+  // is discarded instead of applied.
+  var pendingGenerationToken = 0;
 
   function resolveCharactersForGeneration(){
     if(!assembled || !assembled.characterIdsForGeneration.length) return [];
@@ -842,6 +860,13 @@
       // actual POST body above keeps the as-typed casing.
       var comparisonKey = JSON.stringify(Object.assign({}, payload, { email: contactEmail.toLowerCase() }));
 
+      // Marks this click as the new current attempt -- see
+      // pendingGenerationToken's own comment above for why this is
+      // bumped here, before either path below, rather than only when a
+      // fresh POST actually fires.
+      pendingGenerationToken++;
+      var myToken = pendingGenerationToken;
+
       // Already have a successful in-flight generation for these exact
       // inputs — e.g. the user went forward to Signup and back to this
       // step, then hit Continue again without changing anything. Don't
@@ -881,6 +906,13 @@
       }).then(function(res){
         return res.json().then(function(data){ return { ok: res.ok, data: data }; });
       }).then(function(result){
+        // Stale -- a newer attempt (another edit, or a revert that took
+        // the synchronous skip path above) has since become current.
+        // That newer attempt already owns pendingId/next() for whatever
+        // it decided; applying this abandoned response now would
+        // silently clobber it. Discard entirely: no state write, no
+        // setDraft, no next().
+        if(myToken !== pendingGenerationToken) return;
         if(result.ok && result.data && result.data.pendingId){
           pendingId = result.data.pendingId;
           pendingOperationName = result.data.operationName;
@@ -896,6 +928,7 @@
         DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
         next();
       }).catch(function(){
+        if(myToken !== pendingGenerationToken) return;
         pendingStartFailed = true;
         DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
         next();

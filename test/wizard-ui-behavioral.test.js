@@ -338,6 +338,176 @@ test('wizard.html: reverting to a previously-successful submission after an unre
   }
 });
 
+test('wizard.html: retyping the same email with different casing on a Back + Continue is treated as unchanged (case-insensitive guard, mirrors the server\'s entitlements.normalizeEmail) -- does not force an unnecessary resubmit', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-test-casing-1', operationName: 'fal:fake-model:req-casing-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // First pass -- mixed-case email.
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'Casing-Test@Example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1);
+
+    // Back, retype the SAME address with different casing (a real user
+    // pattern: autofill/manual retyping rarely preserves exact case) --
+    // this must still be recognized as unchanged and skip re-POSTing.
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'casing-test@example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'retyping the same email with different casing must not be treated as a changed submission');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: a stale in-flight start-pending-generation response for an ABANDONED edit must not clobber pendingId/pendingOperationName once the user has already reverted to and advanced with the earlier successful submission (review round 3 race)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    var claimCalls = [];
+    var ORIGINAL_EMAIL = 'race-test@example.com';
+    var SLOW_EMAIL = 'race-test-slow@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      if (body.email === SLOW_EMAIL) {
+        // Held back deliberately -- this is the abandoned edit's request.
+        // It must not settle until well after the user has reverted to
+        // the original content and moved on with ITS pendingId.
+        await new Promise(function (r) { setTimeout(r, 400); });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-race-B', operationName: 'fal:fake-model:req-race-B' }) });
+        return;
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-race-A', operationName: 'fal:fake-model:req-race-A' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });
+    });
+    await page.route('https://example.com/fake-video.mp4', function (route) {
+      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('x') });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Attempt A -- succeeds immediately (fast route).
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', ORIGINAL_EMAIL);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1);
+    assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
+
+    // Back to contact-capture, edit to the SLOW email -- this fires a
+    // real, genuinely-different-content POST that the mocked route holds
+    // for 400ms. The wizard's Continue handler only calls next() once
+    // this settles, so we stay on contact-capture, button disabled,
+    // while it's in flight.
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', SLOW_EMAIL);
+    await page.click('#fn-contact-continue');
+    // Confirm the slow request actually landed (pushed synchronously by
+    // the route handler before its artificial delay) without waiting for
+    // it to resolve -- condition-based, not an arbitrary sleep.
+    var pollStart = Date.now();
+    while (startPendingCalls.length < 2) {
+      if (Date.now() - pollStart > 3000) throw new Error('timed out waiting for the slow start-pending-generation request to be received');
+      await new Promise(function (r) { setTimeout(r, 20); });
+    }
+    assert.equal(startPendingCalls[1].email, SLOW_EMAIL);
+
+    // While that slow request is still pending in the background, the
+    // user abandons this edit entirely: Back to the previous step (Back
+    // is never disabled, even mid-fetch -- review's own finding), then
+    // forward again (re-rendering contact-capture fresh) and revert the
+    // email to the ORIGINAL, already-succeeded value.
+    await page.click('#fnBack');
+    await page.waitForSelector('#fn-freetext-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', ORIGINAL_EMAIL);
+    await page.click('#fn-contact-continue');
+
+    // Guard matches A's earlier successful submission -- skips
+    // re-POSTing and advances to Signup immediately, WITHOUT waiting for
+    // the still-in-flight slow (B) request.
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 2, 'reverting to A must not fire a third real POST');
+
+    // Deliberately wait out B's full artificial delay (400ms) here,
+    // BEFORE completing signup -- this is what actually forces the
+    // race: B's abandoned response must land while the wizard is
+    // sitting idle on Signup, so its (correctly guarded, or -- in a
+    // regression -- unconditional) settlement handler runs well before
+    // signup reads pendingId. Without this explicit wait the test would
+    // pass even against a reverted/buggy guard purely by lucky timing
+    // (B's response not having arrived yet), which is exactly the kind
+    // of false-confidence gap systematic debugging exists to catch --
+    // confirmed by deliberately reverting the token guard and observing
+    // this test still passed until this wait was added.
+    await new Promise(function (r) { setTimeout(r, 600); });
+
+    // Finish signup now -- pendingId must still be A's at this point.
+    await page.fill('#fn-username', 'racetester');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once');
+    assert.equal(claimCalls[0].pendingId, 'pd-race-A', 'must claim A\'s pendingId, not the abandoned B request\'s -- B\'s belated settlement must have been discarded as stale, not applied');
+
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    // adoptPendingGeneration already consumed/cleared the pendingJob by
+    // the time result.html loads in the successful path -- the stronger,
+    // still-checkable signal is the dream that actually got created:
+    // its sourceDreamId/operationName lineage traces back through
+    // DreamStore to whichever operationName was adopted. Assert via the
+    // claim call above (authoritative: it's the exact pendingId the
+    // wizard's closure state held at signup time) -- this second read is
+    // just a sanity check that no pendingJob was left dangling on B.
+    assert.ok(pendingJob === null || pendingJob === undefined || pendingJob.operationName !== 'fal:fake-model:req-race-B', 'must never have adopted the stale B operationName');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: if the pre-signup generation call fails, signup still completes and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
