@@ -6,7 +6,7 @@
 // E108/E111 gate this replaces), that spendTokens fires on every
 // successful 200 (mock mode and the real fal path) but never on a fal
 // submission rejection (E105/E106) or network failure (E107), and that a
-// brand-new email's 290-token signup grant materializes correctly through
+// brand-new email's 220-token signup grant materializes correctly through
 // this same call path. See test/entitlements-tokens.test.js for direct
 // unit coverage of getTokenStatus/spendTokens themselves.
 
@@ -101,12 +101,12 @@ test('a request with no email at all -> E112 (balance resolves to 0, nothing to 
   assert.match(JSON.parse(res.body).error, /^E112:/);
 });
 
-test('a brand-new email (never seen before) gets its 290-token signup grant materialized right here and proceeds', async function () {
+test('a brand-new email (never seen before) gets its 220-token signup grant materialized right here and proceeds', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'first-time@example.com' } }));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'first-time@example.com');
-  assert.equal(record.tokens.balance, 190, '290 granted, 100 spent on this successful generation');
+  assert.equal(record.tokens.balance, 120, '220 granted, 100 spent on this successful generation');
 });
 
 // ----- No flag, no owner bypass — unconditional, unlike the old E108/E111 gate -----
