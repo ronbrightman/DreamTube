@@ -44,8 +44,18 @@ var META_PIXEL_ID = '2464464964036457';
 // Node, where a plain `var` alone wouldn't be visible to a require()
 // caller at all. Pixel IDs aren't secret (see meta-capi.js's own header),
 // so there's no concern about this constant being require()-able.
+// POSTHOG_KEY/POSTHOG_HOST are exported here too, same UMD-lite reasoning as
+// META_PIXEL_ID above — netlify/functions/lib/posthog-capture.js (the new
+// server-side PostHog capture helper, see that file's header) require()s
+// these exact constants rather than hardcoding its own copy, so the key
+// lives in exactly one place whether it's read from a browser <script> or a
+// Netlify Function. Neither value is secret (PostHog's public "project API
+// key" is, by PostHog's own design, meant to be embedded in client-side
+// code — see https://posthog.com/docs/api — same non-secret status as
+// META_PIXEL_ID above), so there's no concern about this constant being
+// require()-able server-side either.
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { META_PIXEL_ID: META_PIXEL_ID };
+  module.exports = { META_PIXEL_ID: META_PIXEL_ID, POSTHOG_KEY: POSTHOG_KEY, POSTHOG_HOST: POSTHOG_HOST };
 }
 
 // ---------------------------------------------------------------------
@@ -121,15 +131,29 @@ function getMetaCookies() {
  * CAPI endpoint takes event_name as a plain string regardless of which
  * client-side call produced it.
  *
+ * `explicitEventId` (optional): pass a pre-generated event_id instead of
+ * having this function mint its own via generateEventId(). Needed when a
+ * THIRD party (not this client-side call and not track-conversion.js) also
+ * needs to share the same event_id — e.g. shop.html's Purchase event,
+ * which must dedupe against dodo-webhook.js's own server-side Purchase fire
+ * (see that file's comment). The event_id is minted at checkout-session-
+ * creation time (create-checkout-session-dodo.js) specifically so both the
+ * eventual client-side return-trip fire AND the webhook's server-side fire
+ * can share it, rather than each generating their own — see
+ * docs/EVENT_TAXONOMY.md's Purchase entry for the full mechanics. Every
+ * other existing caller (FirstVideoCreated, CompleteRegistration,
+ * ReachedEmailEntry) omits this and keeps getting its own fresh
+ * auto-generated id, unaffected.
+ *
  * Fire-and-forget: analytics must never block or break the actual user
  * flow (same rule every page's existing `track()` PostHog helper
  * already follows), so every failure mode here — fbq not defined yet,
  * the fetch itself rejecting, a non-2xx from the server — is swallowed
  * rather than surfaced.
  */
-function fireMetaConversion(eventName, extra, custom) {
+function fireMetaConversion(eventName, extra, custom, explicitEventId) {
   extra = extra || {};
-  var eventId = generateEventId();
+  var eventId = explicitEventId || generateEventId();
 
   if (typeof window.fbq === 'function') {
     try { window.fbq(custom ? 'trackCustom' : 'track', eventName, {}, { eventID: eventId }); } catch (e) { /* analytics must never break the app */ }

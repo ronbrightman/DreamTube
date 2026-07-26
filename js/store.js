@@ -538,6 +538,25 @@
     // Edit Dream / Change Style can regenerate a dream that's already
     // published — keep the shared feed's copy from going stale.
     if (dream.isPublished) syncPublishedDreamToFeed(dream);
+    // 'video_created' — fires on EVERY completed generation (fresh,
+    // resumed, or a regenerate/"Try Again"/"Turn this into a video"), not
+    // just the account's first ever (see markFirstVideoCreatedIfEligible/
+    // 'first_video_created' above, a distinct one-time KPI). This is the
+    // total creation-volume counter Phase 1 reporting needs — finalizeDream
+    // is the single choke point every generation completion already runs
+    // through (startGeneration's only call site, reached from
+    // result.html's fresh generate, explore.html's resume-completion path,
+    // and every regenerate/edit-style/turn-into-video flow alike), so this
+    // is the one place that's true for all of them. PostHog only — unlike
+    // FirstVideoCreated (a genuine one-time ad-optimization signal worth
+    // sending to Meta), a per-generation volume counter fires far too often
+    // to be a useful Meta conversion event, and Meta CAPI has no use for a
+    // metric that isn't a discrete, rare "this person just did the thing"
+    // moment (see docs/EVENT_TAXONOMY.md for the full reasoning). Same
+    // "never break the app" fire-and-forget discipline as every other
+    // analytics call in this file. Phase 1 reporting instrumentation —
+    // tracker item for-product-phase-1-reporting-instrument-kjlh46.
+    trackAnalytics('video_created', { style: dream.style, mediaType: dream.mediaType });
     return dream;
   }
 
@@ -697,6 +716,20 @@
     }
   }
 
+  /**
+   * Bare, no-properties PostHog capture helper — same guarded shape as
+   * every page's own local `track()` helper (see result.html/shop.html),
+   * just living here since these particular fires happen from store-level
+   * logic (signup, generation completion), not from a specific page's
+   * inline script. Fire-and-forget: analytics must never break the actual
+   * app flow it's attached to.
+   */
+  function trackAnalytics(name, props) {
+    if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.capture === 'function') {
+      try { window.posthog.capture(name, props || {}); } catch (e) { /* analytics must never break the app */ }
+    }
+  }
+
   // ==========================================================================
   // Server-side account check (login + forgot-password from any device)
   // --------------------------------------------------------------------------
@@ -714,6 +747,18 @@
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
+    // 'signed_up' — a dedicated PostHog event distinct from the identify()
+    // call above, so PostHog funnels/dashboards can query "an account was
+    // actually created" directly rather than inferring it from identify()
+    // calls (which also happen on every ordinary login — see
+    // attemptLocalLogin/login() below, neither of which fires this).
+    // commitLocalSignup is the ONE place a brand-new account is ever
+    // created (both the server-confirmed and offline-fallback signup
+    // branches route through here — see signup()'s own comment), so this
+    // fires exactly once per real signup, never on a later login from any
+    // device. Phase 1 reporting instrumentation — tracker item
+    // for-product-phase-1-reporting-instrument-kjlh46.
+    trackAnalytics('signed_up');
     return { ok: true, user: state.user };
   }
 
@@ -1383,9 +1428,22 @@
     publishDream: function (id) {
       var d = findDream(id);
       if (d) {
+        // 'video_published' fires only on the actual transition into
+        // published (not already true) -- this is the real "publish
+        // action" moment the tracker item asks for, distinct from
+        // syncPublishedDreamToFeed's OTHER call sites (finalizeDream's
+        // resync of an already-published dream after an edit/regenerate,
+        // and backfillSharedFeed's one-time catch-up sync for dreams
+        // published before the shared feed existed) -- neither of those is
+        // a fresh publish action, so firing this from publish-dream.js
+        // itself (which all three call sites hit identically) would
+        // over-count. Phase 1 reporting instrumentation -- tracker item
+        // for-product-phase-1-reporting-instrument-kjlh46.
+        var isNewPublish = !d.isPublished;
         d.isPublished = true;
         persist();
         syncPublishedDreamToFeed(d);
+        if (isNewPublish) trackAnalytics('video_published', { style: d.style, mediaType: d.mediaType });
       }
       return d;
     },
@@ -1502,12 +1560,23 @@
       return lastDreamOfDayId;
     },
 
-    /** Toggles a like against the real shared count. Returns a Promise of { likes, likedByMe }. */
+    /**
+     * Toggles a like against the real shared count. Returns a Promise of
+     * { likes, likedByMe }. `likerHandle` (this browser's own
+     * state.user.handle, e.g. '@alice', or null if logged out) is sent
+     * alongside id/delta purely so like-dream.js — the single
+     * choke-point that already knows the dream and its owner — can also
+     * fire the 'like_given'/'like_received' PostHog events (Phase 1
+     * reporting instrumentation, tracker item
+     * for-product-phase-1-reporting-instrument-kjlh46); it has no other
+     * effect on the like itself, which the server already fully resolves
+     * from id+delta alone.
+     */
     toggleSharedLike: function (id, currentlyLiked) {
       return fetch('/.netlify/functions/like-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: id, delta: currentlyLiked ? -1 : 1 })
+        body: JSON.stringify({ id: id, delta: currentlyLiked ? -1 : 1, likerHandle: state.user ? state.user.handle : null })
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
