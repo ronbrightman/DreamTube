@@ -238,3 +238,95 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
     await page.close();
   }
 });
+
+test('start.html: the token guard also protects the NESTED pendingPromise.then() continuation, not just entry to attemptSignup\'s outer callback -- the outer check can pass, then go stale WHILE this inner promise is still unsettled', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var claimCalls = [];
+    var EMAIL_A = 'start-signup-inner-race-a@example.com';
+    var EMAIL_B = 'start-signup-inner-race-b@example.com';
+
+    // Unlike the outer-check test above (which held back register-account),
+    // this test holds back start-pending-generation for A -- the fetch the
+    // INNER pendingPromise.then(...) continuation actually waits on --
+    // while register-account resolves fast, so the OUTER check passes
+    // quickly and execution reaches the inner continuation while it's
+    // still unsettled. Both fire in parallel from the same Continue click
+    // here (unlike wizard.html's separate Contact/Signup steps -- see
+    // screen 13's own "Generate-during-signup" comment), so this needs
+    // register-account to win that race, not just fire first.
+    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      if (body.email === EMAIL_A) {
+        await new Promise(function (r) { setTimeout(r, 900); });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-inner-A', operationName: 'fal:fake-model:req-start-inner-A' }) });
+        return;
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-inner-B', operationName: 'fal:fake-model:req-start-inner-B' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    // Attempt A -- Continue fires both the slow start-pending-generation
+    // AND the fast register-account in parallel. register-account wins,
+    // so the OUTER check passes almost immediately, landing inside
+    // pendingPromise.then(...) while A's own start-pending-generation call
+    // is still the 900ms delay away from settling.
+    await page.fill('#fn-email', EMAIL_A);
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // Confirm we're mid-flight (Back disabled) -- stays true through the
+    // inner continuation too, since nothing re-enables Back on the
+    // success path until pendingPromise itself settles.
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+
+    // Force past Back's disable -- same isolation technique as the outer-
+    // check test above -- to invalidate A's token WHILE its inner
+    // pendingPromise.then(...) is still pending, not before the outer
+    // check ran.
+    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
+    await page.click('#fnBack');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+
+    // Attempt B -- reaches a second, fresh screen 13 but is deliberately
+    // NOT submitted -- this test only needs to prove the inner
+    // continuation discards A's stale settlement, not exercise B's own
+    // full flow (the outer-check test above already covers that).
+    await page.click('#fn-s11-continue');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+
+    var screenBefore = await page.evaluate(function () {
+      if (document.getElementById('fn-email')) return 'screen13';
+      if (document.getElementById('fn-s14-continue')) return 'screen14';
+      return 'other';
+    });
+    assert.equal(screenBefore, 'screen13', 'must be sitting on the second, fresh screen 13 before A\'s stale inner settlement lands');
+
+    // Sit idle here while A's held-back start-pending-generation response
+    // lands and its pendingPromise.then(...) continuation runs.
+    await new Promise(function (r) { setTimeout(r, 1100); });
+
+    var screenAfter = await page.evaluate(function () {
+      if (document.getElementById('fn-email')) return 'screen13';
+      if (document.getElementById('fn-s14-continue')) return 'screen14';
+      return 'other';
+    });
+    assert.equal(screenAfter, 'screen13', 'A\'s stale inner continuation must never force-navigate the user away from the second, fresh screen 13 they are actually on');
+    assert.equal(claimCalls.length, 0, 'A\'s stale inner continuation must not have claimed any pending job (it must discard itself via the inner re-check, not just rely on the outer one)');
+  } finally {
+    await page.close();
+  }
+});

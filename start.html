@@ -1047,11 +1047,15 @@
   // time instead of a fire-time snapshot).
   //
   // Gates the ENTIRE callback body -- both the writes AND the
-  // navigation, unlike pendingGenerationToken above (which only guards
-  // that fetch's write, since nothing here waits on it before
-  // advancing). Signup has no "safe to advance without waiting" skip
-  // case: there is no real account, and nothing safe to hand off to the
-  // next screen, until DreamStore.signup itself actually resolves ok.
+  // navigation, INCLUDING the nested pendingPromise.then(...)
+  // continuation below (which has its own re-check, right at its top,
+  // since it settles asynchronously AFTER this outer check already ran
+  // and could go stale in that gap) -- unlike pendingGenerationToken
+  // above (which only guards that fetch's write, since nothing here
+  // waits on it before advancing). Signup has no "safe to advance
+  // without waiting" skip case: there is no real account, and nothing
+  // safe to hand off to the next screen, until DreamStore.signup itself
+  // actually resolves ok.
   //
   // Bumped on TWO separate triggers, not just one: (1) every Continue
   // click on this screen (below), so a genuinely new, competing attempt
@@ -1220,6 +1224,21 @@
           // pending-generation call to settle before adopting it — always
           // resolves, win or lose, so this never hangs the funnel.
           pendingPromise.then(function(){
+            // Re-check -- this attempt can still go stale WHILE this
+            // inner promise is unsettled, even though the outer check
+            // (above) already passed. In normal (non-bypassed) usage
+            // continueBtn/backBtn stay disabled through this whole span,
+            // so nothing can bump signupAttemptToken during this
+            // specific window today -- but that's an incidental
+            // property of the current UI, not something this guard
+            // should rely on. Without this re-check, a future change
+            // that re-enables either button slightly earlier would
+            // silently reopen exactly the same hazard the outer check
+            // exists to close. Discarding here also means NOT touching
+            // backBtn/next() -- same reasoning as the outer check's own
+            // stale-discard above: this may be a detached/superseded
+            // attempt, and a newer one already owns backBtn's state.
+            if(mySignupToken !== signupAttemptToken) return;
             if(pendingId && !pendingStartFailed){
               // Best-effort — see claim-pending-generation.js's own doc
               // comment. email is required by its ownership check; this is

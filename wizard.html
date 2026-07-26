@@ -1016,12 +1016,16 @@
   // Unlike pendingGenerationToken (which only guards the WRITE, since
   // Contact-step navigation was restructured to never wait on that
   // fetch at all), this token gates the ENTIRE callback body -- both the
-  // writes AND the navigation. Signup has no "safe to advance without
-  // waiting" skip case the way a reused/already-succeeded Contact
-  // submission does: there is no real account, and nothing safe to hand
-  // off to processing.html, until DreamStore.signup itself actually
-  // resolves ok -- so navigation can never be decoupled from this
-  // particular settlement the way Contact's was.
+  // writes AND the navigation, INCLUDING the nested
+  // pendingGenerationPromise.then(...) continuation below (which has its
+  // own re-check, right at its top, since it settles asynchronously
+  // AFTER this outer check already ran and could go stale in that gap).
+  // Signup has no "safe to advance without waiting" skip case the way a
+  // reused/already-succeeded Contact submission does: there is no real
+  // account, and nothing safe to hand off to processing.html, until
+  // DreamStore.signup itself actually resolves ok -- so navigation can
+  // never be decoupled from this particular settlement the way
+  // Contact's was.
   //
   // Bumped on TWO separate triggers, not just one: (1) every Signup
   // Continue click (below), so a genuinely new, competing attempt always
@@ -1161,6 +1165,18 @@
           // they were still both null. Always resolves (win or lose),
           // so this can never hang the funnel.
           pendingGenerationPromise.then(function(){
+            // Re-check -- this attempt can still go stale WHILE this
+            // inner promise is unsettled, even though the outer check
+            // (above) already passed. In normal (non-bypassed) usage
+            // continueBtn/backBtn stay disabled through this whole span
+            // in both files, so nothing can bump signupAttemptToken
+            // during this specific window today -- but that's an
+            // incidental property of the current UI, not something this
+            // guard should rely on. Without this re-check, a future
+            // change that re-enables either button slightly earlier
+            // would silently reopen exactly the same hazard the outer
+            // check exists to close, and nothing here would catch it.
+            if(mySignupToken !== signupAttemptToken) return;
             if(pendingId && !pendingStartFailed){
               // email is required now (see claim-pending-generation.js's
               // ownership check, review finding) -- contactEmail is the

@@ -841,6 +841,108 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
   }
 });
 
+test('wizard.html: the token guard also protects the NESTED pendingGenerationPromise.then() continuation, not just entry to attemptSignup\'s outer callback -- the outer check can pass, then go stale WHILE this inner promise is still unsettled', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var claimCalls = [];
+    var EMAIL_A = 'signup-inner-race-a@example.com';
+    var EMAIL_B = 'signup-inner-race-b@example.com';
+
+    // Unlike the outer-check test above (which held back register-account),
+    // this test holds back start-pending-generation for A -- the fetch the
+    // INNER pendingGenerationPromise.then(...) continuation actually waits
+    // on -- while register-account resolves fast, so the OUTER check
+    // passes quickly and execution reaches the inner continuation while
+    // it's still unsettled. That's the exact window review round 5 flagged
+    // as having no re-check of its own.
+    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      if (body.email === EMAIL_A) {
+        await new Promise(function (r) { setTimeout(r, 900); });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-inner-A', operationName: 'fal:fake-model:req-inner-A' }) });
+        return;
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-inner-B', operationName: 'fal:fake-model:req-inner-B' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Attempt A -- Contact (fires the slow start-pending-generation for A)
+    // then Signup, with register-account resolving fast: the OUTER check
+    // passes almost immediately, landing inside
+    // pendingGenerationPromise.then(...) while A's own start-pending-
+    // generation call is still the 900ms delay away from settling.
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', EMAIL_A);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.fill('#fn-username', 'signupinnera');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    // Confirm we're mid-flight (Back disabled) -- this fires while
+    // attemptSignup's own register-account call is out (fast, but not
+    // instant), and stays true through the inner continuation too, since
+    // nothing re-enables Back on the success path.
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+
+    // Force past Back's disable -- same isolation technique as the outer-
+    // check test above -- to invalidate A's token WHILE its inner
+    // pendingGenerationPromise.then(...) is still pending, not before the
+    // outer check ran.
+    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+
+    // Attempt B -- reaches a second, fresh Signup screen but is
+    // deliberately NOT submitted -- this test only needs to prove the
+    // inner continuation discards A's stale settlement, not exercise B's
+    // own full flow (the outer-check test above already covers that).
+    await page.fill('#contact-email', EMAIL_B);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+
+    var screenBefore = await page.evaluate(function () {
+      return document.getElementById('fn-username') ? 'signup' : 'other';
+    });
+    assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale inner settlement lands');
+
+    // Sit idle here while A's held-back start-pending-generation response
+    // lands and its pendingGenerationPromise.then(...) continuation runs.
+    await new Promise(function (r) { setTimeout(r, 1100); });
+
+    var screenAfter = await page.evaluate(function () {
+      if (document.getElementById('fn-username')) return 'signup';
+      if (window.location.pathname.indexOf('processing.html') !== -1) return 'processing';
+      return 'other';
+    });
+    assert.equal(screenAfter, 'signup', 'A\'s stale inner continuation must never force-navigate the user away from the second, fresh Signup screen they are actually on');
+    assert.equal(claimCalls.length, 0, 'A\'s stale inner continuation must not have claimed any pending job (it must discard itself via the inner re-check, not just rely on the outer one)');
+  } finally {
+    await page.close();
+  }
+});
+
 test('claim-dream.html: a ready pending dream shows the video immediately (no login required) and lets a new visitor sign up to save it', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
