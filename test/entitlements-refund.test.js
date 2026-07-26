@@ -37,7 +37,7 @@ test.beforeEach(function () {
 /**
  * Seeds an email with an existing, zero-balance token record before a
  * refund — isolates a test's balance assertion to just the refund being
- * tested, instead of also having to account for the separate 290-token
+ * tested, instead of also having to account for the separate 220-token
  * first-ever-read signup grant syncTokens applies automatically to a
  * genuinely brand-new email. Same helper as entitlements-token-
  * purchases.test.js's/dodo-webhook.test.js's own seedZeroBalance.
@@ -122,7 +122,10 @@ test('refundedJobIds (per-email) and appliedTokenPackPaymentIds (per-email) are 
   await entitlements.refundTokensOnce({}, email, 'job_1', 100);
 
   var record = await entitlements.getEntitlement({}, email);
-  assert.equal(record.tokens.balance, 600);
+  // creditTokenPackOnce delegates to creditTokenPackAmountOnce, which
+  // applies Token Economy C's one-time +50% first-purchase bonus for a
+  // brand-new email: 500 * 1.5 = 750, then +100 for the refund = 850.
+  assert.equal(record.tokens.balance, 850);
   // Both dedup lists are pruned to empty once each mechanism's own outer
   // marker commits -- neither ever contains the OTHER mechanism's id.
   assert.deepEqual(record.refundedJobIds, []);
@@ -298,7 +301,7 @@ test("refundTokenAmountOnce bases the new balance on syncTokens' own returned va
     assert.equal(result.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'refundstaleread@example.com');
-    assert.equal(record.tokens.balance, 290 + 100, "balance must be 290 (signup grant, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 220 + 100, "balance must be 220 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }
