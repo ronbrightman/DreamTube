@@ -150,8 +150,20 @@
     // docs/IMAGE_GENERATION_SPEC.md §4. Mute/play controls below stay
     // video-only (a still image has no playback concept), driven purely by
     // d.videoUrl exactly as before this change.
+    // Windowing (tracker.html: feed-pages-explore-html-home-html-render-6t7udd)
+    // -- preload="metadata" is only correct for the card that's actually in
+    // the first viewport (index 0 of whatever list is currently rendered,
+    // filtered or not -- this is a one-card-per-screen scroll-snap feed, so
+    // "first viewport" really is just the first card). Every other card,
+    // whether it's part of the initial batch or a later lazy-appended one,
+    // gets preload="none" so the browser doesn't start fetching metadata for
+    // ten-plus videos at once on page load -- see appendNextBatch() below for
+    // the batching itself. data-src carries the real URL independent of the
+    // live `src` attribute so memoryObserver (the off-screen memory release
+    // below, keyed off this same data-src) can null out `src` on a long
+    // scroll and restore it later without losing track of what it pointed to.
     var media = d.videoUrl
-      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="metadata"></video>'
+      ? '<video class="feed-video" data-src="'+esc(d.videoUrl)+'" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>'
       : d.imageUrl
         ? '<img class="feed-image" src="'+esc(d.imageUrl)+'" alt="">'
         : '<div class="feed-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
@@ -208,6 +220,27 @@
   var feedLoaded = false;
   var dreamOfDayId = null;
 
+  // ===== Feed windowing (tracker.html: feed-pages-explore-html-home-html-render-6t7udd) =====
+  // Was: root.innerHTML = dreams.map(cardHTML).join('') -- every fetched
+  // dream got its own <video preload=metadata> the instant the feed loaded,
+  // unbounded by feed size. As the published-dream library grows this is an
+  // unbounded number of simultaneous metadata fetches on page load, a real
+  // scaling risk on memory-constrained mobile webviews now that FB/IG ad
+  // traffic funnels visitors straight here (see
+  // for-product-check-app-for-the-same-mobil-5ng2cg's marketing-funnel
+  // precedent for exactly this class of bug). Instead: render only the
+  // first BATCH_SIZE dreams up front, then lazy-append the next BATCH_SIZE
+  // as the user scrolls near the end, via a sentinel element observed by a
+  // second IntersectionObserver (scrollObserver below) -- the same
+  // primitive videoObserver already uses for playback gating, just watching
+  // scroll position against the list's end instead of a single card's
+  // visibility.
+  var BATCH_SIZE = 10;
+  var currentDreams = []; // the filtered (or unfiltered) list render() is currently working through
+  var renderedCount = 0;  // how many of currentDreams have been appended to the DOM so far
+  var scrollSentinel = null;
+  var scrollObserver = null;
+
   function findLoadedDream(id){
     for(var i=0; i<allDreams.length; i++) if(allDreams[i].id === id) return allDreams[i];
     return null;
@@ -233,6 +266,34 @@
       }
     });
   }, { root: root, threshold: [0, 0.6, 1] });
+
+  // Releases a scrolled-far-off-screen card's video `src` so long feeds
+  // don't keep every video element's underlying media resource alive at
+  // once (tracker.html: feed-pages-explore-html-home-html-render-6t7udd,
+  // acceptance: DOM/page weight stay flat regardless of feed size). Uses a
+  // much larger rootMargin than videoObserver above -- videoObserver only
+  // cares about the single card that's the current scroll-snap winner,
+  // this one keeps a small window of hydrated neighbors (previous/current/
+  // next, roughly) around it so scrolling one card in either direction
+  // never has to wait on a fresh network fetch, and only actually frees
+  // anything once a card is well outside that window. data-src (set in
+  // cardHTML) is the durable record of the real URL -- `src` itself gets
+  // removed and restored freely, data-src never does.
+  var memoryObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      var video = entry.target;
+      if(!video.dataset.src) return; // no video source to manage (shouldn't happen, but don't throw on it)
+      if(entry.isIntersecting){
+        if(!video.getAttribute('src')){
+          video.setAttribute('src', video.dataset.src);
+          video.load();
+        }
+      } else if(video.getAttribute('src')){
+        video.removeAttribute('src');
+        video.load(); // actually frees the underlying decoded/buffered media resource, not just the DOM attribute
+      }
+    });
+  }, { root: root, rootMargin: '100% 0px 100% 0px', threshold: 0 });
 
   // Switching away to a different tab/app doesn't change anything about
   // scroll position or intersection ratio, so the observer above has no
@@ -262,6 +323,17 @@
   // thumbnail, so unlike processing.html's preview row there's no gradient
   // to fall back to -- the badge is the recovery path).
   function wireVideoRecovery(v){
+    // observeVideos() below re-scans and re-registers EVERY currently
+    // rendered .feed-video each time a new batch is appended (simplest way
+    // to keep a freshly-appended batch's cards wired without tracking which
+    // ones are "new"), so without this guard a card from an earlier batch
+    // would pick up a duplicate set of these listeners on every later
+    // append. The listeners themselves are idempotent (classList add/
+    // remove, and the retry below is already dataset-guarded) so a
+    // duplicate wouldn't misbehave, but it's needless and grows unbounded
+    // over a long scroll -- skip anything already wired.
+    if(v.dataset.recoveryWired) return;
+    v.dataset.recoveryWired = '1';
     var badge = v.closest('.feed-card').querySelector('.feed-play');
     if(badge){
       // 'play' fires the instant .play() is CALLED, not when playback
@@ -300,12 +372,82 @@
     });
   }
 
+  // Re-scans and re-registers every currently rendered .feed-video with
+  // both observers -- called after every batch append, not just the
+  // initial render, so a lazy-appended batch's new cards get wired up too.
+  // Disconnecting+re-observing the FULL current set (rather than tracking
+  // just what's new) is deliberately simple: both observers' callbacks are
+  // idempotent against re-firing on an element already in the right state
+  // (see memoryObserver's own getAttribute checks, videoObserver's
+  // video.paused checks), and wireVideoRecovery guards itself against
+  // double-wiring the same element (see its own comment) -- so re-running
+  // this over cards from earlier batches on every append is harmless, just
+  // a bit of avoidable-but-cheap re-evaluation.
   function observeVideos(){
     videoObserver.disconnect();
+    memoryObserver.disconnect();
     Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){
       videoObserver.observe(v);
+      memoryObserver.observe(v);
       wireVideoRecovery(v);
     });
+  }
+
+  // Lazily creates the sentinel element + its observer the first time a
+  // feed actually has more than one batch's worth of dreams to show. The
+  // sentinel always stays the last child of #feed-scroll -- appendNextBatch
+  // inserts each new batch's HTML immediately BEFORE it (insertAdjacentHTML
+  // 'beforebegin'), so the sentinel never has to be re-created or manually
+  // moved, just left in place while content grows above it. Same
+  // IntersectionObserver primitive videoObserver already uses for playback
+  // gating, just watching scroll position against the list's end instead
+  // of a single card's visibility.
+  function ensureScrollObserver(){
+    if(scrollObserver) return;
+    scrollObserver = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(entry.isIntersecting) appendNextBatch();
+      });
+    // rootMargin extends the trigger zone past the container's real bottom
+    // edge, so the next batch starts appending a bit before the user
+    // actually hits the end of what's rendered, not only once they're
+    // already stuck there.
+    }, { root: root, rootMargin: '0px 0px 600px 0px', threshold: 0 });
+  }
+
+  /** Appends the next BATCH_SIZE dreams (fewer for the final batch) from currentDreams to the DOM, creating/removing the scroll sentinel as needed. No-ops once everything has been rendered. */
+  function appendNextBatch(){
+    if(renderedCount >= currentDreams.length) return;
+    var slice = currentDreams.slice(renderedCount, renderedCount + BATCH_SIZE);
+    var startIndex = renderedCount;
+    var html = slice.map(function(d, i){
+      var globalIndex = startIndex + i;
+      return cardHTML(d, globalIndex === 0, !filter && d.id === dreamOfDayId);
+    }).join('');
+    renderedCount += slice.length;
+
+    if(scrollSentinel){
+      scrollSentinel.insertAdjacentHTML('beforebegin', html);
+    } else {
+      root.insertAdjacentHTML('beforeend', html);
+    }
+
+    if(renderedCount < currentDreams.length){
+      if(!scrollSentinel){
+        scrollSentinel = document.createElement('div');
+        scrollSentinel.className = 'feed-load-sentinel';
+        scrollSentinel.style.cssText = 'height:1px;';
+        root.appendChild(scrollSentinel);
+        ensureScrollObserver();
+        scrollObserver.observe(scrollSentinel);
+      }
+    } else if(scrollSentinel){
+      scrollObserver.unobserve(scrollSentinel);
+      scrollSentinel.remove();
+      scrollSentinel = null;
+    }
+
+    observeVideos();
   }
 
   function render(){
@@ -320,9 +462,21 @@
         return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
       });
     }
-    root.innerHTML = dreams.length
-      ? dreams.map(function(d,i){ return cardHTML(d, i===0, !filter && d.id === dreamOfDayId); }).join('')
-      : '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No published dreams yet.') + '</div>';
+
+    // Full reset -- render() only runs on initial load and on a filter
+    // change, both of which mean "start the windowed rendering over from
+    // scratch" rather than "append more of the same list".
+    if(scrollSentinel){ scrollObserver.unobserve(scrollSentinel); }
+    scrollSentinel = null;
+    currentDreams = dreams;
+    renderedCount = 0;
+    root.innerHTML = '';
+
+    if(dreams.length){
+      appendNextBatch();
+    } else {
+      root.innerHTML = '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No published dreams yet.') + '</div>';
+    }
 
     if(filter){
       chip.style.display = 'flex';
@@ -330,8 +484,6 @@
     } else {
       chip.style.display = 'none';
     }
-
-    observeVideos();
   }
   render();
 
@@ -358,13 +510,25 @@
       } else {
         dreamOfDayId = null;
       }
+      // A shared-dream deep link (explore.html?id=...) used to rely on the
+      // ENTIRE feed being rendered up front, then scrollIntoView()-ing to
+      // wherever the target card happened to land -- windowing (this
+      // change) breaks that: a deep-linked dream far down a long feed
+      // might not be in the DOM at all yet, since only the first
+      // BATCH_SIZE dreams render initially. Move it to the very front
+      // instead (same technique dream-of-day above already uses, and
+      // deliberately applied AFTER dream-of-day so a deep link always wins
+      // position 0 over today's pick) -- this guarantees it's in the first
+      // batch and already the first thing visible on load, with no
+      // scrollIntoView needed at all.
+      var targetId = getParam('id');
+      var target = targetId ? findLoadedDream(targetId) : null;
+      if(target){
+        var tIdx = allDreams.indexOf(target);
+        if(tIdx > 0){ allDreams.splice(tIdx, 1); allDreams.unshift(target); }
+      }
       feedLoaded = true;
       render();
-      var targetId = getParam('id');
-      if(targetId){
-        var card = root.querySelector('.feed-card[data-id="'+targetId+'"]');
-        if(card) card.scrollIntoView({ block: 'start' });
-      }
     }).catch(function(){
       feedLoaded = true;
       root.innerHTML = '<div class="grid-empty" style="color:#fff;">Couldn\'t load the feed — check your connection and try again.</div>';
