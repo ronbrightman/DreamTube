@@ -15,9 +15,12 @@
   --accent-soft:rgba(255,255,255,0.08);
   --accent-warm:#fff;
   --danger:#FF3040;
-  /* The ONE Instagram-style gradient in the whole app — used in exactly two
-     places: the "+" create button in the bottom nav, and the ring around the
-     user's own avatar on Profile. Nowhere else. */
+  /* The ONE Instagram-style gradient in the whole app, reused wherever a
+     spot needs to read as a real, tappable entry point rather than inert
+     text/decoration: the "+" create button in the bottom nav, the ring
+     around the user's own avatar on Profile, the Profile insight card,
+     the token balance chip, the wait-screen nudge dot, active toggle
+     switches, and the beta-feedback CTA. */
   --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
   /* Shop palette A/B test (docs/SHOP_PALETTE_REDESIGN_SPEC.md) — two new,
      narrowly-scoped accent hues, extending the token system rather than
