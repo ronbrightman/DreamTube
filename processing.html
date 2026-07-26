@@ -217,6 +217,32 @@
   // to just hide itself entirely while they wait — showing nothing where
   // there's screen real estate to fill. Falls back to the general shared
   // Explore feed in that case instead, same visual treatment either way.
+  //
+  // ===== Empty/sparse fallback (tracker: for-product-empty-sparse-feed-
+  // fallback-s-zldn85) =====
+  // That shared-feed fallback is exactly the "first-timer carousel": the
+  // one path a brand-new visitor (no dreams of their own) actually
+  // exercises. This app is still early-stage, so the shared feed itself can
+  // be genuinely empty (no one has published anything yet) or have only a
+  // handful of dreams in it. Previously an empty feed just hid the whole
+  // section — reasonable, but it silently loses the one chance to nudge
+  // "be the first" — and a *sparse* feed rendered 1-2 lonely 64px
+  // thumbnails in an otherwise-empty horizontal scroll row, which reads as
+  // broken rather than intentional. PREVIEW_SPARSE_THRESHOLD picks a small,
+  // deliberately low bar: fewer than 3 published dreams counts as sparse —
+  // low enough that this only kicks in during the genuinely early days (a
+  // healthy feed clears it easily), not as a general design choice. Reuses
+  // the same `.grid-empty` empty-state pattern already established
+  // elsewhere (profile.html's own dreams grids, explore.html, home.html)
+  // rather than inventing new visual language for it.
+  var PREVIEW_SPARSE_THRESHOLD = 3;
+
+  function previewFallbackHTML(kind){
+    return '<div class="grid-empty" style="width:100%;">' + (kind === 'empty'
+      ? 'Be the first to share a dream — publish yours once it’s ready and it’ll show up here.'
+      : 'Only a few dreams shared so far — check back soon as more come in.') + '</div>';
+  }
+
   function renderPreview(){
     var section = document.getElementById('proc-preview');
     var row = document.getElementById('proc-preview-row');
@@ -231,8 +257,17 @@
     }
     DreamStore.getSharedFeed().then(function(dreams){
       var pick = dreams.slice(0, 10);
-      if(!pick.length){ section.style.display = 'none'; return; }
       section.style.display = 'block';
+      if(!pick.length){
+        label.textContent = 'While you wait';
+        row.innerHTML = previewFallbackHTML('empty');
+        return;
+      }
+      if(pick.length < PREVIEW_SPARSE_THRESHOLD){
+        label.textContent = 'While you wait';
+        row.innerHTML = previewFallbackHTML('sparse');
+        return;
+      }
       label.textContent = 'While you wait, explore other dreams';
       row.innerHTML = pick.map(previewThumbHTML).join('');
       wirePreviewErrorFallback(row, pick);
