@@ -1055,7 +1055,17 @@
     var MAX_ATTEMPTS = 8;
     function tryUsername(username){
       DreamStore.signup(username, password, email).then(function(result){
-        if(result.ok){ cb(true, null); return; }
+        if(result.ok){
+          // Fired here, not in the caller's (possibly-later-stale)
+          // signupAttemptToken-gated callback -- a real account genuinely
+          // was created the moment result.ok is true, regardless of
+          // whether THIS particular UI attempt later becomes superseded
+          // by a Back+resubmit. Matches start.html's own tryUsername,
+          // which fires its equivalent call at this same point for the
+          // same reason (review round-2 non-blocking finding).
+          fireMetaConversion('CompleteRegistration', { email: email });
+          cb(true, null); return;
+        }
         if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
           attempts++;
           tryUsername(base + Math.floor(1000 + Math.random() * 9000));
@@ -1141,7 +1151,6 @@
             errEl.textContent = err;
             return;
           }
-          fireMetaConversion('CompleteRegistration', { email: contactEmail });
           flushStagedCharactersToStore();
           // Update the draft's characterIds to the now-real (flushed) id,
           // in case the earlier pre-signup generation call already baked
@@ -1164,6 +1173,17 @@
           // had settled, reading pendingId/pendingOperationName while
           // they were still both null. Always resolves (win or lose),
           // so this can never hang the funnel.
+          // pendingGenerationPromise itself is a live-read shared module
+          // var (unlike start.html's local `pendingPromise`, captured
+          // once per attempt) -- in the exact devtools-bypass race this
+          // token guard targets, an abandoned attempt's .then() below
+          // could technically end up chained off whichever promise this
+          // variable holds AT THAT MOMENT, not necessarily the one that
+          // was current when this attempt started. That's fine, not a
+          // correctness gap: the re-check inside the callback discards
+          // the result regardless of which promise it's attached to --
+          // just don't mistake this line for a per-attempt snapshot if
+          // this code is ever refactored to remove that re-check.
           pendingGenerationPromise.then(function(){
             // Re-check -- this attempt can still go stale WHILE this
             // inner promise is unsettled, even though the outer check
