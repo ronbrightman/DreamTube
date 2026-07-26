@@ -717,6 +717,68 @@
     return { ok: true, user: state.user };
   }
 
+  // Monotonic call-sequence counter guarding commitLocalSignup against a
+  // stale/abandoned DreamStore.signup() call's late settlement clobbering
+  // state.user out from under a newer, still-current one (tracker item
+  // dreamstore-signup-commits-state-user-unc-vv6rio). wizard.html and
+  // start.html each already gate their OWN callback bodies with a
+  // per-attempt signupAttemptToken (see either file's own doc comment for
+  // that pattern's full "why") — but that guard lives entirely in the
+  // caller, one layer above signup() itself, and commitLocalSignup's
+  // state.user write happens INSIDE signup(), before any caller callback
+  // (and thus before the caller's own token check) ever runs. So no
+  // caller-side guard can prevent it: two concurrent DreamStore.signup()
+  // calls (today only reachable via a devtools bypass of wizard.html's/
+  // start.html's disabled Continue/Back buttons, or from any OTHER
+  // caller — see login.html and claim-dream.html, neither of which has
+  // an equivalent UI-level token — that never disables its own controls
+  // the same careful way) would let whichever one's network response
+  // happens to land LAST silently overwrite state.user set by
+  // whichever landed first, even if that first one was actually the
+  // attempt that should still be current.
+  //
+  // Fixed here, at the layer where the mutation actually happens, rather
+  // than only in each caller: every signup() call that reaches the
+  // network captures the NEXT value of this counter as its own sequence
+  // number, right before firing the request. By the time its response
+  // lands, it only commits if it's still the MOST RECENTLY STARTED call
+  // — i.e. no newer signup() call has begun in the meantime. This is
+  // call-ORDER based, not resolve-order based, deliberately: if call A
+  // starts, then call B starts before A resolves, B is "current" from
+  // the moment it starts, regardless of whether A's response happens to
+  // arrive before or after B's. That matches wizard.html's/start.html's
+  // own signupAttemptToken semantics (bumped on every new attempt) and
+  // is the only ordering a caller's Back-then-resubmit flow can rely on.
+  //
+  // This makes DreamStore.signup() inherently safe for ANY caller, not
+  // just wizard.html/start.html — the same idiom state.pendingJob already
+  // uses for a different "which one is current" concern (ownerHandle
+  // scoping, see savePendingJob/scopedPendingJob above), just applied to
+  // call recency instead of account identity.
+  var signupCallSeq = 0;
+
+  /**
+   * Commits a signup only if `mySeq` is still the most recently STARTED
+   * signup() call (see signupCallSeq's own comment above). A superseded
+   * call resolves with `{ ok:false, superseded:true, error }` instead of
+   * writing anything — no state.accounts entry, no state.user, no
+   * identifyForAnalytics call — so a stale attempt has zero observable
+   * effect on local state, exactly like wizard.html's/start.html's own
+   * token-gated callbacks already discard a stale UI-level result
+   * wholesale rather than partially applying it. The account this call
+   * itself just registered server-side (if this is the `ok:true` server
+   * branch, not the offline fallback) is NOT lost: a later login() for
+   * that same username re-checks the server (authoritative) and
+   * materializes the local `accounts` entry then, same as any other
+   * account created on a different device — see login()'s own comment.
+   */
+  function commitLocalSignupIfCurrent(mySeq, username, password, email) {
+    if (mySeq !== signupCallSeq) {
+      return { ok: false, superseded: true, error: 'Superseded by a newer signup attempt.' };
+    }
+    return commitLocalSignup(username, password, email);
+  }
+
   /** Maps register-account.js's error codes to the exact same human-readable strings signup() has always returned locally, so callers (e.g. start.html's attemptSignup, which string-matches 'That username is already taken.' to retry with a new suffix) don't need to know or care whether the rejection came from the server or a local check. */
   function mapRegisterError(code) {
     code = code || '';
@@ -816,6 +878,14 @@
      * this function always worked before — an explicit server-side
      * rejection (username/email already taken elsewhere) is never
      * downgraded to a local write, only a genuine failure-to-ask is.
+     *
+     * Safe to call concurrently: if a newer call to this method starts
+     * before an older one's network response lands, the older one's
+     * result resolves as { ok:false, superseded:true, error } instead of
+     * writing state.user/state.accounts — see signupCallSeq's doc
+     * comment (just above commitLocalSignupIfCurrent) for the full
+     * "why". Only the most-recently-STARTED call is ever allowed to
+     * commit, regardless of resolve order.
      */
     signup: function (username, password, email) {
       username = (username || '').trim();
@@ -838,6 +908,13 @@
       if (state.accounts[key]) return Promise.resolve({ ok: false, error: 'That username is already taken.' });
       if (findAccountKeyByEmail(email)) return Promise.resolve({ ok: false, error: 'An account with that email already exists.' });
 
+      // Captured now, right before the real network call fires (not
+      // earlier — a synchronous validation-failure "call" above never
+      // reaches here and must never bump this, or it could wrongly
+      // supersede a genuinely-still-in-flight call). See signupCallSeq's
+      // own comment for the full "why".
+      var mySignupSeq = ++signupCallSeq;
+
       return fetch('/.netlify/functions/register-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -845,17 +922,17 @@
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
-        if (data && data.ok) return commitLocalSignup(username, password, email);
+        if (data && data.ok) return commitLocalSignupIfCurrent(mySignupSeq, username, password, email);
         if (data && data.ok === false && data.error) return { ok: false, error: mapRegisterError(data.error) };
         // Unexpected/malformed response shape — treat the same as
         // unreachable below rather than surface a confusing error.
-        return commitLocalSignup(username, password, email);
+        return commitLocalSignupIfCurrent(mySignupSeq, username, password, email);
       }).catch(function () {
         // Network failure, or the functions runtime isn't available at all
         // (e.g. this repo's own static-file-server-only browser tests) —
         // degrade to local-only signup rather than hard-block account
         // creation. See this method's own doc comment above.
-        return commitLocalSignup(username, password, email);
+        return commitLocalSignupIfCurrent(mySignupSeq, username, password, email);
       });
     },
 
