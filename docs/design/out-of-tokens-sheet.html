@@ -1,0 +1,121 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Out-of-tokens → store moment</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+  html { background:#0d0d0f; }
+  body { font-family:'Manrope',system-ui,sans-serif; color:#fff; margin:0; padding:24px 12px 48px; }
+  h1 { font-size:20px; text-align:center; font-weight:800; margin:6px 0 2px; }
+  .sub { text-align:center; color:#999; font-size:13px; margin:0 auto 26px; max-width:680px; }
+  .row { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .label { font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#5FB88A; }
+  .note { max-width:280px; font-size:12px; line-height:1.5; color:#aaa; text-align:center; }
+  .note b { color:#ddd; }
+
+  .phone {
+    width:280px; height:580px; background:#000; border-radius:34px;
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.8);
+    overflow:hidden; position:relative; display:flex; flex-direction:column;
+  }
+  .topbar-plain { display:flex; align-items:center; justify-content:space-between; padding:14px 14px 6px; font-size:13.5px; font-weight:700; }
+  .tb-side { width:30px; height:30px; border-radius:50%; background:#1a1a1a; border:1px solid rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center; font-size:13px; color:#ccc; }
+  .balance-chip { display:flex; align-items:center; gap:5px; background:#1a1a1a; border:1px solid rgba(217,166,83,.5); border-radius:100px; padding:4px 10px; font-size:11px; font-weight:800; color:#f0d9a8; }
+  .px { padding:0 14px; }
+  .style-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .style-card { height:58px; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.1); display:flex; align-items:flex-end; padding:8px; font-size:11.5px; font-weight:700; }
+  .st1 { background:linear-gradient(135deg,#2d1b4e,#4a2c7a); }
+  .st2 { background:linear-gradient(135deg,#1b3a4e,#2c5f7a); }
+  .st3 { background:linear-gradient(135deg,#4e2d1b,#7a4a2c); }
+  .st4 { background:linear-gradient(135deg,#1b4e2d,#2c7a4a); border:2px solid #fff; }
+  .seg-row { display:flex; background:#1a1a1a; border:1px solid rgba(255,255,255,.12); border-radius:100px; padding:3px; margin:12px 0 8px; }
+  .seg { flex:1; text-align:center; font-size:12.5px; font-weight:700; padding:8px 0; border-radius:100px; color:#999; }
+  .seg.on { background:#fff; color:#000; }
+  .btn { font-weight:700; font-size:13.5px; border:none; border-radius:100px; padding:13px 16px; display:flex; align-items:center; justify-content:center; gap:7px; color:#000; background:#fff; }
+  .btn.block { width:100%; box-sizing:border-box; }
+
+  .dim { position:absolute; inset:0; background:rgba(0,0,0,.6); z-index:4; }
+  .sheet {
+    position:absolute; left:0; right:0; bottom:0; z-index:5;
+    background:#161616; border-radius:26px 26px 0 0; border-top:1px solid rgba(255,255,255,.14);
+    padding:18px 16px 18px;
+  }
+  .grab { width:36px; height:4px; border-radius:100px; background:rgba(255,255,255,.18); margin:0 auto 14px; }
+  .sheet-title { font-size:16px; font-weight:800; text-align:center; margin-bottom:6px; }
+  .sheet-body { font-size:12.5px; color:#bbb; text-align:center; line-height:1.5; margin-bottom:12px; }
+  .sheet-body b { color:#fff; }
+  .meter { height:8px; border-radius:100px; background:#242424; margin:0 20px 14px; overflow:hidden; }
+  .meter i { display:block; height:100%; width:40%; background:linear-gradient(90deg,#6C8CFF,#9ab0ff); border-radius:100px; }
+  .meter-label { display:flex; justify-content:space-between; font-size:10px; color:#777; margin:0 20px 12px; margin-top:-10px; padding-top:12px; }
+  .buy-btn {
+    width:100%; box-sizing:border-box; font-weight:800; font-size:14px; border:none; border-radius:100px; padding:14px;
+    background:#fff; color:#000; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:9px;
+  }
+  .buy-btn .p { font-weight:700; color:#555; font-size:12.5px; }
+  .see-all { text-align:center; font-size:12px; color:#9ab0ff; font-weight:700; margin-bottom:12px; }
+  .wait-line { text-align:center; font-size:11.5px; color:#888; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); }
+  .wait-line b { color:#bbb; }
+  .trust { text-align:center; font-size:9.5px; color:#666; margin-top:9px; }
+
+  .resume-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:0 26px; }
+  .check-circle { width:64px; height:64px; border-radius:50%; background:rgba(95,184,138,.15); border:1.5px solid #5FB88A; display:flex; align-items:center; justify-content:center; font-size:26px; color:#5FB88A; }
+  .resume-wrap h2 { font-size:17px; font-weight:800; margin:0; text-align:center; }
+  .resume-wrap p { font-size:12.5px; color:#999; text-align:center; line-height:1.5; margin:0; }
+  .spinner { width:26px; height:26px; border-radius:50%; border:3px solid #242424; border-top-color:#fff; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+
+<h1>Out of tokens → the store comes to the user</h1>
+<p class="sub">When any generate action lacks tokens, this sheet slides up over the current screen (replacing today's "wait for the daily grant" modal). Grounded in the overnight research: shortfall arithmetic, one-tap smallest-sufficient pack, honest free-wait escape, and auto-resume of the blocked dream after payment.</p>
+
+<div class="row">
+
+  <!-- FRAME 1: the sheet -->
+  <div class="col">
+    <div class="label">1 · The purchase sheet (on style.html)</div>
+    <div class="phone">
+      <div class="topbar-plain"><div class="tb-side">‹</div>Pick a style<div class="balance-chip">◈ 40 · Low</div></div>
+      <div class="px">
+        <div class="style-grid">
+          <div class="style-card st1">Dreamlike</div>
+          <div class="style-card st2">Cinematic</div>
+          <div class="style-card st3">Anime</div>
+          <div class="style-card st4">Realistic ✓</div>
+        </div>
+        <div class="seg-row"><div class="seg">Image</div><div class="seg on">Video</div></div>
+        <div class="btn block">Generate Video</div>
+      </div>
+      <div class="dim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-title">Almost there — this video needs 100 tokens</div>
+        <div class="sheet-body">You have <b>40</b>. You need <b>60 more</b>.</div>
+        <div class="meter"><i></i></div>
+        <div class="meter-label"><span>40</span><span>100</span></div>
+        <button class="buy-btn">Get 100 tokens <span class="p">· $1.99</span></button>
+        <div class="see-all">See all packs →</div>
+        <div class="wait-line">Or wait — <b>200 free tokens</b> arrive in <b>6h 12m</b></div>
+        <div class="trust">Secure checkout via Dodo · One-time purchase, no subscription</div>
+      </div>
+    </div>
+    <p class="note">Balance chip (top right) is the ambient entry point — warm tint + "Low" under 100. The sheet shows the exact math, prices the exact blocked action, and keeps the free path honest. Same sheet everywhere: style.html, the image→video upsell, the generation-failed screen.</p>
+  </div>
+
+  <!-- FRAME 2: return + auto-resume -->
+  <div class="col">
+    <div class="label">2 · Back from checkout — auto-resume</div>
+    <div class="phone">
+      <div class="topbar-plain"><div class="tb-side">‹</div>&nbsp;<div class="balance-chip" style="border-color:rgba(95,184,138,.5); color:#a8e0c2;">◈ 140</div></div>
+      <div class="resume-wrap">
+        <div class="check-circle">✓</div>
+        <h2>Payment received</h2>
+        <p>100 tokens added. Picking your dream back up…</p>
+        <div class="spinner"></div>
+        <p style="font-size:10.5px; color:#666;">"I was flying over a city made of glass…" · Realistic · Video</p>
+      </div>
+    </div>
+    <p class="note">The dream draft survives the checkout round-trip (it already persists today). On return: verify the webhook credit, then <b>auto-continue the exact generation they paid for</b> — no re-tapping, no hunting. If crediting lags, honest copy: "tokens on the way — tap Generate when your balance updates."</p>
+  </div>
+
+</div>

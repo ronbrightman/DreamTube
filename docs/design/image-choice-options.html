@@ -1,0 +1,187 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image vs Video — where the choice lives</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+  html { background:#0d0d0f; }
+  body { font-family:'Manrope',system-ui,sans-serif; color:#fff; margin:0; padding:24px 12px 48px; }
+  h1 { font-size:20px; text-align:center; font-weight:800; margin:6px 0 2px; }
+  .sub { text-align:center; color:#999; font-size:13px; margin:0 auto 26px; max-width:680px; }
+  .row { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .label { font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+  .label.current { color:#999; }
+  .label.opt { color:#5FB88A; }
+  .note { max-width:280px; font-size:12px; line-height:1.5; color:#aaa; text-align:center; }
+  .note b { color:#ddd; }
+
+  .phone {
+    width:280px; height:580px; background:#000; border-radius:34px;
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.8);
+    overflow:hidden; position:relative; display:flex; flex-direction:column;
+  }
+  .topbar-plain { display:flex; align-items:center; justify-content:space-between; padding:14px 14px 6px; font-size:13.5px; font-weight:700; }
+  .tb-side { width:30px; height:30px; border-radius:50%; background:#1a1a1a; border:1px solid rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center; font-size:13px; color:#ccc; }
+  .px { padding:0 14px; }
+  .section-label { font-size:11px; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:.06em; margin:12px 0 8px; }
+
+  .style-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .style-card { height:64px; border-radius:14px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,.1); display:flex; align-items:flex-end; padding:8px; font-size:11.5px; font-weight:700; }
+  .st1 { background:linear-gradient(135deg,#2d1b4e,#4a2c7a); }
+  .st2 { background:linear-gradient(135deg,#1b3a4e,#2c5f7a); }
+  .st3 { background:linear-gradient(135deg,#4e2d1b,#7a4a2c); }
+  .st4 { background:linear-gradient(135deg,#1b4e2d,#2c7a4a); border:2px solid #fff; }
+
+  .seg-row { display:flex; background:#1a1a1a; border:1px solid rgba(255,255,255,.12); border-radius:100px; padding:3px; margin:12px 0 8px; }
+  .seg { flex:1; text-align:center; font-size:12.5px; font-weight:700; padding:8px 0; border-radius:100px; color:#999; }
+  .seg.on { background:#fff; color:#000; }
+
+  .btn { font-weight:700; font-size:13.5px; border:none; border-radius:100px; padding:13px 16px; display:flex; align-items:center; justify-content:center; gap:7px; color:#000; background:#fff; }
+  .btn.block { width:100%; box-sizing:border-box; }
+  .cost-line { text-align:center; font-size:10.5px; color:#777; margin-top:6px; }
+
+  .mode-card { display:flex; align-items:center; gap:12px; background:#1a1a1a; border:1px solid rgba(255,255,255,.12); border-radius:18px; padding:14px; margin-bottom:10px; }
+  .mode-card.hero { border-color:rgba(108,140,255,.5); }
+  .mode-icon { width:44px; height:44px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .mi-img { background:rgba(95,184,138,.15); border:1px solid rgba(95,184,138,.4); }
+  .mi-vid { background:rgba(108,140,255,.15); border:1px solid rgba(108,140,255,.4); }
+  .mode-title { font-size:14px; font-weight:800; display:flex; align-items:center; gap:7px; }
+  .mode-sub { font-size:11px; color:#999; margin-top:3px; line-height:1.4; }
+  .price-pill { font-size:10px; font-weight:800; padding:2px 8px; border-radius:100px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); color:#ddd; }
+  .chev { margin-left:auto; color:#666; font-size:16px; }
+
+  .video-area {
+    position:absolute; inset:0;
+    background:
+      radial-gradient(120% 90% at 30% 20%, rgba(131,58,180,.6), transparent 60%),
+      radial-gradient(120% 90% at 80% 70%, rgba(252,176,69,.4), transparent 55%),
+      #141414;
+  }
+  .img-badge { position:absolute; top:52px; left:12px; z-index:3; font-size:9.5px; font-weight:700; padding:3px 9px; border-radius:100px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); color:#ccc; }
+  .panel-new {
+    position:absolute; left:0; right:0; bottom:0; z-index:2;
+    padding:34px 12px 12px; display:flex; flex-direction:column; gap:7px;
+    background:linear-gradient(to top, rgba(0,0,0,.72) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,.22) 80%, transparent 100%);
+  }
+  .upsell {
+    border:1px solid rgba(217,166,83,.55); border-radius:100px; padding:11px 14px;
+    background:rgba(40,30,12,.6); backdrop-filter:blur(4px);
+    font-size:13px; font-weight:800; color:#fff; display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .upsell .pp { font-size:10px; font-weight:800; padding:2px 8px; border-radius:100px; background:rgba(217,166,83,.25); border:1px solid rgba(217,166,83,.5); color:#f0d9a8; }
+  .caption-sm { font-size:11.5px; color:rgba(255,255,255,.92); text-shadow:0 1px 6px rgba(0,0,0,.8); padding:0 2px; }
+  .btn-row { display:flex; gap:9px; }
+  .btn-sm { flex:1; font-weight:700; font-size:12px; border:none; border-radius:100px; padding:9px 12px; display:flex; align-items:center; justify-content:center; gap:6px; color:#000; background:#fff; }
+  .btn-sm.secondary { background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); }
+  .small-links { display:flex; justify-content:center; gap:16px; padding-top:1px; }
+  .small-links span { font-size:11px; color:#bbb; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,.8); }
+
+  table.cmp { border-collapse:collapse; margin:34px auto 0; max-width:900px; width:100%; font-size:12.5px; }
+  .cmp th, .cmp td { border:1px solid rgba(255,255,255,.12); padding:9px 11px; text-align:left; vertical-align:top; line-height:1.45; }
+  .cmp th { background:#1a1a1a; font-size:12px; }
+  .cmp td:first-child { color:#999; font-weight:700; white-space:nowrap; }
+  .good { color:#5FB88A; font-weight:700; }
+  .bad { color:#FF7080; font-weight:700; }
+  .wrap { overflow-x:auto; }
+  .rec { max-width:760px; margin:26px auto 0; background:#151a15; border:1px solid rgba(95,184,138,.35); border-radius:18px; padding:16px 18px; font-size:13px; line-height:1.6; color:#ccc; }
+  .rec b { color:#fff; }
+</style>
+
+<h1>Image vs Video — where should the choice live?</h1>
+<p class="sub">Three real options. Option 1 is what's LIVE on main today (shipped 2026-07-24, per your toggle decision). Options 2 and 3 are the candidate changes — mocked on the app's real components, with everything that changes listed below.</p>
+
+<div class="row">
+
+  <!-- OPTION 1: current -->
+  <div class="col">
+    <div class="label current">1 · Today — choice at the END (style.html)</div>
+    <div class="phone">
+      <div class="topbar-plain"><div class="tb-side">‹</div>Pick a style<div style="width:30px;"></div></div>
+      <div class="px" style="flex:1; display:flex; flex-direction:column;">
+        <div class="style-grid">
+          <div class="style-card st1">Dreamlike</div>
+          <div class="style-card st2">Cinematic</div>
+          <div class="style-card st3">Anime</div>
+          <div class="style-card st4">Realistic ✓</div>
+        </div>
+        <div style="flex:1;"></div>
+        <div class="seg-row"><div class="seg">Image</div><div class="seg on">Video</div></div>
+        <div class="btn block">Generate Video</div>
+        <div class="cost-line">100 tokens · free during beta</div>
+        <div style="height:18px;"></div>
+      </div>
+    </div>
+    <p class="note">Segmented toggle above Generate, Video pre-selected. User decides at the last second; price difference lives in one small line. <b>Zero build cost — already live.</b></p>
+  </div>
+
+  <!-- OPTION 2: upfront -->
+  <div class="col">
+    <div class="label opt">2 · Choice UPFRONT (create.html)</div>
+    <div class="phone">
+      <div class="topbar-plain"><div class="tb-side">‹</div>New Dream<div style="width:30px;"></div></div>
+      <div class="px">
+        <div class="section-label">What do you want to make?</div>
+        <div class="mode-card">
+          <div class="mode-icon mi-img">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5FB88A" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5-11 11"/></svg>
+          </div>
+          <div>
+            <div class="mode-title">Dream picture <span class="price-pill">10 tokens</span></div>
+            <div class="mode-sub">Ready in seconds · great to try ideas</div>
+          </div>
+          <div class="chev">›</div>
+        </div>
+        <div class="mode-card hero">
+          <div class="mode-icon mi-vid">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6C8CFF" stroke-width="2"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="M16 10l6-3v10l-6-3z"/></svg>
+          </div>
+          <div>
+            <div class="mode-title">Dream video <span class="price-pill">100 tokens</span></div>
+            <div class="mode-sub">Full motion + sound · the real thing</div>
+          </div>
+          <div class="chev">›</div>
+        </div>
+        <div class="section-label" style="margin-top:16px;">Then describe it</div>
+        <div class="mode-card" style="opacity:.45;"><div>Build it · Write it · Record it</div><div class="chev">›</div></div>
+      </div>
+    </div>
+    <p class="note">Priced cards as the FIRST decision on New Dream. Sets expectations early; the rest of the flow can speak "picture" or "video" consistently. <b>Risk: choosing before feeling invested.</b></p>
+  </div>
+
+  <!-- OPTION 3: image-first -->
+  <div class="col">
+    <div class="label opt">3 · IMAGE-FIRST preview, video as the upgrade</div>
+    <div class="phone">
+      <div class="video-area"></div>
+      <div class="img-badge">Your dream — as a picture</div>
+      <div class="panel-new">
+        <div class="caption-sm">"I was flying over a city made of glass…"</div>
+        <div class="upsell">▶ Bring it to life <span class="pp">video · 100 tokens</span></div>
+        <div class="btn-row">
+          <div class="btn-sm">◎ Explore dreams</div>
+          <div class="btn-sm secondary">👤 My profile</div>
+        </div>
+        <div class="small-links"><span>✎ Edit</span><span>↺ Redo picture</span><span>＋ Make another</span></div>
+      </div>
+    </div>
+    <p class="note">EVERY new dream generates as a cheap image first (seconds, 10 tokens); the video is the emphasized upgrade at peak excitement — on your approved new result layout. style.html keeps a quiet "skip straight to video" for users who know. <b>Your own 07-23 idea; upsell plumbing already shipped.</b></p>
+  </div>
+
+</div>
+
+<div class="wrap">
+<table class="cmp">
+  <tr><th></th><th>1 · End choice (live today)</th><th>2 · Upfront choice</th><th>3 · Image-first + upgrade</th></tr>
+  <tr><td>User's mental model</td><td>"I'm making a video (oh, image exists too)"</td><td>"I pick my format, then create"</td><td>"I see my dream instantly, pay to animate it"</td></tr>
+  <tr><td>Wait to first result</td><td>~90s (video default)</td><td>~90s or seconds (their pick)</td><td class="good">Seconds, always</td></tr>
+  <tr><td>fal.ai cost per new dream</td><td>~$0.80–1.60 (video default)</td><td>Mixed — depends on pick</td><td class="good">~$0.03 first, video only on upgrade</td></tr>
+  <tr><td>Revenue shape</td><td>Video by default, image rarely found</td><td>Honest split; may cannibalize video</td><td>Video becomes the felt "premium" purchase at peak intent</td></tr>
+  <tr><td>What must change</td><td class="good">Nothing — shipped</td><td>create.html gains a mode step; style.html toggle becomes pre-set (still overridable); processing/result copy per mode; events get a mode property</td><td>style.html default flips to image (+ "straight to video" link); result.html upsell becomes the hero CTA (fits approved redesign); processing copy mostly image-speed; wizard/funnel UNTOUCHED (free video stays)</td></tr>
+  <tr><td>Build size</td><td class="good">0</td><td>Medium</td><td>Small–medium (upsell + models already shipped)</td></tr>
+  <tr><td>Main risk</td><td>Image stays invisible; last-second toggle missed</td><td class="bad">Friction + choice overload before any investment; format choice is meaningless to a first-timer</td><td class="bad">The video "wow" gets diluted if the picture underwhelms; regular video-makers get one extra tap</td></tr>
+  <tr><td>Store-launch synergy</td><td>Weak — most users never meet the cheap tier</td><td>Medium</td><td class="good">Strong — every dream creates a felt, well-timed 100-token purchase moment</td></tr>
+</table>
+</div>
+
+<div class="rec"><b>My recommendation: Option 3</b>, with Option 1's toggle surviving as a quiet "skip straight to video" escape on style.html. It's your own image-first upsell idea from 07-23, the expensive plumbing (image gen + image→video) already shipped, it makes every dream's first result near-instant, cuts fal cost per created dream ~30–50×, and — the store-launch tie-in — it manufactures a natural, high-intent purchase moment exactly when tokens start mattering. The funnel/wizard free video stays untouched, per your earlier decision. If you'd rather not touch the default yet, Option 2 is the safer half-step but adds real friction; staying on Option 1 is also legitimate until store data says otherwise.</div>
