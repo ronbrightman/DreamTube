@@ -77,21 +77,31 @@
   }
   .play { width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.3); display:flex; align-items:center; justify-content:center; }
   .play::after { content:''; border-style:solid; border-width:9px 0 9px 15px; border-color:transparent transparent transparent #fff; margin-left:4px; }
-  .topbar { position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; padding:12px 12px 0; z-index:3; }
+  .topbar { position:absolute; top:34px; left:0; right:0; display:flex; justify-content:space-between; padding:12px 12px 0; z-index:3; }
   .icon-btn { width:34px; height:34px; border-radius:50%; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.14); display:flex; align-items:center; justify-content:center; }
   .icon-btn svg { width:17px; height:17px; }
-  .slim-banner {
-    position:absolute; top:56px; left:10px; right:10px; z-index:4;
-    border-radius:100px; padding:8px 13px;
-    background:rgba(20,24,44,.85); border:1px solid rgba(108,140,255,.4); backdrop-filter:blur(6px);
-    display:flex; align-items:center; gap:8px; font-size:11px; color:#dde4ff;
+  .tip-card {
+    position:absolute; top:104px; left:12px; right:12px; z-index:4;
+    border-radius:16px; padding:11px 38px 11px 13px;
+    background:rgba(16,18,32,.92); border:1px solid rgba(108,140,255,.4); backdrop-filter:blur(8px);
+    display:flex; align-items:center; gap:11px;
   }
-  .slim-banner b { color:#9ab0ff; white-space:nowrap; }
-  .slim-banner .x { margin-left:auto; color:#667; font-weight:700; cursor:pointer; }
+  .tip-icon {
+    flex:0 0 auto; width:34px; height:34px; border-radius:11px;
+    background:rgba(108,140,255,.15); border:1px solid rgba(108,140,255,.3);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .tip-icon svg { width:18px; height:18px; }
+  .tip-lines { min-width:0; }
+  .tip-title { font-size:12.5px; font-weight:800; color:#fff; line-height:1.3; }
+  .tip-sub { font-size:11px; color:#9ab0ff; line-height:1.35; margin-top:2px; }
+  .tip-x { position:absolute; top:50%; transform:translateY(-50%); right:12px; color:#667; font-size:14px; font-weight:700; cursor:pointer; }
+  /* frame 2's ig-chrome overlays the absolute video, so pin it */
+  .phone > .ig-chrome { position:relative; }
 </style>
 
-<h1>In-app browser nudge — after signup (FOUNDER-APPROVED: frame 1 only)</h1>
-<p class="sub">Approved by Ron 2026-07-26 ("I love the new wait screen. do it."). Shown ONLY when we detect the Facebook/Instagram built-in mini-browser, and only after signup is done — never mid-funnel. BUILD TARGET = frame 1 (wait-screen card). Frame 2 (video-screen fallback banner) is NOT approved — Ron rejected this version as unclear/scattered; a redesign is with him. Do not build frame 2 from this file.</p>
+<h1>In-app browser nudge — after signup (FOUNDER-APPROVED: both frames)</h1>
+<p class="sub">Approved by Ron 2026-07-26 — frame 1 ("I love the new wait screen. do it.") and frame 2 in its fixed two-line-card form ("ok to go"; his rejected first draft was a scattered one-line pill — do not regress to that). Shown ONLY when we detect the Facebook/Instagram built-in mini-browser, and only after signup is done — never mid-funnel. Frame 2 appears only if the frame-1 card was dismissed/ignored; dismissing it is remembered — never shown again.</p>
 
 <div class="row">
 
@@ -120,16 +130,26 @@
 
   <!-- FRAME 2 -->
   <div class="col">
-    <div class="label">2 · Video screen (quiet fallback)</div>
+    <div class="label">2 · Video screen (quiet fallback — approved fixed form)</div>
     <div class="phone">
       <div class="video"><div class="play"></div></div>
+      <div class="ig-chrome"><span class="close">✕</span><span class="domain">dreamtube1.netlify.app</span><span class="dots">⋯</span></div>
       <div class="topbar">
         <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
         <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></div>
       </div>
-      <div class="slim-banner"><b>Tip:</b> smoother in your browser <span style="opacity:.8;">— tap ⋯ → open externally</span><span class="x">✕</span></div>
+      <div class="tip-card">
+        <div class="tip-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#9ab0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.5 13.5 0 0 1 0 18a13.5 13.5 0 0 1 0-18"/></svg>
+        </div>
+        <div class="tip-lines">
+          <div class="tip-title">Plays smoother in your browser</div>
+          <div class="tip-sub">Tap Instagram's ⋯ (very top) → Open in external browser</div>
+        </div>
+        <span class="tip-x">✕</span>
+      </div>
     </div>
-    <p class="note">Only if the wait-screen card was dismissed/ignored and video playback is at risk. One line, dismissible, remembered — never shown again once dismissed here.</p>
+    <p class="note">Only if the wait-screen card was dismissed/ignored. Two deliberate lines — full sentence, then the instruction naming the host app's own ⋯ menu. Dismissible, remembered — never shown again once dismissed here.</p>
   </div>
 
 </div>
