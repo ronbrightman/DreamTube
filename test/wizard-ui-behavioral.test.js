@@ -207,6 +207,67 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
   }
 });
 
+test('wizard.html: Back from Signup to contact-capture then Continue again does NOT re-submit start-pending-generation (no double fal.ai charge/token spend) -- see tracker item wizard-html-no-guard-against-resubmittin-n5b5k2', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-test-dup-1', operationName: 'fal:fake-model:req-dup-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'dup-submit-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    // Reached signup -- exactly one pending-generation call so far.
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'first Continue from contact capture must start exactly one pending generation');
+
+    // Navigate Back to contact-capture (same step the bug report
+    // describes) and hit Continue again with the SAME email/dream
+    // details unchanged -- this must NOT fire a second real
+    // start-pending-generation call.
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    assert.equal(await page.locator('#contact-email').inputValue(), 'dup-submit-test@example.com', 'email should still be pre-filled from the first pass');
+    await page.click('#fn-contact-continue');
+
+    // Should proceed straight back to the signup step without a network
+    // round-trip -- give it a moment either way, then assert on the
+    // call count, not just the navigation.
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'Back + Continue with unchanged inputs must not re-POST start-pending-generation -- would double-charge fal.ai and double-spend tokens against the same email');
+
+    // Sanity: changing the email on the second pass (a real edit) SHOULD
+    // still be allowed to resubmit -- the guard is keyed on unchanged
+    // inputs, not a blanket "never resubmit."
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'dup-submit-test-changed@example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 2, 'a genuinely changed email must still be allowed to start a new pending generation');
+    assert.equal(startPendingCalls[1].email, 'dup-submit-test-changed@example.com');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: if the pre-signup generation call fails, signup still completes and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

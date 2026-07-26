@@ -777,6 +777,12 @@
   var pendingOperationName = null;
   var pendingStartedAt = null;
   var pendingStartFailed = false;
+  // Snapshot (JSON) of the payload behind the last successful
+  // start-pending-generation call, so Back-to-here + Continue with
+  // nothing changed can skip re-POSTing instead of creating a second
+  // real fal.ai charge + token spend and orphaning the first pending
+  // record. See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
+  var lastPendingSubmissionKey = null;
 
   function resolveCharactersForGeneration(){
     if(!assembled || !assembled.characterIdsForGeneration.length) return [];
@@ -818,21 +824,37 @@
       errEl.textContent = '';
       if(!contactEmail || contactEmail.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
 
+      var characters = resolveCharactersForGeneration();
+      var payload = {
+        email: contactEmail, whatsapp: contactWhatsapp || null,
+        caption: assembled.caption, style: chosenStyle,
+        characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
+        sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey
+      };
+      var submissionKey = JSON.stringify(payload);
+
+      // Already have a successful in-flight generation for these exact
+      // inputs — e.g. the user went forward to Signup and back to this
+      // step, then hit Continue again without changing anything. Don't
+      // re-POST: that would create a second real fal.ai charge + token
+      // spend against the same email and orphan the first pending
+      // record. Only resubmit if something the payload depends on
+      // (email/whatsapp/dream details) actually changed.
+      if(pendingId && !pendingStartFailed && submissionKey === lastPendingSubmissionKey){
+        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
+        next();
+        return;
+      }
+
       continueBtn.disabled = true;
       continueBtn.textContent = 'Starting your dream…';
       track('wizard_contact_captured', { has_whatsapp: !!contactWhatsapp });
 
-      var characters = resolveCharactersForGeneration();
       var startedAt = Date.now();
       fetch('/.netlify/functions/start-pending-generation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: contactEmail, whatsapp: contactWhatsapp || null,
-          caption: assembled.caption, style: chosenStyle,
-          characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
-          sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey
-        })
+        body: submissionKey
       }).then(function(res){
         return res.json().then(function(data){ return { ok: res.ok, data: data }; });
       }).then(function(result){
@@ -841,6 +863,7 @@
           pendingOperationName = result.data.operationName;
           pendingStartedAt = startedAt;
           pendingStartFailed = false;
+          lastPendingSubmissionKey = submissionKey;
         } else {
           // Resilient fallback: generation just won't have a head start —
           // the normal fresh-generation path at processing.html (draft
