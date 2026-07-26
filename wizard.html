@@ -996,6 +996,49 @@
   // generation job (if the pre-signup start succeeded), best-effort mark
   // it claimed server-side, then hand off straight to processing.html.
   // ===================================================================
+  // Per-attempt token — same unscoped-async-callback pattern as
+  // pendingGenerationToken above, and start.html's own signupAttemptToken
+  // (see that file's doc comment). attemptSignup() is a real
+  // register-account.js network round trip (see js/store.js's
+  // DreamStore.signup); its callback used to unconditionally act on
+  // whatever it found once it settled -- write state AND navigate to
+  // processing.html -- with no check that this was still the current
+  // attempt. Repro (tracker item
+  // wizard-html-start-html-signup-step-force-8wtk8h): click Signup
+  // Continue (fires the real signup call), immediately click Back before
+  // it resolves, edit Contact, resubmit, reach a SECOND, fresh Signup
+  // screen -- the first, abandoned call's callback, once it finally
+  // settles, would force-navigate the user away from wherever they
+  // actually are and could adopt/claim the wrong pending job (reading
+  // live pendingId/pendingOperationName/contactEmail/assembled at
+  // settlement time instead of a fire-time snapshot).
+  //
+  // Unlike pendingGenerationToken (which only guards the WRITE, since
+  // Contact-step navigation was restructured to never wait on that
+  // fetch at all), this token gates the ENTIRE callback body -- both the
+  // writes AND the navigation. Signup has no "safe to advance without
+  // waiting" skip case the way a reused/already-succeeded Contact
+  // submission does: there is no real account, and nothing safe to hand
+  // off to processing.html, until DreamStore.signup itself actually
+  // resolves ok -- so navigation can never be decoupled from this
+  // particular settlement the way Contact's was.
+  //
+  // Bumped on TWO separate triggers, not just one: (1) every Signup
+  // Continue click (below), so a genuinely new, competing attempt always
+  // supersedes an older one still in flight; AND (2) every Back click
+  // (see the navigation engine's backBtn listener, further down this
+  // file), so simply navigating away from Signup -- without necessarily
+  // starting a new attempt at all -- also invalidates whatever's still
+  // in flight. Both triggers are required: an early version of this fix
+  // only bumped on (1) and a regression test caught the gap -- sit on a
+  // second, fresh Signup screen without resubmitting, and an abandoned
+  // first attempt's late settlement would still force-navigate, because
+  // nothing had bumped the token since attempt #1 fired it. Also paired
+  // with disabling both continueBtn AND backBtn (defense-in-depth -- see
+  // the click handler below) for the duration of the call, so in normal
+  // (non-test) usage there is no UI path to trigger either case while an
+  // attempt is still in flight in the first place.
+  var signupAttemptToken = 0;
   function deriveUsernameBase(email){
     var local = (email.split('@')[0] || '').toLowerCase();
     var sanitized = local.replace(/[^a-z0-9]/g, '');
@@ -1062,13 +1105,35 @@
       errEl.textContent = '';
       if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
       if(!password){ errEl.textContent = 'Enter a password.'; return; }
+
+      // Marks this click as the new current attempt -- see
+      // signupAttemptToken's own comment above. Captured now, before the
+      // real network call fires, so the callback below can tell whether
+      // it's still the current attempt once it finally settles.
+      signupAttemptToken++;
+      var mySignupToken = signupAttemptToken;
+
       continueBtn.disabled = true;
       continueBtn.textContent = 'Creating your account…';
+      // Defense-in-depth alongside the token check below: with Back
+      // blocked for the duration of this call, there is no UI path to
+      // reach a second, fresh Signup attempt while this one is still in
+      // flight in the first place. See signupAttemptToken's own comment
+      // for why the token check still matters even so.
+      backBtn.disabled = true;
       setTimeout(function(){
         attemptSignup(contactEmail, password, function(ok, err){
+          // Stale -- a newer Signup attempt has since started (or this
+          // one was superseded some other way). Discard everything,
+          // including navigation: touching continueBtn/errEl here would
+          // reach into a detached, already-replaced screen, and
+          // pendingId/pendingOperationName/contactEmail/assembled may
+          // since belong to a completely different attempt.
+          if(mySignupToken !== signupAttemptToken) return;
           if(!ok){
             continueBtn.disabled = false;
             continueBtn.textContent = 'Continue';
+            backBtn.disabled = false;
             errEl.textContent = err;
             return;
           }
@@ -1153,6 +1218,18 @@
   }
   function next(){ goToStep(cur + 1); }
   backBtn.addEventListener('click', function(){
+    // Invalidates any in-flight (or not-yet-acted-on) Signup attempt the
+    // moment the user navigates away via Back -- see signupAttemptToken's
+    // own comment above. Bumping only on Signup's own Continue click
+    // would miss this: a visitor can navigate away from Signup and just
+    // sit somewhere else without ever starting a competing second
+    // attempt, and the abandoned first attempt's callback must still be
+    // discarded once it settles late, per that var's own doc comment
+    // ("a newer Signup attempt has since started OR the user has
+    // navigated away from Signup"). Harmless to bump unconditionally on
+    // every Back click, including ones that have nothing to do with
+    // Signup -- there's simply nothing in flight for it to invalidate.
+    signupAttemptToken++;
     if(cur > 0){ goToStep(cur - 1); return; }
     location.href = 'index.html';
   });

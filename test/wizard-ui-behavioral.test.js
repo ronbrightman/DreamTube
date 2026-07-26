@@ -659,6 +659,188 @@ test('wizard.html: if the pre-signup generation call fails, signup still complet
   }
 });
 
+// ===========================================================================
+// Signup-step navigation-token guard (tracker item
+// wizard-html-start-html-signup-step-force-8wtk8h) — the 3rd confirmed
+// instance of this codebase's recurring "async callback side effects not
+// scoped to the attempt that started them" bug class, this time in
+// renderSignup's attemptSignup callback. Confirmed pre-existing on main
+// (not introduced by the Contact-step fix above): the callback unconditionally
+// wrote pendingId/pendingOperationName/contactEmail-derived state AND
+// navigated to processing.html, with no check that a NEWER Signup attempt
+// (reached via Back -> edit Contact -> resubmit -> a second, fresh Signup
+// screen) hadn't since superseded it, and the topbar Back button was never
+// disabled during the in-flight call. Fix: a per-attempt signupAttemptToken
+// gates the ENTIRE callback body (unlike pendingGenerationToken above, which
+// only guards a write since Contact's own navigation was decoupled from its
+// fetch) -- Signup has no safe-to-advance-without-waiting case, since
+// there's no real account to hand off to processing.html until
+// DreamStore.signup itself actually resolves ok. backBtn.disabled is also
+// toggled alongside continueBtn.disabled as a second, defense-in-depth
+// layer, mirroring the existing pattern.
+// ===========================================================================
+
+test('wizard.html: the topbar Back button is disabled for the duration of an in-flight attemptSignup call, and re-enabled (along with Continue) once a failed attempt settles', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-backdis-1', operationName: 'fal:fake-model:req-backdis-1' }) });
+    });
+    // A genuine (non-"username taken") server-side rejection -- attemptSignup
+    // does not retry this one, so cb(false, ...) fires straight away and the
+    // failure path (continueBtn/backBtn re-enable) is what's under test.
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'rate_limited' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'signup-backdisable-test@example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+
+    var backDisabledBefore = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
+    assert.equal(backDisabledBefore, false, 'Back should not start out disabled on a fresh Signup screen');
+
+    await page.fill('#fn-username', 'backdisabletest');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    // Mid-flight -- Back must now be disabled.
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+
+    // The mocked rejection resolves quickly (no artificial delay) -- both
+    // controls must come back once it lands, so the visitor isn't stuck.
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('Too many signups') !== -1;
+    }, null, { timeout: 5000 });
+    var backDisabledAfter = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
+    var continueDisabledAfter = await page.evaluate(function () { return document.getElementById('fn-signup-continue').disabled; });
+    assert.equal(backDisabledAfter, false, 'Back must be re-enabled after a failed signup attempt settles');
+    assert.equal(continueDisabledAfter, false, 'Continue must be re-enabled after a failed signup attempt settles');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolves (forced past the new Back-disable, isolating the deeper token-guard fix) -> edit Contact + resubmit -> reach a second, fresh Signup screen -- the first, abandoned attemptSignup callback must not force-navigate or adopt the wrong job once it settles late', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var claimCalls = [];
+    var EMAIL_A = 'signup-race-a@example.com';
+    var EMAIL_B = 'signup-race-b@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      var pendingId = body.email === EMAIL_A ? 'pd-sig-A' : 'pd-sig-B';
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: pendingId, operationName: 'fal:fake-model:req-' + pendingId }) });
+    });
+    await page.route('**/.netlify/functions/register-account', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      if (body.email === EMAIL_A) {
+        // The abandoned signup attempt -- held back well past the point
+        // where the user has since moved on to a second, fresh Signup
+        // screen for a completely different submission.
+        await new Promise(function (r) { setTimeout(r, 900); });
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Attempt A -- Contact then Signup, Continue clicked, real signup call
+    // fired and (deliberately) held back.
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', EMAIL_A);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.fill('#fn-username', 'signupracea');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    // Confirm we're genuinely mid-flight (Back disabled) before forcing
+    // past it -- this is the literal repro's "immediate Back" moment,
+    // just routed through a deliberate bypass of the new UI-level guard
+    // so the assertions below can attribute the outcome to the token
+    // guard itself, not merely to Back being unclickable.
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+
+    // Attempt B -- a genuinely different submission -- reaches a second,
+    // fresh Signup screen while A's register-account call is still held
+    // back in flight.
+    await page.fill('#contact-email', EMAIL_B);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+
+    var screenBefore = await page.evaluate(function () {
+      return document.getElementById('fn-username') ? 'signup' : 'other';
+    });
+    assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale response lands');
+
+    // Sit idle right here while A's held-back register-account response
+    // lands (900ms artificial delay above).
+    await new Promise(function (r) { setTimeout(r, 1100); });
+
+    var screenAfter = await page.evaluate(function () {
+      if (document.getElementById('fn-username')) return 'signup';
+      if (window.location.pathname.indexOf('processing.html') !== -1) return 'processing';
+      return 'other';
+    });
+    assert.equal(screenAfter, 'signup', 'the abandoned first Signup attempt\'s late settlement must never force-navigate the user away from the second, fresh Signup screen they are actually on');
+    assert.equal(claimCalls.length, 0, 'the abandoned attempt must not have claimed any pending job');
+
+    // Finish signup for real with B's own content -- must still work
+    // normally and claim B's job, never A's.
+    await page.fill('#fn-username', 'signupraceb');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    await page.waitForFunction(function () {
+      return window.location.pathname.indexOf('processing.html') !== -1;
+    }, null, { timeout: 10000 });
+
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (B) signup');
+    assert.equal(claimCalls[0].pendingId, 'pd-sig-B', 'must claim B\'s pendingId, never the abandoned A attempt\'s');
+  } finally {
+    await page.close();
+  }
+});
+
 test('claim-dream.html: a ready pending dream shows the video immediately (no login required) and lets a new visitor sign up to save it', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
