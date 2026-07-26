@@ -693,6 +693,13 @@
 
       track('first_video_created', { style: dream.style });
       fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
+      // Retention email ("your dream is ready") -- see js/store.js's
+      // sendFirstDreamEmailBestEffort doc comment and
+      // send-first-dream-email.js's header comment. Same choke point as
+      // the KPI event just above, deliberately -- both gated on the same
+      // markFirstVideoCreatedIfEligible(dream.id) call already having
+      // returned true.
+      DreamStore.sendFirstDreamEmailBestEffort(dream);
     } catch (e) { /* analytics must never break the app */ }
   })();
 

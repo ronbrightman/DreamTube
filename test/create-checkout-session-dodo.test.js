@@ -129,6 +129,15 @@ test('valid request -> 200 with checkout url + session id, sends the right produ
   assert.equal(sentBody.metadata.dreamtube_email, 'buyer@example.com');
   assert.equal(sentBody.metadata.dreamtube_pack, 'pack100');
   assert.equal(sentBody.metadata.dreamtube_tokens, 100);
+  // Phase 1 reporting instrumentation's shared Purchase-dedup id (review
+  // finding: this exact link previously existed in code but was never
+  // actually wired -- the endpoint's response has to genuinely carry the
+  // SAME id it embeds in Dodo's metadata, or dodo-webhook.js's own
+  // server-side Purchase fire silently falls back to a fresh, non-
+  // deduping id).
+  assert.equal(sentBody.metadata.dreamtube_price, 2.99);
+  assert.ok(body.eventId, 'the response must carry an eventId for shop.html to thread into its pending-purchase marker');
+  assert.equal(sentBody.metadata.dreamtube_event_id, body.eventId, 'the SAME event_id must be both returned to the client and embedded in Dodo metadata, or dodo-webhook.js\'s own Purchase fire cannot dedupe against the client-side one');
 });
 
 test('pack300 maps to DODO_PRODUCT_PACK_300 and carries 300 tokens in metadata', async function () {

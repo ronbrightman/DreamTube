@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Your dream — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!--
+  watch.html — the page the retention email's "Watch it" link lands on
+  (tracker.html's for-product-retention-email-send-user-th-eke9ra item,
+  founder-greenlit 2026-07-26). Reads ?id=<dreamId>&token=<share token>
+  from the URL, verifies both via get-shared-dream.js (read-only, does not
+  consume the token -- see lib/dream-share-token.js's own doc comment for
+  why this stays revisitable), then shows the video with no login required
+  to watch -- same "the finished dream is the reason to return, escape a
+  webview, no login wall in front of the payoff" reasoning as
+  claim-dream.html, just for an EXISTING account's own already-real dream
+  rather than a pre-signup one, so there's no signup/claim flow here at
+  all -- purely a view + a soft nudge to make another dream.
+
+  Deliberately NOT the same page as explore.html?id= -- that only ever
+  renders a dream already present in the shared (published) feed; this
+  page exists specifically because most first-time dreams are still
+  private at the moment this email sends. See lib/dream-share-token.js's
+  header comment for the full reasoning.
+
+  No PostHog/Meta Pixel here, same as claim-dream.html -- this is an
+  unauthenticated, publicly-linked page reachable from an email, not part
+  of the tracked in-app funnel.
+-->
+
+<div id="app">
+  <div class="topbar"><div></div><div style="font-weight:700; font-size:14px;">Your dream</div><div style="width:36px;"></div></div>
+
+  <div class="px" id="loading-view" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+    <div class="spinner-inline" style="width:32px; height:32px; border-width:3px;"></div>
+    <div style="color:var(--text-muted); font-size:13px; margin-top:14px;">Loading your dream…</div>
+  </div>
+
+  <div class="px" id="error-view" style="flex:1; display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 24px;">
+    <div class="proc-fail-icon" id="error-icon" style="margin-bottom:16px;"></div>
+    <div style="font-weight:700; font-size:16px; margin-bottom:8px;">This link isn't working</div>
+    <div style="color:var(--text-muted); font-size:13.5px; line-height:1.5;">Links like this stay valid a while, but this one didn't check out. If you still have the original email, try opening it again from there.</div>
+  </div>
+
+  <div class="px" id="ready-view" style="flex:1; display:none; flex-direction:column;">
+    <div style="border-radius:18px; overflow:hidden; margin:10px 0 16px; background:#000;">
+      <video id="ready-video" controls playsinline muted autoplay preload="metadata" style="width:100%; display:block; max-height:60vh;"></video>
+    </div>
+    <div style="font-weight:700; font-size:15px; margin-bottom:6px;">It's ready to watch.</div>
+    <div style="color:var(--text-muted); font-size:13px; line-height:1.5; margin-bottom:18px;" id="ready-caption"></div>
+
+    <button class="btn btn-primary btn-block" id="make-another-btn">Make another dream</button>
+
+    <div style="flex:1"></div>
+    <a class="link-text" href="index.html" style="display:block; text-align:center; margin-top:14px;">What is DreamTube?</a>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  function getParam(name){
+    var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function showView(id){
+    ['loading-view', 'error-view', 'ready-view'].forEach(function(v){
+      document.getElementById(v).style.display = v === id ? 'flex' : 'none';
+    });
+  }
+  function showError(){
+    document.getElementById('error-icon').innerHTML = Icons.warning;
+    showView('error-view');
+  }
+
+  var dreamId = getParam('id');
+  var token = getParam('token');
+  if(!dreamId || !token){
+    showError();
+  } else {
+    fetch('/.netlify/functions/get-shared-dream?id=' + encodeURIComponent(dreamId) + '&token=' + encodeURIComponent(token))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(!data.ok || !data.dream || !data.dream.videoUrl){
+          showError();
+          return;
+        }
+        document.getElementById('ready-video').src = data.dream.videoUrl;
+        document.getElementById('ready-caption').textContent = data.dream.caption || '';
+        showView('ready-view');
+
+        document.getElementById('make-another-btn').addEventListener('click', function(){
+          location.href = 'create.html';
+        });
+      }).catch(function(){
+        showError();
+      });
+  }
+})();
+</script>
+</body>
+</html>

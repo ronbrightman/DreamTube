@@ -19,6 +19,8 @@ mockBlobs.install();
 var { Webhook } = require('standardwebhooks');
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var accountStore = require('../netlify/functions/lib/account-store');
+var analyticsConfig = require('../js/analytics-config');
 var handler = require('../netlify/functions/dodo-webhook').handler;
 
 var WEBHOOK_SECRET = 'whsec_' + Buffer.from('a-test-signing-key-32-bytes-long').toString('base64');
@@ -92,12 +94,55 @@ function paymentPayload(overrides) {
   };
 }
 
+// ===== Server-side Purchase conversion (Phase 1 reporting instrumentation,
+// tracker item for-product-phase-1-reporting-instrument-kjlh46) =====
+//
+// dodo-webhook.js now fires analytics (PostHog + Meta CAPI, both real
+// outbound fetch() calls) after EVERY successfully-credited payment.succeeded
+// — including every pre-existing test above that doesn't care about
+// analytics at all. POSTHOG_KEY is a real, hardcoded value (see
+// js/analytics-config.js), so without a default global.fetch stub in place
+// for the whole file, those pre-existing tests would each fire a real
+// network call to PostHog's live endpoint the moment they credit tokens.
+// installAnalyticsFetchSpy() below is that default stub (safe no-op
+// success for both vendors); individual analytics-focused tests further
+// down call it themselves to get back the recorded calls to assert on, or
+// pass opts to simulate a vendor failure.
+var realFetch = global.fetch;
+var REAL_META_TOKEN = 'EAAtest-super-secret-capi-token-purchase';
+
+function installAnalyticsFetchSpy(opts) {
+  opts = opts || {};
+  var posthogCalls = [];
+  var metaCalls = [];
+  global.fetch = async function (url, init) {
+    var urlStr = String(url);
+    if (urlStr.indexOf('/capture/') !== -1) {
+      posthogCalls.push({ url: urlStr, body: init && init.body ? JSON.parse(init.body) : null });
+      if (opts.posthogFails) return { ok: false, status: 500, json: async function () { return {}; }, text: async function () { return 'posthog down'; } };
+      return { ok: true, status: 200, json: async function () { return {}; }, text: async function () { return 'ok'; } };
+    }
+    if (urlStr.indexOf('graph.facebook.com') !== -1) {
+      metaCalls.push({ url: urlStr, body: init && init.body ? JSON.parse(init.body) : null });
+      if (opts.metaFails) return { ok: false, status: 500, json: async function () { return { error: { message: 'meta down' } }; } };
+      return { ok: true, status: 200, json: async function () { return { events_received: 1 }; } };
+    }
+    throw new Error('unexpected fetch to ' + urlStr);
+  };
+  return { posthogCalls: posthogCalls, metaCalls: metaCalls };
+}
+
 test.beforeEach(function () {
   mockBlobs.reset();
   process.env.DODO_WEBHOOK_SECRET = WEBHOOK_SECRET;
   process.env.DODO_PRODUCT_PACK_100 = 'pdt_pack100_test';
   process.env.DODO_PRODUCT_PACK_300 = 'pdt_pack300_test';
   process.env.DODO_PRODUCT_PACK_700 = 'pdt_pack700_test';
+  process.env.META_CAPI_ACCESS_TOKEN = REAL_META_TOKEN;
+  // Default safe stub -- see the comment block above. Tests that care about
+  // the actual analytics calls override this by calling
+  // installAnalyticsFetchSpy() themselves.
+  installAnalyticsFetchSpy();
 });
 
 test.after(function () {
@@ -105,6 +150,196 @@ test.after(function () {
   delete process.env.DODO_PRODUCT_PACK_100;
   delete process.env.DODO_PRODUCT_PACK_300;
   delete process.env.DODO_PRODUCT_PACK_700;
+  delete process.env.META_CAPI_ACCESS_TOKEN;
+  global.fetch = realFetch;
+});
+
+test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CAPI, sharing the event_id from metadata.dreamtube_event_id, with value/currency/timestamp', async function () {
+  await seedZeroBalance('purchaseanalytics@example.com');
+  await accountStore.createAccount({}, { username: 'purchaseanalyticsuser', password: 'testpass1', email: 'purchaseanalytics@example.com' });
+  var spies = installAnalyticsFetchSpy();
+
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_analytics_1',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_analytics', email: 'purchaseanalytics@example.com' },
+    metadata: { dreamtube_event_id: 'shared-evt-abc123' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  // Credit still landed independent of any of this.
+  var record = await entitlements.getEntitlement({}, 'purchaseanalytics@example.com');
+  assert.equal(record.tokens.balance, 100);
+
+  assert.equal(spies.posthogCalls.length, 1, 'expected exactly one PostHog capture call');
+  var phBody = spies.posthogCalls[0].body;
+  assert.equal(phBody.api_key, analyticsConfig.POSTHOG_KEY);
+  assert.equal(phBody.event, 'purchase_completed');
+  assert.equal(phBody.distinct_id, 'purchaseanalyticsuser', 'distinct_id must be the account USERNAME, not the email, to match the client\'s posthog.identify()');
+  assert.equal(phBody.properties.value, 2.99);
+  assert.equal(phBody.properties.currency, 'USD');
+  assert.ok(phBody.properties.timestamp, 'properties.timestamp should be present');
+  assert.equal(phBody.properties.$insert_id, 'shared-evt-abc123', 'PostHog dedup key must match the shared event_id');
+  assert.ok(phBody.timestamp, 'top-level timestamp should be present');
+
+  assert.equal(spies.metaCalls.length, 1, 'expected exactly one Meta CAPI call');
+  var metaBody = spies.metaCalls[0].body;
+  var metaEvent = metaBody.data[0];
+  assert.equal(metaEvent.event_name, 'Purchase');
+  assert.equal(metaEvent.event_id, 'shared-evt-abc123', 'Meta CAPI event_id must match the shared event_id used for PostHog dedup too');
+  assert.equal(metaEvent.custom_data.value, 2.99);
+  assert.equal(metaEvent.custom_data.currency, 'USD');
+  assert.ok(metaEvent.event_time, 'event_time should be present');
+});
+
+test('pack300 resolves price 7.99 for the Purchase event', async function () {
+  await seedZeroBalance('purchase300@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_analytics_300',
+    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    customer: { customer_id: 'cus_300a', email: 'purchase300@example.com' },
+    metadata: { dreamtube_event_id: 'evt-300' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.value, 7.99);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 7.99);
+});
+
+test('pack700 resolves price 14.99 for the Purchase event', async function () {
+  await seedZeroBalance('purchase700@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_analytics_700',
+    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    customer: { customer_id: 'cus_700a', email: 'purchase700@example.com' },
+    metadata: { dreamtube_event_id: 'evt-700' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.value, 14.99);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 14.99);
+});
+
+test('when metadata carries no dreamtube_event_id (a purchase predating this instrumentation), the Purchase event still fires with a freshly generated event_id shared between PostHog and Meta for THIS webhook fire', async function () {
+  await seedZeroBalance('nolegacyid@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var payload = paymentPayload({
+    payment_id: 'pay_no_legacy_id',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_nl', email: 'nolegacyid@example.com' },
+    metadata: {}
+  });
+  await handler(signedEvent(payload));
+
+  assert.equal(spies.posthogCalls.length, 1);
+  assert.equal(spies.metaCalls.length, 1);
+  var phEventId = spies.posthogCalls[0].body.properties.$insert_id;
+  var metaEventId = spies.metaCalls[0].body.data[0].event_id;
+  assert.ok(phEventId, 'a fallback event_id must still be generated');
+  assert.equal(phEventId, metaEventId, 'both vendors must share the SAME fallback id for this one webhook fire');
+});
+
+test('distinct_id falls back to the normalized email when no matching account record exists', async function () {
+  await seedZeroBalance('noaccountrecord@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_no_account',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_na', email: 'NoAccountRecord@Example.com' },
+    metadata: { dreamtube_event_id: 'evt-no-account' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.distinct_id, 'noaccountrecord@example.com');
+});
+
+test('a PostHog capture failure never blocks the token credit or the webhook\'s 200 response', async function () {
+  await seedZeroBalance('posthogdown@example.com');
+  var spies = installAnalyticsFetchSpy({ posthogFails: true });
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_posthog_down',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_phd', email: 'posthogdown@example.com' },
+    metadata: { dreamtube_event_id: 'evt-ph-down' }
+  })));
+  assert.equal(res.statusCode, 200, 'a PostHog failure must never surface as a webhook failure');
+  var record = await entitlements.getEntitlement({}, 'posthogdown@example.com');
+  assert.equal(record.tokens.balance, 100, 'the token credit must still have landed');
+  assert.equal(spies.metaCalls.length, 1, 'the Meta CAPI call must still have been attempted independent of the PostHog failure');
+});
+
+test('a Meta CAPI failure never blocks the token credit or the webhook\'s 200 response', async function () {
+  await seedZeroBalance('metadown@example.com');
+  var spies = installAnalyticsFetchSpy({ metaFails: true });
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_meta_down',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_md', email: 'metadown@example.com' },
+    metadata: { dreamtube_event_id: 'evt-meta-down' }
+  })));
+  assert.equal(res.statusCode, 200, 'a Meta CAPI failure must never surface as a webhook failure');
+  var record = await entitlements.getEntitlement({}, 'metadown@example.com');
+  assert.equal(record.tokens.balance, 100, 'the token credit must still have landed');
+  assert.equal(spies.posthogCalls.length, 1, 'the PostHog call must still have been attempted independent of the Meta failure');
+});
+
+test('missing META_CAPI_ACCESS_TOKEN: PostHog still fires, Meta CAPI is skipped gracefully, credit + 200 unaffected', async function () {
+  delete process.env.META_CAPI_ACCESS_TOKEN;
+  await seedZeroBalance('nometatoken@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_no_meta_token',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_nmt', email: 'nometatoken@example.com' },
+    metadata: { dreamtube_event_id: 'evt-no-meta-token' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'nometatoken@example.com');
+  assert.equal(record.tokens.balance, 100);
+  assert.equal(spies.posthogCalls.length, 1, 'PostHog should still fire even without a Meta token configured');
+  assert.equal(spies.metaCalls.length, 0, 'no Meta CAPI call should be attempted without an access token (lib/meta-capi.js returns ok:false before ever calling fetch)');
+});
+
+test('a payment with no resolvable price (unknown product_id and no metadata.dreamtube_price) skips the Purchase fire entirely, on both vendors', async function () {
+  await seedZeroBalance('nopriceresolvable@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_no_price',
+    product_cart: [{ product_id: 'pdt_totally_unknown', quantity: 1 }],
+    customer: { customer_id: 'cus_np', email: 'nopriceresolvable@example.com' },
+    metadata: { dreamtube_tokens: 100 } // resolves tokens (so the credit lands) but no price
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'nopriceresolvable@example.com');
+  assert.equal(record.tokens.balance, 100, 'the credit must still land even though price is unresolvable');
+  assert.equal(spies.posthogCalls.length, 0, 'must not guess a price -- no Purchase fire at all');
+  assert.equal(spies.metaCalls.length, 0);
+});
+
+test('a redelivered payment.succeeded event (same payment_id, already fully credited) does NOT re-fire the Purchase analytics event on either vendor -- creditTokenPackOnce\'s credited:false must gate this, not just the balance', async function () {
+  await seedZeroBalance('noreanalytics@example.com');
+  var payload = paymentPayload({
+    payment_id: 'pay_redelivered_analytics',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_ra', email: 'noreanalytics@example.com' },
+    metadata: { dreamtube_event_id: 'evt-redelivered' }
+  });
+
+  var spies1 = installAnalyticsFetchSpy();
+  var res1 = await handler(signedEvent(payload, { id: 'msg_first_analytics' }));
+  assert.equal(res1.statusCode, 200);
+  assert.equal(spies1.posthogCalls.length, 1, 'the first, genuine delivery must fire Purchase once');
+  assert.equal(spies1.metaCalls.length, 1);
+
+  // Dodo redelivers the identical event under a different webhook message
+  // id/timestamp -- same as the existing non-analytics redelivery test
+  // above, but this one specifically proves the analytics side doesn't
+  // double-fire even though the balance-dedup test already proves the
+  // balance itself doesn't double-credit.
+  var spies2 = installAnalyticsFetchSpy();
+  var res2 = await handler(signedEvent(payload, { id: 'msg_second_analytics' }));
+  assert.equal(res2.statusCode, 200);
+  assert.equal(spies2.posthogCalls.length, 0, 'a redelivered, already-fully-processed payment must NOT re-fire the PostHog Purchase event');
+  assert.equal(spies2.metaCalls.length, 0, 'a redelivered, already-fully-processed payment must NOT re-fire the Meta CAPI Purchase event');
+
+  var record = await entitlements.getEntitlement({}, 'noreanalytics@example.com');
+  assert.equal(record.tokens.balance, 100, 'balance must still only reflect a single credit');
 });
 
 test('non-POST method -> 405 E1', async function () {

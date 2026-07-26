@@ -59,9 +59,40 @@
 //   E5 processing_failed         — signature verified, but crediting tokens failed (Blobs error, etc.);
 //                                  returns 500 deliberately so Dodo retries delivery, since our own
 //                                  write is what failed, not the event itself being invalid
+//
+// ---------------------------------------------------------------------
+// Server-side Purchase conversion (P0 reporting instrumentation — tracker
+// item for-product-phase-1-reporting-instrument-kjlh46, founder-greenlit
+// 2026-07-26): shop.html's client-side purchase_completed/Purchase fire
+// (see that file's handleCheckoutReturn) only ever fires if the buyer's
+// browser actually lands back on ?checkout=success with its
+// dreamtube_pending_purchase sessionStorage marker still present — a
+// reload, a cross-device return, or a closed tab after paying all miss it
+// entirely. This handler is Dodo's own durable, signature-verified
+// confirmation that a payment actually happened, so it's the trustworthy
+// place to fire Purchase too, to BOTH PostHog and Meta CAPI, deduped
+// against the client-side fire via a event_id shared through Dodo's
+// metadata (minted once, in create-checkout-session-dodo.js, at checkout
+// creation time — see that file's own comment). See
+// docs/EVENT_TAXONOMY.md's Purchase entry for the full mechanics.
+//
+// This fires only when a credit ACTUALLY happens this call (see
+// creditResult.credited below) — a redelivered webhook for an
+// already-fully-processed payment_id must not double-report revenue just
+// because it double-acknowledges the balance side as a safe no-op. It's
+// wrapped in its own try/catch, entirely separate from the try/catch
+// around creditTokenPackOnce, so a PostHog/Meta failure can NEVER turn a
+// successful token credit into a 500 (which would make Dodo redeliver and
+// double-credit) — "analytics must never break the app" applies just as
+// much to a webhook as it does to a page.
+// ---------------------------------------------------------------------
 
+var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
 var entitlements = require('./lib/entitlements');
+var accountStore = require('./lib/account-store');
+var posthogCapture = require('./lib/posthog-capture');
+var metaCapi = require('./lib/meta-capi');
 
 /** Best-effort: Netlify may base64-encode the body depending on how the request arrived; the Standard Webhooks signature check needs the exact raw bytes either way. */
 function rawBody(event) {
@@ -86,6 +117,14 @@ function getHeader(event, name) {
 // separately, per-account, by lib/entitlements.js's
 // creditTokenPackAmountOnce, never baked into this table.
 var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
+
+// USD price per pack — same mirrored-copy reasoning as PACK_TOKENS above,
+// and same fallback role: create-checkout-session-dodo.js's own
+// PACK_PRICES is the primary source of truth via metadata.dreamtube_price;
+// this local copy only matters if that metadata is ever missing (a
+// purchase made before this field existed) AND the product_id -> pack
+// mapping below also fails to resolve — see resolvePackPrice.
+var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
 
 /**
  * Resolves how many BASE tokens a completed Payment should credit (before
@@ -114,6 +153,100 @@ function resolvePackTokens(payment) {
   var metaTokens = payment.metadata && payment.metadata.dreamtube_tokens;
   var parsed = typeof metaTokens === 'number' ? metaTokens : parseInt(metaTokens, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Resolves the USD price a completed Payment's pack corresponds to, for the
+ * Purchase conversion's `value` — NEVER trusts anything the client itself
+ * could have supplied, same "don't trust the client for money" reasoning
+ * every other server-side amount in this codebase already follows. Mirrors
+ * resolvePackTokens exactly: prefers matching product_cart[0].product_id
+ * against the current DODO_PRODUCT_PACK_100/300/700 env vars (the
+ * authoritative, current mapping), falling back to the
+ * metadata.dreamtube_price create-checkout-session-dodo.js attached at
+ * checkout time. Returns undefined if neither resolves — callers must
+ * treat that as "can't determine what to report" and skip firing Purchase
+ * entirely, rather than guess or send a zero/placeholder value that would
+ * corrupt revenue reporting.
+ */
+function resolvePackPrice(payment) {
+  var cart = payment.product_cart || [];
+  var productId = cart.length ? cart[0].product_id : undefined;
+  if (productId) {
+    if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_PRICES.pack100;
+    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_PRICES.pack300;
+    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_PRICES.pack700;
+  }
+  var metaPrice = payment.metadata && payment.metadata.dreamtube_price;
+  var parsed = typeof metaPrice === 'number' ? metaPrice : parseFloat(metaPrice);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Fires the server-side Purchase conversion (PostHog + Meta CAPI) for a
+ * confirmed, credited token-pack payment — see the header comment's
+ * "Server-side Purchase conversion" section for the full why. Never
+ * throws: every failure (price unresolvable, PostHog/Meta unreachable, no
+ * matching local account) is swallowed, since this must never turn a
+ * successful token credit into a failed webhook response.
+ */
+async function firePurchaseConversion(event, payment, payEmail, tokens) {
+  try {
+    var price = resolvePackPrice(payment);
+    if (price == null) return; // can't determine what to report — don't guess, same as resolvePackTokens' own undefined-return contract
+
+    // Shared with shop.html's own client-side Purchase fire (see
+    // handleCheckoutReturn) via Dodo's echoed-back metadata — this is what
+    // lets PostHog ($insert_id) and Meta (Pixel+CAPI event_id) dedupe the
+    // two fires into one counted conversion instead of double-counting. A
+    // payment that predates this metadata field (or one that otherwise
+    // never carried it) falls back to a fresh id — this specific Purchase
+    // simply won't have a client-side counterpart to dedupe against, which
+    // is the correct, non-guessing behavior rather than fabricating a
+    // shared id that was never actually shared.
+    var eventId = (payment.metadata && payment.metadata.dreamtube_event_id) || crypto.randomBytes(16).toString('hex');
+    var eventTimeMs = Date.now();
+    var pack = payment.metadata && payment.metadata.dreamtube_pack;
+
+    // distinct_id must match what the client's posthog.identify() used —
+    // the account's raw username, not its email (see
+    // lib/posthog-capture.js's header comment). Resolved via the real
+    // server-side account store; falls back to the normalized email itself
+    // (better than dropping the event) for the rare case no matching
+    // account record exists (e.g. a legacy/local-only account that was
+    // never backfilled server-side — see js/store.js's
+    // backfillAccountServerSide).
+    var account = await accountStore.getByEmail(event, payEmail).catch(function () { return null; });
+    var distinctId = (account && account.username) || entitlements.normalizeEmail(payEmail);
+
+    var postHogProps = {
+      value: price,
+      currency: 'USD',
+      timestamp: new Date(eventTimeMs).toISOString(),
+      pack: pack,
+      tokens: tokens,
+      $insert_id: eventId // PostHog's own dedup key -- see lib/posthog-capture.js header comment
+    };
+
+    await Promise.all([
+      posthogCapture.captureEvent({
+        event: 'purchase_completed',
+        distinct_id: distinctId,
+        properties: postHogProps,
+        timestamp: eventTimeMs
+      }),
+      metaCapi.sendCapiEvent({
+        event_name: 'Purchase',
+        event_id: eventId,
+        event_time: Math.floor(eventTimeMs / 1000),
+        email: payEmail,
+        custom_data: { value: price, currency: 'USD' }
+      })
+    ]);
+  } catch (e) {
+    // analytics must never break the app -- the token credit above has
+    // already happened and must not be undone or fail because of this.
+  }
 }
 
 exports.handler = async function (event) {
@@ -160,7 +293,24 @@ exports.handler = async function (event) {
       var tokens = resolvePackTokens(payment);
 
       if (payEmail && tokens) {
-        await entitlements.creditTokenPackOnce(event, payEmail, payment.payment_id, tokens);
+        var creditResult = await entitlements.creditTokenPackOnce(event, payEmail, payment.payment_id, tokens);
+        // creditTokenPackOnce's own doc comment flags `credited: true` as
+        // exactly the signal a caller should gate a one-time side effect
+        // on (a receipt email, an analytics event) — `credited: false`
+        // means this paymentId was already fully processed (a genuine
+        // Dodo redelivery of an already-committed payment, or a duplicate
+        // resume), a safe no-op for the BALANCE but NOT a new purchase to
+        // report. Firing Purchase unconditionally here (ignoring this
+        // return value) would double-report revenue on every redelivered
+        // webhook — the exact thing event_id dedup is meant to prevent,
+        // just from this codebase's own webhook re-firing itself rather
+        // than a client/server dedup gap. Never allowed to affect this
+        // handler's response either way — see firePurchaseConversion's own
+        // doc comment and the header comment's "Server-side Purchase
+        // conversion" section above.
+        if (creditResult && creditResult.credited) {
+          await firePurchaseConversion(event, payment, payEmail, tokens);
+        }
       }
       // No resolvable email, or no resolvable token amount: acknowledged
       // below, nothing credited — same "don't guess" reasoning as

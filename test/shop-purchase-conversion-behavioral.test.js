@@ -168,7 +168,14 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     // handleCheckoutReturn's IIFE runs fresh with the marker already in
     // place.
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack700', tokens: 700, price: 14.99 });
+    // eventId here mirrors what create-checkout-session-dodo.js's real
+    // response now always carries (Phase 1 reporting instrumentation --
+    // shared between this client-side fire and dodo-webhook.js's own
+    // server-side Purchase fire, for PostHog/Meta dedup -- see that
+    // file's own header comment). A production purchasePack() call always
+    // has one; this seed matches that reality rather than the pre-Phase-1
+    // shape. pack700/$14.99 matches Token Economy C's 3-pack lineup.
+    await markPendingPurchase(page, { pack: 'pack700', tokens: 700, price: 14.99, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget -- give it a moment
@@ -178,7 +185,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
     assert.equal(fbqPurchaseCalls.length, 1, 'expected exactly one fbq track Purchase call');
     var eventId = fbqPurchaseCalls[0][3] && fbqPurchaseCalls[0][3].eventID;
-    assert.ok(eventId, 'the fbq Purchase call should carry an eventID');
+    assert.equal(eventId, 'evt-fixed-test-id', 'the fbq Purchase call must use the SHARED event_id from the pending marker, not a freshly generated one, so it dedupes against dodo-webhook.js\'s own server-side Purchase fire');
 
     var purchaseConversions = conversionCalls.filter(function (body) { return body && body.event_name === 'Purchase'; });
     assert.equal(purchaseConversions.length, 1, 'expected exactly one Purchase POST to track-conversion');
@@ -188,7 +195,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var phCalls = await readPostHogCalls(page);
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
-    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack700', tokens: 700, value: 14.99, currency: 'USD' });
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack700', tokens: 700, value: 14.99, currency: 'USD', $insert_id: 'evt-fixed-test-id' });
 
     var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
     assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
@@ -296,6 +303,56 @@ test('a reload after a successful first fire does not re-fire (marker already co
     assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length, 1, 'a reload must not re-fire the CAPI Purchase event');
     var phCalls = await readPostHogCalls(page);
     assert.equal(phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; }).length, 0, 'a reload gets a fresh PostHog queue (new page load) and must not queue a new purchase_completed call either');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries create-checkout-session-dodo.js\'s own returned eventId all the way through to both the Meta and PostHog Purchase fires (Phase 1 reporting instrumentation\'s server-side dedup id)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var fbqCalls = await installFbqRecorder(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var conversionCalls = await captureTrackConversion(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    // Mock the real endpoint create-checkout-session-dodo.js exposes --
+    // this is the exact link that silently broke once already (an edit
+    // made but never actually committed to its branch): the endpoint
+    // mints an eventId and returns it, purchasePack() has to actually
+    // read data.eventId and store it, and the eventual Purchase fire has
+    // to actually use it. A hand-seeded marker (as the other tests in
+    // this file use) skips over purchasePack() entirely and can't catch
+    // a regression in that specific reading/storing step.
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_real_flow', eventId: 'evt-real-server-eventid' })
+      });
+    });
+
+    await page.click('#shop-buy-pack100');
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+    await page.waitForTimeout(300);
+
+    var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
+    assert.equal(fbqPurchaseCalls.length, 1);
+    var usedEventId = fbqPurchaseCalls[0][3] && fbqPurchaseCalls[0][3].eventID;
+    assert.equal(usedEventId, 'evt-real-server-eventid', 'the REAL server-returned eventId must be what the Meta Pixel call actually uses, proving create-checkout-session-dodo.js\'s response -> purchasePack() -> the pending-purchase marker -> the Purchase fire all genuinely connect end to end');
+
+    var purchaseConversions = conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; });
+    assert.equal(purchaseConversions.length, 1);
+    assert.equal(purchaseConversions[0].event_id, 'evt-real-server-eventid');
+
+    var phCalls = await readPostHogCalls(page);
+    var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
+    assert.equal(purchaseCaptures.length, 1);
+    assert.equal(purchaseCaptures[0][2].$insert_id, 'evt-real-server-eventid', 'PostHog\'s $insert_id must also be the real server-returned eventId, not a client-generated fallback, so dodo-webhook.js\'s own server-side Purchase fire can actually dedupe against this one');
   } finally {
     await context.close();
   }
