@@ -897,14 +897,26 @@
   // ===================================================================
   // Screen 11 — Preparing / transition. Copy deliberately stops short of
   // claiming generation has started — nothing has been generated yet.
+  // Record-mode-aware (bug fix, tracker item
+  // for-product-bug-founder-high-record-it-f-8ng0nf, founder repro
+  // 2026-07-26): the default copy ("Your dream is coming together...")
+  // is honest for Build/Write visitors, who already handed off real
+  // caption text from the funnel — but in Record-it mode (isRecordMode)
+  // NOTHING has been recorded yet at this point in the flow (recording
+  // happens app-side, after signup, on create.html — see completeFunnel
+  // below), so that copy was flatly false and made it look like
+  // recording had been silently skipped. Record mode gets its own
+  // honest "quick setup, then you'll record" copy instead.
   // ===================================================================
   var prepTimer = null;
   function renderScreen11(el){
+    var headlineText = isRecordMode ? 'Almost there&hellip;' : 'Your dream is coming together&hellip;';
+    var bodyText = isRecordMode ? 'Quick setup, then you’ll record your dream.' : 'We’ll bring it to life the moment you’re set up.';
     el.innerHTML =
       '<div class="fn-spacer"></div>' +
       '<div class="fn-spin"></div>' +
-      '<div class="fn-loading-line" style="color:var(--phase-ink, var(--fn-ink)); font-weight:700;">Your dream is coming together&hellip;</div>' +
-      '<div class="fn-loading-line">We’ll bring it to life the moment you’re set up.</div>' +
+      '<div class="fn-loading-line" style="color:var(--phase-ink, var(--fn-ink)); font-weight:700;">' + headlineText + '</div>' +
+      '<div class="fn-loading-line">' + bodyText + '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s11-continue" type="button">Continue</button>';
     var thisStep = cur;
@@ -1149,8 +1161,22 @@
     tryUsername(base);
   }
   function renderScreen13(el){
+    // Record-mode-aware (bug fix, tracker item
+    // for-product-bug-founder-high-record-it-f-8ng0nf): the default
+    // headline/reassurance assume a dream already exists and is just
+    // waiting to be delivered -- true for Build/Write visitors (real
+    // caption text already handed off from the funnel), but false for
+    // Record-it visitors, who haven't recorded anything yet. Recording
+    // happens app-side, right after this signup step, on create.html
+    // (see completeFunnel's isRecordMode branch below) -- so record
+    // mode's copy says so instead of implying a dream is already in
+    // progress.
+    var headline = isRecordMode ? 'Almost set — where should we send you?' : 'Where should we send your first dream?';
+    var reassurance = isRecordMode
+      ? "Free to start — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready."
+      : "Free to start — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.";
     el.innerHTML =
-      '<div class="fn-headline">Where should we send your first dream?</div>' +
+      '<div class="fn-headline">' + headline + '</div>' +
       '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;">' +
       // Reassurance microcopy directly under the email field — a real user's
       // session replay showed a drop-off right at this exact ask (dream text
@@ -1165,7 +1191,7 @@
       // the funnel most needs a single, clear reason to hand over an email.
       // That line is gone; this is now the ONLY message here, and still
       // mentions "free" so nothing about cost is lost.
-      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + "Free to start — we’ll email you your dream the moment it’s ready, that’s the only reason we ask." + '</div>' +
+      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + reassurance + '</div>' +
       '<div class="fn-field-pw-wrap">' +
         '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
         '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
@@ -1369,15 +1395,28 @@
 
   // ===================================================================
   // Screen 15 — Confirmation, then real handoff to processing.html
+  // (or, in Record mode, to create.html's Record UI -- see
+  // completeFunnel below). Record-mode-aware (bug fix, tracker item
+  // for-product-bug-founder-high-record-it-f-8ng0nf): the default copy
+  // ("Building your first dream now") is honest for Build/Write
+  // visitors, whose real generation is already in flight (see
+  // getOrStartPendingGeneration above) -- but false for Record-it
+  // visitors, for whom nothing has been recorded or built yet at this
+  // point; that's the very next step, on create.html. Record mode's
+  // copy points at recording instead of claiming a dream is already
+  // being made.
   // ===================================================================
   function renderScreen15(el){
+    var headline = isRecordMode ? "You're in. Let’s record your dream." : "You're in. Building your first dream now.";
+    var body = isRecordMode ? 'Next: tap record and tell us about it — DreamTube will bring it to life.' : 'This is DreamTube — quiet and dark, like the room you just woke up in.';
+    var btnLabel = isRecordMode ? 'Start recording' : 'Watch it happen';
     el.innerHTML =
       '<div class="fn-spacer"></div>' +
       '<div class="fn-check-badge">&#10003;</div>' +
-      '<div class="fn-headline" style="text-align:center; color:#fff; font-size:23px;">' + "You're in. Building your first dream now." + '</div>' +
-      '<div class="fn-body-copy" style="text-align:center; color:rgba(255,255,255,.7);">This is DreamTube — quiet and dark, like the room you just woke up in.</div>' +
+      '<div class="fn-headline" style="text-align:center; color:#fff; font-size:23px;">' + headline + '</div>' +
+      '<div class="fn-body-copy" style="text-align:center; color:rgba(255,255,255,.7);">' + body + '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s15-continue" type="button">Watch it happen</button>';
+      '<button class="fn-btn-primary" id="fn-s15-continue" type="button">' + btnLabel + '</button>';
     document.getElementById('fn-s15-continue').addEventListener('click', completeFunnel);
   }
   function completeFunnel(){

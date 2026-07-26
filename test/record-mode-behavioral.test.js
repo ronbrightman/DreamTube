@@ -252,3 +252,127 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
     await context.close();
   }
 });
+
+// ===========================================================================
+// Bug fix coverage — tracker item
+// for-product-bug-founder-high-record-it-f-8ng0nf (founder repro,
+// 2026-07-26 night): "click Record it in the growth funnel -> recording
+// appears skipped entirely." All the handoff wiring above already worked
+// (mode=record -> isRecordMode -> create.html?record=1 -> startRecordingUI);
+// the actual bug was start.html's record-mode screens (11, 13, 15) showing
+// unchanged copy that lied about a dream already being in progress ("Your
+// dream is coming together", "we'll email you your dream the moment it's
+// ready", "Building your first dream now") when, in record mode, nothing
+// has been recorded yet at that point — recording only happens after this,
+// app-side on create.html. Fixed by making that copy record-mode-aware.
+//
+// This covers the FULL chain end to end in one test (funnel handoff ->
+// start.html signup in record mode -> create.html?record=1 -> the record
+// panel/mic-open behavior actually reachable) plus the record-mode copy
+// itself, on a mobile FB/IG-in-app-webview-sized viewport per
+// FOUNDER_PRINCIPLES.md's "Paid traffic is mobile, mostly the FB/IG
+// in-app webview ... smoke-test the real funnel" standing rule — the two
+// earlier tests in this file cover the same chain in two separate halves
+// (default desktop viewport, no copy assertions); this one is the single
+// continuous mobile repro of the founder's own bug report.
+// ===========================================================================
+
+/** iPhone 12/13-sized viewport — a common real-world FB/IG in-app-browser width, matching this repo's other mobile-webview-sized viewport tests (e.g. test/ui-behavioral.test.js's 375px/320px result.html checks). */
+var MOBILE_WEBVIEW_VIEWPORT = { width: 390, height: 844 };
+
+test('record-it funnel full chain on a mobile webview viewport: mode=record handoff -> start.html signup (honest record-mode copy, no false "dream in progress" claims) -> create.html?record=1 -> record panel + mic actually reachable', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var pendingGenerationCalls = await trackPendingGenerationCalls(page);
+
+    await page.goto(
+      baseUrl + '/start.html?resume=1&mode=record&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos'),
+      { waitUntil: 'domcontentloaded' }
+    );
+
+    // Screen 11 ("preparing" transition) must not claim a dream is already
+    // coming together -- nothing has been recorded yet in record mode.
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    var screen11Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.doesNotMatch(screen11Text, /dream is coming together/i, 'record mode must not claim a dream is already coming together -- nothing has been recorded yet');
+    assert.match(screen11Text, /you.?ll record your dream/i, 'record mode\'s screen 11 must tell the visitor they will record their dream next');
+    await page.click('#fn-s11-continue');
+
+    // Screen 13 (email capture) must not claim a dream already exists /
+    // is just waiting to be emailed -- it must say recording comes next.
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    var screen13Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.doesNotMatch(screen13Text, /where should we send your first dream/i, 'record mode must not ask where to "send your first dream" -- no dream exists yet');
+    assert.doesNotMatch(screen13Text, /we.?ll email you your dream the moment it.?s ready/i, 'record mode\'s reassurance must not read as if a dream already exists, waiting only on email delivery');
+    assert.match(screen13Text, /record your dream/i, 'record mode\'s screen 13 must say the visitor will record their dream');
+    await page.fill('#fn-email', 'record-mode-mobile-behavioral@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    assert.equal(pendingGenerationCalls.length, 0, 'record mode must never call start-pending-generation -- there is no real caption to submit a billed generation for');
+    await page.click('#fn-s14-continue');
+
+    // Screen 15 (confirmation) must not claim a dream is already being
+    // built -- recording (the actual first step) hasn't happened yet.
+    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    var screen15Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.doesNotMatch(screen15Text, /building your first dream now/i, 'record mode must not claim a dream is already being built -- recording (the real first step) has not happened yet');
+    assert.match(screen15Text, /record your dream/i, 'record mode\'s screen 15 must point the visitor at recording next, not a dream already in progress');
+    await page.click('#fn-s15-continue');
+
+    // Full handoff into create.html's Record UI, with the mic flow actually
+    // reachable (real startRecordingUI() call, mocked media only).
+    await page.waitForURL('**/create.html?record=1', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
+
+    var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
+    assert.equal(getUserMediaCalls, 1, 'landing on create.html?record=1 after the full record-it chain must actually open the mic, with no extra tap');
+
+    var heading = await page.textContent('#create-heading');
+    assert.equal(heading, 'Record your dream');
+
+    assert.equal(pendingGenerationCalls.length, 0, 'still zero start-pending-generation calls after the full record-it chain completes');
+  } finally {
+    await context.close();
+  }
+});
+
+test('start.html: a normal (no mode=record) visitor still sees the original screen 11/13/15 copy unchanged, on the same mobile webview viewport', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await page.goto(
+      baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
+      { waitUntil: 'domcontentloaded' }
+    );
+
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    var screen11Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.match(screen11Text, /dream is coming together/i, 'a normal (non-record) visitor must still see the original screen 11 copy, unchanged');
+    await page.click('#fn-s11-continue');
+
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    var screen13Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.match(screen13Text, /where should we send your first dream/i, 'a normal (non-record) visitor must still see the original screen 13 headline, unchanged');
+    await page.fill('#fn-email', 'normal-mode-mobile-behavioral@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    await page.click('#fn-s14-continue');
+
+    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    var screen15Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.match(screen15Text, /building your first dream now/i, 'a normal (non-record) visitor must still see the original screen 15 copy, unchanged');
+  } finally {
+    await context.close();
+  }
+});
