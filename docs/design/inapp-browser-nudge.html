@@ -1,0 +1,120 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FB/IG in-app browser nudge — placement mock</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+  html { background:#0d0d0f; }
+  body { font-family:'Manrope',system-ui,sans-serif; color:#fff; margin:0; padding:24px 12px 48px; }
+  h1 { font-size:20px; text-align:center; font-weight:800; margin:6px 0 2px; }
+  .sub { text-align:center; color:#999; font-size:13px; margin:0 0 26px; max-width:640px; margin-left:auto; margin-right:auto;}
+  .row { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .label { font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#5FB88A; }
+  .note { max-width:280px; font-size:12px; line-height:1.5; color:#aaa; text-align:center; }
+
+  .phone {
+    width:290px; height:600px; background:#000; border-radius:36px;
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.8);
+    overflow:hidden; position:relative; display:flex; flex-direction:column;
+  }
+
+  /* ---- Frame 1: generation wait screen ---- */
+  .wait { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:0 24px; background:#000; }
+  .orb {
+    width:110px; height:110px; border-radius:50%;
+    background:
+      radial-gradient(circle at 35% 30%, rgba(131,58,180,.9), transparent 65%),
+      radial-gradient(circle at 70% 65%, rgba(252,176,69,.7), transparent 60%),
+      radial-gradient(circle at 55% 45%, rgba(253,29,29,.5), transparent 60%),
+      #1a1a1a;
+    filter:blur(1px); animation:pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{ transform:scale(1); opacity:.9;} 50%{ transform:scale(1.07); opacity:1;} }
+  .wait h2 { font-size:17px; font-weight:800; margin:0; text-align:center; }
+  .wait .reassure { font-size:12.5px; color:#999; text-align:center; line-height:1.5; margin:0; min-height:36px; }
+  .bar { width:100%; height:5px; border-radius:100px; background:#242424; overflow:hidden; }
+  .bar i { display:block; height:100%; width:58%; border-radius:100px; background:linear-gradient(90deg,#833AB4,#FD1D1D,#FCB045); }
+  .bar-label { font-size:10.5px; color:#666; align-self:flex-end; margin-top:-12px; }
+
+  .nudge-card {
+    margin:0 14px 16px; border-radius:18px; padding:13px 14px;
+    background:#1a1a1a; border:1px solid rgba(108,140,255,.35);
+    position:relative;
+  }
+  .nudge-card .x { position:absolute; top:9px; right:12px; color:#666; font-size:14px; font-weight:700; cursor:pointer; }
+  .nudge-head { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:800; margin-bottom:5px; color:#fff; }
+  .nudge-head .dot { width:22px; height:22px; border-radius:7px; background:var(--gradient-ig,linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045)); display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .nudge-body { font-size:11.5px; color:#bbb; line-height:1.5; }
+  .nudge-btn {
+    margin-top:9px; font-weight:700; font-size:12px; border-radius:100px; padding:8px 12px;
+    background:#6C8CFF; color:#0a1130; display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .nudge-hint { font-size:10.5px; color:#777; text-align:center; margin-top:6px; }
+
+  /* ---- Frame 2: result screen slim banner ---- */
+  .video {
+    position:absolute; inset:0;
+    background:
+      radial-gradient(120% 90% at 30% 20%, rgba(131,58,180,.55), transparent 60%),
+      radial-gradient(120% 90% at 80% 70%, rgba(252,176,69,.35), transparent 55%),
+      #141414;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .play { width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.3); display:flex; align-items:center; justify-content:center; }
+  .play::after { content:''; border-style:solid; border-width:9px 0 9px 15px; border-color:transparent transparent transparent #fff; margin-left:4px; }
+  .topbar { position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; padding:12px 12px 0; z-index:3; }
+  .icon-btn { width:34px; height:34px; border-radius:50%; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.14); display:flex; align-items:center; justify-content:center; }
+  .icon-btn svg { width:17px; height:17px; }
+  .slim-banner {
+    position:absolute; top:56px; left:10px; right:10px; z-index:4;
+    border-radius:100px; padding:8px 13px;
+    background:rgba(20,24,44,.85); border:1px solid rgba(108,140,255,.4); backdrop-filter:blur(6px);
+    display:flex; align-items:center; gap:8px; font-size:11px; color:#dde4ff;
+  }
+  .slim-banner b { color:#9ab0ff; white-space:nowrap; }
+  .slim-banner .x { margin-left:auto; color:#667; font-weight:700; cursor:pointer; }
+</style>
+
+<h1>In-app browser nudge — after signup (FOUNDER-APPROVED: frame 1 only)</h1>
+<p class="sub">Approved by Ron 2026-07-26 ("I love the new wait screen. do it."). Shown ONLY when we detect the Facebook/Instagram built-in mini-browser, and only after signup is done — never mid-funnel. BUILD TARGET = frame 1 (wait-screen card). Frame 2 (video-screen fallback banner) is NOT approved — Ron rejected this version as unclear/scattered; a redesign is with him. Do not build frame 2 from this file.</p>
+
+<div class="row">
+
+  <!-- FRAME 1 -->
+  <div class="col">
+    <div class="label">1 · Wait screen (primary spot)</div>
+    <div class="phone">
+      <div class="wait">
+        <div class="orb"></div>
+        <h2>Your dream is forming…</h2>
+        <p class="reassure">Painting your city of glass — this usually takes about a minute and a half. Don't close this screen.</p>
+        <div class="bar"><i></i></div>
+        <div class="bar-label">~40s left</div>
+      </div>
+      <div class="nudge-card">
+        <span class="x">✕</span>
+        <div class="nudge-head"><span class="dot">📷</span> You're inside Instagram's browser</div>
+        <div class="nudge-body">Videos play smoother — and you stay signed in — in your real browser. Your dream will be right here waiting.</div>
+        <div class="nudge-btn">Open in my browser ↗</div>
+        <div class="nudge-hint">or tap <b>⋯</b> at the top right → "Open in external browser"</div>
+      </div>
+    </div>
+    <p class="note">The user is doing nothing for ~90s — the one moment a suggestion costs zero funnel momentum. Signup is already captured, so nothing is lost if they switch (account restores by email). Card is dismissible.</p>
+  </div>
+
+  <!-- FRAME 2 -->
+  <div class="col">
+    <div class="label">2 · Video screen (quiet fallback)</div>
+    <div class="phone">
+      <div class="video"><div class="play"></div></div>
+      <div class="topbar">
+        <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <div class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></div>
+      </div>
+      <div class="slim-banner"><b>Tip:</b> smoother in your browser <span style="opacity:.8;">— tap ⋯ → open externally</span><span class="x">✕</span></div>
+    </div>
+    <p class="note">Only if the wait-screen card was dismissed/ignored and video playback is at risk. One line, dismissible, remembered — never shown again once dismissed here.</p>
+  </div>
+
+</div>

@@ -1,0 +1,181 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>result.html redesign — Variant A revised</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+  html { background:#0d0d0f; }
+  body { font-family:'Manrope',system-ui,sans-serif; color:#fff; margin:0; padding:24px 12px 48px; }
+  h1 { font-size:20px; text-align:center; font-weight:800; margin:6px 0 2px; }
+  .sub { text-align:center; color:#999; font-size:13px; margin:0 0 26px; }
+  .row { display:flex; flex-wrap:wrap; gap:28px; justify-content:center; align-items:flex-start; }
+  .col { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .label { font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+  .label.old { color:#999; }
+  .label.new { color:#5FB88A; }
+  .note { max-width:280px; font-size:12px; line-height:1.5; color:#aaa; text-align:center; }
+
+  .phone {
+    width:290px; height:600px; background:#000; border-radius:36px;
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.8);
+    overflow:hidden; position:relative;
+  }
+  .video {
+    position:absolute; inset:0;
+    background:
+      radial-gradient(120% 90% at 30% 20%, rgba(131,58,180,.55), transparent 60%),
+      radial-gradient(120% 90% at 80% 70%, rgba(252,176,69,.35), transparent 55%),
+      radial-gradient(100% 100% at 60% 40%, rgba(253,29,29,.25), transparent 60%),
+      #141414;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* faint "dream" shapes low in the frame so you can SEE the video through the new panel */
+  .video::after {
+    content:''; position:absolute; left:0; right:0; bottom:0; height:46%;
+    background:
+      radial-gradient(60px 40px at 25% 70%, rgba(255,255,255,.18), transparent 70%),
+      radial-gradient(80px 50px at 70% 82%, rgba(180,200,255,.16), transparent 70%),
+      radial-gradient(50px 30px at 50% 55%, rgba(255,220,180,.14), transparent 70%);
+  }
+  .play {
+    width:52px; height:52px; border-radius:50%; margin-top:-120px;
+    background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.3);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .play::after { content:''; border-style:solid; border-width:9px 0 9px 15px; border-color:transparent transparent transparent #fff; margin-left:4px; }
+  .topbar { position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; padding:12px 12px 0; z-index:3; }
+  .tb-group { display:flex; gap:8px; }
+  .icon-btn {
+    width:34px; height:34px; border-radius:50%; background:rgba(0,0,0,.5);
+    border:1px solid rgba(255,255,255,.14);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-btn svg { width:17px; height:17px; }
+
+  /* ---------- OLD variant A panel (solid black, big) ---------- */
+  .panel-old { position:absolute; left:0; right:0; bottom:0; padding:12px 14px 16px; background:#000; display:flex; flex-direction:column; gap:9px; z-index:2; }
+  .panel-old .caption-old { font-size:12px; color:rgba(255,255,255,.85); padding:0 2px 2px; }
+  .btn {
+    font-weight:700; font-size:13.5px; border:none; border-radius:100px; padding:13px 16px;
+    display:flex; align-items:center; justify-content:center; gap:7px; color:#000; background:#fff;
+  }
+  .btn.secondary { background:#242424; color:#fff; border:1px solid rgba(255,255,255,.14); }
+  .btn-row { display:flex; gap:9px; }
+  .btn-row .btn { flex:1; }
+  .interp {
+    border:1px solid rgba(255,255,255,.14); border-radius:18px; padding:11px 13px;
+    background:#1a1a1a; font-size:12px; color:#ccc; line-height:1.45;
+  }
+  .interp b { color:#fff; font-size:12.5px; display:flex; align-items:center; gap:6px; }
+  .reveal { color:#6C8CFF; font-weight:700; }
+  .small-links { display:flex; justify-content:center; gap:18px; padding-top:2px; }
+  .small-links span { font-size:12px; color:#bbb; font-weight:600; display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+  /* ---------- REVISED panel: translucent gradient, compact ---------- */
+  .panel-new {
+    position:absolute; left:0; right:0; bottom:0; z-index:2;
+    padding:34px 12px 12px; display:flex; flex-direction:column; gap:7px;
+    background:linear-gradient(to top, rgba(0,0,0,.72) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,.22) 80%, transparent 100%);
+  }
+  .caption {
+    font-size:11.5px; line-height:1.45; color:rgba(255,255,255,.92);
+    text-shadow:0 1px 6px rgba(0,0,0,.8); cursor:pointer; padding:0 2px;
+  }
+  .caption .txt {
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .caption.expanded .txt { display:block; }
+  .caption .more { color:#9ab0ff; font-weight:700; font-size:10.5px; }
+  .tag { display:inline-block; font-size:9px; font-weight:700; padding:1px 7px; border-radius:100px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); color:#ccc; margin-bottom:3px; }
+
+  .interp-slim {
+    border:1px solid rgba(255,255,255,.18); border-radius:100px; padding:7px 13px;
+    background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
+    font-size:11.5px; color:#eee; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .btn-sm {
+    font-weight:700; font-size:12px; border:none; border-radius:100px; padding:9px 12px;
+    display:flex; align-items:center; justify-content:center; gap:6px; color:#000; background:#fff;
+  }
+  .btn-sm.secondary { background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(4px); }
+  .btn-sm svg { width:14px; height:14px; }
+  .small-links-new { display:flex; justify-content:center; gap:16px; padding-top:1px; }
+  .small-links-new span { font-size:11px; color:#bbb; font-weight:600; display:flex; align-items:center; gap:4px; cursor:pointer; text-shadow:0 1px 4px rgba(0,0,0,.8); }
+  .small-links-new svg { width:12px; height:12px; }
+
+  .hint { font-size:11px; color:#5FB88A; font-weight:700; text-align:center; margin-top:2px; }
+</style>
+
+<h1>result.html redesign — FOUNDER-APPROVED design (build the RIGHT frame)</h1>
+<p class="sub">Approved by Ron 2026-07-26 ("now its perfect"). Left frame = earlier draft kept only for contrast. BUILD TARGET = right frame: compact CTA area · translucent gradient bottom (video stays visible) · standard share &amp; back icons · Edit/Publish/Make-another as quiet small links · prompt clamps to 2 lines, expands on click</p>
+
+<div class="row">
+
+  <!-- OLD VARIANT A -->
+  <div class="col">
+    <div class="label old">Variant A — as first shown</div>
+    <div class="phone">
+      <div class="video"><div class="play"></div></div>
+      <div class="topbar">
+        <div class="tb-group"><div class="icon-btn" style="font-size:15px;">←</div></div>
+        <div class="tb-group"><div class="icon-btn" style="font-size:15px;">↗</div></div>
+      </div>
+      <div class="panel-old">
+        <div class="caption-old"><span class="tag">Private</span><br>"I was flying over a city made of glass and every window showed a different memory from my childhood, and I kept trying to land but the streets kept turning into rivers…"</div>
+        <div class="interp"><b>🌙 What might this dream mean? <span class="reveal">Reveal →</span></b></div>
+        <div class="btn-row">
+          <div class="btn">◎ Explore dreams</div>
+          <div class="btn secondary">👤 My profile</div>
+        </div>
+        <div class="small-links"><span>✎ Edit</span><span>＋ Make another</span></div>
+      </div>
+    </div>
+    <p class="note">Solid black slab hides ~40% of the video; buttons oversized; prompt text runs long; non-standard icons.</p>
+  </div>
+
+  <!-- REVISED VARIANT A -->
+  <div class="col">
+    <div class="label new">Variant A — revised</div>
+    <div class="phone">
+      <div class="video"><div class="play"></div></div>
+      <div class="topbar">
+        <div class="tb-group">
+          <div class="icon-btn" title="Back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </div>
+        </div>
+        <div class="tb-group">
+          <div class="icon-btn" title="Share">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="panel-new">
+        <div class="caption" id="cap" onclick="this.classList.toggle('expanded'); document.getElementById('more').textContent = this.classList.contains('expanded') ? ' less' : '… more';">
+          <span class="tag">Private</span>
+          <div class="txt">"I was flying over a city made of glass and every window showed a different memory from my childhood, and I kept trying to land but the streets kept turning into rivers…"</div>
+          <span class="more" id="more">… more</span>
+        </div>
+        <div class="interp-slim"><span>🌙 What might this dream mean?</span><span class="reveal" style="font-size:11px;">Reveal →</span></div>
+        <div class="btn-row">
+          <div class="btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5l-1.8 4.2-4.2 1.8 1.8-4.2z" fill="#000"/></svg>
+            Explore dreams
+          </div>
+          <div class="btn-sm secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+            My profile
+          </div>
+        </div>
+        <div class="small-links-new">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4L8 20l-5 1 1-5z"/></svg>Edit</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18"/></svg>Publish</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="#bbb" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Make another</span>
+        </div>
+      </div>
+    </div>
+    <p class="note">Bottom is a soft gradient — the video (faint dream shapes) stays visible through it. CTA pair shrunk ~35%; interpretation is one slim pill; Edit · Publish · Make another all quiet. Standard iOS-style share, clean back chevron.</p>
+    <div class="hint">↑ tap/click the prompt text — it expands and collapses</div>
+  </div>
+
+</div>
