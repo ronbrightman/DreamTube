@@ -1703,6 +1703,26 @@
     },
 
     /**
+     * Device-level "has this browser already dismissed the post-signup
+     * FB/IG in-app-browser nudge card on the generation wait screen"
+     * marker (see processing.html's initInAppNudge). Device-level (not
+     * account-scoped) for the same reason as getSoundPref/
+     * getSeenDreamOfDayId — the in-app-webview context belongs to the
+     * browser/app the visitor is inside, not to whichever account happens
+     * to be signed in. Once dismissed it never shows again in this
+     * browser, no matter how many more times generation runs or which
+     * account is signed in.
+     */
+    getInAppNudgeDismissed: function () {
+      try { return localStorage.getItem('dreamtube_inapp_nudge_dismissed_v1') === '1'; }
+      catch (e) { return false; }
+    },
+    dismissInAppNudge: function () {
+      try { localStorage.setItem('dreamtube_inapp_nudge_dismissed_v1', '1'); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
      * grant mechanism (290 on first-ever read, +200/24h lazily thereafter,

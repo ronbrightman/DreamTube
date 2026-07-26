@@ -429,6 +429,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-bar-track{ width:100%; height:8px; background:var(--surface); border-radius:100px; overflow:hidden; position:relative;}
 .proc-bar-fill{ position:absolute; top:0; left:-40%; height:100%; width:40%; border-radius:100px; background:linear-gradient(90deg, transparent, #fff, transparent); animation:proc-bar-sweep 1.6s ease-in-out infinite;}
 @keyframes proc-bar-sweep{ 0%{ left:-40%;} 100%{ left:100%;} }
+/* Friendly elapsed-time estimate under the bar — a fake, client-side-only
+   countdown from a fixed per-mediaType estimate (see processing.html's
+   startTimeEstimate/updateTimeLabel), NOT tied to the real (unknowable)
+   fal.ai completion time. Purely reassurance copy alongside the existing
+   indeterminate sweep above — first-timers reported the plain sweep alone
+   read as "maybe stuck" with nothing telling them how much longer. */
+.proc-time-label{ width:100%; text-align:right; font-size:11px; color:var(--text-faint); margin-top:-14px;}
 .proc-checklist{ display:flex; flex-direction:column; gap:8px; align-items:flex-start; text-align:left;}
 .proc-check-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-muted);}
 .proc-check-item.current{ color:var(--text-primary); font-weight:700; animation:pulse-text 1.6s ease-in-out infinite;}
@@ -442,6 +449,25 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-preview-row::-webkit-scrollbar{ display:none;}
 .proc-preview-thumb{ position:relative; flex:0 0 auto; width:64px; aspect-ratio:9/14; border-radius:10px; overflow:hidden; background:var(--surface);}
 .ppt-bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+/* Post-signup FB/IG in-app-browser nudge (docs/design/inapp-browser-nudge.html,
+   Frame 1 only — see processing.html's initInAppNudge). Shown only when the
+   UA is Instagram's or Facebook's own in-app webview, only once signed in,
+   and only until dismissed once (remembered forever after, see
+   DreamStore.getInAppNudgeDismissed/dismissInAppNudge). Reuses the app's
+   existing --accent-trust blue (already used for token-pack "best value"
+   and the tracker's own "ron" badge) and --gradient-ig (the app's one
+   Instagram-style gradient, already used for the "+" nav button and the
+   profile avatar ring) rather than inventing new colors. */
+.proc-nudge-card{ width:100%; text-align:left; position:relative; margin-top:6px; padding:13px 30px 13px 14px; border-radius:16px; background:var(--surface); border:1px solid rgba(108,140,255,.35);}
+.proc-nudge-x{ position:absolute; top:9px; right:10px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); background:none; border:none; font-size:16px; line-height:1; cursor:pointer; padding:0;}
+.proc-nudge-head{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:800; color:var(--text-primary); margin-bottom:5px;}
+.proc-nudge-dot{ flex:0 0 auto; width:22px; height:22px; border-radius:7px; background:var(--gradient-ig); display:flex; align-items:center; justify-content:center; color:#fff;}
+.proc-nudge-dot svg{ width:13px; height:13px;}
+.proc-nudge-body{ font-size:11.5px; color:var(--text-muted); line-height:1.5;}
+.proc-nudge-btn{ margin-top:9px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:12.5px; border-radius:100px; padding:9px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer;}
+.proc-nudge-btn .icon{ width:14px; height:14px;}
+.proc-nudge-hint{ font-size:10.5px; color:var(--text-faint); text-align:center; margin-top:7px; transition:color .3s ease;}
+.proc-nudge-hint.proc-nudge-hint-emph{ color:var(--accent-trust); font-weight:700;}
 .proc-fail{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;}
 .proc-fail-icon{ width:42px; height:42px; color:var(--danger);}
 .proc-fail-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; max-width:260px;}
