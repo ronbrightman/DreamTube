@@ -245,6 +245,8 @@
       <span class="link-text" id="build-char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -674,6 +676,16 @@
     document.getElementById(elId).style.display = 'none';
   }
 
+  // Matches profile.html's own showToast() exactly -- same #toast/.toast/
+  // .toast.show markup and CSS (css/styles.css), reused here rather than
+  // inventing a new pattern.
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
   function stopMediaStream(){
     if(mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
   }
@@ -780,6 +792,16 @@
     return new RegExp('\\b(' + alternatives.map(escapeRegExp).join('|') + ')\\b', 'i');
   }
 
+  // Set the first time autoSelectSelfIfMentioned actually attaches the Me
+  // character below, so the toast fires once per draft rather than on every
+  // matching keystroke -- deliberately an in-memory flag, not persisted to
+  // the draft itself: a fresh page load of create.html (a new draft, in the
+  // normal case -- see the DreamStore.clearDraft() call above) starts this
+  // false again and re-arms the toast, same "small, contained" scope as the
+  // rest of this feature. See docs/UNIFIED_IDENTITY_SPEC.md section 3c
+  // (Direction B) for the decision this implements.
+  var meAutoAttachToastShown = false;
+
   function autoSelectSelfIfMentioned(captionText){
     var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
     if(!self) return;
@@ -790,6 +812,10 @@
     if(selectedIds.indexOf(self.id) !== -1) return;
     DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });
     renderCharacterChips();
+    if(!meAutoAttachToastShown){
+      meAutoAttachToastShown = true;
+      showToast('Added your Me character since you mentioned yourself');
+    }
   }
 
   textArea.addEventListener('input', function(){
