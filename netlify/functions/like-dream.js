@@ -1,18 +1,78 @@
 // netlify/functions/like-dream.js
 //
-// POST { id, delta } -> adjusts a dream's shared like count by delta (+1 or
-// -1, from toggling like/unlike) and returns the new total. Read-modify-
-// write on the same feed-index blob as get-feed.js/publish-dream.js — see
-// that file's header comment for why this is fine at this app's scale but
-// not race-proof under real concurrent traffic (deliberate MVP tradeoff).
+// POST { id, delta, likerHandle? } -> adjusts a dream's shared like count by
+// delta (+1 or -1, from toggling like/unlike) and returns the new total.
+// Read-modify-write on the same feed-index blob as get-feed.js/
+// publish-dream.js — see that file's header comment for why this is fine at
+// this app's scale but not race-proof under real concurrent traffic
+// (deliberate MVP tradeoff).
 //
 // No per-user like tracking (would need real accounts, out of scope) — the
 // client decides whether it's liking or unliking based on its own local
 // "have I liked this" flag (js/store.js's state.likedIds), so the same
 // dream liked from two different browsers/devices counts twice. Acceptable
 // given this app's local-only auth model everywhere else.
+//
+// ---------------------------------------------------------------------
+// 'like_given' / 'like_received' PostHog events (Phase 1 reporting
+// instrumentation — tracker item for-product-phase-1-reporting-instrument-
+// kjlh46, founder-greenlit 2026-07-26): this is the single choke-point that
+// already knows the dream, its owner, AND the delta, so it's the natural
+// place to fire both sides of one "like" action — the liker gets
+// 'like_given', the dream's own owner gets 'like_received'. Only fires on
+// delta === +1 (a genuine like); toggling a like back OFF (delta === -1,
+// an "unlike") fires neither — these are meant to measure real like
+// actions/social engagement, not net count deltas, and an unlike undoing a
+// still-in-flight like (a fast double-tap) would otherwise report a
+// negative-signal 'like_given' event that never really happened as its own
+// action.
+//
+// distinct_id discipline: must match what the client's posthog.identify()
+// used — the account's raw username, no leading '@' (see js/store.js's
+// identifyForAnalytics / lib/posthog-capture.js's header comment). Both
+// the liker (payload.likerHandle, e.g. '@alice') and the dream's owner
+// (feed[idx].ownerHandle, same '@'-prefixed shape — see publish-dream.js)
+// are already in that handle form, so stripHandle() below strips the
+// leading '@' before using either as a distinct_id. No account-store
+// lookup needed here (unlike dodo-webhook.js's Purchase fire) — a handle
+// IS the username in this codebase's local-account model, nothing to
+// resolve from an email.
+//
+// PostHog only, no Meta CAPI — a like is a product engagement signal, not
+// an ad-optimization conversion event (see docs/EVENT_TAXONOMY.md).
+//
+// Fire-and-forget: analytics failures here must never turn a successful
+// like into a failed response — same "analytics must never break the app"
+// discipline as every other analytics call in this codebase.
+// ---------------------------------------------------------------------
 
 var { connectLambda, getStore } = require('@netlify/blobs');
+var posthogCapture = require('./lib/posthog-capture');
+
+/** Strips a leading '@' off a handle (e.g. '@alice' -> 'alice') so it matches the raw-username distinct_id the client's posthog.identify() call used. Returns null for anything falsy/non-string. */
+function stripHandle(handle) {
+  if (typeof handle !== 'string' || !handle) return null;
+  return handle.charAt(0) === '@' ? handle.slice(1) : handle;
+}
+
+/** Fires like_given (to the liker) + like_received (to the dream's owner). Never throws -- every failure is swallowed, see header comment. */
+async function fireLikeEvents(likerHandle, ownerHandle, dreamId) {
+  try {
+    var likerDistinctId = stripHandle(likerHandle);
+    var ownerDistinctId = stripHandle(ownerHandle);
+    var fires = [];
+    if (likerDistinctId) {
+      fires.push(posthogCapture.captureEvent({ event: 'like_given', distinct_id: likerDistinctId, properties: { dreamId: dreamId } }));
+    }
+    if (ownerDistinctId) {
+      fires.push(posthogCapture.captureEvent({ event: 'like_received', distinct_id: ownerDistinctId, properties: { dreamId: dreamId } }));
+    }
+    await Promise.all(fires);
+  } catch (e) {
+    // analytics must never break the app -- the like itself has already
+    // succeeded and must not be affected by this.
+  }
+}
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -42,6 +102,11 @@ exports.handler = async function (event) {
     }
     feed[idx].likes = Math.max(0, (feed[idx].likes || 0) + delta);
     await store.setJSON('feed-index', feed);
+
+    if (delta === 1) {
+      await fireLikeEvents(payload.likerHandle, feed[idx].ownerHandle, id);
+    }
+
     return { statusCode: 200, body: JSON.stringify({ ok: true, likes: feed[idx].likes }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'like_failed: ' + (e && e.message) }) };

@@ -73,7 +73,20 @@
       <div class="proc-title" id="proc-title">Turning your dream<br>into a video…</div>
       <div class="proc-sub" id="proc-sub">Video generation takes about 1-2 minutes.</div>
       <div class="proc-bar-track"><div class="proc-bar-fill" id="proc-fill"></div></div>
+      <div class="proc-time-label" id="proc-time-label"></div>
       <div class="proc-checklist" id="proc-checklist"></div>
+      <!-- Post-signup FB/IG in-app-browser nudge (Frame 1 of
+           docs/design/inapp-browser-nudge.html only) -- hidden by default,
+           shown by initInAppNudge() below only for a detected FB/IG
+           in-app webview, only once signed in, and only if not already
+           dismissed. -->
+      <div class="proc-nudge-card" id="proc-nudge-card" style="display:none;">
+        <button type="button" class="proc-nudge-x" id="proc-nudge-dismiss" aria-label="Dismiss">&times;</button>
+        <div class="proc-nudge-head"><span class="proc-nudge-dot" id="proc-nudge-icon"></span><span id="proc-nudge-title"></span></div>
+        <div class="proc-nudge-body">Videos play smoother — and you stay signed in — in your real browser. Your dream will be right here waiting.</div>
+        <button type="button" class="proc-nudge-btn" id="proc-nudge-open-btn"></button>
+        <div class="proc-nudge-hint" id="proc-nudge-hint"></div>
+      </div>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
@@ -143,6 +156,36 @@
   applyMediaTypeCopy();
 
   var progInterval;
+  var timeInterval;
+  var waitStartedAt;
+
+  // ===== Fake "time left" estimate (visible progress indicator) =====
+  // The real bar above is deliberately indeterminate (see its own CSS
+  // comment — there's no real percentage to report), and the checklist
+  // is a growing list rather than a single moving number, so neither
+  // actually tells a first-timer "how much longer, roughly." This adds a
+  // small, honest-effort estimate under the bar, ticking down from a
+  // fixed per-mediaType guess (never a real measurement of the in-flight
+  // fal.ai call) — purely reassurance, same spirit as the checklist copy,
+  // and it never blocks or drives the actual completion, which is still
+  // whenever attachTaskHandlers' task promise resolves.
+  var VIDEO_ESTIMATE_SECONDS = 90;
+  var IMAGE_ESTIMATE_SECONDS = 8;
+  function estimateSecondsFor(){
+    return currentMediaType() === 'image' ? IMAGE_ESTIMATE_SECONDS : VIDEO_ESTIMATE_SECONDS;
+  }
+  function updateTimeLabel(){
+    var el = document.getElementById('proc-time-label');
+    var elapsed = (Date.now() - waitStartedAt) / 1000;
+    var remaining = Math.ceil(estimateSecondsFor() - elapsed);
+    el.textContent = remaining > 0 ? ('~' + remaining + 's left') : 'Almost there…';
+  }
+  function startTimeEstimate(){
+    clearInterval(timeInterval);
+    waitStartedAt = Date.now();
+    updateTimeLabel();
+    timeInterval = setInterval(updateTimeLabel, 1000);
+  }
 
   // Real Veo generation takes minutes, not seconds, and there's no real
   // percentage to report — the bar itself is a purely indeterminate CSS
@@ -171,6 +214,7 @@
     var tickCount = 0, maxReached = 0;
     clearInterval(progInterval);
     renderChecklist(0, 0);
+    startTimeEstimate();
     progInterval = setInterval(function(){
       tickCount++;
       var currentIdx;
@@ -187,6 +231,7 @@
   }
   function finishProgress(){
     clearInterval(progInterval);
+    clearInterval(timeInterval);
   }
 
   function previewThumbHTML(d){
@@ -217,6 +262,32 @@
   // to just hide itself entirely while they wait — showing nothing where
   // there's screen real estate to fill. Falls back to the general shared
   // Explore feed in that case instead, same visual treatment either way.
+  //
+  // ===== Empty/sparse fallback (tracker: for-product-empty-sparse-feed-
+  // fallback-s-zldn85) =====
+  // That shared-feed fallback is exactly the "first-timer carousel": the
+  // one path a brand-new visitor (no dreams of their own) actually
+  // exercises. This app is still early-stage, so the shared feed itself can
+  // be genuinely empty (no one has published anything yet) or have only a
+  // handful of dreams in it. Previously an empty feed just hid the whole
+  // section — reasonable, but it silently loses the one chance to nudge
+  // "be the first" — and a *sparse* feed rendered 1-2 lonely 64px
+  // thumbnails in an otherwise-empty horizontal scroll row, which reads as
+  // broken rather than intentional. PREVIEW_SPARSE_THRESHOLD picks a small,
+  // deliberately low bar: fewer than 3 published dreams counts as sparse —
+  // low enough that this only kicks in during the genuinely early days (a
+  // healthy feed clears it easily), not as a general design choice. Reuses
+  // the same `.grid-empty` empty-state pattern already established
+  // elsewhere (profile.html's own dreams grids, explore.html, home.html)
+  // rather than inventing new visual language for it.
+  var PREVIEW_SPARSE_THRESHOLD = 3;
+
+  function previewFallbackHTML(kind){
+    return '<div class="grid-empty" style="width:100%;">' + (kind === 'empty'
+      ? 'Be the first to share a dream — publish yours once it’s ready and it’ll show up here.'
+      : 'Only a few dreams shared so far — check back soon as more come in.') + '</div>';
+  }
+
   function renderPreview(){
     var section = document.getElementById('proc-preview');
     var row = document.getElementById('proc-preview-row');
@@ -231,8 +302,17 @@
     }
     DreamStore.getSharedFeed().then(function(dreams){
       var pick = dreams.slice(0, 10);
-      if(!pick.length){ section.style.display = 'none'; return; }
       section.style.display = 'block';
+      if(!pick.length){
+        label.textContent = 'While you wait';
+        row.innerHTML = previewFallbackHTML('empty');
+        return;
+      }
+      if(pick.length < PREVIEW_SPARSE_THRESHOLD){
+        label.textContent = 'While you wait';
+        row.innerHTML = previewFallbackHTML('sparse');
+        return;
+      }
       label.textContent = 'While you wait, explore other dreams';
       row.innerHTML = pick.map(previewThumbHTML).join('');
       wirePreviewErrorFallback(row, pick);
@@ -310,6 +390,7 @@
       }, 350);
     }).catch(function(err){
       clearInterval(progInterval);
+      clearInterval(timeInterval);
       document.getElementById('proc-live').style.display = 'none';
       document.getElementById('proc-fail').style.display = 'flex';
       // err.message carries an "ENNN: reason" string from wherever it
@@ -355,6 +436,79 @@
     DreamStore.setDraft({ restore: true });
     location.href = 'create.html';
   });
+
+  // ===== Post-signup FB/IG in-app-browser nudge (Frame 1 only) =====
+  // docs/design/inapp-browser-nudge.html (branch claude/manager-onboarding-
+  // xcq4ul) — tracker items for-product-build-post-signup-fb-ig-in-a-oognuc
+  // and for-product-wait-screen-reassurance-duri-ofoag1. Frame 2 (a
+  // result.html banner) was rejected by the founder and is NOT built here.
+  //
+  // Detection: Facebook's in-app browser UA carries both FBAN and FBAV
+  // tokens; Instagram's carries the literal substring "Instagram". Neither
+  // token appears in any normal desktop/mobile browser UA.
+  function detectInAppHost(){
+    var ua = navigator.userAgent || '';
+    if (/FBAN|FBAV/.test(ua)) return 'Facebook';
+    if (/Instagram/.test(ua)) return 'Instagram';
+    return null;
+  }
+  function isAndroidUA(){
+    return /Android/.test(navigator.userAgent || '');
+  }
+  // Android only: forces the current URL open in Chrome via an intent://
+  // URL, the standard escape hatch for in-app webviews on Android (there is
+  // no equivalent on iOS — see initInAppNudge's click handler below).
+  // S.browser_fallback_url means a device without Chrome installed still
+  // lands back on this same URL (in whatever handles the fallback) instead
+  // of the intent silently failing.
+  function buildAndroidChromeIntentUrl(){
+    var target = location.href.replace(/^https?:\/\//, '');
+    var fallback = encodeURIComponent(location.href);
+    return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
+  }
+  function initInAppNudge(){
+    var host = detectInAppHost();
+    if(!host) return;
+    // Defense-in-depth: processing.html's own auth guard at the top of this
+    // script already redirects to login.html before any of this markup
+    // renders when signed out, so this should always be true here — but
+    // gate on it explicitly too per the tracker item's own instruction,
+    // rather than relying solely on the page-level redirect.
+    if(!DreamStore.getCurrentUser()) return;
+    if(DreamStore.getInAppNudgeDismissed()) return;
+
+    var card = document.getElementById('proc-nudge-card');
+    document.getElementById('proc-nudge-icon').innerHTML = Icons.globe;
+    document.getElementById('proc-nudge-title').textContent = "You're viewing this in " + host;
+    var openBtn = document.getElementById('proc-nudge-open-btn');
+    openBtn.innerHTML = 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>';
+    var hint = document.getElementById('proc-nudge-hint');
+    // Must explicitly name the HOST APP's own "..." menu — a bare "tap ...
+    // above" reads to users as this app's own icon, not the host app's
+    // chrome (the founder caught exactly this ambiguity in review of the
+    // design mock — see the mock's own comment on .ig-chrome).
+    hint.textContent = 'or tap ' + host + '’s ⋯ at the very top → "Open in external browser"';
+    card.style.display = 'block';
+
+    openBtn.addEventListener('click', function(){
+      if(isAndroidUA()){
+        location.href = buildAndroidChromeIntentUrl();
+      } else {
+        // iOS (and anything else that isn't Android): there is no reliable
+        // programmatic way to escape an in-app webview, so don't attempt
+        // one that would just silently fail. Instead draw attention to the
+        // hint line, which is the only real guidance that works there.
+        hint.classList.add('proc-nudge-hint-emph');
+        hint.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(function(){ hint.classList.remove('proc-nudge-hint-emph'); }, 1600);
+      }
+    });
+    document.getElementById('proc-nudge-dismiss').addEventListener('click', function(){
+      DreamStore.dismissInAppNudge();
+      card.style.display = 'none';
+    });
+  }
+  initInAppNudge();
 
   runGeneration();
 </script>

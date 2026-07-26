@@ -93,6 +93,14 @@
     // grep. A simple line-art video-camera: a body rectangle + the lens
     // trapezoid, same 24x24/currentColor/stroke-only convention as every
     // other entry here.
-    video: svg('<rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 10l5-3v10l-5-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>')
+    video: svg('<rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 10l5-3v10l-5-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>'),
+
+    // Added for the post-signup FB/IG in-app-browser nudge card
+    // (processing.html) — "open in your real browser" affordance. Standard
+    // external-link glyph (box + arrow escaping the corner), same
+    // 24x24/currentColor/stroke-only convention as every other entry here.
+    // Deliberately generic rather than a brand logo — no Instagram/
+    // Facebook mark reproduced anywhere in this app.
+    externalLink: svg('<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M15 3h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M10 14L21 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
   };
 })();

@@ -44,6 +44,7 @@
 //   E6 missing_product_id     — DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 not configured for the requested pack
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 
+var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
 var { normalizeEmail } = require('./lib/entitlements');
 
@@ -54,6 +55,15 @@ var { normalizeEmail } = require('./lib/entitlements');
 // dodo-webhook.js reads if its product_id -> pack mapping ever changes
 // after a purchase was made (see that file's resolvePackTokens).
 var PACK_TOKENS = { pack100: 100, pack500: 500 };
+
+// USD price per pack, mirrors shop.html's own PACK_INFO map — used only for
+// the metadata.dreamtube_price fallback below, the same "belt-and-
+// suspenders" role dreamtube_tokens already plays for resolvePackTokens.
+// dodo-webhook.js's own resolvePackPrice prefers matching the payment's
+// actual product_id against DODO_PRODUCT_PACK_* first (this is only the
+// fallback path), so this never needs to be the source of truth for what
+// Dodo actually charged.
+var PACK_PRICES = { pack100: 1.99, pack500: 8.95 };
 
 var PACK_PRODUCT_ENV = {
   pack100: 'DODO_PRODUCT_PACK_100',
@@ -102,6 +112,21 @@ exports.handler = async function (event) {
   var returnUrl = payload.successUrl || (origin + '/shop.html?checkout=success');
   var cancelUrl = payload.cancelUrl || (origin + '/shop.html?checkout=cancelled');
 
+  // Shared between this checkout session and dodo-webhook.js's eventual
+  // server-side Purchase fire (P0 reporting instrumentation — see
+  // AGENT_POLICY.md's tracker item for-product-phase-1-reporting-
+  // instrument-kjlh46) so the two Purchase events (this one's own
+  // eventual client-side return-trip fire on shop.html, and the webhook's
+  // durable server-side one) dedupe against each other on both PostHog
+  // ($insert_id) and Meta (Pixel+CAPI event_id) — see
+  // docs/EVENT_TAXONOMY.md's Purchase entry for the full mechanics. Minted
+  // here (not on the client, and not in the webhook) because this is the
+  // one place both eventual fires can trace back to a single shared value:
+  // it's threaded through to the client via metadata below AND returned in
+  // this response for shop.html to stash alongside its own pending-purchase
+  // marker.
+  var eventId = crypto.randomBytes(16).toString('hex');
+
   try {
     var client = new DodoPayments({
       bearerToken: apiKey,
@@ -113,17 +138,26 @@ exports.handler = async function (event) {
       customer: { email: email },
       return_url: returnUrl,
       cancel_url: cancelUrl,
-      // Carries the normalized email + pack + token amount through as a
-      // fallback identity/amount source alongside the webhook payload's
-      // own data.customer.email and data.product_cart — belt-and-
-      // suspenders, same reasoning as create-checkout-session.js's
-      // metadata, and specifically load-bearing if DODO_PRODUCT_PACK_*
-      // ever gets rotated between checkout creation and webhook delivery
-      // (see dodo-webhook.js's resolvePackTokens).
-      metadata: { dreamtube_email: email, dreamtube_pack: pack, dreamtube_tokens: PACK_TOKENS[pack] }
+      // Carries the normalized email + pack + token amount + shared
+      // event_id through as a fallback identity/amount source alongside
+      // the webhook payload's own data.customer.email and
+      // data.product_cart — belt-and-suspenders, same reasoning as
+      // create-checkout-session.js's metadata, and specifically
+      // load-bearing if DODO_PRODUCT_PACK_* ever gets rotated between
+      // checkout creation and webhook delivery (see dodo-webhook.js's
+      // resolvePackTokens/resolvePackPrice). Dodo echoes metadata back
+      // verbatim on the payment.succeeded webhook, which is how
+      // dreamtube_event_id makes it from here to dodo-webhook.js.
+      metadata: {
+        dreamtube_email: email,
+        dreamtube_pack: pack,
+        dreamtube_tokens: PACK_TOKENS[pack],
+        dreamtube_price: PACK_PRICES[pack],
+        dreamtube_event_id: eventId
+      }
     });
 
-    return { statusCode: 200, body: JSON.stringify({ url: session.checkout_url, sessionId: session.session_id }) };
+    return { statusCode: 200, body: JSON.stringify({ url: session.checkout_url, sessionId: session.session_id, eventId: eventId }) };
   } catch (e) {
     return { statusCode: 502, body: JSON.stringify({ error: 'E7: dodo_request_failed' + (e && e.message ? ': ' + e.message : '') }) };
   }

@@ -246,7 +246,15 @@
         // create-checkout-session call above never sets it.
         try {
           var info = PACK_INFO[pack];
-          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price }));
+          // data.eventId (minted by create-checkout-session-dodo.js at
+          // checkout-creation time) is carried along so the eventual
+          // ?checkout=success return trip's Purchase fire shares the SAME
+          // event_id as dodo-webhook.js's own server-side Purchase fire —
+          // see that function's comment and docs/EVENT_TAXONOMY.md's
+          // Purchase entry for the full dedup mechanics (P0 reporting
+          // instrumentation, tracker item
+          // for-product-phase-1-reporting-instrument-kjlh46).
+          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price, eventId: data.eventId || null }));
         } catch(e) { /* sessionStorage unavailable (e.g. private mode) — worst case the return trip just won't fire the conversion events */ }
         location.href = data.url;
       })
@@ -369,8 +377,28 @@
         sessionStorage.removeItem(PENDING_PURCHASE_KEY); // consume once regardless of outcome below
         if(pendingRaw){
           var pending = JSON.parse(pendingRaw);
-          track('purchase_completed', { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' });
-          fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } });
+          // $insert_id/explicit eventId below: dodo-webhook.js's own
+          // server-side Purchase fire (the durable source of truth — see
+          // that file's comment) shares this SAME event_id when Dodo's
+          // metadata carried it through, so PostHog ($insert_id) and Meta
+          // (Pixel+CAPI event_id) both dedupe this client-side fire
+          // against the webhook's, rather than double-counting one real
+          // purchase as two. pending.eventId can be null (a checkout
+          // started before this field existed, or create-checkout-
+          // session-dodo.js's response omitted it for any reason) — in
+          // that case each side just falls back to its own independent id,
+          // same as before this instrumentation existed.
+          // Build props with a real object key only when an eventId
+          // actually exists -- `$insert_id: undefined` would still be an
+          // OWN enumerable property on the object (unlike a key that's
+          // simply absent), which is both semantically sloppy and (this
+          // codebase's own pre-existing purchase-conversion test caught
+          // it) breaks a strict deep-equal check on the exact PostHog
+          // properties shape.
+          var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' };
+          if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
+          track('purchase_completed', purchaseProps);
+          fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);
         }
       } catch(e) { /* analytics must never break the app */ }
     } else if(checkout === 'cancelled'){
