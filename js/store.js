@@ -175,6 +175,17 @@
     // start.html pre-signup seam) legitimately has no owner yet, and that
     // case is already handled entirely by adoptPendingGeneration's own
     // flow, not by anything here.
+    //
+    // Residual, irreducible risk (same shape as backfillAccountServerSide's
+    // own doc comment below): this attributes the legacy job to whoever
+    // s.user happens to be the FIRST time this migration runs for a given
+    // browser, not necessarily who actually submitted it. If account A
+    // creates the job, logs out, and account B logs into the same browser
+    // before this branch's first post-deploy load ever happens there, B
+    // permanently inherits A's job (and, once it resolves, the finished
+    // dream itself). There's no clean fix — the true original owner is
+    // unrecoverable for data that predates ownerHandle tracking at all —
+    // this is just the one-time migration doing its best with what it has.
     if (s.pendingJob && !s.pendingJob.ownerHandle && s.user) {
       s.pendingJob.ownerHandle = s.user.handle;
       changed = true;
