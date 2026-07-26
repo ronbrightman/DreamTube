@@ -33,7 +33,7 @@ test.beforeEach(function () {
 test('GET with no email -> a zero/inert status, no Blobs touched', async function () {
   var res = await getTokenStatusHandler(fakeEvent({ method: 'GET', ip: nextIp() }));
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 10 });
+  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 200 });
 });
 
 test('GET with a brand-new email materializes the 290-token signup grant', async function () {
@@ -41,7 +41,7 @@ test('GET with a brand-new email materializes the 290-token signup grant', async
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.balance, 290);
-  assert.equal(body.dailyGrantAmount, 10);
+  assert.equal(body.dailyGrantAmount, 200);
   assert.equal(typeof body.nextGrantAt, 'number');
 });
 

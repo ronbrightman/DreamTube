@@ -1,9 +1,10 @@
 // test/token-daily-grant-copy-behavioral.test.js
 //
-// Regression coverage for a review finding on the image-generation branch:
-// style.html, result.html, shop.html, and profile.html all hardcoded the
-// literal number "100" in their daily-free-grant copy ("...you'll get 100
-// more automatically...", "Next 100 free tokens in...", "+100 in...").
+// Regression coverage for review findings across two branches:
+// (1) image-generation branch — style.html, result.html, shop.html
+// (#shop-countdown), and profile.html all hardcoded the literal number
+// "100" in their daily-free-grant copy ("...you'll get 100 more
+// automatically...", "Next 100 free tokens in...", "+100 in...").
 // entitlements.js's DAILY_GRANT_AMOUNT was retuned 100 -> 10 as part of
 // this same branch (docs/IMAGE_GENERATION_SPEC.md §2b-revised) but these
 // four hardcoded strings were missed — two (style.html/result.html) were
@@ -11,14 +12,19 @@
 // not even scoped to the image feature (DAILY_GRANT_AMOUNT is global, so
 // every user would have seen a 10x-wrong number regardless of ever
 // touching image generation).
+// (2) raise-daily-token-award-to-200 branch (10 -> 200, 2026-07-26),
+// review round 2 — a FIFTH such location, shop.html's #shop-cap-note
+// ("Free tokens are capped — 100 every 24 hours..."), a different
+// phrasing again that slipped past the grep patterns used to find the
+// first four.
 //
 // Fix: all four now read tokenStatus.dailyGrantAmount live instead of a
 // hardcoded literal (see js/store.js's getTokenStatus / get-token-status.js
 // / lib/entitlements.js's getTokenStatus, which already return this field
 // for exactly this purpose). These tests mock a deliberately distinctive
-// dailyGrantAmount (7 -- not 10, not 100) so a pass actually proves the
-// copy is read live, not coincidentally matching whatever the real
-// constant happens to be today.
+// dailyGrantAmount (7 -- not 10, not 100, and not 200 as of the 2026-07-26
+// retune) so a pass actually proves the copy is read live, not
+// coincidentally matching whatever the real constant happens to be today.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -167,6 +173,33 @@ test('shop.html: the countdown reads the live dailyGrantAmount, not a hardcoded 
     var countdown = await page.textContent('#shop-countdown');
     assert.match(countdown, new RegExp('Next ' + DISTINCTIVE_GRANT + ' free tokens in'));
     assert.doesNotMatch(countdown, /Next 100 free tokens/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmount, not a hardcoded "100 every 24 hours"', async function (t) {
+  // Review round 2 on raise-daily-token-award-to-200: a THIRD hardcoded
+  // copy of the daily-grant number ("100 every 24 hours"), distinct from
+  // #shop-countdown above and missed by the grep patterns used to find
+  // the other two locations (result.html/style.html's #modal-quota-body).
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    await seedLoggedInUserAt(page, 'dailygrantshopcap', '/shop.html');
+    await page.waitForSelector('#shop-cap-note', { timeout: 5000 });
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-cap-note');
+      return el && el.textContent.indexOf('capped') !== -1 && !/100 every 24 hours/.test(el.textContent);
+    }, { timeout: 5000 });
+
+    var capNote = await page.textContent('#shop-cap-note');
+    assert.match(capNote, new RegExp(DISTINCTIVE_GRANT + ' every 24 hours'));
+    assert.doesNotMatch(capNote, /100 every 24 hours/);
+    assert.match(capNote, /up to 500 banked/, 'the grant ceiling (500, unchanged by this branch) should still be present');
   } finally {
     await context.close();
   }

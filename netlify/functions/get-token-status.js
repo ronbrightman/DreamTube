@@ -7,7 +7,7 @@
 // authoritative enforcement is still generate-video.js's server-side E112
 // check — this endpoint only exists so the client has something to
 // show/check without guessing. This is also the point that actually
-// materializes a brand-new email's 200-token signup grant the *first* time
+// materializes a brand-new email's 290-token signup grant the *first* time
 // it's ever read (see entitlements.js's syncTokens) — which is exactly why
 // it's passed the real request `event`, not just the email string: the
 // per-IP daily cap on new-signup-bonus grants needs the real client IP.
@@ -33,11 +33,11 @@ exports.handler = async function (event) {
   var rawEmail = (event.queryStringParameters && event.queryStringParameters.email) || '';
   if (!entitlements.normalizeEmail(rawEmail)) {
     // dailyGrantAmount here mirrors entitlements.js's real DAILY_GRANT_AMOUNT
-    // (10 as of 2026-07-24's token-economy retune) — kept as a literal
+    // (200 as of 2026-07-26's token-economy retune) — kept as a literal
     // rather than importing the constant since this whole branch is a
     // no-Blobs-touch fast path, but it must stay in sync by hand if that
     // constant ever changes again.
-    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: 10 }) };
+    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: 200 }) };
   }
 
   var status = await entitlements.getTokenStatus(event, rawEmail);

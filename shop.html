@@ -100,7 +100,7 @@
       <button class="btn btn-secondary btn-block" id="shop-buy-pack500" data-pack="pack500">Buy</button>
     </div>
 
-    <div class="auth-sub" style="margin-top:8px;">Free tokens are capped — 100 every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.</div>
+    <div class="auth-sub" style="margin-top:8px;" id="shop-cap-note">Free tokens are capped — 200 every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.</div>
   </div>
 </div>
 
@@ -262,6 +262,7 @@
 
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
+  var capNoteEl = document.getElementById('shop-cap-note');
   var tokenStatus = null;
 
   /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — same shape as profile.html/style.html/result.html/processing.html's own copy of this (no shared JS module in this codebase, see js/store.js's header comment). */
@@ -279,13 +280,23 @@
     if(!tokenStatus) return;
     balanceEl.textContent = tokenStatus.balance;
     // Reads the daily-grant amount live off tokenStatus (see
-    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 10 as of 2026-07-24's
+    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 200 as of 2026-07-26's
     // token-economy retune) rather than a hardcoded number — a review
     // finding on the image-generation branch: this line, plus
     // profile.html's own copy of the same countdown, both hardcoded "100"
     // and went stale silently the moment that constant changed, since
     // neither is scoped to the image feature at all.
     countdownEl.textContent = tokenStatus.nextGrantAt ? ('Next ' + tokenStatus.dailyGrantAmount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt)) : '';
+    // Review round 2 on raise-daily-token-award-to-200: this static
+    // '.auth-sub' note was a THIRD hardcoded copy of the daily-grant
+    // number (a different phrasing again -- "100 every 24 hours" -- that
+    // slipped past the grep patterns used for the other two locations
+    // above). Fixed the same way: read live off tokenStatus rather than
+    // ever hardcoding a number that only this page's own markup owns.
+    // 500 (the grant ceiling) is left as a literal -- GRANT_CEILING isn't
+    // in get-token-status.js's response shape, and this branch's own
+    // scope explicitly excludes touching that constant.
+    capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.';
   }
   function loadBalance(){
     DreamStore.getTokenStatus().then(function(status){
