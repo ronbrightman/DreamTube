@@ -252,42 +252,52 @@
    * delete-account.js has confirmed the real, server-side deletion
    * succeeded (never before — this must not run just because the user
    * clicked a confirm button, only once the destructive server call
-   * actually completed). Goes further than logout() (which only ever
-   * clears state.user and re-persists the rest of the blob unchanged,
-   * since state.dreams/charactersByUser/accounts are deliberately shared
-   * across every account that's ever used this browser — see logout's own
-   * comment): this instead REMOVES the entire localStorage key outright,
-   * exactly the "delete key vs. just clearing state.user" distinction an
-   * account deletion needs — once the account itself is gone server-side,
-   * there's no reason for this browser to go on holding a local mirror of
-   * its dreams/characters/draft/pendingJob (some of which may be OTHER
-   * accounts' data that happened to share this browser, but none of which
-   * should still reference a signed-in user that no longer exists).
+   * actually completed).
    *
-   * Resets the in-memory `state` to a fresh seed too (not just the
-   * on-disk key) — this script instance stays alive until the page
-   * actually navigates away, so any DreamStore call made in that window
-   * (however unlikely) must see a clean, logged-out state rather than the
-   * stale in-memory object from before deletion.
+   * MUST be scoped to just the ONE account being deleted, not a wholesale
+   * wipe of the whole KEY blob — state.dreams/charactersByUser/accounts
+   * are deliberately SHARED across every account that's ever used this
+   * browser (see logout's own comment, and getMyDreams's `d.ownerHandle
+   * === myHandle` filtering — the same pattern getAccountBackup already
+   * uses to export just one account's slice). A second local account
+   * signing in/out on this same device (increasingly realistic now that
+   * cross-device login exists) must survive this untouched: its private,
+   * never-published dreams and characters have no copy anywhere else, and
+   * its locally-cached password/email is how it logs in on this device at
+   * all if it predates the server-side account store. A round-2 review
+   * caught an earlier version of this function doing exactly that wrong
+   * (a bare `localStorage.removeItem(KEY)`) — this is the fix.
    *
-   * Deliberately narrow: only removes the one blob this file itself
-   * owns (KEY) plus the two backfill/persist "have I already done this"
-   * flags below, since both refer to account/dream data that's just been
-   * wiped — leaving them set would incorrectly skip that logic for a
-   * brand-new account created later on this same browser (backfillSharedFeed
-   * would think there's nothing to backfill, maybeRequestPersistentStorage
-   * would think it already asked). Deliberately does NOT touch the
-   * genuinely device-level prefs (dreamtube_sound_on, dreamtube_dod_seen_id,
-   * shop.html's own dreamtube_shop_variant) — those aren't account data at
-   * all (see getSoundPref's own comment: "like a volume setting, it should
-   * stick regardless of who's signed in"), so an account deletion has no
-   * more reason to reset them than logging out already does.
+   * Removes: this account's `accounts[key]` entry, its
+   * `charactersByUser[key]` array, every dream in `state.dreams` whose
+   * `ownerHandle` matches (private and previously-published alike — the
+   * server call already removed the published copies from the shared
+   * feed; this removes this browser's own copy), and `state.pendingJob`
+   * only if it's this same account's (scopedPendingJob's own ownerHandle
+   * check already hides another account's job from this one, but there's
+   * no reason to let a deleted account's job data linger). Then resets
+   * `state.user`/`state.draft` — the current session's own transient
+   * state, not account data — the same way logout() resets `state.user`.
+   * `state.likedIds` is left alone: already documented (see its own
+   * comment) as not deduped per-account at all, same as logout().
+   *
+   * Deliberately does NOT touch the feed-backfill/persistent-storage
+   * "have I already done this" flags or the genuinely device-level prefs
+   * (dreamtube_sound_on, dreamtube_dod_seen_id, shop.html's own
+   * dreamtube_shop_variant) — none of those are this account's data (see
+   * backfillSharedFeed's own "safe to run again" comment, and
+   * getSoundPref's "like a volume setting" comment), so an account
+   * deletion has no more reason to touch them than logging out already
+   * does.
    */
-  function wipeAllLocalState() {
-    try { localStorage.removeItem(KEY); } catch (e) { /* storage unavailable — in-memory reset below still takes effect for this page load */ }
-    try { localStorage.removeItem(FEED_BACKFILL_KEY); } catch (e) { /* best-effort */ }
-    try { localStorage.removeItem(PERSIST_ASKED_KEY); } catch (e) { /* best-effort */ }
-    state = seed();
+  function wipeAllLocalState(usernameKey, myHandle) {
+    delete state.accounts[usernameKey];
+    delete state.charactersByUser[usernameKey];
+    state.dreams = state.dreams.filter(function (d) { return d.ownerHandle !== myHandle; });
+    if (state.pendingJob && state.pendingJob.ownerHandle === myHandle) state.pendingJob = null;
+    state.user = null;
+    state.draft = seed().draft;
+    persist();
   }
 
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -850,6 +860,12 @@
     code = code || '';
     if (code.indexOf('incorrect_password') !== -1) return 'Incorrect password.';
     if (code.indexOf('rate_limited') !== -1) return 'Too many attempts — please wait and try again.';
+    // deletion_failed: the password WAS verified — something failed while
+    // actually deleting server-side (e.g. a Blobs error). Distinct from
+    // not_found/incorrect_password, which are about the credential itself
+    // — telling the user to re-check a password that already checked out
+    // would be misleading.
+    if (code.indexOf('deletion_failed') !== -1) return "Something went wrong deleting your account — please try again.";
     // not_found and anything else unexpected: this device's own local
     // account cache could in principle be stale (e.g. this account was
     // already deleted from a different device/tab) — surface a generic
@@ -1186,6 +1202,8 @@
       if (!state.user) return Promise.resolve({ ok: false, error: 'not_logged_in' });
       if (!password) return Promise.resolve({ ok: false, error: 'Enter your password to confirm.' });
       var username = state.user.username;
+      var usernameKey = username.toLowerCase();
+      var myHandle = state.user.handle;
 
       return fetch('/.netlify/functions/delete-account', {
         method: 'POST',
@@ -1195,7 +1213,7 @@
         return res.json();
       }).then(function (data) {
         if (data && data.ok) {
-          wipeAllLocalState();
+          wipeAllLocalState(usernameKey, myHandle);
           return { ok: true };
         }
         return { ok: false, error: mapDeleteAccountError(data && data.error) };
