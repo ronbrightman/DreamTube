@@ -67,24 +67,53 @@
 // never surfaces as an error -- this must never block or fail the
 // generation-completion flow it's called from.
 //
+// AUTHENTICATION (review finding, fixed): unlike submit-support-message.js
+// (which this file's own header comment originally, and wrongly, cited as
+// precedent), this endpoint has a real external side effect on a THIRD
+// PARTY's own inbox, plus a PERMANENT, unrecoverable per-account guard
+// (firstDreamEmailStore.markSentOnce, with no admin/reset path anywhere
+// in this codebase) -- submit-support-message.js only ever emails the
+// FOUNDER's own inbox, using the resolved account email solely as a
+// reply_to convenience, so a bare client-claimed username was an
+// acceptable bar there. Here it is not: since every account's handle is
+// public (shown on every Explore feed row), a bare client-claimed
+// username would let anyone spam a real stranger's real inbox with
+// attacker-chosen caption/video content AND silently, permanently disable
+// that account's own legitimate future retention email, with no recovery
+// path. Requires the account's real current password -- the same bar
+// delete-account.js already uses for a destructive/side-effecting action
+// against a real account, verified via accountStore.verifyLogin BEFORE
+// resolving the account's email or touching the idempotency guard (so a
+// wrong-password attempt never poisons the real "already sent" flag for
+// that account either). js/store.js's sendFirstDreamEmailBestEffort
+// supplies this from the CURRENTLY signed-in account's own locally-cached
+// password (state.accounts[key].password -- the same plaintext-local
+// account model every other DreamStore method already relies on), so
+// this adds no new UI prompt -- the legitimate caller already has it on
+// hand.
+//
 // RATE LIMITING: a per-IP daily cap (lib/rate-limit.js, same helper
 // generate-video.js/account-login.js/submit-support-message.js already
-// use) -- this is a public endpoint with no real caller auth (same MVP
-// security posture as every other endpoint in this codebase), and unlike
-// generate-video.js's cost risk, the risk here is spam/reputation/quota
-// (Resend's free tier caps at 100 sends/day total -- see tracker.html's
-// idea-weekly-recap item flagging this same constraint) rather than
-// dollars. The per-account markSentOnce guard above already bounds the
-// worst case to one email per real account ever, but a per-IP cap still
-// bounds how many DISTINCT accounts one source can trigger sends for in a
-// single day.
+// use) -- unlike generate-video.js's cost risk, the risk here is spam/
+// reputation/quota (Resend's free tier caps at 100 sends/day total -- see
+// tracker.html's idea-weekly-recap item flagging this same constraint)
+// rather than dollars. The per-account markSentOnce guard above already
+// bounds the worst case to one email per real account ever, and the
+// password check above closes the spoofing vector, but a per-IP cap still
+// bounds how many password-guessing attempts one source can make in a
+// single day (same two-bucket reasoning as account-login.js/delete-
+// account.js, simplified to per-IP only here since this isn't itself a
+// login endpoint -- a wrong guess here doesn't unlock anything beyond
+// this one email).
 //
 // Error codes (this file's own small namespace, matching
 // dream-webhook.js's/request-magic-link.js's bare-number convention for a
 // small file, not generate-video.js's zero-padded E1xx range):
 //   E1 method_not_allowed
 //   E2 invalid_json
-//   E3 missing_fields  -- username/dreamId/videoUrl not all present
+//   E3 missing_fields  -- username/dreamId/videoUrl/password not all present
+//   E4 rate_limited    -- MAX_FIRST_DREAM_EMAILS_PER_IP_PER_DAY exceeded
+//   E5 incorrect_password -- password present but didn't match this account
 
 var accountStore = require('./lib/account-store');
 var firstDreamEmailStore = require('./lib/first-dream-email-store');
@@ -134,13 +163,14 @@ exports.handler = async function (event) {
   }
 
   var username = payload.username;
+  var password = payload.password;
   var dreamId = payload.dreamId;
   var videoUrl = payload.videoUrl;
   var caption = payload.caption;
   var style = payload.style;
   var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
 
-  if (!username || !dreamId || !videoUrl) {
+  if (!username || !password || !dreamId || !videoUrl) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E3: missing_fields' }) };
   }
 
@@ -162,12 +192,24 @@ exports.handler = async function (event) {
   }
 
   try {
-    // Never trust a client-supplied email -- resolve the account's real,
-    // verified address the same way submit-support-message.js already
-    // does. No account record, or an account with no email on file yet,
+    // Real password re-check BEFORE resolving the account's email or
+    // touching the idempotency guard below -- see header comment. This is
+    // the fix for a review finding: a bare client-claimed username alone
+    // would let anyone spam a real account's real inbox (every handle is
+    // public) and permanently poison that account's own future retention
+    // email via the unrecoverable markSentOnce guard. A wrong password
+    // must fail here, before either of those, so a spoofing attempt never
+    // has any observable effect at all.
+    var loginCheck = await accountStore.verifyLogin(event, username, password);
+    if (!loginCheck.ok) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E5: incorrect_password' }) };
+    }
+
+    // The just-verified record's own email -- never a client-supplied
+    // one. No email on file yet (a legacy, not-yet-backfilled account)
     // means there is nothing safe to send to.
-    var account = await accountStore.getByUsername(event, username);
-    if (!account || !account.email) {
+    var account = loginCheck.record;
+    if (!account.email) {
       console.log('send-first-dream-email: no verified account email on file for username ' + username + ' -- skipping');
       return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'no_verified_email' }) };
     }

@@ -116,6 +116,7 @@ test('result.html: a brand-new account\'s first-ever completed dream triggers th
 
     assert.equal(emailCalls.length, 1, 'expected exactly one send-first-dream-email request');
     assert.equal(emailCalls[0].username, 'retentionuser');
+    assert.equal(emailCalls[0].password, 'testpass1', 'must thread this account\'s own already-cached local password through -- the server requires it (review fix: a bare username alone could spam a real inbox)');
     assert.equal(emailCalls[0].dreamId, 'dream-ret-1');
     assert.equal(emailCalls[0].caption, 'Flying over mountains');
     assert.equal(emailCalls[0].style, 'Anime');

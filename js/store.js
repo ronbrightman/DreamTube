@@ -1710,10 +1710,18 @@
      * fires the request. Fire-and-forget: never throws, never awaited,
      * must never block rendering. The server
      * (send-first-dream-email.js) does the actual security-sensitive
-     * work — resolving the account's real verified email, and the
-     * durable "exactly once per account" guard — this call only tips it
-     * off that a first completion just happened; it is never trusted
-     * with the send decision itself.
+     * work — a real password re-check (see that file's own header
+     * comment on why a bare username alone isn't enough here, unlike
+     * most of this codebase's other client-trusted-identity endpoints:
+     * this one has a real side effect on a third party's inbox plus a
+     * permanent per-account guard), resolving the account's real
+     * verified email, and the durable "exactly once per account" guard —
+     * this call only supplies proof of which account it's firing for; it
+     * is never trusted with the send decision itself. The password comes
+     * from THIS account's own already-cached local credential
+     * (state.accounts[key].password — the same plaintext-local account
+     * model every other DreamStore method already relies on), so this
+     * adds no new re-auth prompt for the user.
      *
      * Video-only, matching markFirstVideoCreatedIfEligible's own scope
      * above (it only ever returns true for a videoUrl dream) — an image-
@@ -1723,12 +1731,16 @@
      */
     sendFirstDreamEmailBestEffort: function (dream) {
       if (!state.user || !dream || !dream.videoUrl) return;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return;
       try {
         fetch('/.netlify/functions/send-first-dream-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: state.user.username,
+            password: account.password,
             dreamId: dream.id,
             caption: dream.caption,
             style: dream.style,

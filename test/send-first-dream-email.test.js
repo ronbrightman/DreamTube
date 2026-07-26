@@ -86,6 +86,7 @@ async function registerAccount(username, email) {
 function dreamPayload(overrides) {
   return Object.assign({
     username: 'nora',
+    password: 'realpassword1',
     dreamId: 'dream-1',
     caption: 'Flying over the ocean',
     style: 'Cinematic',
@@ -246,7 +247,7 @@ test('send-first-dream-email: an account with no verified email on file is a sil
 
     var sentCalls = installFetchSpy(true);
     var handler = require('../netlify/functions/send-first-dream-email').handler;
-    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ username: 'noemailuser' }) }));
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ username: 'noemailuser', password: 'x' }) }));
 
     assert.equal(res.statusCode, 200);
     assert.equal(JSON.parse(res.body).ok, true);
@@ -254,15 +255,38 @@ test('send-first-dream-email: an account with no verified email on file is a sil
   });
 });
 
-test('send-first-dream-email: an unknown username is a silent no-op, no send attempted', function () {
+test('send-first-dream-email: an unknown username fails the password check (E5) -- no send attempted, and this never reveals whether the account exists', function () {
   return withEnv(ENV, async function () {
     var sentCalls = installFetchSpy(true);
     var handler = require('../netlify/functions/send-first-dream-email').handler;
     var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ username: 'nobody-registered' }) }));
 
     assert.equal(res.statusCode, 200);
-    assert.equal(JSON.parse(res.body).ok, true);
+    assert.equal(JSON.parse(res.body).ok, false);
+    assert.match(JSON.parse(res.body).error, /^E5/);
     assert.equal(sentCalls.length, 0);
+  });
+});
+
+test('send-first-dream-email: a WRONG password for a REAL registered account is rejected (E5), no send attempted, and does NOT poison the exactly-once guard for a later legitimate call', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    var sentCalls = installFetchSpy(true);
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+
+    // The exact spoofing attempt the review flagged: a bare, correct
+    // username with an attacker-guessed (wrong) password -- must never
+    // send, and must never poison first-dream-email-store's per-account
+    // guard, so the real account can still get its legitimate email later.
+    var spoofed = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ password: 'attacker-guessed-wrong' }) }));
+    assert.equal(spoofed.statusCode, 200);
+    assert.equal(JSON.parse(spoofed.body).ok, false);
+    assert.match(JSON.parse(spoofed.body).error, /^E5/);
+    assert.equal(sentCalls.length, 0, 'a wrong password must never trigger a real send');
+
+    var legit = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload() }));
+    assert.equal(JSON.parse(legit.body).ok, true);
+    assert.equal(sentCalls.length, 1, 'the real account must still be able to get its legitimate retention email after a failed spoofing attempt');
   });
 });
 
