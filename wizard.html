@@ -235,6 +235,14 @@
   var charEditingId = null;
   var charSubMode = 'describe';
   var charPendingPhotoDataUrl = null;
+  // Bumped on every open AND every close (see openCharSheet/closeCharSheet
+  // below) so a pending resizeImageFile call started by one sheet
+  // "instance" can tell, once it resolves, whether it's still talking
+  // about the instance that's still on screen. Same pattern as create.html/
+  // profile.html's charSheetToken/identitySheetToken — see the photo-input
+  // change handler (inside renderSubject below), the only reader of this
+  // token.
+  var charSheetToken = 0;
 
   // Non-character subject state ("A stranger" / "An animal or creature" /
   // "No people" / "+ Something else"). Single-active-subject model (see
@@ -305,6 +313,7 @@
   }
 
   function openCharSheet(mode, existing){
+    charSheetToken++;
     charEditingId = existing ? existing.id : null;
     document.getElementById('char-sheet-title').textContent = mode === 'self'
       ? (existing ? 'Edit yourself' : 'Add yourself')
@@ -322,6 +331,7 @@
     document.getElementById('sheet-character-overlay').classList.add('open');
   }
   function closeCharSheet(){
+    charSheetToken++;
     document.getElementById('sheet-character-overlay').classList.remove('open');
   }
   function renderCharPhotoPreview(){
@@ -474,10 +484,21 @@
       e.target.value = '';
       if(!file) return;
       document.getElementById('char-error').textContent = '';
+      // resizeImageFile is a real multi-step async chain (FileReader ->
+      // Image decode -> canvas draw), easily slow enough to race a Cancel-
+      // then-reopen of this sheet -- including reopening for a DIFFERENT
+      // character than the one being edited when the photo was picked.
+      // Captured now and re-checked once it resolves -- without this, a
+      // stale resize from a cancelled instance can resolve after reopen and
+      // silently overwrite charPendingPhotoDataUrl/the preview with an
+      // abandoned photo the user never confirmed for this instance.
+      var tokenAtPick = charSheetToken;
       resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+        if(tokenAtPick !== charSheetToken) return;
         charPendingPhotoDataUrl = dataUrl;
         renderCharPhotoPreview();
       }).catch(function(){
+        if(tokenAtPick !== charSheetToken) return;
         document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
       });
     });
