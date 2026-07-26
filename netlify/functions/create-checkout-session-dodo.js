@@ -2,8 +2,14 @@
 //
 // POST { email, pack } -> creates a Dodo Payments Checkout Session for a
 // one-time DreamTube token-pack purchase and returns { url } for the
-// client to redirect the browser to. `pack` is "pack100" or "pack500"
-// (100 tokens / $1.99, 500 tokens / $8.95 — see shop.html).
+// client to redirect the browser to. `pack` is "pack100", "pack300", or
+// "pack700" (100 tokens / $2.99, 300 tokens / $7.99, 700 tokens / $14.99
+// — "Token Economy C", founder-approved 2026-07-26 night — see
+// shop.html). A user's first-ever successful pack purchase additionally
+// credits +50% tokens — applied server-side by dodo-webhook.js /
+// lib/entitlements.js on the confirmed payment, nothing here needs to
+// know about it (this function only ever creates the checkout session,
+// see below).
 //
 // This function only creates the Checkout Session — it does not itself
 // grant any tokens. The credit is applied by dodo-webhook.js once Dodo
@@ -40,8 +46,8 @@
 //   E2 missing_api_key        — DODO_API_KEY not configured in this environment
 //   E3 invalid_json
 //   E4 email_and_pack_required
-//   E5 invalid_pack           — pack wasn't "pack100" or "pack500"
-//   E6 missing_product_id     — DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 not configured for the requested pack
+//   E5 invalid_pack           — pack wasn't "pack100", "pack300", or "pack700"
+//   E6 missing_product_id     — DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700 not configured for the requested pack
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 
 var crypto = require('crypto');
@@ -49,12 +55,17 @@ var DodoPayments = require('dodopayments').default;
 var { normalizeEmail } = require('./lib/entitlements');
 
 // Token amount per pack — mirrors the pricing already shown in shop.html
-// (100 tokens/$1.99, 500 tokens/$8.95). The actual dollar amount charged
+// (100 tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99 — "Token Economy
+// C", founder-approved 2026-07-26 night). The actual dollar amount charged
 // lives entirely on the Dodo product configured for each env var below,
 // not here; this amount is only used for the metadata fallback
 // dodo-webhook.js reads if its product_id -> pack mapping ever changes
-// after a purchase was made (see that file's resolvePackTokens).
-var PACK_TOKENS = { pack100: 100, pack500: 500 };
+// after a purchase was made (see that file's resolvePackTokens). Does NOT
+// include the +50% first-purchase bonus — that's decided and applied
+// entirely server-side on the webhook's crediting path (see
+// lib/entitlements.js's creditTokenPackAmountOnce), never known at
+// checkout-creation time.
+var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
 
 // USD price per pack, mirrors shop.html's own PACK_INFO map — used only for
 // the metadata.dreamtube_price fallback below, the same "belt-and-
@@ -63,11 +74,12 @@ var PACK_TOKENS = { pack100: 100, pack500: 500 };
 // actual product_id against DODO_PRODUCT_PACK_* first (this is only the
 // fallback path), so this never needs to be the source of truth for what
 // Dodo actually charged.
-var PACK_PRICES = { pack100: 1.99, pack500: 8.95 };
+var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
 
 var PACK_PRODUCT_ENV = {
   pack100: 'DODO_PRODUCT_PACK_100',
-  pack500: 'DODO_PRODUCT_PACK_500'
+  pack300: 'DODO_PRODUCT_PACK_300',
+  pack700: 'DODO_PRODUCT_PACK_700'
 };
 
 exports.handler = async function (event) {

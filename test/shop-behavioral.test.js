@@ -90,7 +90,7 @@ async function seedShopPage(page, email) {
   await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
 }
 
-test('both token-pack buttons are enabled and say "Buy" (no longer disabled "Coming soon")', async function (t) {
+test('all three token-pack buttons are enabled and say "Buy" (no longer disabled "Coming soon")', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -100,12 +100,15 @@ test('both token-pack buttons are enabled and say "Buy" (no longer disabled "Com
     await seedShopPage(page);
 
     var pack100 = page.locator('#shop-buy-pack100');
-    var pack500 = page.locator('#shop-buy-pack500');
+    var pack300 = page.locator('#shop-buy-pack300');
+    var pack700 = page.locator('#shop-buy-pack700');
     await assert.doesNotReject(pack100.waitFor({ state: 'visible', timeout: 5000 }));
     assert.equal(await pack100.isDisabled(), false);
-    assert.equal(await pack500.isDisabled(), false);
+    assert.equal(await pack300.isDisabled(), false);
+    assert.equal(await pack700.isDisabled(), false);
     assert.equal((await pack100.textContent()).trim(), 'Buy');
-    assert.equal((await pack500.textContent()).trim(), 'Buy');
+    assert.equal((await pack300.textContent()).trim(), 'Buy');
+    assert.equal((await pack700.textContent()).trim(), 'Buy');
   } finally {
     await context.close();
   }
@@ -126,10 +129,10 @@ test('clicking a pack button posts {email, pack} and redirects to the returned c
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_test' }) });
     });
 
-    await page.click('#shop-buy-pack500');
+    await page.click('#shop-buy-pack700');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
 
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack500' });
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack700' });
   } finally {
     await context.close();
   }

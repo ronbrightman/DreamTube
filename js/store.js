@@ -1733,9 +1733,9 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * grant mechanism (290 on first-ever read, +200/24h lazily thereafter,
-     * capped once balance is already ≥500). Resolves to
-     * { balance:0, nextGrantAt:null, dailyGrantAmount:200 } with no network
+     * grant mechanism (220 on first-ever read, +20/24h lazily thereafter,
+     * capped once balance is already ≥200). Resolves to
+     * { balance:0, nextGrantAt:null, dailyGrantAmount:20 } with no network
      * call at all when there's no logged-in account or no email on file
      * (a legacy account that never added one — signup requires an email
      * today, see signup() above) since the server side has nothing to key
@@ -1747,8 +1747,13 @@
     getTokenStatus: function () {
       var email = currentAccountEmail();
       // dailyGrantAmount here mirrors entitlements.js's real
-      // DAILY_GRANT_AMOUNT (200 as of 2026-07-26's token-economy retune).
-      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 200 });
+      // DAILY_GRANT_AMOUNT (20 as of Token Economy C, 2026-07-26 night —
+      // see tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy
+      // for why this exact hand-maintained fallback keeps needing manual
+      // updates: this is a plain script with no bundler/require, so it
+      // can't import entitlements.js's live constant the way
+      // get-token-status.js now does).
+      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 20 });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })
         .then(function (data) {

@@ -43,11 +43,14 @@ growth-owned).
 ## What's built and live (main branch, all tested)
 
 - **Monetization:** pivoted from subscription/quota to a one-time
-  token ledger (290-token signup grant, +10/day automatic). Dodo
-  Payments is the chosen, live payment provider — checkout + webhook +
-  idempotent crediting all merged and tested; still needs **Ron's own**
-  account/API-key setup before it can process a real charge (founder
-  action, not something this session can do).
+  token ledger — retuned to "Token Economy C" 2026-07-26 night
+  (founder-approved): 220-token signup grant, +20/day automatic, 200
+  ceiling. Dodo Payments is the chosen, live payment provider — checkout
+  + webhook + idempotent crediting all merged and tested, now a 3-pack
+  lineup (100/$2.99, 300/$7.99, 700/$14.99) plus a one-time +50%
+  first-purchase bonus; still needs **Ron's own** account/API-key setup
+  (3 Dodo products this time) before it can process a real charge
+  (founder action, not something this session can do).
 - **Shop palette A/B test:** the token shop's red/hot visual palette
   (founder feedback) was redesigned into two calmer directions, shipped
   as a live 50/50 in-product A/B test (not a founder pick-one) with a

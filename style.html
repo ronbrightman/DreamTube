@@ -103,7 +103,7 @@
            only (updateMediaTypeUI() overwrites it synchronously on load,
            before this modal is ever shown) — its daily-grant number is
            kept in sync with DEFAULT_DAILY_GRANT_AMOUNT below by hand. -->
-      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 200 more automatically within 24 hours.</div>
+      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 20 more automatically within 24 hours.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
         <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
@@ -163,12 +163,12 @@
 
   // Fallback only for the brief window before the async getTokenStatus()
   // call above resolves (this screen's copy is re-rendered the instant it
-  // does) — mirrors entitlements.js's real DAILY_GRANT_AMOUNT (200 as of
-  // 2026-07-26's token-economy retune) and js/store.js's own no-email
+  // does) — mirrors entitlements.js's real DAILY_GRANT_AMOUNT (20 as of
+  // Token Economy C, 2026-07-26 night) and js/store.js's own no-email
   // fallback of the same value, so this never goes stale on its own if
   // that constant changes again without every hardcoded copy of the
   // number being hunted down by hand (the actual bug this replaces).
-  var DEFAULT_DAILY_GRANT_AMOUNT = 200;
+  var DEFAULT_DAILY_GRANT_AMOUNT = 20;
   function dailyGrantAmountText(){
     return (tokenStatus && tokenStatus.dailyGrantAmount) || DEFAULT_DAILY_GRANT_AMOUNT;
   }

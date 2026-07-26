@@ -112,8 +112,11 @@ function getHeader(event, name) {
 // so this file has no compile-time dependency on that one; a mismatch
 // would only matter for the metadata fallback below, since the primary
 // path resolves the amount from the *current* DODO_PRODUCT_PACK_* env
-// vars, not from a hardcoded table).
-var PACK_TOKENS = { pack100: 100, pack500: 500 };
+// vars, not from a hardcoded table). These are BASE tokens — the +50%
+// first-purchase bonus (see resolvePackTokens' caller below) is applied
+// separately, per-account, by lib/entitlements.js's
+// creditTokenPackAmountOnce, never baked into this table.
+var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
 
 // USD price per pack — same mirrored-copy reasoning as PACK_TOKENS above,
 // and same fallback role: create-checkout-session-dodo.js's own
@@ -121,16 +124,18 @@ var PACK_TOKENS = { pack100: 100, pack500: 500 };
 // this local copy only matters if that metadata is ever missing (a
 // purchase made before this field existed) AND the product_id -> pack
 // mapping below also fails to resolve — see resolvePackPrice.
-var PACK_PRICES = { pack100: 1.99, pack500: 8.95 };
+var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
 
 /**
- * Resolves how many tokens a completed Payment should credit.
+ * Resolves how many BASE tokens a completed Payment should credit (before
+ * any first-purchase bonus — see creditTokenPackAmountOnce, which decides
+ * and applies that separately, per-account).
  *
  * Prefers matching the payment's product_cart[0].product_id against the
- * same DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 env vars
- * create-checkout-session-dodo.js uses to create the checkout in the first
- * place — this is the authoritative, current mapping and needs no
- * cooperation from the payload itself. Falls back to the metadata
+ * same DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700
+ * env vars create-checkout-session-dodo.js uses to create the checkout in
+ * the first place — this is the authoritative, current mapping and needs
+ * no cooperation from the payload itself. Falls back to the metadata
  * create-checkout-session-dodo.js attached at checkout time
  * (dreamtube_tokens, a plain integer), for the case those env vars have
  * changed between checkout creation and webhook delivery. Returns
@@ -142,7 +147,8 @@ function resolvePackTokens(payment) {
   var productId = cart.length ? cart[0].product_id : undefined;
   if (productId) {
     if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_TOKENS.pack100;
-    if (productId === process.env.DODO_PRODUCT_PACK_500) return PACK_TOKENS.pack500;
+    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_TOKENS.pack300;
+    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_TOKENS.pack700;
   }
   var metaTokens = payment.metadata && payment.metadata.dreamtube_tokens;
   var parsed = typeof metaTokens === 'number' ? metaTokens : parseInt(metaTokens, 10);
@@ -155,20 +161,21 @@ function resolvePackTokens(payment) {
  * could have supplied, same "don't trust the client for money" reasoning
  * every other server-side amount in this codebase already follows. Mirrors
  * resolvePackTokens exactly: prefers matching product_cart[0].product_id
- * against the current DODO_PRODUCT_PACK_100/500 env vars (the authoritative,
- * current mapping), falling back to the metadata.dreamtube_price
- * create-checkout-session-dodo.js attached at checkout time. Returns
- * undefined if neither resolves — callers must treat that as "can't
- * determine what to report" and skip firing Purchase entirely, rather than
- * guess or send a zero/placeholder value that would corrupt revenue
- * reporting.
+ * against the current DODO_PRODUCT_PACK_100/300/700 env vars (the
+ * authoritative, current mapping), falling back to the
+ * metadata.dreamtube_price create-checkout-session-dodo.js attached at
+ * checkout time. Returns undefined if neither resolves — callers must
+ * treat that as "can't determine what to report" and skip firing Purchase
+ * entirely, rather than guess or send a zero/placeholder value that would
+ * corrupt revenue reporting.
  */
 function resolvePackPrice(payment) {
   var cart = payment.product_cart || [];
   var productId = cart.length ? cart[0].product_id : undefined;
   if (productId) {
     if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_PRICES.pack100;
-    if (productId === process.env.DODO_PRODUCT_PACK_500) return PACK_PRICES.pack500;
+    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_PRICES.pack300;
+    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_PRICES.pack700;
   }
   var metaPrice = payment.metadata && payment.metadata.dreamtube_price;
   var parsed = typeof metaPrice === 'number' ? metaPrice : parseFloat(metaPrice);
