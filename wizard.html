@@ -786,24 +786,53 @@
   // comparing against it (alone, without pendingStartFailed) safe.
   // See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
   var lastPendingSubmissionKey = null;
-  // Per-attempt token (review round 3) — same "an async callback's side
-  // effects aren't scoped to the attempt that started them" pattern as
-  // start.html's own pendingGenerationToken (see that file's doc
-  // comment). Bumped on EVERY Continue click here, not just when a
-  // fresh POST fires (unlike start.html's version): reverting to
-  // already-succeeded content takes the synchronous skip path below
-  // with no new POST at all, but it's still a newer attempt that must
-  // invalidate whatever's still in flight from an abandoned edit in
-  // between. Repro this closes: submit A (succeeds, pendingId=X) ->
-  // edit to B, Continue (fires a real POST, doesn't land yet) -> Back,
-  // revert to A exactly, Continue (guard matches, skips re-POST,
-  // advances carrying X — correct) -> B's POST finally resolves. Without
-  // this token, B's belated .then() would unconditionally overwrite
-  // pendingId/pendingOperationName back to B's job well after the user
-  // already moved on with A, orphaning X. With it, B's captured token no
-  // longer matches (the revert-to-A click bumped it), so B's settlement
-  // is discarded instead of applied.
+  // Per-attempt token — same "an async callback's side effects aren't
+  // scoped to the attempt that started them" pattern as start.html's own
+  // pendingGenerationToken (see that file's doc comment, ~start.html:954).
+  // Bumped on EVERY Continue click here, not just when a fresh POST
+  // fires (unlike start.html's version): reverting to already-succeeded
+  // content takes the synchronous skip path below with no new POST at
+  // all, but it's still a newer attempt that must invalidate whatever's
+  // still in flight from an abandoned edit in between. Guards
+  // startPendingGeneration()'s WRITE to the pending* vars below — never
+  // gates navigation (see pendingGenerationPromise's own comment for why
+  // navigation is handled entirely separately now).
   var pendingGenerationToken = 0;
+  // Review round 4: the topbar Back button (backBtn, ~line 1150) is
+  // never disabled, including mid-fetch. The previous structure called
+  // next() from INSIDE the fetch's .then()/.catch() -- so a user could
+  // click Continue (fires the POST), then immediately click Back before
+  // it landed, all without ever re-clicking Continue on Contact (no
+  // token bump, since the token only bumps on a Continue click). The
+  // settling response's next() = goToStep(cur + 1) then read `cur` LIVE
+  // at settlement time, not the value from when the request fired --
+  // silently force-navigating the user forward again from wherever
+  // they'd since moved to, and DreamStore.setDraft(...) writing
+  // whatever assembled.caption/chosenStyle happened to be NOW, which
+  // might not even match what was actually POSTed. Same underlying
+  // failure mode as the round 2/3 races (a stale async callback acting
+  // on live shared state), reached via a path neither prior fix's token
+  // check touched, because neither guarded navigation itself.
+  //
+  // Structural fix (matches start.html's own startPendingGeneration/
+  // getOrStartPendingGeneration precedent, ~start.html:944-1026) rather
+  // than another patch: startPendingGeneration()'s settlement below
+  // ONLY ever writes pendingId/pendingOperationName/pendingStartedAt/
+  // pendingStartFailed/lastPendingSubmissionKey (still token-guarded,
+  // unchanged) -- it NEVER calls next() or DreamStore.setDraft(). The
+  // Continue handler calls both of those ITSELF, synchronously, right
+  // after firing the request (or right after the skip-guard's
+  // synchronous branch) -- never waiting on the fetch. This removes the
+  // whole "settlement drives navigation off live shared state" hazard
+  // by construction: there is no longer any window where an in-flight
+  // request's eventual settlement can navigate anyone anywhere, because
+  // settlement never navigates, period. pendingGenerationPromise tracks
+  // the latest fire so the Signup step (the only other place that reads
+  // pendingId/pendingOperationName) can wait for it to settle before
+  // reading them, exactly mirroring how start.html's own Signup screen
+  // (screen 13, ~start.html:1159) awaits pendingPromise before its own
+  // claim/adopt/next() -- see renderSignup below.
+  var pendingGenerationPromise = Promise.resolve();
 
   function resolveCharactersForGeneration(){
     if(!assembled || !assembled.characterIdsForGeneration.length) return [];
@@ -813,6 +842,47 @@
     var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
     if(c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
     return [resolved];
+  }
+
+  /**
+   * Fires start-pending-generation.js and updates the pending* vars on
+   * settlement -- but ONLY if `token` still matches pendingGenerationToken
+   * (see that var's own comment); a mismatch means a newer attempt has
+   * since become current, so this stale response is discarded rather
+   * than clobbering it. Always resolves (never rejects) -- a failure
+   * just leaves pendingStartFailed true. Deliberately does NOT navigate
+   * or touch the draft -- see the Continue handler below, which
+   * advances synchronously right after calling this, without waiting
+   * for it to settle. Same shape as start.html's own
+   * startPendingGeneration (~start.html:968).
+   */
+  function startPendingGeneration(submissionKey, comparisonKey, token){
+    var startedAt = Date.now();
+    return fetch('/.netlify/functions/start-pending-generation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: submissionKey
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(token !== pendingGenerationToken) return; // stale -- a newer attempt has since started, discard
+      if(result.ok && result.data && result.data.pendingId){
+        pendingId = result.data.pendingId;
+        pendingOperationName = result.data.operationName;
+        pendingStartedAt = startedAt;
+        pendingStartFailed = false;
+        lastPendingSubmissionKey = comparisonKey;
+      } else {
+        // Resilient fallback: generation just won't have a head start —
+        // the normal fresh-generation path at processing.html (draft
+        // caption/style are set synchronously by the caller regardless)
+        // still works.
+        pendingStartFailed = true;
+      }
+    }).catch(function(){
+      if(token !== pendingGenerationToken) return;
+      pendingStartFailed = true;
+    });
   }
 
   function renderContact(el){
@@ -860,6 +930,8 @@
       // actual POST body above keeps the as-typed casing.
       var comparisonKey = JSON.stringify(Object.assign({}, payload, { email: contactEmail.toLowerCase() }));
 
+      var draftPatch = { caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey };
+
       // Marks this click as the new current attempt -- see
       // pendingGenerationToken's own comment above for why this is
       // bumped here, before either path below, rather than only when a
@@ -889,7 +961,10 @@
       // the equality check alone already proves pendingId is valid for
       // this exact content.
       if(pendingId && comparisonKey === lastPendingSubmissionKey){
-        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
+        // Nothing new to wait for -- pendingId is already correct and
+        // settled from an earlier completed attempt.
+        pendingGenerationPromise = Promise.resolve();
+        DreamStore.setDraft(draftPatch);
         next();
         return;
       }
@@ -898,41 +973,20 @@
       continueBtn.textContent = 'Starting your dream…';
       track('wizard_contact_captured', { has_whatsapp: !!contactWhatsapp });
 
-      var startedAt = Date.now();
-      fetch('/.netlify/functions/start-pending-generation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: submissionKey
-      }).then(function(res){
-        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
-      }).then(function(result){
-        // Stale -- a newer attempt (another edit, or a revert that took
-        // the synchronous skip path above) has since become current.
-        // That newer attempt already owns pendingId/next() for whatever
-        // it decided; applying this abandoned response now would
-        // silently clobber it. Discard entirely: no state write, no
-        // setDraft, no next().
-        if(myToken !== pendingGenerationToken) return;
-        if(result.ok && result.data && result.data.pendingId){
-          pendingId = result.data.pendingId;
-          pendingOperationName = result.data.operationName;
-          pendingStartedAt = startedAt;
-          pendingStartFailed = false;
-          lastPendingSubmissionKey = comparisonKey;
-        } else {
-          // Resilient fallback: generation just won't have a head start —
-          // the normal fresh-generation path at processing.html (draft
-          // caption/style are already set below) still works.
-          pendingStartFailed = true;
-        }
-        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
-        next();
-      }).catch(function(){
-        if(myToken !== pendingGenerationToken) return;
-        pendingStartFailed = true;
-        DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
-        next();
-      });
+      pendingGenerationPromise = startPendingGeneration(submissionKey, comparisonKey, myToken);
+
+      // Advance immediately -- settlement (above, in startPendingGeneration)
+      // only ever WRITES state, it never navigates. See
+      // pendingGenerationPromise's own comment for the full "why": Back
+      // is never disabled here, so waiting for this fetch before
+      // advancing left a window where a since-abandoned attempt's async
+      // callback could force-navigate the user off of live shared `cur`
+      // state read at settlement time rather than fire time. Signup
+      // (renderSignup below) is what actually needs pendingId/
+      // pendingOperationName once they're ready -- it awaits
+      // pendingGenerationPromise itself before reading them.
+      DreamStore.setDraft(draftPatch);
+      next();
     });
   }
 
@@ -1030,21 +1084,34 @@
           if(assembled && assembled.characterIdsForGeneration.length && staged.subjectCharacterId){
             DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
           }
-          if(pendingId && !pendingStartFailed){
-            // email is required now (see claim-pending-generation.js's
-            // ownership check, review finding) -- contactEmail is the
-            // exact same email start-pending-generation.js created this
-            // pending record under, so this always matches.
-            fetch('/.netlify/functions/claim-pending-generation', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
-            }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
-          }
-          if(pendingOperationName && !pendingStartFailed){
-            DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle);
-          }
-          track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
-          location.href = 'processing.html';
+          // Waits for the (already in-flight, possibly already settled)
+          // pending-generation call to settle before reading pendingId/
+          // pendingOperationName -- same shape as start.html's own
+          // screen 13 (~start.html:1159, `pendingPromise.then(...)`).
+          // Contact-capture's Continue handler no longer waits on this
+          // fetch before advancing here (see pendingGenerationPromise's
+          // own comment on why), so without this wait a fast typer could
+          // reach Signup and submit it before the contact-step's POST
+          // had settled, reading pendingId/pendingOperationName while
+          // they were still both null. Always resolves (win or lose),
+          // so this can never hang the funnel.
+          pendingGenerationPromise.then(function(){
+            if(pendingId && !pendingStartFailed){
+              // email is required now (see claim-pending-generation.js's
+              // ownership check, review finding) -- contactEmail is the
+              // exact same email start-pending-generation.js created this
+              // pending record under, so this always matches.
+              fetch('/.netlify/functions/claim-pending-generation', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
+              }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
+            }
+            if(pendingOperationName && !pendingStartFailed){
+              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle);
+            }
+            track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
+            location.href = 'processing.html';
+          });
         });
       }, 0);
     });

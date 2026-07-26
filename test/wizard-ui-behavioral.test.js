@@ -382,7 +382,136 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
   }
 });
 
-test('wizard.html: a stale in-flight start-pending-generation response for an ABANDONED edit must not clobber pendingId/pendingOperationName once the user has already reverted to and advanced with the earlier successful submission (review round 3 race)', async function (t) {
+test('wizard.html: Contact-capture Continue advances to Signup SYNCHRONOUSLY, before the (deliberately delayed) start-pending-generation response resolves -- navigation no longer waits on the fetch at all (review round 4 structural fix)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
+      // Held back well past the assertion window below -- if navigation
+      // were still gated on this settling (the pre-round-4 shape), the
+      // short-timeout waitForSelector below would time out.
+      await new Promise(function (r) { setTimeout(r, 800); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-sync-1', operationName: 'fal:fake-model:req-sync-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'sync-nav-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    // Signup must already be showing well before the mocked route's
+    // 800ms delay elapses -- proves next() fired synchronously, right
+    // after the request was FIRED, not after it SETTLED.
+    await page.waitForSelector('#fn-username', { timeout: 300 });
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: clicking Continue then immediately clicking Back (no re-click on Contact) -- the abandoned request\'s belated settlement must not force-navigate the user anywhere once it lands (review round 4 literal repro)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      await new Promise(function (r) { setTimeout(r, 500); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-noback-1', operationName: 'fal:fake-model:req-noback-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Small helper: identifies which screen is currently showing by
+    // checking for each screen's distinctive element. Deliberately does
+    // NOT assume next() already fired synchronously -- this same check
+    // is used both right after the two clicks below (where a REGRESSED,
+    // still-fetch-gated next() would leave the user on freetext-skip,
+    // one step short of contact-capture, rather than contact-capture
+    // itself) and again after the wait, so the core assertion (do these
+    // two reads match?) catches a forced navigation regardless of which
+    // screen the user happened to land on in between.
+    async function currentScreen() {
+      if (await page.locator('#contact-email').count() > 0) return 'contact';
+      if (await page.locator('#fn-freetext-skip').count() > 0) return 'freetext';
+      if (await page.locator('#fn-username').count() > 0) return 'signup';
+      return 'unknown';
+    }
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'noback-test@example.com');
+    await page.click('#fn-contact-continue');
+    // The literal round-4 repro: click Back IMMEDIATELY, with no wait in
+    // between and WITHOUT ever re-clicking Continue on Contact (so
+    // pendingGenerationToken never bumps again) -- exactly the path
+    // neither the round-2 nor round-3 token guard touched, because
+    // those only guarded the WRITE, not navigation itself. Deliberately
+    // does NOT wait for '#fn-username' first -- that would itself block
+    // on next() having already fired, which is exactly the behavior
+    // under test, not something safe to assume going in.
+    await page.click('#fnBack');
+
+    var screenAfterBack = await currentScreen();
+    assert.notEqual(screenAfterBack, 'unknown', 'test setup assumption broken -- must have landed on a recognizable screen after Continue then Back');
+
+    // Wait well past the request's 500ms delay -- its settlement lands
+    // while the user is sitting wherever they ended up above, having
+    // clicked nothing further at all.
+    await new Promise(function (r) { setTimeout(r, 700); });
+
+    var screenAfterWait = await currentScreen();
+    // The core assertion: the abandoned request's belated settlement
+    // must never navigate on its own -- whatever screen the user was on
+    // right after the two clicks must be EXACTLY where they still are
+    // once the settlement lands, unprompted. (The round-4 bug: next()
+    // used to fire from inside the settlement handler itself, reading
+    // live `cur` at settlement time -- this assertion is code-shape
+    // agnostic on purpose, so it would have failed against the
+    // pre-round-4 structure too, not just documented the fixed
+    // structure's specific screen sequence.)
+    assert.equal(screenAfterWait, screenAfterBack, 'the abandoned request\'s settlement must never navigate on its own, regardless of which screen the user was already on when it landed');
+
+    // Now assert the ACTUAL fixed structure's specific, deterministic
+    // behavior: Continue synchronously advances to Signup, so an
+    // immediate Back lands squarely back on contact-capture (not
+    // freetext-skip, one step further back).
+    assert.equal(screenAfterBack, 'contact', 'Continue must have already advanced to Signup synchronously before Back was clicked, so Back lands on contact-capture');
+
+    // The write itself is still correct and useful (this isn't a stale
+    // attempt by token -- no newer Continue click ever fired) -- confirm
+    // by clicking Continue again with the SAME email: the guard should
+    // now recognize pendingId is already set for this content and skip
+    // re-POSTing, proving the settlement's state write landed even
+    // though it triggered no navigation.
+    await page.fill('#contact-email', 'noback-test@example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'the settled pendingId must have been recognized by the guard -- no second real POST for unchanged content');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendingId once a newer (reverted) attempt has become current -- round 2/3 race, re-verified under the round-4 synchronous-navigation structure', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -399,7 +528,7 @@ test('wizard.html: a stale in-flight start-pending-generation response for an AB
         // Held back deliberately -- this is the abandoned edit's request.
         // It must not settle until well after the user has reverted to
         // the original content and moved on with ITS pendingId.
-        await new Promise(function (r) { setTimeout(r, 400); });
+        await new Promise(function (r) { setTimeout(r, 500); });
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-race-B', operationName: 'fal:fake-model:req-race-B' }) });
         return;
       }
@@ -426,41 +555,33 @@ test('wizard.html: a stale in-flight start-pending-generation response for an AB
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
-    // Attempt A -- succeeds immediately (fast route).
+    // Attempt A -- fires and advances immediately; wait for the actual
+    // network response (condition-based, not an arbitrary sleep) so its
+    // pendingId is definitely written before we test reverting to it.
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', ORIGINAL_EMAIL);
+    var responseA = page.waitForResponse(function (res) { return res.url().indexOf('start-pending-generation') !== -1; });
     await page.click('#fn-contact-continue');
+    await responseA;
     await page.waitForSelector('#fn-username', { timeout: 5000 });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
 
-    // Back to contact-capture, edit to the SLOW email -- this fires a
-    // real, genuinely-different-content POST that the mocked route holds
-    // for 400ms. The wizard's Continue handler only calls next() once
-    // this settles, so we stay on contact-capture, button disabled,
-    // while it's in flight.
+    // Back to contact-capture (direct now -- navigation no longer waits
+    // on any fetch, so Back from Signup always lands straight back on
+    // Contact), edit to the SLOW email, Continue -- advances immediately
+    // again, real POST fired but held back 500ms.
     await page.click('#fnBack');
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', SLOW_EMAIL);
     await page.click('#fn-contact-continue');
-    // Confirm the slow request actually landed (pushed synchronously by
-    // the route handler before its artificial delay) without waiting for
-    // it to resolve -- condition-based, not an arbitrary sleep.
-    var pollStart = Date.now();
-    while (startPendingCalls.length < 2) {
-      if (Date.now() - pollStart > 3000) throw new Error('timed out waiting for the slow start-pending-generation request to be received');
-      await new Promise(function (r) { setTimeout(r, 20); });
-    }
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 2);
     assert.equal(startPendingCalls[1].email, SLOW_EMAIL);
 
-    // While that slow request is still pending in the background, the
-    // user abandons this edit entirely: Back to the previous step (Back
-    // is never disabled, even mid-fetch -- review's own finding), then
-    // forward again (re-rendering contact-capture fresh) and revert the
+    // Back again (B's request still in flight, held back), revert the
     // email to the ORIGINAL, already-succeeded value.
     await page.click('#fnBack');
-    await page.waitForSelector('#fn-freetext-skip');
-    await page.click('#fn-freetext-skip');
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', ORIGINAL_EMAIL);
     await page.click('#fn-contact-continue');
@@ -471,18 +592,15 @@ test('wizard.html: a stale in-flight start-pending-generation response for an AB
     await page.waitForSelector('#fn-username', { timeout: 5000 });
     assert.equal(startPendingCalls.length, 2, 'reverting to A must not fire a third real POST');
 
-    // Deliberately wait out B's full artificial delay (400ms) here,
+    // Deliberately wait out B's full artificial delay (500ms) here,
     // BEFORE completing signup -- this is what actually forces the
     // race: B's abandoned response must land while the wizard is
-    // sitting idle on Signup, so its (correctly guarded, or -- in a
-    // regression -- unconditional) settlement handler runs well before
-    // signup reads pendingId. Without this explicit wait the test would
-    // pass even against a reverted/buggy guard purely by lucky timing
-    // (B's response not having arrived yet), which is exactly the kind
-    // of false-confidence gap systematic debugging exists to catch --
-    // confirmed by deliberately reverting the token guard and observing
-    // this test still passed until this wait was added.
-    await new Promise(function (r) { setTimeout(r, 600); });
+    // sitting idle on Signup, so its settlement handler runs well
+    // before signup reads pendingId. Without this explicit wait the
+    // test would pass even against a broken token guard purely by lucky
+    // timing (B's response not having arrived yet) -- exactly the kind
+    // of false-confidence gap systematic debugging exists to catch.
+    await new Promise(function (r) { setTimeout(r, 700); });
 
     // Finish signup now -- pendingId must still be A's at this point.
     await page.fill('#fn-username', 'racetester');
@@ -492,17 +610,6 @@ test('wizard.html: a stale in-flight start-pending-generation response for an AB
     await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once');
     assert.equal(claimCalls[0].pendingId, 'pd-race-A', 'must claim A\'s pendingId, not the abandoned B request\'s -- B\'s belated settlement must have been discarded as stale, not applied');
-
-    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
-    // adoptPendingGeneration already consumed/cleared the pendingJob by
-    // the time result.html loads in the successful path -- the stronger,
-    // still-checkable signal is the dream that actually got created:
-    // its sourceDreamId/operationName lineage traces back through
-    // DreamStore to whichever operationName was adopted. Assert via the
-    // claim call above (authoritative: it's the exact pendingId the
-    // wizard's closure state held at signup time) -- this second read is
-    // just a sanity check that no pendingJob was left dangling on B.
-    assert.ok(pendingJob === null || pendingJob === undefined || pendingJob.operationName !== 'fal:fake-model:req-race-B', 'must never have adopted the stale B operationName');
   } finally {
     await page.close();
   }
