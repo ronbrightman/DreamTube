@@ -58,6 +58,9 @@
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
 //                                                result.html's call site + js/analytics-config.js)
+//   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
+//       — the retention email ("your dream is ready") — see that function's own header comment.
+//       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
 //   adoptPendingGeneration(operationName,startedAt,caption,style) -> local write, adopts an
 //       already-submitted (pre-signup) generation job as this browser's pendingJob — see
 //       wizard.html's "generate during signup" seam and start-pending-generation.js
@@ -1693,6 +1696,47 @@
       account.firstVideoCreatedFired = true;
       persist();
       return true;
+    },
+
+    /**
+     * Best-effort trigger for the "your dream is ready" RETENTION email
+     * (tracker.html's for-product-retention-email-send-user-th-eke9ra
+     * item — day-1 -> day-2+ return, distinct from the FirstVideoCreated
+     * KPI event above though fired from the exact same choke point — see
+     * result.html's/explore.html's call sites, right alongside their own
+     * markFirstVideoCreatedIfEligible(dream.id) guard). Callers must
+     * gate this on that SAME eligibility check already having returned
+     * true — this function does not re-check eligibility itself, it just
+     * fires the request. Fire-and-forget: never throws, never awaited,
+     * must never block rendering. The server
+     * (send-first-dream-email.js) does the actual security-sensitive
+     * work — resolving the account's real verified email, and the
+     * durable "exactly once per account" guard — this call only tips it
+     * off that a first completion just happened; it is never trusted
+     * with the send decision itself.
+     *
+     * Video-only, matching markFirstVideoCreatedIfEligible's own scope
+     * above (it only ever returns true for a videoUrl dream) — an image-
+     * type dream's completion never reaches this call in practice, but
+     * the explicit videoUrl check below keeps that scope decision visible
+     * here too rather than silently relying on the caller.
+     */
+    sendFirstDreamEmailBestEffort: function (dream) {
+      if (!state.user || !dream || !dream.videoUrl) return;
+      try {
+        fetch('/.netlify/functions/send-first-dream-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: state.user.username,
+            dreamId: dream.id,
+            caption: dream.caption,
+            style: dream.style,
+            videoUrl: dream.videoUrl,
+            mediaType: dream.mediaType || 'video'
+          })
+        }).catch(function () { /* best-effort, must never break the app */ });
+      } catch (e) { /* best-effort, must never break the app */ }
     }
   };
 })();
