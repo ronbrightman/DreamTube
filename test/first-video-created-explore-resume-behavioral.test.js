@@ -197,11 +197,23 @@ async function seedAccountWithPendingJob(page, opts) {
   }, opts);
 }
 
-/** Sets the "just generated" sessionStorage marker result.html looks for -- same key processing.html writes right before its redirect. */
-function markJustGenerated(page, dreamId) {
-  return page.evaluate(function (id) {
-    sessionStorage.setItem('dreamtube_just_generated_id', id);
-  }, dreamId);
+/**
+ * Mocks POST /.netlify/functions/consume-generation-marker for
+ * result.html's leg-2 visit below -- the durable, server-side replacement
+ * for the old sessionStorage `dreamtube_just_generated_id` marker (see
+ * test/first-video-created-behavioral.test.js's identical helper for the
+ * full doc comment). Returns `matched: true` exactly once for the given
+ * dreamId.
+ */
+function mockConsumeMarker(page, justGeneratedDreamId) {
+  var consumed = false;
+  return page.route('**/.netlify/functions/consume-generation-marker', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    var matched = !consumed && !!(justGeneratedDreamId && body && body.dreamId === justGeneratedDreamId);
+    if (matched) consumed = true;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
+  });
 }
 
 test('explore.html: a brand-new account whose ONLY pending job completes via the resume-completion path fires FirstVideoCreated exactly once, on all three vendors', async function (t) {
@@ -329,18 +341,18 @@ test('cross-path: an account whose first video completes via explore.html\'s res
     assert.ok(dreamId, 'sanity check: the resumed job should have produced a real completed dream');
 
     // Leg 2: the user later opens result.html for that same dream. The
-    // "just generated" sessionStorage marker IS set here, deliberately --
-    // this test exists to prove the shared account-level
+    // durable "just generated" marker IS mocked to match here,
+    // deliberately -- this test exists to prove the shared account-level
     // markFirstVideoCreatedIfEligible flag (set by leg 1) is what blocks
-    // the re-fire, not result.html's separate, unrelated sessionStorage
-    // guard. Without setting this marker, result.html's own guard would
+    // the re-fire, not result.html's separate, unrelated durable-marker
+    // guard. Without mocking a match here, result.html's own guard would
     // return early before ever reaching markFirstVideoCreatedIfEligible,
     // and the "no double-fire" assertion below would pass for the wrong
     // reason -- it would stop catching a real regression in the
     // account-level flag's own cross-path sufficiency. Passing the
-    // sessionStorage guard through to the eligibility check is exactly
+    // durable-marker guard through to the eligibility check is exactly
     // what makes this a genuine test of that flag.
-    await markJustGenerated(page, dreamId);
+    await mockConsumeMarker(page, dreamId);
     await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
 

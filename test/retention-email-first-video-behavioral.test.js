@@ -7,7 +7,7 @@
 // request at the right moment, and that watch.html (the emailed link's
 // landing page) genuinely renders a dream via a share token with no login.
 // Follows test/first-video-created-behavioral.test.js's seedAccount/
-// markJustGenerated conventions exactly, since this fires from the same
+// mockConsumeMarker conventions exactly, since this fires from the same
 // choke point.
 
 var test = require('node:test');
@@ -79,10 +79,23 @@ async function seedAccount(page, opts) {
   }, opts);
 }
 
-function markJustGenerated(page, dreamId) {
-  return page.evaluate(function (id) {
-    sessionStorage.setItem('dreamtube_just_generated_id', id);
-  }, dreamId);
+/**
+ * Mocks POST /.netlify/functions/consume-generation-marker -- the durable,
+ * server-side replacement for the old sessionStorage
+ * `dreamtube_just_generated_id` marker (see
+ * test/first-video-created-behavioral.test.js's identical helper for the
+ * full doc comment). Returns `matched: true` exactly once for the given
+ * dreamId.
+ */
+function mockConsumeMarker(page, justGeneratedDreamId) {
+  var consumed = false;
+  return page.route('**/.netlify/functions/consume-generation-marker', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    var matched = !consumed && !!(justGeneratedDreamId && body && body.dreamId === justGeneratedDreamId);
+    if (matched) consumed = true;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
+  });
 }
 
 /** Intercepts POST to send-first-dream-email, recording each parsed body and fulfilling with a harmless 200. */
@@ -109,7 +122,7 @@ test('result.html: a brand-new account\'s first-ever completed dream triggers th
       email: 'retention@example.com',
       dreams: [{ id: 'dream-ret-1', caption: 'Flying over mountains', style: 'Anime' }]
     });
-    await markJustGenerated(page, 'dream-ret-1');
+    await mockConsumeMarker(page, 'dream-ret-1');
 
     await page.goto(baseUrl + '/result.html?id=dream-ret-1', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -145,7 +158,7 @@ test('result.html: a second completed dream never triggers the retention-email r
       email: 'retention2@example.com',
       dreams: [{ id: 'dream-ret-2a' }, { id: 'dream-ret-2b' }]
     });
-    await markJustGenerated(page, 'dream-ret-2b');
+    await mockConsumeMarker(page, 'dream-ret-2b');
 
     await page.goto(baseUrl + '/result.html?id=dream-ret-2b', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);

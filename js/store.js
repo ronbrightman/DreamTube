@@ -58,6 +58,14 @@
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
 //                                                result.html's call site + js/analytics-config.js)
+//   markDreamJustCompleted(dreamId) -> fire-and-forget, POST /.netlify/functions/mark-generation-completed
+//       — durable (server-side, dream-id-keyed) replacement for the old sessionStorage
+//       "just generated" marker; called from processing.html right before its redirect.
+//   wasDreamJustCompleted(dreamId) -> Promise<boolean>, POST /.netlify/functions/consume-generation-marker
+//       — durable counterpart to markDreamJustCompleted, consumed exactly once by result.html.
+//   isOnlyCompletedDream(dreamId) -> local read-only query, same eligibility computation as
+//       markFirstVideoCreatedIfEligible minus its one-time flag — feeds the PostHog
+//       first_video_result_view sanity-check signal (see result.html's call site).
 //   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
 //       — the retention email ("your dream is ready") — see that function's own header comment.
 //       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
@@ -1838,6 +1846,112 @@
           })
         }).catch(function () { /* best-effort, must never break the app */ });
       } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Durable, server-side replacement for the old sessionStorage
+     * `dreamtube_just_generated_id` marker (tracker.html's
+     * result-htmls-firstvideocreated-still-dep-qfg48t item,
+     * founder-approved 2026-07-27 -- "make the carrier durable"). Called
+     * from processing.html's attachTaskHandlers right before it redirects
+     * to result.html on a successful generation (fresh or regenerated),
+     * exactly where the old sessionStorage.setItem call used to be.
+     *
+     * POSTs to /.netlify/functions/mark-generation-completed, which
+     * durably records "this dream id just finished generating" keyed by
+     * the dream id itself (see that file + lib/generation-completion-
+     * store.js's own header comments for why this needs no account/email
+     * auth and works identically for every account). `keepalive: true`
+     * gives this request its best chance of actually completing even
+     * though the page navigates away ~350ms later -- the same hazard
+     * (an in-flight request getting cut off by navigation) that made
+     * sessionStorage an unreliable carrier across some FB/IG in-app
+     * browser webview redirects in the first place; a plain fetch here
+     * would just move the same class of risk from "storage" to "network",
+     * not fix it.
+     *
+     * Fire-and-forget, best-effort: must never throw or delay the
+     * redirect it runs right before. A failure here (offline, a webview
+     * that kills the request anyway) means this specific completion's
+     * FirstVideoCreated fire may be missed -- an honest degrade, not a
+     * crash, same posture the old sessionStorage marker already had when
+     * storage was disabled.
+     */
+    markDreamJustCompleted: function (dreamId) {
+      if (!dreamId) return;
+      try {
+        fetch('/.netlify/functions/mark-generation-completed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dreamId: dreamId }),
+          keepalive: true
+        }).catch(function () { /* best-effort, must never break the app */ });
+      } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Durable counterpart to markDreamJustCompleted above -- consumes
+     * (reads + deletes, exactly once) the durable marker for `dreamId` via
+     * /.netlify/functions/consume-generation-marker, returning a Promise
+     * that resolves true only the first time this is called for a dreamId
+     * that was actually just marked complete. Every call after that (a
+     * reload of result.html, a dreamId that was never marked, or a
+     * network failure reaching the endpoint at all) resolves false.
+     *
+     * This is HALF of result.html's FirstVideoCreated eligibility check --
+     * the durable replacement for the old
+     * `sessionStorage.getItem('dreamtube_just_generated_id') ===
+     * dream.id` comparison, proving this page load is the actual moment
+     * generation just finished, not a later revisit/reload of an old
+     * result.html?id=... URL. Callers must still separately gate the
+     * actual conversion fire on markFirstVideoCreatedIfEligible(dreamId)
+     * above (the OTHER, unchanged half -- is this genuinely the account's
+     * first-ever completed dream) -- this function alone does not decide
+     * eligibility, exactly like the old sessionStorage read never did
+     * either. See docs/EVENT_TAXONOMY.md's "FirstVideoCreated" section for
+     * the full two-guard picture.
+     *
+     * Never rejects in a way a caller needs to special-case: a network/
+     * server failure resolves false (not fresh, don't fire) rather than
+     * throwing, the same honest "storage unavailable, marker missing"
+     * degrade the sessionStorage version already had.
+     */
+    wasDreamJustCompleted: function (dreamId) {
+      if (!dreamId) return Promise.resolve(false);
+      return fetch('/.netlify/functions/consume-generation-marker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dreamId: dreamId })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) { return !!(data && data.matched); })
+        .catch(function () { return false; });
+    },
+
+    /**
+     * Pure, read-only query: true if `dreamId` is (as far as this
+     * account's own local dream data can tell) this account's ONLY
+     * completed dream -- the exact same eligibility computation
+     * markFirstVideoCreatedIfEligible above makes, minus that function's
+     * one-time flag check-and-set. Unlike markFirstVideoCreatedIfEligible,
+     * this has no side effect and can be called repeatedly (including on
+     * an ordinary revisit, or for an account whose fire-once flag is
+     * already set) without consuming anything.
+     *
+     * Exists purely to feed a PostHog sanity-check signal
+     * (`first_video_result_view`, see result.html's call site and
+     * docs/EVENT_TAXONOMY.md) that's independent of FirstVideoCreated's
+     * own fire-once/durable-marker gating -- comparing this event's count
+     * against FirstVideoCreated's own count is what makes any remaining
+     * undercount (from the durable marker above still failing sometimes,
+     * e.g. total network loss) visible after this fix ships, per
+     * tracker.html's result-htmls-firstvideocreated-still-dep-qfg48t item.
+     */
+    isOnlyCompletedDream: function (dreamId) {
+      if (!state.user || !dreamId) return false;
+      var myHandle = state.user.handle;
+      var completed = state.dreams.filter(function (d) { return d.ownerHandle === myHandle && !!d.videoUrl; });
+      return completed.length === 1 && completed[0].id === dreamId;
     }
   };
 })();

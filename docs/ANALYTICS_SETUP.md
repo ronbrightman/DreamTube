@@ -180,8 +180,13 @@ screens, etc.), add the same `ph-no-capture` class to that element.
   change (event_name was already forwarded as a plain string)
 - `js/store.js` — new `markFirstVideoCreatedIfEligible(dreamId)`,
   fire-once-per-account guard
-- `processing.html` — sets a `dreamtube_just_generated_id` sessionStorage
-  marker right before redirecting to `result.html` on a successful
-  generation
+- `processing.html` — durably marks the dream as "just generated" right
+  before redirecting to `result.html` on a successful generation (see
+  `js/store.js`'s `markDreamJustCompleted` and
+  `netlify/functions/lib/generation-completion-store.js` — this was a
+  `dreamtube_just_generated_id` sessionStorage marker until 2026-07-27,
+  moved server-side because sessionStorage didn't reliably survive some
+  FB/IG in-app-browser webview redirects; see
+  `docs/EVENT_TAXONOMY.md`'s FirstVideoCreated section for the full story)
 - `result.html` — new local `track()` PostHog helper (mirrors
   `start.html`'s) + the call site itself

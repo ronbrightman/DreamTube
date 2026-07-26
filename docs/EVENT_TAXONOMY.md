@@ -139,15 +139,16 @@ forwarding, etc.).
 
 **Why two guards, not one:**
 
-1. **`sessionStorage.dreamtube_just_generated_id`** — set by
-   `processing.html`'s `attachTaskHandlers()` right before it redirects to
-   `result.html?id=...` on a successful generation (fresh or
-   regenerated), and consumed (read + removed) exactly once by
-   `result.html`. This confirms the *current page load* is the actual
-   moment generation just finished — not a later revisit or reload of an
-   old `result.html?id=...` URL for the same dream. sessionStorage (not a
-   query param) specifically so a reload or a copy-pasted/shared URL
-   can't carry this signal along with it.
+1. **`DreamStore.wasDreamJustCompleted(dreamId)`** (a durable,
+   server-side marker — see `netlify/functions/lib/generation-completion-
+   store.js`, `netlify/functions/mark-generation-completed.js` /
+   `consume-generation-marker.js`) — set by `processing.html`'s
+   `attachTaskHandlers()` (via `DreamStore.markDreamJustCompleted(dreamId)`)
+   right before it redirects to `result.html?id=...` on a successful
+   generation (fresh or regenerated), and consumed (read + deleted)
+   exactly once by `result.html`. This confirms the *current page load*
+   is the actual moment generation just finished — not a later revisit or
+   reload of an old `result.html?id=...` URL for the same dream.
 2. **`DreamStore.markFirstVideoCreatedIfEligible(dreamId)`** — an atomic
    check-and-set against the signed-in account's state (see
    `js/store.js`): true only if (a) the account's own
@@ -165,16 +166,15 @@ Both guards exist because either alone has a gap the other closes:
   migrated retroactively). Guarding purely on "flag unset + exactly one
   completed dream" would misfire the very next time that account simply
   *opens* `result.html` for their pre-existing dream — not just when a
-  video actually just finished generating. The sessionStorage marker is
-  what ties the event to the real generation-completion moment the
-  founder asked for ("the moment a user's first-ever dream video
+  video actually just finished generating. The durable "just completed"
+  marker is what ties the event to the real generation-completion moment
+  the founder asked for ("the moment a user's first-ever dream video
   finishes generating and shows on result.html"), not merely to dream
   count.
-- **The sessionStorage marker alone isn't enough either**: it only
-  proves "a generation job just completed and redirected here," not
-  "this was the account's *first* one." Without the persisted-flag +
-  dream-count check, every 2nd/3rd/Nth video would re-fire the event
-  too.
+- **The "just completed" marker alone isn't enough either**: it only
+  proves "a generation job just completed," not "this was the account's
+  *first* one." Without the persisted-flag + dream-count check, every
+  2nd/3rd/Nth video would re-fire the event too.
 
 Together: the event fires exactly once per account, at the literal moment
 their first-ever completed dream lands on `result.html`, and never again
@@ -184,24 +184,63 @@ this feature shipped (their flag stays unset until they generate their
 *next* video, at which point the dream count is 2 and the eligibility
 check correctly declines to fire at all).
 
-**Why `explore.html` doesn't need the sessionStorage guard:** the
-sessionStorage marker on `result.html` exists purely to distinguish a
-fresh post-generation redirect from a later plain revisit/reload of an
-old `result.html?id=...` URL for the same dream — see the "Why two
-guards, not one" reasoning above. `explore.html`'s resume-completion
-call site has no equivalent revisit risk: `fireFirstVideoCreatedIfEligible`
-only ever runs inside `resumePendingJob().then()`, which resolves only on
-a genuine, just-happened completion of a job that was actually in flight
-(never on a page reload or revisit). So the account-level
+**Why guard #1 moved off sessionStorage (2026-07-27, tracker.html's
+`result-htmls-firstvideocreated-still-dep-qfg48t`):** the original
+version of guard #1 was a `sessionStorage.dreamtube_just_generated_id`
+marker — same "prove this page load is the fresh moment" job, just
+carried in sessionStorage instead of server-side. That carrier didn't
+reliably survive some FB/IG in-app-browser webview redirects from
+`processing.html` to `result.html` — exactly where this app's paid ad
+traffic lands, and exactly the event Meta optimizes ad delivery toward —
+so the event silently undercounted there. The FIX is a durable carrier,
+not a semantics change: the founder's own framing was "keep
+moment-of-completion, make the carrier durable." A server-side marker
+keyed by dream id (not username/email) was chosen over a per-email
+flag (the other option on the table) specifically because
+`netlify/functions/lib/account-store.js` only backfills an account
+server-side if it has an email (`js/store.js`'s
+`backfillAccountServerSide`) — gating this marker on server-verified
+account identity the same way `send-first-dream-email.js` does would
+silently stop working for every account without an email on file, a real
+coverage regression rather than a reliability improvement. Keying by
+dream id instead needs no account/auth plumbing at all and works
+identically for every account. See
+`netlify/functions/lib/generation-completion-store.js`'s header comment
+for the accepted, low-risk lack of auth on this specific marker.
+
+**Why `explore.html` doesn't need guard #1 at all:** guard #1 (whichever
+carrier) exists purely to distinguish a fresh post-generation redirect
+from a later plain revisit/reload of an old `result.html?id=...` URL for
+the same dream — see the "Why two guards, not one" reasoning above.
+`explore.html`'s resume-completion call site has no equivalent revisit
+risk: `fireFirstVideoCreatedIfEligible` only ever runs inside
+`resumePendingJob().then()`, which resolves only on a genuine,
+just-happened completion of a job that was actually in flight (never on
+a page reload or revisit). So the account-level
 `markFirstVideoCreatedIfEligible` check alone is sufficient to cover that
-specific revisit risk, without needing a second, sessionStorage-based
-guard. This also means `explore.html`'s fire site has no
-sessionStorage-availability dependency at all — a real advantage on
-traffic where sessionStorage may not survive (e.g. Meta/Instagram
-in-app browser webviews), though `result.html`'s own direct-landing path
-still carries that dependency; see
+specific revisit risk, without needing a second guard at all. This also
+means `explore.html`'s fire site has no dependency on guard #1's carrier
+(sessionStorage before, the durable marker now) — see
 `for-product-make-firstvideocreated-relia-5i9o0t` on `tracker.html` for
 the fuller history of why this event needed hardening.
+
+**PostHog sanity check — `first_video_result_view`:** a distinct,
+PostHog-only event fired from `result.html` (via
+`DreamStore.isOnlyCompletedDream(dreamId)`, a pure read-only query — same
+eligibility computation as guard #2 above, minus its one-time flag and
+side effect) every time this looks like the account's only completed
+video, independent of both guards above. Comparing this event's count
+against `first_video_created`'s own count in PostHog is what makes any
+remaining undercount from guard #1's durable marker (e.g. a total network
+failure reaching `mark-generation-completed`/`consume-generation-marker`,
+not just a storage failure) visible after this fix ships — the whole
+point of the sanity check the founder asked for. Expect a small,
+persistent, non-closing gap from grandfathered accounts (pre-existing
+single-video accounts revisiting `result.html`, which correctly never
+fire `first_video_created` at all per the guard-#2 semantics above) —
+that's expected noise from an intentional exclusion, not evidence of a
+reliability bug; a real reliability gap would show up as the TOTAL gap
+shrinking once this fix is live, not as this specific noise disappearing.
 
 **Known limitation, not fixed by the above (tracked separately):**
 `markFirstVideoCreatedIfEligible`'s account-flag check is only atomic
@@ -230,11 +269,29 @@ at both fire sites.
 - `netlify/functions/track-conversion.js` — `FirstVideoCreated` added to
   `ALLOWED_EVENT_NAMES`
 - `js/store.js` — `markFirstVideoCreatedIfEligible(dreamId)`
-- `processing.html` — sets the `dreamtube_just_generated_id` sessionStorage marker
+- `processing.html` — sets the "just generated" marker
 - `result.html` — new local `track()` PostHog helper + the call site
 - `explore.html` — new local `track()` PostHog helper +
   `fireFirstVideoCreatedIfEligible()`, called from the resume-completion
   path (`resumePendingJob().then()`)
+
+**Files touched by the 2026-07-27 durable-carrier fix
+(`result-htmls-firstvideocreated-still-dep-qfg48t`):**
+
+- `netlify/functions/lib/generation-completion-store.js` — new, the
+  dream-id-keyed Blobs store backing the durable "just completed" marker
+- `netlify/functions/mark-generation-completed.js` — new, POST endpoint
+  `processing.html` calls to set the marker
+- `netlify/functions/consume-generation-marker.js` — new, POST endpoint
+  `result.html` calls to read + consume the marker
+- `js/store.js` — new `markDreamJustCompleted(dreamId)`,
+  `wasDreamJustCompleted(dreamId)`, `isOnlyCompletedDream(dreamId)`
+- `processing.html` — replaced the `sessionStorage.setItem(
+  'dreamtube_just_generated_id', ...)` call with
+  `DreamStore.markDreamJustCompleted(dream.id)`
+- `result.html` — replaced the synchronous sessionStorage read/consume
+  with `DreamStore.wasDreamJustCompleted(dream.id).then(...)`, and added
+  the new `first_video_result_view` PostHog sanity-check event
 
 ### Retention email send — "your dream is ready" (first-dream retention email)
 

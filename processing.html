@@ -375,15 +375,17 @@
   function attachTaskHandlers(task){
     task.then(function(dream){
       finishProgress();
-      // Marks this dream as "just finished generating in this browser
-      // session" for result.html's first-video-created conversion event
-      // (see js/store.js's markFirstVideoCreatedIfEligible + result.html's
-      // own call site) -- sessionStorage rather than a query param so a
-      // manual reload/reshare of the resulting result.html URL can't carry
-      // this signal along with it. Consumed (read + removed) exactly once
+      // Marks this dream as "just finished generating" for result.html's
+      // first-video-created conversion event (see js/store.js's
+      // markDreamJustCompleted + markFirstVideoCreatedIfEligible +
+      // result.html's own call site) -- a durable, server-side marker
+      // (tracker.html's result-htmls-firstvideocreated-still-dep-qfg48t
+      // item) rather than the sessionStorage marker this used to set,
+      // which didn't reliably survive some FB/IG in-app-browser webview
+      // redirects to result.html. Consumed (read + deleted) exactly once
       // by result.html; harmless if generation somehow never reaches
-      // result.html at all (a fresh key next time simply overwrites it).
-      try { sessionStorage.setItem('dreamtube_just_generated_id', dream.id); } catch(e) { /* private mode / storage disabled -- the conversion event just won't fire this time */ }
+      // result.html at all (a fresh mark next time simply overwrites it).
+      DreamStore.markDreamJustCompleted(dream.id);
       setTimeout(function(){
         DreamStore.clearDraft();
         location.href = 'result.html?id=' + dream.id;
