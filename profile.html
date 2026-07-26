@@ -111,7 +111,7 @@
 
   <div class="sheet-overlay" id="sheet-account-overlay">
     <div class="sheet">
-      <div class="sheet-handle"></div>
+      <div class="sheet-handle" id="account-sheet-handle"></div>
       <div class="sheet-title">Settings</div>
 
       <div class="settings-section">
@@ -135,7 +135,14 @@
 
       <div class="settings-section">
         <div class="section-label">Tokens</div>
-        <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
+        <a class="shop-cta" href="shop.html" id="account-shop-link">
+          <div class="shop-cta-icon icon" id="account-shop-icon"></div>
+          <div class="shop-cta-text">
+            <div class="shop-cta-title">Token shop</div>
+            <div class="shop-cta-sub" id="account-shop-sub">Get more tokens</div>
+          </div>
+          <div class="shop-cta-chevron icon" id="account-shop-chevron"></div>
+        </a>
       </div>
 
       <!-- Owner-only manual top-up — resolves the "owner bypass for the
@@ -259,6 +266,8 @@
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
   document.getElementById('support-row-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('account-shop-icon').innerHTML = Icons.coin;
+  document.getElementById('account-shop-chevron').innerHTML = Icons.chevronDown;
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
@@ -666,6 +675,11 @@
     // identical fix/comment for the review finding this addresses.
     else if(tokenStatus.nextGrantAt) tokenMetaEl.textContent = '+' + tokenStatus.dailyGrantAmount + ' in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
     else tokenMetaEl.textContent = '';
+    // Settings sheet's Token shop row shows the live balance too (part of
+    // giving it real visual weight — see the shop-cta CSS/markup) rather
+    // than static "Get more tokens" copy once a real balance is known.
+    var shopSubEl = document.getElementById('account-shop-sub');
+    if(shopSubEl) shopSubEl.textContent = tokenStatus.balance + ' tokens available — tap to top up';
   }
   function renderTokens(){
     DreamStore.getTokenStatus().then(function(status){
@@ -718,6 +732,45 @@
   accountOverlay.addEventListener('click', function(e){
     if(e.target.id === 'sheet-account-overlay') closeAccountSheet();
   });
+
+  // Swipe down (on the grabber handle) -> close Settings. Same
+  // decide-purely-at-touchend shape as the swipe-right -> Explore gesture
+  // further down this file (touchstart/touchend only, never
+  // preventDefault on touchmove, distance/time/angle thresholds) --
+  // mirrored here rather than reinvented. Deliberately scoped to
+  // #account-sheet-handle specifically, NOT the whole .sheet card: this
+  // sheet's content can be taller than the viewport (.sheet has
+  // max-height:88vh + overflow-y:auto -- see css/styles.css), so a
+  // whole-card gesture would risk eating a real attempt to scroll the
+  // sheet's own content. The handle is a small, fixed, non-scrolling
+  // element pinned to the very top of the sheet, so a gesture scoped to
+  // it can never conflict with scrolling the body below it. (See that
+  // element's own CSS for the enlarged invisible touch target -- the
+  // visible 38x4 bar is too small to reliably grab as-is.)
+  (function(){
+    var startX = 0, startY = 0, startT = 0, tracking = false;
+    var MIN_DY = 70, MAX_DX = 60, MAX_MS = 700;
+    var handleEl = document.getElementById('account-sheet-handle');
+    handleEl.addEventListener('touchstart', function(e){
+      if(e.touches.length !== 1 || !accountOverlay.classList.contains('open')){ tracking = false; return; }
+      tracking = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      startT = Date.now();
+    }, { passive: true });
+    handleEl.addEventListener('touchend', function(e){
+      if(!tracking) return;
+      tracking = false;
+      var touch = e.changedTouches[0];
+      if(!touch) return;
+      var dx = touch.clientX - startX;
+      var dy = touch.clientY - startY;
+      var dt = Date.now() - startT;
+      if(dt <= MAX_MS && dy >= MIN_DY && Math.abs(dx) <= MAX_DX){
+        closeAccountSheet();
+      }
+    }, { passive: true });
+  })();
 
   document.getElementById('account-save-btn').addEventListener('click', function(){
     var email = document.getElementById('account-email-input').value;

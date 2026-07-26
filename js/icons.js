@@ -93,6 +93,15 @@
     // grep. A simple line-art video-camera: a body rectangle + the lens
     // trapezoid, same 24x24/currentColor/stroke-only convention as every
     // other entry here.
-    video: svg('<rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 10l5-3v10l-5-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>')
+    video: svg('<rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16 10l5-3v10l-5-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>'),
+
+    // Added for the Settings-sheet Token shop CTA redesign (tracker.html's
+    // settings-sheet-profile-html-review-swipe-igw84s item) — no existing
+    // icon in this file read as a token/coin, confirmed by grep. A coin
+    // (outer ring) with a simple 5-point star inside, reading clearly as
+    // "currency/token" at small sizes without implying a specific real
+    // currency (no $ /¢ glyph) — same 24x24/currentColor/stroke-only
+    // convention as every other entry here.
+    coin: svg('<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 7.5l1.1 3.4h3.6l-2.9 2.1 1.1 3.4-2.9-2.1-2.9 2.1 1.1-3.4-2.9-2.1h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/>')
   };
 })();
