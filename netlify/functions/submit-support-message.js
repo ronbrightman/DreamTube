@@ -67,6 +67,18 @@
 // message through and its self-reported contact address shown, just
 // without the reply-to convenience a verified account gets.
 //
+// Residual, accepted gap (distinct from the reply_to-spoofing vector above,
+// which IS closed): this endpoint is unauthenticated, so anyone who knows a
+// real registered `username` can submit a message AS that user — their
+// real verified email gets wired up as reply_to and shown as the sender,
+// even though the actual caller never proved they control that account.
+// That's impersonating a real user's authorship, not redirecting PII to an
+// attacker (that vector is closed) — the same client-trusted-identity
+// tradeoff already accepted elsewhere in this early-beta app (no real
+// server-side sessions yet). Not fixed here; needs a real auth/session
+// layer to close properly (tracker.html's harden-submit-support-message-js
+// item).
+//
 // Error codes (local to this function, same small-number-scheme
 // reasoning as admin-paywall-toggle.js/owner-topup-tokens.js):
 //   E1 method_not_allowed  — verb other than POST
@@ -109,6 +121,25 @@ var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
 function esc(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// `username` here is CLIENT-SUPPLIED and not length-limited by
+// register-account.js (only a MINIMUM of 3 chars is enforced there), and
+// this endpoint doesn't even require it to resolve to a real account (see
+// the header comment on the accountStore.getByUsername lookup below) — so
+// an arbitrary caller can put an arbitrary string straight into
+// `resendPayload.subject`, a raw mail header field. Resend's API takes
+// structured JSON over HTTPS rather than raw SMTP text, so a literal
+// CRLF-header-injection attack isn't actually reachable here the way it
+// would be against a real sendmail-style API — but stripping CR/LF and
+// capping length anyway is cheap, real defense-in-depth against whatever
+// Resend (or a future provider swap) does internally with this string, and
+// keeps an absurdly long username from bloating/breaking the subject line
+// Ron actually reads. Only used for the subject; the HTML body already
+// escapes username via esc() everywhere it appears.
+var MAX_SUBJECT_USERNAME_LENGTH = 100;
+function forSubjectHeader(str) {
+  return String(str == null ? '' : str).replace(/[\r\n]+/g, ' ').slice(0, MAX_SUBJECT_USERNAME_LENGTH);
 }
 
 exports.handler = async function (event) {
@@ -184,7 +215,7 @@ exports.handler = async function (event) {
   if (resendKey && ownerEmail) {
     try {
       var label = type === 'feedback' ? 'Feedback' : 'Support';
-      var subject = 'DreamTube ' + label + ' — ' + username;
+      var subject = 'DreamTube ' + label + ' — ' + forSubjectHeader(username);
       // "(unverified)" whenever contactEmail didn't come from a real,
       // server-side account — Ron should be able to tell at a glance
       // that this address is exactly what the client claimed, not
