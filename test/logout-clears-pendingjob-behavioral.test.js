@@ -34,13 +34,35 @@
 // (logging back into the SAME account mid-generation still sees and can
 // resume its own job).
 //
-// This file covers both scenarios end to end:
+// ROUND 3 FIX (this file, latest): round 2's scopedPendingJob() treats a
+// pendingJob with no ownerHandle as belonging to no one -- correct for a
+// legitimately-ownerless pre-signup adopted job, but review caught that it
+// also silently orphans every REAL, already-in-flight job that existed in
+// a user's localStorage from before this branch shipped, since those were
+// written by the OLD savePendingJob, which never set ownerHandle at all.
+// Without a fix, every such user hits the exact same "paid-for job
+// silently vanishes with zero error" failure mode round 1 was rejected
+// for -- just triggered by deploy timing instead of a logout action, and
+// needing zero user action (not even a page reload beyond the next
+// natural one) to hit. processing.html's `location.href = 'create.html'`
+// fallback when getPendingJob() is null means affected users get silently
+// bounced with no explanation. Fixed by backfilling ownerHandle onto a
+// pre-existing, owner-less pendingJob inside migrateLegacyState() the
+// moment it's loaded, whenever s.user is set (a pre-signup adopted job
+// with no account yet legitimately has no owner and is left alone).
+//
+// This file covers all three scenarios end to end:
 //   1. Cross-account: account A has a pendingJob, logs out, account B
 //      signs up in the same browser -- B must never see or be able to
 //      resume A's stale pendingJob.
 //   2. Same-account: account A has a pendingJob, logs out, then logs back
 //      into the SAME account -- the pendingJob must still be there and
 //      resumable (not silently discarded).
+//   3. Legacy/pre-branch-deploy: a pendingJob with NO ownerHandle at all
+//      (the exact shape the old, pre-fix savePendingJob produced) for a
+//      user who is still logged into the same account they submitted it
+//      under (never logged out) -- the migration must backfill its
+//      ownerHandle on load so the rightful owner can still resume it.
 //
 // Follows test/wizard-ui-behavioral.test.js's conventions exactly: a plain
 // static file server (no real Netlify Functions runtime), blockThirdParty()
@@ -108,42 +130,53 @@ async function safeGoto(page, url) {
 
 /**
  * Seeds localStorage as if `username` is logged in with a real in-flight
- * pendingJob already tagged with its ownerHandle (matching what
- * savePendingJob would have written) -- operationName must be "fal:"- or
- * "mock:"-prefixed or migrateLegacyState() strips it as a stale
- * pre-fal.ai leftover on next load, see js/store.js's own comment on that
- * migration. `password`/`email` are also seeded into `accounts` so a
- * later DreamStore.login() for the SAME account can succeed via the
- * documented local fallback (attemptLocalLogin) against the static test
- * server, which has no real account-login.js to answer it.
+ * pendingJob -- operationName must be "fal:"- or "mock:"-prefixed or
+ * migrateLegacyState() strips it as a stale pre-fal.ai leftover on next
+ * load, see js/store.js's own comment on that migration. `password`/
+ * `email` are also seeded into `accounts` so a later DreamStore.login()
+ * for the SAME account can succeed via the documented local fallback
+ * (attemptLocalLogin) against the static test server, which has no real
+ * account-login.js to answer it.
+ *
+ * By default the seeded job already carries its ownerHandle (matching
+ * what the current savePendingJob would have written for a real user on
+ * this branch). Pass `omitOwnerHandle: true` to instead seed the exact
+ * shape the OLD, pre-fix savePendingJob produced -- no ownerHandle field
+ * at all -- simulating a real user's browser at the moment this branch
+ * first deploys, still logged into the same account they submitted the
+ * job under.
  */
-async function seedLoggedInWithPendingJob(page, username, password, email) {
+async function seedLoggedInWithPendingJob(page, username, password, email, opts) {
+  opts = opts || {};
   await page.evaluate(function (args) {
     var handle = '@' + args.username;
+    var pendingJob = {
+      operationName: 'fal:veo-3.1-fast:req-' + args.username,
+      startedAt: Date.now(),
+      caption: args.username + '\'s in-flight dream',
+      style: 'Cinematic',
+      sourceDreamId: null,
+      mediaType: 'video',
+      notify: false
+    };
+    if (!args.omitOwnerHandle) pendingJob.ownerHandle = handle;
     var state = {
       user: { handle: handle, username: args.username },
       accounts: {},
       draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
       dreams: [],
-      pendingJob: {
-        operationName: 'fal:veo-3.1-fast:req-' + args.username,
-        startedAt: Date.now(),
-        caption: args.username + '\'s in-flight dream',
-        style: 'Cinematic',
-        sourceDreamId: null,
-        mediaType: 'video',
-        notify: false,
-        ownerHandle: handle
-      },
+      pendingJob: pendingJob,
       charactersByUser: {},
       likedIds: {}
     };
     state.accounts[args.username] = { password: args.password, email: args.email };
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-  }, { username: username, password: password, email: email });
+  }, { username: username, password: password, email: email, omitOwnerHandle: !!opts.omitOwnerHandle });
 
   // Reload so js/store.js's IIFE reads the seeded state above (it's only
-  // loaded from localStorage once, at page load).
+  // loaded from localStorage once, at page load) -- this is also the exact
+  // moment migrateLegacyState()'s ownerHandle backfill (round 3) would run
+  // for a real user's browser on this branch's first deploy.
   await safeGoto(page, baseUrl + '/login.html');
 }
 
@@ -239,6 +272,52 @@ test('js/store.js: same-account -- a user who logs out mid-generation and logs b
     await page.evaluate(function () { window.DreamStore.requestNotifyOnReady(); });
     var notifyFlag = await page.evaluate(function () { return window.DreamStore.getPendingJob().notify; });
     assert.equal(notifyFlag, true, 'requestNotifyOnReady() must be able to mark the resumed job for account A');
+  } finally {
+    await page.close();
+  }
+});
+
+test('js/store.js: legacy/pre-branch-deploy -- a pendingJob with no ownerHandle at all (the OLD savePendingJob\'s shape) is backfilled on load so its rightful, still-logged-in owner can still resume it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    // Simulates exactly what a real user's browser looked like the moment
+    // this branch first deploys: still logged into the account that
+    // submitted the generation, never logged out, but the job in storage
+    // predates ownerHandle entirely (written by the pre-fix savePendingJob).
+    // seedLoggedInWithPendingJob's own internal seed step writes the raw
+    // pendingJob with NO ownerHandle at all (omitOwnerHandle: true -- see
+    // that helper's own code just above), matching the old pre-fix
+    // savePendingJob's exact shape, THEN reloads -- which is the exact
+    // point migrateLegacyState()'s backfill must run.
+    await seedLoggedInWithPendingJob(page, 'accounta', 'accountapassword1', 'accounta@example.com', { omitOwnerHandle: true });
+    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJob, 'the rightful, still-logged-in owner must still see their own pendingJob after the migration backfill -- this must NOT read as absent just because it predates ownerHandle');
+    assert.equal(pendingJob.operationName, 'fal:veo-3.1-fast:req-accounta');
+
+    // The backfill must actually persist ownerHandle to storage too, not
+    // just patch the in-memory copy for this one read -- otherwise the
+    // very next load (no code path re-runs the migration on an object that
+    // already looks migrated once `changed` isn't tripped again) would be
+    // back to square one for a job that still hasn't resolved yet.
+    var rawPendingJobAfterLoad = await page.evaluate(function () {
+      return JSON.parse(localStorage.getItem('dreamtube_state_v1')).pendingJob;
+    });
+    assert.equal(rawPendingJobAfterLoad.ownerHandle, '@accounta', 'migrateLegacyState() must persist the backfilled ownerHandle, not just patch it in memory for one read');
+
+    // And it must actually be resumable, not just visible to getPendingJob().
+    var resumeAttempted = await page.evaluate(function () {
+      return typeof window.DreamStore.resumePendingJob === 'function';
+    });
+    assert.ok(resumeAttempted, 'sanity check: resumePendingJob exists to attempt this with');
+    // resumePendingJob() itself is not invoked here (it would kick off a
+    // real poll against video-status.js, which 404s against this static
+    // test server and would hang/retry) -- resumePendingJob() reads
+    // through the same scopedPendingJob() helper getPendingJob() does (see
+    // js/store.js), so proving getPendingJob() sees the backfilled job
+    // above already proves resumePendingJob() would too.
   } finally {
     await page.close();
   }

@@ -158,6 +158,28 @@
       changed = true;
     }
 
+    // Backfill ownerHandle onto a pendingJob that predates the
+    // account-scoping fix (state-pendingjob-not-cleared-on-logout-s-p2ivk2,
+    // review round 3) — every browser that had a real in-flight (or simply
+    // not-yet-resumed) job the moment this branch deployed has one of
+    // these: written by the OLD savePendingJob, which never set
+    // ownerHandle at all. scopedPendingJob() treats a missing ownerHandle
+    // as belonging to no one, so without this backfill every such user
+    // would find getPendingJob() suddenly null on their very next load —
+    // with no logout involved at all — and processing.html's
+    // `location.href = 'create.html'` fallback would silently bounce them
+    // off an already-paid-for generation (tokens are spent at submission,
+    // see generate-video.js's E112 doc block) with zero explanation. Only
+    // backfill when s.user is actually set — a pendingJob adopted via
+    // adoptPendingGeneration before signup completes (the wizard.html/
+    // start.html pre-signup seam) legitimately has no owner yet, and that
+    // case is already handled entirely by adoptPendingGeneration's own
+    // flow, not by anything here.
+    if (s.pendingJob && !s.pendingJob.ownerHandle && s.user) {
+      s.pendingJob.ownerHandle = s.user.handle;
+      changed = true;
+    }
+
     // Accounts used to be `{ key: password }`. Password reset needs an
     // email on file, so accounts are now `{ key: { password, email } }` —
     // upgrade any old plain-string entries in place (email starts unset;
@@ -573,6 +595,18 @@
         operationName: operationName, startedAt: startedAt,
         caption: caption, style: style, sourceDreamId: sourceDreamId,
         mediaType: mediaType,
+        // Reads state.pendingJob directly rather than through
+        // scopedPendingJob() / the already-scoped `job` resumePendingJob()
+        // obtained — safe here specifically because a resume can only ever
+        // reach this line synchronously within the same microtask
+        // resumePendingJob() called it from (operationPromise resolves
+        // immediately via Promise.resolve(resume.operationName) on the
+        // resume path, with nothing awaited in between that could log the
+        // user out or switch accounts), so state.pendingJob is still
+        // provably the same job that was just validated as theirs. Not
+        // restructured to go through the scoped accessor too, to keep this
+        // review round's fix to the actual bug (ownerHandle backfill,
+        // above) rather than a speculative "while I'm here" refactor.
         notify: (resume && state.pendingJob && state.pendingJob.notify) || false
       });
       return pollUntilDone(operationName, startedAt, mediaType);
