@@ -100,6 +100,31 @@ test('submit-support-message: a real registered account gets emailed to the owne
   });
 });
 
+test('submit-support-message: a username containing CR/LF or absurdly long text is sanitized before landing in the email SUBJECT header, but left untouched everywhere else (HTML body, persisted record)', function () {
+  return withEnv(ENV, async function () {
+    var sentCalls = installFetchSpy(true);
+    var handler = require('../netlify/functions/submit-support-message').handler;
+    var weirdUsername = 'evil\r\nBcc: attacker@example.com' + 'x'.repeat(200);
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      ip: '9.9.9.9',
+      body: { type: 'support', username: weirdUsername, email: 'weird@example.com', message: 'hi' }
+    }));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(sentCalls.length, 1);
+    assert.equal(sentCalls[0].body.subject.indexOf('\r') === -1 && sentCalls[0].body.subject.indexOf('\n') === -1, true, 'no raw CR/LF must ever reach the mail header field, regardless of how unlikely real injection is against a JSON API');
+    assert.ok(sentCalls[0].body.subject.length < weirdUsername.length, 'an absurdly long username must be capped in the subject, not passed through verbatim');
+    assert.match(sentCalls[0].body.subject, /^DreamTube Support — evil Bcc: attacker@example\.com/, 'the CRLF is replaced with a space, not silently dropped (so the surrounding text does not get glued together in a misleading way), and the visible prefix is otherwise unchanged');
+
+    // Nothing else this codebase relies on gets truncated/sanitized — this
+    // is deliberately narrow to the one raw-mail-header field.
+    var supportStore = require('../netlify/functions/lib/support-store');
+    var messages = await supportStore.getMessages(fakeEvent({ method: 'GET' }));
+    assert.equal(messages[0].username, weirdUsername, 'the PERSISTED record keeps the exact username as submitted -- only the email subject line is sanitized');
+  });
+});
+
 test('submit-support-message: feedback type is tagged distinctly in the email subject and the persisted record', function () {
   return withEnv(ENV, async function () {
     var registerHandler = require('../netlify/functions/register-account').handler;
