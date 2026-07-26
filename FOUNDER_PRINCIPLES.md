@@ -145,6 +145,14 @@ tight (curate, don't dump).
   same as this file's own "Cross-session working" section already
   establishes; this just makes explicit that urgency is opt-in, not
   default.
+- **STANDING RULE (founder said "always," 2026-07-26): whenever he needs to
+  see a design/visual before deciding, actually show it to him** — paste
+  it directly in the reply or give him a real link (an Artifact, a live
+  page, a screenshot), never just describe the change in prose and ask
+  him to imagine it. Came up on a Settings-sheet review request with
+  several small visual asks (a button's styling, etc.) — prose-only
+  descriptions of a visual change are not an acceptable substitute for
+  actually seeing it, even for a small tweak.
 - **Reuse proven components** over reinventing (e.g. the small-thumbnail video
   carousel from the processing page beat two rounds of a custom lazy slider).
 - **Light media over heavy on mobile** — small thumbnails, poster-first,
