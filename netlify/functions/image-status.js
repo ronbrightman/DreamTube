@@ -25,7 +25,58 @@
 // so a mock delay proportionate to that keeps mock mode representative
 // rather than making an image generation feel artificially slow.
 
+var entitlements = require('./lib/entitlements');
+var accountStore = require('./lib/account-store');
+var posthogCapture = require('./lib/posthog-capture');
+
 var FAL_API_BASE = 'https://queue.fal.run';
+
+// Must match generate-image.js's own IMAGE_TOKEN_COST — kept as a local
+// literal rather than require()'d, per this codebase's "each function
+// self-contained" convention (see humanizeFalDetail's own
+// duplicated-not-shared precedent just below).
+var IMAGE_TOKEN_COST = 10;
+
+// Auto-refund tracker item idea-auto-refund-policy, founder-approved
+// 2026-07-26 — see lib/entitlements.js's refundTokensOnce doc block for the
+// full mechanism, and video-status.js's own REFUND_ELIGIBLE_CODES comment
+// for why only these two per media type are in scope. E505/E508 are this
+// file's own equivalents of video-status.js's E205/E208.
+var REFUND_ELIGIBLE_CODES = ['E505', 'E508'];
+
+/** True if `errorStr` (an "ENNN: reason" string, see the E5xx doc block below) starts with one of REFUND_ELIGIBLE_CODES. */
+function isRefundEligibleError(errorStr) {
+  if (typeof errorStr !== 'string') return false;
+  return REFUND_ELIGIBLE_CODES.some(function (code) { return errorStr.indexOf(code + ':') === 0; });
+}
+
+/**
+ * Refunds IMAGE_TOKEN_COST tokens for `jobId` onto `email`'s balance and
+ * reports the `tokens_refunded` PostHog event — see video-status.js's own
+ * refundAndReport for the full reasoning (identical shape, image-scoped).
+ * Never throws.
+ */
+async function refundAndReport(event, email, jobId, reasonCode) {
+  if (!email) return { refunded: false };
+  try {
+    var refundResult = await entitlements.refundTokensOnce(event, email, jobId, IMAGE_TOKEN_COST);
+    if (!refundResult.refunded) return { refunded: false };
+
+    var account = await accountStore.getByEmail(event, email).catch(function () { return null; });
+    var distinctId = (account && account.username) || entitlements.normalizeEmail(email);
+
+    await posthogCapture.captureEvent({
+      event: 'tokens_refunded',
+      distinct_id: distinctId,
+      properties: { jobId: jobId, cost: IMAGE_TOKEN_COST, reason: reasonCode, mediaType: 'image' }
+    });
+
+    return { refunded: true };
+  } catch (e) {
+    console.error('image-status: refund attempt failed (non-fatal, support form is the fallback)', e);
+    return { refunded: false };
+  }
+}
 
 /** Parses a fetch Response as JSON, tolerating an empty/non-JSON body so callers can report the raw text instead of throwing. Duplicated from video-status.js — see this codebase's "each function self-contained" convention. */
 async function parseJsonSafe(res) {
@@ -85,6 +136,11 @@ function falErrorMessage(data) {
 //   E506 non-JSON response from fal's result endpoint
 //   E507 fal's result endpoint returned a non-OK HTTP response
 //   E508 job reported COMPLETED but the result had no image URL in it (unexpected response shape)
+//
+// E505 and E508 specifically are also the auto-refund-eligible codes — see
+// REFUND_ELIGIBLE_CODES/refundAndReport below and lib/entitlements.js's
+// refundTokensOnce doc block for the full mechanism (tracker item
+// idea-auto-refund-policy, founder-approved 2026-07-26).
 //
 // The mock path (checkMockStatus below) has no error codes of its own — a
 // mock operation can't fail the way a real fal call can, by design (see
@@ -175,6 +231,10 @@ exports.handler = async function (event) {
   if (!name) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E502: name_required' }) };
   }
+  // Best-effort: only used to credit an auto-refund on a refund-eligible
+  // failure (see refundAndReport above) — never required for the plain
+  // status check itself.
+  var email = (event.queryStringParameters || {}).email || '';
 
   try {
     var result;
@@ -197,7 +257,16 @@ exports.handler = async function (event) {
     }
 
     var body = { done: result.done };
-    if (result.error) body.error = result.error;
+    if (result.error) {
+      body.error = result.error;
+      // Auto-refund — see refundAndReport's own doc comment. Only fires
+      // for the narrow refund-eligible code set; every other error path
+      // here is unaffected and behaves exactly as before this feature.
+      if (isRefundEligibleError(result.error)) {
+        var refundOutcome = await refundAndReport(event, email, name, result.error);
+        if (refundOutcome.refunded) body.tokensRefunded = true;
+      }
+    }
     if (result.imageUrl) body.imageUrl = result.imageUrl;
     return { statusCode: result.statusCode, body: JSON.stringify(body) };
   } catch (e) {

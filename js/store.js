@@ -438,14 +438,39 @@
     return mediaType === 'image' ? '/.netlify/functions/image-status' : '/.netlify/functions/video-status';
   }
 
-  function pollUntilDone(operationName, startedAt, mediaType) {
+  /**
+   * email (optional) is threaded through to video-status.js/image-status.js
+   * purely so a refund-eligible generation failure (E205/E208-class — see
+   * either function's own doc block) can credit tokens back onto the
+   * right account's balance server-side, the moment that failure is
+   * determined — see lib/entitlements.js's refundTokensOnce. Never required
+   * for the plain status check itself; an empty/missing email just means
+   * no refund attempt (shouldn't happen in practice — generate-video.js's/
+   * generate-image.js's own E112/E412 token gate already requires a real
+   * email before a job can even be submitted, so every operationName this
+   * polls for was necessarily submitted with one).
+   */
+  function pollUntilDone(operationName, startedAt, mediaType, email) {
     return new Promise(function (resolve, reject) {
       function poll() {
         if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('E301: generation_timeout')); return; }
-        fetch(statusEndpointFor(mediaType) + '?name=' + encodeURIComponent(operationName))
+        var url = statusEndpointFor(mediaType) + '?name=' + encodeURIComponent(operationName)
+          + (email ? '&email=' + encodeURIComponent(email) : '');
+        fetch(url)
           .then(function (res) { return res.json(); })
           .then(function (data) {
-            if (data.error) { reject(new Error(data.error)); return; }
+            if (data.error) {
+              // tokensRefunded (see video-status.js/image-status.js) rides
+              // along on the Error object itself (not encodable in the
+              // "ENNN: reason" string) so processing.html's catch handler
+              // can show "Your tokens were returned." exactly when a real
+              // server-side refund actually landed — never assumed from
+              // the client side.
+              var refundErr = new Error(data.error);
+              refundErr.tokensRefunded = !!data.tokensRefunded;
+              reject(refundErr);
+              return;
+            }
             if (data.done) { resolve(mediaType === 'image' ? data.imageUrl : data.videoUrl); return; }
             setTimeout(poll, POLL_INTERVAL_MS);
           })
@@ -585,6 +610,12 @@
     // concept here).
     var sourceImageUrl = (mediaType === 'video' && opts.sourceImageUrl) ? opts.sourceImageUrl : null;
     var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
+    // Captured once, up front, so the SAME value is used both on the
+    // submission request below and later on every status poll (see
+    // pollUntilDone's own doc comment) — an account's email can't change
+    // mid-generation in any way that should retroactively affect which
+    // balance a post-submission-failure refund lands on.
+    var email = currentAccountEmail();
 
     var operationPromise = resume
       ? Promise.resolve(resume.operationName)
@@ -603,7 +634,7 @@
             // unconditional and always on, and identifies the caller's token
             // balance by this email. No email means no way to look up a
             // balance, so an anonymous/logged-out call here fails the gate.
-            email: currentAccountEmail(),
+            email: email,
             // Best-effort Cloudflare Turnstile token, resolved client-side by
             // processing.html before calling generateVideo/generateImage/
             // regenerateDream (see js/turnstile-config.js's
@@ -642,7 +673,7 @@
         // above) rather than a speculative "while I'm here" refactor.
         notify: (resume && state.pendingJob && state.pendingJob.notify) || false
       });
-      return pollUntilDone(operationName, startedAt, mediaType);
+      return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType);
       // No duration concept applies to a still image — only probe/patch

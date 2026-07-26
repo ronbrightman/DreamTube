@@ -119,6 +119,36 @@ forwarding, etc.).
 | **Two different subjects, one action** | `like_given`'s `distinct_id` is the liker (`payload.likerHandle`, sent by `js/store.js`'s `toggleSharedLike` alongside `id`/`delta` — the current browser's own `state.user.handle`, purely for this attribution, with no other effect on the like itself); `like_received`'s `distinct_id` is the dream's owner (`feed[idx].ownerHandle`, already known server-side from the feed record). Both are `@`-prefixed handles in this codebase's local-account model — `like-dream.js`'s `stripHandle()` strips the leading `@` so each matches the raw-username `distinct_id` the corresponding account's browser already identified as. A dream liked by its own owner (self-like) fires both events on the same distinct_id — not specially handled, since that's an honest reflection of what happened |
 | **What's sent** | `{ dreamId }` on each |
 
+### tokens_refunded
+
+Founder-approved auto-refund policy (tracker item `idea-auto-refund-policy`,
+2026-07-26): "refund IMMEDIATELY on every post-submission generation failure
+(E205/E208-class), not once/day. Server-side, in the same path that marks
+the dream failed; credit back the exact cost (100 video / 10 image);
+idempotent per job-id... Instrument `tokens_refunded` event (job id, cost,
+reason) so refund volume is visible from launch day." Tokens only — a real
+money refund (Dodo Payments purchase) stays a manual, support-driven
+process, untouched by this event or the crediting mechanism behind it.
+
+| | |
+|---|---|
+| **Trigger** | `video-status.js`/`image-status.js` (the two places that check a submitted fal.ai job's status) determine, on fal's own authority, that the job is refund-eligible — E205/E208 for video, E505/E508 for image (fal itself marked the job failed, or it completed with no usable video/image URL back) — AND `lib/entitlements.js`'s `refundTokensOnce` reports `refunded: true` for THIS specific job id (not a resumed/redelivered poll of an already-refunded job) |
+| **Fires from** | `netlify/functions/video-status.js`'s `refundAndReport` / `netlify/functions/image-status.js`'s `refundAndReport` — called from each file's `exports.handler`, right where the refund-eligible error is about to be returned to the client |
+| **Vendors** | PostHog only — an internal cost/reliability signal, not an ad-optimization conversion (same reasoning as `video_created`/`like_given`) |
+| **Scope: only E205/E208-class, not every error code** | A transport-level hiccup talking to fal (E203/E204/E206/E207 and their E5xx counterparts) doesn't actually prove the job failed — only that this particular status check couldn't confirm either way — so those stay outside automatic refund/event scope entirely; the existing support-form fallback covers them, per the founder's own spec |
+| **Idempotency** | `refundTokensOnce` folds the job id into the SAME Blobs write as the balance credit (a new `refundedJobIds` array on the per-email entitlement record, alongside `tokens.balance`) — mirrors `creditTokenPackAmountOnce`'s own "both facts, one write" fix for Dodo purchase crediting, for the identical reason (a page reload mid-poll re-polls the same operationName from scratch, and fal's own job status is terminal/stable, so a resumed poll of an already-failed job would otherwise refund a second time). The event only fires on a genuine fresh refund (`refunded: true`), never on a dedup no-op — same "only fire on the real thing" discipline as `dodo-webhook.js`'s `firePurchaseConversion` (`credited === true` gate) |
+| **distinct_id** | The account's raw username, resolved via `lib/account-store.js`'s `getByEmail` from the email the client's poll carried — falls back to the normalized email itself if no matching account record exists, same resolution `dodo-webhook.js`'s server-side Purchase event already uses |
+| **What's sent** | `{ jobId, cost, reason, mediaType }` — `jobId` is the operationName (fal's own request id, prefixed `fal:<model>:` — or `mock:...`, though the mock path never actually fails/refunds by design), `cost` is the exact token amount refunded (100 video / 10 image, matching what was actually spent for that job type), `reason` is the full `"ENNN: ..."` error string that triggered the refund, `mediaType` is `'video'` or `'image'` |
+| **Never blocks the failure notice** | `refundAndReport` never throws — a refund attempt that hits a genuine Blobs write exhaustion (see `refundTokensOnce`'s own "EXHAUSTION MUST THROW" doc comment) is caught and logged, not surfaced as a 500; the generation-failure response the user is waiting on always still reaches them. There's no webhook-style redelivery mechanism here to give a thrown error a real second attempt the way `dodo-webhook.js` has, so this fails soft rather than fail closed — the support-form fallback is the intended catch-all for that rare case |
+| **Client-visible effect** | `video-status.js`/`image-status.js`'s response carries `tokensRefunded: true` only when a refund genuinely landed just now; `js/store.js`'s `pollUntilDone` attaches this to the rejected `Error` object (`err.tokensRefunded`) rather than encoding it into the `"ENNN: reason"` string, and `processing.html`'s failure screen shows "Your tokens were returned." only when that flag is set — never assumed just because generation failed at all |
+
+**Files touched:**
+
+- `netlify/functions/lib/entitlements.js` — new `refundTokensOnce`, new `refundedJobIds` field on the entitlement record
+- `netlify/functions/video-status.js` / `netlify/functions/image-status.js` — new `refundAndReport`/`isRefundEligibleError`, wired into each `exports.handler`
+- `js/store.js` — `pollUntilDone` now threads `email` through to the status-poll request and attaches `tokensRefunded` to a rejected generation-failure `Error`
+- `processing.html` — new `#proc-fail-refund` copy line, shown conditionally in the failure `.catch` handler
+
 ### signed_up
 
 | | |
