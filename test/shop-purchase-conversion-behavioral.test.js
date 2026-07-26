@@ -168,7 +168,14 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     // handleCheckoutReturn's IIFE runs fresh with the marker already in
     // place.
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack500', tokens: 500, price: 8.95 });
+    // eventId here mirrors what create-checkout-session-dodo.js's real
+    // response now always carries (Phase 1 reporting instrumentation --
+    // shared between this client-side fire and dodo-webhook.js's own
+    // server-side Purchase fire, for PostHog/Meta dedup -- see that
+    // file's own header comment). A production purchasePack() call always
+    // has one; this seed matches that reality rather than the pre-Phase-1
+    // shape.
+    await markPendingPurchase(page, { pack: 'pack500', tokens: 500, price: 8.95, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget -- give it a moment
@@ -178,7 +185,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
     assert.equal(fbqPurchaseCalls.length, 1, 'expected exactly one fbq track Purchase call');
     var eventId = fbqPurchaseCalls[0][3] && fbqPurchaseCalls[0][3].eventID;
-    assert.ok(eventId, 'the fbq Purchase call should carry an eventID');
+    assert.equal(eventId, 'evt-fixed-test-id', 'the fbq Purchase call must use the SHARED event_id from the pending marker, not a freshly generated one, so it dedupes against dodo-webhook.js\'s own server-side Purchase fire');
 
     var purchaseConversions = conversionCalls.filter(function (body) { return body && body.event_name === 'Purchase'; });
     assert.equal(purchaseConversions.length, 1, 'expected exactly one Purchase POST to track-conversion');
@@ -188,7 +195,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var phCalls = await readPostHogCalls(page);
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
-    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack500', tokens: 500, value: 8.95, currency: 'USD' });
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack500', tokens: 500, value: 8.95, currency: 'USD', $insert_id: 'evt-fixed-test-id' });
 
     var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
     assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
