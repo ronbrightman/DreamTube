@@ -777,11 +777,14 @@
   var pendingOperationName = null;
   var pendingStartedAt = null;
   var pendingStartFailed = false;
-  // Snapshot (JSON) of the payload behind the last successful
-  // start-pending-generation call, so Back-to-here + Continue with
-  // nothing changed can skip re-POSTing instead of creating a second
-  // real fal.ai charge + token spend and orphaning the first pending
-  // record. See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
+  // Snapshot (JSON, email-normalized) of the payload behind the last
+  // successful start-pending-generation call, so Back-to-here + Continue
+  // with nothing changed can skip re-POSTing instead of creating a
+  // second real fal.ai charge + token spend and orphaning the first
+  // pending record. Only ever written alongside pendingId on success —
+  // see the Continue handler below for why that invariant is what makes
+  // comparing against it (alone, without pendingStartFailed) safe.
+  // See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
   var lastPendingSubmissionKey = null;
 
   function resolveCharactersForGeneration(){
@@ -832,6 +835,12 @@
         sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey
       };
       var submissionKey = JSON.stringify(payload);
+      // Comparison-only key: normalizes email casing (mirrors the
+      // server's entitlements.normalizeEmail) so retyping the same
+      // address with different case isn't treated as a changed
+      // submission and forced through an unnecessary resubmit. The
+      // actual POST body above keeps the as-typed casing.
+      var comparisonKey = JSON.stringify(Object.assign({}, payload, { email: contactEmail.toLowerCase() }));
 
       // Already have a successful in-flight generation for these exact
       // inputs — e.g. the user went forward to Signup and back to this
@@ -840,7 +849,21 @@
       // spend against the same email and orphan the first pending
       // record. Only resubmit if something the payload depends on
       // (email/whatsapp/dream details) actually changed.
-      if(pendingId && !pendingStartFailed && submissionKey === lastPendingSubmissionKey){
+      //
+      // Deliberately NOT gated on pendingStartFailed: that flag only
+      // reflects the outcome of the MOST RECENT POST, not whether THIS
+      // content's submission succeeded. Example: content A succeeds
+      // (pendingId=X, lastPendingSubmissionKey=A) -> user edits to B,
+      // which fails transiently (pendingStartFailed=true, pendingId/
+      // lastPendingSubmissionKey untouched, still X/A) -> user reverts
+      // to A. comparisonKey now matches lastPendingSubmissionKey again
+      // and pendingId (X) is still a valid, unclaimed job for it --
+      // gating on the stale pendingStartFailed would force a needless
+      // real re-POST/charge here. lastPendingSubmissionKey is ONLY ever
+      // written alongside pendingId on a successful POST (see below), so
+      // the equality check alone already proves pendingId is valid for
+      // this exact content.
+      if(pendingId && comparisonKey === lastPendingSubmissionKey){
         DreamStore.setDraft({ caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
         next();
         return;
@@ -863,7 +886,7 @@
           pendingOperationName = result.data.operationName;
           pendingStartedAt = startedAt;
           pendingStartFailed = false;
-          lastPendingSubmissionKey = submissionKey;
+          lastPendingSubmissionKey = comparisonKey;
         } else {
           // Resilient fallback: generation just won't have a head start —
           // the normal fresh-generation path at processing.html (draft

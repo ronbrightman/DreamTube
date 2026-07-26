@@ -268,6 +268,76 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
   }
 });
 
+test('wizard.html: reverting to a previously-successful submission after an unrelated failed resubmission still skips re-POSTing -- pendingStartFailed (which only reflects the MOST RECENT attempt) must not gate the equality check', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    var ORIGINAL_EMAIL = 'revert-test@example.com';
+    var CHANGED_EMAIL = 'revert-test-changed@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      var body = JSON.parse(route.request().postData());
+      startPendingCalls.push(body);
+      if (body.email === CHANGED_EMAIL) {
+        // Simulate a transient failure on the SECOND (changed-content)
+        // submission -- this is what sets the global pendingStartFailed
+        // flag, which must not leak into the guard for the THIRD
+        // attempt below (reverted back to the original, already-
+        // succeeded content).
+        route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E9: transient_failure' }) });
+        return;
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-test-revert-1', operationName: 'fal:fake-model:req-revert-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Attempt 1 -- content A (ORIGINAL_EMAIL) -- succeeds.
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', ORIGINAL_EMAIL);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'first submission (content A) must fire');
+    assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
+
+    // Attempt 2 -- Back, edit to content B (CHANGED_EMAIL) -- a genuine
+    // change, so it must resubmit for real. This attempt is mocked to
+    // fail, which sets pendingStartFailed=true globally (pendingId and
+    // lastPendingSubmissionKey stay pointed at content A's successful
+    // job, untouched by this failure).
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', CHANGED_EMAIL);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 2, 'a genuine content change must resubmit even though it will fail');
+    assert.equal(startPendingCalls[1].email, CHANGED_EMAIL);
+
+    // Attempt 3 -- Back, revert to content A (ORIGINAL_EMAIL) exactly.
+    // content A already has a valid, unclaimed pendingId from attempt 1
+    // -- this must skip re-POSTing entirely, regardless of attempt 2's
+    // unrelated failure having left pendingStartFailed=true.
+    await page.click('#fnBack');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', ORIGINAL_EMAIL);
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 2, 'reverting to a previously-succeeded submission must NOT re-POST, even after an unrelated failed resubmission in between -- exactly 2 real calls total across all 3 attempts');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: if the pre-signup generation call fails, signup still completes and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
