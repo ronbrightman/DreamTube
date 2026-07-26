@@ -446,16 +446,23 @@ test('Ron\'s and Claude\'s comment areas on the same item save independently -- 
     await openItem(page, 'task-b');
     await page.fill(commentInputSelector('task-b', 'ron'), "Ron's note");
     await page.click(commentSaveSelector('task-b', 'ron'));
+    // Wait for the actual DOM state change (this entry landing), not the
+    // toast -- two saves in a row show the SAME "Comment saved" toast
+    // text, so waiting on toast visibility a second time can match the
+    // FIRST save's still-visible toast (it auto-hides after 2200ms, see
+    // tracker.html's showToast) before the second request has actually
+    // completed. This flaked intermittently for exactly that reason
+    // (tracker item fix-flaky-tracker-comments-behavioral-te-bq5qz5).
     await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+      var els = document.querySelectorAll('.tracker-item[data-id="task-b"] .tracker-comment-text');
+      return Array.prototype.some.call(els, function (e) { return e.textContent === "Ron's note"; });
     }, null, { timeout: 5000 });
 
     await page.fill(commentInputSelector('task-b', 'claude'), "Claude's note");
     await page.click(commentSaveSelector('task-b', 'claude'));
     await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && /Comment saved/.test(t.textContent);
+      var els = document.querySelectorAll('.tracker-item[data-id="task-b"] .tracker-comment-text');
+      return Array.prototype.some.call(els, function (e) { return e.textContent === "Claude's note"; });
     }, null, { timeout: 5000 });
 
     var authors = await page.$$eval('.tracker-item[data-id="task-b"] .tracker-comment-author', function (els) { return els.map(function (e) { return e.textContent; }); });
