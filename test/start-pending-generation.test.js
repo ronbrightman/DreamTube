@@ -229,3 +229,100 @@ test('mediaType "image": a fal rejection marks the pending record failed and nev
   var status = await entitlements.getTokenStatus({}, 'rejected-image@example.com');
   assert.equal(status.balance, 500); // untouched -- no spend on rejection
 });
+
+// -----------------------------------------------------------------------
+// Regression coverage for tracker item for-product-only-generate-a-video-
+// once-t-1nqv5m ("don't spend fal.ai money generating a video for a user
+// we can't reach"). This file's handler already creates the pending-dream
+// record (with `email` durably persisted to Blobs via
+// pendingDreams.create -> store().setJSON) BEFORE either
+// entitlements.spendTokens or the actual fal.ai submission run (see the
+// handler's own comment right above its `pendingDreams.create` call) --
+// nothing in between is wrapped in a try/catch that swallows a create()
+// failure and presses on, so if the durable write itself throws, the
+// exception propagates straight out of the handler and NOTHING after it
+// executes. These tests prove that ordering by forcing pendingDreams.create
+// to fail (simulating a genuine Blobs write failure) and asserting no
+// money-adjacent call happens on either side of it, for every
+// mediaType x mock/real combination. See docs/... (n/a) -- verified by
+// hand-tracing every branch of start-pending-generation.js during this
+// investigation; no path was found where spendTokens or a fal call can run
+// without pendingDreams.create having already succeeded first.
+// -----------------------------------------------------------------------
+
+var originalPendingCreate = pendingDreams.create;
+test.afterEach(function () {
+  pendingDreams.create = originalPendingCreate;
+});
+
+function breakPendingCreate() {
+  pendingDreams.create = async function () {
+    throw new Error('simulated pending-dreams Blobs write failure');
+  };
+}
+
+test('video, real fal mode: if the durable pending-dream (email) write itself fails, the handler throws and fal is never called / no tokens are spent', async function () {
+  await balance('durability-video-real@example.com', 500);
+  var falCalls = 0;
+  global.fetch = async function () { falCalls++; return { ok: true, status: 200, json: async function () { return { request_id: 'should-never-be-reached' }; } }; };
+  breakPendingCreate();
+
+  await assert.rejects(function () {
+    return handler(genEvent({ body: { email: 'durability-video-real@example.com' } }));
+  }, /simulated pending-dreams Blobs write failure/);
+
+  assert.equal(falCalls, 0, 'fal must never be called if the email-bearing record was never durably written');
+  var status = await entitlements.getTokenStatus({}, 'durability-video-real@example.com');
+  assert.equal(status.balance, 500, 'no tokens may be spent if the email-bearing record was never durably written');
+});
+
+test('video, GENERATION_MOCK_MODE: if the durable pending-dream (email) write itself fails, the handler throws before the mock-mode token spend', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  await balance('durability-video-mock@example.com', 500);
+  breakPendingCreate();
+
+  await assert.rejects(function () {
+    return handler(genEvent({ body: { email: 'durability-video-mock@example.com' } }));
+  }, /simulated pending-dreams Blobs write failure/);
+
+  var status = await entitlements.getTokenStatus({}, 'durability-video-mock@example.com');
+  assert.equal(status.balance, 500, 'mock mode must not spend tokens if the email-bearing record was never durably written');
+});
+
+test('mediaType "image", real fal mode: if the durable pending-dream (email) write itself fails, the handler throws and fal is never called / no tokens are spent', async function () {
+  await balance('durability-image-real@example.com', 500);
+  var falCalls = 0;
+  global.fetch = async function () { falCalls++; return { ok: true, status: 200, json: async function () { return { request_id: 'should-never-be-reached' }; } }; };
+  breakPendingCreate();
+
+  await assert.rejects(function () {
+    return handler(genEvent({ body: { email: 'durability-image-real@example.com', mediaType: 'image' } }));
+  }, /simulated pending-dreams Blobs write failure/);
+
+  assert.equal(falCalls, 0, 'fal must never be called if the email-bearing record was never durably written');
+  var status = await entitlements.getTokenStatus({}, 'durability-image-real@example.com');
+  assert.equal(status.balance, 500, 'no tokens may be spent if the email-bearing record was never durably written');
+});
+
+test('mediaType "image", GENERATION_MOCK_MODE: if the durable pending-dream (email) write itself fails, the handler throws before the mock-mode token spend', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  await balance('durability-image-mock@example.com', 500);
+  breakPendingCreate();
+
+  await assert.rejects(function () {
+    return handler(genEvent({ body: { email: 'durability-image-mock@example.com', mediaType: 'image' } }));
+  }, /simulated pending-dreams Blobs write failure/);
+
+  var status = await entitlements.getTokenStatus({}, 'durability-image-mock@example.com');
+  assert.equal(status.balance, 500, 'mock mode must not spend tokens if the email-bearing record was never durably written');
+});
+
+test('the durable pending-dream write itself really does persist email via a real Blobs setJSON before anything else runs (sanity check the record shape, not just the failure path)', async function () {
+  stubFetchOk();
+  var res = await handler(genEvent({ body: { email: 'durability-sanity@example.com' } }));
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  var record = await pendingDreams.get({}, data.pendingId);
+  assert.equal(record.email, 'durability-sanity@example.com');
+  assert.ok(record.createdAt);
+});
