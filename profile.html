@@ -661,7 +661,7 @@
     tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
     if(tokenStatus.balance < 100) tokenMetaEl.textContent = 'Out of tokens';
     // Daily-grant amount read live off tokenStatus (see
-    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 10 as of 2026-07-24's
+    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 200 as of 2026-07-26's
     // token-economy retune) rather than hardcoded — see shop.html's own
     // identical fix/comment for the review finding this addresses.
     else if(tokenStatus.nextGrantAt) tokenMetaEl.textContent = '+' + tokenStatus.dailyGrantAmount + ' in ' + formatTokenCountdown(tokenStatus.nextGrantAt);

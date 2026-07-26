@@ -50,7 +50,7 @@ test('POST from the owner credits the amount and returns the refreshed token sta
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
     assert.equal(body.balance, 790, '290 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
-    assert.equal(body.dailyGrantAmount, 10);
+    assert.equal(body.dailyGrantAmount, 200);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
     assert.equal(record.tokens.balance, 790);

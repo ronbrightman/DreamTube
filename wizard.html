@@ -1113,7 +1113,8 @@
     el.innerHTML =
       '<div class="fn-headline">Create your account</div>' +
       // 290 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
-      // 2026-07-24 alongside DAILY_GRANT_AMOUNT 100->10 — see
+      // 2026-07-24 alongside DAILY_GRANT_AMOUNT 100->10, which was itself
+      // later raised again 2026-07-26 to 200 — see
       // docs/IMAGE_GENERATION_SPEC.md §2b-revised). Hardcoded, not fetched
       // live: this screen renders before a real account exists, so there's
       // no logged-in DreamStore.getTokenStatus() call to make here (that

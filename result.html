@@ -880,11 +880,11 @@
   var tokenStatus = null;
   var quotaBody = document.getElementById('modal-quota-body');
   // Fallback only for the brief window before getTokenStatus() resolves —
-  // mirrors entitlements.js's real DAILY_GRANT_AMOUNT (10 as of
-  // 2026-07-24's token-economy retune), same reasoning as style.html's own
+  // mirrors entitlements.js's real DAILY_GRANT_AMOUNT (200 as of
+  // 2026-07-26's token-economy retune), same reasoning as style.html's own
   // copy of this constant — read live off tokenStatus.dailyGrantAmount
   // rather than hardcoded, so a future retune can't drift this copy again.
-  var DEFAULT_DAILY_GRANT_AMOUNT = 10;
+  var DEFAULT_DAILY_GRANT_AMOUNT = 200;
   function updateQuotaBodyCopy(){
     var grant = (tokenStatus && tokenStatus.dailyGrantAmount) || DEFAULT_DAILY_GRANT_AMOUNT;
     quotaBody.textContent = 'Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.';

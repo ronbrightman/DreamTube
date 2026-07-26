@@ -1633,9 +1633,9 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * grant mechanism (290 on first-ever read, +10/24h lazily thereafter,
+     * grant mechanism (290 on first-ever read, +200/24h lazily thereafter,
      * capped once balance is already ≥500). Resolves to
-     * { balance:0, nextGrantAt:null, dailyGrantAmount:10 } with no network
+     * { balance:0, nextGrantAt:null, dailyGrantAmount:200 } with no network
      * call at all when there's no logged-in account or no email on file
      * (a legacy account that never added one — signup requires an email
      * today, see signup() above) since the server side has nothing to key
@@ -1647,8 +1647,8 @@
     getTokenStatus: function () {
       var email = currentAccountEmail();
       // dailyGrantAmount here mirrors entitlements.js's real
-      // DAILY_GRANT_AMOUNT (10 as of 2026-07-24's token-economy retune).
-      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 10 });
+      // DAILY_GRANT_AMOUNT (200 as of 2026-07-26's token-economy retune).
+      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 200 });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })
         .then(function (data) {

@@ -16,9 +16,9 @@
 // hardcoded literal (see js/store.js's getTokenStatus / get-token-status.js
 // / lib/entitlements.js's getTokenStatus, which already return this field
 // for exactly this purpose). These tests mock a deliberately distinctive
-// dailyGrantAmount (7 -- not 10, not 100) so a pass actually proves the
-// copy is read live, not coincidentally matching whatever the real
-// constant happens to be today.
+// dailyGrantAmount (7 -- not 10, not 100, and not 200 as of the 2026-07-26
+// retune) so a pass actually proves the copy is read live, not
+// coincidentally matching whatever the real constant happens to be today.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
