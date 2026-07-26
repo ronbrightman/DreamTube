@@ -110,7 +110,12 @@
                      // meant to reflect how credentials would be handled for real.
       draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
       dreams: [],
-      pendingJob: null,
+      pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
+                         // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
+                         // (see scopedPendingJob) rather than the job ever being cleared on
+                         // logout, so a same-account mid-generation logout/relogin can still
+                         // resume it, but a different account signing in on this browser never
+                         // can.
       charactersByUser: {}, // lowercased username -> array of character objects. Private
                              // per-user and reusable across dreams, same key scheme as accounts.
       likedIds: {} // dream id -> true. Purely local "have I liked this" state for the shared
@@ -316,8 +321,38 @@
     });
   }
 
-  function savePendingJob(job) { state.pendingJob = job; persist(); }
+  // Tags every pendingJob with the handle of whoever is logged in at write
+  // time — both call sites (startGeneration below, and adoptPendingGeneration
+  // right after signup succeeds in wizard.html/start.html) always run with
+  // state.user already set (generation requires currentAccountEmail() for
+  // the server-side token gate, which is null unless state.user is set; the
+  // pre-signup adopt call is only ever made from inside DreamStore.signup()'s
+  // own success callback — verified directly at both call sites). Same
+  // account-scoping shape as dreams' ownerHandle (see getMyDreams below) —
+  // this is what getPendingJob/resumePendingJob/requestNotifyOnReady filter
+  // reads by, instead of logout() wholesale-clearing the job (which used to
+  // also destroy a same-account resume after a mid-generation logout+
+  // relogin — tracker.html's state-pendingjob-not-cleared-on-logout-s-p2ivk2,
+  // review round 2).
+  function savePendingJob(job) {
+    state.pendingJob = Object.assign({}, job, { ownerHandle: state.user ? state.user.handle : null });
+    persist();
+  }
   function clearPendingJob() { state.pendingJob = null; persist(); }
+
+  // Returns state.pendingJob only when it belongs to whoever is currently
+  // logged in — never to a logged-out visitor (myHandle null) and never to
+  // a job tagged for a different account, same filter shape as
+  // getMyDreams()'s `d.ownerHandle === myHandle`. A job with no ownerHandle
+  // at all (only possible for one already in a browser's localStorage from
+  // before this scoping existed) is likewise treated as belonging to no one
+  // — matches getMyDreams()'s existing behavior for any dream whose
+  // ownerHandle doesn't match, and is the safe default per the bug this
+  // closes: never guess an owner, just let it sit inert in storage.
+  function scopedPendingJob() {
+    var myHandle = state.user ? state.user.handle : null;
+    return (state.pendingJob && myHandle && state.pendingJob.ownerHandle === myHandle) ? state.pendingJob : null;
+  }
 
   /**
    * Fire-and-forget upsert into the shared feed-index blob. Local state is
@@ -940,14 +975,23 @@
       return { ok: true };
     },
 
-    // Clears pendingJob too, not just state.user — same account-scoping bug
-    // class as state.dreams/charactersByUser (see getMyDreams below), but
-    // unlike those there's no ownerHandle on a pendingJob to re-scope by, so
-    // the fix here is the simpler one: a mid-flight generation belongs to
-    // this one browser session, not something that should survive a switch
-    // to a different account signing up/in on the same browser before it
-    // resolves.
-    logout: function () { state.user = null; state.pendingJob = null; persist(); },
+    // Does NOT clear state.pendingJob — same account-scoping bug class as
+    // state.dreams/charactersByUser (see getMyDreams below), but unlike a
+    // wholesale clear-on-logout, pendingJob is now tagged with an
+    // ownerHandle at write time (see savePendingJob) and every read
+    // (getPendingJob/resumePendingJob/requestNotifyOnReady) is scoped to
+    // whoever is CURRENTLY logged in via scopedPendingJob — so a different
+    // account signing up/in on this browser before the job resolves can
+    // never observe or overwrite it (the original bug,
+    // state-pendingjob-not-cleared-on-logout-s-p2ivk2), while the SAME
+    // account logging back out and back in mid-generation still sees and
+    // can resume its own in-flight job (a real generation already spent
+    // real tokens at submission — see generate-video.js's E112 doc block —
+    // so silently losing the ability to resume/get notified on it would
+    // waste that spend for no reason; an earlier version of this fix
+    // wholesale-cleared pendingJob on logout and broke exactly this case,
+    // caught in review).
+    logout: function () { state.user = null; persist(); },
 
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
@@ -1142,8 +1186,8 @@
       return true;
     },
 
-    /** The in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. */
-    getPendingJob: function () { return state.pendingJob; },
+    /** The CURRENT account's in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. Scoped by ownerHandle (see scopedPendingJob) so a different account never sees another account's job. */
+    getPendingJob: function () { return scopedPendingJob(); },
 
     /**
      * Adopts an ALREADY-SUBMITTED generation job as this browser's
@@ -1197,14 +1241,15 @@
       return dream;
     },
 
-    /** Marks the pending job so its completion fires a real Notification wherever it resolves. */
+    /** Marks the CURRENT account's pending job so its completion fires a real Notification wherever it resolves. */
     requestNotifyOnReady: function () {
-      if (state.pendingJob) { state.pendingJob.notify = true; persist(); }
+      var job = scopedPendingJob();
+      if (job) { job.notify = true; persist(); }
     },
 
-    /** Resumes polling a pending job left over from a previous page (e.g. the user left Processing). */
+    /** Resumes polling the CURRENT account's pending job left over from a previous page (e.g. the user left Processing). */
     resumePendingJob: function () {
-      var job = state.pendingJob;
+      var job = scopedPendingJob();
       if (!job) return Promise.reject(new Error('no_pending_job'));
       return startGeneration(job.caption, job.style, {
         sourceDreamId: job.sourceDreamId,

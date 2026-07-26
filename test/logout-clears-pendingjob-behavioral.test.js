@@ -10,22 +10,48 @@
 // (see js/store.js's getMyDreams() comment) — this is a new instance of it
 // for a piece of state not previously noticed.
 //
-// Concrete risk this closes: account A starts a generation, logs out
-// before it resolves, and account B signs up in the same browser before
-// A's job clears — B's signup-success handler could observe or overwrite
-// a stale pendingJob tied to A. This test reproduces that exact scenario:
-// account A has a pendingJob set, logs out, account B signs up in the same
-// browser, and asserts B never sees A's stale pendingJob.
+// FIRST FIX (round 1, reverted): unconditionally cleared state.pendingJob
+// in logout(). Closed the cross-account leak but review (round 2) caught a
+// real regression it introduced: a logged-in user with no lock preventing
+// logout mid-generation (profile.html's logout link) who logs out and back
+// into the SAME account mid-flight would find their pendingJob gone —
+// silently wasting an already-spent generation (tokens are spent at
+// submission time, see generate-video.js's E112 doc block) with no error
+// surfaced, since home.html/explore.html/processing.html's resume
+// machinery had nothing left to resume.
+//
+// FINAL FIX (round 2, this file): logout() no longer touches
+// state.pendingJob at all. Instead savePendingJob tags every pendingJob
+// with an ownerHandle at write time (both write sites -- startGeneration
+// and adoptPendingGeneration -- always run with state.user already set,
+// verified directly at both call sites in wizard.html/start.html), and
+// every read (getPendingJob/resumePendingJob/requestNotifyOnReady) is
+// scoped through scopedPendingJob() to only return/act on a job whose
+// ownerHandle matches whoever is CURRENTLY logged in -- same filter shape
+// as getMyDreams()'s `d.ownerHandle === myHandle`. This closes the
+// cross-account leak (a different account can never observe or resume
+// another account's job) while preserving the same-account resume case
+// (logging back into the SAME account mid-generation still sees and can
+// resume its own job).
+//
+// This file covers both scenarios end to end:
+//   1. Cross-account: account A has a pendingJob, logs out, account B
+//      signs up in the same browser -- B must never see or be able to
+//      resume A's stale pendingJob.
+//   2. Same-account: account A has a pendingJob, logs out, then logs back
+//      into the SAME account -- the pendingJob must still be there and
+//      resumable (not silently discarded).
 //
 // Follows test/wizard-ui-behavioral.test.js's conventions exactly: a plain
 // static file server (no real Netlify Functions runtime), blockThirdParty()
 // for this sandbox's flaky outbound network to fonts/PostHog/Pixel, and
-// safeGoto() to tolerate a transient nav failure. DreamStore.signup() is
-// left UNMOCKED deliberately — an unmocked POST to register-account.js
-// 404s against the static file server, and js/store.js's signup() already
-// degrades that to a local-only signup (see that function's own doc
-// comment), exactly like every other browser test in this repo that
-// exercises signup.
+// safeGoto() to tolerate a transient nav failure. DreamStore.signup()/
+// DreamStore.login() are left UNMOCKED deliberately -- an unmocked POST to
+// register-account.js/account-login.js 404s against the static file
+// server, and js/store.js's signup()/login() already degrade that to their
+// documented local-only fallback paths (commitLocalSignup/
+// attemptLocalLogin), exactly like every other browser test in this repo
+// that exercises signup/login.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -80,57 +106,73 @@ async function safeGoto(page, url) {
   }
 }
 
-test('js/store.js: logout() clears state.pendingJob -- account B never sees account A\'s stale in-flight generation job after A logs out and B signs up in the same browser', async function (t) {
+/**
+ * Seeds localStorage as if `username` is logged in with a real in-flight
+ * pendingJob already tagged with its ownerHandle (matching what
+ * savePendingJob would have written) -- operationName must be "fal:"- or
+ * "mock:"-prefixed or migrateLegacyState() strips it as a stale
+ * pre-fal.ai leftover on next load, see js/store.js's own comment on that
+ * migration. `password`/`email` are also seeded into `accounts` so a
+ * later DreamStore.login() for the SAME account can succeed via the
+ * documented local fallback (attemptLocalLogin) against the static test
+ * server, which has no real account-login.js to answer it.
+ */
+async function seedLoggedInWithPendingJob(page, username, password, email) {
+  await page.evaluate(function (args) {
+    var handle = '@' + args.username;
+    var state = {
+      user: { handle: handle, username: args.username },
+      accounts: {},
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
+      dreams: [],
+      pendingJob: {
+        operationName: 'fal:veo-3.1-fast:req-' + args.username,
+        startedAt: Date.now(),
+        caption: args.username + '\'s in-flight dream',
+        style: 'Cinematic',
+        sourceDreamId: null,
+        mediaType: 'video',
+        notify: false,
+        ownerHandle: handle
+      },
+      charactersByUser: {},
+      likedIds: {}
+    };
+    state.accounts[args.username] = { password: args.password, email: args.email };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, { username: username, password: password, email: email });
+
+  // Reload so js/store.js's IIFE reads the seeded state above (it's only
+  // loaded from localStorage once, at page load).
+  await safeGoto(page, baseUrl + '/login.html');
+}
+
+test('js/store.js: cross-account -- account B never sees or can resume account A\'s stale pendingJob after A logs out and B signs up in the same browser', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    // Land on any page that loads js/store.js so window.DreamStore exists.
     await safeGoto(page, baseUrl + '/login.html');
-
-    // Seed localStorage as if account A is logged in with a real in-flight
-    // pendingJob (operationName must be "fal:"- or "mock:"-prefixed or
-    // migrateLegacyState() strips it as a stale pre-fal.ai leftover on next
-    // load -- see js/store.js's own comment on that migration).
-    await page.evaluate(function () {
-      var state = {
-        user: { handle: '@accounta', username: 'accounta' },
-        accounts: { accounta: { password: 'accountapassword1', email: 'accounta@example.com' } },
-        draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
-        dreams: [],
-        pendingJob: {
-          operationName: 'fal:veo-3.1-fast:req-account-a',
-          startedAt: Date.now(),
-          caption: 'account A\'s in-flight dream',
-          style: 'Cinematic',
-          sourceDreamId: null,
-          mediaType: 'video',
-          notify: false
-        },
-        charactersByUser: {},
-        likedIds: {}
-      };
-      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-    });
-
-    // Reload so js/store.js's IIFE reads the seeded state above (it's only
-    // loaded from localStorage once, at page load).
-    await safeGoto(page, baseUrl + '/login.html');
+    await seedLoggedInWithPendingJob(page, 'accounta', 'accountapassword1', 'accounta@example.com');
 
     var pendingJobBeforeLogout = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
-    assert.ok(pendingJobBeforeLogout, 'sanity check: pendingJob should be seeded before logout');
-    assert.equal(pendingJobBeforeLogout.operationName, 'fal:veo-3.1-fast:req-account-a');
+    assert.ok(pendingJobBeforeLogout, 'sanity check: pendingJob should be seeded and visible to account A before logout');
+    assert.equal(pendingJobBeforeLogout.operationName, 'fal:veo-3.1-fast:req-accounta');
 
     // Account A logs out.
     await page.evaluate(function () { window.DreamStore.logout(); });
 
     var pendingJobAfterLogout = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
-    assert.equal(pendingJobAfterLogout, null, 'logout() must clear pendingJob, not just state.user');
+    assert.equal(pendingJobAfterLogout, null, 'no one is logged in right after logout, so getPendingJob() must read as absent');
 
+    // logout() itself must NOT have wiped the job out of storage -- the
+    // same-account resume case (covered in the next test) depends on it
+    // still being there, tagged to account A, for whenever A logs back in.
     var persistedAfterLogout = await page.evaluate(function () {
       return JSON.parse(localStorage.getItem('dreamtube_state_v1')).pendingJob;
     });
-    assert.equal(persistedAfterLogout, null, 'the cleared pendingJob must actually be persisted to localStorage, not just in-memory');
+    assert.ok(persistedAfterLogout, 'logout() must NOT delete the pendingJob from storage -- only scope who can see it');
+    assert.equal(persistedAfterLogout.ownerHandle, '@accounta');
 
     // Account B signs up in the same browser, before A's job would have
     // resolved. register-account.js 404s against the static file server,
@@ -141,13 +183,62 @@ test('js/store.js: logout() clears state.pendingJob -- account B never sees acco
     });
     assert.equal(signupResult.ok, true, 'account B signup should succeed');
 
+    var currentUser = await page.evaluate(function () { return window.DreamStore.getCurrentUser(); });
+    assert.equal(currentUser.username, 'accountb', 'sanity check: account B is really the one signed in now');
+
     var pendingJobForAccountB = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
     assert.equal(pendingJobForAccountB, null, 'account B must never see account A\'s stale pendingJob after signing up in the same browser');
 
-    // Sanity check: confirm this really is account B now signed in (not,
-    // say, a no-op signup call that left A's session intact).
-    var currentUser = await page.evaluate(function () { return window.DreamStore.getCurrentUser(); });
-    assert.equal(currentUser.username, 'accountb');
+    // Nor can B resume it (the read-scoping must hold for resumePendingJob
+    // too, not just the getPendingJob() accessor).
+    var resumeRejected = await page.evaluate(function () {
+      return window.DreamStore.resumePendingJob().then(
+        function () { return { rejected: false }; },
+        function (err) { return { rejected: true, message: err && err.message }; }
+      );
+    });
+    assert.equal(resumeRejected.rejected, true, 'resumePendingJob() must reject for account B -- there is nothing that belongs to them to resume');
+  } finally {
+    await page.close();
+  }
+});
+
+test('js/store.js: same-account -- a user who logs out mid-generation and logs back into the SAME account still sees and can resume their own pendingJob', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await seedLoggedInWithPendingJob(page, 'accounta', 'accountapassword1', 'accounta@example.com');
+
+    var pendingJobBeforeLogout = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJobBeforeLogout, 'sanity check: pendingJob should be seeded and visible before logout');
+
+    // Logs out mid-generation (e.g. tapping profile.html's logout link with
+    // no lock preventing it while a job is in flight).
+    await page.evaluate(function () { window.DreamStore.logout(); });
+    assert.equal(await page.evaluate(function () { return window.DreamStore.getPendingJob(); }), null, 'nobody logged in right after logout -- getPendingJob() reads as absent, not deleted');
+
+    // Logs back into the SAME account. account-login.js 404s against the
+    // static file server, so this exercises login()'s documented
+    // local-only fallback (attemptLocalLogin) against the accounts entry
+    // seeded above -- same as every other browser test in this repo that
+    // calls login() against the static server.
+    var loginResult = await page.evaluate(function () {
+      return window.DreamStore.login('accounta', 'accountapassword1');
+    });
+    assert.equal(loginResult.ok, true, 'account A should be able to log back in with its own credentials');
+
+    var pendingJobAfterRelogin = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
+    assert.ok(pendingJobAfterRelogin, 'account A must still see its own pendingJob after logging back in -- a real, already-paid-for generation must not silently vanish');
+    assert.equal(pendingJobAfterRelogin.operationName, 'fal:veo-3.1-fast:req-accounta');
+    assert.equal(pendingJobAfterRelogin.caption, 'accounta\'s in-flight dream');
+
+    // requestNotifyOnReady must also act on it post-relogin (not just
+    // getPendingJob()).
+    await page.evaluate(function () { window.DreamStore.requestNotifyOnReady(); });
+    var notifyFlag = await page.evaluate(function () { return window.DreamStore.getPendingJob().notify; });
+    assert.equal(notifyFlag, true, 'requestNotifyOnReady() must be able to mark the resumed job for account A');
   } finally {
     await page.close();
   }
