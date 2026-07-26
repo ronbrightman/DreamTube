@@ -940,7 +940,14 @@
       return { ok: true };
     },
 
-    logout: function () { state.user = null; persist(); },
+    // Clears pendingJob too, not just state.user — same account-scoping bug
+    // class as state.dreams/charactersByUser (see getMyDreams below), but
+    // unlike those there's no ownerHandle on a pendingJob to re-scope by, so
+    // the fix here is the simpler one: a mid-flight generation belongs to
+    // this one browser session, not something that should survive a switch
+    // to a different account signing up/in on the same browser before it
+    // resolves.
+    logout: function () { state.user = null; state.pendingJob = null; persist(); },
 
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
