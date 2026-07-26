@@ -10,9 +10,9 @@
 // same #toast/.toast/.toast.show markup and showToast() pattern
 // profile.html already has (see that page's own showToast()).
 //
-// Three things under test, matching the build task's own acceptance list:
+// Things under test, matching the build task's own acceptance list:
 // 1. The toast appears exactly once the first time auto-attach actually
-//    attaches the Me character.
+//    attaches the Me character (Write flow).
 // 2. It does not appear again on a later re-attach in the *same* draft
 //    (the toast-shown flag is independent of, and stricter than, the
 //    existing "already attached" no-op guard -- this is checked by forcing
@@ -20,12 +20,32 @@
 // 3. No toast at all when no Me character exists (mirrors the existing
 //    "never attaches without a Me character" case in
 //    test/profile-me-character-behavioral.test.js).
+// 4. The Record flow (transcription-success handler) also actually shows
+//    the toast, not just performs the attach -- added after review caught
+//    that create.html:~1408-1409 originally called
+//    autoSelectSelfIfMentioned() and then `location.href = 'style.html'`
+//    synchronously on the very next line, with zero delay, so the toast's
+//    classList mutation never got a chance to paint before the page
+//    unloaded. The fix makes autoSelectSelfIfMentioned() report whether it
+//    just fired the toast, and only then holds navigation for
+//    ME_TOAST_NAV_DELAY_MS (matching showToast()'s own 2200ms display
+//    window) before navigating on -- every other Record submission
+//    (no mention / already attached / no Me character) is unaffected and
+//    navigates immediately, same as before.
+// 5. The Record flow's "no toast" cases (no mention, no Me character)
+//    still navigate to style.html promptly -- confirms the fix adds zero
+//    delay for anyone who never triggers the toast.
 //
-// Follows that file's own conventions: node:test + real Chromium via
-// Playwright (not a project dependency -- resolved from this sandbox's
-// global install, see CLAUDE.md), state seeded directly into localStorage,
-// and every page.goto wrapped against this sandbox's known intermittent
-// outbound-network stalls on third-party hosts.
+// Follows test/profile-me-character-behavioral.test.js's and
+// test/record-mode-behavioral.test.js's own conventions: node:test + real
+// Chromium via Playwright (not a project dependency -- resolved from this
+// sandbox's global install, see CLAUDE.md), state seeded directly into
+// localStorage, page.route() mocks in place of a real Netlify Functions
+// runtime for the Record flow's transcribe-audio/transcribe-status calls
+// (mirroring test/record-mode-behavioral.test.js's own
+// installMediaRecorderMock for getUserMedia/MediaRecorder), and every
+// page.goto wrapped against this sandbox's known intermittent outbound-
+// network stalls on third-party hosts.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -109,6 +129,13 @@ async function seedUser(page, selfCharacter) {
   }, selfCharacter || null);
 }
 
+/** Reads the raw DreamStore state back out of localStorage for direct assertions. Mirrors test/profile-me-character-behavioral.test.js's readState. */
+function readState(page) {
+  return page.evaluate(function () {
+    return JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+  });
+}
+
 /**
  * Installs a MutationObserver on #toast's class attribute before any page
  * script runs, counting leading-edge "off -> on" transitions of the
@@ -141,6 +168,68 @@ function installToastCounter(page) {
       attach();
     }
   });
+}
+
+/**
+ * Installs a minimal fake navigator.mediaDevices.getUserMedia + window.MediaRecorder
+ * before any page script runs, so create.html's real startRecordingUI()/
+ * stop-record flow can run end to end without a real microphone. Same
+ * shape as test/record-mode-behavioral.test.js's own installMediaRecorderMock,
+ * scoped to a single page (via page.addInitScript) rather than a context,
+ * since this file's other tests use browser.newPage() directly.
+ */
+function installMediaRecorderMock(page) {
+  return page.addInitScript(function () {
+    var fakeStream = { getTracks: function () { return []; } };
+    if (!navigator.mediaDevices) navigator.mediaDevices = {};
+    navigator.mediaDevices.getUserMedia = function () {
+      return Promise.resolve(fakeStream);
+    };
+    function FakeMediaRecorder(stream, opts) {
+      this.stream = stream;
+      this.state = 'inactive';
+      this.mimeType = (opts && opts.mimeType) || 'audio/webm';
+      this._listeners = {};
+    }
+    FakeMediaRecorder.prototype.addEventListener = function (evt, cb) {
+      this._listeners[evt] = this._listeners[evt] || [];
+      this._listeners[evt].push(cb);
+    };
+    FakeMediaRecorder.prototype.start = function () { this.state = 'recording'; };
+    FakeMediaRecorder.prototype.stop = function () {
+      this.state = 'inactive';
+      (this._listeners.stop || []).forEach(function (cb) { cb(); });
+    };
+    FakeMediaRecorder.isTypeSupported = function () { return true; };
+    window.MediaRecorder = FakeMediaRecorder;
+  });
+}
+
+/**
+ * Mocks the Record flow's real transcription calls (transcribe-audio.js
+ * submits and returns an operationName, transcribe-status.js is polled
+ * until done) so the flow completes instantly with a fixed transcript --
+ * no fal.ai cost, no local Netlify Functions runtime needed (mirrors
+ * test/profile-me-character-behavioral.test.js's mockGenerateAvatar).
+ */
+function mockTranscription(page, transcript) {
+  return Promise.all([
+    page.route('**/.netlify/functions/transcribe-audio', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'test-op-1' }) });
+    }),
+    page.route('**/.netlify/functions/transcribe-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, transcript: transcript }) });
+    })
+  ]);
+}
+
+/** Drives create.html's real Record flow from the choice screen through to the review screen's "Continue" tap: click Record, wait for the mic UI, stop, wait for the review screen, click Continue. */
+async function recordAndSubmit(page) {
+  await page.click('#choice-record');
+  await page.waitForSelector('#stop-record');
+  await page.click('#stop-record');
+  await page.waitForSelector('#review-continue:not([disabled])');
+  await page.click('#review-continue');
 }
 
 test('create.html: shows a one-time toast the first time dream text auto-attaches the Me character, and not again on a later re-attach in the same draft', async function (t) {
@@ -214,6 +303,73 @@ test('create.html: no toast when no Me character exists, even though "I"/"me" is
     assert.deepEqual(draftIds, [], 'nothing to attach -- no Me character exists yet');
     assert.equal(await page.evaluate(function () { return window.__toastShowCount; }), 0, 'no toast without a Me character to attach');
     assert.equal(await page.locator('#toast.show').count(), 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html Record flow: the transcription-success handler also shows the one-time toast (not just the attach), and holds navigation until it is actually visible', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await installToastCounter(page);
+    await installMediaRecorderMock(page);
+    await seedUser(page, { id: 'cself-toast-rec', name: 'Morgan', isSelf: true, description: 'curly hair' });
+    await safeGoto(page, baseUrl + '/create.html');
+    await mockTranscription(page, 'I flew over the mountains at dawn.');
+
+    await page.click('#choice-record');
+    await page.waitForSelector('#stop-record');
+    await page.click('#stop-record');
+    await page.waitForSelector('#review-continue:not([disabled])');
+    await page.click('#review-continue');
+
+    // This is the exact regression review caught: previously
+    // location.href = 'style.html' ran synchronously on the very next line
+    // after the attach, with no delay -- so the toast's classList mutation
+    // never got a chance to be visible before the page unloaded. If that
+    // bug were still present, this selector would either time out (page
+    // navigated away, #toast no longer exists in this document) or resolve
+    // only after navigation already started.
+    await page.waitForSelector('#toast.show', { timeout: 5000 });
+    assert.match(page.url(), /create\.html/, 'must still be on create.html while the toast is visible -- navigation must not have already happened');
+    assert.equal(await page.locator('#toast').textContent(), EXPECTED_TOAST_TEXT);
+    assert.equal(await page.evaluate(function () { return window.__toastShowCount; }), 1);
+
+    // The attach itself was never blocked by this fix -- draft persists
+    // through to style.html once navigation does happen.
+    await page.waitForURL('**/style.html', { timeout: 6000 });
+    var state = await readState(page);
+    assert.deepEqual(state.draft.characterIds, ['cself-toast-rec']);
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html Record flow: a transcript with no self-mention (Me character exists but unmentioned) navigates to style.html immediately, with no artificial delay and no toast', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await installToastCounter(page);
+    await installMediaRecorderMock(page);
+    await seedUser(page, { id: 'cself-toast-rec2', name: 'Morgan', isSelf: true, description: 'curly hair' });
+    await safeGoto(page, baseUrl + '/create.html');
+    await mockTranscription(page, 'A dragon flew across the sky and breathed fire.');
+
+    await page.click('#choice-record');
+    await page.waitForSelector('#stop-record');
+    await page.click('#stop-record');
+    await page.waitForSelector('#review-continue:not([disabled])');
+    await page.click('#review-continue');
+
+    // No self-mention -- must reach style.html quickly, with no
+    // ME_TOAST_NAV_DELAY_MS-style hold-up added by this fix.
+    await page.waitForURL('**/style.html', { timeout: 1500 });
+    var state = await readState(page);
+    assert.deepEqual(state.draft.characterIds || [], [], 'nothing should have been attached -- no self-mention in the transcript');
+    assert.equal(await page.evaluate(function () { return window.__toastShowCount; }), 0, 'no toast when nothing was attached');
   } finally {
     await page.close();
   }

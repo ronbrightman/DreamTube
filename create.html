@@ -802,20 +802,36 @@
   // (Direction B) for the decision this implements.
   var meAutoAttachToastShown = false;
 
+  // Matches showToast()'s own 2200ms display duration exactly (not an
+  // independently-invented number) -- gives the Record flow's toast the
+  // same full visible window a Write-flow toast gets before its own
+  // auto-hide timer would fire, rather than cutting it off arbitrarily
+  // earlier. See the Record transcription-success handler below.
+  var ME_TOAST_NAV_DELAY_MS = 2200;
+
+  /**
+   * Returns true only when this call is the one that just showed the
+   * toast (i.e. a first-time-this-draft attach happened) -- false for
+   * every no-op path (no self character, no mention, already attached,
+   * already shown once). Callers that navigate away right after calling
+   * this (the Record flow, below) use the return value to know whether
+   * they need to hold off navigating for the toast to actually be seen;
+   * the Write flow's own caller ignores it, since it never navigates.
+   */
   function autoSelectSelfIfMentioned(captionText){
     var self = DreamStore.getCharacters().filter(function(c){ return c.isSelf; })[0];
-    if(!self) return;
+    if(!self) return false;
     var nameRe = buildNameRegex(self.name);
     var mentioned = FIRST_PERSON_RE.test(captionText) || (nameRe && nameRe.test(captionText));
-    if(!mentioned) return;
+    if(!mentioned) return false;
     var selectedIds = DreamStore.getDraft().characterIds || [];
-    if(selectedIds.indexOf(self.id) !== -1) return;
+    if(selectedIds.indexOf(self.id) !== -1) return false;
     DreamStore.setDraft({ characterIds: selectedIds.concat([self.id]) });
     renderCharacterChips();
-    if(!meAutoAttachToastShown){
-      meAutoAttachToastShown = true;
-      showToast('Added your Me character since you mentioned yourself');
-    }
+    if(meAutoAttachToastShown) return false;
+    meAutoAttachToastShown = true;
+    showToast('Added your Me character since you mentioned yourself');
+    return true;
   }
 
   textArea.addEventListener('input', function(){
@@ -1405,8 +1421,24 @@
       // Record skips the Write panel entirely, so this is the only chance to
       // link a first-person transcript ("I flew over...") to the saved self
       // character before generation — same check as the Write textarea.
-      autoSelectSelfIfMentioned(transcript);
-      location.href = 'style.html';
+      var meToastFired = autoSelectSelfIfMentioned(transcript);
+      // The attach itself is already saved to the draft above regardless --
+      // this delay is purely about the *visible feedback*. Unlike the Write
+      // flow (toast shows on the same page the user stays on), Record
+      // normally falls straight through to style.html on the very next
+      // line with no intermediate screen -- navigating immediately would
+      // unload the page before the toast's classList change ever gets
+      // painted, so the "why did this attach" feedback silently never
+      // appears despite the toast code running. Only holds up navigation
+      // on the one call that actually just showed the toast (first
+      // self-mention this draft) -- every other Record submission
+      // (no self-mention, already attached, no Me character) is unaffected
+      // and navigates immediately, same as before this fix.
+      if(meToastFired){
+        setTimeout(function(){ location.href = 'style.html'; }, ME_TOAST_NAV_DELAY_MS);
+      } else {
+        location.href = 'style.html';
+      }
     }).catch(function(){
       reviewContinue.disabled = false;
       reviewContinue.textContent = 'Continue';
