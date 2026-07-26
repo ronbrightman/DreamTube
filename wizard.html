@@ -1064,14 +1064,25 @@
           // which fires its equivalent call at this same point for the
           // same reason (review round-2 non-blocking finding).
           fireMetaConversion('CompleteRegistration', { email: email });
-          cb(true, null); return;
+          cb(true, null, false); return;
         }
         if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
           attempts++;
           tryUsername(base + Math.floor(1000 + Math.random() * 9000));
           return;
         }
-        cb(false, result.error);
+        // result.superseded (js/store.js's own call-sequence guard --
+        // see signupCallSeq's doc comment there) means THIS call was
+        // never even the most-recently-STARTED signup() call by the time
+        // its response landed, so js/store.js itself already declined to
+        // touch state.user/state.accounts for it. Passed through to cb
+        // as defense-in-depth alongside mySignupToken below -- in normal
+        // (non-bypassed) usage this UI-level token already catches every
+        // case the store-level guard would, but the store-level guard is
+        // now the one actually protecting state.user regardless of
+        // caller, per tracker item dreamstore-signup-commits-state-user-
+        // unc-vv6rio.
+        cb(false, result.error, !!result.superseded);
       });
     }
     tryUsername(base);
@@ -1136,14 +1147,19 @@
       // for why the token check still matters even so.
       backBtn.disabled = true;
       setTimeout(function(){
-        attemptSignup(contactEmail, password, function(ok, err){
+        attemptSignup(contactEmail, password, function(ok, err, superseded){
           // Stale -- a newer Signup attempt has since started (or this
           // one was superseded some other way). Discard everything,
           // including navigation: touching continueBtn/errEl here would
           // reach into a detached, already-replaced screen, and
           // pendingId/pendingOperationName/contactEmail/assembled may
-          // since belong to a completely different attempt.
-          if(mySignupToken !== signupAttemptToken) return;
+          // since belong to a completely different attempt. `superseded`
+          // is js/store.js's OWN call-sequence guard saying it already
+          // declined to commit this result -- checked here too (not just
+          // mySignupToken) so this callback stays correct even if this
+          // token's own bookkeeping were ever wrong; see attemptSignup's
+          // comment on result.superseded above.
+          if(mySignupToken !== signupAttemptToken || superseded) return;
           if(!ok){
             continueBtn.disabled = false;
             continueBtn.textContent = 'Continue';
