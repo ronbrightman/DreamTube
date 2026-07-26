@@ -49,11 +49,11 @@ test('POST from the owner credits the amount and returns the refreshed token sta
     }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.balance, 790, '290 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
-    assert.equal(body.dailyGrantAmount, 200);
+    assert.equal(body.balance, 720, '220 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
+    assert.equal(body.dailyGrantAmount, 20);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
-    assert.equal(record.tokens.balance, 790);
+    assert.equal(record.tokens.balance, 720);
   });
 });
 
@@ -66,7 +66,7 @@ test('POST normalizes the owner email the same way admin-paywall-toggle.js does 
     }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.balance, 540, '290 signup grant + 250 top-up');
+    assert.equal(body.balance, 470, '220 signup grant + 250 top-up');
   });
 });
 
@@ -182,7 +182,7 @@ test('an amount exactly at the per-call cap (5000) is accepted', function () {
       body: { email: OWNER_EMAIL, amount: 5000 }
     }));
     assert.equal(res.statusCode, 200);
-    assert.equal(JSON.parse(res.body).balance, 5290, '290 signup grant + 5000 top-up');
+    assert.equal(JSON.parse(res.body).balance, 5220, '220 signup grant + 5000 top-up');
   });
 });
 

@@ -12,7 +12,8 @@
 // ONE RECORD PER NORMALIZED EMAIL:
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
 //     tokens: { balance, lastGrantAt },
-//     appliedTokenPackPaymentIds }
+//     appliedTokenPackPaymentIds,
+//     firstPackPurchaseAt }
 //
 // appliedTokenPackPaymentIds: a short-lived array of Dodo payment_ids whose
 // token-pack credit has already been applied to `tokens.balance` — see
@@ -24,6 +25,16 @@
 // normally empty — it only holds entries while a credit is genuinely
 // in-flight or was interrupted mid-way.
 //
+// firstPackPurchaseAt: epoch-ms timestamp stamped the first time this email
+// ever completes a token-pack credit, by creditTokenPackAmountOnce — unlike
+// appliedTokenPackPaymentIds this is NEVER pruned, since its whole job is
+// to durably answer "has this account ever bought a pack before" for the
+// one-time +50% first-purchase bonus (see creditTokenPackAmountOnce below).
+// Deliberately its own field rather than reusing
+// appliedTokenPackPaymentIds.length — that array is transient by design
+// (pruned back to empty in steady state), so it can't answer "ever", only
+// "currently mid-flight".
+//
 // ============================================================================
 // TOKEN ECONOMY — replaces the old quota/subscription-entitlement model
 // ----------------------------------------------------------------------------
@@ -33,14 +44,23 @@
 // an edit/regenerate, or a style change — all three already funnel through
 // the same generate-video.js call site, see that file; a cheaper 10-token
 // image generation was added later, see generate-image.js). Balance is
-// earned for free (290 on first read of a never-before-seen email, +200
+// earned for free (220 on first read of a never-before-seen email, +20
 // every 24h, lazily, see below — the daily amount was retuned 2026-07-24
 // from the original 200/+100 to 290/+10 so a new signup nets exactly 190
-// tokens after its one free onboarding video, then raised again 2026-07-26
-// from +10 to +200/day (2 fresh videos' worth) after new users were found
-// to choke once the 290-token signup grant ran out and the +10 trickle left
-// them stuck for days) — this remains true even now that shop.html's token
-// packs are a live, real purchase (see creditTokenPackOnce below and
+// tokens after its one free onboarding video, then raised 2026-07-26
+// (morning) from +10 to +200/day (2 fresh videos' worth) after new users
+// were found to choke once the 290-token signup grant ran out and the +10
+// trickle left them stuck for days, then retuned again 2026-07-26 (night,
+// "Token Economy C", founder-approved) to 220 initial / +20 per day / 200
+// ceiling — 220 covers the funnel's free onboarding video (100) plus one
+// additional day-1 video (100) plus 2 images (20); the daily drip was cut
+// back down to +20 once real token packs (see the 3-pack lineup below)
+// existed as the actual "need more, buy more" path, rather than a fast
+// free drip doing that job. 220 > the new 200 ceiling is deliberate and
+// fine — see the GRANT_CEILING doc comment below — the drip simply
+// resumes once balance actually drops below 200) — this remains true even
+// now that shop.html's token packs are a live, real purchase (see
+// creditTokenPackOnce below and
 // docs/PAYWALL_SETUP.md): the free grant and paid packs are both additive
 // to the same balance, never either/or. Because every token anyone can
 // ever spend was, from day one, either free-earned or (now) purchased —
@@ -62,19 +82,21 @@
 // kept for that same reason, even though nothing in this codebase calls it
 // today. The Dodo Payments backend (create-checkout-session-dodo.js /
 // dodo-webhook.js), by contrast, is now LIVE and wired to shop.html's
-// $1.99/$8.95 one-time token-pack purchases — see creditTokenPackOnce
+// 3-pack one-time token-pack purchases (pack100/pack300/pack700 — see
+// create-checkout-session-dodo.js) — see creditTokenPackOnce
 // below, which is what dodo-webhook.js actually calls on a confirmed
 // payment. It does not touch `active`/`plan` at all (that's a subscription
 // concept); a token-pack purchase is a straight balance credit via
-// addTokens.
+// addTokens, plus a one-time +50% first-purchase bonus (see
+// creditTokenPackAmountOnce's `firstPackPurchaseAt` handling below).
 //
 // tokens.balance: the email's current spendable token count. Never goes
-// negative (spendTokens floors at 0); the ≥500 daily-grant ceiling below is
+// negative (spendTokens floors at 0); the ≥200 daily-grant ceiling below is
 // the only thing that keeps it from growing unbounded for an idle account.
 //
 // tokens.lastGrantAt: epoch-ms timestamp of the most recent grant this
-// record actually received — either the one-time 290-token signup grant, or
-// the most recent +200 daily drip. getTokenStatus lazily compares this
+// record actually received — either the one-time 220-token signup grant, or
+// the most recent +20 daily drip. getTokenStatus lazily compares this
 // against "now" on every read to decide whether a daily grant is due — the
 // entire reset/grant mechanism, no scheduled function involved (this
 // codebase has none and none should be added, see AGENT_POLICY.md), same
@@ -82,23 +104,28 @@
 // system's monthly quota reset.
 //
 // Why a single lazy grant per read, not a multi-day catch-up loop: if an
-// email goes unread for, say, 5 days, a strict "credit +200 for every full
-// 24h elapsed" reading would hand it +1000 in one shot. This file
-// deliberately does the simpler thing instead — one +200 grant per lazy
+// email goes unread for, say, 5 days, a strict "credit +20 for every full
+// 24h elapsed" reading would hand it +100 in one shot. This file
+// deliberately does the simpler thing instead — one +20 grant per lazy
 // check, then lastGrantAt snaps to "now" — mirroring exactly how the old
 // monthly quota reset never compounded across multiple skipped months
 // either, it just snapped `used` to 0 once. This is the more conservative
-// (cheaper, simpler to reason about) of the two readings of "200 tokens
+// (cheaper, simpler to reason about) of the two readings of "20 tokens
 // every 24 hours, granted lazily on read" and was chosen deliberately for
 // that reason.
 //
-// ≥500 grant ceiling: getTokenStatus skips the +200 daily grant entirely
+// ≥200 grant ceiling: getTokenStatus skips the +20 daily grant entirely
 // (leaving lastGrantAt untouched, so the very next read re-checks
 // immediately once the balance actually drops) once balance is already
-// ≥500 (5 video generations' worth, or 50 image generations' worth) — an
+// ≥200 (2 video generations' worth, or 20 image generations' worth) — an
 // idle account that never spends must not silently accumulate unbounded
-// free value while still fully honoring "200/day" for anyone actually using
-// the product. See getTokenStatus.
+// free value while still fully honoring "20/day" for anyone actually using
+// the product. Note the brand-new 220-token signup grant is deliberately
+// ABOVE this 200 ceiling — that's fine and intentional (see the doc block
+// at the top of this file): the drip simply stays paused until the account
+// actually spends down below 200, exactly the same "skip while ≥ceiling"
+// logic already handles for any other reason a balance sits at/above it.
+// See getTokenStatus.
 //
 // Per-IP daily cap on brand-new signup-bonus grants: see the big comment
 // on syncTokens below for what this raises the cost of and why it's
@@ -215,9 +242,15 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-var INITIAL_GRANT = 290;
-var DAILY_GRANT_AMOUNT = 200;
-var GRANT_CEILING = 500;
+// "Token Economy C" (founder-approved 2026-07-26 night) — see the doc
+// block at the top of this file for the full retune history/reasoning.
+// 220 initial = free funnel video (100) + one additional day-1 video (100)
+// + 2 images (20). 220 > GRANT_CEILING (200) is intentional: the drip
+// simply resumes once balance actually drops below 200 — do not add
+// special-casing to force the initial grant under the ceiling.
+var INITIAL_GRANT = 220;
+var DAILY_GRANT_AMOUNT = 20;
+var GRANT_CEILING = 200;
 var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 // Per-IP daily cap on brand-new-email token initializations — see
@@ -225,12 +258,12 @@ var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // js/store.js's signup() is 100% client-side (localStorage only, confirmed
 // by reading it — there is no server touchpoint at account-creation time at
 // all today), so a scripted attacker can create unlimited accounts purely
-// to farm the 290-token signup bonus, each one worth up to ~$1.60-3.20 of
+// to farm the 220-token signup bonus, each one worth up to ~$1.60-3.20 of
 // real fal.ai generation cost with no payment and no email verification.
 //
 // Rather than inventing new server-side signup-registration plumbing just
 // to enforce a rate limit (a new, wider surface for a narrow problem), this
-// gates the actual moment the 290-token grant becomes real cost exposure:
+// gates the actual moment the 220-token grant becomes real cost exposure:
 // the first time syncTokens below ever materializes a balance for a given
 // email (the `!record.tokens` branch), regardless of which caller triggered
 // it (get-token-status.js's read, or generate-video.js's gate on a client
@@ -244,7 +277,7 @@ var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // A NEW email whose IP is already over today's cap does not get hard-
 // blocked forever — it gets 0 tokens today (not the usual E112 rejection,
 // since this isn't the generation gate) with lastGrantAt stamped to now, so
-// the normal +200/24h lazy drip picks it up starting tomorrow exactly like
+// the normal +20/24h lazy drip picks it up starting tomorrow exactly like
 // any other account. This only ever runs once per email (the branch it's
 // in is only reached while `tokens` has never been set), so a legitimate
 // user is never repeatedly rate-limited just for reading their own
@@ -293,7 +326,7 @@ async function syncTokens(event, email) {
     await setEntitlement(event, key, { tokens: granted });
     return granted;
   }
-  // Either not due yet, or due but held back by the ≥500 ceiling — in the
+  // Either not due yet, or due but held back by the ≥200 ceiling — in the
   // ceiling case lastGrantAt is deliberately left untouched (not bumped to
   // `now`) so the very next read re-checks immediately once the balance
   // actually drops below the ceiling, rather than waiting a further 24h.
@@ -301,13 +334,13 @@ async function syncTokens(event, email) {
 }
 
 /**
- * Reads this email's current token status, applying the lazy 290-token
- * first-ever-read grant and/or the lazy +200/24h drip (with its ≥500
+ * Reads this email's current token status, applying the lazy 220-token
+ * first-ever-read grant and/or the lazy +20/24h drip (with its ≥200
  * ceiling) as needed — see the doc blocks above for the full mechanism.
  * Returns { balance, nextGrantAt, dailyGrantAmount }. nextGrantAt is an
  * epoch-ms timestamp (lastGrantAt + 24h) for the UI's live countdown (see
  * profile.html/style.html/result.html/processing.html/shop.html) — while
- * balance is held at the ≥500 ceiling this may already be in the past;
+ * balance is held at the ≥200 ceiling this may already be in the past;
  * callers should treat that as "a grant is pending, due as soon as balance
  * drops", not render a negative countdown.
  */
@@ -356,7 +389,7 @@ var MAX_TOKEN_BALANCE = 1000000;
  * same syncTokens-then-setEntitlement shape. Deliberately separate from the
  * automatic daily-grant machinery syncTokens drives: `lastGrantAt` is
  * carried through unchanged (not bumped to "now"), so a top-up never resets
- * or delays the next automatic +200/24h drip — it is purely additive to
+ * or delays the next automatic +20/24h drip — it is purely additive to
  * `balance`, nothing else about the record's grant timing changes because
  * of it. (syncTokens itself may still apply an already-*due* lazy grant as
  * part of reading the current balance before adding to it, exactly as
@@ -705,11 +738,12 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
 }
 
 /**
- * Credits `amount` tokens onto `email`'s balance for a specific Dodo
- * `paymentId`, idempotently: calling this twice for the same paymentId
- * only ever applies the balance increment once. Used by creditTokenPackOnce
- * to make its 'pending'-marker resume path safe (see that function's doc
- * comment for the hazard this closes).
+ * Credits `amount` BASE tokens (before any bonus — see the FIRST-PURCHASE
+ * BONUS section of this doc comment below) onto `email`'s balance for a
+ * specific Dodo `paymentId`, idempotently: calling this twice for the same
+ * paymentId only ever applies the balance increment once. Used by
+ * creditTokenPackOnce to make its 'pending'-marker resume path safe (see
+ * that function's doc comment for the hazard this closes).
  *
  * WHY THIS NEEDS ITS OWN WRITE, NOT JUST "check a flag, then call
  * addTokens": recording "this paymentId's tokens were applied" and
@@ -756,7 +790,44 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * Same class of narrow last-write-wins drift this file's own header
  * comment already accepts for concurrent balance mutations in general;
  * not something this fix introduces or specifically defends against.
+ *
+ * ----------------------------------------------------------------------
+ * FIRST-PURCHASE BONUS (+50%, Token Economy C, founder-approved 2026-07-26)
+ * ----------------------------------------------------------------------
+ * `amount` here is always the pack's BASE token count (resolved by
+ * dodo-webhook.js's resolvePackTokens, unaware of any bonus) — this
+ * function is what actually decides, per call, whether the account's
+ * `firstPackPurchaseAt` field is already set. If it is not, this is (as
+ * far as this record can tell) the email's first-ever completed pack
+ * purchase, so `amount` is bumped by FIRST_PURCHASE_BONUS_MULTIPLIER
+ * before being added to the balance, and `firstPackPurchaseAt` is stamped
+ * in the SAME write — deliberately the same atomic-single-write reasoning
+ * as `appliedTokenPackPaymentIds` above: whether the bonus applies and the
+ * credit that depends on that decision must never be allowed to disagree
+ * with each other, so they're decided and written together, not as two
+ * separate facts that could each independently fail to land.
+ *
+ * This is why the bonus decision lives HERE (inside the retryingWrite's
+ * `mutate`, re-read fresh on every attempt) rather than being computed
+ * once by the caller and passed in: a resume of an interrupted earlier
+ * attempt re-reads the CURRENT record state on each try, so it can never
+ * apply a bonus decision that's gone stale relative to what's actually
+ * been committed.
+ *
+ * Known, accepted residual race (same class this file's header comment
+ * already accepts elsewhere): two genuinely concurrent FIRST purchases
+ * under DIFFERENT payment_ids for the same brand-new email (e.g. two
+ * pack purchases within the same Blobs propagation window) could each
+ * read `firstPackPurchaseAt` as unset and each apply the bonus once —
+ * dedup here is per-payment, not a per-email lock, same as
+ * appliedTokenPackPaymentIds' own dedup. Narrow, real-money-adjacent but
+ * bounded to a single extra bonus application in a genuinely rare timing
+ * window, not unbounded double-crediting; revisit only if actually
+ * observed in practice, same posture this file already takes on its
+ * other documented residual races.
  */
+var FIRST_PURCHASE_BONUS_MULTIPLIER = 1.5;
+
 async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
@@ -774,8 +845,8 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
   // merges via Object.assign, so the patch's `tokens` key wins outright
   // over whatever its own internal read saw) — this function follows the
   // same pattern for the same reason. Getting this wrong would silently
-  // overwrite a real grant that just landed (up to 290 tokens for a
-  // brand-new email's first-ever read, or 200 for a daily drip).
+  // overwrite a real grant that just landed (up to 220 tokens for a
+  // brand-new email's first-ever read, or 20 for a daily drip).
   var syncedTokens = await syncTokens(event, key);
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
@@ -787,17 +858,22 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
     mutate: function (existing) {
       // This fresh-per-attempt read is used ONLY to check
       // appliedTokenPackPaymentIds (the idempotency guard against a
-      // concurrent resume) and to preserve any other fields already on
-      // the record — NEVER to derive the new balance. See the doc
-      // comment above `syncedTokens` for why.
+      // concurrent resume) and firstPackPurchaseAt (the first-purchase-
+      // bonus check, same reasoning — see this function's own doc
+      // comment) — and to preserve any other fields already on the
+      // record — NEVER to derive the new balance. See the doc comment
+      // above `syncedTokens` for why.
       var rec = existing || { email: key };
       var appliedList = rec.appliedTokenPackPaymentIds || [];
       if (appliedList.indexOf(paymentId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
-      var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + amount);
+      var isFirstPurchase = !rec.firstPackPurchaseAt;
+      var creditAmount = isFirstPurchase ? Math.round(amount * FIRST_PURCHASE_BONUS_MULTIPLIER) : amount;
+      var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + creditAmount);
       return Object.assign({}, rec, {
         email: key,
         tokens: { balance: newBalance, lastGrantAt: syncedTokens.lastGrantAt },
         appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
+        firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
       });
     },
@@ -867,5 +943,15 @@ module.exports = {
   addTokens,
   creditTokenPackOnce,
   creditTokenPackAmountOnce,
-  forgetAppliedTokenPack
+  forgetAppliedTokenPack,
+  // Exported so callers that need the live values (get-token-status.js's
+  // no-email fast path, which never reaches getTokenStatus itself — see
+  // that file) can read them instead of hand-maintaining a duplicate
+  // literal that silently goes stale on the next retune. See this
+  // recurring bug class documented in tracker item
+  // recurring-bug-class-hardcoded-daily-gran-h6swgy.
+  INITIAL_GRANT,
+  DAILY_GRANT_AMOUNT,
+  GRANT_CEILING,
+  FIRST_PURCHASE_BONUS_MULTIPLIER
 };

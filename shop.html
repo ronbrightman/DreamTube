@@ -76,31 +76,55 @@
     </div>
 
     <div class="section-label" style="padding:0;">Token packs (optional)</div>
+    <!-- First-purchase bonus (Token Economy C, founder-approved 2026-07-26
+         night) — a one-time +50% tokens on a user's FIRST successful pack
+         purchase ever, applied server-side by lib/entitlements.js's
+         creditTokenPackAmountOnce (see that file). This line is plain,
+         static copy — it doesn't try to detect whether THIS particular
+         visitor has already used the bonus (that would need an extra
+         server round trip just for a sub-headline), same "don't guess,
+         keep it honest but simple" posture as the rest of this page's
+         static copy. -->
+    <div class="auth-sub" style="padding:0; margin-bottom:10px;">First pack: +50% bonus tokens, automatically applied.</div>
 
-    <!-- Both packs now call the live Dodo Payments checkout (see the
+    <!-- All three packs call the live Dodo Payments checkout (see the
          header comment in the script block below) — no longer disabled
          "Coming soon" placeholders. data-pack identifies which one to
-         POST to create-checkout-session-dodo.js. -->
+         POST to create-checkout-session-dodo.js. Framing on each card
+         states what the tokens buy in BOTH media types (1 video = 100
+         tokens, 1 image = 10 tokens — see style.html's own IMAGE_TOKEN_COST/
+         VIDEO_TOKEN_COST) since either media type can be generated from
+         the same balance. -->
     <div class="token-pack-card">
       <div class="token-pack-row">
         <div class="token-pack-amt">100 tokens</div>
-        <div class="token-pack-price">$1.99</div>
+        <div class="token-pack-price">$2.99</div>
       </div>
-      <div class="token-pack-sub">Enough for 1 more generation.</div>
+      <div class="token-pack-sub">100 tokens = 1 video or 10 images.</div>
       <button class="btn btn-secondary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
     </div>
 
-    <div class="token-pack-card best">
-      <div class="token-pack-badge">10% off</div>
+    <div class="token-pack-card popular">
+      <div class="token-pack-badge token-pack-badge-popular">Most popular</div>
       <div class="token-pack-row">
-        <div class="token-pack-amt">500 tokens</div>
-        <div class="token-pack-price">$8.95</div>
+        <div class="token-pack-amt">300 tokens</div>
+        <div class="token-pack-price">$7.99</div>
       </div>
-      <div class="token-pack-sub">Enough for 5 more generations.</div>
-      <button class="btn btn-secondary btn-block" id="shop-buy-pack500" data-pack="pack500">Buy</button>
+      <div class="token-pack-sub">300 tokens = 3 videos or 30 images.</div>
+      <button class="btn btn-secondary btn-block" id="shop-buy-pack300" data-pack="pack300">Buy</button>
     </div>
 
-    <div class="auth-sub" style="margin-top:8px;" id="shop-cap-note">Free tokens are capped — 200 every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.</div>
+    <div class="token-pack-card best">
+      <div class="token-pack-badge">Best value</div>
+      <div class="token-pack-row">
+        <div class="token-pack-amt">700 tokens</div>
+        <div class="token-pack-price">$14.99</div>
+      </div>
+      <div class="token-pack-sub">700 tokens = 7 videos or 70 images.</div>
+      <button class="btn btn-secondary btn-block" id="shop-buy-pack700" data-pack="pack700">Buy</button>
+    </div>
+
+    <div class="auth-sub" style="margin-top:8px;" id="shop-cap-note">Free tokens are capped — 20 every 24 hours, up to 200 banked. Buy a pack any time for more, right when you need it.</div>
   </div>
 </div>
 
@@ -173,24 +197,27 @@
   // of truth; a client-side "I just paid" signal can't be trusted (see
   // that file's header comment).
   //
-  // Both buttons call the same purchasePack() below with their own
-  // data-pack ("pack100"/"pack500"). A failure here (most likely: Dodo's
-  // real API key/product-id env vars aren't configured in this
-  // environment yet — see docs/PAYWALL_SETUP.md's "what a human still
-  // needs to do" checklist) degrades to a toast and a re-enabled button,
-  // never a stuck/broken UI, same "flag, don't fake it" rule this file
-  // followed while the buttons were still disabled placeholders.
+  // All three buttons call the same purchasePack() below with their own
+  // data-pack ("pack100"/"pack300"/"pack700"). A failure here (most
+  // likely: Dodo's real API key/product-id env vars aren't configured in
+  // this environment yet — see docs/PAYWALL_SETUP.md's "what a human
+  // still needs to do" checklist) degrades to a toast and a re-enabled
+  // button, never a stuck/broken UI, same "flag, don't fake it" rule this
+  // file followed while the buttons were still disabled placeholders.
   //
-  // Pricing (founder-specified): 100 tokens for $1.99, 500 tokens for
-  // $8.95. The 500-pack price is a 10% discount off the naive 5x bundle
-  // price (5 * $1.99 = $9.95 -> 10% off = $8.955), rounded DOWN to a clean
-  // two-decimal price ($8.95) rather than the exact $8.955 — a deliberate
-  // but arbitrary rounding choice, not a fixed one. Revisit/adjust freely;
-  // it was never re-derived from a pricing model, just picked to look clean
-  // on a price tag. The actual amount charged is whatever the Dodo product
-  // behind DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 is configured for —
-  // nothing here enforces these two stay in sync; keep them matched by
-  // hand when setting up (or changing) those Dodo products.
+  // Pricing (Token Economy C, founder-approved 2026-07-26 night): 100
+  // tokens for $2.99, 300 tokens for $7.99 (badged "Most popular"), 700
+  // tokens for $14.99 (badged "Best value"). The actual amount charged is
+  // whatever the Dodo product behind DODO_PRODUCT_PACK_100/
+  // DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700 is configured for —
+  // nothing here enforces these stay in sync; keep them matched by hand
+  // when setting up (or changing) those Dodo products. A user's first-ever
+  // successful pack purchase additionally credits +50% tokens, applied
+  // server-side by dodo-webhook.js/lib/entitlements.js — see this page's
+  // own "First pack" note above the cards; not reflected in PACK_INFO
+  // below, which mirrors the BASE pack tokens shown on each price tag
+  // (used only for the purchase_completed analytics event's `tokens`
+  // property, not for crediting — crediting is entirely server-side).
   // ============================================================================
 
   function showToast(msg){
@@ -206,15 +233,16 @@
   var PENDING_PURCHASE_KEY = 'dreamtube_pending_purchase';
 
   // Mirrors the pricing shown in this page's own markup above (100
-  // tokens/$1.99, 500 tokens/$8.95) — kept as one small local map right next
-  // to purchasePack rather than re-deriving/hardcoding these numbers a
-  // second time somewhere disconnected from the visible price tags (same
-  // "one local helper, not a shared module" convention as this file's own
-  // formatTokenCountdown). See the "Token packs" header comment above for
-  // where the $8.95 number itself came from.
+  // tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99) — kept as one small
+  // local map right next to purchasePack rather than re-deriving/
+  // hardcoding these numbers a second time somewhere disconnected from the
+  // visible price tags (same "one local helper, not a shared module"
+  // convention as this file's own formatTokenCountdown). See the "Token
+  // packs" header comment above for where these numbers came from.
   var PACK_INFO = {
-    pack100: { tokens: 100, price: 1.99 },
-    pack500: { tokens: 500, price: 8.95 }
+    pack100: { tokens: 100, price: 2.99 },
+    pack300: { tokens: 300, price: 7.99 },
+    pack700: { tokens: 700, price: 14.99 }
   };
 
   function purchasePack(pack, button){
@@ -258,7 +286,8 @@
   }
 
   document.getElementById('shop-buy-pack100').addEventListener('click', function(){ purchasePack('pack100', this); });
-  document.getElementById('shop-buy-pack500').addEventListener('click', function(){ purchasePack('pack500', this); });
+  document.getElementById('shop-buy-pack300').addEventListener('click', function(){ purchasePack('pack300', this); });
+  document.getElementById('shop-buy-pack700').addEventListener('click', function(){ purchasePack('pack700', this); });
 
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
@@ -280,8 +309,8 @@
     if(!tokenStatus) return;
     balanceEl.textContent = tokenStatus.balance;
     // Reads the daily-grant amount live off tokenStatus (see
-    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 200 as of 2026-07-26's
-    // token-economy retune) rather than a hardcoded number — a review
+    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 20 as of Token Economy C,
+    // 2026-07-26 night) rather than a hardcoded number — a review
     // finding on the image-generation branch: this line, plus
     // profile.html's own copy of the same countdown, both hardcoded "100"
     // and went stale silently the moment that constant changed, since
@@ -293,10 +322,10 @@
     // slipped past the grep patterns used for the other two locations
     // above). Fixed the same way: read live off tokenStatus rather than
     // ever hardcoding a number that only this page's own markup owns.
-    // 500 (the grant ceiling) is left as a literal -- GRANT_CEILING isn't
-    // in get-token-status.js's response shape, and this branch's own
-    // scope explicitly excludes touching that constant.
-    capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to 500 banked. Buy a pack any time for more, right when you need it.';
+    // 200 (the grant ceiling, as of Token Economy C) is left as a literal
+    // -- GRANT_CEILING isn't in get-token-status.js's response shape, and
+    // this branch's own scope explicitly excludes touching that constant.
+    capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to 200 banked. Buy a pack any time for more, right when you need it.';
   }
   function loadBalance(){
     DreamStore.getTokenStatus().then(function(status){

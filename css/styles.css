@@ -600,10 +600,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    loud/urgent rather than calm. Baseline fix below (plain card border, plain
    white balance numeral matching .rec-timer's existing big-number pattern)
    applies to every visitor, no variant condition. Only the "best value" pack
-   card's border/badge color is a live in-product A/B test — see
+   card's (pack700) border/badge color is a live in-product A/B test — see
    .token-pack-card.best / .token-pack-badge and the .shop-variant-a/
    .shop-variant-b rules further down, which shop.html's inline script
-   assigns once per browser and persists in localStorage. */
+   assigns once per browser and persists in localStorage. The middle
+   "Most popular" pack (pack300, added for Token Economy C's 3-pack
+   lineup) uses its own fixed .token-pack-card.popular / .token-pack-
+   badge-popular color, not part of that A/B test. */
 .token-balance-card{ position:relative; background:var(--surface); border:1px solid var(--border-strong); border-radius:20px; padding:20px; margin:6px 0 22px;}
 .token-balance-inner{ text-align:center;}
 .token-balance-amt{ font-size:36px; font-weight:800; line-height:1.1; color:var(--text-primary);}
@@ -615,12 +618,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .token-pack-sub{ font-size:12.5px; color:var(--text-faint); margin-top:4px;}
 .token-pack-badge{ position:absolute; top:-10px; right:16px; color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
 .token-pack-card .btn{ margin-top:14px;}
+/* "Most popular" badge (pack300, Token Economy C's 3-pack lineup) — fixed
+   accent-growth color, deliberately NOT part of the "best value" A/B test
+   below (that test is scoped to .token-pack-card.best specifically). */
+.token-pack-card.popular{ border-color:var(--accent-growth);}
+.token-pack-badge.token-pack-badge-popular{ background:var(--accent-growth);}
 /* Direction A — "quiet ledger" (calm periwinkle-blue). */
 .shop-variant-a .token-pack-card.best{ border-color:var(--accent-trust);}
-.shop-variant-a .token-pack-badge{ background:var(--accent-trust);}
+.shop-variant-a .token-pack-card.best .token-pack-badge{ background:var(--accent-trust);}
 /* Direction B — "premium currency" (muted warm gold). */
 .shop-variant-b .token-pack-card.best{ border-color:var(--accent-value);}
-.shop-variant-b .token-pack-badge{ background:var(--accent-value);}
+.shop-variant-b .token-pack-card.best .token-pack-badge{ background:var(--accent-value);}
 
 /* ===== Tracker (tracker.html) ===== */
 /* One item = one native <details>/<summary> — the summary row (always

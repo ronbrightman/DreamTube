@@ -38,15 +38,30 @@ test.beforeEach(function () {
  * Seeds an email with an existing, zero-balance token record before a
  * credit — isolates a test's balance assertion to just the credit being
  * tested, instead of also having to account for this same file's own
- * separate 200-token first-ever-read signup grant, which
+ * separate 220-token first-ever-read signup grant, which
  * addTokens/syncTokens applies automatically to a genuinely brand-new
  * email the first time its balance is ever materialized. That grant is
  * real, correct, unrelated production behavior (covered by its own tests
  * in entitlements-tokens.test.js) — this helper just keeps it out of
  * these token-purchase-specific assertions. Same helper as
  * dodo-webhook.test.js's seedZeroBalance.
+ *
+ * ALSO stamps `firstPackPurchaseAt` in the past, so this account is
+ * treated as already having a completed pack purchase on file — isolates
+ * these dedup/race/exhaustion-focused tests from the separate +50%
+ * first-purchase bonus (see creditTokenPackAmountOnce), which has its own
+ * dedicated tests further down using seedZeroBalanceNoPriorPurchase
+ * instead.
  */
 async function seedZeroBalance(email) {
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 0, lastGrantAt: Date.now() },
+    firstPackPurchaseAt: Date.now() - 999999999
+  });
+}
+
+/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used only by the first-purchase-bonus tests, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. */
+async function seedZeroBalanceNoPriorPurchase(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
 }
 
@@ -305,13 +320,16 @@ test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returne
 
   try {
     // Deliberately brand-new/unseeded: syncTokens (called first, inside
-    // creditTokenPackAmountOnce) applies the one-time 290-token signup
-    // grant as part of this very call.
+    // creditTokenPackAmountOnce) applies the one-time 220-token signup
+    // grant as part of this very call. This account also has no
+    // firstPackPurchaseAt on file (genuinely brand-new to purchasing, not
+    // just to tokens), so the +50% first-purchase bonus applies too —
+    // 100 base x 1.5 = 150 credited, not a plain 100.
     var applyResult = await entitlements.creditTokenPackAmountOnce({}, 'staleread@example.com', 'pay_stale_read', 100);
     assert.equal(applyResult.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'staleread@example.com');
-    assert.equal(record.tokens.balance, 290 + 100, "balance must be 290 (signup grant, from syncTokens' own in-memory return value) + 100 (this credit) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 220 + 150, "balance must be 220 (signup grant, from syncTokens' own in-memory return value) + 150 (this credit, bonused 1.5x as a first purchase) — a buggy re-read-based implementation would compute 0 + 150 = 150 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }
@@ -422,4 +440,58 @@ test('concurrent races on DIFFERENT payment_ids for the same email both go throu
 
   assert.equal(results[0].credited, true);
   assert.equal(results[1].credited, true);
+});
+
+// ----- First-purchase bonus (+50%, Token Economy C, founder-approved
+// 2026-07-26 night) — direct unit coverage of creditTokenPackOnce /
+// creditTokenPackAmountOnce's own first-purchase decision. See
+// dodo-webhook.test.js for the same behavior exercised through the real
+// webhook handler end-to-end. -----
+
+test("creditTokenPackOnce credits 1.5x on a brand-new-to-purchasing email's first pack, and stamps firstPackPurchaseAt", async function () {
+  await seedZeroBalanceNoPriorPurchase('unitbonus@example.com');
+  var result = await entitlements.creditTokenPackOnce({}, 'unitbonus@example.com', 'pay_unit_bonus', 100);
+  assert.equal(result.credited, true);
+
+  var record = await entitlements.getEntitlement({}, 'unitbonus@example.com');
+  assert.equal(record.tokens.balance, 150, '100 base x 1.5 first-purchase bonus');
+  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must be stamped');
+});
+
+test('a SECOND distinct payment_id from the same email does not get the bonus again — plain base tokens only', async function () {
+  await seedZeroBalanceNoPriorPurchase('unitsecond@example.com');
+  await entitlements.creditTokenPackOnce({}, 'unitsecond@example.com', 'pay_unit_second_a', 100);
+  var afterFirst = await entitlements.getEntitlement({}, 'unitsecond@example.com');
+  assert.equal(afterFirst.tokens.balance, 150, 'first purchase gets the bonus');
+
+  await entitlements.creditTokenPackOnce({}, 'unitsecond@example.com', 'pay_unit_second_b', 100);
+  var afterSecond = await entitlements.getEntitlement({}, 'unitsecond@example.com');
+  assert.equal(afterSecond.tokens.balance, 250, '150 (bonused first purchase) + 100 (plain second purchase, no bonus) = 250');
+});
+
+test('an account already marked with a prior firstPackPurchaseAt (e.g. seedZeroBalance) never gets the bonus, even on payment_id it has never seen', async function () {
+  await seedZeroBalance('alreadypurchased@example.com'); // stamps firstPackPurchaseAt in the past
+  var result = await entitlements.creditTokenPackOnce({}, 'alreadypurchased@example.com', 'pay_already_purchased', 100);
+  assert.equal(result.credited, true);
+  var record = await entitlements.getEntitlement({}, 'alreadypurchased@example.com');
+  assert.equal(record.tokens.balance, 100, 'no bonus — this account already has a completed purchase on file');
+});
+
+test("creditTokenPackAmountOnce called directly also applies the first-purchase bonus (not just via creditTokenPackOnce's wrapper)", async function () {
+  await seedZeroBalanceNoPriorPurchase('directbonus@example.com');
+  var result = await entitlements.creditTokenPackAmountOnce({}, 'directbonus@example.com', 'pay_direct_bonus', 100);
+  assert.equal(result.ok, true);
+  var record = await entitlements.getEntitlement({}, 'directbonus@example.com');
+  assert.equal(record.tokens.balance, 150);
+});
+
+test('a redelivered (same payment_id) first-purchase event does not re-apply the bonus a second time', async function () {
+  await seedZeroBalanceNoPriorPurchase('redeliverbonus@example.com');
+  var first = await entitlements.creditTokenPackOnce({}, 'redeliverbonus@example.com', 'pay_redeliver_bonus', 100);
+  var second = await entitlements.creditTokenPackOnce({}, 'redeliverbonus@example.com', 'pay_redeliver_bonus', 100);
+  assert.equal(first.credited, true);
+  assert.equal(second.credited, false, 'a redelivered event for an already-processed payment_id is a no-op');
+
+  var record = await entitlements.getEntitlement({}, 'redeliverbonus@example.com');
+  assert.equal(record.tokens.balance, 150, 'exactly one bonused credit, not two');
 });

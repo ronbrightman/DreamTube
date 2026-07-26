@@ -46,14 +46,30 @@ function signedEvent(payloadObj, opts) {
  * Seeds an email with an existing, zero-balance token record before a
  * webhook fires — isolates a test's balance assertion to just the credit
  * this test is checking, instead of also having to account for
- * lib/entitlements.js's own separate 200-token first-ever-read signup
+ * lib/entitlements.js's own separate 220-token first-ever-read signup
  * grant (which addTokens' underlying syncTokens would otherwise apply
  * automatically to a genuinely brand-new email, since it has never been
  * read before). That signup grant is real, correct, unrelated production
  * behavior — it's covered by its own tests in entitlements-tokens.test.js
  * — this helper just keeps it out of these webhook-specific assertions.
+ *
+ * ALSO stamps `firstPackPurchaseAt` (in the past) so this account is
+ * treated as already having completed a pack purchase before — this keeps
+ * the tests in THIS file focused purely on crediting/dedup mechanics
+ * without being confounded by the separate +50% first-purchase bonus (see
+ * lib/entitlements.js's creditTokenPackAmountOnce), which has its own
+ * dedicated tests further down. Same "isolate the thing this test is
+ * actually checking" reasoning as the signup-grant isolation above.
  */
 async function seedZeroBalance(email) {
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 0, lastGrantAt: Date.now() },
+    firstPackPurchaseAt: Date.now() - 999999999
+  });
+}
+
+/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used by the first-purchase-bonus tests below, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. */
+async function seedZeroBalanceNoPriorPurchase(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
 }
 
@@ -80,13 +96,15 @@ test.beforeEach(function () {
   mockBlobs.reset();
   process.env.DODO_WEBHOOK_SECRET = WEBHOOK_SECRET;
   process.env.DODO_PRODUCT_PACK_100 = 'pdt_pack100_test';
-  process.env.DODO_PRODUCT_PACK_500 = 'pdt_pack500_test';
+  process.env.DODO_PRODUCT_PACK_300 = 'pdt_pack300_test';
+  process.env.DODO_PRODUCT_PACK_700 = 'pdt_pack700_test';
 });
 
 test.after(function () {
   delete process.env.DODO_WEBHOOK_SECRET;
   delete process.env.DODO_PRODUCT_PACK_100;
-  delete process.env.DODO_PRODUCT_PACK_500;
+  delete process.env.DODO_PRODUCT_PACK_300;
+  delete process.env.DODO_PRODUCT_PACK_700;
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -141,16 +159,28 @@ test('payment.succeeded for pack100 credits 100 tokens onto the buyer\'s balance
   assert.equal(record.plan, undefined);
 });
 
-test('payment.succeeded for pack500 credits 500 tokens', async function () {
-  await seedZeroBalance('500buyer@example.com');
+test('payment.succeeded for pack300 credits 300 tokens', async function () {
+  await seedZeroBalance('300buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
-    payment_id: 'pay_500',
-    product_cart: [{ product_id: 'pdt_pack500_test', quantity: 1 }],
-    customer: { customer_id: 'cus_500', email: '500buyer@example.com' }
+    payment_id: 'pay_300',
+    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    customer: { customer_id: 'cus_300', email: '300buyer@example.com' }
   })));
   assert.equal(res.statusCode, 200);
-  var record = await entitlements.getEntitlement({}, '500buyer@example.com');
-  assert.equal(record.tokens.balance, 500);
+  var record = await entitlements.getEntitlement({}, '300buyer@example.com');
+  assert.equal(record.tokens.balance, 300);
+});
+
+test('payment.succeeded for pack700 credits 700 tokens', async function () {
+  await seedZeroBalance('700buyer@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_700',
+    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    customer: { customer_id: 'cus_700', email: '700buyer@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, '700buyer@example.com');
+  assert.equal(record.tokens.balance, 700);
 });
 
 test('tokens stack onto an existing balance rather than replacing it', async function () {
@@ -292,4 +322,76 @@ test('non-payment.succeeded event types (payment.failed, subscription.*, refund.
   }));
   assert.equal(res2.statusCode, 200);
   assert.equal(await entitlements.getEntitlement({}, 'failedpay@example.com'), null);
+});
+
+// ----- First-purchase bonus (+50%, Token Economy C) -----
+//
+// A user's FIRST-EVER successful pack purchase credits 1.5x the pack's
+// base tokens; every purchase after that credits the plain base amount.
+// Uses seedZeroBalanceNoPriorPurchase (no firstPackPurchaseAt stamped) so
+// these accounts are genuinely eligible for the bonus, unlike every test
+// above (which deliberately seeds firstPackPurchaseAt in the past via
+// seedZeroBalance, to isolate THEIR assertions from this bonus).
+
+test('a brand-new account\'s first pack100 purchase ever credits 150 tokens (100 base x 1.5), not 100', async function () {
+  await seedZeroBalanceNoPriorPurchase('firstbonus@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_first_bonus',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_first_bonus', email: 'firstbonus@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'firstbonus@example.com');
+  assert.equal(record.tokens.balance, 150, 'first-ever pack purchase must credit 1.5x the base 100 tokens');
+  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must be stamped after the first purchase completes');
+});
+
+test('a SECOND purchase from the same account does not get the bonus again — plain base tokens only', async function () {
+  await seedZeroBalanceNoPriorPurchase('secondpurchase@example.com');
+  var first = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_second_purchase_first',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_second_a', email: 'secondpurchase@example.com' }
+  })));
+  assert.equal(first.statusCode, 200);
+  var afterFirst = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
+  assert.equal(afterFirst.tokens.balance, 150, 'first purchase still gets the bonus: 100 x 1.5');
+
+  var second = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_second_purchase_second',
+    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    customer: { customer_id: 'cus_second_b', email: 'secondpurchase@example.com' }
+  })));
+  assert.equal(second.statusCode, 200);
+  var afterSecond = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
+  assert.equal(afterSecond.tokens.balance, 450, '150 (after first, bonused) + 300 (second purchase, base only, no bonus) = 450');
+});
+
+test('a redelivered FIRST-purchase event (same payment_id) does not re-apply the bonus a second time', async function () {
+  await seedZeroBalanceNoPriorPurchase('redeliveredbonus@example.com');
+  var payload = paymentPayload({
+    payment_id: 'pay_redelivered_bonus',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_redelivered_bonus', email: 'redeliveredbonus@example.com' }
+  });
+
+  await handler(signedEvent(payload, { id: 'msg_bonus_first' }));
+  var afterFirst = await entitlements.getEntitlement({}, 'redeliveredbonus@example.com');
+  assert.equal(afterFirst.tokens.balance, 150);
+
+  await handler(signedEvent(payload, { id: 'msg_bonus_second' }));
+  var afterSecond = await entitlements.getEntitlement({}, 'redeliveredbonus@example.com');
+  assert.equal(afterSecond.tokens.balance, 150, 'a redelivered event for the SAME payment_id must not double-apply the bonus or the credit');
+});
+
+test('pack700\'s first purchase credits 1050 tokens (700 base x 1.5)', async function () {
+  await seedZeroBalanceNoPriorPurchase('firstbonus700@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_first_bonus_700',
+    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    customer: { customer_id: 'cus_first_bonus_700', email: 'firstbonus700@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'firstbonus700@example.com');
+  assert.equal(record.tokens.balance, 1050, '700 base x 1.5 = 1050');
 });

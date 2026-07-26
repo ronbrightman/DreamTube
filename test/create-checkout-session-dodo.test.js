@@ -45,14 +45,16 @@ test.beforeEach(function () {
   global.fetch = realFetch;
   process.env.DODO_API_KEY = 'test-dodo-key';
   process.env.DODO_PRODUCT_PACK_100 = 'pdt_pack100_test';
-  process.env.DODO_PRODUCT_PACK_500 = 'pdt_pack500_test';
+  process.env.DODO_PRODUCT_PACK_300 = 'pdt_pack300_test';
+  process.env.DODO_PRODUCT_PACK_700 = 'pdt_pack700_test';
 });
 
 test.after(function () {
   global.fetch = realFetch;
   delete process.env.DODO_API_KEY;
   delete process.env.DODO_PRODUCT_PACK_100;
-  delete process.env.DODO_PRODUCT_PACK_500;
+  delete process.env.DODO_PRODUCT_PACK_300;
+  delete process.env.DODO_PRODUCT_PACK_700;
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -93,10 +95,20 @@ test('invalid pack value -> 400 E5', async function () {
 });
 
 test('valid pack but its product id env var is not configured -> 500 E6', async function () {
-  delete process.env.DODO_PRODUCT_PACK_500;
-  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack500' } }));
+  delete process.env.DODO_PRODUCT_PACK_300;
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack300' } }));
   assert.equal(res.statusCode, 500);
-  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_PACK_500/);
+  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_PACK_300/);
+});
+
+test('an unconfigured pack does not affect the other two packs (each pack degrades independently)', async function () {
+  stubFetchCapture();
+  delete process.env.DODO_PRODUCT_PACK_700;
+  var res100 = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100' } }));
+  assert.equal(res100.statusCode, 200, 'pack100 must still work even though pack700 is unconfigured');
+  var res700 = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack700' } }));
+  assert.equal(res700.statusCode, 500);
+  assert.match(JSON.parse(res700.body).error, /^E6: missing_product_id: DODO_PRODUCT_PACK_700/);
 });
 
 test('valid request -> 200 with checkout url + session id, sends the right product/customer to Dodo', async function () {
@@ -119,12 +131,20 @@ test('valid request -> 200 with checkout url + session id, sends the right produ
   assert.equal(sentBody.metadata.dreamtube_tokens, 100);
 });
 
-test('pack500 maps to DODO_PRODUCT_PACK_500 and carries 500 tokens in metadata', async function () {
+test('pack300 maps to DODO_PRODUCT_PACK_300 and carries 300 tokens in metadata', async function () {
   var captured = stubFetchCapture();
-  await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack500' } }));
+  await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack300' } }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
-  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack500_test');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 500);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack300_test');
+  assert.equal(sentBody.metadata.dreamtube_tokens, 300);
+});
+
+test('pack700 maps to DODO_PRODUCT_PACK_700 and carries 700 tokens in metadata', async function () {
+  var captured = stubFetchCapture();
+  await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack700' } }));
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack700_test');
+  assert.equal(sentBody.metadata.dreamtube_tokens, 700);
 });
 
 test('default return/cancel URLs point back to shop.html, derived from the request host', async function () {

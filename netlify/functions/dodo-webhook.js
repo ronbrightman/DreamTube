@@ -81,17 +81,22 @@ function getHeader(event, name) {
 // so this file has no compile-time dependency on that one; a mismatch
 // would only matter for the metadata fallback below, since the primary
 // path resolves the amount from the *current* DODO_PRODUCT_PACK_* env
-// vars, not from a hardcoded table).
-var PACK_TOKENS = { pack100: 100, pack500: 500 };
+// vars, not from a hardcoded table). These are BASE tokens — the +50%
+// first-purchase bonus (see resolvePackTokens' caller below) is applied
+// separately, per-account, by lib/entitlements.js's
+// creditTokenPackAmountOnce, never baked into this table.
+var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
 
 /**
- * Resolves how many tokens a completed Payment should credit.
+ * Resolves how many BASE tokens a completed Payment should credit (before
+ * any first-purchase bonus — see creditTokenPackAmountOnce, which decides
+ * and applies that separately, per-account).
  *
  * Prefers matching the payment's product_cart[0].product_id against the
- * same DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_500 env vars
- * create-checkout-session-dodo.js uses to create the checkout in the first
- * place — this is the authoritative, current mapping and needs no
- * cooperation from the payload itself. Falls back to the metadata
+ * same DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700
+ * env vars create-checkout-session-dodo.js uses to create the checkout in
+ * the first place — this is the authoritative, current mapping and needs
+ * no cooperation from the payload itself. Falls back to the metadata
  * create-checkout-session-dodo.js attached at checkout time
  * (dreamtube_tokens, a plain integer), for the case those env vars have
  * changed between checkout creation and webhook delivery. Returns
@@ -103,7 +108,8 @@ function resolvePackTokens(payment) {
   var productId = cart.length ? cart[0].product_id : undefined;
   if (productId) {
     if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_TOKENS.pack100;
-    if (productId === process.env.DODO_PRODUCT_PACK_500) return PACK_TOKENS.pack500;
+    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_TOKENS.pack300;
+    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_TOKENS.pack700;
   }
   var metaTokens = payment.metadata && payment.metadata.dreamtube_tokens;
   var parsed = typeof metaTokens === 'number' ? metaTokens : parseInt(metaTokens, 10);
