@@ -12,45 +12,54 @@
 // stays exactly as it was, since dream ownership/count data is local-only
 // and has no server-side equivalent to move it to.
 //
-// WHY KEYED BY DREAM ID, NOT USERNAME/EMAIL (a deliberate departure from
-// this file's own suggested "server-side flag on the per-email
-// entitlements record" framing): `netlify/functions/lib/account-store.js`
-// only ever gets an account backfilled server-side if it has an email
-// (see js/store.js's `backfillAccountServerSide` -- `if (!account.email)
-// return`), so gating this marker on `accountStore.verifyLogin` the same
-// way `send-first-dream-email.js` does would silently stop working for
-// every account that never supplied an email -- a real regression, not a
-// reliability improvement, for exactly the accounts this fix cannot
-// afford to lose coverage for. A dream's own id is already a public,
-// unauthenticated identifier elsewhere in this codebase (explore.html's
-// `?id=`, watch.html's `?id=`, lib/dream-share-token.js's share links) --
-// using it as this store's key needs no new identity/auth plumbing at
-// all, works identically for every account regardless of whether it has
-// an email on file, and is what actually needs a freshness marker in the
-// first place (a specific dream's completion moment, not an account's
-// generic state).
+// KEYED BY operationName, NOT dreamId (review finding, fixed 2026-07-27 --
+// the original version of this file was dreamId-keyed; see git history).
+// Dream ids (js/store.js's `newId()`, `'d' + Math.random().toString(36)
+// .slice(2,9)`) are client-invented AND already public elsewhere in this
+// app -- explore.html/profile.html/watch.html all link straight to
+// `result.html?id=<dreamId>`, and profile.html's own dreams grid is the
+// ORDINARY way a user revisits their own past dream. Keying this marker
+// on dreamId meant ANY unauthenticated caller who merely knew/guessed a
+// real dreamId (trivial: browse the public feed, or a target's own public
+// profile) could POST it to mark-generation-completed and plant a marker
+// for it -- with no ownership check and no TTL, that marker would sit
+// until the victim's own next ordinary revisit of their own old dream
+// consumed it, forging a FirstVideoCreated fire (Pixel + CAPI + PostHog)
+// for an account that never actually just generated anything. That's a
+// forged signal injected directly into the exact ad-optimization metric
+// this whole feature exists to make trustworthy -- strictly worse than
+// the old sessionStorage design, which could only ever be set by the
+// victim's OWN browser from a real processing.html redirect.
 //
-// SECURITY NOTE (accepted, low-risk residual): dream ids
-// (js/store.js's `newId()`, `'d' + Math.random().toString(36).slice(2,9)`)
-// are opaque but not cryptographically unguessable, and this endpoint pair
-// has no auth. The worst a stranger who somehow knows/guesses a real,
-// in-flight dream id can do is pre-write or prematurely consume its
-// marker -- causing, at most, a missed FirstVideoCreated fire for that one
-// completion (the exact class of gap this whole fix exists to shrink, not
-// a new one), never a false fire (the account-level flag in js/store.js
-// still gates that independently) and never any data exposure. Same
-// "public opaque id, not a secret" trust model this codebase already
-// applies to every other dream-id-keyed lookup.
+// operationName (the job id generate-video.js/generate-image.js issue at
+// submission time, e.g. "fal:fal-ai/veo3.1/fast/<request_id>" or
+// "mock:<startedAtMs>:<id>" -- see those files' own header comments) is
+// the right key instead: it's server-issued, never client-invented, and
+// never exposed in any UI/URL/share link anywhere in this app -- there is
+// no public surface an outside caller can consult to learn a real
+// operationName the way dreamId is trivially knowable. mark-generation-
+// completed.js additionally independently RE-VERIFIES (against fal's own
+// status endpoint, or the embedded-timestamp check for mock mode -- see
+// that file) that the claimed operationName actually completed before
+// this store's markCompleted is ever called, rather than trusting a bare
+// client claim. Combined, an outside caller has no way to target a
+// specific victim's account/dream at all: even a caller who successfully
+// marks SOME real, genuinely-completed operationName gains nothing from
+// it, because nothing will ever call consumeIfPresent with that exact
+// string except the one browser that generated it (result.html reads it
+// off `dream.sourceOperationName` -- see js/store.js's finalizeDream --
+// which is set once, locally, only for the account that actually ran
+// that generation, and is never shown or transmitted anywhere else).
 //
 // Backed by a single Netlify Blobs store ("dreamtube-generation-completions"),
-// ONE RECORD PER DREAM ID: { dreamId, markedAt }. Plain
+// ONE RECORD PER operationName: { operationName, markedAt }. Plain
 // existence-check-then-delete, same accepted-race shape as every other
 // Blobs-backed store in this codebase (see lib/first-dream-email-store.js's
 // header comment) -- two near-simultaneous consume calls for the same
-// dreamId (e.g. two tabs) could in principle both observe the marker
-// before either delete lands, an accepted, narrow, pre-existing class of
-// race this codebase already lives with elsewhere at this exact choke
-// point (see docs/EVENT_TAXONOMY.md's "Known limitation" note on
+// operationName (e.g. two tabs) could in principle both observe the
+// marker before either delete lands, an accepted, narrow, pre-existing
+// class of race this codebase already lives with elsewhere at this exact
+// choke point (see docs/EVENT_TAXONOMY.md's "Known limitation" note on
 // markFirstVideoCreatedIfEligible).
 //
 // No TTL/cleanup: a marker that's never consumed (e.g. generation
@@ -68,35 +77,40 @@ function store() {
 }
 
 /**
- * Records that `dreamId` just finished generating -- called (best-effort,
- * fire-and-forget) from processing.html right before it redirects to
- * result.html, replacing the old sessionStorage.setItem call. A fresh
- * generation for the same dreamId simply overwrites whatever was there
- * before (harmless -- there is only ever one "most recent completion" per
- * dream id in practice), matching the old marker's own "a fresh key next
- * time simply overwrites it" behavior.
+ * Records that `operationName` just finished generating -- called
+ * (best-effort, fire-and-forget) from processing.html right before it
+ * redirects to result.html, replacing the old sessionStorage.setItem
+ * call. Only ever called by mark-generation-completed.js AFTER it has
+ * independently verified the operation actually completed (see that
+ * file's `verifyOperationCompleted`) -- this function itself does no
+ * verification, it just records what its caller already confirmed. A
+ * fresh call for the same operationName simply overwrites whatever was
+ * there before (harmless -- operationName values are unique per
+ * submitted job, generate-video.js/generate-image.js never reissue one).
  */
-async function markCompleted(event, dreamId) {
-  if (!dreamId) return;
+async function markCompleted(event, operationName) {
+  if (!operationName) return;
   connectLambda(event);
-  await store().setJSON(dreamId, { dreamId: dreamId, markedAt: Date.now() });
+  await store().setJSON(operationName, { operationName: operationName, markedAt: Date.now() });
 }
 
 /**
- * Consumes (reads, then deletes) the marker for `dreamId`, exactly once.
- * Returns true only the first time this is called for a dreamId that was
- * actually marked complete -- every call after that (a reload of
- * result.html, or a dreamId that was never marked) returns false. Mirrors
- * the old sessionStorage `getItem` + unconditional `removeItem` pair
- * exactly, just durable server-side instead of tied to one browser tab.
+ * Consumes (reads, then deletes) the marker for `operationName`, exactly
+ * once. Returns true only the first time this is called for an
+ * operationName that was actually marked complete (and independently
+ * verified, see mark-generation-completed.js) -- every call after that (a
+ * reload of result.html, or an operationName that was never marked/
+ * verified at all) returns false. Mirrors the old sessionStorage
+ * `getItem` + unconditional `removeItem` pair exactly, just durable
+ * server-side instead of tied to one browser tab.
  */
-async function consumeIfPresent(event, dreamId) {
-  if (!dreamId) return false;
+async function consumeIfPresent(event, operationName) {
+  if (!operationName) return false;
   connectLambda(event);
   var s = store();
-  var record = await s.get(dreamId, { type: 'json' });
+  var record = await s.get(operationName, { type: 'json' });
   if (!record) return false;
-  await s.delete(dreamId);
+  await s.delete(operationName);
   return true;
 }
 

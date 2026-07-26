@@ -54,7 +54,7 @@ function blockThirdParty(page) {
   });
 }
 
-/** Same seeding shape as test/first-video-created-behavioral.test.js's seedAccount. */
+/** Same seeding shape as test/first-video-created-behavioral.test.js's seedAccount -- every seeded dream gets a deterministic `sourceOperationName` ('op-for-' + its id) unless overridden. */
 async function seedAccount(page, opts) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (o) {
@@ -66,14 +66,16 @@ async function seedAccount(page, opts) {
     if (o.firstVideoCreatedFired) state.accounts[o.username].firstVideoCreatedFired = true;
     if (!state.dreams) state.dreams = [];
     (o.dreams || []).forEach(function (d) {
-      state.dreams.push(Object.assign({
+      var merged = Object.assign({
         ownerHandle: '@' + o.username,
         caption: 'A test dream',
         style: 'Cinematic',
         videoUrl: 'https://example.com/fake-video.mp4',
         isPublished: false,
         likes: 0, likedByMe: false, dur: '0:08'
-      }, d));
+      }, d);
+      if (merged.sourceOperationName === undefined) merged.sourceOperationName = 'op-for-' + merged.id;
+      state.dreams.push(merged);
     });
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   }, opts);
@@ -84,15 +86,15 @@ async function seedAccount(page, opts) {
  * server-side replacement for the old sessionStorage
  * `dreamtube_just_generated_id` marker (see
  * test/first-video-created-behavioral.test.js's identical helper for the
- * full doc comment). Returns `matched: true` exactly once for the given
- * dreamId.
+ * full doc comment). Returns `matched: true` exactly once for a request
+ * whose `operationName` equals `justCompletedOperationName`.
  */
-function mockConsumeMarker(page, justGeneratedDreamId) {
+function mockConsumeMarker(page, justCompletedOperationName) {
   var consumed = false;
   return page.route('**/.netlify/functions/consume-generation-marker', function (route) {
     var body = null;
     try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-    var matched = !consumed && !!(justGeneratedDreamId && body && body.dreamId === justGeneratedDreamId);
+    var matched = !consumed && !!(justCompletedOperationName && body && body.operationName === justCompletedOperationName);
     if (matched) consumed = true;
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
   });
@@ -122,7 +124,7 @@ test('result.html: a brand-new account\'s first-ever completed dream triggers th
       email: 'retention@example.com',
       dreams: [{ id: 'dream-ret-1', caption: 'Flying over mountains', style: 'Anime' }]
     });
-    await mockConsumeMarker(page, 'dream-ret-1');
+    await mockConsumeMarker(page, 'op-for-dream-ret-1');
 
     await page.goto(baseUrl + '/result.html?id=dream-ret-1', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -158,7 +160,7 @@ test('result.html: a second completed dream never triggers the retention-email r
       email: 'retention2@example.com',
       dreams: [{ id: 'dream-ret-2a' }, { id: 'dream-ret-2b' }]
     });
-    await mockConsumeMarker(page, 'dream-ret-2b');
+    await mockConsumeMarker(page, 'op-for-dream-ret-2b');
 
     await page.goto(baseUrl + '/result.html?id=dream-ret-2b', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);

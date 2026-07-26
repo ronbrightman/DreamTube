@@ -139,16 +139,19 @@ forwarding, etc.).
 
 **Why two guards, not one:**
 
-1. **`DreamStore.wasDreamJustCompleted(dreamId)`** (a durable,
+1. **`DreamStore.wasOperationJustCompleted(operationName)`** (a durable,
    server-side marker — see `netlify/functions/lib/generation-completion-
    store.js`, `netlify/functions/mark-generation-completed.js` /
    `consume-generation-marker.js`) — set by `processing.html`'s
-   `attachTaskHandlers()` (via `DreamStore.markDreamJustCompleted(dreamId)`)
-   right before it redirects to `result.html?id=...` on a successful
-   generation (fresh or regenerated), and consumed (read + deleted)
-   exactly once by `result.html`. This confirms the *current page load*
+   `attachTaskHandlers()` (via
+   `DreamStore.markGenerationJustCompleted(operationName)`) right before
+   it redirects to `result.html?id=...` on a successful generation (fresh
+   or regenerated), and consumed (read + deleted) exactly once by
+   `result.html`, using the dream's own `sourceOperationName` field (see
+   `js/store.js`'s `finalizeDream`). This confirms the *current page load*
    is the actual moment generation just finished — not a later revisit or
-   reload of an old `result.html?id=...` URL for the same dream.
+   reload of an old `result.html?id=...` URL for the same dream. Keyed by
+   `operationName`, not `dreamId` — see the security note below.
 2. **`DreamStore.markFirstVideoCreatedIfEligible(dreamId)`** — an atomic
    check-and-set against the signed-in account's state (see
    `js/store.js`): true only if (a) the account's own
@@ -194,19 +197,37 @@ reliably survive some FB/IG in-app-browser webview redirects from
 traffic lands, and exactly the event Meta optimizes ad delivery toward —
 so the event silently undercounted there. The FIX is a durable carrier,
 not a semantics change: the founder's own framing was "keep
-moment-of-completion, make the carrier durable." A server-side marker
-keyed by dream id (not username/email) was chosen over a per-email
-flag (the other option on the table) specifically because
+moment-of-completion, make the carrier durable."
+
+**Why keyed by `operationName`, not `dreamId` (review finding, fixed
+2026-07-27 — see git history for the original, vulnerable version): the
+first cut of this fix used a server-side marker keyed by `dreamId`,
+chosen over a per-email flag (the other option on the table) because
 `netlify/functions/lib/account-store.js` only backfills an account
 server-side if it has an email (`js/store.js`'s
-`backfillAccountServerSide`) — gating this marker on server-verified
-account identity the same way `send-first-dream-email.js` does would
-silently stop working for every account without an email on file, a real
-coverage regression rather than a reliability improvement. Keying by
-dream id instead needs no account/auth plumbing at all and works
-identically for every account. See
-`netlify/functions/lib/generation-completion-store.js`'s header comment
-for the accepted, low-risk lack of auth on this specific marker.
+`backfillAccountServerSide`) — gating on server-verified account identity
+the way `send-first-dream-email.js` does would have silently stopped
+working for every account without an email on file. That reasoning was
+right, but `dreamId` itself turned out to be the wrong key: dream ids are
+client-invented AND already public elsewhere in this app
+(`explore.html`/`profile.html`/`watch.html` links, `profile.html`'s own
+dreams grid being the ORDINARY way a user revisits their own past
+dream) — so keying the marker on `dreamId` meant any unauthenticated
+caller who merely knew/guessed a real one could plant a marker for it,
+which the victim's own next ordinary revisit would silently consume,
+forging a `FirstVideoCreated` fire for an account that never actually
+just generated anything. Strictly worse than the sessionStorage design it
+replaced (settable only by the victim's own browser from a real redirect).
+The fix re-keys on the job's own server-issued `operationName` instead —
+never client-invented, never exposed in any UI/URL anywhere in this app —
+AND has `mark-generation-completed.js` independently RE-VERIFY (against
+fal's own status endpoint, or the mock path's embedded-timestamp check)
+that the claimed `operationName` genuinely completed before writing
+anything, rather than trusting a bare client claim. See
+`netlify/functions/lib/generation-completion-store.js`'s and
+`mark-generation-completed.js`'s own header comments for the full
+mechanics, and `test/generation-completion-marker.test.js`'s
+`SECURITY:`-prefixed tests for the regression coverage.**
 
 **Why `explore.html` doesn't need guard #1 at all:** guard #1 (whichever
 carrier) exists purely to distinguish a fresh post-generation redirect
@@ -276,22 +297,34 @@ at both fire sites.
   path (`resumePendingJob().then()`)
 
 **Files touched by the 2026-07-27 durable-carrier fix
-(`result-htmls-firstvideocreated-still-dep-qfg48t`):**
+(`result-htmls-firstvideocreated-still-dep-qfg48t`), as landed after a
+review round caught the dreamId-keying gap described above:**
 
 - `netlify/functions/lib/generation-completion-store.js` — new, the
-  dream-id-keyed Blobs store backing the durable "just completed" marker
+  operationName-keyed Blobs store backing the durable "just completed"
+  marker
 - `netlify/functions/mark-generation-completed.js` — new, POST endpoint
-  `processing.html` calls to set the marker
+  `processing.html` calls to set the marker; independently re-verifies
+  the claimed `operationName` actually completed (`verifyOperationCompleted`)
+  before writing anything
 - `netlify/functions/consume-generation-marker.js` — new, POST endpoint
   `result.html` calls to read + consume the marker
-- `js/store.js` — new `markDreamJustCompleted(dreamId)`,
-  `wasDreamJustCompleted(dreamId)`, `isOnlyCompletedDream(dreamId)`
+- `js/store.js` — `finalizeDream` gained a new `operationName` param,
+  stamped onto the completed dream as `sourceOperationName`;
+  `startGeneration` threads its own captured `operationName` through to
+  it; new `markGenerationJustCompleted(operationName)`,
+  `wasOperationJustCompleted(operationName)`, `isOnlyCompletedDream(dreamId)`
 - `processing.html` — replaced the `sessionStorage.setItem(
   'dreamtube_just_generated_id', ...)` call with
-  `DreamStore.markDreamJustCompleted(dream.id)`
+  `DreamStore.markGenerationJustCompleted(dream.sourceOperationName)`
 - `result.html` — replaced the synchronous sessionStorage read/consume
-  with `DreamStore.wasDreamJustCompleted(dream.id).then(...)`, and added
-  the new `first_video_result_view` PostHog sanity-check event
+  with `DreamStore.wasOperationJustCompleted(dream.sourceOperationName)
+  .then(...)`, and added the new `first_video_result_view` PostHog
+  sanity-check event
+- `test/generation-completion-marker.test.js` — new, unit coverage for
+  the store + both endpoints, including `SECURITY:`-prefixed tests
+  proving an unverified/forged `operationName` (or a `dreamId`-only
+  payload, the old vulnerable shape) can never become consumable
 
 ### Retention email send — "your dream is ready" (first-dream retention email)
 

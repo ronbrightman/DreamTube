@@ -375,9 +375,12 @@
   function attachTaskHandlers(task){
     task.then(function(dream){
       finishProgress();
-      // Marks this dream as "just finished generating" for result.html's
-      // first-video-created conversion event (see js/store.js's
-      // markDreamJustCompleted + markFirstVideoCreatedIfEligible +
+      // Marks this GENERATION (keyed by its own server-issued
+      // operationName, dream.sourceOperationName -- see js/store.js's
+      // finalizeDream doc comment for why this isn't keyed by dream.id)
+      // as "just finished generating" for result.html's first-video-
+      // created conversion event (see js/store.js's
+      // markGenerationJustCompleted + markFirstVideoCreatedIfEligible +
       // result.html's own call site) -- a durable, server-side marker
       // (tracker.html's result-htmls-firstvideocreated-still-dep-qfg48t
       // item) rather than the sessionStorage marker this used to set,
@@ -385,7 +388,7 @@
       // redirects to result.html. Consumed (read + deleted) exactly once
       // by result.html; harmless if generation somehow never reaches
       // result.html at all (a fresh mark next time simply overwrites it).
-      DreamStore.markDreamJustCompleted(dream.id);
+      DreamStore.markGenerationJustCompleted(dream.sourceOperationName);
       setTimeout(function(){
         DreamStore.clearDraft();
         location.href = 'result.html?id=' + dream.id;

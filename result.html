@@ -671,8 +671,8 @@
   // fresh off processing.html -- not on a later revisit/reload of this
   // same page, and not on their 2nd+ video. Two independent guards must
   // both pass:
-  //   1. DreamStore.wasDreamJustCompleted(dream.id) -- a durable,
-  //      server-side marker (tracker.html's
+  //   1. DreamStore.wasOperationJustCompleted(dream.sourceOperationName) --
+  //      a durable, server-side marker (tracker.html's
   //      result-htmls-firstvideocreated-still-dep-qfg48t item,
   //      founder-approved 2026-07-27) set by processing.html right before
   //      this redirect and consumed here exactly once -- confirms this
@@ -681,9 +681,17 @@
   //      `dreamtube_just_generated_id` marker, which didn't reliably
   //      survive some FB/IG in-app-browser webview redirects (exactly
   //      where this app's paid ad traffic lands) -- same semantics, a
-  //      durable carrier. See js/store.js's wasDreamJustCompleted doc
-  //      comment and netlify/functions/lib/generation-completion-store.js
-  //      for the full mechanics.
+  //      durable carrier. Keyed by the job's own server-issued
+  //      operationName, NOT dream.id (a review finding: dream ids are
+  //      client-invented and already public elsewhere in this app --
+  //      explore.html/profile.html/watch.html links -- so keying on them
+  //      would let anyone who knows/guesses a dream id plant a marker for
+  //      it; operationName is server-issued, never shown in any UI/URL,
+  //      and independently re-verified server-side before a marker is
+  //      ever honored). See js/store.js's wasOperationJustCompleted and
+  //      finalizeDream doc comments, and
+  //      netlify/functions/lib/generation-completion-store.js, for the
+  //      full mechanics.
   //   2. DreamStore.markFirstVideoCreatedIfEligible(dream.id) -- confirms
   //      this is chronologically this account's first-ever completed
   //      dream, and atomically marks the account's one-time flag so it
@@ -710,7 +718,7 @@
       }
     } catch (e) { /* analytics must never break the app */ }
 
-    DreamStore.wasDreamJustCompleted(dream.id).then(function (justCompleted) {
+    DreamStore.wasOperationJustCompleted(dream.sourceOperationName).then(function (justCompleted) {
       try {
         if (!justCompleted) return;
         if (!DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;

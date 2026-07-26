@@ -41,13 +41,22 @@
 // "Just generated" marker note (2026-07-27 update, tracker.html's
 // result-htmls-firstvideocreated-still-dep-qfg48t): result.html's guard #1
 // used to be a synchronous sessionStorage read/consume; it's now an async
-// POST to /.netlify/functions/consume-generation-marker (see
-// js/store.js's wasDreamJustCompleted). mockConsumeMarker below mocks that
-// route instead of writing to sessionStorage directly, returning
-// `matched: true` only for the dreamId the test wants to simulate as
-// freshly completed — passing `null` returns `matched: false`,
-// simulating "no durable marker was ever set for this dream" (an ordinary
-// revisit).
+// POST to /.netlify/functions/consume-generation-marker, keyed by the
+// dream's own `sourceOperationName` field, NOT its dreamId (a review
+// finding -- dream ids are already public elsewhere in this app, so
+// keying the marker on them let an unauthenticated caller plant one for
+// any dreamId they merely knew/guessed; operationName is server-issued
+// and never exposed anywhere in the UI -- see js/store.js's
+// wasOperationJustCompleted and finalizeDream doc comments, and
+// netlify/functions/lib/generation-completion-store.js's header comment,
+// for the full mechanics). seedAccount below stamps a deterministic
+// `sourceOperationName` ('op-for-' + the dream's id) onto every seeded
+// dream unless a test overrides it. mockConsumeMarker mocks the
+// consume-generation-marker route instead of writing to sessionStorage
+// directly, returning `matched: true` only for the operationName the test
+// wants to simulate as freshly completed — passing `null` returns
+// `matched: false`, simulating "no durable marker was ever set for this
+// dream" (an ordinary revisit).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -135,7 +144,7 @@ function readPostHogCaptureCalls(page) {
   });
 }
 
-/** Seeds localStorage with a logged-in account and however many of its own completed dreams the test needs, mirroring test/ui-behavioral.test.js's seedResultPage shape. `firstVideoCreatedFired` lets a test simulate an account that already consumed its one-time flag. */
+/** Seeds localStorage with a logged-in account and however many of its own completed dreams the test needs, mirroring test/ui-behavioral.test.js's seedResultPage shape. `firstVideoCreatedFired` lets a test simulate an account that already consumed its one-time flag. Every seeded dream gets a deterministic `sourceOperationName` ('op-for-' + its id) unless the test overrides it (e.g. `sourceOperationName: null` to simulate a legacy dream from before this field existed). */
 async function seedAccount(page, opts) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (o) {
@@ -147,14 +156,16 @@ async function seedAccount(page, opts) {
     if (o.firstVideoCreatedFired) state.accounts[o.username].firstVideoCreatedFired = true;
     if (!state.dreams) state.dreams = [];
     (o.dreams || []).forEach(function (d) {
-      state.dreams.push(Object.assign({
+      var merged = Object.assign({
         ownerHandle: '@' + o.username,
         caption: 'A test dream',
         style: 'Cinematic',
         videoUrl: 'https://example.com/fake-video.mp4',
         isPublished: false,
         likes: 0, likedByMe: false, dur: '0:08'
-      }, d));
+      }, d);
+      if (merged.sourceOperationName === undefined) merged.sourceOperationName = 'op-for-' + merged.id;
+      state.dreams.push(merged);
     });
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   }, opts);
@@ -165,9 +176,9 @@ async function seedAccount(page, opts) {
  * server-side replacement for the old sessionStorage
  * `dreamtube_just_generated_id` marker (see file header comment).
  * Fulfills `matched: true` exactly ONCE, only for a request whose
- * `dreamId` equals `justGeneratedDreamId` -- every call after that first
- * match (a reload, or any other request) gets `matched: false`, the same
- * exactly-once consumption the real consume-generation-marker.js/
+ * `operationName` equals `justCompletedOperationName` -- every call after
+ * that first match (a reload, or any other request) gets `matched: false`,
+ * the same exactly-once consumption the real consume-generation-marker.js/
  * generation-completion-store.js enforce server-side (see
  * test/generation-completion-marker.test.js for direct unit coverage of
  * that). Pass `null` to always return `matched: false`, simulating "no
@@ -175,12 +186,12 @@ async function seedAccount(page, opts) {
  * Must be installed before the page.goto to result.html, since the check
  * runs as part of that page's own inline script on load.
  */
-function mockConsumeMarker(page, justGeneratedDreamId) {
+function mockConsumeMarker(page, justCompletedOperationName) {
   var consumed = false;
   return page.route('**/.netlify/functions/consume-generation-marker', function (route) {
     var body = null;
     try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-    var matched = !consumed && !!(justGeneratedDreamId && body && body.dreamId === justGeneratedDreamId);
+    var matched = !consumed && !!(justCompletedOperationName && body && body.operationName === justCompletedOperationName);
     if (matched) consumed = true;
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
   });
@@ -204,7 +215,7 @@ test('result.html: a brand-new account\'s first-ever completed dream, opened fre
       email: 'fresh@example.com',
       dreams: [{ id: 'dream-first-1' }]
     });
-    await mockConsumeMarker(page, 'dream-first-1');
+    await mockConsumeMarker(page, 'op-for-dream-first-1');
 
     await page.goto(baseUrl + '/result.html?id=dream-first-1', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget (js/analytics-config.js
@@ -258,7 +269,7 @@ test('result.html: an account\'s second completed dream never fires FirstVideoCr
       email: 'second@example.com',
       dreams: [{ id: 'dream-second-1' }, { id: 'dream-second-2' }]
     });
-    await mockConsumeMarker(page, 'dream-second-2');
+    await mockConsumeMarker(page, 'op-for-dream-second-2');
 
     await page.goto(baseUrl + '/result.html?id=dream-second-2', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -322,7 +333,7 @@ test('result.html: the account-level flag persists -- once fired, a brand-new dr
       firstVideoCreatedFired: true,
       dreams: [{ id: 'dream-fired-1' }, { id: 'dream-fired-2' }]
     });
-    await mockConsumeMarker(page, 'dream-fired-2');
+    await mockConsumeMarker(page, 'op-for-dream-fired-2');
 
     await page.goto(baseUrl + '/result.html?id=dream-fired-2', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -357,7 +368,7 @@ test('result.html: fires the first_video_result_view PostHog sanity-check event 
       email: 'sanity@example.com',
       dreams: [{ id: 'dream-sanity-1' }]
     });
-    await mockConsumeMarker(page, 'dream-sanity-1');
+    await mockConsumeMarker(page, 'op-for-dream-sanity-1');
 
     await page.goto(baseUrl + '/result.html?id=dream-sanity-1', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -416,7 +427,7 @@ test('result.html: does NOT fire first_video_result_view for an account\'s 2nd/N
       email: 'sanity-second@example.com',
       dreams: [{ id: 'dream-sanity-2a' }, { id: 'dream-sanity-2b' }]
     });
-    await mockConsumeMarker(page, 'dream-sanity-2b');
+    await mockConsumeMarker(page, 'op-for-dream-sanity-2b');
 
     await page.goto(baseUrl + '/result.html?id=dream-sanity-2b', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
@@ -433,20 +444,26 @@ test('result.html: does NOT fire first_video_result_view for an account\'s 2nd/N
 // (the cheapest way to exercise its own guard logic in isolation, per this
 // file's header comment). This test instead drives the actual page flow
 // the durable marker exists to survive: processing.html's
-// attachTaskHandlers calls DreamStore.markDreamJustCompleted(dream.id)
+// attachTaskHandlers calls DreamStore.markGenerationJustCompleted(dream.sourceOperationName)
 // (POSTing to mark-generation-completed), then redirects to
-// result.html?id=..., which calls DreamStore.wasDreamJustCompleted(dream.id)
+// result.html?id=..., which reads that same dream's sourceOperationName
+// back off localStorage and calls
+// DreamStore.wasOperationJustCompleted(dream.sourceOperationName)
 // (POSTing to consume-generation-marker) before firing. No real fal.ai
 // call (generate-video/video-status are mocked to complete immediately,
 // per AGENT_POLICY.md's "keep generation-testing cost low" section) --
 // this is pure plumbing verification, not generation-quality verification.
+// This test mocks the mark/consume ROUTES directly (like every test
+// above), so it does NOT exercise mark-generation-completed.js's own
+// verifyOperationCompleted logic -- that's covered by
+// test/generation-completion-marker.test.js's unit tests instead.
 
-/** Mocks a generation that completes immediately with a fake video, and captures the dreamId processing.html's mark-generation-completed call carries -- reused by consume-generation-marker's own mock below so the two endpoints agree on the same dreamId, exactly like the real dream-id-keyed Blobs store would. */
+/** Mocks a generation that completes immediately with a fake video, and captures the operationName processing.html's mark-generation-completed call carries -- reused by consume-generation-marker's own mock below so the two endpoints agree on the same operationName, exactly like the real operationName-keyed Blobs store would. */
 function mockGenerationCompletesImmediately(page) {
-  var state = { markedDreamId: null, consumedOnce: false };
+  var state = { markedOperationName: null, consumedOnce: false };
   return Promise.all([
     page.route('**/.netlify/functions/generate-video', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast/test-op' }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:test-op' }) });
     }),
     page.route('**/.netlify/functions/video-status*', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-e2e-video.mp4' }) });
@@ -454,13 +471,13 @@ function mockGenerationCompletesImmediately(page) {
     page.route('**/.netlify/functions/mark-generation-completed', function (route) {
       var body = null;
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-      if (body && body.dreamId) state.markedDreamId = body.dreamId;
+      if (body && body.operationName) state.markedOperationName = body.operationName;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     }),
     page.route('**/.netlify/functions/consume-generation-marker', function (route) {
       var body = null;
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-      var matched = !state.consumedOnce && !!state.markedDreamId && !!body && body.dreamId === state.markedDreamId;
+      var matched = !state.consumedOnce && !!state.markedOperationName && !!body && body.operationName === state.markedOperationName;
       if (matched) state.consumedOnce = true;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
     }),
@@ -501,8 +518,8 @@ test('end-to-end: a brand-new account\'s real processing.html -> result.html red
     await page.waitForURL(/result\.html\?id=/, { timeout: 8000 });
     await page.waitForTimeout(400);
 
-    assert.ok(markerState.markedDreamId, 'processing.html should have POSTed the completed dream\'s id to mark-generation-completed before redirecting');
-    assert.match(page.url(), new RegExp('result\\.html\\?id=' + markerState.markedDreamId + '$'), 'result.html should load for the SAME dreamId that was just marked complete');
+    assert.ok(markerState.markedOperationName, 'processing.html should have POSTed the completed generation\'s operationName to mark-generation-completed before redirecting');
+    assert.match(page.url(), /result\.html\?id=/, 'should have redirected to result.html for the freshly-completed dream');
 
     var trackCustomCalls = fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated');
     assert.equal(trackCustomCalls.length, 1, 'the real processing.html -> result.html flow should fire FirstVideoCreated exactly once via the durable marker round-trip');

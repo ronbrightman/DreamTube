@@ -202,15 +202,15 @@ async function seedAccountWithPendingJob(page, opts) {
  * result.html's leg-2 visit below -- the durable, server-side replacement
  * for the old sessionStorage `dreamtube_just_generated_id` marker (see
  * test/first-video-created-behavioral.test.js's identical helper for the
- * full doc comment). Returns `matched: true` exactly once for the given
- * dreamId.
+ * full doc comment). Returns `matched: true` exactly once for a request
+ * whose `operationName` equals `justCompletedOperationName`.
  */
-function mockConsumeMarker(page, justGeneratedDreamId) {
+function mockConsumeMarker(page, justCompletedOperationName) {
   var consumed = false;
   return page.route('**/.netlify/functions/consume-generation-marker', function (route) {
     var body = null;
     try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-    var matched = !consumed && !!(justGeneratedDreamId && body && body.dreamId === justGeneratedDreamId);
+    var matched = !consumed && !!(justCompletedOperationName && body && body.operationName === justCompletedOperationName);
     if (matched) consumed = true;
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ matched: matched }) });
   });
@@ -330,15 +330,20 @@ test('cross-path: an account whose first video completes via explore.html\'s res
     await page.waitForTimeout(500);
     assert.equal(fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length, 1, 'leg 1 (explore.html resume) should have fired FirstVideoCreated once');
 
-    // Find the dream id explore.html's resume just created, so leg 2 can
+    // Find the dream explore.html's resume just created, so leg 2 can
     // revisit result.html for that SAME dream, exactly as if the user had
-    // tapped into it from their own feed/profile afterwards.
-    var dreamId = await page.evaluate(function () {
+    // tapped into it from their own feed/profile afterwards. Also reads
+    // back its sourceOperationName (stamped by the real finalizeDream that
+    // just ran, from the seeded pendingJob's own operationName) -- that's
+    // what leg 2's mockConsumeMarker below needs to match on now, not the
+    // dreamId.
+    var resumed = await page.evaluate(function () {
       var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
       var mine = state.dreams.filter(function (d) { return d.ownerHandle === '@crosspathuser'; });
-      return mine.length ? mine[0].id : null;
+      return mine.length ? { id: mine[0].id, sourceOperationName: mine[0].sourceOperationName } : null;
     });
-    assert.ok(dreamId, 'sanity check: the resumed job should have produced a real completed dream');
+    assert.ok(resumed && resumed.id, 'sanity check: the resumed job should have produced a real completed dream');
+    var dreamId = resumed.id;
 
     // Leg 2: the user later opens result.html for that same dream. The
     // durable "just generated" marker IS mocked to match here,
@@ -352,7 +357,7 @@ test('cross-path: an account whose first video completes via explore.html\'s res
     // account-level flag's own cross-path sufficiency. Passing the
     // durable-marker guard through to the eligibility check is exactly
     // what makes this a genuine test of that flag.
-    await mockConsumeMarker(page, dreamId);
+    await mockConsumeMarker(page, resumed.sourceOperationName);
     await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
 
