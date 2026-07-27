@@ -32,9 +32,10 @@
         // (passwords, and — the reason this matters most for DreamTube — the personal,
         // sometimes vulnerable dream text people type into #dream-text and future
         // free-text quiz-funnel screens) in session replays without anyone noticing.
-        // See also the `ph-no-capture` class on #dream-text in create.html, a second,
-        // independent layer of the same protection for that specific field. DO NOT
-        // REMOVE either of these without a deliberate privacy decision.
+        // See also the `ph-no-capture` class on #dream-text and #transcript-text in
+        // create.html, a second, independent layer of the same protection for those
+        // specific fields. DO NOT REMOVE either of these without a deliberate privacy
+        // decision.
         maskAllInputs: true
       }
     });
@@ -180,6 +181,27 @@
     </div>
   </div>
 
+  <!-- Text-review step (tracker item transcription-t8pd3o): shown once
+       transcribe-status.js actually returns a transcript for the recording
+       reviewed in #create-review above. Whisper is right most of the time
+       but not always -- mishearing, filler words, wrong names -- and this is
+       the only chance to see and fix the words before they become the
+       dream's caption and generation starts downstream. Mirrors the same
+       .rec-panel/.px conventions as #create-review/#create-record rather
+       than inventing new layout, and its own "Re-record" ghost button
+       mirrors #re-record above for scrapping the whole recording and
+       starting over. -->
+  <div class="px rec-panel" id="create-transcript-review" style="display:none;">
+    <div style="font-weight:800; font-size:15px; text-align:center; padding:0 10px;">Check your dream</div>
+    <div style="font-size:12px; color:var(--text-muted); text-align:center; padding:0 14px;">Fix anything that sounds off — this is what we'll use to make your video.</div>
+    <textarea class="field ph-no-capture" id="transcript-text" dir="auto" style="align-self:stretch; width:auto; flex:1;"></textarea>
+    <div class="rec-error" id="transcript-error" style="display:none;"></div>
+    <div style="width:100%; display:flex; flex-direction:column; gap:10px; padding:0 4px 22px;">
+      <button class="btn btn-primary btn-block" id="transcript-continue">Continue</button>
+      <button class="btn btn-ghost btn-block" id="transcript-re-record"></button>
+    </div>
+  </div>
+
   <!-- Shown by startRecordingUI() INSTEAD of attempting getUserMedia when an
        FB/IG in-app webview is detected (Meta ad traffic very commonly lands
        here — clicking an ad opens inside Instagram's/Facebook's own in-app
@@ -304,6 +326,7 @@
   document.querySelector('.choice-icon-record').innerHTML = Icons.mic;
   document.querySelector('.rec-dot').innerHTML = Icons.mic;
   document.getElementById('re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
+  document.getElementById('transcript-re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
 
   // Founder decision 2026-07-27 (tracker for-product-founder-solution-for-record--111tp1),
@@ -720,11 +743,15 @@
   var writeEl = document.getElementById('create-write');
   var recordEl = document.getElementById('create-record');
   var reviewEl = document.getElementById('create-review');
+  var transcriptReviewEl = document.getElementById('create-transcript-review');
   var heading = document.getElementById('create-heading');
   var textArea = document.getElementById('dream-text');
   var charCount = document.getElementById('char-count');
   var writeContinue = document.getElementById('write-continue');
   var reviewContinue = document.getElementById('review-continue');
+  var transcriptTextArea = document.getElementById('transcript-text');
+  var transcriptContinue = document.getElementById('transcript-continue');
+  var transcriptReRecord = document.getElementById('transcript-re-record');
 
   function showError(elId, msg){
     var el = document.getElementById(elId);
@@ -978,6 +1005,7 @@
 
       selectEl.style.display = 'none';
       reviewEl.style.display = 'none';
+      transcriptReviewEl.style.display = 'none';
       recordEl.style.display = 'flex';
       heading.textContent = 'Record your dream';
       var secs = 0;
@@ -1003,13 +1031,14 @@
       heading.textContent = 'New Dream';
       return;
     }
-    var open = [writeEl, recordEl, reviewEl, recordBlockedEl].some(function(el){ return el.style.display === 'flex'; });
+    var open = [writeEl, recordEl, reviewEl, recordBlockedEl, transcriptReviewEl].some(function(el){ return el.style.display === 'flex'; });
     if(open){
       selectEl.style.display = 'block';
       writeEl.style.display = 'none';
       recordEl.style.display = 'none';
       reviewEl.style.display = 'none';
       recordBlockedEl.style.display = 'none';
+      transcriptReviewEl.style.display = 'none';
       heading.textContent = 'New Dream';
       clearInterval(recInterval);
       stopMediaStream();
@@ -1445,6 +1474,16 @@
     mediaRecorder.stop();
   });
   document.getElementById('re-record').addEventListener('click', function(){
+    // review-continue is disabled while a transcription is in flight, but this
+    // button isn't -- without invalidating the in-flight attempt here, a
+    // transcription that resolves after the user has already started a new
+    // recording would still land (setDraft + navigate, or repopulate the text-
+    // review screen) on top of whatever they're doing now. Same recurring
+    // stale-async-callback shape as tracker item recurring-stale-async-
+    // callback-bug-shape-xp61pn -- guarded here with a simple per-attempt token
+    // rather than a shared utility, since this is the only place on this page
+    // it's reachable.
+    transcribeAttemptToken++;
     playbackAudio.pause();
     startRecordingUI();
   });
@@ -1500,11 +1539,38 @@
     });
   }
 
+  // Bumped whenever a fresh transcription attempt starts, and whenever the
+  // user bails out of the current attempt (re-record, from either review
+  // screen) before it resolves. A stale attempt's own .then()/.catch() checks
+  // this against the token it captured at start and no-ops if it's changed --
+  // see the #re-record click handler's own comment for the failure mode this
+  // prevents.
+  var transcribeAttemptToken = 0;
+
+  /**
+   * Shows the post-transcription text-review screen (tracker item
+   * transcription-t8pd3o) with the raw transcript pre-filled and editable.
+   * Nothing is committed to the draft yet -- that only happens once the user
+   * confirms via #transcript-continue below, using whatever's actually in
+   * the textarea at that moment.
+   */
+  function showTranscriptReview(transcript){
+    reviewEl.style.display = 'none';
+    transcriptTextArea.value = transcript;
+    hideError('transcript-error');
+    transcriptContinue.disabled = false;
+    transcriptContinue.textContent = 'Continue';
+    transcriptReviewEl.style.display = 'flex';
+    heading.textContent = 'Review your dream';
+    transcriptTextArea.focus();
+  }
+
   reviewContinue.addEventListener('click', function(){
     if(!recordedBlob) return;
     hideError('rec-error');
     reviewContinue.disabled = true;
     reviewContinue.textContent = 'Transcribing…';
+    var myAttempt = ++transcribeAttemptToken;
 
     recordedBlob.arrayBuffer().then(function(buffer){
       return fetch('/.netlify/functions/transcribe-audio', {
@@ -1520,6 +1586,7 @@
       }
       return pollTranscribeStatus(result.data.operationName, Date.now());
     }).then(function(transcript){
+      if(myAttempt !== transcribeAttemptToken) return; // stale -- user re-recorded or navigated away meanwhile
       // No looksLikeGibberish() check here, deliberately: unlike the Write
       // textarea (a bare length check with zero content-quality validation),
       // this path is already gated by a real AI model -- fal-ai/whisper maps
@@ -1529,18 +1596,41 @@
       // something Whisper produces from real speech, so the Write-panel
       // heuristic wouldn't meaningfully fire here and risks flagging real
       // short transcripts instead. Same length gate isn't present here either
-      // (there never was one) -- Whisper's own output is the gate.
-      DreamStore.setDraft({ caption: transcript, sourceDreamId: null });
-      // Record skips the Write panel entirely, so this is the only chance to
-      // link a first-person transcript ("I flew over...") to the saved self
-      // character before generation — same check as the Write textarea.
-      autoSelectSelfIfMentioned(transcript);
-      location.href = 'style.html';
+      // (there never was one) -- Whisper's own output is the gate. The user
+      // still gets a chance to fix any mishearing on the text-review screen
+      // this hands off to, so nothing here is truly "final" yet.
+      showTranscriptReview(transcript);
     }).catch(function(){
+      if(myAttempt !== transcribeAttemptToken) return; // stale -- ignore a failure for an attempt the user already abandoned
       reviewContinue.disabled = false;
       reviewContinue.textContent = 'Continue';
       showError('rec-error', "Couldn't transcribe that recording — try again, or re-record.");
     });
+  });
+
+  transcriptContinue.addEventListener('click', function(){
+    var edited = transcriptTextArea.value.trim();
+    if(!edited){
+      showError('transcript-error', 'Type something before continuing — or re-record.');
+      return;
+    }
+    DreamStore.setDraft({ caption: edited, sourceDreamId: null });
+    // Checked against the user's edited text, not the discarded raw
+    // transcript -- an edit is what actually gets submitted as the caption,
+    // so that's what needs to correctly link to the saved self character.
+    autoSelectSelfIfMentioned(edited);
+    location.href = 'style.html';
+  });
+
+  transcriptTextArea.addEventListener('input', function(){
+    hideError('transcript-error');
+  });
+
+  transcriptReRecord.addEventListener('click', function(){
+    transcribeAttemptToken++;
+    transcriptReviewEl.style.display = 'none';
+    playbackAudio.pause();
+    startRecordingUI();
   });
 
   renderCharacterChips();
