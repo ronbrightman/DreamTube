@@ -201,6 +201,14 @@ exports.handler = async function (event) {
       customer: { email: email },
       return_url: returnUrl,
       cancel_url: cancelUrl,
+      // DreamTube sells token packs to individual consumers, not
+      // businesses, and the founder does not want the "purchasing as a
+      // business" tax-id option surfaced at all (tracker item
+      // review-the-non-mandatory-dodo-account-fi-bnw41z, founder note
+      // 2026-07-27). Dodo's `allow_tax_id` defaults to true, which is what
+      // put that checkbox on the checkout page; explicitly disabling it
+      // removes the option rather than just leaving it unused.
+      allow_tax_id: false,
       // Carries the normalized email + pack + token amount + shared
       // event_id through as a fallback identity/amount source alongside
       // the webhook payload's own data.customer.email and

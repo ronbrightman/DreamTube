@@ -138,6 +138,11 @@ test('valid request -> 200 with checkout url + session id, sends the right produ
   assert.equal(sentBody.metadata.dreamtube_price, 2.99);
   assert.ok(body.eventId, 'the response must carry an eventId for shop.html to thread into its pending-purchase marker');
   assert.equal(sentBody.metadata.dreamtube_event_id, body.eventId, 'the SAME event_id must be both returned to the client and embedded in Dodo metadata, or dodo-webhook.js\'s own Purchase fire cannot dedupe against the client-side one');
+  // Founder does not want the "purchasing as a business" tax-id option
+  // surfaced at checkout for consumer token-pack purchases (tracker item
+  // review-the-non-mandatory-dodo-account-fi-bnw41z) -- Dodo's allow_tax_id
+  // defaults to true, so this must be explicitly disabled.
+  assert.equal(sentBody.allow_tax_id, false, 'the business/tax-id checkout option must be explicitly disabled, not left at Dodo\'s default-true');
 });
 
 test('pack300 maps to DODO_PRODUCT_PACK_300 and carries 300 tokens in metadata', async function () {
