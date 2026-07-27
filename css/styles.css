@@ -562,7 +562,7 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    #result-more-menu) since the Edit-sheet placement was too buried --
    see result.html's comment above .result-actions-wrap and tracker.html's
    for-product-result-screen-delete-is-too--6axxko / no-delete-video-2rlysi. */
-.result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:16px; flex-wrap:wrap; padding-top:2px;}
+.result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:16px; flex-wrap:wrap; padding-top:2px; padding-right:38px;}
 .result-quiet-link{
   display:flex; align-items:center; gap:5px; font-family:var(--font-body); font-size:11px; font-weight:600;
   color:rgba(255,255,255,.75); background:none; border:none; cursor:pointer; padding:4px; margin:0;
@@ -578,6 +578,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    trigger pinned to the right edge of the quiet-link row, opening a tiny
    popover with exactly one (destructive-styled) item. See tracker.html's
    no-delete-video-2rlysi. */
+/* padding-right on .result-quiet-links above (38px = trigger's 26px width
+   + a clear gap) reserves space so the centered quiet-link row can never
+   visually collide with .result-more-trigger below, which is absolutely
+   positioned at the same right:0 edge -- review finding, verified with a
+   bounding-box test at 320px/375px. */
 .result-actions-wrap{ position:relative;}
 .result-more-trigger{
   position:absolute; right:0; top:50%; transform:translateY(-50%);
