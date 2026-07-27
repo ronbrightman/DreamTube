@@ -1277,6 +1277,12 @@
 
     var continueBtn = document.getElementById('fn-s13-continue');
     var errEl = document.getElementById('fn-signup-error');
+    // Variant b's email step trains "Enter advances" (see
+    // renderScreen13EmailFirst's own emailInput keydown handler above) —
+    // matching that here keeps the expectation consistent across both of
+    // its steps. Harmless, unrequested-but-natural addition for variant a
+    // too, which never had Enter-to-submit before.
+    pwInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); continueBtn.click(); } });
     continueBtn.addEventListener('click', function(){
       var email = document.getElementById('fn-email').value.trim();
       var password = pwInput.value;
@@ -1427,15 +1433,23 @@
     // Same real, never-fake count screen 14 already uses (see
     // dreamsThisMonthCount's own doc comment above) — omitted entirely
     // (not a placeholder number) if the feed fetch hasn't resolved yet or
-    // failed.
-    var proofStripHtml = (dreamsThisMonthCount !== null) ?
-      ('<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>') :
-      '';
+    // failed. Recomputed fresh on every internal render (not cached once
+    // in this outer closure) because the getSharedFeed() fetch that
+    // populates dreamsThisMonthCount is still in flight for meaningfully
+    // more visitors here than on screen 14 (this is an earlier funnel
+    // step) — caching the value at first-render time would freeze out the
+    // proof strip for the rest of the visitor's time on screen 13 even if
+    // the fetch resolves seconds later while they're still typing.
+    function computeProofStripHtml(){
+      return (dreamsThisMonthCount !== null) ?
+        ('<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>') :
+        '';
+    }
 
     function renderEmailStep(prefillEmail){
       el.innerHTML =
         '<div class="fn-headline">' + headline + '</div>' +
-        proofStripHtml +
+        computeProofStripHtml() +
         '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
         '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;" value="' + esc(prefillEmail || '') + '">' +
         '<div class="fn-err-text" id="fn-signup-error"></div>' +
@@ -1465,7 +1479,7 @@
     function renderPasswordStep(email){
       el.innerHTML =
         '<div class="fn-headline">' + headline + '</div>' +
-        proofStripHtml +
+        computeProofStripHtml() +
         '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
         // Confirmed email, shown read-only -- same real "fn-email" id and
         // .value wireScreen13Fields()/attemptSignup() below read from --
