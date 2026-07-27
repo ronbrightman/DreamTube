@@ -952,18 +952,19 @@
   function migrateLegacyThrowawayAccountData(serverUsername, displayUsername) {
     if (serverUsername !== LEGACY_ACCOUNT_RENAME.toUsername) return;
 
-    var oldHandle = '@' + LEGACY_ACCOUNT_RENAME.fromUsername;
-    // Re-tag onto the EXACT handle this login is about to set state.user
-    // to (displayUsername's own casing — see login()'s own
-    // typedIsUsername/displayUsername handling just above this call),
-    // not a hardcoded lowercase '@ronbrightman' — getMyDreams/etc. compare
-    // d.ownerHandle to state.user.handle with a plain `===`, so this has
-    // to match exactly whatever casing THIS login session actually uses,
-    // or the very re-tag meant to fix visibility would immediately break
-    // it again for a login typed in different casing than a previous one.
+    // Match the old handle case-insensitively — the throwaway account may
+    // have been logged into more than once with different typed casing
+    // before this rename, and getMyDreams/etc.'s `===` match against
+    // state.user.handle would otherwise silently leave a differently-cased
+    // dream orphaned (unreachable under either the old or new identity).
+    var oldHandleLower = ('@' + LEGACY_ACCOUNT_RENAME.fromUsername).toLowerCase();
+    // login() now always pins displayUsername to the canonical lowercase
+    // form for this one account (see its own comment), so this always
+    // lands on the exact same handle string on every future login too —
+    // no risk of the re-tag itself drifting across sessions.
     var newHandle = '@' + (displayUsername || LEGACY_ACCOUNT_RENAME.toUsername);
     state.dreams.forEach(function (d) {
-      if (d.ownerHandle === oldHandle) d.ownerHandle = newHandle;
+      if ((d.ownerHandle || '').toLowerCase() === oldHandleLower) d.ownerHandle = newHandle;
     });
 
     var oldCharacters = state.charactersByUser[LEGACY_ACCOUNT_RENAME.fromUsername];
@@ -1150,6 +1151,21 @@
           // pre-fix local-only login always did.
           var typedIsUsername = usernameOrEmail.toLowerCase() === serverUsername;
           var displayUsername = typedIsUsername ? usernameOrEmail : serverUsername;
+          // One-off: pin this ONE renamed account's display casing to the
+          // canonical lowercase form always, regardless of how it's typed.
+          // Review of migrateLegacyThrowawayAccountData caught that letting
+          // typed casing drive state.user.handle (the normal behavior above)
+          // makes ownerHandle-tagged dreams only survive the FIRST post-
+          // rename login's casing — every dream accessor does a plain
+          // `d.ownerHandle === state.user.handle` match, so a later login
+          // typed with different casing (e.g. "Ronbrightman" vs
+          // "ronbrightman") would silently fail to find dreams already
+          // migrated under the earlier casing, with no self-healing path.
+          // Forcing one fixed handle string for this account closes that
+          // permanently.
+          if (serverUsername === LEGACY_ACCOUNT_RENAME.toUsername) {
+            displayUsername = LEGACY_ACCOUNT_RENAME.toUsername;
+          }
           if (!state.accounts[serverUsername]) {
             // Brand-new-to-this-device account — materialize a local
             // placeholder so the rest of this app's local-storage-

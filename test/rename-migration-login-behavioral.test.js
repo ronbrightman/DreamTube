@@ -238,3 +238,45 @@ test('js/store.js: migration is idempotent — logging in as ronbrightman twice 
     await page.close();
   }
 });
+
+test('js/store.js: dreams stay visible even when the ronbrightman username is typed with different casing across two logins', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await seedPreRenameLocalData(page);
+    // account-login.js always resolves to the canonical lowercase
+    // username server-side, regardless of what was typed — mocked the
+    // same way here, since typedIsUsername/displayUsername in login()
+    // only look at the RAW usernameOrEmail the caller passed in.
+    await mockServerLoginSuccess(page, 'ronbrightman', 'ronbrightman@gmail.com');
+
+    var result = await page.evaluate(function () {
+      // First login: typed as a username, unusual casing.
+      return window.DreamStore.login('Ronbrightman', 'pw1').then(function () {
+        window.DreamStore.logout();
+        // Second login: typed as a username again, DIFFERENT casing —
+        // this is the exact scenario the review found broken pre-fix:
+        // without pinning displayUsername, this session's state.user.handle
+        // would be '@ronBRIGHTMAN', which would never `===`-match the
+        // '@ronbrightman' the first login's migration already re-tagged
+        // the dreams onto.
+        return window.DreamStore.login('ronBRIGHTMAN', 'pw1');
+      }).then(function () {
+        return {
+          currentUser: window.DreamStore.getCurrentUser(),
+          myDreams: window.DreamStore.getMyDreams(),
+          characters: window.DreamStore.getCharacters()
+        };
+      });
+    });
+
+    assert.equal(result.currentUser.handle, '@ronbrightman', 'handle must always be pinned to the canonical lowercase form for this account, regardless of typed casing');
+    var myDreamIds = result.myDreams.map(function (d) { return d.id; }).sort();
+    assert.deepEqual(myDreamIds, ['legacy-dream-1', 'legacy-dream-2'], 'dreams must stay visible across logins typed with different casing, not just the first one');
+    assert.equal(result.characters.length, 1);
+  } finally {
+    await page.close();
+  }
+});
