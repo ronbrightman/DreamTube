@@ -145,7 +145,7 @@
            open/close + rotating-chevron convention — the closest existing
            "real accordion" pattern in this codebase — rather than
            inventing a different interaction. Content is the tracker's own
-           drafted Q&A, lightly edited in two places against current
+           drafted Q&A, lightly edited in three places against current
            reality rather than the draft's original figures: (1) the
            account-deletion answer, originally flagged
            "doesn't exist yet — confirm/build before publishing", now
@@ -156,8 +156,13 @@
            netlify/functions/lib/entitlements.js's INITIAL_GRANT (220, not
            the draft's 200) / DAILY_GRANT_AMOUNT (20, not 100) constants,
            and shop.html's packs, which are a live real purchase now, not
-           the "coming soon" placeholder the draft described. Every other
-           answer is the tracker's draft verbatim. -->
+           the "coming soon" placeholder the draft described; (3) the
+           refund-cadence answer, which the draft wrote as "once per day
+           automatically" — entitlements.js's refundTokensOnce/
+           refundTokenAmountOnce have no per-day cap at all (idempotent
+           per job id, not per day), so the answer now says "automatically,
+           every time" instead. Every other answer is the tracker's draft
+           verbatim. -->
       <div class="settings-section">
         <div class="section-label">FAQ</div>
         <div id="faq-list">
