@@ -541,10 +541,15 @@ var ownerBypass = require('./lib/owner-bypass');
  * already-paid-for submission into a 500 — the only consequence of a
  * failed write is that a LATER refund attempt for this job fails closed
  * (see refundTokensOnce), never that this submission itself breaks.
+ *
+ * Also records mediaType:'video' (this file's only kind — see
+ * lib/job-owners.js's header comment on why this is recorded, not
+ * derived) so mark-generation-completed.js can later preserve the first-
+ * dream retention email's video-only scope when it fires automatically.
  */
 async function recordJobOwnerBestEffort(event, operationName, email) {
   try {
-    await jobOwners.recordJobOwner(event, operationName, email);
+    await jobOwners.recordJobOwner(event, operationName, email, 'video');
   } catch (e) {
     console.error('generate-video: failed to record job owner (refund auth binding) for ' + operationName + ' — a later refund attempt for this job will fail closed', e);
   }

@@ -1,20 +1,45 @@
 // netlify/functions/send-first-dream-email.js
 //
-// POST { username, dreamId, caption, style, videoUrl, mediaType } -> sends
-// the "your dream is ready" RETENTION email (day-1 -> day-2+ return),
-// tracker.html's for-product-retention-email-send-user-th-eke9ra item,
-// founder-greenlit 2026-07-26 ("start now, before paywall").
+// POST { username, password, dreamId, caption, style, videoUrl, mediaType }
+// -> sends the "your dream is ready" RETENTION email (day-1 -> day-2+
+// return), tracker.html's for-product-retention-email-send-user-th-eke9ra
+// item, founder-greenlit 2026-07-26 ("start now, before paywall").
+//
+// AS OF 2026-07-27 (tracker.html's
+// for-product-activate-automatic-retention-4n74rw item, founder-approved
+// -- "start sending... AUTOMATICALLY... do not wait for manual
+// triggering"), this is no longer the ONLY way this email fires --
+// mark-generation-completed.js now ALSO fires it directly, automatically,
+// from the real server-verified generation-complete choke point (see that
+// file's own header comment for why THIS endpoint's client-triggered path
+// couldn't be that choke point on its own: it depends on the browser tab
+// surviving long enough to load result.html/explore.html and run their
+// JS, which a closed tab, a killed in-app-browser webview, or total
+// network loss between processing.html and result.html could all
+// prevent). This endpoint is KEPT, unchanged in its own request contract,
+// as the client-triggered fallback result.html/explore.html still call
+// (see their own call sites) -- both paths funnel into the exact same
+// atomic per-account guard (lib/first-dream-email-store.js's
+// markSentOnce, via the shared lib/first-dream-email-sender.js core both
+// now call), so whichever one reaches the choke point first for a given
+// account wins the send, and the other is a harmless no-op. In practice
+// the automatic path almost always wins the race (it fires the moment
+// processing.html's poll sees completion, well before result.html even
+// loads) -- this endpoint mainly exists now as a safety net for whatever
+// edge case reaches result.html/explore.html without the automatic path
+// having already fired (e.g. a legacy dream with no sourceOperationName,
+// or a mark-generation-completed request that got lost in transit).
 //
 // Called from the SAME choke point js/store.js's
 // markFirstVideoCreatedIfEligible already fires the FirstVideoCreated KPI
 // event from (see result.html's and explore.html's own call sites, and
 // docs/EVENT_TAXONOMY.md) -- the moment an account's first-ever completed
-// dream shows up, client-side. There is no server-side signal for a
-// normal signed-in generation completing at all (see
-// generate-video.js's withWebhook comment -- fal's webhook is used ONLY
-// for the separate pre-signup abandoned-dream flow in dream-webhook.js),
-// so the client has to be the one to tell the server "this just happened"
-// -- this endpoint exists to take that tip and do everything
+// dream shows up, client-side. There is no real fal webhook for a normal
+// signed-in generation completing at all (see generate-video.js's
+// withWebhook comment -- fal's webhook is used ONLY for the separate
+// pre-signup abandoned-dream flow in dream-webhook.js), so the client has
+// historically been the one to tell the server "this just happened" for
+// this fallback path -- this endpoint takes that tip and does everything
 // security-sensitive server-side instead of trusting the client with it.
 //
 // A NEW, SEPARATE email from dream-webhook.js's sendReadyEmail -- do not
@@ -36,13 +61,23 @@
 // (a real, common state -- see js/store.js's own account model), this is
 // a silent, logged no-op: there is nothing safe to send to, and no
 // fallback to any client-supplied address. The dream CONTENT
-// (caption/style/videoUrl), on the other hand, is taken as given from the
-// client, same as publish-dream.js's own documented "no ownership check,
-// honest MVP scope" -- there is no independent server-side record of a
-// PRIVATE dream to cross-check it against (see lib/dream-share-token.js's
-// header comment for the full reasoning), and the content is only ever
-// exposed back to whoever holds the resulting single-purpose share token,
-// never anything account-identifying beyond that.
+// (caption/style), on the other hand, is taken as given from the client,
+// same as publish-dream.js's own documented "no ownership check, honest
+// MVP scope" -- there is no independent server-side record of a PRIVATE
+// dream to cross-check it against, and it's used purely for cosmetic
+// personalization of the email body (see lib/first-dream-email-sender.js),
+// never anything account-identifying.
+//
+// THE LINK (changed 2026-07-27, founder decision): used to mint a
+// lib/dream-share-token.js one-time-to-mint, many-times-viewable
+// watch.html link for this ONE specific (possibly still-private) dream.
+// Now links straight at this account's own profile.html instead -- see
+// lib/first-dream-email-sender.js's header comment for the full reasoning
+// (profile.html is already an authenticated app page, needing no
+// per-dream token/session-carrying mechanism of its own). `videoUrl` is
+// consequently no longer used for anything (no share token to mint), but
+// is still accepted/required in the request shape unchanged, so
+// result.html's/explore.html's existing call sites need no changes.
 //
 // MEDIA-TYPE SCOPE: video only, matching FirstVideoCreated's own existing
 // scope (js/store.js's markFirstVideoCreatedIfEligible filters on
@@ -54,12 +89,12 @@
 //
 // IDEMPOTENCY: exactly once per account, ever -- see
 // lib/first-dream-email-store.js's markSentOnce(), checked (and won)
-// BEFORE any send is attempted. This is the durable, cross-device
-// backstop for the same known cross-tab race already accepted at this
-// exact choke point for markFirstVideoCreatedIfEligible/FirstVideoCreated
-// (see docs/EVENT_TAXONOMY.md) -- two tabs racing the client-side check
-// could both dispatch this request, but only one wins this server-side
-// guarded write, so only one email ever actually sends.
+// BEFORE any send is attempted, via lib/first-dream-email-sender.js's
+// shared sendIfEligible(). Now genuinely race-safe (blobs-retry-backed),
+// not just a plain check-then-act -- see that store's own header comment
+// for why this matters more now that a second, unconditional automatic
+// caller (mark-generation-completed.js) exists alongside this endpoint's
+// own client-triggered, one-time-page-load-gated calls.
 //
 // BEST-EFFORT, SAME DISCIPLINE AS dream-webhook.js's sendReadyEmail /
 // request-password-reset.js: gated on RESEND_API_KEY being configured
@@ -90,7 +125,9 @@
 // password (state.accounts[key].password -- the same plaintext-local
 // account model every other DreamStore method already relies on), so
 // this adds no new UI prompt -- the legitimate caller already has it on
-// hand.
+// hand. (mark-generation-completed.js's automatic path needs no password
+// at all -- it resolves identity via lib/job-owners.js's server-issued
+// operationName binding instead, see that file's own header comment.)
 //
 // RATE LIMITING: a per-IP daily cap (lib/rate-limit.js, same helper
 // generate-video.js/account-login.js/submit-support-message.js already
@@ -104,7 +141,10 @@
 // single day (same two-bucket reasoning as account-login.js's own rate
 // limiting, simplified to per-IP only here since this isn't itself a
 // login endpoint -- a wrong guess here doesn't unlock anything beyond
-// this one email).
+// this one email). The automatic path (mark-generation-completed.js) has
+// its OWN, separate per-IP rate limit already (guarding against scripted
+// junk requests, not password-guessing, since it needs no password at
+// all) -- this endpoint's cap is unrelated to that one.
 //
 // Error codes (this file's own small namespace, matching
 // dream-webhook.js's bare-number convention for a small file, not
@@ -116,39 +156,8 @@
 //   E5 incorrect_password -- password present but didn't match this account
 
 var accountStore = require('./lib/account-store');
-var firstDreamEmailStore = require('./lib/first-dream-email-store');
-var dreamShareToken = require('./lib/dream-share-token');
+var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 var rateLimit = require('./lib/rate-limit');
-
-var RESEND_API_BASE = 'https://api.resend.com/emails';
-// Deliberately duplicated from dream-webhook.js's own identical constant
-// rather than extracted into a shared lib -- this task's own instructions
-// are explicit not to touch that file, and both are small, self-contained
-// per-file constants already (this codebase's established convention --
-// see request-password-reset.js's own identical FROM_ADDRESS constant).
-var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
-
-// Same style -> color mapping as js/store.js's STYLE_GRADIENTS, flattened
-// to a single flat hex for an email client (most email clients don't
-// render CSS gradients reliably, some strip <style> blocks entirely) --
-// this stands in for a real video-frame thumbnail, which this codebase
-// has no infrastructure to generate (no server-side video-frame
-// extraction anywhere) -- a real thumbnail is a separate, bigger project,
-// out of scope for "keep it simple" here. Falls back to Cinematic's own
-// color, same default gradientFor() in js/store.js uses.
-var STYLE_COLORS = {
-  Cartoon: '#FFB199',
-  Cinematic: '#22405c',
-  Anime: '#9F8FFF',
-  Realistic: '#2A2F4A'
-};
-function colorForStyle(style) {
-  return STYLE_COLORS[style] || STYLE_COLORS.Cinematic;
-}
-
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -214,49 +223,18 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'no_verified_email' }) };
     }
 
-    // Idempotency FIRST, before any send is attempted -- see header
-    // comment. A losing racer (the same cross-tab race
-    // markFirstVideoCreatedIfEligible already accepts) must never send.
-    var guard = await firstDreamEmailStore.markSentOnce(event, username, dreamId);
-    if (!guard.ok) {
-      return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'already_sent' }) };
-    }
-
-    var resendKey = process.env.RESEND_API_KEY;
-    if (!resendKey) {
-      console.log('send-first-dream-email: RESEND_API_KEY not configured -- skipping send for ' + username);
-      return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'no_resend_key' }) };
-    }
-
-    var token = await dreamShareToken.createToken(event, {
-      id: dreamId, ownerHandle: account.username, caption: caption, style: style, videoUrl: videoUrl, mediaType: mediaType
+    // The guard + actual send both live in the shared core now -- see
+    // lib/first-dream-email-sender.js's header comment for why (the exact
+    // same logic mark-generation-completed.js's automatic path calls, so
+    // the two trigger points can never race each other into a double-send).
+    await firstDreamEmailSender.sendIfEligible(event, {
+      username: account.username,
+      email: account.email,
+      dreamId: dreamId,
+      caption: caption,
+      style: style,
+      auto: false
     });
-    var watchUrl = dreamShareToken.buildUrl(event, dreamId, token);
-    var host = event.headers['x-forwarded-host'] || event.headers.host;
-    var createUrl = 'https://' + host + '/create.html';
-    var bannerColor = colorForStyle(style);
-
-    try {
-      var res = await fetch(RESEND_API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resendKey },
-        body: JSON.stringify({
-          from: FROM_ADDRESS,
-          to: [account.email],
-          subject: "Your dream is ready — here's your video",
-          html:
-            '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
-            '<div style="height:160px;border-radius:14px;background:' + bannerColor + ';margin-bottom:18px;"></div>' +
-            '<p style="font-size:16px;">Your dream is ready to watch' + (caption ? ': <b>' + esc(caption) + '</b>' : '.') + '</p>' +
-            '<p><a href="' + watchUrl + '" style="display:inline-block;padding:12px 22px;background:#000;color:#fff;border-radius:24px;text-decoration:none;font-weight:600;">Watch it</a></p>' +
-            '<p style="color:#666;font-size:13px;">Loved it? <a href="' + createUrl + '">Make another dream</a> — it only takes a minute.</p>' +
-            '</div>'
-        })
-      });
-      if (!res.ok) console.error('send-first-dream-email: Resend rejected the send', res.status);
-    } catch (sendErr) {
-      console.error('send-first-dream-email: Resend send failed (non-fatal)', sendErr);
-    }
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {

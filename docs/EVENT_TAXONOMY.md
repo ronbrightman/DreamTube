@@ -358,32 +358,51 @@ review round caught the dreamId-keying gap described above:**
 
 ### Retention email send — "your dream is ready" (first-dream retention email)
 
-Not a Meta/PostHog conversion event — a real EMAIL send point, included here
+Not a Meta/PostHog conversion event (though it DOES now fire its own PostHog
+event on an actual send, see below) — a real EMAIL send point, included here
 because it's triggered from the exact same choke point as `FirstVideoCreated`
 above and shares the same fire-once-per-account discipline, so it belongs in
 this index for anyone auditing that choke point (tracker.html's
 `for-product-retention-email-send-user-th-eke9ra` item, founder-greenlit
 2026-07-26 — "start now, before paywall — getting users back is valid now
-too"). Goal: day-1 -> day-2+ return.
+too"; ACTIVATED automatically 2026-07-27 per
+`for-product-activate-automatic-retention-4n74rw`, founder-approved — "start
+sending... AUTOMATICALLY... do not wait for manual triggering"). Goal: day-1
+-> day-2+ return.
+
+**Two trigger paths now feed the same guarded send** (`lib/first-dream-email-
+sender.js`'s `sendIfEligible`, wrapping `lib/first-dream-email-store.js`'s
+atomic per-account guard) — whichever reaches it first for a given account
+wins; the other is a harmless no-op:
 
 | | |
 |---|---|
-| **Trigger** | Same moment `FirstVideoCreated` fires — an account's first-ever completed dream **video** (mediaType scope matches `FirstVideoCreated`'s own — see below) shows on `result.html`, or finishes via `explore.html`'s resume-completion path |
-| **Fires from** | `js/store.js`'s `sendFirstDreamEmailBestEffort(dream)`, called from `result.html` and `explore.html`'s `fireFirstVideoCreatedIfEligible`, immediately after the `FirstVideoCreated` calls, both gated on the same `markFirstVideoCreatedIfEligible(dream.id)` check already having returned `true` — no separate eligibility check |
-| **What it does** | POSTs `{ username, password, dreamId, caption, style, videoUrl, mediaType }` to `netlify/functions/send-first-dream-email.js`, which first requires a real password re-check via `accountStore.verifyLogin` (review fix — since every account handle is public, a bare client-claimed username alone would let anyone spam a real stranger's inbox and permanently poison their guard below; `password` comes from this account's own already-cached local credential, no new re-auth prompt), then resolves the account's real, verified email from that same just-verified record (the client-supplied username is never trusted for the address itself, same pattern `submit-support-message.js` already established), and — gated on a durable, cross-device "already sent" flag (`lib/first-dream-email-store.js`, keyed per account, checked before send, only ever reached after the password check passes) — emails a Resend "your dream is ready" message: a style-colored banner (no real video-frame thumbnail infra exists, see that file's own comment), a "Watch it" link, and a soft nudge to make another dream |
-| **The watch link** | `explore.html?id=` only renders a dream already in the PUBLISHED shared feed — most first dreams are still private at send time, so this uses a new, separate mechanism: `lib/dream-share-token.js` mints a random, 30-day, account-scoped token (same generate/store-in-Blobs/verify shape as `lib/pending-dream-token.js`, but for an existing account's own already-real dream, not a pre-signup one) that lets a new page, `watch.html`, render that one dream via `get-shared-dream.js`, no login required |
-| **Media-type scope** | Video only — matches `markFirstVideoCreatedIfEligible`'s own existing scope (it already only counts a dream with a `videoUrl`), kept consistent rather than quietly broadened. An image-only first dream fires neither `FirstVideoCreated` nor this email today |
-| **Guard** | `lib/first-dream-email-store.js`'s `markSentOnce(event, username, dreamId)` — a durable, per-account, plain existence-check-then-write flag (same accepted-race shape as every other Blobs-backed store in this codebase), checked server-side BEFORE any send, so even the known client-side cross-tab race already accepted for `FirstVideoCreated` (see above) can send at most once — a losing racer's request always finds the flag already set |
-| **Never blocks** | Best-effort throughout, same discipline as `dream-webhook.js`'s `sendReadyEmail`/`request-password-reset.js` — no-ops (logged, not thrown) if `RESEND_API_KEY` isn't configured, if the account has no verified email on file, or if Resend itself rejects the send; never turns into a failure the generation-completion flow surfaces |
+| **Trigger (automatic, primary)** | `netlify/functions/mark-generation-completed.js` — the genuine, server-verified "a generation just finished" choke point for every normal signed-in generation path (no real fal webhook exists for this path — see that file's own header comment) — fires the instant `verifyOperationCompleted` confirms completion, independent of whether the browser ever loads `result.html` at all |
+| **Identity (automatic path)** | Resolved via `lib/job-owners.js`'s `getJobOwnerRecord(operationName)` (bound at generation-SUBMISSION time in `generate-video.js`/`generate-image.js`) → email → `accountStore.getByEmail`. No password, no client-claimed identity at all — ownership is proven by knowing the server-issued, unguessable, independently-re-verified `operationName` |
+| **Trigger (client fallback)** | Same moment `FirstVideoCreated` fires client-side — an account's first-ever completed dream **video** shows on `result.html`, or finishes via `explore.html`'s resume-completion path. Kept as a safety net for whatever the automatic path might miss (a legacy dream with no `sourceOperationName`, a lost `mark-generation-completed` request) |
+| **Fires from (client fallback)** | `js/store.js`'s `sendFirstDreamEmailBestEffort(dream)` → POSTs `{ username, password, dreamId, caption, style, videoUrl, mediaType }` to `netlify/functions/send-first-dream-email.js`, which requires a real password re-check via `accountStore.verifyLogin` before resolving the account's real email (review fix — a bare client-claimed username alone would let anyone spam a real stranger's inbox) |
+| **What it does** | Both paths call `lib/first-dream-email-sender.js`'s `sendIfEligible`, which — gated on the shared guard below — emails a Resend "your dream is ready" message: a style-colored banner (no real video-frame thumbnail infra exists), a "View my dreams" link to **`profile.html`** (founder decision 2026-07-27 — not a per-dream watch link), and a soft nudge to make another dream. The automatic path has no caption/style available at its choke point (see `mark-generation-completed.js`'s own comment on why), so it gets generic copy; the client fallback path still personalizes with the dream's own caption/style |
+| **The link** | Changed 2026-07-27 (founder decision): used to mint a `lib/dream-share-token.js` one-time-to-mint `watch.html` link for that one specific (possibly-private) dream. Now a plain, direct `https://<host>/profile.html` URL — no token needed, since profile.html is already an authenticated app page. `lib/dream-share-token.js`/`get-shared-dream.js`/`watch.html` are UNCHANGED and still independently functional/tested, just no longer linked from this email |
+| **Media-type scope** | Video only — matches `markFirstVideoCreatedIfEligible`'s own existing scope. The automatic path checks this via `job-owners.js`'s recorded `mediaType` (set at submission time in `generate-video.js`/`generate-image.js`) and fails CLOSED (no auto-send) if it's missing/unrecognized, never assuming 'video' |
+| **Guard** | `lib/first-dream-email-store.js`'s `markSentOnce(event, username, dreamId)` — a durable, per-account, now-**atomic** (`lib/blobs-retry.js`-backed, claimId read→mutate→write→verify) flag, checked server-side BEFORE any send. Tightened from a plain existence-check-then-write specifically because the automatic path fires unconditionally on every completion, not just a gated one-time page load — see that file's own header comment |
+| **PostHog event** | `first_dream_email_sent` (`distinct_id`: the account's raw username, `properties.auto`: true/false for which path sent it) — fired server-side via `lib/posthog-capture.js` ONLY on an actual send, never on a skip, so Growth can measure return-rate lift off a real "this account was emailed" signal |
+| **Never blocks** | Best-effort throughout, same discipline as `dream-webhook.js`'s `sendReadyEmail`/`request-password-reset.js` — no-ops (logged, not thrown) if `RESEND_API_KEY` isn't configured, if no real account resolves, or if Resend itself rejects the send; never turns into a failure the generation-completion flow surfaces |
 
-**Files touched:**
+**Files touched (2026-07-27 activation):**
 
-- `netlify/functions/lib/first-dream-email-store.js` — new, the per-account send-once guard
-- `netlify/functions/lib/dream-share-token.js` — new, the private-dream view token
-- `netlify/functions/send-first-dream-email.js` — new, the send endpoint
-- `netlify/functions/get-shared-dream.js` — new, resolves a share token for `watch.html`
-- `watch.html` — new, the unauthenticated dream-view landing page
-- `js/store.js` — new `sendFirstDreamEmailBestEffort(dream)`
+- `netlify/functions/lib/first-dream-email-store.js` — `markSentOnce` rewritten to use `lib/blobs-retry.js` for genuine atomicity
+- `netlify/functions/lib/first-dream-email-sender.js` — new, the shared guard+send core both trigger paths call
+- `netlify/functions/lib/job-owners.js` — `recordJobOwner` gained an optional `mediaType` param; new `getJobOwnerRecord`
+- `netlify/functions/generate-video.js` / `generate-image.js` — now record `mediaType` alongside the existing job-owner binding
+- `netlify/functions/mark-generation-completed.js` — new `maybeSendAutomaticFirstDreamEmail`, called after a verified completion
+- `netlify/functions/send-first-dream-email.js` — now delegates to the shared sender; link changed to `profile.html`
+
+**Files from the original 2026-07-26 feature (unchanged in shape, `dream-share-token.js`/`get-shared-dream.js`/`watch.html` just no longer linked from this email):**
+
+- `netlify/functions/lib/dream-share-token.js` — the private-dream view token
+- `netlify/functions/get-shared-dream.js` — resolves a share token for `watch.html`
+- `watch.html` — the unauthenticated dream-view landing page
+- `js/store.js` — `sendFirstDreamEmailBestEffort(dream)`
 - `result.html` / `explore.html` — call sites, right alongside the existing `FirstVideoCreated` ones
 
 ### ReachedEmailEntry / funnel_step_viewed(email_capture)

@@ -1,19 +1,31 @@
 // test/send-first-dream-email.test.js
 //
-// Covers the new retention-email feature (tracker.html's
-// for-product-retention-email-send-user-th-eke9ra item):
+// Covers the retention-email feature (tracker.html's
+// for-product-retention-email-send-user-th-eke9ra item, then
+// for-product-activate-automatic-retention-4n74rw):
 //   - netlify/functions/lib/first-dream-email-store.js: the durable,
-//     per-account "already sent" guard.
+//     per-account, now-atomic "already sent" guard.
 //   - netlify/functions/lib/dream-share-token.js: the private-dream view
-//     token (create/verify, mismatch/expiry rejection).
+//     token (create/verify, mismatch/expiry rejection) -- kept, unchanged,
+//     as its own independently-functional/tested piece of infra even
+//     though it's no longer linked from this email (see
+//     send-first-dream-email.js's own header comment on the 2026-07-27
+//     link change to profile.html).
 //   - netlify/functions/send-first-dream-email.js: validation, the
 //     account-store email resolution (never trusts a client-supplied
 //     email), the Resend send (mocked, same spy pattern as
 //     test/support-feedback.test.js/test/password-reset-account.test.js),
-//     the exactly-once-per-account guarantee, video-only scope, and per-IP
-//     rate limiting.
+//     the exactly-once-per-account guarantee, video-only scope, per-IP
+//     rate limiting, and the profile.html link.
 //   - netlify/functions/get-shared-dream.js: valid token renders the
 //     dream, wrong/missing/expired token doesn't leak anything.
+//
+// The AUTOMATIC trigger path (mark-generation-completed.js firing this
+// same send with no client involvement at all) has its own dedicated
+// coverage in test/automatic-first-dream-email.test.js -- kept separate
+// since it exercises a different file/identity-resolution path entirely,
+// even though both funnel into the same lib/first-dream-email-sender.js
+// core this file also exercises indirectly via the HTTP endpoint.
 // Run with: node --test test/
 
 var test = require('node:test');
@@ -43,10 +55,30 @@ function withEnv(vars, fn) {
     });
 }
 
-/** Spies on global.fetch (Resend) so tests never make a real network call — same convention as test/support-feedback.test.js's installFetchSpy(). */
+/**
+ * Spies on global.fetch (Resend) so tests never make a real network call —
+ * same convention as test/support-feedback.test.js's installFetchSpy(),
+ * extended (2026-07-27) to also swallow the 'first_dream_email_sent'
+ * PostHog capture call lib/first-dream-email-sender.js now fires on every
+ * actual send (POSTHOG_KEY is a real, hardcoded value — see
+ * js/analytics-config.js/lib/posthog-capture.js's own header comment —
+ * so without this, every send here would attempt a REAL network call to
+ * PostHog's live endpoint). Only Resend calls are recorded into the
+ * returned array — every assertion in this file cares about "how many
+ * emails were actually sent," not the separate PostHog analytics fire
+ * (which test/automatic-first-dream-email.test.js covers on its own),
+ * same split-by-URL convention test/dodo-webhook.test.js's
+ * installAnalyticsFetchSpy already established for its own two-vendor fire.
+ */
 function installFetchSpy(ok) {
   var calls = [];
   global.fetch = async function (url, opts) {
+    var urlStr = String(url);
+    if (urlStr.indexOf('/capture/') !== -1) {
+      // PostHog's capture endpoint -- swallowed, not recorded (see doc
+      // comment above).
+      return { ok: true, status: 200, json: async function () { return {}; } };
+    }
     calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null });
     return { ok: ok !== false, status: ok !== false ? 200 : 500, json: async function () { return {}; } };
   };
@@ -67,6 +99,7 @@ test.beforeEach(function () {
   delete require.cache[require.resolve('../netlify/functions/register-account')];
   delete require.cache[require.resolve('../netlify/functions/lib/account-store')];
   delete require.cache[require.resolve('../netlify/functions/lib/first-dream-email-store')];
+  delete require.cache[require.resolve('../netlify/functions/lib/first-dream-email-sender')];
   delete require.cache[require.resolve('../netlify/functions/lib/dream-share-token')];
   delete require.cache[require.resolve('../netlify/functions/lib/rate-limit')];
   delete process.env.MAX_FIRST_DREAM_EMAILS_PER_IP_PER_DAY;
@@ -123,6 +156,25 @@ test('first-dream-email-store: different accounts get independent guards', async
   var bob = await store.markSentOnce(event, 'bob', 'dream-b');
   assert.equal(alice.ok, true);
   assert.equal(bob.ok, true);
+});
+
+// CONCURRENCY (the part this task's own instructions called out as "most
+// worth getting right"): two genuinely concurrent claim attempts for the
+// SAME account must never both win -- same "Promise.all races step-by-
+// step exactly like two concurrent Netlify Function invocations would"
+// reasoning as test/session-transfer.test.js's own racing-consume test,
+// proving lib/blobs-retry.js's read->mutate->write->verify loop actually
+// closes this race rather than just asserting the code "looks" atomic.
+test('CONCURRENCY: first-dream-email-store: two concurrent markSentOnce calls for the SAME account -- exactly one wins, never both, never neither', async function () {
+  var store = require('../netlify/functions/lib/first-dream-email-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  var results = await Promise.all([
+    store.markSentOnce(event, 'raceraccount', 'dream-race-1'),
+    store.markSentOnce(event, 'raceraccount', 'dream-race-2')
+  ]);
+  var winCount = results.filter(function (r) { return r.ok === true; }).length;
+  assert.equal(winCount, 1, 'exactly one of the two racing claims must win -- a real winner must exist, and it must never be both');
 });
 
 // ===== lib/dream-share-token.js =====
@@ -193,7 +245,7 @@ test('dream-share-token: verifying again after a first read still works (revisit
 
 // ===== send-first-dream-email.js =====
 
-test('send-first-dream-email: a real registered account with a verified email gets sent the retention email, with a working watch link', function () {
+test('send-first-dream-email: a real registered account with a verified email gets sent the retention email, linking to profile.html', function () {
   return withEnv(ENV, async function () {
     await registerAccount('nora', 'nora@example.com');
     var sentCalls = installFetchSpy(true);
@@ -209,8 +261,10 @@ test('send-first-dream-email: a real registered account with a verified email ge
     assert.equal(sentCalls.length, 1, 'expected exactly one Resend send');
     assert.deepEqual(sentCalls[0].body.to, ['nora@example.com'], 'must send to the ACCOUNT\'S REAL email, resolved server-side');
     assert.match(sentCalls[0].body.subject, /ready/i);
-    assert.match(sentCalls[0].body.html, /watch\.html\?id=dream-1&token=/, 'body must contain a working watch link');
+    assert.match(sentCalls[0].body.html, /href="https:\/\/dreamtube1\.netlify\.app\/profile\.html"/, 'body must link to the account\'s own profile page (founder decision 2026-07-27), not a per-dream watch link');
+    assert.doesNotMatch(sentCalls[0].body.html, /watch\.html/, 'must not link to the old per-dream watch.html share link anymore');
     assert.match(sentCalls[0].body.html, /create\.html/, 'body must contain the soft "make another" nudge link');
+    assert.match(sentCalls[0].body.html, /Flying over the ocean/, 'the client-triggered fallback path still personalizes with the dream\'s own caption');
   });
 });
 
@@ -385,22 +439,26 @@ test('send-first-dream-email: per-IP rate limit blocks further sends from the sa
 });
 
 // ===== get-shared-dream.js =====
+//
+// send-first-dream-email.js no longer mints a dream-share-token at all
+// (see its own header comment on the 2026-07-27 profile.html link
+// change) -- these two tests used to go through that endpoint end-to-end,
+// but get-shared-dream.js/dream-share-token.js are unchanged, independent
+// infra, so they're exercised directly here instead (same shape the
+// dream-share-token.js unit tests above already use, one layer up through
+// the actual HTTP handler).
 
-test('get-shared-dream: end-to-end -- the link sent in the email actually resolves the dream', function () {
+test('get-shared-dream: end-to-end -- a minted share token resolves the exact dream it points at', function () {
   return withEnv(ENV, async function () {
-    await registerAccount('nora', 'nora@example.com');
-    var sentCalls = installFetchSpy(true);
-    var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
-    await sendHandler(fakeEvent({ method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' }, body: dreamPayload() }));
-
-    var html = sentCalls[0].body.html;
-    var match = /watch\.html\?id=([^&]+)&token=([a-f0-9]+)/.exec(html);
-    assert.ok(match, 'expected a watch.html link with an id and token in the sent email');
-    var id = decodeURIComponent(match[1]);
-    var token = match[2];
+    var dreamShareToken = require('../netlify/functions/lib/dream-share-token');
+    var event = fakeEvent({ method: 'POST', headers: { host: 'dreamtube1.netlify.app' } });
+    var token = await dreamShareToken.createToken(event, {
+      id: 'dream-1', ownerHandle: '@nora', caption: 'Flying over the ocean', style: 'Cinematic',
+      videoUrl: 'https://example.com/fake-video.mp4', mediaType: 'video'
+    });
 
     var getHandler = require('../netlify/functions/get-shared-dream').handler;
-    var res = await getHandler(fakeEvent({ method: 'GET', query: { id: id, token: token } }));
+    var res = await getHandler(fakeEvent({ method: 'GET', query: { id: 'dream-1', token: token } }));
     var data = JSON.parse(res.body);
     assert.equal(data.ok, true);
     assert.equal(data.dream.videoUrl, 'https://example.com/fake-video.mp4');
@@ -410,10 +468,9 @@ test('get-shared-dream: end-to-end -- the link sent in the email actually resolv
 
 test('get-shared-dream: a wrong token for a real id is rejected, no dream leaked', function () {
   return withEnv(ENV, async function () {
-    await registerAccount('nora', 'nora@example.com');
-    installFetchSpy(true);
-    var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
-    await sendHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload() }));
+    var dreamShareToken = require('../netlify/functions/lib/dream-share-token');
+    var event = fakeEvent({ method: 'POST' });
+    await dreamShareToken.createToken(event, { id: 'dream-1', videoUrl: 'https://example.com/fake-video.mp4' });
 
     var getHandler = require('../netlify/functions/get-shared-dream').handler;
     var res = await getHandler(fakeEvent({ method: 'GET', query: { id: 'dream-1', token: 'totally-wrong-token' } }));

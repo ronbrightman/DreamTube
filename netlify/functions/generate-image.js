@@ -204,10 +204,10 @@ var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
 
-/** Mirrors generate-video.js's own recordJobOwnerBestEffort exactly — see that function's doc comment and lib/job-owners.js's header comment for the full mechanism. */
+/** Mirrors generate-video.js's own recordJobOwnerBestEffort exactly — see that function's doc comment and lib/job-owners.js's header comment for the full mechanism. Records mediaType:'image' (this file's only kind) so mark-generation-completed.js can keep the first-dream retention email video-only when it fires automatically. */
 async function recordJobOwnerBestEffort(event, operationName, email) {
   try {
-    await jobOwners.recordJobOwner(event, operationName, email);
+    await jobOwners.recordJobOwner(event, operationName, email, 'image');
   } catch (e) {
     console.error('generate-image: failed to record job owner (refund auth binding) for ' + operationName + ' — a later refund attempt for this job will fail closed', e);
   }
