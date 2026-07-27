@@ -285,30 +285,42 @@ test('variant "b": a shared-feed fetch still in flight when the email step first
     await blockThirdParty(page);
 
     // The route handler below runs in this test process (Node), not in
-    // the browser -- so holding the real response back just means not
-    // calling route.fulfill() until this test explicitly does. This
-    // simulates a getSharedFeed() fetch that's still in flight when screen
-    // 13's email step first renders (a realistic race -- the fetch starts
-    // at script load, screens 9/11 may pass quickly) but has resolved by
-    // the time the visitor finishes typing their email and advances.
+    // the browser -- genuinely HOLDS the response until this test calls
+    // releaseFeed() (gated behind releaseFeedPromise, not fulfilled
+    // synchronously), simulating a getSharedFeed() fetch still in flight
+    // when screen 13's email step first renders (a realistic race -- the
+    // fetch starts at script load, screens 9/11 may pass quickly) but
+    // resolved by the time the visitor advances to the password step.
     var feedRequested;
     var feedRequestedPromise = new Promise(function (resolve) { feedRequested = resolve; });
+    var releaseFeed;
+    var releaseFeedPromise = new Promise(function (resolve) { releaseFeed = resolve; });
     await page.route('**/.netlify/functions/get-feed', function (route) {
       feedRequested();
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: [{ id: 'a', publishedAt: new Date().toISOString() }], dreamOfDayId: null }) });
+      releaseFeedPromise.then(function () {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: [{ id: 'a', publishedAt: new Date().toISOString() }], dreamOfDayId: null }) });
+      });
     });
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
-
-    // Wait for the fetch to genuinely resolve before advancing -- this is
-    // the case the fix is actually meant to cover: the SAME screen-13
-    // instance visits two internal renders (email step, then password
-    // step), and the fetch resolves somewhere in that window. The route
-    // above fulfills synchronously once requested, so awaiting the
-    // request itself is enough for the response (and the app's own
-    // .then() that sets dreamsThisMonthCount) to have landed.
     await feedRequestedPromise;
-    await page.waitForTimeout(100); // give the app's .then() a moment to actually set dreamsThisMonthCount
+
+    // Prove the pending state is real -- the email step's own first
+    // render must show no proof strip while the fetch is still
+    // deliberately held open. Without this assertion, the test couldn't
+    // tell "fix present" apart from "fetch happened to already be
+    // resolved," which is exactly the gap the round-2 review found.
+    var proofStripBefore = await page.$$eval('.fn-proof-strip', function (els) { return els.length; });
+    assert.equal(proofStripBefore, 0, 'expected no proof strip on the email step while the feed fetch is still deliberately unresolved');
+
+    // Now let the response land, and wait on the actual network event
+    // (not a blind sleep) before advancing -- plus one macrotask tick so
+    // the page's own fetch().then() chain (JSON parsing, setting
+    // dreamsThisMonthCount) has drained before the next action.
+    var responsePromise = page.waitForResponse('**/.netlify/functions/get-feed');
+    releaseFeed();
+    await responsePromise;
+    await page.evaluate(function () { return new Promise(function (resolve) { setTimeout(resolve, 0); }); });
 
     await page.fill('#fn-email', 'race-feed-resolve@example.com');
     await page.click('#fn-s13-email-continue');
@@ -317,7 +329,8 @@ test('variant "b": a shared-feed fetch still in flight when the email step first
     // The password step's OWN render (triggered by the click above, well
     // after the fetch resolved) must show the proof strip -- this only
     // works if the fix recomputes it fresh on that render rather than
-    // reusing whatever was cached from the email step's earlier render.
+    // reusing whatever was cached (or absent) from the email step's
+    // earlier render.
     await page.waitForSelector('.fn-proof-strip', { timeout: 5000 });
     var proofText = await page.textContent('.fn-proof-strip');
     assert.match(proofText, /1 dream brought to life this month/, 'expected the password step\'s own render to pick up the now-resolved count, not a stale value cached from the email step');
