@@ -113,6 +113,34 @@
         <div id="admin-rename-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Diagnose rename conflict (tracker.html's
+           for-product-rename-dry-run-refused-u-ron-rd0sm9 item): the dry
+           run above correctly refused because u:ronbrightman already exists
+           as a SEPARATE account from u:__probe_throwaway_user__, but its own
+           E8 response deliberately reveals nothing about whose account that
+           is or what either account holds. Calls
+           admin-diagnose-rename-conflict.js -- a READ-ONLY sibling endpoint,
+           same real-password owner gate as the rename tool above, but this
+           one makes no writes at all, under any code path. It reports each
+           account's on-file email, token balance, and published-dream
+           count so the founder can tell whether both accounts really are
+           his (safe to plan a data-preserving merge) or whether
+           u:ronbrightman is an unrelated real user (a different, more
+           careful plan needed) -- see the tracker item for the decision
+           this diagnostic feeds into. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Diagnose rename conflict</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Check both accounts (read-only)</div>
+          <div class="admin-row-sub">Calls admin-diagnose-rename-conflict.js. Looks up u:__probe_throwaway_user__ and u:ronbrightman (email, token balance, published-dream count) and the ronbrightman@gmail.com email index. Makes no changes of any kind.</div>
+        </div>
+        <input class="field" id="admin-diagnose-source" type="text" placeholder="Username or email (for password check)" value="__probe_throwaway_user__" autocomplete="off" dir="auto">
+        <input class="field" id="admin-diagnose-password" type="password" placeholder="That account's real password" autocomplete="current-password">
+        <button type="button" class="btn btn-primary btn-block" id="admin-diagnose-submit">Diagnose</button>
+        <div class="err-text" id="admin-diagnose-error" style="margin-top:4px;"></div>
+        <div id="admin-diagnose-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -375,6 +403,83 @@
         renameSubmitBtn.disabled = false;
         renameDryRunToggle.classList.remove('disabled');
         renameErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
+      });
+  });
+
+  // ===== Diagnose rename conflict (admin-diagnose-rename-conflict.js) =====
+  var diagnoseSourceEl = document.getElementById('admin-diagnose-source');
+  var diagnosePasswordEl = document.getElementById('admin-diagnose-password');
+  var diagnoseSubmitBtn = document.getElementById('admin-diagnose-submit');
+  var diagnoseErrorEl = document.getElementById('admin-diagnose-error');
+  var diagnoseResultEl = document.getElementById('admin-diagnose-result');
+
+  var DIAGNOSE_ERROR_COPY = {
+    'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+    'E4: missing_fields': 'Enter a username/email and password.',
+    'E5: forbidden': "Couldn't verify — check the username/email and password (must be the account owner's real credentials)."
+  };
+
+  function formatDiagnoseAccount(label, summary) {
+    if (!summary.exists) {
+      return label + ': does not exist.';
+    }
+    var lines = [
+      label + ': ' + summary.username + ' (' + summary.email + ')',
+      '  token balance: ' + (summary.tokenBalance === null ? 'unknown' : summary.tokenBalance),
+      '  published dreams: ' + summary.publishedDreamCount +
+        (summary.publishedDreamIds && summary.publishedDreamIds.length ? ' (' + summary.publishedDreamIds.join(', ') + ')' : ''),
+      '  private dreams/characters: not visible server-side (browser-local only)'
+    ];
+    if (summary.renamedFrom) lines.push('  renamedFrom: ' + summary.renamedFrom);
+    return lines.join('\n');
+  }
+
+  function renderDiagnoseResult(data) {
+    diagnoseResultEl.style.display = 'block';
+    if (!data.ok) {
+      diagnoseResultEl.textContent = '';
+      diagnoseResultEl.style.display = 'none';
+      diagnoseErrorEl.textContent = DIAGNOSE_ERROR_COPY[data.error] || (data.error && data.error.indexOf('E6') === 0 ? data.error.replace(/^E6:\s*/, '') : (data.error || "Something went wrong — try again."));
+      return;
+    }
+    diagnoseErrorEl.textContent = '';
+    var lines = [
+      formatDiagnoseAccount('__probe_throwaway_user__', data.accounts.probe),
+      '',
+      formatDiagnoseAccount('ronbrightman', data.accounts.target),
+      '',
+      'Email index (e:' + data.ownerEmail + ') points at: ' + (data.emailIndex.rawTarget || 'nothing'),
+      'Validated resolution: ' + (data.emailIndex.resolvesToRecord ? data.emailIndex.resolvesToRecord.username : 'none (stale/missing index)')
+    ];
+    diagnoseResultEl.textContent = lines.join('\n');
+  }
+
+  diagnoseSubmitBtn.addEventListener('click', function () {
+    diagnoseErrorEl.textContent = '';
+    var usernameOrEmail = diagnoseSourceEl.value.trim();
+    var password = diagnosePasswordEl.value;
+    if (!usernameOrEmail || !password) {
+      diagnoseErrorEl.textContent = 'Enter a username/email and password.';
+      return;
+    }
+
+    diagnoseSubmitBtn.disabled = true;
+
+    fetch('/.netlify/functions/admin-diagnose-rename-conflict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        diagnoseSubmitBtn.disabled = false;
+        renderDiagnoseResult(result.data);
+      })
+      .catch(function () {
+        diagnoseSubmitBtn.disabled = false;
+        diagnoseErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
       });
   });
 </script>
