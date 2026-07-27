@@ -1349,7 +1349,7 @@ test('pricing screen (14, now the token intro): Continue advances to the confirm
   }
 });
 
-test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullets + token-math card + "coming soon" pack pricing) is gone, replaced with one short beta message, with no plan cards or payment/checkout language left behind', async function (t) {
+test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullets + token-math card + "coming soon" pack pricing) is gone, replaced with one short signup-grant message, with no "beta" framing, plan cards, or payment/checkout language left behind', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -1360,8 +1360,16 @@ test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullet
     await page.waitForSelector('.fn-token-free-card', { timeout: 5000 });
 
     var cardText = await page.textContent('.fn-token-free-card');
-    assert.match(cardText, /still in beta/i, 'expected the simple beta message');
-    assert.match(cardText, /free to try/i);
+    // Store-launch copy sweep (tracker item
+    // for-product-store-launch-copy-sweep-purc-m6xhkx): "Still in beta" /
+    // "Free to try and enjoy right now" is gone -- a real, live
+    // contradiction once Dodo Payments checkout actually went live.
+    // Replaced with the real signup grant (220 tokens, matching
+    // lib/entitlements.js's INITIAL_GRANT and wizard.html's own
+    // renderSignup screen). "No card needed" is still accurate and kept.
+    assert.doesNotMatch(cardText, /still in beta/i, 'the beta framing must be gone now that the store is live');
+    assert.match(cardText, /free to start/i);
+    assert.match(cardText, /220 tokens/i, 'should state the real signup grant, matching entitlements.js\'s INITIAL_GRANT');
     assert.match(cardText, /no card needed/i);
 
     var bodyText = await page.textContent('#app');
@@ -1754,7 +1762,12 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
 // explicit "free during beta, no card needed" framing (most of that turned
 // out to already be shipped by the token-economy pivot -- these tests cover
 // the specific gaps that were still open: the email-ask reassurance line,
-// and the beta-free framing on shop.html/style.html's out-of-tokens modal).
+// and (at the time) the beta-free framing on shop.html/style.html's
+// out-of-tokens modal). The shop.html banner test below is since rewritten
+// again -- the store-launch copy sweep (tracker item
+// for-product-store-launch-copy-sweep-purc-m6xhkx) replaced that "beta"
+// framing entirely once the store actually went live (2026-07-27), since
+// by then it was a real, live contradiction, not just get-ahead-of-it copy.
 // ===========================================================================
 
 test('email capture screen (13) shows the reassurance microcopy explaining why email is asked', async function (t) {
@@ -1802,27 +1815,45 @@ test('login.html signup mode shows the same email reassurance microcopy, hidden 
   }
 });
 
-test('shop.html leads with an explicit "Free during beta, no card needed" banner', async function (t) {
+test('shop.html leads with the real per-generation cost line, not stale "beta"/"nothing to buy" framing', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
     await seedLoggedInUserAt(page, baseUrl, 'shopbetatester', '/shop.html');
-    await page.waitForSelector('#shop-beta-banner', { timeout: 5000 });
+    await page.waitForSelector('#shop-cost-banner', { timeout: 5000 });
 
-    var bannerText = await page.textContent('#shop-beta-banner');
-    assert.match(bannerText, /free during beta/i);
-    assert.match(bannerText, /no card needed/i);
+    var bannerText = await page.textContent('#shop-cost-banner');
+    // Store-launch copy sweep (tracker item
+    // for-product-store-launch-copy-sweep-purc-m6xhkx): "Free during
+    // beta -- no card needed" / "nothing to buy right now" directly
+    // contradicted the three live Buy buttons right below it once Dodo
+    // Payments checkout actually went live -- replaced with the real
+    // cost facts (must match lib/entitlements.js's real
+    // VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_GRANT_AMOUNT/
+    // GRANT_CEILING, not stale/guessed numbers).
+    assert.doesNotMatch(bannerText, /free during beta/i, 'the beta framing must be gone now that the store is live');
+    assert.doesNotMatch(bannerText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- three live packs are right below it');
+    assert.match(bannerText, /100 tokens/i, 'should state the real video cost');
+    assert.match(bannerText, /10\b/, 'should state the real image cost');
+    assert.match(bannerText, /free/i, 'should still mention the free daily grant exists');
 
-    // Token packs are real, live purchases now (Dodo Payments, merged
-    // 2026-07-24 per Ron's explicit go-ahead) -- see
-    // test/shop-behavioral.test.js for full "Buy" button coverage. This
-    // banner's own job is just making sure a beta user reads the free
-    // tier as the default, not a wall -- the packs being real doesn't
-    // change that framing (see "Token packs (optional)" label above them).
-    assert.match(bannerText, /nothing to buy right now/i);
+    // Token packs are real, live purchases (Dodo Payments) -- see
+    // test/shop-behavioral.test.js for full "Buy" button coverage, and
+    // the "promoted to primary" assertion below (same tracker item --
+    // the buttons were still styled as de-emphasized/secondary from the
+    // beta era even after Dodo checkout went live).
+    var buttonClasses = await page.getAttribute('#shop-buy-pack100', 'class');
+    assert.match(buttonClasses, /\bbtn-primary\b/, 'buy buttons must be promoted to primary styling now that the store is live');
+    assert.doesNotMatch(buttonClasses, /\bbtn-secondary\b/);
+
+    var trustLine = await page.textContent('#shop-trust-line');
+    assert.match(trustLine, /Dodo Payments/i);
+    assert.match(trustLine, /one-time purchase/i);
+    assert.match(trustLine, /no subscription/i);
+    assert.match(trustLine, /receipt/i);
   } finally {
     await context.close();
   }
@@ -2069,6 +2100,52 @@ test('profile.html: a balance just under the ceiling (199) still shows a normal 
     var meta = await page.textContent('#profile-tokens-meta');
     assert.doesNotMatch(meta, /paused/i, 'a below-ceiling balance must show the real countdown, not the at-ceiling copy');
     assert.match(meta, /\+20 in/, 'should show the normal live countdown');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Media-aware low-balance label (hardening fix, tracker item
+// for-product-store-launch-copy-sweep-purc-m6xhkx): profile.html used to
+// flatly label any balance under 100 (VIDEO_TOKEN_COST) as "Out of tokens",
+// even though a balance of, say, 50 can still afford the 10-token image
+// path -- literally false for that user. Fixed to distinguish "genuinely
+// can't afford anything" (< IMAGE_TOKEN_COST, 10) from "can't afford a
+// video but can still afford an image" (>= 10, < 100), which now reads
+// "Low" instead.
+// ===========================================================================
+
+test('profile.html: a balance that can still afford an image (e.g. 50) shows "Low", not "Out of tokens"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await seedLoggedInUserAt(page, baseUrl, 'lowbalanceimageok', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var meta = await page.textContent('#profile-tokens-meta');
+    assert.doesNotMatch(meta, /out of tokens/i, 'a balance that can still afford a 10-token image must not claim the user is entirely out of tokens');
+    assert.match(meta, /low/i, 'should read as "Low" instead');
+  } finally {
+    await context.close();
+  }
+});
+
+test('profile.html: a balance that can\'t even afford an image (e.g. 5) still shows "Out of tokens"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await seedLoggedInUserAt(page, baseUrl, 'trulyoutoftokens', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var meta = await page.textContent('#profile-tokens-meta');
+    assert.match(meta, /out of tokens/i, 'a balance below even the cheapest generation type is genuinely out of tokens');
   } finally {
     await context.close();
   }
