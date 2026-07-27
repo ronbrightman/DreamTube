@@ -131,15 +131,25 @@
          below is unchanged from before this redesign). Delete used to
          live here too but the founder flagged it as reading like a
          recommended action on the live page (it was never in the approved
-         mock) — it now lives as a small red text link at the bottom of
-         the Edit sheet instead (#edit-delete-link below), matching the
-         existing char-delete-link pattern. See
-         tracker.html's for-product-result-screen-delete-is-too--6axxko. -->
-    <div class="result-quiet-links">
-      <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
-      <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
-      <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
-      <button class="result-quiet-link" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
+         mock) — it briefly moved into the Edit sheet as a small red text
+         link instead, but that made it too buried (founder feedback,
+         tracker.html's no-delete-video-2rlysi). It now lives in the small
+         overflow (⋯) menu just to the right of this row instead — reachable
+         in one tap from this screen, without being a 5th quiet-link button
+         (would recreate the original "too prominent" complaint). See
+         tracker.html's for-product-result-screen-delete-is-too--6axxko and
+         no-delete-video-2rlysi. -->
+    <div class="result-actions-wrap">
+      <div class="result-quiet-links">
+        <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
+        <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+        <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
+        <button class="result-quiet-link" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
+      </div>
+      <button class="result-more-trigger" id="result-more-btn" title="More options" aria-haspopup="true" aria-expanded="false"><span class="icon" id="result-more-icon"></span></button>
+      <div class="result-more-menu" id="result-more-menu">
+        <button type="button" class="result-more-menu-item" id="overflow-delete-link">Delete this dream</button>
+      </div>
     </div>
   </div>
 
@@ -221,13 +231,13 @@
       <button class="btn btn-primary btn-block" id="edit-generate-again">Generate Again</button>
       <div style="height:10px;"></div>
       <span class="link-text" id="edit-cancel" style="cursor:pointer;">Cancel</span>
-      <div style="height:8px;"></div>
-      <!-- Deletion is an edit-your-content concern, not a primary/
-           recommended action, so it lives here rather than in the bottom
-           action bar (founder feedback on the live redesign, 2026-07-27 —
-           see tracker.html's for-product-result-screen-delete-is-too--6axxko).
-           Same quiet small-red-text-link treatment as char-delete-link. -->
-      <span class="link-text" id="edit-delete-link" style="cursor:pointer; color:var(--danger);">Delete this dream</span>
+      <!-- Delete used to live here as a small red text link (founder
+           feedback on the live redesign, 2026-07-27 -- see tracker.html's
+           for-product-result-screen-delete-is-too--6axxko) but that turned
+           out to be too buried -- opening Edit then scrolling to find it.
+           It now lives in the overflow (⋯) menu on the main result screen
+           instead (see #result-more-btn / #overflow-delete-link above the
+           script section). See tracker.html's no-delete-video-2rlysi. -->
     </div>
   </div>
 
@@ -352,6 +362,7 @@
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
+  document.getElementById('result-more-icon').innerHTML = Icons.moreHoriz;
   document.getElementById('turn-video-icon').innerHTML = Icons.video;
   document.getElementById('interp-lock-icon').innerHTML = Icons.lock;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
@@ -1115,18 +1126,56 @@
     }
   });
 
-  // Relocated from the bottom action bar (was #delete-btn) into the Edit
-  // sheet as a quiet red text link -- founder feedback 2026-07-27, see
-  // tracker.html's for-product-result-screen-delete-is-too--6axxko. The
-  // confirmation modal and its copy are unchanged; only the entry point
-  // moved, so close the Edit sheet first to keep the confirmation modal
-  // as the sole focus rather than stacking it over the still-open sheet.
-  document.getElementById('edit-delete-link').addEventListener('click', function(){
+  // ===== Overflow ("more options") menu -- houses Delete =====
+  // First moved from the bottom action bar (was #delete-btn) into the Edit
+  // sheet as a quiet red text link (founder feedback 2026-07-27, see
+  // tracker.html's for-product-result-screen-delete-is-too--6axxko), then
+  // moved AGAIN here -- founder feedback that the Edit-sheet placement was
+  // too buried (open Edit, then scroll to the bottom to find it). See
+  // tracker.html's no-delete-video-2rlysi. This small kebab trigger + menu
+  // is the OTHER placement that original tracker item explicitly offered
+  // ("house it inside the Edit sheet... or an overflow menu"), so this is a
+  // relocation of the entry point only -- the confirmation modal, its copy,
+  // and DreamStore.deleteDream + navigate-to-profile.html below are all
+  // byte-for-byte the same logic as before.
+  var moreBtn = document.getElementById('result-more-btn');
+  var moreMenu = document.getElementById('result-more-menu');
+  function closeMoreMenu(){
+    moreMenu.classList.remove('open');
+    moreBtn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleMoreMenu(){
+    var isOpen = moreMenu.classList.contains('open');
+    if(isOpen){
+      closeMoreMenu();
+    } else {
+      moreMenu.classList.add('open');
+      moreBtn.setAttribute('aria-expanded', 'true');
+    }
+  }
+  moreBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    toggleMoreMenu();
+  });
+  // Closes on any outside tap -- the menu has no dedicated overlay/backdrop
+  // (it's a tiny popover, not a sheet), so a plain document-level listener
+  // is the simplest way to dismiss it like any native overflow menu.
+  document.addEventListener('click', function(e){
+    if(moreMenu.classList.contains('open') && e.target !== moreBtn && !moreMenu.contains(e.target) && !moreBtn.contains(e.target)){
+      closeMoreMenu();
+    }
+  });
+  document.getElementById('overflow-delete-link').addEventListener('click', function(){
     // Deleting a published dream also unpublishes it (DreamStore.deleteDream
     // calls removePublishedDreamFromFeed) -- that's real, existing behavior,
     // but the generic delete warning never said so. A published dream gets
     // an extended, explicit warning about the Explore-removal side effect
     // instead of just the generic "can't be undone" copy.
+    closeMoreMenu();
+    // The Edit sheet is no longer reachable from here, but close it too in
+    // case it's somehow still open -- same discipline as the prior fix, so
+    // the confirmation modal is always the sole focus, never stacked over
+    // another open sheet.
     closeSheet('edit');
     document.getElementById('delete-modal-body').textContent = dream.isPublished
       ? "This can't be undone — the video and caption will be gone for good, and since this dream is public, it'll also be removed from Explore immediately."

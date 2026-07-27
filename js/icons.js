@@ -124,6 +124,16 @@
     // item). Standard two-overlapping-rectangles copy glyph, no existing
     // icon in this file fit, confirmed by grep — same 24x24/currentColor/
     // stroke-only convention as every other entry here.
-    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
+    // Added for result.html's overflow ("more options") menu trigger that
+    // now houses Delete (tracker.html's no-delete-video-2rlysi, reverting
+    // the earlier Edit-sheet placement per founder feedback that it was too
+    // buried there). Standard horizontal-kebab/ellipsis glyph -- three
+    // evenly-spaced filled dots -- no existing icon in this file fit,
+    // confirmed by grep. Same 24x24/currentColor convention as every other
+    // entry here, filled rather than stroked since dots this small don't
+    // read cleanly as outlines.
+    moreHoriz: svg('<circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/>')
   };
 })();

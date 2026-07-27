@@ -675,14 +675,15 @@ test('result.html redesign: Edit / Publish / Make another / Save all still trigg
       assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
     }
     var quietLinkCount = await page.locator('.result-quiet-links button').count();
-    assert.equal(quietLinkCount, 4, 'the bottom quiet-link row should have exactly 4 buttons, no more');
+    assert.equal(quietLinkCount, 4, 'the bottom quiet-link row should have exactly 4 buttons, no more -- Delete lives in the separate overflow trigger, not as a 5th quiet-link');
 
     // Regression check for tracker.html's
-    // for-product-result-screen-delete-is-too--6axxko: a bare #delete-btn
-    // must not exist ANYWHERE on the page (not just hidden/moved within the
-    // bottom bar) -- it was fully relocated into the Edit sheet.
+    // for-product-result-screen-delete-is-too--6axxko / no-delete-video-2rlysi:
+    // a bare #delete-btn must not exist ANYWHERE on the page (not just
+    // hidden/moved within the bottom bar) -- it was fully relocated, first
+    // into the Edit sheet, then into the #result-more-btn overflow menu.
     var deleteBtnCount = await page.locator('#delete-btn').count();
-    assert.equal(deleteBtnCount, 0, '#delete-btn should not exist anywhere on the page -- Delete moved into the Edit sheet');
+    assert.equal(deleteBtnCount, 0, '#delete-btn should not exist anywhere on the page -- Delete now lives behind the overflow menu');
 
     // Edit still opens the edit sheet.
     await page.click('#open-edit-sheet');
@@ -712,27 +713,50 @@ test('result.html redesign: Edit / Publish / Make another / Save all still trigg
   }
 });
 
-test('result.html: Delete now lives as a small red text link at the bottom of the Edit sheet, reads as an edit-your-content concern, and still runs the exact same confirm-then-delete flow', async function (t) {
+test('result.html: Delete now lives behind a small overflow (⋯) menu on the main result screen -- reachable in one tap, not a 5th quiet-link, and still runs the exact same confirm-then-delete flow', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var dreamId = 'd-edit-sheet-delete-test';
+    var dreamId = 'd-overflow-delete-test';
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Not reachable from the bottom bar at all.
-    var deleteInQuietLinks = await page.locator('.result-quiet-links #edit-delete-link').count();
-    assert.equal(deleteInQuietLinks, 0, 'the delete link must not live in the bottom quiet-link row');
+    // No stray reference to the old Edit-sheet entry point anywhere on the
+    // page -- it was fully relocated, not just hidden.
+    var editDeleteLinkCount = await page.locator('#edit-delete-link').count();
+    assert.equal(editDeleteLinkCount, 0, '#edit-delete-link should not exist anywhere on the page -- Delete relocated to the overflow menu');
+    assert.ok(!/edit-delete-link/.test(await page.content()), 'no leftover "edit-delete-link" id/reference anywhere in the rendered page markup');
 
-    // Open the Edit sheet -- the link lives inside it, styled as a quiet
-    // red text link (matching the existing char-delete-link treatment),
-    // not a button, and not visually competing with Generate Again/Cancel.
-    await page.click('#open-edit-sheet');
-    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
-    var deleteLink = page.locator('#sheet-edit-overlay #edit-delete-link');
-    assert.ok(await deleteLink.isVisible(), '#edit-delete-link should be visible inside the Edit sheet');
+    // The trigger is a small icon-only kebab button, not a labeled
+    // quiet-link -- confirm it lives outside .result-quiet-links (so it
+    // never gets counted among the 4 quiet-link buttons) and is not itself
+    // inside the Edit sheet.
+    var moreBtnInQuietLinks = await page.locator('.result-quiet-links #result-more-btn').count();
+    assert.equal(moreBtnInQuietLinks, 0, 'the overflow trigger must not live inside .result-quiet-links -- would recreate the "too prominent" complaint');
+    var moreBtnInEditSheet = await page.locator('#sheet-edit-overlay #result-more-btn').count();
+    assert.equal(moreBtnInEditSheet, 0, 'the overflow trigger must live on the main screen, not inside the Edit sheet');
+    assert.ok(await page.locator('#result-more-btn').isVisible(), '#result-more-btn (the kebab trigger) should be visible on the main result screen');
+
+    // Menu starts closed.
+    var menuOpenInitially = await page.evaluate(function () {
+      return document.getElementById('result-more-menu').classList.contains('open');
+    });
+    assert.equal(menuOpenInitially, false, 'the overflow menu should start closed');
+    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'false');
+
+    // Tapping the kebab reveals the menu with exactly one item: Delete,
+    // styled in the app's danger/red color (same convention as
+    // char-delete-link).
+    await page.click('#result-more-btn');
+    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
+    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'true');
+    var menuItemCount = await page.locator('#result-more-menu button').count();
+    assert.equal(menuItemCount, 1, 'the overflow menu should have exactly one item');
+    var deleteLink = page.locator('#overflow-delete-link');
+    assert.ok(await deleteLink.isVisible(), '#overflow-delete-link should be visible once the menu is open');
+    assert.equal(await deleteLink.textContent(), 'Delete this dream');
     var deleteLinkColor = await deleteLink.evaluate(function (el) { return getComputedStyle(el).color; });
     var dangerColor = await page.evaluate(function () {
       return getComputedStyle(document.documentElement).getPropertyValue('--danger').trim();
@@ -747,14 +771,24 @@ test('result.html: Delete now lives as a small red text link at the bottom of th
       d.remove();
       return rgb;
     }, dangerColor);
-    assert.equal(deleteLinkColor, dangerColorRgb, 'the delete link should render in the app\'s danger/red color');
+    assert.equal(deleteLinkColor, dangerColorRgb, 'the delete item should render in the app\'s danger/red color, matching the existing char-delete-link convention');
 
-    // Tapping it closes the Edit sheet and opens the SAME delete
-    // confirmation modal -- same copy, same Cancel/Delete buttons -- just
-    // reached from the new location.
-    await deleteLink.click();
+    // Tapping outside the open menu dismisses it without doing anything else.
+    await page.click('#result-quote');
     await page.waitForFunction(function () {
-      var el = document.getElementById('sheet-edit-overlay');
+      var el = document.getElementById('result-more-menu');
+      return el && !el.classList.contains('open');
+    }, null, { timeout: 5000 });
+    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'false');
+
+    // Reopen and tap Delete -- closes the overflow menu and opens the SAME
+    // delete confirmation modal -- same copy, same Cancel/Delete buttons --
+    // just reached from the new location.
+    await page.click('#result-more-btn');
+    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
+    await page.click('#overflow-delete-link');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('result-more-menu');
       return el && !el.classList.contains('open');
     }, null, { timeout: 5000 });
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
@@ -775,9 +809,9 @@ test('result.html: Delete now lives as a small red text link at the bottom of th
     // Go through the flow again and actually confirm -- the real deletion
     // mechanics (DreamStore.deleteDream + navigation to profile.html) must
     // be untouched, not rebuilt, by the relocation.
-    await page.click('#open-edit-sheet');
-    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
-    await page.click('#edit-delete-link');
+    await page.click('#result-more-btn');
+    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
+    await page.click('#overflow-delete-link');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     await page.click('#delete-confirm');
     await page.waitForURL(/profile\.html/, { timeout: 5000 });
@@ -792,13 +826,13 @@ test('result.html: Delete now lives as a small red text link at the bottom of th
   }
 });
 
-test('result.html: deleting a published dream from the relocated Edit-sheet link still shows the extended Explore-removal warning (unchanged copy)', async function (t) {
+test('result.html: deleting a published dream from the overflow menu still shows the extended Explore-removal warning (unchanged copy)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var dreamId = 'd-edit-sheet-delete-published-test';
+    var dreamId = 'd-overflow-delete-published-test';
     await seedResultPage(page, baseUrl, dreamId);
     await page.evaluate(function (id) {
       var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
@@ -808,9 +842,9 @@ test('result.html: deleting a published dream from the relocated Edit-sheet link
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    await page.click('#open-edit-sheet');
-    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
-    await page.click('#edit-delete-link');
+    await page.click('#result-more-btn');
+    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
+    await page.click('#overflow-delete-link');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     assert.match(await page.textContent('#delete-modal-body'), /removed from Explore immediately/, 'a published dream should still get the extended warning copy');
   } finally {
