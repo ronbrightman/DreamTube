@@ -325,6 +325,24 @@ review surface (the tracker doesn't push notifications; it's a mailbox you check
    not a one-off. Applies to both sessions on any item they hand back to
    him for a real decision.
 
+**[Growth] Broken conversion data poisons the optimizer's prior — switching to a
+healthy event can beat fixing the broken one (Learned from Ron 2026-07-27).** When
+an optimization event fires but doesn't attribute (ReachedEmailEntry fired ~47/day
+yet Meta credited ~0 to the campaign), the reflex is to fix the data flow. But a
+fix only helps GOING FORWARD: every past non-attributed fire stays in Meta's model
+as a click that didn't convert — a poisoned prior — so even once fixed the event
+restarts cold with a negative history. CompleteRegistration, by contrast, already
+had clean attributed history in the pixel (~18/wk), so switching the ad set to
+optimize IT gave Meta a retroactive WARM start on the real business goal. Ron saw
+this; the session had tunneled on "diagnose and fix the broken metric" (engineer
+reflex) and missed the reframe. Durable rule: when a tracked/optimization event is
+broken, weigh (clean existing attributed history of a healthy alternate event)
+against (cold restart + poisoned prior of the fixed event) — platform ML optimizes
+off historical attributed volume, which is retroactive, so routing around broken
+data often beats repairing it. Step up to the actual objective before defaulting to
+fix the local data bug. (Mirrored from the growth session; kept here because both
+sessions touch Pixel/CAPI/optimization.)
+
 ## Improvement cycle (cadence)
 
 Run the reflection pass **after each significant change — especially ones that
