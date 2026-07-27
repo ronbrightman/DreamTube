@@ -307,6 +307,21 @@ async function performRename(event, ownerEmail, dryRun) {
     // run (createAccount's own email-uniqueness check rules out two
     // genuinely different accounts sharing this email). Finish the
     // remaining steps rather than refusing.
+    //
+    // KNOWN, ACCEPTED EDGE CASE: the resumed path intentionally reuses
+    // targetRecord AS-IS (including its password) rather than re-deriving
+    // it from sourceRecord -- so if a password reset were applied to the
+    // source account IN BETWEEN an interrupted first call (the one that
+    // wrote this target record) and this resuming retry, the account
+    // would end up under the STALE password from the first call, not the
+    // fresher one on the source record. Not worth guarding against for a
+    // single planned invocation against a real, known-quiet throwaway
+    // account (no password reset is expected to land in the gap between
+    // two calls of the SAME one-off script, seconds to minutes apart at
+    // most) -- flagged here rather than fixed, since handling it would
+    // mean deciding which of two divergent passwords is "right" with no
+    // real signal to go on, for a scenario this specific operation is not
+    // expected to ever actually hit.
     status = 'resumed';
   } else {
     status = 'renamed';

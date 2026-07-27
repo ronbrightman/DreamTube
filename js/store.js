@@ -904,6 +904,76 @@
     return 'That username is already taken.';
   }
 
+  // One-off pair for the tracker item for-product-correct-founder-account-
+  // user-flutrx (see netlify/functions/admin-rename-account.js's own header
+  // comment for the server-side half of this rename) — hardcoded, on
+  // purpose: this is a one-off correction for one real account, not a
+  // general "migrate any rename" feature (the tracker item's own explicit
+  // scope note). If another rename like this is ever needed, add another
+  // hardcoded pair/call rather than generalizing this into a real feature.
+  var LEGACY_ACCOUNT_RENAME = { fromUsername: '__probe_throwaway_user__', toUsername: 'ronbrightman' };
+
+  /**
+   * Re-stamps this BROWSER's own locally-cached data from the old
+   * throwaway username onto the new one, the moment a login resolves to
+   * LEGACY_ACCOUNT_RENAME.toUsername. admin-rename-account.js only ever
+   * touches SERVER-side state (the account record, the shared feed) — it
+   * has no way to reach into any browser's localStorage at all — so
+   * without this, the very next login after that server-side rename would
+   * hit login()'s existing "brand-new-to-this-device account" branch
+   * below and silently show an empty account: state.dreams (filtered by
+   * `d.ownerHandle === state.user.handle`, see getMyDreams/getDreamInsight/
+   * getAccountBackup/etc.) and state.charactersByUser (keyed by lowercased
+   * username) both stay local-only and keyed to the OLD identity forever,
+   * unless something explicitly re-keys them. On the founder's own real,
+   * actively-used account, that would look exactly like his dreams had
+   * been destroyed by the rename, not merely relabeled.
+   *
+   * Safe to call on every login (cheap, idempotent) — once the data has
+   * actually moved once, there's nothing left under the old handle/key to
+   * find on any later call, so this becomes a permanent no-op after the
+   * first real run. Only re-stamps dreams onto the new handle (never
+   * pushes new entries — state.dreams is the one array shared by every
+   * account that's ever used this browser, mutating d.ownerHandle in
+   * place is safe exactly the same way toggleLike's own in-place dream
+   * mutation is), and only moves charactersByUser's old-username entry
+   * over if the new username doesn't already have real character data of
+   * its own (defensive — never clobber data that's already legitimately
+   * there under the new identity).
+   *
+   * Does NOT touch state.pendingJob — that's a single, short-lived
+   * in-flight-generation slot (see savePendingJob/scopedPendingJob), not
+   * a growing collection like dreams/characters; by the time this one-off
+   * server-side rename actually runs, any pendingJob from testing under
+   * the old throwaway identity is realistically long since resolved or
+   * abandoned, and migrating a stale one risks resurfacing a confusing
+   * "resume this old job" prompt for nothing.
+   */
+  function migrateLegacyThrowawayAccountData(serverUsername, displayUsername) {
+    if (serverUsername !== LEGACY_ACCOUNT_RENAME.toUsername) return;
+
+    var oldHandle = '@' + LEGACY_ACCOUNT_RENAME.fromUsername;
+    // Re-tag onto the EXACT handle this login is about to set state.user
+    // to (displayUsername's own casing — see login()'s own
+    // typedIsUsername/displayUsername handling just above this call),
+    // not a hardcoded lowercase '@ronbrightman' — getMyDreams/etc. compare
+    // d.ownerHandle to state.user.handle with a plain `===`, so this has
+    // to match exactly whatever casing THIS login session actually uses,
+    // or the very re-tag meant to fix visibility would immediately break
+    // it again for a login typed in different casing than a previous one.
+    var newHandle = '@' + (displayUsername || LEGACY_ACCOUNT_RENAME.toUsername);
+    state.dreams.forEach(function (d) {
+      if (d.ownerHandle === oldHandle) d.ownerHandle = newHandle;
+    });
+
+    var oldCharacters = state.charactersByUser[LEGACY_ACCOUNT_RENAME.fromUsername];
+    var newCharacters = state.charactersByUser[LEGACY_ACCOUNT_RENAME.toUsername];
+    if (oldCharacters && oldCharacters.length && (!newCharacters || !newCharacters.length)) {
+      state.charactersByUser[LEGACY_ACCOUNT_RENAME.toUsername] = oldCharacters;
+      delete state.charactersByUser[LEGACY_ACCOUNT_RENAME.fromUsername];
+    }
+  }
+
   /**
    * The pre-fix, fully-local login check — kept as the fallback for an
    * account that was created before the server-side store existed and was
@@ -1087,7 +1157,10 @@
             // etc.) doesn't break from a missing accounts entry. Dreams/
             // characters for this username are deliberately left empty —
             // syncing those is out of scope, see
-            // tracker.html's sync-private-dreams-videos-later item.
+            // tracker.html's sync-private-dreams-videos-later item. The
+            // ONE hardcoded exception is migrateLegacyThrowawayAccountData
+            // below, for the one-off ronbrightman rename specifically —
+            // see that function's own doc comment.
             state.accounts[serverUsername] = { password: password, email: (data.email || '').toLowerCase() };
           } else {
             // Already known locally (e.g. this is the account's original
@@ -1098,6 +1171,12 @@
             state.accounts[serverUsername].password = password;
             if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
           }
+          // One-off: pick up any locally-cached dreams/characters still
+          // sitting under the old __probe_throwaway_user__ identity the
+          // moment a login resolves to the renamed ronbrightman account —
+          // see migrateLegacyThrowawayAccountData's own doc comment for
+          // why this can't be handled server-side at all.
+          migrateLegacyThrowawayAccountData(serverUsername, displayUsername);
           state.user = { handle: '@' + displayUsername, username: displayUsername };
           persist();
           identifyForAnalytics(displayUsername);
