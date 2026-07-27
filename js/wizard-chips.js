@@ -47,10 +47,15 @@
 // (matching the spec's literal example) and the caller must NOT include
 // that character's id in the generation request's characterIds. For a
 // PHOTO character (self only), generate-video.js's reference-to-video path
-// needs the actual photo attached via characterIds — but it already skips
-// appending a text description for any character that has a photo (see
-// its buildPrompt: `.filter(c => !c.photoDataUrl)`), so there is no
-// double-up risk there; the caller SHOULD include that character's id.
+// needs the actual photo attached via characterIds — buildPrompt() now
+// folds that character's description into the SAME reference-photo
+// pointer clause it already emits ("...appears as shown in the reference
+// photo, with these specific details: ..."), rather than skipping it, but
+// this module's own `subjectPhraseAndCharacterId` still returns an empty
+// caption phrase for a photo character (see below) — the description
+// never gets baked into the assembled caption text here, only ever
+// reaches the prompt once via buildPrompt/characterIds — so there is
+// still no double-up risk; the caller SHOULD include that character's id.
 // assembleCaption's own `characterIdsForGeneration` return value already
 // encodes this rule — callers should use exactly that array, not their own.
 
