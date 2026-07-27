@@ -285,14 +285,15 @@
      reassurance for handing over an email. */
   .fn-price-note{ font-size:14px; font-weight:600; color:var(--phase-ink, var(--fn-ink)); text-align:center; margin:2px 0 0; line-height:1.45;}
 
-  /* Screen 14's beta message card. Used to hold a dense token-math/pack-
-     pricing wall of text (Yearly/Monthly-card-style value props, a free-
-     token breakdown, and two "coming soon" token-pack price tiles) — a
-     real mobile test found it read as "too much text" and "scary" right
-     before signup. Replaced with one short, honest beta statement; this
-     card styling (and class name) is kept as-is since it already reads
-     as a calm, considered callout, just pointed at simpler copy now. See
-     renderScreen14 below for the markup this styles. */
+  /* Screen 14's free-signup-grant message card (class name/styling
+     predates the store-launch copy sweep that dropped its old "beta"
+     copy — kept as-is, it already reads as a calm, considered callout).
+     Used to hold a dense token-math/pack-pricing wall of text
+     (Yearly/Monthly-card-style value props, a free-token breakdown, and
+     two "coming soon" token-pack price tiles) — a real mobile test found
+     it read as "too much text" and "scary" right before signup. See
+     renderScreen14 below for the markup this styles and its own comment
+     for the copy's more recent history. */
   .fn-token-free-card{ background:#fff; border-radius:16px; padding:16px; margin-bottom:14px; border:1.5px solid var(--fn-accent-solid); text-align:center;}
   .fn-token-free-card .title{ font-weight:800; font-size:15px; color:var(--fn-ink); margin-bottom:6px;}
   .fn-token-free-card .body{ font-size:13.5px; color:var(--fn-ink-soft); line-height:1.55;}
@@ -1344,12 +1345,24 @@
   // Per a real mobile-test founder pass, the earlier version of this
   // screen (value-prop checklist + a token-math card + two "coming soon"
   // token-pack price tiles) read as "too much text" and "scary" right
-  // before signup — replaced with one short, honest beta statement
-  // instead, matching the tone already used for the same idea on
-  // shop.html/style.html's out-of-tokens messaging ("Free during beta —
-  // no card needed"). This is deliberately NOT wired to real purchasing —
-  // this screen is mid-funnel, pre-signup; shop.html (post-signup) is
-  // where token packs are actually sold now that Dodo Payments is live.
+  // before signup — replaced with one short, honest statement instead.
+  // This is deliberately NOT wired to real purchasing — this screen is
+  // mid-funnel, pre-signup; shop.html (post-signup) is where token packs
+  // are actually sold now that Dodo Payments is live.
+  //
+  // Store-launch copy sweep (tracker item
+  // for-product-store-launch-copy-sweep-purc-m6xhkx): the card used to say
+  // "Still in beta" / "Free to try and enjoy right now — no card needed",
+  // matching the same "Free during beta" framing shop.html/style.html's
+  // out-of-tokens messaging used to have — a real, live contradiction once
+  // Dodo Payments checkout actually went live (founder launched the store
+  // 2026-07-27). Fixed to state the real signup grant instead (220 tokens,
+  // matching wizard.html's own renderSignup screen and
+  // lib/entitlements.js's real INITIAL_GRANT — see that screen's comment
+  // for why this can't be fetched live pre-signup and must be hand-kept in
+  // sync). "No card needed" itself is still accurate and kept — signing up
+  // genuinely doesn't require a card, unlike the dropped "beta" framing,
+  // which implied a temporary state that would eventually start charging.
   var MOTIVATION_HEADLINES = {
     'Capture dreams before they fade': 'Never lose a dream again.',
     'Turn them into videos': 'See your dreams, not just remember them.',
@@ -1369,8 +1382,8 @@
         '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>' :
         '') +
       '<div class="fn-token-free-card">' +
-        '<div class="title">Still in beta</div>' +
-        '<div class="body">Free to try and enjoy right now — no card needed.</div>' +
+        '<div class="title">Free to start</div>' +
+        '<div class="body">220 tokens on signup, no card needed — enough for a couple of free videos.</div>' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue</button>';
