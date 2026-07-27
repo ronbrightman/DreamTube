@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Privacy Policy — DreamTube</title>
+<meta name="description" content="How DreamTube collects, uses, and shares information, in plain language.">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Scoped styling for this page's long-form legal text only — css/styles.css
+     has no generic "article/prose" class anywhere else in this codebase (every
+     other page is UI chrome, not paragraphs), so this is new, but built entirely
+     from existing tokens (--text-primary/--text-muted/--border/--font-body etc.)
+     rather than introducing new colors — same scoping pattern index.html already
+     uses for its own page-only <style> block. -->
+<style>
+  .legal-content{ padding-bottom:48px; }
+  .legal-updated{ font-size:12.5px; color:var(--text-faint); margin-bottom:22px; }
+  .legal-content h2{ font-size:15px; font-weight:800; margin:26px 0 8px; }
+  .legal-content h2:first-of-type{ margin-top:0; }
+  .legal-content p{ font-size:14px; line-height:1.65; color:var(--text-muted); margin:0 0 12px; }
+  .legal-content ul{ margin:0 0 12px; padding-left:20px; }
+  .legal-content li{ font-size:14px; line-height:1.65; color:var(--text-muted); margin-bottom:6px; }
+  .legal-content b{ color:var(--text-primary); }
+  .legal-content a{ color:var(--text-primary); text-decoration:underline; text-underline-offset:3px; }
+  .legal-table{ width:100%; border-collapse:collapse; margin:0 0 16px; font-size:13px; }
+  .legal-table th, .legal-table td{ text-align:left; padding:8px 10px; border:1px solid var(--border); vertical-align:top; }
+  .legal-table th{ color:var(--text-primary); font-weight:700; background:var(--surface); }
+  .legal-table td{ color:var(--text-muted); }
+</style>
+
+<!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
+     (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
+     load, no network call, no console error — until real keys are set in
+     js/analytics-config.js. See docs/ANALYTICS_SETUP.md for the full setup story,
+     including why GA4 is deliberately not installed yet (no Google Ads channel yet). -->
+<script src="js/analytics-config.js"></script>
+<script>
+  // PostHog web snippet — https://posthog.com/docs/getting-started/install
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, {
+      api_host: POSTHOG_HOST,
+      defaults: '2026-05-30',
+      session_recording: {
+        maskAllInputs: true
+      }
+    });
+  }
+</script>
+<script>
+  // Meta Pixel base code — https://developers.facebook.com/docs/meta-pixel/get-started
+  if (typeof META_PIXEL_ID !== 'undefined' && META_PIXEL_ID !== 'REPLACE_WITH_REAL_PIXEL_ID') {
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', META_PIXEL_ID);
+    fbq('track', 'PageView');
+  }
+</script>
+</head>
+<body>
+
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <div class="icon-btn" id="privacy-back"></div>
+    <div class="topbar-logo" style="font-size:16px;">Privacy Policy</div>
+    <div style="width:36px;"></div>
+  </div>
+  <div class="scroll-area">
+    <div class="px legal-content">
+      <div class="legal-updated">Last updated: July 27, 2026</div>
+
+      <p>This policy explains what information DreamTube collects when you use the app, why, who we share it with, and how to delete it. We've tried to write it in plain language rather than dense legal boilerplate — if anything here is unclear, use the <b>Contact support</b> form in Settings and ask.</p>
+
+      <h2>What DreamTube is</h2>
+      <p>DreamTube turns a written (or spoken, then transcribed) description of a dream into a short AI-generated video or image. You can optionally add details — a character, a camera angle, a time and place — and choose to keep the result private or publish it to the shared Explore feed for other users to see.</p>
+
+      <h2>Information we collect</h2>
+      <table class="legal-table">
+        <tr><th>What</th><th>Details</th></tr>
+        <tr>
+          <td>Account information</td>
+          <td>Username, password, and (optional but recommended, so we can email you and so you can reset your password) email address.</td>
+        </tr>
+        <tr>
+          <td>Dream content</td>
+          <td>The text you type or record (recordings are transcribed to text) describing a dream, your chosen style, and any optional extras — camera angle, scene time/place, and characters (including a photo of <i>yourself</i>, if you add one — photos of other people aren't supported).</td>
+        </tr>
+        <tr>
+          <td>Payment information</td>
+          <td>If you buy a token pack, our payment processor, Dodo Payments, collects your card details directly — DreamTube's own servers never see or store your card number. We keep only your email, the amount purchased, and Dodo's payment reference.</td>
+        </tr>
+        <tr>
+          <td>Usage &amp; analytics data</td>
+          <td>Standard product-analytics events (pages viewed, buttons tapped, funnel steps completed) and ad-conversion events, collected via PostHog and Meta (Pixel/Conversions API) — see "Who we share it with" below. Session-replay tools we use mask every text field's contents by default, including the dream-text field.</td>
+        </tr>
+        <tr>
+          <td>Support &amp; feedback messages</td>
+          <td>Whatever you type into the Support/Feedback form in Settings, plus your username, email, and basic account context (how many videos you've made, how long you've had the account) so we can help you faster.</td>
+        </tr>
+      </table>
+
+      <p><b>What stays only on your device:</b> your private dreams and saved characters live in this browser's local storage, not on our servers, unless and until you publish a dream to Explore (at which point the published dream and its caption become visible to other users and are stored server-side so they can see it) or delete your account. Clearing your browser's storage, or using a different device/browser, means that local-only data doesn't carry over — your account and username/password still do, since those are stored server-side.</p>
+
+      <h2>Why we collect it</h2>
+      <ul>
+        <li>To generate the videos/images you ask for, and let you retrieve them later.</li>
+        <li>To run your account: login, password resets, your token balance, and emailing you when a dream is ready.</li>
+        <li>To process payments for token packs.</li>
+        <li>To understand how people use DreamTube and improve it (product analytics, A/B tests).</li>
+        <li>To measure whether our ads are working (ad-conversion tracking).</li>
+        <li>To respond to support requests and feedback.</li>
+      </ul>
+
+      <h2>Who we share it with</h2>
+      <p>We don't sell your information. We share it with the following vendors, each doing one specific job for us:</p>
+      <ul>
+        <li><b>fal.ai</b> — processes the dream text, style, and any character photo you submit, in order to generate the video or image (and to transcribe a voice recording to text, if you recorded instead of typed).</li>
+        <li><b>Dodo Payments</b> — handles token-pack checkout and payment. They hold your payment/card details and billing history; we don't.</li>
+        <li><b>Resend</b> — sends transactional emails on our behalf (password resets, "your dream is ready" notifications).</li>
+        <li><b>PostHog</b> — product analytics: funnels, feature usage, A/B experiments.</li>
+        <li><b>Meta (Pixel / Conversions API)</b> — ad conversion measurement for our Meta ad campaigns.</li>
+        <li><b>Netlify</b> — our hosting provider; account records, published dreams, and token balances are stored in Netlify Blobs, their data-storage service. Private dreams and saved characters are never stored here — see above.</li>
+      </ul>
+
+      <h2>How long we keep it</h2>
+      <p>We keep your account, dreams, and token balance for as long as your account exists. Support messages are kept as a permanent record of what was said to us (like an email inbox — we don't retroactively delete a message just because the account that sent it is later deleted). Dodo Payments retains your billing/payment history independently of DreamTube, per standard payment-processor practice, even after you delete your DreamTube account.</p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li><b>Delete a single dream</b> — anytime, from your Profile.</li>
+        <li><b>Delete your whole account</b> — open <a href="profile.html">your Profile</a>, tap the Settings icon, then Danger zone → Delete account, confirmed with your password. This permanently removes your account, every dream (private and published), your saved characters, and your token balance from DreamTube's systems. (Payment/billing history is kept separately by Dodo Payments, as noted above — that's the one thing this doesn't touch.)</li>
+        <li><b>Export a backup</b> of your dreams/characters — Settings → Your data.</li>
+        <li><b>Ask us anything</b> about your data via the Contact support form in Settings.</li>
+      </ul>
+      <p>If you're in a region with specific data-protection rights (for example GDPR in the EU/UK or CCPA in California), these same controls — deletion, export, and asking us questions — are how you exercise them here. Contact support if you need something this page doesn't cover.</p>
+
+      <h2>Children</h2>
+      <p>DreamTube isn't directed at children, and we don't knowingly collect information from anyone under 13. Uploading a photo of a child or teen for character generation isn't supported anywhere in the app, by design.</p>
+
+      <h2>Security</h2>
+      <p>We take reasonable measures to protect the information described above, but no method of storage or transmission over the internet is 100% secure, and we can't guarantee absolute security.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If this policy changes in a meaningful way, we'll update the "Last updated" date above. Continuing to use DreamTube after a change means you accept the updated policy.</p>
+
+      <h2>Contact us</h2>
+      <p>Questions about this policy or your data? Use the <b>Contact support</b> form: Profile → Settings icon → Support &amp; feedback → Contact support.</p>
+
+      <p style="margin-top:20px;">See also our <a href="terms.html">Terms of Service</a>.</p>
+    </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script>
+  document.getElementById('privacy-back').innerHTML = Icons.back;
+  // Smart back: same "was this reached via real in-app navigation" check
+  // login.html's own back button uses (see its "login-back" handler) —
+  // this page is linked from many places (Settings, signup screens), so a
+  // hardcoded href would send some visitors somewhere they didn't come
+  // from. Falls back to the home screen when there's no real referrer
+  // (e.g. opened directly, or from Meta's own Privacy Policy URL check).
+  document.getElementById('privacy-back').addEventListener('click', function(){
+    if (document.referrer && document.referrer.indexOf(location.origin) === 0) { history.back(); }
+    else { location.href = 'index.html'; }
+  });
+</script>
+</body>
+</html>

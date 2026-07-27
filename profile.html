@@ -239,6 +239,34 @@
         </div>
       </div>
 
+      <!-- Legal (tracker.html's for-product-create-a-real-privacy-policy-o3g56s
+           item) — DreamTube had no privacy policy or terms page anywhere
+           before this; these two rows are the only in-app entry point to
+           them outside of the signup screens' own small-print links (see
+           login.html/start.html/wizard.html). Placed right after the FAQ
+           section, before Support/Danger zone, per that item's own
+           placement suggestion. Plain links, not a sheet of their own —
+           privacy.html/terms.html are full static pages. -->
+      <div class="settings-section">
+        <div class="section-label">Legal</div>
+        <a class="settings-row" href="privacy.html" style="text-decoration:none; color:inherit;">
+          <div class="settings-row-icon icon" id="privacy-row-icon"></div>
+          <div class="settings-row-text">
+            <div class="settings-row-title">Privacy Policy</div>
+            <div class="settings-row-sub">What we collect and how it's used</div>
+          </div>
+          <div class="settings-row-chevron icon" id="privacy-row-chevron"></div>
+        </a>
+        <a class="settings-row" href="terms.html" style="text-decoration:none; color:inherit;">
+          <div class="settings-row-icon icon" id="terms-row-icon"></div>
+          <div class="settings-row-text">
+            <div class="settings-row-title">Terms of Service</div>
+            <div class="settings-row-sub">The basic rules for using DreamTube</div>
+          </div>
+          <div class="settings-row-chevron icon" id="terms-row-chevron"></div>
+        </a>
+      </div>
+
       <!-- Owner-only manual top-up — resolves the "owner bypass for the
            token gate" question the founder's own way: not an E112
            exemption (generate-video.js's gate stays unconditional for
@@ -426,6 +454,10 @@
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
   document.getElementById('support-row-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('privacy-row-icon').innerHTML = Icons.lock;
+  document.getElementById('privacy-row-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('terms-row-icon').innerHTML = Icons.check;
+  document.getElementById('terms-row-chevron').innerHTML = Icons.chevronDown;
 
   // ===== FAQ accordion (tracker.html's idea-faq-section item) =====
   // Static content, no backend involvement. Each .faq-item toggles
