@@ -1381,6 +1381,41 @@ async function forgetRefundedJobId(event, email, jobId) {
   });
 }
 
+/**
+ * Permanently deletes an email's entire entitlement record — the token
+ * ledger half of delete-account.js's account-deletion flow. Removes the
+ * balance/lastGrantAt, the dormant Stripe subscription fields
+ * (active/plan/stripeCustomerId/stripeSubscriptionId — see this file's own
+ * header comment for why they're still on the record shape even though
+ * unused), and appliedTokenPackPaymentIds (the short-lived Dodo
+ * in-flight-credit bookkeeping array) all in one shot, since they're all
+ * one single-key record here (unlike account-store.js's two-key shape).
+ *
+ * Deliberately does NOT touch TOKEN_PURCHASES_STORE_NAME (the per-
+ * Dodo-payment_id dedup markers, keyed by payment, not by email) — see
+ * delete-account.js's own header comment for why: those records are
+ * keyed by an opaque payment_id this codebase has no cheap way to
+ * enumerate "all payment_ids for email X" against (no index from email
+ * -> payment_id exists, mirroring this file's own header comment on why
+ * Blobs has no cheap scan), and forgetAppliedTokenPack's own doc comment
+ * already establishes that a lingering payment marker is harmless once
+ * its purchase is fully committed — it carries no more than the email,
+ * a token count, and a status, no card data or name/address (that PII
+ * lives entirely on Dodo's own side, see create-checkout-session-dodo.js).
+ *
+ * Always succeeds (returns { ok:true }) even if no record existed yet for
+ * this email — same "deleting something already gone is a safe no-op"
+ * semantics as account-store.js's deleteAccount and
+ * @netlify/blobs' own store.delete().
+ */
+async function deleteEntitlement(event, email) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false, error: 'email_required' };
+  connectLambda(event);
+  await store().delete(key);
+  return { ok: true };
+}
+
 module.exports = {
   STORE_NAME,
   TOKEN_PURCHASES_STORE_NAME,
@@ -1398,6 +1433,7 @@ module.exports = {
   refundTokensOnce,
   refundTokenAmountOnce,
   forgetRefundedJobId,
+  deleteEntitlement,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see
   // that file) can read them instead of hand-maintaining a duplicate
