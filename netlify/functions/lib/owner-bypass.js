@@ -102,35 +102,63 @@ async function verifyOwnerCredentials(event, username, password) {
 }
 
 /**
- * Mints + stores a fresh short-lived bypass token. Returns
- * { token, expiresAt }. Only ever meant to be called after
- * verifyOwnerCredentials has already returned ok:true -- this function
- * itself performs no auth check, it just issues a credential once the
- * caller has already established the request is really the owner.
+ * Mints + stores a fresh short-lived bypass token, BOUND to `ownerEmail`
+ * (normalized) -- the resolved account's own on-file email, as returned by
+ * verifyOwnerCredentials's `record.email`, never a value the caller
+ * independently supplies. Returns { token, expiresAt }. Only ever meant to
+ * be called after verifyOwnerCredentials has already returned ok:true --
+ * this function itself performs no auth check, it just issues a credential
+ * once the caller has already established the request is really the
+ * owner.
+ *
+ * REVIEW FIX (round 1): the token used to be a bare bearer capability --
+ * "is this token live" with no record of WHOSE session it was issued for,
+ * the exact class of bug lib/job-owners.js's own binding closes for
+ * refund authorization (see that file's header comment). A live token
+ * could previously be replayed against ANY email in a generation request
+ * body, letting a leaked/shared/XSS'd token skip the per-IP/per-email rate
+ * limit (and the token-init per-IP anti-farming cap) for an email that
+ * never verified anything. Binding the token to the specific email that
+ * was actually verified, and requiring the caller (generate-video.js/
+ * generate-image.js) to match the REQUEST's own email against this bound
+ * value before treating the bypass as active, closes that -- mirrors
+ * dream-share-token.js's own "token is only ever valid for the exact
+ * resource it was minted for" precedent, just binding to an identity
+ * instead of a dreamId.
  */
-async function createBypassToken(event) {
+async function createBypassToken(event, ownerEmail) {
   var token = crypto.randomBytes(32).toString('hex');
   var expiresAt = Date.now() + TTL_MS;
+  var boundEmail = normalizeEmail(ownerEmail);
   connectLambda(event);
-  await store().setJSON(token, { createdAt: Date.now(), expiresAt: expiresAt });
+  await store().setJSON(token, { ownerEmail: boundEmail, createdAt: Date.now(), expiresAt: expiresAt });
   return { token: token, expiresAt: expiresAt };
 }
 
 /**
  * Checks whether `token` is a live (previously issued, unexpired) owner
- * bypass token. Returns { ok:true } or { ok:false } -- deliberately fails
- * CLOSED on anything unexpected (missing/malformed/expired token, or no
- * token at all): "bypass active" only ever comes from an explicit, live
- * record here, never assumed. Revisitable -- does NOT delete the token on
- * a successful check, see header comment for why (meant to be sent with
+ * bypass token. Returns { ok:true, email } (the NORMALIZED email this
+ * specific token is bound to -- see createBypassToken) or { ok:false } --
+ * deliberately fails CLOSED on anything unexpected (missing/malformed/
+ * expired token, a record with no bound email at all, or no token at all):
+ * "bypass active" only ever comes from an explicit, live, bound record
+ * here, never assumed. Revisitable -- does NOT delete the token on a
+ * successful check, see header comment for why (meant to be sent with
  * every generation request during the session).
+ *
+ * Returning the bound email (rather than a bare boolean) is deliberate:
+ * this function has no idea what email the CALLING request itself claims,
+ * so it can't do the match check itself -- that comparison happens in
+ * generate-video.js/generate-image.js, which have both values. See the
+ * REVIEW FIX note on createBypassToken above for why this match is
+ * required at all, not optional.
  */
 async function verifyBypassToken(event, token) {
   if (!token || typeof token !== 'string') return { ok: false };
   connectLambda(event);
   var record = await store().get(token, { type: 'json' });
-  if (!record || !record.expiresAt || record.expiresAt < Date.now()) return { ok: false };
-  return { ok: true };
+  if (!record || !record.expiresAt || record.expiresAt < Date.now() || !record.ownerEmail) return { ok: false };
+  return { ok: true, email: record.ownerEmail };
 }
 
 module.exports = { STORE_NAME, TTL_MS, verifyOwnerCredentials, createBypassToken, verifyBypassToken };

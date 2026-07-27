@@ -260,10 +260,17 @@ exports.handler = async function (event) {
   // expired token leaves ownerBypassActive false, same as if this feature
   // didn't exist for every request that isn't the founder's own verified
   // session.
+  //
+  // REVIEW FIX (round 1): the token is bound to a specific email at
+  // issuance (lib/owner-bypass.js's createBypassToken) — a live token
+  // alone is not enough, THIS request's own (normalized) email must match
+  // the token's bound email, or the bypass never activates. See
+  // generate-video.js's own identical comment for the full reasoning (a
+  // leaked/replayed token must not be usable against an arbitrary email).
   var ownerBypassActive = false;
   if (ownerBypassToken) {
     var bypassCheck = await ownerBypass.verifyBypassToken(event, ownerBypassToken);
-    ownerBypassActive = !!bypassCheck.ok;
+    ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
   }
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);

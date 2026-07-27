@@ -461,18 +461,23 @@ async function callVeoDirect(prompt, apiKey) {
 // 7mjq2l item) — see lib/owner-bypass.js's header comment for the full
 // mechanism and why it requires a real server-verified password, never a
 // client-claimed email. When `ownerBypassToken` is present AND verifies
-// (lib/owner-bypass.js's verifyBypassToken), this ONLY skips the E109
-// per-IP/per-email rate-limit checkAndIncrement calls immediately below,
-// and the token-init per-IP cap inside entitlements.getTokenStatus's own
-// opts.ownerBypass (see that function's doc comment) — both narrow,
-// bounded exemptions. It structurally CANNOT affect E112 (the unconditional
-// token-balance gate — the `tokenStatus.balance < 100` comparison below
-// never reads ownerBypassActive at all) or E110 (spendGuard.checkAndReserve
-// below is called with no bypass signal whatsoever, by design — see
+// (lib/owner-bypass.js's verifyBypassToken) AND its bound email matches
+// THIS request's own (normalized) email — see the "REVIEW FIX" comment at
+// the actual check below for why the bound-email match is required, not
+// optional — this ONLY skips the E109 per-IP/per-email rate-limit
+// checkAndIncrement calls immediately below, and the token-init per-IP cap
+// inside entitlements.getTokenStatus's own opts.ownerBypass (see that
+// function's doc comment) — both narrow, bounded exemptions. It
+// structurally CANNOT affect E112 (the unconditional token-balance gate —
+// the `tokenStatus.balance < 100` comparison below never reads
+// ownerBypassActive at all) or E110 (spendGuard.checkAndReserve below is
+// called with no bypass signal whatsoever, by design — see
 // lib/spend-guard.js, untouched by this feature). A missing/invalid/
-// expired token is silently treated as "no bypass" (fails closed) — this
-// whole check is a no-op for every request that doesn't carry a live
-// token, i.e. every request except the founder's own verified session.
+// expired/email-mismatched token is silently treated as "no bypass" (fails
+// closed) — this whole check is a no-op for every request that doesn't
+// carry a live token bound to that exact request's own email, i.e. every
+// request except the founder's own verified session generating under his
+// own account email.
 //
 // Mock mode & test-duration override — see docs/TESTING.md for the full
 // writeup and AGENT_POLICY.md's "Never spend real generation cost on
@@ -619,10 +624,22 @@ exports.handler = async function (event) {
   // malformed), leaves ownerBypassActive false — the same as if this
   // feature didn't exist at all, for every request that isn't the
   // founder's own verified session.
+  //
+  // REVIEW FIX (round 1): "the token verifies" is NOT enough on its own —
+  // verifyBypassToken only proves the token was genuinely issued once and
+  // hasn't expired, it says nothing about whether THIS request is the
+  // session it was issued to. A token is bound to a specific email at
+  // issuance (see lib/owner-bypass.js's createBypassToken/verifyBypassToken
+  // doc comments) precisely so it can't be replayed against an arbitrary
+  // email — e.g. a token leaked from localStorage, a shared/compromised
+  // device, or an XSS'd tab attaching it to a request for SOME OTHER
+  // email, to skip that other email's own rate limit/anti-farming cap.
+  // The bound email must match THIS request's own (normalized) email
+  // before the bypass is ever treated as active.
   var ownerBypassActive = false;
   if (ownerBypassToken) {
     var bypassCheck = await ownerBypass.verifyBypassToken(event, ownerBypassToken);
-    ownerBypassActive = !!bypassCheck.ok;
+    ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
   }
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);

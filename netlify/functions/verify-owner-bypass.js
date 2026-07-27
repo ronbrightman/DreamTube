@@ -19,12 +19,27 @@
 // gates an exemption from the control that bounds real fal.ai spend for
 // EVERY caller.
 //
+// TOKEN IS BOUND TO THE VERIFIED EMAIL, NOT A BARE BEARER CAPABILITY
+// (review round-1 fix): the token is minted via
+// ownerBypass.createBypassToken(event, result.record.email) -- the REAL
+// account record verifyOwnerCredentials just resolved, not anything the
+// client claims -- and generate-video.js/generate-image.js independently
+// require the generation REQUEST's own email to match that bound value
+// before ever treating the bypass as active. Without this, a token that
+// merely proves "issued once, still live" (with no record of to whom)
+// could be replayed against an arbitrary email in a generation request --
+// e.g. a token leaked from localStorage, a shared/compromised device, or
+// an XSS'd session -- letting an attacker skip the rate limit/anti-farming
+// cap for any email they choose. See lib/owner-bypass.js's own doc
+// comments on createBypassToken/verifyBypassToken for the full mechanism.
+//
 // Response shapes:
 //   200 { ok:true, token, expiresAt }  -- real owner, real password match.
-//         `token` is opaque (see lib/owner-bypass.js) and `expiresAt` is
-//         an epoch-ms timestamp the client can use to know when to
-//         re-verify -- see js/store.js's verifyOwnerBypass/
-//         getOwnerBypassToken for how the client stores and re-sends it.
+//         `token` is opaque and bound server-side to the verified owner
+//         email (see above) -- `expiresAt` is an epoch-ms timestamp the
+//         client can use to know when to re-verify -- see js/store.js's
+//         verifyOwnerBypass/getOwnerBypassToken for how the client stores
+//         and re-sends it.
 //   403 { ok:false, error: 'E5: forbidden' } -- covers every
 //         verifyOwnerCredentials failure (owner_not_configured, not_found,
 //         incorrect_password, not_owner) without distinguishing which --
@@ -106,6 +121,14 @@ exports.handler = async function (event) {
     return { statusCode: 403, body: JSON.stringify({ ok: false, error: 'E5: forbidden' }) };
   }
 
-  var issued = await ownerBypass.createBypassToken(event);
+  // Bind the token to the REAL, just-verified account's own on-file email
+  // (result.record.email) -- never anything the client claims -- so
+  // generate-video.js/generate-image.js can later require the request's
+  // own email to match this exact value before treating the bypass as
+  // active. See lib/owner-bypass.js's createBypassToken doc comment
+  // (REVIEW FIX) for why this binding is required, not optional: without
+  // it, a leaked/shared token could be replayed against an arbitrary
+  // email.
+  var issued = await ownerBypass.createBypassToken(event, result.record.email);
   return { statusCode: 200, body: JSON.stringify({ ok: true, token: issued.token, expiresAt: issued.expiresAt }) };
 };

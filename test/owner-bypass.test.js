@@ -141,15 +141,37 @@ test('owner-bypass: verifyOwnerCredentials also succeeds when the owner logs in 
 });
 
 // ===== lib/owner-bypass.js: createBypassToken / verifyBypassToken =====
+//
+// createBypassToken now requires the resolved owner email as its 2nd arg,
+// and verifyBypassToken returns { ok:true, email } (the BOUND email) --
+// see the "REVIEW FIX" doc comments on both functions: a token that only
+// proves "issued once, still live" with no record of whose session it was
+// issued for could previously be replayed against an arbitrary email in a
+// generation request, letting a leaked/shared/XSS'd token skip the rate
+// limit/anti-farming cap for an email that never actually verified
+// anything. These tests cover the binding itself; the "match the
+// requesting email" enforcement lives in generate-video.js/
+// generate-image.js (see the integration tests further down, especially
+// "a bypass token bound to a DIFFERENT email must never activate").
 
-test('owner-bypass: a freshly-created token verifies as active', async function () {
+test('owner-bypass: a freshly-created token verifies as active AND returns the bound email it was issued for', async function () {
   var ownerBypass = require('../netlify/functions/lib/owner-bypass');
   var event = fakeEvent({ method: 'POST' });
-  var issued = await ownerBypass.createBypassToken(event);
+  var issued = await ownerBypass.createBypassToken(event, OWNER_EMAIL);
   assert.equal(typeof issued.token, 'string');
   assert.ok(issued.token.length >= 32, 'expected a real random token, not a short/predictable value');
   var check = await ownerBypass.verifyBypassToken(event, issued.token);
   assert.equal(check.ok, true);
+  assert.equal(check.email, OWNER_EMAIL, 'verifyBypassToken must return the exact email this token was bound to at issuance');
+});
+
+test('owner-bypass: the bound email is normalized (trim + lowercase), same as every other email in this codebase', async function () {
+  var ownerBypass = require('../netlify/functions/lib/owner-bypass');
+  var event = fakeEvent({ method: 'POST' });
+  var issued = await ownerBypass.createBypassToken(event, '  Founder@DreamTube.Example  ');
+  var check = await ownerBypass.verifyBypassToken(event, issued.token);
+  assert.equal(check.ok, true);
+  assert.equal(check.email, 'founder@dreamtube.example');
 });
 
 test('owner-bypass: an unknown token fails closed', async function () {
@@ -170,7 +192,7 @@ test('owner-bypass: a missing/empty/non-string token fails closed', async functi
 test('owner-bypass: an expired token fails closed', async function () {
   var ownerBypass = require('../netlify/functions/lib/owner-bypass');
   var event = fakeEvent({ method: 'POST' });
-  var issued = await ownerBypass.createBypassToken(event);
+  var issued = await ownerBypass.createBypassToken(event, OWNER_EMAIL);
   var { getStore } = require('@netlify/blobs');
   var store = getStore({ name: ownerBypass.STORE_NAME });
   var record = await store.get(issued.token, { type: 'json' });
@@ -180,10 +202,20 @@ test('owner-bypass: an expired token fails closed', async function () {
   assert.equal(check.ok, false);
 });
 
+test('owner-bypass: a record with no bound email at all fails closed (defense in depth against a malformed/legacy record)', async function () {
+  var ownerBypass = require('../netlify/functions/lib/owner-bypass');
+  var event = fakeEvent({ method: 'POST' });
+  var { getStore } = require('@netlify/blobs');
+  var store = getStore({ name: ownerBypass.STORE_NAME });
+  await store.setJSON('a-legacy-style-token-with-no-bound-email', { createdAt: Date.now(), expiresAt: Date.now() + 60000 });
+  var check = await ownerBypass.verifyBypassToken(event, 'a-legacy-style-token-with-no-bound-email');
+  assert.equal(check.ok, false);
+});
+
 test('owner-bypass: a token is revisitable (not single-use) within its TTL', async function () {
   var ownerBypass = require('../netlify/functions/lib/owner-bypass');
   var event = fakeEvent({ method: 'POST' });
-  var issued = await ownerBypass.createBypassToken(event);
+  var issued = await ownerBypass.createBypassToken(event, OWNER_EMAIL);
   var first = await ownerBypass.verifyBypassToken(event, issued.token);
   var second = await ownerBypass.verifyBypassToken(event, issued.token);
   assert.equal(first.ok, true);
@@ -384,6 +416,34 @@ test('generate-video: a NON-owner account cannot obtain a working bypass token f
   });
 });
 
+test('generate-video: THE CRITICAL BINDING PROPERTY -- a valid, live bypass token issued for the OWNER email must NEVER activate the bypass for a DIFFERENT email in the request body -- closes the "leaked/replayed token against an arbitrary email" gap review round 1 flagged', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, MAX_GENERATIONS_PER_IP_PER_DAY: '1', FAL_KEY: 'test-fal-key', DAILY_SPEND_CAP_USD: undefined }, async function () {
+    delete require.cache[require.resolve('../netlify/functions/generate-video')];
+    delete require.cache[require.resolve('../netlify/functions/verify-owner-bypass')];
+    var entitlements = require('../netlify/functions/lib/entitlements');
+    var handler = require('../netlify/functions/generate-video').handler;
+    // A genuinely live, correctly-issued token -- proves the OWNER's own
+    // password, not a forged/guessed one.
+    var realOwnerToken = await issueOwnerToken();
+    var realFetch = global.fetch;
+    stubFalOk();
+    var ip = nextGenVideoIp();
+    var attackerEmail = 'attacker-controlled@example.com';
+    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    var body = { caption: 'a dream', style: 'Cartoon', email: attackerEmail, ownerBypassToken: realOwnerToken };
+    // Cap is 1/day on this IP -- the 2nd request must 429 exactly like it
+    // would with no token attached at all, proving the live-but-mismatched
+    // token contributed NOTHING toward bypassing the rate limit for this
+    // other email.
+    var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
+    var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
+    global.fetch = realFetch;
+    assert.equal(r1.statusCode, 200);
+    assert.equal(r2.statusCode, 429, 'a live token bound to a DIFFERENT email must never bypass the rate limit for this email');
+    assert.match(JSON.parse(r2.body).error, /^E109: rate_limited/);
+  });
+});
+
 test('generate-video: THE MOST IMPORTANT PROPERTY -- DAILY_SPEND_CAP_USD (E110) is enforced even with a verified, active owner bypass -- the money backstop is never bypassable, under any circumstance this feature builds', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL, FAL_KEY: 'test-fal-key', DAILY_SPEND_CAP_USD: '1' }, async function () {
     delete require.cache[require.resolve('../netlify/functions/generate-video')];
@@ -478,6 +538,28 @@ test('generate-image: a verified owner bypass token skips the per-IP rate limit 
     global.fetch = realFetch;
     assert.equal(r1.statusCode, 200);
     assert.equal(r2.statusCode, 200, 'bypass must skip generate-image.js\'s own E409 rate limit');
+  });
+});
+
+test('generate-image: a valid, live bypass token bound to the OWNER email must NEVER activate the bypass for a DIFFERENT email in the request body (same binding property as generate-video.js)', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, MAX_GENERATIONS_PER_IP_PER_DAY: '1', FAL_KEY: 'test-fal-key', DAILY_SPEND_CAP_USD: undefined }, async function () {
+    delete require.cache[require.resolve('../netlify/functions/generate-image')];
+    delete require.cache[require.resolve('../netlify/functions/verify-owner-bypass')];
+    var entitlements = require('../netlify/functions/lib/entitlements');
+    var handler = require('../netlify/functions/generate-image').handler;
+    var realOwnerToken = await issueOwnerToken();
+    var realFetch = global.fetch;
+    stubFalOk();
+    var ip = nextGenVideoIp();
+    var attackerEmail = 'attacker-controlled-image@example.com';
+    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    var body = { caption: 'a dream', style: 'Cartoon', email: attackerEmail, ownerBypassToken: realOwnerToken };
+    var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
+    var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
+    global.fetch = realFetch;
+    assert.equal(r1.statusCode, 200);
+    assert.equal(r2.statusCode, 429, 'a live token bound to a DIFFERENT email must never bypass generate-image.js\'s rate limit either');
+    assert.match(JSON.parse(r2.body).error, /^E409: rate_limited/);
   });
 });
 
