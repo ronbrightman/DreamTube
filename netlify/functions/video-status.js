@@ -23,9 +23,72 @@
 // GEM_API_KEY on every download and classic functions cap responses ~6MB.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
+var entitlements = require('./lib/entitlements');
+var accountStore = require('./lib/account-store');
+var posthogCapture = require('./lib/posthog-capture');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 var VEO_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+// Must match generate-video.js's own spendTokens(event, email, 100) call at
+// submission time — kept as a local literal rather than require()'d, per
+// this codebase's "each function self-contained" convention (see
+// humanizeFalDetail's own duplicated-not-shared precedent just below).
+var VIDEO_TOKEN_COST = 100;
+
+// Auto-refund tracker item idea-auto-refund-policy, founder-approved
+// 2026-07-26 — see lib/entitlements.js's refundTokensOnce doc block for the
+// full mechanism. Only E205 (fal itself marked the job failed) and E208
+// (job reported COMPLETED but no video URL came back) are refund-eligible:
+// both mean the job's fate is KNOWN (it did not produce a usable video).
+// Every other code in this file's own range (E203/E204/E206/E207 — a
+// transport-level hiccup talking to fal, not proof the job itself failed;
+// E201/E202/E209/E210/E211 — this function's own request/config errors,
+// never a real generation attempt) is deliberately left out of scope — the
+// support form is the fallback for those, per the founder's own spec.
+var REFUND_ELIGIBLE_CODES = ['E205', 'E208'];
+
+/** True if `errorStr` (an "ENNN: reason" string, see the E2xx doc block below) starts with one of REFUND_ELIGIBLE_CODES. */
+function isRefundEligibleError(errorStr) {
+  if (typeof errorStr !== 'string') return false;
+  return REFUND_ELIGIBLE_CODES.some(function (code) { return errorStr.indexOf(code + ':') === 0; });
+}
+
+/**
+ * Refunds VIDEO_TOKEN_COST tokens for `jobId` onto `email`'s balance and
+ * reports the `tokens_refunded` PostHog event — called only for the two
+ * refund-eligible codes above. Never throws: a failed/exhausted refund
+ * attempt must not turn a real generation-failure response into a 500 (see
+ * refundTokensOnce's own doc comment for why there's no webhook-style
+ * redelivery here to give a thrown error a genuine second attempt). Returns
+ * `{ refunded: boolean }` so the caller can tell the client whether to show
+ * "Your tokens were returned."
+ */
+async function refundAndReport(event, email, jobId, reasonCode) {
+  if (!email) return { refunded: false }; // no account to credit — shouldn't happen, see generate-video.js's E112 gate, but never let this throw
+  try {
+    var refundResult = await entitlements.refundTokensOnce(event, email, jobId, VIDEO_TOKEN_COST);
+    if (!refundResult.refunded) return { refunded: false }; // already refunded by an earlier poll of this same job, or no email — safe no-op
+
+    // distinct_id must match what the client's posthog.identify() used —
+    // the account's raw username, not its email — same resolution
+    // dodo-webhook.js's firePurchaseConversion already uses (see
+    // lib/posthog-capture.js's header comment for the full "why").
+    var account = await accountStore.getByEmail(event, email).catch(function () { return null; });
+    var distinctId = (account && account.username) || entitlements.normalizeEmail(email);
+
+    await posthogCapture.captureEvent({
+      event: 'tokens_refunded',
+      distinct_id: distinctId,
+      properties: { jobId: jobId, cost: VIDEO_TOKEN_COST, reason: reasonCode, mediaType: 'video' }
+    });
+
+    return { refunded: true };
+  } catch (e) {
+    console.error('video-status: refund attempt failed (non-fatal, support form is the fallback)', e);
+    return { refunded: false };
+  }
+}
 
 /** Parses a fetch Response as JSON, tolerating an empty/non-JSON body so callers can report the raw text instead of throwing. */
 async function parseJsonSafe(res) {
@@ -93,6 +156,11 @@ function falErrorMessage(data) {
 //   E206 non-JSON response from fal's result endpoint
 //   E207 fal's result endpoint returned a non-OK HTTP response
 //   E208 job reported COMPLETED but the result had no video URL in it (unexpected response shape)
+//
+// E205 and E208 specifically are also the auto-refund-eligible codes — see
+// REFUND_ELIGIBLE_CODES/refundAndReport below and lib/entitlements.js's
+// refundTokensOnce doc block for the full mechanism (tracker item
+// idea-auto-refund-policy, founder-approved 2026-07-26).
 //
 // The mock path (checkMockStatus below) has no error codes of its own — a
 // mock operation can't fail the way a real fal call can, by design (see
@@ -242,6 +310,11 @@ exports.handler = async function (event) {
   if (!name) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E202: name_required' }) };
   }
+  // Best-effort: only used to credit an auto-refund on a refund-eligible
+  // failure (see refundAndReport above) — never required for the plain
+  // status check itself, so an old/cached client that doesn't send it yet
+  // just means no refund attempt, not a broken poll.
+  var email = (event.queryStringParameters || {}).email || '';
 
   try {
     var result;
@@ -268,7 +341,16 @@ exports.handler = async function (event) {
     }
 
     var body = { done: result.done };
-    if (result.error) body.error = result.error;
+    if (result.error) {
+      body.error = result.error;
+      // Auto-refund — see refundAndReport's own doc comment. Only fires
+      // for the narrow refund-eligible code set; every other error path
+      // here is unaffected and behaves exactly as before this feature.
+      if (isRefundEligibleError(result.error)) {
+        var refundOutcome = await refundAndReport(event, email, name, result.error);
+        if (refundOutcome.refunded) body.tokensRefunded = true;
+      }
+    }
     if (result.videoUrl) body.videoUrl = result.videoUrl;
     return { statusCode: result.statusCode, body: JSON.stringify(body) };
   } catch (e) {

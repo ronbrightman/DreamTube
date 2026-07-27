@@ -12,8 +12,16 @@
 // ONE RECORD PER NORMALIZED EMAIL:
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
 //     tokens: { balance, lastGrantAt },
-//     appliedTokenPackPaymentIds,
+//     appliedTokenPackPaymentIds, refundedJobIds,
 //     firstPackPurchaseAt }
+//
+// refundedJobIds: a short-lived per-email list of generation job ids
+// (operationName values) whose spend is in the process of being (or has
+// just been) refunded — same "short-lived, pruned once its outer marker
+// commits" shape as appliedTokenPackPaymentIds, just for refunds instead
+// of purchases. See refundTokensOnce's own doc block (near the bottom of
+// this file) for the full two-phase-marker mechanism and
+// forgetRefundedJobId for the pruning.
 //
 // appliedTokenPackPaymentIds: a short-lived array of Dodo payment_ids whose
 // token-pack credit has already been applied to `tokens.balance` — see
@@ -176,6 +184,7 @@ var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 var blobsRetry = require('./blobs-retry');
+var jobOwners = require('./job-owners');
 
 var STORE_NAME = 'dreamtube-entitlements';
 
@@ -931,9 +940,375 @@ async function forgetAppliedTokenPack(event, email, paymentId) {
   });
 }
 
+// ============================================================================
+// Automatic token refund on post-submission generation failure — idempotent
+// per job id (tracker item idea-auto-refund-policy, founder-approved
+// 2026-07-26)
+// ----------------------------------------------------------------------------
+// generate-video.js/generate-image.js spend tokens the moment a generation
+// is successfully SUBMITTED to fal (100 for video, 10 for image, via
+// spendTokens above) — correct even though the job hasn't finished yet, a
+// real submission is real cost regardless of what fal eventually does with
+// it. But a user charged for a video/image that never actually materialized
+// is a bad experience worth fixing automatically, not just routing to the
+// support form every time.
+//
+// video-status.js/image-status.js are the two places that determine, on
+// fal's own authority, that a submitted job actually failed (E205/E505 —
+// fal itself marked the job's terminal status something other than
+// success) or completed with no usable result (E208/E508 — COMPLETED but
+// no video/image URL in the response). Those two files call
+// refundTokensOnce below the moment they report one of THOSE specific
+// codes — see either file's own error-code doc block for the full list and
+// why only these two per media type are refund-eligible: a transport-level
+// hiccup fetching fal's status/result endpoint (E203/E204/E206/E207 and
+// their E5xx counterparts) doesn't actually prove the job failed, only that
+// THIS status check couldn't confirm either way, so those stay outside the
+// automatic refund's scope — the support-form fallback covers those, per
+// the founder's own spec ("Support-form fallback stays for anything beyond
+// (form exists)"). Also per spec: tokens only — money refunds for a real
+// Dodo purchase stay a manual, support-driven process, not something this
+// function ever touches.
+//
+// WHY THIS NEEDS THE EXACT SAME TWO-PHASE-MARKER DISCIPLINE AS
+// creditTokenPackOnce (NOT just creditTokenPackAmountOnce's single-write
+// dedup array alone): not a theoretical race, and a single "fold the id
+// into the same write as the balance" array-membership check is NOT
+// sufficient by itself under genuine concurrency, even though it looks
+// idempotent at first glance. Proven directly by this file's own test
+// suite (test/entitlements-refund.test.js's first draft): two concurrent
+// calls for the same jobId can both `read()` the entitlement record
+// BEFORE either has written, both independently compute "jobId is not yet
+// in refundedJobIds, add it," and both write — a plain array-membership
+// `verify()` (does the array contain jobId) then returns TRUE for BOTH
+// callers, since whichever write actually lands last still contains jobId
+// either way. That's a real double-refund, not a false alarm — the same
+// class of bug creditTokenPackAmountOnce alone would have if
+// creditTokenPackOnce's own OUTER per-payment-id marker (a separate store,
+// a claimId minted per attempt, `verify()` checking "is MY claimId the one
+// now visible" rather than "does a marker merely exist") didn't serialize
+// concurrent callers before any of them ever reach the balance write.
+// creditTokenPackAmountOnce is only safe in production because it is never
+// called with the same paymentId from two genuinely concurrent callers —
+// creditTokenPackOnce's outer marker already guarantees at most one caller
+// gets past the SKIP check to call it. Refunds need that identical outer
+// serialization, not a copy of the inner half alone — see
+// refundTokensOnce below (the outer, claimId-based marker, mirroring
+// creditTokenPackOnce almost line for line) and refundTokenAmountOnce
+// (the inner, per-job balance credit, mirroring creditTokenPackAmountOnce)
+// for the two-function split this requires.
+//
+// Backed by a SEPARATE Blobs store ("dreamtube-refunded-jobs"), one record
+// per generation job id — deliberately mirrors TOKEN_PURCHASES_STORE_NAME's
+// own shape (see that store's header comment above) for the identical
+// reason: a job id and a Dodo payment id are different id spaces meaning
+// different things, so keeping their dedup stores separate means a
+// refund's guard can never be confused with a purchase's, and this store's
+// own 'committed' marker becomes ITS OWN durable, permanent "already
+// refunded" record — which is what makes it safe to prune the per-email
+// `refundedJobIds` array afterward (see forgetRefundedJobId below),
+// exactly like forgetAppliedTokenPack does for purchases once
+// TOKEN_PURCHASES_STORE_NAME's own marker commits.
+// ============================================================================
+
+var REFUNDED_JOBS_STORE_NAME = 'dreamtube-refunded-jobs';
+
+function refundedJobsStore() {
+  return getStore({ name: REFUNDED_JOBS_STORE_NAME });
+}
+
+/**
+ * The OUTER refund entry point — mirrors creditTokenPackOnce almost line
+ * for line (see that function's own doc comment for the full two-phase
+ * mechanism this reuses): a claimId-based write-then-verify race against
+ * REFUNDED_JOBS_STORE_NAME serializes concurrent callers for the SAME
+ * jobId (only one ever gets past the SKIP check to actually apply the
+ * balance credit), a `status: 'pending' -> 'committed'` marker makes an
+ * interrupted attempt (a crash between winning the marker race and
+ * finishing the credit) safely RESUMABLE rather than permanently stuck
+ * either "already marked processed but never credited" or "credited
+ * twice," and refundTokenAmountOnce below (mirroring
+ * creditTokenPackAmountOnce) makes the actual balance write idempotent per
+ * jobId too, so a resume can never double-apply it.
+ *
+ * Returns `{ ok: true, refunded: boolean }`: `refunded: false` means this
+ * jobId was already refunded (a genuine redelivery/resumed poll finding
+ * the same terminal failure again, or a concurrent caller that lost the
+ * marker race) — a safe no-op, not an error. Throws on genuine exhaustion
+ * at either phase (bounded retry attempts never confirm a winner),
+ * matching creditTokenPackOnce's own "EXHAUSTION MUST THROW, NOT SILENTLY
+ * SWALLOW" reasoning — see that function's doc comment. Callers here
+ * (video-status.js/image-status.js) catch this and log rather than fail
+ * the whole status-check response: there's no webhook-style redelivery
+ * mechanism to give a thrown error a genuine second attempt the way
+ * dodo-webhook.js has, so the generation-failure notice must still reach
+ * the user even if this refund attempt itself hit a transient Blobs
+ * failure — the support-form fallback covers the rare case a refund never
+ * lands, per the founder's own spec.
+ *
+ * A missing/falsy jobId skips the dedup guard entirely and always refunds
+ * — mirrors creditTokenPackOnce's own documented `!paymentId` escape
+ * hatch. Shouldn't happen in practice (every real generation always has an
+ * operationName), but this must not silently drop a legitimate refund if
+ * it somehow did. NOT reachable via the real HTTP-exposed status endpoints
+ * (video-status.js/image-status.js both require a non-empty `name` before
+ * ever calling this — see either file's own E202/E502 validation), so this
+ * escape hatch is not itself part of the ownership-check surface below —
+ * there is no jobId for an attacker to spoof ownership of in this branch.
+ *
+ * ----------------------------------------------------------------------
+ * SECURITY: email/jobId ownership check (round-2 review finding, fixes a
+ * real vulnerability, not a hypothetical)
+ * ----------------------------------------------------------------------
+ * `email` and `jobId` both arrive here as plain, unauthenticated
+ * arguments — video-status.js/image-status.js pass through whatever the
+ * request's own query string said, with no session/auth token to check
+ * either against (this codebase has none — every request is identified
+ * purely by a client-supplied email throughout, see generate-video.js's
+ * own E112 doc block). Before this check existed, that meant `GET
+ * /video-status?name=<victim's in-flight operationName>&email=
+ * <attacker's email>` would credit the ATTACKER's balance for a
+ * STRANGER's failed job the instant it failed — and PERMANENTLY lock the
+ * real owner out of ever being refunded for their own job, since the
+ * marker below commits to 'committed' on the first successful claim,
+ * regardless of who made it. This was a genuine, not merely theoretical,
+ * gap: nothing before this line verified the caller was actually the
+ * account that submitted `jobId`.
+ *
+ * jobOwners.getJobOwnerEmail(jobId) (lib/job-owners.js) answers exactly
+ * that — a record written once, at generation-submission time, by
+ * generate-video.js's/generate-image.js's own recordJobOwnerBestEffort,
+ * binding the job id to the email that actually paid for it. This check
+ * runs BEFORE this function ever touches REFUNDED_JOBS_STORE_NAME's
+ * marker or any balance, so a mismatched/unauthorized attempt has ZERO
+ * side effects — it never creates, resumes, or interferes with a marker
+ * the real owner's later, correctly-authenticated poll would still need
+ * to see fresh.
+ *
+ * Fails CLOSED, not open, when no owner record exists at all (a write
+ * failure at submission time, or a job that predates this store): refuses
+ * to refund rather than falling back to trusting the caller's claimed
+ * email. The support-form fallback (per the founder's own spec) is the
+ * correct route for that rare case — silently trusting an unverifiable
+ * email here would just reopen the exact vulnerability this check exists
+ * to close, for the same convenience "auto-refund still works one way or
+ * another" reasoning; this codebase already accepts that a security
+ * boundary degrades to "the automatic path doesn't fire" rather than "the
+ * automatic path fires for someone unverified."
+ */
+async function refundTokensOnce(event, email, jobId, amount) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false, refunded: false };
+
+  if (!jobId) {
+    await addTokens(event, key, amount);
+    return { ok: true, refunded: true };
+  }
+
+  var ownerEmail = await jobOwners.getJobOwnerEmail(event, jobId);
+  if (!ownerEmail) {
+    console.error('refundTokensOnce: no recorded owner for jobId ' + jobId + ' — refusing to refund (fails closed; the support form is the fallback)');
+    return { ok: true, refunded: false };
+  }
+  if (ownerEmail !== key) {
+    console.error('refundTokensOnce: email/jobId mismatch — refusing to refund. jobId=' + jobId + ' requested-by=' + key + ' actual-owner=' + ownerEmail);
+    return { ok: true, refunded: false };
+  }
+
+  var claimId; // set fresh inside mutate() on whichever attempt actually writes
+
+  var result = await blobsRetry.retryingWrite(event, REFUNDED_JOBS_STORE_NAME, jobId, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return refundedJobsStore().get(jobId, { type: 'json' });
+    },
+    mutate: function (existing) {
+      // A marker already exists — either our own earlier attempt within
+      // this loop (verify lagged, so we looped back and now see our own
+      // write) or a genuinely separate concurrent caller/redelivery.
+      // Nothing new to write: SKIP and let the caller decide what the
+      // existing marker's `status` means.
+      if (existing) return blobsRetry.SKIP;
+      claimId = crypto.randomUUID();
+      return { email: key, amount: amount, status: 'pending', claimId: claimId, createdAt: Date.now() };
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.claimId === claimId);
+    }
+  });
+
+  var marker;
+  if (result.ok) {
+    marker = result.value; // our freshly-written 'pending' marker just won the race
+  } else if (result.skipped) {
+    marker = result.current; // a pre-existing marker (pending or committed) -- some other caller/attempt already owns this jobId
+  } else {
+    // Genuine exhaustion — not the legitimate `skipped` case. See
+    // creditTokenPackOnce's own identical doc comment for why this must
+    // throw rather than silently return refunded:false.
+    throw new Error('refundTokensOnce: exhausted attempts writing the pending marker for jobId ' + jobId + ' without confirming a winner');
+  }
+
+  if (!marker || marker.status === 'committed') {
+    // Already fully processed — a genuine redelivery/concurrent-loser,
+    // nothing to do.
+    return { ok: true, refunded: false };
+  }
+
+  // marker.status === 'pending': either freshly created above, or a
+  // resume of an interrupted earlier attempt. refundTokenAmountOnce is
+  // idempotent per jobId (folds the dedup check into the same write as
+  // the balance, see its own doc comment), so it's safe to call again
+  // here even if an earlier, interrupted attempt already applied this
+  // exact credit.
+  await refundTokenAmountOnce(event, marker.email || key, jobId, marker.amount || amount);
+
+  // Flip to 'committed' — ALSO raced (a second claimId-based
+  // write-then-verify), not a blind overwrite, since a 'pending' marker
+  // can legitimately be resumed by more than one near-simultaneous caller
+  // — exactly one resumer should report refunded:true, the rest see it
+  // already finished. Mirrors creditTokenPackOnce's own finish-flip
+  // exactly.
+  var finishClaimId;
+  var finishResult = await blobsRetry.retryingWrite(event, REFUNDED_JOBS_STORE_NAME, jobId, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return refundedJobsStore().get(jobId, { type: 'json' });
+    },
+    mutate: function (existing) {
+      if (existing && existing.status === 'committed') return blobsRetry.SKIP; // someone else already finished this resume
+      finishClaimId = crypto.randomUUID();
+      return Object.assign({}, existing || marker, { status: 'committed', creditedAt: Date.now(), finishClaimId: finishClaimId });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.finishClaimId === finishClaimId);
+    }
+  });
+
+  if (finishResult.skipped) {
+    // Someone else's concurrent resume already flipped this marker — a
+    // safe, expected no-op. The credit itself is guaranteed correct
+    // regardless (refundTokenAmountOnce's own guarantee, above); this
+    // call just isn't the one that gets to report refunded:true.
+    return { ok: true, refunded: false };
+  }
+  if (!finishResult.ok) {
+    // The balance credit itself is NOT at risk (refundTokenAmountOnce
+    // already guaranteed it landed, or would have thrown) — only the
+    // bookkeeping flip-to-'committed' failed to confirm. Still throw
+    // rather than silently succeed — see creditTokenPackOnce's identical
+    // reasoning.
+    throw new Error('refundTokensOnce: exhausted attempts flipping the marker to committed for jobId ' + jobId);
+  }
+
+  // Best-effort cleanup of the short-lived per-email refundedJobIds entry
+  // now that the job's own marker is committed (see forgetRefundedJobId's
+  // doc comment) — not required for correctness, so a failure here must
+  // never turn an already-successful refund into a thrown error.
+  try {
+    await forgetRefundedJobId(event, marker.email || key, jobId);
+  } catch (e) {
+    // Swallowed deliberately — see comment above.
+  }
+
+  return { ok: true, refunded: true };
+}
+
+/**
+ * Credits `amount` tokens back onto `email`'s balance for a specific
+ * generation job id, idempotently: calling this twice (or concurrently)
+ * for the same jobId only ever applies the balance increment once. Same
+ * read -> mutate -> write -> verify shape as creditTokenPackAmountOnce —
+ * see that function's own doc comment for the full race-closing reasoning.
+ * Used by refundTokensOnce above to make its 'pending'-marker resume path
+ * safe (see that function's doc comment for the hazard this closes) — NOT
+ * safe to call directly with the same jobId from genuinely concurrent
+ * callers with no outer serialization (see the doc block above this
+ * section for exactly why that alone isn't enough); always go through
+ * refundTokensOnce in production code.
+ *
+ * A missing/falsy jobId skips the dedup guard entirely and always credits
+ * — mirrors creditTokenPackAmountOnce's own documented escape hatch.
+ */
+async function refundTokenAmountOnce(event, email, jobId, amount) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false };
+
+  if (!jobId) {
+    await addTokens(event, key, amount);
+    return { ok: true };
+  }
+
+  // Same "use syncTokens' own returned value as the balance base, never a
+  // later independent re-read" discipline as creditTokenPackAmountOnce —
+  // see that function's own doc comment for the read-your-own-write hazard
+  // this avoids (a just-landed daily/signup grant getting silently
+  // clobbered by a stale re-read).
+  var syncedTokens = await syncTokens(event, key);
+
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return store().get(key, { type: 'json' });
+    },
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var refundedList = rec.refundedJobIds || [];
+      if (refundedList.indexOf(jobId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
+      var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + amount);
+      return Object.assign({}, rec, {
+        email: key,
+        tokens: { balance: newBalance, lastGrantAt: syncedTokens.lastGrantAt },
+        refundedJobIds: refundedList.concat([jobId]),
+        updatedAt: Date.now()
+      });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.refundedJobIds && verifyRead.refundedJobIds.indexOf(jobId) !== -1);
+    }
+  });
+
+  if (result.ok || result.skipped) return { ok: true }; // credited just now, or already applied by an earlier attempt
+
+  // Bonus confirmatory read, same reasoning as creditTokenPackAmountOnce's
+  // own — resolves the common "our write actually landed, only the
+  // verify-read lagged" case without ever reporting success when nothing
+  // was actually confirmed.
+  var finalRead = await getEntitlement(event, key);
+  var finalRefunded = (finalRead && finalRead.refundedJobIds) || [];
+  if (finalRefunded.indexOf(jobId) !== -1) return { ok: true };
+
+  throw new Error('refundTokenAmountOnce: exhausted attempts refunding jobId ' + jobId + ' for ' + key + ' without ever confirming the refund landed');
+}
+
+/**
+ * Removes `jobId` from `email`'s short-lived `refundedJobIds` list once
+ * REFUNDED_JOBS_STORE_NAME's own marker for it has been safely flipped to
+ * `'committed'` (see refundTokensOnce) — at that point the marker record
+ * is the sole durable source of truth for "already refunded" and this
+ * per-email array no longer needs to remember it too. Mirrors
+ * forgetAppliedTokenPack exactly (same reasoning, same "harmless if this
+ * never runs" non-fatal cleanup). No-ops for an empty/missing email or a
+ * jobId that isn't present.
+ */
+async function forgetRefundedJobId(event, email, jobId) {
+  var key = normalizeEmail(email);
+  if (!key) return;
+  var record = await getEntitlement(event, key);
+  var refunded = (record && record.refundedJobIds) || [];
+  if (refunded.indexOf(jobId) === -1) return;
+  await setEntitlement(event, key, {
+    refundedJobIds: refunded.filter(function (id) { return id !== jobId; })
+  });
+}
+
 module.exports = {
   STORE_NAME,
   TOKEN_PURCHASES_STORE_NAME,
+  REFUNDED_JOBS_STORE_NAME,
   normalizeEmail,
   getEntitlement,
   isEntitled,
@@ -944,6 +1319,9 @@ module.exports = {
   creditTokenPackOnce,
   creditTokenPackAmountOnce,
   forgetAppliedTokenPack,
+  refundTokensOnce,
+  refundTokenAmountOnce,
+  forgetRefundedJobId,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see
   // that file) can read them instead of hand-maintaining a duplicate

@@ -184,6 +184,16 @@ var rateLimit = require('./lib/rate-limit');
 var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var turnstile = require('./lib/turnstile');
+var jobOwners = require('./lib/job-owners');
+
+/** Mirrors generate-video.js's own recordJobOwnerBestEffort exactly — see that function's doc comment and lib/job-owners.js's header comment for the full mechanism. */
+async function recordJobOwnerBestEffort(event, operationName, email) {
+  try {
+    await jobOwners.recordJobOwner(event, operationName, email);
+  } catch (e) {
+    console.error('generate-image: failed to record job owner (refund auth binding) for ' + operationName + ' — a later refund attempt for this job will fail closed', e);
+  }
+}
 
 var IMAGE_TOKEN_COST = 10;
 
@@ -272,7 +282,9 @@ exports.handler = async function (event) {
   // FAL_MODEL_IMAGE_GEN, the actual fal.ai call) is ever reached.
   if (mockMode) {
     await entitlements.spendTokens(event, email, IMAGE_TOKEN_COST);
-    return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
+    var mockOpName = mockOperationName();
+    await recordJobOwnerBestEffort(event, mockOpName, email);
+    return { statusCode: 200, body: JSON.stringify({ operationName: mockOpName }) };
   }
 
   var prompt = buildImagePrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace);
@@ -285,6 +297,7 @@ exports.handler = async function (event) {
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E405: ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, IMAGE_TOKEN_COST);
+    await recordJobOwnerBestEffort(event, result.operationName, email);
     return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E407: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
