@@ -7,11 +7,27 @@
 // `dodopayments` SDK makes its HTTP request via the global `fetch`, so
 // intercepting it there avoids needing real Dodo credentials or network
 // access.
+//
+// Also covers the returning-customer-prefill fix (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6): when
+// lib/entitlements.js already has a Dodo customer id on file for this
+// email (stamped by dodo-webhook.js on a prior purchase — see
+// dodo-webhook.test.js for that half), this function must attach the
+// checkout session to that EXISTING customer (`customer: { customer_id }`)
+// instead of the plain email-only shape, plus the fallback-to-email path
+// if that attach attempt itself fails (a stale/deleted stored id). Uses
+// the same mock-Blobs pattern as dodo-webhook.test.js /
+// generate-video-gate.test.js, since entitlements.getDodoCustomerId now
+// backs this lookup.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
 
+var mockBlobs = require('./helpers/mock-blobs');
+mockBlobs.install();
+
 var { fakeEvent } = require('./helpers/fake-event');
+var entitlements = require('../netlify/functions/lib/entitlements');
 var handler = require('../netlify/functions/create-checkout-session-dodo').handler;
 
 var realFetch = global.fetch;
@@ -43,6 +59,7 @@ function reqEvent(overrides) {
 
 test.beforeEach(function () {
   global.fetch = realFetch;
+  mockBlobs.reset();
   process.env.DODO_API_KEY = 'test-dodo-key';
   process.env.DODO_PRODUCT_PACK_100 = 'pdt_pack100_test';
   process.env.DODO_PRODUCT_PACK_300 = 'pdt_pack300_test';
@@ -227,4 +244,88 @@ test('Dodo API rejects the request -> 502 E7', async function () {
   var res = await handler(reqEvent());
   assert.equal(res.statusCode, 502);
   assert.match(JSON.parse(res.body).error, /^E7: dodo_request_failed/);
+});
+
+// ============================================================================
+// Returning-customer prefill (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6) — see this file's own
+// header comment and the inline comment above the checkoutSessions.create
+// call in create-checkout-session-dodo.js for the full research/reasoning.
+// ============================================================================
+
+test('every checkout session always sets minimal_address + show_saved_payment_methods, regardless of returning-customer status', async function () {
+  var captured = stubFetchCapture();
+  await handler(reqEvent({ body: { email: 'freshbuyer@example.com', pack: 'pack100' } }));
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.minimal_address, true, 'minimal_address must always be set — reduces billing address collection to country/zip regardless of whether this is a returning customer');
+  assert.equal(sentBody.show_saved_payment_methods, true, 'show_saved_payment_methods must always be set — harmless no-op for a brand-new customer with no saved methods yet');
+});
+
+test('a brand-new buyer with no stored Dodo customer id yet still sends the plain email-based customer shape — no change from before this fix', async function () {
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'brandnew@example.com', pack: 'pack100' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'brandnew@example.com' }, 'no stored customer id for this email -> customer must be the plain NewCustomer{email} shape, exactly as before');
+});
+
+test('a returning buyer WITH a stored Dodo customer id sends AttachExistingCustomer{customer_id} instead of the bare email', async function () {
+  await entitlements.recordDodoCustomerId({}, 'returning@example.com', 'cus_returning_123');
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'returning@example.com', pack: 'pack300' } }));
+  assert.equal(res.statusCode, 200);
+
+  assert.equal(captured.calls.length, 1, 'the stored customer id must be used on the FIRST attempt — no fallback retry needed when it works');
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { customer_id: 'cus_returning_123' }, 'must attach to the existing Dodo customer by id, not send a bare email that would look like a fresh customer');
+  // Everything else about the request is unaffected by which customer shape is used.
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack300_test');
+  assert.equal(sentBody.metadata.dreamtube_email, 'returning@example.com');
+});
+
+test('the stored Dodo customer id lookup is normalized-email-scoped, same as every other email lookup in this codebase', async function () {
+  await entitlements.recordDodoCustomerId({}, 'MixedCase@Example.com', 'cus_mixedcase');
+  var captured = stubFetchCapture();
+  await handler(reqEvent({ body: { email: '  mixedcase@example.com  ', pack: 'pack100' } }));
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { customer_id: 'cus_mixedcase' }, 'the stored id must be found regardless of case/whitespace differences between how it was recorded and how this request supplied the email');
+});
+
+test('a stale/rejected stored customer id falls back to a second attempt with the plain email shape, and still succeeds', async function () {
+  await entitlements.recordDodoCustomerId({}, 'staleid@example.com', 'cus_stale_deleted');
+  var calls = [];
+  global.fetch = async function (url, init) {
+    var body = JSON.parse(init.body);
+    calls.push(body);
+    if (body.customer && body.customer.customer_id) {
+      // Simulate Dodo rejecting a reference to a customer id that no
+      // longer exists on its side.
+      return new Response(JSON.stringify({ message: 'customer not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ session_id: 'cks_fallback', checkout_url: 'https://checkout.dodopayments.com/cks_fallback' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  var res = await handler(reqEvent({ body: { email: 'staleid@example.com', pack: 'pack100' } }));
+  assert.equal(res.statusCode, 200, 'a stale stored customer id must not block the purchase — it must fall back and still succeed');
+  var body = JSON.parse(res.body);
+  assert.equal(body.url, 'https://checkout.dodopayments.com/cks_fallback');
+
+  assert.equal(calls.length, 2, 'exactly one failed attach-by-id attempt, then one successful fallback attempt');
+  assert.deepEqual(calls[0].customer, { customer_id: 'cus_stale_deleted' });
+  assert.deepEqual(calls[1].customer, { email: 'staleid@example.com' }, 'the fallback attempt must use the plain email shape');
+  // The fallback retry still carries every other real field (product, metadata) — it isn't a stripped-down request.
+  assert.equal(calls[1].product_cart[0].product_id, 'pdt_pack100_test');
+  assert.equal(calls[1].metadata.dreamtube_pack, 'pack100');
+});
+
+test('a brand-new buyer (no stored customer id, so already on the plain-email path) gets NO retry on failure — a real Dodo rejection still surfaces as 502 E7 directly', async function () {
+  var calls = [];
+  global.fetch = async function (url, init) {
+    calls.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ message: 'invalid product' }), { status: 400, headers: { 'content-type': 'application/json' } });
+  };
+  var res = await handler(reqEvent({ body: { email: 'brandnewfails@example.com', pack: 'pack100' } }));
+  assert.equal(res.statusCode, 502);
+  assert.match(JSON.parse(res.body).error, /^E7: dodo_request_failed/);
+  assert.equal(calls.length, 1, 'no retry should be attempted for a request that was already on the plain-email path — there is no fallback left to try');
 });

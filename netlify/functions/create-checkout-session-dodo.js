@@ -87,7 +87,8 @@ function isSafeRedirectPath(candidate) {
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
-var { normalizeEmail } = require('./lib/entitlements');
+var entitlements = require('./lib/entitlements');
+var normalizeEmail = entitlements.normalizeEmail;
 
 // Token amount per pack — mirrors the pricing already shown in shop.html
 // (100 tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99 — "Token Economy
@@ -190,35 +191,105 @@ exports.handler = async function (event) {
   // marker.
   var eventId = crypto.randomBytes(16).toString('hex');
 
+  // ── Repeat-purchase friction fix (tracker item
+  //    for-product-repeat-purchase-friction-dod-b6pzs6) ──
+  // Researched directly against the `dodopayments` npm package's own
+  // shipped TypeScript types (node_modules/dodopayments/resources/
+  // payments.d.ts) rather than assumed: a checkout session's `customer`
+  // field accepts EITHER `{ customer_id }` (AttachExistingCustomer — attach
+  // to a customer Dodo already has on file) or `{ email, name?,
+  // phone_number? }` (NewCustomer — always creates/collects a customer
+  // fresh). If dodo-webhook.js has already recorded a Dodo customer id for
+  // this email from a prior purchase (lib/entitlements.js's
+  // recordDodoCustomerId/getDodoCustomerId — stamped from the
+  // payment.succeeded webhook's own `customer.customer_id`), attach to
+  // THAT existing customer instead of the bare-email shape, so Dodo
+  // recognizes the buyer as already-known (their name/phone are already on
+  // file with that customer record) rather than collecting them fresh as
+  // if this were a brand-new customer. A brand-new buyer (no stored id
+  // yet) gets exactly the prior email-only behavior — nothing changes for
+  // them.
+  //
+  // What this does NOT solve: Dodo's Customer object has no billing-
+  // address field at all (confirmed via both the SDK's Customer/
+  // CustomerLimitedDetails types and docs.dodopayments.com) — billing
+  // address is a per-checkout-session concern with nothing to reuse across
+  // sessions, customer id or not. `minimal_address: true` below is the
+  // real, separately-documented lever for that (confirmed applicable to
+  // this hosted checkout_url flow, not just an embedded/inline-confirm
+  // flow, per docs.dodopayments.com's v1.66.0 changelog): it reduces
+  // billing-address collection down to just country (always required for
+  // tax) plus zip/postal code where the buyer's region needs it for tax,
+  // dropping street/city/state entirely. Dodo enforces country
+  // unconditionally as merchant of record; there is no way to make even
+  // that fully optional, nor is there a dashboard setting this codebase
+  // could instead rely on for either of these — both are request
+  // parameters, applied here.
+  //
+  // `show_saved_payment_methods: true` is the third, independent lever:
+  // Dodo's own doc comment for it is literally "Display saved payment
+  // methods of a returning customer" — harmless to always set (a brand-new
+  // customer simply has none to show yet).
+  //
+  // Honestly flagged, not assumed: docs.dodopayments.com does not
+  // explicitly confirm that AttachExistingCustomer suppresses the
+  // name/phone fields in the checkout UI itself (only that it's the SDK's
+  // documented mechanism for identifying a returning customer, distinct
+  // from NewCustomer's fresh-collection shape) — see
+  // lib/entitlements.js's own doc block above recordDodoCustomerId for the
+  // full reasoning on why this should still help.
+  var dodoCustomerId = await entitlements.getDodoCustomerId(event, email);
+  var customerField = dodoCustomerId ? { customer_id: dodoCustomerId } : { email: email };
+
+  var sessionParams = {
+    product_cart: [{ product_id: productId, quantity: 1 }],
+    customer: customerField,
+    return_url: returnUrl,
+    cancel_url: cancelUrl,
+    minimal_address: true,
+    show_saved_payment_methods: true,
+    // Carries the normalized email + pack + token amount + shared
+    // event_id through as a fallback identity/amount source alongside
+    // the webhook payload's own data.customer.email and
+    // data.product_cart — belt-and-suspenders, same reasoning as
+    // create-checkout-session.js's metadata, and specifically
+    // load-bearing if DODO_PRODUCT_PACK_* ever gets rotated between
+    // checkout creation and webhook delivery (see dodo-webhook.js's
+    // resolvePackTokens/resolvePackPrice). Dodo echoes metadata back
+    // verbatim on the payment.succeeded webhook, which is how
+    // dreamtube_event_id makes it from here to dodo-webhook.js.
+    metadata: {
+      dreamtube_email: email,
+      dreamtube_pack: pack,
+      dreamtube_tokens: PACK_TOKENS[pack],
+      dreamtube_price: PACK_PRICES[pack],
+      dreamtube_event_id: eventId
+    }
+  };
+
   try {
     var client = new DodoPayments({
       bearerToken: apiKey,
       environment: process.env.DODO_ENVIRONMENT || 'live_mode'
     });
 
-    var session = await client.checkoutSessions.create({
-      product_cart: [{ product_id: productId, quantity: 1 }],
-      customer: { email: email },
-      return_url: returnUrl,
-      cancel_url: cancelUrl,
-      // Carries the normalized email + pack + token amount + shared
-      // event_id through as a fallback identity/amount source alongside
-      // the webhook payload's own data.customer.email and
-      // data.product_cart — belt-and-suspenders, same reasoning as
-      // create-checkout-session.js's metadata, and specifically
-      // load-bearing if DODO_PRODUCT_PACK_* ever gets rotated between
-      // checkout creation and webhook delivery (see dodo-webhook.js's
-      // resolvePackTokens/resolvePackPrice). Dodo echoes metadata back
-      // verbatim on the payment.succeeded webhook, which is how
-      // dreamtube_event_id makes it from here to dodo-webhook.js.
-      metadata: {
-        dreamtube_email: email,
-        dreamtube_pack: pack,
-        dreamtube_tokens: PACK_TOKENS[pack],
-        dreamtube_price: PACK_PRICES[pack],
-        dreamtube_event_id: eventId
-      }
-    });
+    var session;
+    try {
+      session = await client.checkoutSessions.create(sessionParams);
+    } catch (attachErr) {
+      // Conservative fallback, ONLY for the existing-customer-attach path:
+      // a stored dodoCustomerId could in principle be stale (e.g. the
+      // customer record was deleted on Dodo's own dashboard between
+      // purchases) — rather than let a caching optimization ever block a
+      // real purchase, retry once with the exact prior plain-email
+      // behavior before giving up. A brand-new buyer (no dodoCustomerId,
+      // so already on the plain-email path) gets no retry here — a
+      // failure there is a real, non-retryable problem (bad product id,
+      // bad API key, etc.) and must surface as E7 exactly as before this
+      // change.
+      if (!dodoCustomerId) throw attachErr;
+      session = await client.checkoutSessions.create(Object.assign({}, sessionParams, { customer: { email: email } }));
+    }
 
     return { statusCode: 200, body: JSON.stringify({ url: session.checkout_url, sessionId: session.session_id, eventId: eventId }) };
   } catch (e) {

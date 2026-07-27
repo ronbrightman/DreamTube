@@ -293,6 +293,26 @@ exports.handler = async function (event) {
       var tokens = resolvePackTokens(payment);
 
       if (payEmail && tokens) {
+        // Repeat-purchase friction fix (tracker item
+        // for-product-repeat-purchase-friction-dod-b6pzs6) — remember this
+        // email's Dodo customer id (if the payload carries one) so a LATER
+        // checkout session (create-checkout-session-dodo.js) can attach to
+        // this SAME existing Dodo customer instead of implicitly creating a
+        // fresh one every time. Deliberately scoped inside this
+        // `payEmail && tokens` gate, same as the credit call below — NOT
+        // run for a payment whose email/token amount couldn't be resolved,
+        // matching this handler's existing "don't create a phantom
+        // entitlement record for something we can't actually attribute"
+        // discipline (see resolvePackTokens' own doc comment). Runs on
+        // EVERY qualifying delivery, including redeliveries of an
+        // already-processed payment_id — see recordDodoCustomerId's own
+        // doc comment for why that's harmless (idempotent overwrite with
+        // the same value in steady state).
+        var dodoCustomerId = payment.customer && payment.customer.customer_id;
+        if (dodoCustomerId) {
+          await entitlements.recordDodoCustomerId(event, payEmail, dodoCustomerId);
+        }
+
         var creditResult = await entitlements.creditTokenPackOnce(event, payEmail, payment.payment_id, tokens);
         // creditTokenPackOnce's own doc comment flags `credited: true` as
         // exactly the signal a caller should gate a one-time side effect

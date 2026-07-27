@@ -452,6 +452,73 @@ test('a redelivered payment.succeeded event (same payment_id) does not double-cr
   assert.equal(afterSecond.tokens.balance, 100, 'balance must not double-credit on a redelivered event');
 });
 
+// ============================================================================
+// Dodo customer id storage (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6 — "repeat-purchase
+// friction: Dodo re-asks all contact/billing details on every purchase").
+// See lib/entitlements.js's recordDodoCustomerId/getDodoCustomerId and
+// create-checkout-session-dodo.test.js for the other half (reusing this
+// stored id on a LATER checkout session).
+// ============================================================================
+
+test('a first-time buyer\'s payment.succeeded webhook stores the Dodo customer id on the entitlement record', async function () {
+  await seedZeroBalance('firsttimecustid@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_first_custid',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_firsttime_abc', email: 'firsttimecustid@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'firsttimecustid@example.com');
+  assert.equal(record.dodoCustomerId, 'cus_firsttime_abc');
+  assert.equal(await entitlements.getDodoCustomerId({}, 'firsttimecustid@example.com'), 'cus_firsttime_abc');
+});
+
+test('a SECOND purchase from the same customer_id re-stores the same id (idempotent, not appended/duplicated)', async function () {
+  await seedZeroBalance('repeatcustid@example.com');
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_repeat_custid_1',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { customer_id: 'cus_repeat_same', email: 'repeatcustid@example.com' }
+  })));
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_repeat_custid_2',
+    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    customer: { customer_id: 'cus_repeat_same', email: 'repeatcustid@example.com' }
+  })));
+  var record = await entitlements.getEntitlement({}, 'repeatcustid@example.com');
+  assert.equal(record.dodoCustomerId, 'cus_repeat_same');
+  // Both purchases' token credits still landed independent of this bookkeeping.
+  assert.equal(record.tokens.balance, 400);
+});
+
+test('a payment whose customer block carries no customer_id (e.g. legacy/malformed payload) credits tokens normally but stores no dodoCustomerId', async function () {
+  await seedZeroBalance('nocustid@example.com');
+  var payload = paymentPayload({
+    payment_id: 'pay_no_custid',
+    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    customer: { email: 'nocustid@example.com' } // no customer_id field at all
+  });
+  var res = await handler(signedEvent(payload));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'nocustid@example.com');
+  assert.equal(record.tokens.balance, 100, 'the credit must land regardless of whether a customer_id was present');
+  assert.equal(record.dodoCustomerId, undefined, 'nothing to store when the payload never carried a customer_id');
+});
+
+test('a payment whose token amount could not be resolved stores no dodoCustomerId either -- no phantom entitlement record from bookkeeping alone', async function () {
+  var payload = paymentPayload({
+    payment_id: 'pay_unresolvable_custid',
+    product_cart: [{ product_id: 'pdt_unknown_product', quantity: 1 }],
+    customer: { customer_id: 'cus_unresolvable', email: 'unresolvablecustid@example.com' },
+    metadata: {}
+  });
+  var res = await handler(signedEvent(payload));
+  assert.equal(res.statusCode, 200);
+  assert.equal(await entitlements.getEntitlement({}, 'unresolvablecustid@example.com'), null, 'must create no record at all when tokens are unresolvable, same discipline as the existing test for this case -- not even for customer-id bookkeeping');
+});
+
 test('email falls back to metadata.dreamtube_email when the customer block is missing', async function () {
   await seedZeroBalance('fallback@example.com');
   var payload = paymentPayload({

@@ -13,7 +13,20 @@
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
 //     tokens: { balance, lastGrantAt },
 //     appliedTokenPackPaymentIds, refundedJobIds,
-//     firstPackPurchaseAt }
+//     firstPackPurchaseAt, dodoCustomerId }
+//
+// dodoCustomerId: the Dodo Payments customer id (e.g. "cus_...") this email
+// is known to map to, recorded by recordDodoCustomerId (called from
+// dodo-webhook.js on every payment.succeeded whose token amount actually
+// resolves — see that file) and read back by getDodoCustomerId
+// (create-checkout-session-dodo.js, so a returning buyer's later checkout
+// session attaches to their EXISTING Dodo customer record instead of
+// implicitly creating a fresh one every time — see that file's own
+// comment for why this is what actually reduces re-entering name/phone on
+// a second purchase, per tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6). Mirrors
+// stripeCustomerId's existing role for the dormant Stripe backend, just
+// for the live Dodo one.
 //
 // refundedJobIds: a short-lived per-email list of generation job ids
 // (operationName values) whose spend is in the process of being (or has
@@ -1440,6 +1453,89 @@ async function deleteEntitlement(event, email) {
   return { ok: true };
 }
 
+// ============================================================================
+// Dodo customer id (tracker item for-product-repeat-purchase-friction-
+// dod-b6pzs6 — "repeat-purchase friction: Dodo re-asks all contact/billing
+// details on every purchase") — see the header doc comment's
+// `dodoCustomerId` entry for the full record-shape context.
+//
+// Researched against the `dodopayments` npm package's own shipped
+// TypeScript types (node_modules/dodopayments/resources/payments.d.ts,
+// checkout-sessions.d.ts) rather than assumed: a checkout session's
+// `customer` field is typed `CustomerRequest = AttachExistingCustomer |
+// NewCustomer`, where `AttachExistingCustomer` is JUST `{ customer_id:
+// string }` and `NewCustomer` is `{ email: string, name?, phone_number? }`
+// ("Email is required for creating a new customer" — its own doc comment).
+// The webhook's `payment.customer` (typed `CustomerLimitedDetails`) DOES
+// carry `customer_id` alongside `email`/`name`/`phone_number` — confirmed
+// by reading that interface directly, not guessed.
+//
+// Why this actually reduces re-entry (not just a cosmetic id swap):
+// NewCustomer's shape exists to CREATE a customer record, so a checkout
+// session built from bare email always collects name/phone fresh into
+// that new record, even though Dodo's own default backend behavior
+// already attaches the session to a matching existing customer by email
+// (see checkout-sessions.d.ts's `always_create_new_customer` flag: "By
+// default email is used to find an existing customer to attach the
+// session to") — that default only dedupes the CUSTOMER RECORD on Dodo's
+// side, it doesn't change what the checkout form collects. Passing
+// `customer_id` via AttachExistingCustomer instead tells Dodo this is a
+// KNOWN customer whose name/phone are already on file, which is what
+// actually skips re-collecting them.
+//
+// What this does NOT solve: Dodo's Customer object (confirmed via both
+// the SDK's `Customer`/`CustomerLimitedDetails` types and
+// docs.dodopayments.com) has no billing-address field at all — billing
+// address is a per-checkout-session concern, not something stored on the
+// customer and reusable across sessions. See create-checkout-session-
+// dodo.js's own comment for how that part is instead addressed
+// (`minimal_address`), and its comment for what's still an open,
+// unverified question (whether AttachExistingCustomer actually suppresses
+// the name/phone fields in the checkout UI, vs. merely linking the
+// backend record) — docs.dodopayments.com does not explicitly confirm the
+// UI-prefill behavior either way, only that this is the SDK's documented
+// mechanism for identifying a returning customer.
+// ============================================================================
+
+/**
+ * Records the Dodo customer id (`payment.customer.customer_id` off a
+ * verified payment.succeeded webhook) this email maps to, for
+ * create-checkout-session-dodo.js to reuse on a later purchase (see
+ * getDodoCustomerId below). Called from dodo-webhook.js.
+ *
+ * Idempotent and safe to call on EVERY resolvable payment.succeeded for
+ * this email, not just the first: Dodo's own default customer-lookup
+ * behavior (find-by-email, see the doc block above) means a given email
+ * should always resolve to the same customer_id, so simply overwriting
+ * with the latest-seen value on each call is harmless — and, in the
+ * unlikely event Dodo's own mapping ever legitimately changes, more
+ * correct than freezing whatever the first purchase happened to see.
+ *
+ * No-ops (writes nothing, creates no record) if either `email` or
+ * `customerId` is missing/empty — mirrors this file's existing
+ * "an unidentifiable write creates no phantom record" discipline (see
+ * getEntitlement/syncTokens' own guards).
+ */
+async function recordDodoCustomerId(event, email, customerId) {
+  var key = normalizeEmail(email);
+  if (!key || !customerId) return;
+  await setEntitlement(event, key, { dodoCustomerId: customerId });
+}
+
+/**
+ * Reads back the Dodo customer id previously recorded for this email (see
+ * recordDodoCustomerId), or `undefined` if this email has never completed
+ * a payment.succeeded webhook that carried one — a brand-new buyer, or an
+ * existing buyer whose only purchase(s) so far predate this field
+ * existing. Callers (create-checkout-session-dodo.js) must treat
+ * `undefined` as "fall back to the plain email-based checkout, exactly
+ * like before this existed" rather than erroring.
+ */
+async function getDodoCustomerId(event, email) {
+  var record = await getEntitlement(event, email);
+  return (record && record.dodoCustomerId) || undefined;
+}
+
 module.exports = {
   STORE_NAME,
   TOKEN_PURCHASES_STORE_NAME,
@@ -1458,6 +1554,8 @@ module.exports = {
   refundTokenAmountOnce,
   forgetRefundedJobId,
   deleteEntitlement,
+  recordDodoCustomerId,
+  getDodoCustomerId,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see
   // that file) can read them instead of hand-maintaining a duplicate
