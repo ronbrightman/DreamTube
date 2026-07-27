@@ -65,6 +65,38 @@
 // Failing this way (safe degrade to "no auto-refund" rather than "refund
 // anyone who asks") is the deliberate, correct tradeoff for a security
 // boundary, even though it's the less convenient one operationally.
+//
+// SECOND CALLER (added for tracker.html's
+// for-product-activate-automatic-retention-4n74rw item, founder-approved
+// 2026-07-27 — "start sending the first-video retention email
+// AUTOMATICALLY... do not wait for manual triggering"): mark-generation-
+// completed.js — the one genuine server-verified "a generation just
+// finished" choke point for a normal signed-in generation (there is no
+// real fal webhook for that path, only the abandoned-pre-signup one — see
+// that file's own header comment) — needed a way to resolve WHO owns a
+// just-completed operationName with no client-supplied identity at all,
+// so it can fire the retention email itself rather than depending on the
+// client's browser surviving long enough to load result.html and run its
+// own JS. This store already existed for exactly that "operationName ->
+// real owner, no client trust needed" purpose (see above), so it's reused
+// here rather than inventing a second identity-binding mechanism.
+//
+// `mediaType` (optional 3rd arg to recordJobOwner, added the same day) is
+// ALSO now recorded, purely so mark-generation-completed.js can preserve
+// the retention email's existing "video only" scope (matching
+// markFirstVideoCreatedIfEligible's/send-first-dream-email.js's own
+// documented scope decision) without needing to fetch the job's actual
+// result payload — verifyOperationCompleted's own doc comment explains
+// why it deliberately never does that. A "fal:" operationName's own model
+// segment can't be used instead: image and video mock-mode operationNames
+// are indistinguishable strings ("mock:" + timestamp + uuid, see
+// generate-video.js's/generate-image.js's own mockOperationName), so this
+// needed to be recorded explicitly, not derived. Purely additive and
+// backward compatible — a record written before this field existed simply
+// has no `mediaType`, which getJobOwnerRecord's callers must treat as
+// "unknown," never "video" (see mark-generation-completed.js's own
+// comment on why it fails closed — no auto-send — on unknown mediaType,
+// not just on a missing owner record).
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -86,13 +118,32 @@ function normalizeEmail(email) {
  * happen — generate-video.js's/generate-image.js's own E112/E412 token
  * gate already requires a real email before either reaches this point —
  * but this must never throw on a defensive check failing).
+ *
+ * `mediaType` (optional) — see header comment's "SECOND CALLER" section.
+ * Only 'video'/'image' are ever stored; anything else (including omitted)
+ * leaves the field off the record entirely, which every reader must treat
+ * as "unknown," not as either specific type.
  */
-async function recordJobOwner(event, jobId, email) {
+async function recordJobOwner(event, jobId, email, mediaType) {
   if (!jobId) return;
   var key = normalizeEmail(email);
   if (!key) return;
   connectLambda(event);
-  await store().setJSON(jobId, { email: key, createdAt: Date.now() });
+  var record = { email: key, createdAt: Date.now() };
+  if (mediaType === 'video' || mediaType === 'image') record.mediaType = mediaType;
+  await store().setJSON(jobId, record);
+}
+
+/**
+ * Returns the full { email, mediaType, createdAt } record for `jobId`, or
+ * null if none exists — see getJobOwnerEmail below for the same
+ * "predates this store / write failed" honest-degrade reasoning, just
+ * handing back the whole record instead of only the email.
+ */
+async function getJobOwnerRecord(event, jobId) {
+  if (!jobId) return null;
+  connectLambda(event);
+  return (await store().get(jobId, { type: 'json' })) || null;
 }
 
 /**
@@ -100,13 +151,13 @@ async function recordJobOwner(event, jobId, email) {
  * record exists (never submitted through the real generate-video.js/
  * generate-image.js flow, predates this store, or recordJobOwner's own
  * write failed/never landed — see header comment for why that reads as
- * "refuse to refund," not "refund anyone").
+ * "refuse to refund," not "refund anyone"). Thin wrapper over
+ * getJobOwnerRecord above — unchanged contract/behavior from before that
+ * function existed.
  */
 async function getJobOwnerEmail(event, jobId) {
-  if (!jobId) return null;
-  connectLambda(event);
-  var record = await store().get(jobId, { type: 'json' });
+  var record = await getJobOwnerRecord(event, jobId);
   return (record && record.email) || null;
 }
 
-module.exports = { STORE_NAME, recordJobOwner, getJobOwnerEmail };
+module.exports = { STORE_NAME, recordJobOwner, getJobOwnerRecord, getJobOwnerEmail };

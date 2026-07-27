@@ -44,11 +44,55 @@
 // nothing useful to do about it anyway, and a distinguishable response
 // for "unverified" vs "verified" would just hand a prober a free oracle.
 //
+// AUTOMATIC FIRST-DREAM RETENTION EMAIL (added 2026-07-27, tracker.html's
+// for-product-activate-automatic-retention-4n74rw item, founder-approved
+// -- "start sending... AUTOMATICALLY... do not wait for manual
+// triggering"): this is THE genuine, singular, server-verified
+// "generation just completed" choke point for every normal signed-in
+// generation path this app has (fresh video, regenerate, reference-to-
+// video, image-to-video, and image generation -- all funnel through
+// generate-video.js/generate-image.js's own recordJobOwnerBestEffort call
+// at submission time, see lib/job-owners.js). There is genuinely no real
+// fal WEBHOOK for any of these -- dream-webhook.js is fal's only actual
+// webhook target in this app, and it's wired ONLY to the separate,
+// pre-signup abandoned-dream flow (see generate-video.js's own
+// withWebhook comment) -- so this client-polled-then-server-re-verified
+// endpoint IS the closest thing to a real completion signal this app has,
+// exactly the choke point the tracker item asked to trace and confirm
+// before wiring into.
+//
+// Once `verified` is true below, this independently resolves WHO owns
+// `operationName` via lib/job-owners.js's getJobOwnerRecord (recorded at
+// SUBMISSION time, never anything this request itself claims) and, for a
+// real registered account whose recorded mediaType is 'video' (matching
+// the retention email's own long-established video-only scope --
+// see send-first-dream-email.js's header comment; an unrecorded/unknown
+// mediaType fails closed here, never assumed to be video), calls the
+// exact same guarded lib/first-dream-email-sender.js core
+// send-first-dream-email.js itself calls. This needs NO password and NO
+// client-claimed identity at all -- ownership is proven purely by
+// knowing operationName (server-issued, unguessable, independently
+// re-verified as genuinely completed above) plus the submission-time
+// job-owners binding, a strictly STRONGER identity proof than the
+// password re-check the client-triggered endpoint needs, not a weaker
+// one. Awaited (not fire-and-forget) so this function's own invocation
+// doesn't return before the send genuinely completes or fails -- same
+// "await the notification best-effort, inside a try/catch, before
+// returning" discipline dream-webhook.js's own sendReadyEmail already
+// uses for its webhook handler. Never turns into a distinguishable
+// response either way (see the E-code list below): a real completion
+// marker write always succeeds or fails on its own terms, independent of
+// whatever happens to this bonus email step.
+//
 // Rate limiting: same reasoning as track-conversion.js -- a public,
 // unauthenticated endpoint, so a per-IP daily cap guards against someone
 // scripting pointless requests. Not the actual security boundary (that's
 // verifyOperationCompleted below) -- just cheap hygiene consistent with
-// this codebase's other public endpoints.
+// this codebase's other public endpoints. The retention-email send this
+// endpoint may now also trigger needs no SEPARATE rate limit of its own:
+// it can fire at most once per real account ever (lib/first-dream-email-
+// store.js's atomic guard), so this endpoint's existing per-IP cap on
+// mark ATTEMPTS already bounds it.
 //
 // Error codes (local to this small function):
 //   E1 method_not_allowed
@@ -57,6 +101,9 @@
 //   E4 rate_limited
 
 var generationCompletionStore = require('./lib/generation-completion-store');
+var jobOwners = require('./lib/job-owners');
+var accountStore = require('./lib/account-store');
+var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 var rateLimit = require('./lib/rate-limit');
 
 var FAL_API_BASE = 'https://queue.fal.run';
@@ -164,6 +211,15 @@ exports.handler = async function (event) {
     var verified = await verifyOperationCompleted(operationName);
     if (verified) {
       await generationCompletionStore.markCompleted(event, operationName);
+      // Best-effort, awaited (see header comment on why) -- a failure
+      // anywhere in here must never affect the completion marker just
+      // written above, which is why it's wrapped in its own try/catch
+      // rather than sharing the outer one's fate.
+      try {
+        await maybeSendAutomaticFirstDreamEmail(event, operationName);
+      } catch (emailErr) {
+        console.error('mark-generation-completed: automatic first-dream email step failed (non-fatal)', emailErr);
+      }
     }
     // An operationName that doesn't verify is a silent no-op -- see header
     // comment on why this never surfaces as a distinguishable response.
@@ -178,6 +234,50 @@ exports.handler = async function (event) {
 
   return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 };
+
+/**
+ * Resolves `operationName`'s real owner (lib/job-owners.js, recorded at
+ * submission time) and, if it's a real registered account whose recorded
+ * mediaType is 'video', fires the guarded first-dream retention-email
+ * send -- see this file's own "AUTOMATIC FIRST-DREAM RETENTION EMAIL"
+ * header comment for the full reasoning. Every branch below is a plain,
+ * silent no-op (never an error, never a distinguishable response) -- see
+ * that same header comment for why: a job-owners record missing/failed to
+ * write, an email that doesn't resolve to a real account (a local-only
+ * legacy account never backfilled server-side, see
+ * js/store.js's backfillAccountServerSide), or a non-video mediaType (or
+ * one recorded before this field existed) all mean simply "no automatic
+ * email this time," not a failure worth surfacing anywhere.
+ *
+ * Caption/style are deliberately NOT passed through here (see
+ * lib/first-dream-email-sender.js's own header comment) -- this choke
+ * point only ever independently re-verifies a job's completion STATUS,
+ * never fetches its full result payload, so there is nothing to
+ * personalize with without accepting new client-trusted input at exactly
+ * the one place in this feature that currently needs none at all.
+ */
+async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
+  var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
+  if (!ownerRecord || !ownerRecord.email) return; // no recorded owner -- nothing to do (see header comment)
+
+  // Video-only scope, matching send-first-dream-email.js's own documented
+  // scope decision -- an unrecorded/unrecognized mediaType (a job
+  // predating this field, or a write that failed) fails CLOSED here
+  // (no auto-send), never assumed to be 'video'. See lib/job-owners.js's
+  // header comment on why mediaType can't be derived from operationName
+  // alone (mock-mode operationNames are identical strings for both kinds).
+  if (ownerRecord.mediaType !== 'video') return;
+
+  var account = await accountStore.getByEmail(event, ownerRecord.email);
+  if (!account || !account.username) return; // no real registered account behind this email -- nothing safe to send to
+
+  await firstDreamEmailSender.sendIfEligible(event, {
+    username: account.username,
+    email: account.email,
+    dreamId: null,
+    auto: true
+  });
+}
 
 // Exposed for direct unit testing of the verification logic in isolation
 // (test/generation-completion-marker.test.js) -- not used by any other
