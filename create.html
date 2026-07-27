@@ -1033,6 +1033,15 @@
     }
     var open = [writeEl, recordEl, reviewEl, recordBlockedEl, transcriptReviewEl].some(function(el){ return el.style.display === 'flex'; });
     if(open){
+      // REVIEW FIX: topbar Back is a second, equally reachable way to
+      // abandon an in-flight transcription (#review-continue's "Transcribing…"
+      // state) besides #re-record/#transcript-re-record -- the code used to
+      // (incorrectly) claim those two buttons were "the only place on this
+      // page it's reachable." Bumping the token here too means a stale
+      // transcription that resolves AFTER Back was tapped correctly no-ops
+      // instead of yanking the user into the text-review screen for
+      // whatever flow they've since navigated to.
+      transcribeAttemptToken++;
       selectEl.style.display = 'block';
       writeEl.style.display = 'none';
       recordEl.style.display = 'none';
@@ -1481,8 +1490,9 @@
     // review screen) on top of whatever they're doing now. Same recurring
     // stale-async-callback shape as tracker item recurring-stale-async-
     // callback-bug-shape-xp61pn -- guarded here with a simple per-attempt token
-    // rather than a shared utility, since this is the only place on this page
-    // it's reachable.
+    // rather than a shared utility. REVIEW FIX: this is NOT the only place
+    // this is reachable from -- topbar Back and #transcript-re-record are
+    // two others, both bump this same token too (see their own handlers).
     transcribeAttemptToken++;
     playbackAudio.pause();
     startRecordingUI();

@@ -310,3 +310,42 @@ test('create.html: the text-review screen\'s own Re-record button abandons the c
     await context.close();
   }
 });
+
+test('create.html: tapping topbar Back while a transcription is in flight abandons that attempt too -- not just the Re-record buttons', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Review finding: the transcribeAttemptToken guard originally only
+    // covered #re-record and #transcript-re-record, incorrectly claiming
+    // (in its own code comment) those were "the only place on this page
+    // it's reachable" -- topbar Back is a second, equally reachable way to
+    // abandon the same in-flight "Transcribing…" state, and previously
+    // wasn't guarded at all. Uses a delayed transcription so there's a
+    // reliable window to tap Back before it resolves.
+    await mockSuccessfulTranscription(page, 'A transcript that should never surface', 300);
+
+    await seedLoggedInUserAt(page, 'transcriptreviewtester6', '/create.html');
+    await recordAndSubmitForTranscription(page);
+    await page.waitForSelector('#review-continue:disabled', { timeout: 5000 });
+    assert.equal(await page.textContent('#review-continue'), 'Transcribing…');
+
+    await page.click('#create-back');
+    await page.waitForSelector('#create-select[style*="display: block"]', { timeout: 5000 });
+    await page.click('#choice-write');
+    await page.waitForSelector('#create-write[style*="display: flex"]', { timeout: 5000 });
+
+    // Give the delayed transcription's response time to actually resolve.
+    await page.waitForTimeout(600);
+
+    var writeStillOpen = await page.locator('#create-write').evaluate(function (el) { return getComputedStyle(el).display; });
+    var transcriptReviewOpen = await page.locator('#create-transcript-review').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(writeStillOpen, 'flex', 'the Write panel the user navigated to must still be showing');
+    assert.equal(transcriptReviewOpen, 'none', 'the stale transcription must not hijack the screen into the text-review panel after Back was tapped');
+    assert.equal(await page.textContent('#create-heading'), 'Write your dream', 'heading must not have been overwritten by the stale attempt settling late');
+  } finally {
+    await context.close();
+  }
+});
