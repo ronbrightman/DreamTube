@@ -132,6 +132,7 @@
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -144,7 +145,22 @@
      file and docs/TURNSTILE_SETUP.md. -->
 <script src="js/turnstile-config.js"></script>
 <script>
+  // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
+  // doc comment) BEFORE the sign-in guard below runs -- this is what
+  // makes the host app's 3-dots-menu "open in browser" action land signed
+  // IN when it opened this exact URL, not signed out. No-ops instantly
+  // (and does not touch state.user) when there's no `bt` param on this
+  // load at all, the overwhelmingly common case.
+  DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // Keeps this page's own URL carrying a fresh transfer token for as long
+  // as it stays open, signed in, and inside a detected FB/IG webview --
+  // see that function's own doc comment for the full "why" and the
+  // leak-prevention reasoning. Called exactly once per page load
+  // (unconditionally, unlike initInAppNudge below, which the resume flows
+  // further down call again on their own -- a second call here would
+  // start a second refresh interval).
+  DreamStore.maintainSessionTransferUrl();
   document.querySelector('.proc-fail-icon').innerHTML = Icons.warning;
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
@@ -543,31 +559,62 @@
   // and for-product-wait-screen-reassurance-duri-ofoag1. Frame 2 (a
   // result.html banner) was rejected by the founder and is NOT built here.
   //
-  // Detection: Facebook's in-app browser UA carries both FBAN and FBAV
-  // tokens; Instagram's carries the literal substring "Instagram". Neither
-  // token appears in any normal desktop/mobile browser UA.
-  function detectInAppHost(){
-    var ua = navigator.userAgent || '';
-    if (/FBAN|FBAV/.test(ua)) return 'Facebook';
-    if (/Instagram/.test(ua)) return 'Instagram';
-    return null;
-  }
+  // Detection now lives in js/store.js's detectInAppWebviewHost (shared
+  // with result.html's session-transfer URL maintenance — see that
+  // function's own doc comment) rather than a private copy here.
   function isAndroidUA(){
     return /Android/.test(navigator.userAgent || '');
   }
   // Android only: forces the current URL open in Chrome via an intent://
   // URL, the standard escape hatch for in-app webviews on Android (there is
-  // no equivalent on iOS — see initInAppNudge's click handler below).
-  // S.browser_fallback_url means a device without Chrome installed still
-  // lands back on this same URL (in whatever handles the fallback) instead
-  // of the intent silently failing.
+  // no equivalent on iOS — see initInAppNudge's click handler below). Reads
+  // location.href at CLICK time (not render time), so it naturally picks
+  // up whatever ?bt= session-transfer token DreamStore.maintainSessionTransferUrl
+  // has most recently written there (tracker.html's
+  // for-product-bug-fix-founder-high-in-app--sv3mym item, part of the same
+  // fix as the copy-link button below) — Chrome opens signed in, not just
+  // on the right page. S.browser_fallback_url means a device without
+  // Chrome installed still lands back on this same URL (in whatever
+  // handles the fallback) instead of the intent silently failing.
   function buildAndroidChromeIntentUrl(){
     var target = location.href.replace(/^https?:\/\//, '');
     var fallback = encodeURIComponent(location.href);
     return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
   }
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+  // Non-Android fix (founder-reported bug, tracker.html's
+  // for-product-bug-fix-founder-high-in-app--sv3mym item): iOS webviews
+  // can't be escaped programmatically, so "Open in my browser" used to be
+  // a real-feeling button that silently did nothing beyond re-emphasizing
+  // the hint text. Copies the CURRENT URL — including whatever ?bt=
+  // session-transfer token is on it, same reasoning as the Android intent
+  // URL above — so pasting it into Safari lands the user signed in, not
+  // just on the right page. Same navigator.clipboard.writeText + toast
+  // pattern as result.html's own doShare, for a consistent feel — except
+  // the toast copy here explicitly warns not to share this specific link
+  // (round-2 review finding: this URL is a live, single-use sign-in
+  // credential for the next ~15 minutes, sitting on the general OS
+  // clipboard — clipboard managers/sync and simple paste-into-the-wrong-
+  // place mistakes are a real exposure surface this copy should at least
+  // name, even though the single-use+short-TTL design already bounds it).
+  function copyLinkForBrowser(){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(location.href).then(function(){
+        showToast('Link copied — paste it in Safari. Keep it to yourself.');
+      }).catch(function(){
+        showToast("Couldn't copy link");
+      });
+    } else {
+      showToast("Copying isn't supported in this browser");
+    }
+  }
   function initInAppNudge(){
-    var host = detectInAppHost();
+    var host = DreamStore.detectInAppWebviewHost();
     if(!host) return;
     // Defense-in-depth: processing.html's own auth guard at the top of this
     // script already redirects to login.html before any of this markup
@@ -580,8 +627,15 @@
     var card = document.getElementById('proc-nudge-card');
     document.getElementById('proc-nudge-icon').innerHTML = Icons.globe;
     document.getElementById('proc-nudge-title').textContent = "You're viewing this in " + host;
+    var onAndroid = isAndroidUA();
     var openBtn = document.getElementById('proc-nudge-open-btn');
-    openBtn.innerHTML = 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>';
+    // Non-Android gets a real, working action ("Copy link for your
+    // browser") instead of the "Open in my browser" label that used to
+    // promise something the click handler couldn't actually do there —
+    // see copyLinkForBrowser's own doc comment.
+    openBtn.innerHTML = onAndroid
+      ? 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>'
+      : 'Copy link for your browser <span class="icon">' + Icons.copy + '</span>';
     var hint = document.getElementById('proc-nudge-hint');
     // Must explicitly name the HOST APP's own "..." menu — a bare "tap ...
     // above" reads to users as this app's own icon, not the host app's
@@ -591,13 +645,16 @@
     card.style.display = 'block';
 
     openBtn.addEventListener('click', function(){
-      if(isAndroidUA()){
+      if(onAndroid){
         location.href = buildAndroidChromeIntentUrl();
       } else {
         // iOS (and anything else that isn't Android): there is no reliable
-        // programmatic way to escape an in-app webview, so don't attempt
-        // one that would just silently fail. Instead draw attention to the
-        // hint line, which is the only real guidance that works there.
+        // programmatic way to escape an in-app webview, so the button does
+        // the one thing that actually works there (copy the link) instead
+        // of attempting an "open" that would just silently fail. The hint
+        // line stays emphasized alongside this too — copying the link
+        // still requires the user to go open Safari themselves.
+        copyLinkForBrowser();
         hint.classList.add('proc-nudge-hint-emph');
         hint.scrollIntoView({ behavior: 'smooth', block: 'center' });
         setTimeout(function(){ hint.classList.remove('proc-nudge-hint-emph'); }, 1600);

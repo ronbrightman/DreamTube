@@ -1123,6 +1123,65 @@
     } catch (e) { /* fetch unavailable/blocked — best-effort, ignore */ }
   }
 
+  /**
+   * Commits a session-transfer-token-verified {username, email} as this
+   * browser's current session — the passwordless counterpart to login()'s
+   * own success branch (see that function's comment) — used ONLY by
+   * consumeSessionTransferTokenFromUrlSync below, for an identity the
+   * server has ALREADY verified via a real password check at token-MINT
+   * time (see netlify/functions/create-session-transfer.js's own header
+   * comment for why that's the real security boundary of this whole
+   * feature). This function itself performs no verification of its own —
+   * exactly like verify-session-transfer.js itself doesn't.
+   *
+   * Materializes a local `accounts` placeholder for `username` if this
+   * browser has never seen it before (same "dreams/characters left empty,
+   * synced elsewhere" shape login() already uses for a brand-new-to-this-
+   * device account) — but with `password: null`, since there IS no
+   * password to cache here (unlike login(), which always has the real
+   * typed password on hand to store for this device's own future local-
+   * fallback login). This one property is why a session established this
+   * way can't opportunistically re-authenticate to password-gated,
+   * best-effort endpoints like sendFirstDreamEmailBestEffort below (that
+   * call simply no-ops server-side if the cached password doesn't match —
+   * it never throws or blocks anything) — an accepted, narrow degrade,
+   * not a bug: this session is real for everything else, it just never
+   * had a password to cache.
+   *
+   * Round-2 review fix: refuses to commit if this browser is ALREADY
+   * signed in as a genuinely DIFFERENT account. Without this, a valid
+   * token minted for account A (a completely legitimate mint, using
+   * A's own real password) landing on a device already signed in as B
+   * would silently replace B's session with A's — reachable two ways:
+   * (a) benignly, a shared/reused device switching identity with zero
+   * warning the moment a stale/reused "open in browser" link lands; (b)
+   * as a session-fixation-style vector, since nothing stops account A's
+   * own holder from sending their own valid ?bt= URL to someone else —
+   * "check this out" — and having that person's browser silently become
+   * signed in AS A the moment they open it, with no confirmation, no
+   * indication their own prior session (if any) just got swapped out.
+   * A same-identity "refresh" (key already equals the signed-in user) is
+   * still allowed through — harmless, matches what was already there.
+   */
+  function commitTransferredSession(username, email) {
+    var key = (username || '').toLowerCase();
+    if (!key) return;
+    // Treat "signed in as someone whose username isn't readable" the same
+    // as "signed in as someone" — block, don't fall through — so this
+    // guard holds even against a malformed/legacy-shaped state.user, not
+    // just the well-formed shape every current constructor produces.
+    if (state.user && (!state.user.username || state.user.username.toLowerCase() !== key)) return;
+    if (!state.accounts[key]) {
+      state.accounts[key] = { password: null, email: (email || '').toLowerCase() || null };
+    } else if (email) {
+      state.accounts[key].email = email.toLowerCase();
+    }
+    var displayUsername = pinLegacyRenameIdentity(key, username);
+    state.user = { handle: '@' + displayUsername, username: displayUsername };
+    persist();
+    identifyForAnalytics(displayUsername);
+  }
+
   window.DreamStore = {
     STYLE_GRADIENTS: STYLE_GRADIENTS,
 
@@ -1953,6 +2012,165 @@
     dismissInAppNudge: function () {
       try { localStorage.setItem('dreamtube_inapp_nudge_dismissed_v1', '1'); }
       catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
+     * Detects a Facebook/Instagram in-app-browser webview from the user
+     * agent — the single shared source of truth for this check, used by
+     * both the nudge card above (processing.html's initInAppNudge) and
+     * the session-transfer URL maintenance below (both pages). Extracted
+     * here rather than left as processing.html's own private
+     * detectInAppHost so result.html doesn't need its own second copy —
+     * this codebase's own "shared bits live in js/store.js, page-specific
+     * logic stays in the page" precedent (see e.g. getTokenStatus's own
+     * doc comment on being used by five different pages).
+     *
+     * Facebook's in-app browser UA carries both FBAN and FBAV tokens;
+     * Instagram's carries the literal substring "Instagram". Neither
+     * token appears in any normal desktop/mobile browser UA.
+     */
+    detectInAppWebviewHost: function () {
+      var ua = navigator.userAgent || '';
+      if (/FBAN|FBAV/.test(ua)) return 'Facebook';
+      if (/Instagram/.test(ua)) return 'Instagram';
+      return null;
+    },
+
+    /**
+     * Mints a session-transfer token (netlify/functions/create-session-
+     * transfer.js) for the CURRENTLY signed-in account, using its own
+     * already-cached local password — same "no new re-auth prompt, the
+     * password is already on hand" shape as sendFirstDreamEmailBestEffort
+     * above. Resolves the raw token string on success, or null on
+     * anything short of that (not signed in, no cached password for this
+     * account — e.g. an account itself established via a session-transfer
+     * token, see commitTransferredSession's own doc comment — network
+     * failure, or the server rejected the cached password because it's
+     * gone stale since a reset on another device). Every null case is a
+     * silent, no-error skip for the caller (maintainSessionTransferUrl
+     * below) — minting is a pure convenience layered on top of an
+     * already-working nudge feature, never something its failure should
+     * surface to the user.
+     */
+    mintSessionTransferToken: function () {
+      if (!state.user) return Promise.resolve(null);
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account || !account.password) return Promise.resolve(null);
+      return fetch('/.netlify/functions/create-session-transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: state.user.username, password: account.password })
+      }).then(function (res) { return res.json(); }).then(function (data) {
+        return (data && data.ok && data.token) ? data.token : null;
+      }).catch(function () { return null; });
+    },
+
+    /**
+     * Keeps the CURRENT page's own URL carrying a fresh `?bt=<token>`
+     * session-transfer param via history.replaceState, for as long as
+     * this page stays open, signed in, and inside a detected FB/IG
+     * webview — see this whole feature's own security notes (in the
+     * originating tracker item / build task) for why this is safe to do:
+     * the token this mints is bound to the CURRENTLY signed-in account
+     * only, and only ever gets attached to THIS page's own address bar —
+     * never to any link this page hands to anyone else (a published
+     * dream's explore.html share link is built independently, straight
+     * from location.origin + dream.id, see result.html's doShare — it
+     * never touches location.href/location.search, so it can never pick
+     * this param up). That's what makes it safe for the host app's own
+     * 3-dots-menu "open in browser" action to carry an
+     * auto-authenticating URL: that action always opens THIS page's
+     * CURRENT address bar value, which is the one and only place this
+     * token is ever written.
+     *
+     * Mints immediately on call, then re-mints on an interval well inside
+     * the token's own ~15-minute TTL (netlify/functions/lib/session-
+     * transfer-token.js) — covering both "the token already got consumed
+     * by an earlier handoff" and "it's simply gotten old" without this
+     * page needing to know which. A mint that resolves null (see
+     * mintSessionTransferToken's own doc comment) just leaves the URL as
+     * it already was — never clears an still-good existing param, and
+     * never surfaces an error.
+     *
+     * No-ops entirely (returns without starting the interval) when this
+     * page isn't in a detected webview or isn't signed in — the common
+     * case for every normal, non-webview page load.
+     */
+    maintainSessionTransferUrl: function () {
+      var self = this;
+      if (!self.detectInAppWebviewHost()) return;
+      if (!state.user) return;
+
+      function applyToken(token) {
+        if (!token) return;
+        try {
+          var url = new URL(location.href);
+          url.searchParams.set('bt', token);
+          history.replaceState(null, '', url.pathname + url.search + url.hash);
+        } catch (e) { /* malformed URL API in this environment — leave the address bar as-is */ }
+      }
+
+      self.mintSessionTransferToken().then(applyToken);
+      // ~10 minutes — comfortably inside the token's own 15-minute TTL,
+      // so a fresh replacement is always minted well before the previous
+      // one could expire out from under a still-open tab.
+      setInterval(function () { self.mintSessionTransferToken().then(applyToken); }, 10 * 60 * 1000);
+    },
+
+    /**
+     * Consumes a `?bt=<token>` session-transfer param from the CURRENT
+     * page's URL, if one is present — netlify/functions/verify-session-
+     * transfer.js verifies + consumes it (exactly once) and, on success,
+     * commits the identity it vouches for as this browser's session via
+     * commitTransferredSession. The `bt` param is stripped from the URL
+     * via history.replaceState UNCONDITIONALLY, before the network call
+     * even starts — so it is never left sitting in the visible/
+     * bookmarkable address bar, valid or not, regardless of outcome.
+     *
+     * Deliberately SYNCHRONOUS (a blocking XMLHttpRequest, not fetch) —
+     * this must fully resolve (commit the session, or not) BEFORE the
+     * caller's own very-next line, `if(!DreamStore.getCurrentUser())
+     * {...}`, runs — that guard, and the hundreds of lines of existing
+     * page logic after it, all assume state.user is already whatever it's
+     * going to be for this load, synchronously. Restructuring
+     * processing.html/result.html's entire top-level script into an
+     * async continuation just to await one rare, small request would be a
+     * far larger and riskier change than this call's own brief,
+     * intentionally-narrow-scope synchronous network request — this only
+     * ever fires at all on a page load that happens to carry a `?bt=`
+     * param, which itself only ever happens right after a session-
+     * transfer handoff.
+     *
+     * Silent no-op — never throws, never surfaces an error — for a
+     * missing/invalid/expired/already-consumed token, a network failure,
+     * or a browser without synchronous XHR support: every one of those
+     * simply falls through to the normal signed-out flow the very next
+     * line already handles, per this feature's own spec.
+     */
+    consumeSessionTransferTokenFromUrlSync: function () {
+      var token;
+      try {
+        token = new URL(location.href).searchParams.get('bt');
+      } catch (e) { token = null; }
+      if (!token) return;
+
+      try {
+        var url = new URL(location.href);
+        url.searchParams.delete('bt');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch (e) { /* malformed URL API — worst case the param stays visible this one load */ }
+
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/.netlify/functions/verify-session-transfer', false); // false = synchronous, see doc comment above
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.send(JSON.stringify({ token: token }));
+        if (xhr.status !== 200) return;
+        var data = JSON.parse(xhr.responseText || '{}');
+        if (!data || !data.ok || !data.username) return;
+        commitTransferredSession(data.username, data.email);
+      } catch (e) { /* network failure / sync XHR unavailable — silent no-op, see doc comment above */ }
     },
 
     /**

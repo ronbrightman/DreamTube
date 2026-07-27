@@ -114,6 +114,16 @@
     // this file matched that specific iOS convention, confirmed by grep,
     // so this is a new addition rather than a reuse — same 24x24/
     // currentColor/stroke-only convention as every other entry here.
-    shareIos: svg('<path d="M12 15V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
+    shareIos: svg('<path d="M12 15V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
+    // Added for the in-app-browser nudge card's non-Android "Copy link for
+    // your browser" button (processing.html) — on iOS there is no
+    // programmatic way to escape a webview, so the button's action became
+    // a copy-to-clipboard instead of externalLink's "open" implication
+    // (see tracker.html's for-product-bug-fix-founder-high-in-app--sv3mym
+    // item). Standard two-overlapping-rectangles copy glyph, no existing
+    // icon in this file fit, confirmed by grep — same 24x24/currentColor/
+    // stroke-only convention as every other entry here.
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
   };
 })();

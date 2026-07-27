@@ -278,7 +278,25 @@
 <script src="js/store.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
+  // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
+  // doc comment on consumeSessionTransferTokenFromUrlSync) BEFORE the
+  // sign-in guard below runs — this is what makes the host app's
+  // 3-dots-menu "open in browser" action land signed IN when it opened
+  // this exact result.html URL, not signed out (tracker.html's
+  // for-product-bug-fix-founder-high-in-app--sv3mym item). No-ops
+  // instantly when there's no `bt` param on this load at all, the
+  // overwhelmingly common case, and never touches the `?id=` param this
+  // page parses further down.
+  DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // Keeps this page's own URL carrying a fresh transfer token for as long
+  // as it stays open, signed in, and inside a detected FB/IG webview —
+  // see that function's own doc comment for the full "why" and the
+  // leak-prevention reasoning (in particular: doShare below builds its
+  // share link from location.origin + dream.id, never from location.href/
+  // location.search, so a shared explore.html link can never pick this
+  // token up).
+  DreamStore.maintainSessionTransferUrl();
 
   // A purchase sheet opened from THIS page always sends the checkout's
   // successUrl to processing.html (the one page that knows how to
