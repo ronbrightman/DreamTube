@@ -734,6 +734,11 @@
     // currentMediaTypeCost() fallback (pendingPurchase.cost doesn't exist
     // here) and a generic 'blocked_action' source.
     showPaymentReceivedState();
+    var resumeDraftNoMarker = DreamStore.getDraft();
+    if(resumeDraftNoMarker && resumeDraftNoMarker.caption){
+      document.getElementById('proc-payment-draft-summary').textContent =
+        '"' + resumeDraftNoMarker.caption + '" · ' + (resumeDraftNoMarker.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
+    }
     startCreditPoll(currentMediaTypeCost(), 'blocked_action');
   } else {
     initInAppNudge();
