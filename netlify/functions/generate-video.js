@@ -1,8 +1,17 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken? }
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken?, ownerBypassToken? }
 // -> kicks off a video generation job and returns an operationName the
 // client can poll via video-status.js.
+//
+// ownerBypassToken (optional) — see lib/owner-bypass.js and
+// verify-owner-bypass.js for how the founder obtains one (a real,
+// server-verified password check, never a client-claimed email) and the
+// "OWNER BYPASS" doc block further down for exactly what it does and does
+// NOT affect. js/store.js's startGeneration attaches this automatically
+// from localStorage when present (getOwnerBypassToken) — every other
+// caller simply never has one, so this is fully additive and invisible to
+// every non-owner request.
 //
 // turnstileToken (optional) is a Cloudflare Turnstile response token,
 // obtained client-side (see js/turnstile-config.js's getTurnstileToken(),
@@ -460,6 +469,28 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     already used elsewhere in this codebase for a failed identity/
 //                                     ownership check (see admin-paywall-toggle.js).
 //
+// OWNER BYPASS (tracker.html's for-product-founder-hit-the-per-ip-gener-
+// 7mjq2l item) — see lib/owner-bypass.js's header comment for the full
+// mechanism and why it requires a real server-verified password, never a
+// client-claimed email. When `ownerBypassToken` is present AND verifies
+// (lib/owner-bypass.js's verifyBypassToken) AND its bound email matches
+// THIS request's own (normalized) email — see the "REVIEW FIX" comment at
+// the actual check below for why the bound-email match is required, not
+// optional — this ONLY skips the E109 per-IP/per-email rate-limit
+// checkAndIncrement calls immediately below, and the token-init per-IP cap
+// inside entitlements.getTokenStatus's own opts.ownerBypass (see that
+// function's doc comment) — both narrow, bounded exemptions. It
+// structurally CANNOT affect E112 (the unconditional token-balance gate —
+// the `tokenStatus.balance < 100` comparison below never reads
+// ownerBypassActive at all) or E110 (spendGuard.checkAndReserve below is
+// called with no bypass signal whatsoever, by design — see
+// lib/spend-guard.js, untouched by this feature). A missing/invalid/
+// expired/email-mismatched token is silently treated as "no bypass" (fails
+// closed) — this whole check is a no-op for every request that doesn't
+// carry a live token bound to that exact request's own email, i.e. every
+// request except the founder's own verified session generating under his
+// own account email.
+//
 // Mock mode & test-duration override — see docs/TESTING.md for the full
 // writeup and AGENT_POLICY.md's "Never spend real generation cost on
 // testing" standing rule this exists to make achievable. Two independent
@@ -498,6 +529,7 @@ var entitlements = require('./lib/entitlements');
 var promptCondenser = require('./lib/prompt-condenser');
 var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
+var ownerBypass = require('./lib/owner-bypass');
 
 /**
  * Records that `email` submitted `operationName`, best-effort — see
@@ -553,7 +585,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -564,6 +596,7 @@ exports.handler = async function (event) {
     sceneryPlace = payload.sceneryPlace || null;
     email = entitlements.normalizeEmail(payload.email);
     turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
+    ownerBypassToken = typeof payload.ownerBypassToken === 'string' ? payload.ownerBypassToken : null;
     // Optional — the "Turn this into a video" upsell (see js/store.js's
     // turnImageIntoVideo and result.html's CTA). When present, this request
     // routes through callFalImageToVideo instead of the normal text-to-video/
@@ -597,27 +630,58 @@ exports.handler = async function (event) {
     }
   }
 
+  // Owner bypass resolution — see the "OWNER BYPASS" doc block above for
+  // exactly what this does and does not affect. A missing token, or one
+  // that fails lib/owner-bypass.js's own verification (expired, unknown,
+  // malformed), leaves ownerBypassActive false — the same as if this
+  // feature didn't exist at all, for every request that isn't the
+  // founder's own verified session.
+  //
+  // REVIEW FIX (round 1): "the token verifies" is NOT enough on its own —
+  // verifyBypassToken only proves the token was genuinely issued once and
+  // hasn't expired, it says nothing about whether THIS request is the
+  // session it was issued to. A token is bound to a specific email at
+  // issuance (see lib/owner-bypass.js's createBypassToken/verifyBypassToken
+  // doc comments) precisely so it can't be replayed against an arbitrary
+  // email — e.g. a token leaked from localStorage, a shared/compromised
+  // device, or an XSS'd tab attaching it to a request for SOME OTHER
+  // email, to skip that other email's own rate limit/anti-farming cap.
+  // The bound email must match THIS request's own (normalized) email
+  // before the bypass is ever treated as active.
+  var ownerBypassActive = false;
+  if (ownerBypassToken) {
+    var bypassCheck = await ownerBypass.verifyBypassToken(event, ownerBypassToken);
+    ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
+  }
+
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
 
-  var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
-  if (!ipLimit.allowed) {
-    return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this network today, try again tomorrow' }) };
-  }
-  if (email) {
-    var emailLimit = await rateLimit.checkAndIncrement(event, 'email', email, maxPerDay);
-    if (!emailLimit.allowed) {
-      return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this account today, try again tomorrow' }) };
+  if (!ownerBypassActive) {
+    var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
+    if (!ipLimit.allowed) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this network today, try again tomorrow' }) };
+    }
+    if (email) {
+      var emailLimit = await rateLimit.checkAndIncrement(event, 'email', email, maxPerDay);
+      if (!emailLimit.allowed) {
+        return { statusCode: 429, body: JSON.stringify({ error: 'E109: rate_limited: too many generations from this account today, try again tomorrow' }) };
+      }
     }
   }
 
   // E112 — unconditional token-balance gate, see the doc block above for
-  // why this always runs (no flag, no owner bypass), unlike the E108/E111
-  // subscription-paywall gate this replaces. A request with no email can't
+  // why this always runs (no flag, no owner bypass on the THRESHOLD
+  // itself), unlike the E108/E111 subscription-paywall gate this replaces.
+  // ownerBypassActive is forwarded here ONLY to let a brand-new email's
+  // first-ever grant skip the separate token-init per-IP cap (see
+  // entitlements.getTokenStatus's own doc comment) — it never changes the
+  // `< 100` comparison two lines below, which runs unconditionally against
+  // whatever balance comes back either way. A request with no email can't
   // be identified for a balance at all, so it reads as balance 0 (blocked)
   // via getTokenStatus's own empty-email guard rather than a special case
   // here.
-  var tokenStatus = await entitlements.getTokenStatus(event, email);
+  var tokenStatus = await entitlements.getTokenStatus(event, email, { ownerBypass: ownerBypassActive });
   if (tokenStatus.balance < 100) {
     return { statusCode: 402, body: JSON.stringify({ error: 'E112: insufficient_tokens: not enough tokens to generate a video' }) };
   }

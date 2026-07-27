@@ -383,6 +383,7 @@
     document.getElementById('proc-fail').style.display = 'none';
     tokenFailContext = false;
     retryBtn.textContent = 'Try Again';
+    retryBtn.style.display = '';
     applyMediaTypeCopy();
     startFakeProgress();
     renderPreview();
@@ -487,6 +488,23 @@
         tokenFailContext = true;
         retryBtn.textContent = 'Get more tokens';
         openTokenPurchaseSheet();
+      }
+      // Rate-limit (E109/E409) and daily-spend-cap (E110/E410) failures:
+      // both reset once a day, not on the next request, so an immediate
+      // retry would just fail identically again right now — same
+      // "don't offer an action that can't possibly help" reasoning as the
+      // E112/E412 handling above, just without a paid way to route around
+      // it (there's nothing to buy your way past a network-wide cap or an
+      // account-wide daily circuit breaker). reasonEl above already shows
+      // the server's own honest "try again tomorrow" wording (see
+      // generate-video.js's/generate-image.js's E109/E110/E409/E410
+      // messages), so hiding Try Again here rather than relabeling it
+      // avoids a second, redundant action that would just fail again.
+      // "Edit Dream" stays visible either way — it's still a real,
+      // different action (adjusting the draft, or simply leaving this
+      // screen), not a retry.
+      if(match && ['E109', 'E409', 'E110', 'E410'].indexOf(match[1]) !== -1){
+        retryBtn.style.display = 'none';
       }
     });
   }

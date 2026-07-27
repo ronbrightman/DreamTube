@@ -1,8 +1,16 @@
 // netlify/functions/generate-image.js
 //
-// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken? }
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken?, ownerBypassToken? }
 // -> kicks off a cheap image generation job and returns an operationName the
 // client can poll via image-status.js.
+//
+// ownerBypassToken (optional) — mirrors generate-video.js's own handling
+// exactly, see that file's "OWNER BYPASS" doc block and
+// lib/owner-bypass.js's header comment for the full mechanism. Same
+// narrow scope here: only skips the E409 per-IP/per-email rate-limit
+// checks and the token-init per-IP cap — never E412 (the token-balance
+// gate) or E410 (spendGuard.checkAndReserve), both unconditional either
+// way.
 //
 // Mirrors generate-video.js's structure and guardrail order (Turnstile ->
 // per-IP/email rate limit -> token gate -> spend-guard circuit breaker ->
@@ -194,6 +202,7 @@ var spendGuard = require('./lib/spend-guard');
 var entitlements = require('./lib/entitlements');
 var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
+var ownerBypass = require('./lib/owner-bypass');
 
 /** Mirrors generate-video.js's own recordJobOwnerBestEffort exactly — see that function's doc comment and lib/job-owners.js's header comment for the full mechanism. */
 async function recordJobOwnerBestEffort(event, operationName, email) {
@@ -225,7 +234,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E402: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, ownerBypassToken;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -236,6 +245,7 @@ exports.handler = async function (event) {
     sceneryPlace = payload.sceneryPlace || null;
     email = entitlements.normalizeEmail(payload.email);
     turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
+    ownerBypassToken = typeof payload.ownerBypassToken === 'string' ? payload.ownerBypassToken : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E403: invalid_json' }) };
   }
@@ -254,25 +264,48 @@ exports.handler = async function (event) {
     }
   }
 
+  // Owner bypass resolution — mirrors generate-video.js's own handling
+  // exactly, see that file's "OWNER BYPASS" doc block. A missing/invalid/
+  // expired token leaves ownerBypassActive false, same as if this feature
+  // didn't exist for every request that isn't the founder's own verified
+  // session.
+  //
+  // REVIEW FIX (round 1): the token is bound to a specific email at
+  // issuance (lib/owner-bypass.js's createBypassToken) — a live token
+  // alone is not enough, THIS request's own (normalized) email must match
+  // the token's bound email, or the bypass never activates. See
+  // generate-video.js's own identical comment for the full reasoning (a
+  // leaked/replayed token must not be usable against an arbitrary email).
+  var ownerBypassActive = false;
+  if (ownerBypassToken) {
+    var bypassCheck = await ownerBypass.verifyBypassToken(event, ownerBypassToken);
+    ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
+  }
+
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
 
-  var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
-  if (!ipLimit.allowed) {
-    return { statusCode: 429, body: JSON.stringify({ error: 'E409: rate_limited: too many generations from this network today, try again tomorrow' }) };
-  }
-  if (email) {
-    var emailLimit = await rateLimit.checkAndIncrement(event, 'email', email, maxPerDay);
-    if (!emailLimit.allowed) {
-      return { statusCode: 429, body: JSON.stringify({ error: 'E409: rate_limited: too many generations from this account today, try again tomorrow' }) };
+  if (!ownerBypassActive) {
+    var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
+    if (!ipLimit.allowed) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'E409: rate_limited: too many generations from this network today, try again tomorrow' }) };
+    }
+    if (email) {
+      var emailLimit = await rateLimit.checkAndIncrement(event, 'email', email, maxPerDay);
+      if (!emailLimit.allowed) {
+        return { statusCode: 429, body: JSON.stringify({ error: 'E409: rate_limited: too many generations from this account today, try again tomorrow' }) };
+      }
     }
   }
 
   // E412 — unconditional token-balance gate, same shape/reasoning as
   // generate-video.js's E112 (see that file's doc block) — just a 10-token
-  // threshold instead of 100. A request with no email can't be identified
-  // for a balance at all, so it reads as balance 0 (blocked).
-  var tokenStatus = await entitlements.getTokenStatus(event, email);
+  // threshold instead of 100. ownerBypassActive is forwarded ONLY to let a
+  // brand-new email's first-ever grant skip the token-init per-IP cap (see
+  // entitlements.getTokenStatus's own doc comment) — it never changes the
+  // `< IMAGE_TOKEN_COST` comparison below. A request with no email can't
+  // be identified for a balance at all, so it reads as balance 0 (blocked).
+  var tokenStatus = await entitlements.getTokenStatus(event, email, { ownerBypass: ownerBypassActive });
   if (tokenStatus.balance < IMAGE_TOKEN_COST) {
     return { statusCode: 402, body: JSON.stringify({ error: 'E412: insufficient_tokens: not enough tokens to generate an image' }) };
   }
