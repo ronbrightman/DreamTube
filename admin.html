@@ -263,6 +263,7 @@
   // about to be submitted for real.
   var lastDryRunOk = null;
   renameSourceEl.addEventListener('input', function () { lastDryRunOk = null; });
+  renamePasswordEl.addEventListener('input', function () { lastDryRunOk = null; });
 
   function renameIsDryRun() {
     return renameDryRunToggle.classList.contains('on');

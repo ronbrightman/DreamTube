@@ -256,6 +256,67 @@ test('admin.html: the real (non-dry-run) call only fires once the toggle is expl
   }
 });
 
+test('admin.html: editing the password AFTER a completed dry run invalidates it -- the real run stays blocked until a fresh dry run covers the new password (review finding)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await mockOwnerGate(page);
+    var calls = mockRenameEndpoint(page, [DRY_RUN_RENAMED_RESPONSE, DRY_RUN_RENAMED_RESPONSE, REAL_RUN_RENAMED_RESPONSE]);
+    await seedOwnerAt(page, baseUrl);
+    await page.waitForSelector('#admin-rename-submit');
+
+    page.on('dialog', function (dialog) { dialog.accept(); });
+
+    // 1) Dry run against password A.
+    await page.fill('#admin-rename-password', 'passwordA');
+    await page.click('#admin-rename-submit');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('admin-rename-result');
+      return el && el.textContent && el.textContent.indexOf('DRY RUN') !== -1;
+    });
+    assert.equal(calls.length, 1);
+
+    // 2) Edit the password to B WITHOUT re-running the dry run, then flip
+    // dry-run off and try to submit for real.
+    await page.fill('#admin-rename-password', 'passwordB');
+    await page.click('#admin-rename-dryrun-row');
+    assert.equal(await page.locator('#admin-rename-dryrun-toggle').getAttribute('aria-checked'), 'false');
+    await page.click('#admin-rename-submit');
+    await page.waitForTimeout(200);
+
+    // The stale dry run (against password A) must not authorize a real run
+    // against password B -- must be blocked exactly like never having run
+    // a dry run at all.
+    assert.equal(calls.length, 1, 'no real call must fire -- the prior dry run no longer covers the edited password');
+    var errorText = await page.locator('#admin-rename-error').textContent();
+    assert.ok(errorText.toLowerCase().indexOf('dry run') !== -1, 'an explanatory error must be shown instead');
+
+    // 3) A fresh dry run against B, THEN the real run, must work normally.
+    await page.click('#admin-rename-dryrun-row');
+    assert.equal(await page.locator('#admin-rename-dryrun-toggle').getAttribute('aria-checked'), 'true');
+    await page.click('#admin-rename-submit');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('admin-rename-result');
+      return el && el.textContent && el.textContent.indexOf('DRY RUN') !== -1;
+    });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].password, 'passwordB');
+
+    await page.click('#admin-rename-dryrun-row');
+    await page.click('#admin-rename-submit');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('admin-rename-result');
+      return el && el.textContent && el.textContent.indexOf('DRY RUN') === -1 && el.textContent.indexOf('Renamed') !== -1;
+    });
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].dryRun, false);
+    assert.equal(calls[2].password, 'passwordB');
+  } finally {
+    await page.close();
+  }
+});
+
 test('admin.html: an error response (e.g. wrong password) is shown and never rendered as a success result', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
