@@ -771,6 +771,33 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .shop-variant-b .token-pack-card.best{ border-color:var(--accent-value);}
 .shop-variant-b .token-pack-card.best .token-pack-badge{ background:var(--accent-value);}
 
+/* First-purchase +50% bonus callout (tracker item
+   for-product-shop-first-purchase-50-bonus-bzx2d4) — promoted from a
+   small/faint ".auth-sub" line to the most prominent element on the shop
+   page per founder feedback (2026-07-27 live shop review): the research
+   that introduced this bonus called it the single strongest payer-
+   conversion lever on this page, so its visual weight now matches that —
+   big bold headline, real border/background, not fine print. shop.html's
+   script hides this by default (inline style="display:none;" in markup)
+   and only reveals it once get-token-status.js's hasMadeFirstPurchase
+   comes back explicitly false, so a repeat buyer who already redeemed the
+   bonus never sees the claim again. Deliberately shares the SAME
+   --accent-trust/--accent-value tokens as the "best value" pack's own
+   .shop-variant-a/.shop-variant-b border above (base plain style here,
+   two explicit per-variant overrides below) rather than introducing a
+   third, untested color — so this callout reads as part of whichever
+   palette direction this visitor's shop-palette A/B assignment already
+   put them in, instead of becoming its own confound in that live test. */
+.first-purchase-callout{ background:var(--surface); border:1.5px solid var(--border-strong); border-radius:18px; padding:16px 18px; margin-bottom:14px; text-align:center;}
+.first-purchase-callout-headline{ font-size:19px; font-weight:800; line-height:1.3; color:var(--text-primary);}
+.first-purchase-callout-sub{ font-size:12.5px; color:var(--text-muted); margin-top:5px;}
+/* Direction A — "quiet ledger" (calm periwinkle-blue), matching .token-pack-card.best's own A/B color. */
+.shop-variant-a .first-purchase-callout{ border-color:var(--accent-trust); background:var(--accent-trust-soft);}
+.shop-variant-a .first-purchase-callout-headline{ color:var(--accent-trust);}
+/* Direction B — "premium currency" (muted warm gold). */
+.shop-variant-b .first-purchase-callout{ border-color:var(--accent-value); background:var(--accent-value-soft);}
+.shop-variant-b .first-purchase-callout-headline{ color:var(--accent-value);}
+
 /* ===== Tracker (tracker.html) ===== */
 /* One item = one native <details>/<summary> — the summary row (always
    visible) holds the done button + priority buttons + title + expand

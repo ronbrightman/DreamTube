@@ -37,8 +37,11 @@ test('GET with no email -> a zero/inert status, no Blobs touched', async functio
   // for-product-bug-founder-high-token-chip--kn1v8t (see
   // lib/entitlements.js's getTokenStatus doc comment) -- atCeiling is
   // unconditionally false here since balance is always 0 on this
-  // no-email fast path.
-  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+  // no-email fast path. hasMadeFirstPurchase (tracker item
+  // for-product-shop-first-purchase-50-bonus-bzx2d4) is unconditionally
+  // false here too -- there's no identity on this no-email path that
+  // could have ever completed a purchase.
+  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
 });
 
 test('GET with a brand-new email materializes the 220-token signup grant', async function () {

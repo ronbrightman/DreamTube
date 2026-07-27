@@ -40,8 +40,11 @@ exports.handler = async function (event) {
     // copy. See tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy
     // for why this exact bug class keeps recurring across retunes.
     // atCeiling is unconditionally false here — balance is always 0 on this
-    // no-email path, never anywhere near the ceiling.
-    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: entitlements.DAILY_GRANT_AMOUNT, grantCeiling: entitlements.GRANT_CEILING, atCeiling: false }) };
+    // no-email path, never anywhere near the ceiling. hasMadeFirstPurchase
+    // is unconditionally false too — there's no identity here to have ever
+    // completed a purchase against, so shop.html's first-purchase-bonus
+    // callout is safe to show (no false claim risk with no known email).
+    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: entitlements.DAILY_GRANT_AMOUNT, grantCeiling: entitlements.GRANT_CEILING, atCeiling: false, hasMadeFirstPurchase: false }) };
   }
 
   var status = await entitlements.getTokenStatus(event, rawEmail);

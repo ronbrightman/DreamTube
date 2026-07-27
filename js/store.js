@@ -2331,7 +2331,11 @@
       // entitlements.js's live constants the way get-token-status.js now
       // does). atCeiling is unconditionally false here — balance is always
       // 0 on this no-email path, never anywhere near the ceiling.
-      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+      // hasMadeFirstPurchase is unconditionally false here too — no email
+      // on file means no identity that could have ever completed a
+      // purchase, so shop.html's first-purchase-bonus callout is safe to
+      // show (see that page's own script for how it uses this field).
+      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })
         .then(function (data) {

@@ -88,16 +88,40 @@
     </div>
 
     <div class="section-label" style="padding:0;">Token packs (optional)</div>
-    <!-- First-purchase bonus (Token Economy C, founder-approved 2026-07-26
-         night) — a one-time +50% tokens on a user's FIRST successful pack
-         purchase ever, applied server-side by lib/entitlements.js's
-         creditTokenPackAmountOnce (see that file). This line is plain,
-         static copy — it doesn't try to detect whether THIS particular
-         visitor has already used the bonus (that would need an extra
-         server round trip just for a sub-headline), same "don't guess,
-         keep it honest but simple" posture as the rest of this page's
-         static copy. -->
-    <div class="auth-sub" style="padding:0; margin-bottom:10px;">First pack: +50% bonus tokens, automatically applied.</div>
+    <!-- First-purchase bonus callout (Token Economy C, founder-approved
+         2026-07-26 night; promoted to this prominent callout per tracker
+         item for-product-shop-first-purchase-50-bonus-bzx2d4, founder
+         feedback 2026-07-27: the original static ".auth-sub" line styled
+         this like fine print even though it's this page's single
+         strongest purchase motivator — the research that introduced the
+         bonus called it the most proven payer-conversion lever). A
+         one-time +50% tokens on a user's FIRST successful pack purchase
+         ever, applied server-side by lib/entitlements.js's
+         creditTokenPackAmountOnce (see that file).
+
+         This USED to be static copy that didn't try to detect whether
+         this particular visitor had already used the bonus, reasoning
+         that doing so "would need an extra server round trip just for a
+         sub-headline" — that reasoning no longer holds: shop.html already
+         calls get-token-status.js on every load for the balance display
+         above, and lib/entitlements.js's getTokenStatus now returns a
+         `hasMadeFirstPurchase` boolean on that SAME response (see that
+         file's doc comment), so this costs no extra round trip. Hidden by
+         default in markup and only revealed by the script below once that
+         field comes back false — showing "+50% on your first pack" to a
+         visitor who already redeemed it would be false advertising per
+         the founder's own words, so a fetch failure or a
+         missing/undefined field fails toward NOT showing this rather than
+         the old unconditional display. Palette-aware (see
+         .first-purchase-callout / .shop-variant-a / .shop-variant-b in
+         css/styles.css) so it reads as part of whichever accent direction
+         this visitor's shop-palette A/B assignment already put them in,
+         rather than introducing a third, un-tested color into that live
+         experiment. -->
+    <div class="first-purchase-callout" id="shop-first-purchase-callout" style="display:none;">
+      <div class="first-purchase-callout-headline">+50% bonus tokens on your first pack</div>
+      <div class="first-purchase-callout-sub">Automatically applied at checkout — first pack only, no code needed.</div>
+    </div>
 
     <!-- All three packs call the live Dodo Payments checkout (see the
          header comment in the script block below) — no longer disabled
@@ -336,6 +360,7 @@
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
   var capNoteEl = document.getElementById('shop-cap-note');
+  var firstPurchaseCalloutEl = document.getElementById('shop-first-purchase-callout');
   var tokenStatus = null;
 
   /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — same shape as profile.html/style.html/result.html/processing.html's own copy of this (no shared JS module in this codebase, see js/store.js's header comment). */
@@ -389,6 +414,25 @@
     // primary path anymore.
     var ceiling = tokenStatus.grantCeiling || 200;
     capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to ' + ceiling + ' banked. Buy a pack any time for more, right when you need it.';
+
+    // First-purchase bonus callout (tracker item
+    // for-product-shop-first-purchase-50-bonus-bzx2d4) — only ever shown
+    // when the server explicitly returns hasMadeFirstPurchase === false.
+    // Deliberately a strict === check, NOT a truthiness/negation check:
+    // `!tokenStatus.hasMadeFirstPurchase` would treat a missing/undefined
+    // field (an old/degraded response shape) the same as an explicit
+    // false — i.e. SHOW the claim — which is exactly backwards from the
+    // fail-toward-not-claiming posture this callout needs. Only a
+    // response that positively confirms "no purchase yet" reveals it;
+    // true, undefined, or anything else all resolve to hidden, the same
+    // posture as loadBalance()'s own .catch() below leaving tokenStatus
+    // (and so this callout, hidden by default in markup) untouched on a
+    // fetch failure. Re-evaluated on every renderBalance() call (including
+    // the periodic re-fetch below), so if this visitor's first purchase
+    // completes while the page is still open, the next refresh correctly
+    // hides the now-used offer instead of continuing to show a claim
+    // that's no longer true.
+    firstPurchaseCalloutEl.style.display = (tokenStatus.hasMadeFirstPurchase === false) ? '' : 'none';
   }
   function loadBalance(){
     DreamStore.getTokenStatus().then(function(status){

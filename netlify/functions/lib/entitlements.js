@@ -328,6 +328,17 @@ async function syncTokens(event, email, opts) {
 
   var record = await getEntitlement(event, key);
   var now = Date.now();
+  // `firstPackPurchaseAt` lives at the TOP LEVEL of the entitlement record
+  // (stamped by creditTokenPackAmountOnce, see its own doc comment), never
+  // inside `record.tokens` — so it has to be read off `record` here and
+  // carried through explicitly on every return path below, rather than
+  // assumed to already be part of whatever `record.tokens` holds. Every
+  // existing caller of syncTokens (spendTokens, addTokens,
+  // creditTokenPackAmountOnce, refund crediting) explicitly picks only
+  // `balance`/`lastGrantAt` back off this return value when building the
+  // `tokens` sub-object it writes, so adding this field here never risks
+  // it getting persisted into `record.tokens` itself.
+  var firstPackPurchaseAt = record && record.firstPackPurchaseAt;
 
   if (!record || !record.tokens) {
     // First-ever token read for this email — see the per-IP cap doc block
@@ -345,7 +356,7 @@ async function syncTokens(event, email, opts) {
       : { balance: 0, lastGrantAt: now }; // capped for today — see doc block above, not a permanent block
 
     await setEntitlement(event, key, { tokens: fresh });
-    return fresh;
+    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt });
   }
 
   var tokens = record.tokens;
@@ -353,13 +364,13 @@ async function syncTokens(event, email, opts) {
   if (elapsed >= GRANT_INTERVAL_MS && tokens.balance < GRANT_CEILING) {
     var granted = { balance: tokens.balance + DAILY_GRANT_AMOUNT, lastGrantAt: now };
     await setEntitlement(event, key, { tokens: granted });
-    return granted;
+    return Object.assign({}, granted, { firstPackPurchaseAt: firstPackPurchaseAt });
   }
   // Either not due yet, or due but held back by the ≥200 ceiling — in the
   // ceiling case lastGrantAt is deliberately left untouched (not bumped to
   // `now`) so the very next read re-checks immediately once the balance
   // actually drops below the ceiling, rather than waiting a further 24h.
-  return tokens;
+  return Object.assign({}, tokens, { firstPackPurchaseAt: firstPackPurchaseAt });
 }
 
 /**
@@ -400,6 +411,18 @@ async function syncTokens(event, email, opts) {
  * comparison lives entirely in the caller (generate-video.js/
  * generate-image.js) against whatever balance this returns, unconditional
  * either way.
+ *
+ * `hasMadeFirstPurchase` (added for tracker item
+ * for-product-shop-first-purchase-50-bonus-bzx2d4): true once this email
+ * has ever completed a token-pack purchase (derived from
+ * `!!tokens.firstPackPurchaseAt` — see syncTokens/creditTokenPackAmountOnce
+ * for where that's stamped). shop.html uses this to decide whether the
+ * first-purchase +50% bonus callout is still a true claim for this
+ * visitor — showing it to someone who already used the bonus would be
+ * false advertising. Deliberately exposes only this derived boolean, never
+ * the raw `firstPackPurchaseAt` timestamp itself, since the UI has no
+ * legitimate use for the actual purchase time and there's no reason to
+ * leak more than it needs.
  */
 async function getTokenStatus(event, email, opts) {
   var tokens = await syncTokens(event, email, opts);
@@ -408,7 +431,8 @@ async function getTokenStatus(event, email, opts) {
     nextGrantAt: tokens.lastGrantAt + GRANT_INTERVAL_MS,
     dailyGrantAmount: DAILY_GRANT_AMOUNT,
     grantCeiling: GRANT_CEILING,
-    atCeiling: tokens.balance >= GRANT_CEILING
+    atCeiling: tokens.balance >= GRANT_CEILING,
+    hasMadeFirstPurchase: !!tokens.firstPackPurchaseAt
   };
 }
 
