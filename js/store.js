@@ -69,6 +69,11 @@
 //   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
 //       — the retention email ("your dream is ready") — see that function's own header comment.
 //       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
+//   verifyOwnerBypass() -> Promise, POST /.netlify/functions/verify-owner-bypass — real
+//       password re-check for the currently signed-in account; on success, stores a
+//       short-lived owner generation-rate-limit bypass token locally (see
+//       netlify/functions/lib/owner-bypass.js and admin.html's "Owner Generation Bypass" control).
+//   getOwnerBypassStatus() / clearOwnerBypass() -> local read/write of that token's UI state.
 //   adoptPendingGeneration(operationName,startedAt,caption,style) -> local write, adopts an
 //       already-submitted (pre-signup) generation job as this browser's pendingJob — see
 //       wizard.html's "generate during signup" seam and start-pending-generation.js
@@ -256,6 +261,40 @@
     if (!state.user) return null;
     var key = state.user.username.toLowerCase();
     return state.accounts[key] ? state.accounts[key].email : null;
+  }
+
+  // ===== Owner generation-rate-limit bypass (tracker.html's
+  // for-product-founder-hit-the-per-ip-gener-7mjq2l item) =====
+  //
+  // Standalone localStorage keys, same "small, single-purpose key, own
+  // try/catch" convention as dreamtube_sound_on/dreamtube_dod_seen_id
+  // above — deliberately NOT part of the main `state` object/KEY blob,
+  // since a bypass token is short-lived (see netlify/functions/lib/
+  // owner-bypass.js's 12h TTL) and account-independent bookkeeping, not
+  // durable app state that belongs in a backup export.
+  //
+  // SECURITY NOTE for anyone reading this expecting it to be the boundary:
+  // it isn't. Storing a token here (or reading it back) proves nothing by
+  // itself — verifyOwnerBypass() below only ever obtains one after the
+  // REAL server-side check in verify-owner-bypass.js (a genuine password
+  // match against the account on file for OWNER_EMAIL). Nothing client-
+  // side, including this code, has any authority — a token that doesn't
+  // verify server-side (lib/owner-bypass.js's verifyBypassToken, called
+  // fresh on every generate-video.js/generate-image.js request) is simply
+  // ignored, same as no token at all.
+  var OWNER_BYPASS_TOKEN_KEY = 'dreamtube_owner_bypass_token';
+  var OWNER_BYPASS_EXPIRES_KEY = 'dreamtube_owner_bypass_expires';
+
+  /** Reads a currently-live owner bypass token from localStorage, or null if none was ever obtained, or the stored one has expired. Best-effort — any localStorage failure (private mode, etc.) reads as "no bypass", never throws, matching every other localStorage read in this file. */
+  function getOwnerBypassToken() {
+    try {
+      var token = localStorage.getItem(OWNER_BYPASS_TOKEN_KEY);
+      var expiresAt = parseInt(localStorage.getItem(OWNER_BYPASS_EXPIRES_KEY), 10);
+      if (!token || !expiresAt || Date.now() >= expiresAt) return null;
+      return token;
+    } catch (e) {
+      return null;
+    }
   }
 
   /** The current user's account-creation timestamp (epoch ms), or null — either not logged in, or (see getAccountCreatedAt's own doc comment) a pre-existing account from before this field existed. */
@@ -673,7 +712,15 @@
             // configured there. Only actually checked server-side (E113/
             // E413) once TURNSTILE_SECRET_KEY is likewise configured — see
             // generate-video.js's doc block.
-            turnstileToken: opts.turnstileToken || null
+            turnstileToken: opts.turnstileToken || null,
+            // Opportunistic, same shape as email above — null for every
+            // caller except the founder's own browser after a successful
+            // verifyOwnerBypass() (see that function and admin.html's
+            // "Owner Generation Bypass" control). generate-video.js/
+            // generate-image.js independently re-verify this server-side
+            // on every request (lib/owner-bypass.js's verifyBypassToken) —
+            // this is never trusted as-is.
+            ownerBypassToken: getOwnerBypassToken()
           }, sourceImageUrl ? { sourceImageUrl: sourceImageUrl } : {}))
         }).then(function (res) {
           return res.json().then(function (data) {
@@ -1906,6 +1953,82 @@
           })
         }).catch(function () { /* best-effort, must never break the app */ });
       } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Enables the owner generation-rate-limit bypass for THIS browser
+     * (tracker.html's for-product-founder-hit-the-per-ip-gener-7mjq2l
+     * item — see netlify/functions/lib/owner-bypass.js's header comment
+     * for the full mechanism and why this needs a real password, not just
+     * being logged in as an account whose email happens to match
+     * OWNER_EMAIL). Reuses the CURRENTLY signed-in account's own already-
+     * cached local credential (state.accounts[key].password) — the exact
+     * same "no new re-auth prompt" pattern sendFirstDreamEmailBestEffort
+     * above already establishes — rather than asking for a password a
+     * second time in a form, since admin.html (this method's only
+     * intended caller) is already gated on being signed in as an account
+     * whose email matches OWNER_EMAIL before it even shows the control.
+     *
+     * POSTs to verify-owner-bypass.js, which independently re-verifies
+     * the real password server-side regardless of anything this client
+     * believes about who's signed in — see that file's own header comment.
+     * On success, stores the returned short-lived token + its expiry in
+     * localStorage (getOwnerBypassToken reads it back) so every
+     * subsequent startGeneration call in this browser attaches it
+     * automatically until it expires. Returns a Promise resolving
+     * { ok:true, expiresAt } or { ok:false, error }.
+     */
+    verifyOwnerBypass: function () {
+      if (!state.user) return Promise.resolve({ ok: false, error: 'not_logged_in' });
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return Promise.resolve({ ok: false, error: 'not_logged_in' });
+      return fetch('/.netlify/functions/verify-owner-bypass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: state.user.username, password: account.password })
+      })
+        .then(function (res) { return res.json().then(function (data) { return { status: res.status, data: data }; }); })
+        .then(function (result) {
+          if (!result.data || !result.data.ok) {
+            return { ok: false, error: (result.data && result.data.error) || 'request_failed' };
+          }
+          try {
+            localStorage.setItem(OWNER_BYPASS_TOKEN_KEY, result.data.token);
+            localStorage.setItem(OWNER_BYPASS_EXPIRES_KEY, String(result.data.expiresAt));
+          } catch (e) { /* storage unavailable — bypass simply won't persist this session */ }
+          return { ok: true, expiresAt: result.data.expiresAt };
+        })
+        .catch(function () {
+          return { ok: false, error: 'network_error' };
+        });
+    },
+
+    /**
+     * Local read of the owner bypass's current status for this browser —
+     * { active:boolean, expiresAt:number|null } — used by admin.html to
+     * render "Active until …" vs. an "Enable" control. Never a security
+     * check itself (see getOwnerBypassToken's own header note) — purely
+     * UI state.
+     */
+    getOwnerBypassStatus: function () {
+      var token = getOwnerBypassToken();
+      if (!token) return { active: false, expiresAt: null };
+      var expiresAt = parseInt(localStorage.getItem(OWNER_BYPASS_EXPIRES_KEY), 10);
+      return { active: true, expiresAt: expiresAt || null };
+    },
+
+    /**
+     * Clears any locally-stored owner bypass token for this browser —
+     * lets admin.html offer an explicit "Disable" action rather than only
+     * ever waiting out the 12h TTL. Purely a local, best-effort cleanup;
+     * the token itself simply expires server-side on its own regardless.
+     */
+    clearOwnerBypass: function () {
+      try {
+        localStorage.removeItem(OWNER_BYPASS_TOKEN_KEY);
+        localStorage.removeItem(OWNER_BYPASS_EXPIRES_KEY);
+      } catch (e) { /* storage unavailable — nothing to clear */ }
     },
 
     /**

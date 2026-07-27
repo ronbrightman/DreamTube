@@ -304,8 +304,25 @@ var MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT = 5;
  * balance and writes nothing, mirroring this file's existing "an
  * unidentifiable caller never creates a phantom record" discipline (see
  * the old getQuotaStatus, which had the same guard for the same reason).
+ *
+ * Optional 3rd arg `opts.ownerBypass` (default false — every existing
+ * caller before this was added, and every caller other than
+ * generate-video.js/generate-image.js's own getTokenStatus call today,
+ * passes nothing and keeps the exact prior behavior): when true, skips
+ * ONLY the per-IP token-init rate-limit check in the first-ever-read
+ * branch immediately below, granting INITIAL_GRANT unconditionally instead
+ * — see netlify/functions/lib/owner-bypass.js's header comment for the
+ * full "owner testing on a rate-limited IP" mechanism this closes, and the
+ * for-product-founder-hit-the-per-ip-gener-7mjq2l tracker item this
+ * implements. Deliberately narrow: this flag is never read anywhere else
+ * in this function or file — it has no effect on the ≥200 grant ceiling,
+ * the +20/24h drip, spendTokens, addTokens, or (critically) the E112/E412
+ * balance-threshold check itself, which callers apply completely
+ * independently of this — a bypassed IP still gets exactly INITIAL_GRANT
+ * (220) tokens, no more, same as any other brand-new email that simply
+ * wasn't IP-capped.
  */
-async function syncTokens(event, email) {
+async function syncTokens(event, email, opts) {
   var key = normalizeEmail(email);
   if (!key) return { balance: 0, lastGrantAt: Date.now() };
 
@@ -318,7 +335,10 @@ async function syncTokens(event, email) {
     var maxInitPerIp = parseInt(process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY, 10);
     if (!maxInitPerIp || maxInitPerIp <= 0) maxInitPerIp = MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT;
     var ip = rateLimit.clientIp(event);
-    var ipCheck = await rateLimit.checkAndIncrement(event, 'token-init', ip, maxInitPerIp);
+    var ownerBypassActive = !!(opts && opts.ownerBypass);
+    var ipCheck = ownerBypassActive
+      ? { allowed: true }
+      : await rateLimit.checkAndIncrement(event, 'token-init', ip, maxInitPerIp);
 
     var fresh = ipCheck.allowed
       ? { balance: INITIAL_GRANT, lastGrantAt: now }
@@ -352,9 +372,16 @@ async function syncTokens(event, email) {
  * balance is held at the ≥200 ceiling this may already be in the past;
  * callers should treat that as "a grant is pending, due as soon as balance
  * drops", not render a negative countdown.
+ *
+ * Optional 3rd arg `opts` is forwarded as-is to syncTokens — see that
+ * function's own doc comment for `opts.ownerBypass`. This does NOT change
+ * the E112/E412 threshold check itself (`balance < 100`/`< 10`) — that
+ * comparison lives entirely in the caller (generate-video.js/
+ * generate-image.js) against whatever balance this returns, unconditional
+ * either way.
  */
-async function getTokenStatus(event, email) {
-  var tokens = await syncTokens(event, email);
+async function getTokenStatus(event, email, opts) {
+  var tokens = await syncTokens(event, email, opts);
   return {
     balance: tokens.balance,
     nextGrantAt: tokens.lastGrantAt + GRANT_INTERVAL_MS,

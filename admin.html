@@ -45,6 +45,28 @@
       </div>
       <div class="err-text" id="admin-error" style="margin-top:8px;"></div>
 
+      <!-- Owner generation-rate-limit bypass (tracker.html's
+           for-product-founder-hit-the-per-ip-gener-7mjq2l item) -- lets the
+           founder skip the per-IP/per-email generation rate limit
+           (MAX_GENERATIONS_PER_IP_PER_DAY) while testing, WITHOUT touching
+           the token-balance gate or the daily spend cap -- see
+           js/store.js's verifyOwnerBypass and
+           netlify/functions/lib/owner-bypass.js for the real, server-side
+           password-verified mechanism this triggers. This panel is a
+           client-side UX convenience only (shown once admin-paywall-toggle's
+           own isOwner check above already passed) -- the actual boundary is
+           verify-owner-bypass.js's independent server-side password check. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Generation rate-limit bypass</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px;">
+        <div class="choice-icon" id="admin-bypass-icon"></div>
+        <div class="choice-text">
+          <div class="choice-title">Owner bypass</div>
+          <div class="admin-row-sub" id="admin-bypass-sub">Checking status…</div>
+        </div>
+        <button type="button" class="btn btn-ghost" id="admin-bypass-btn" style="width:auto; padding:8px 16px;">Enable</button>
+      </div>
+      <div class="err-text" id="admin-bypass-error" style="margin-top:8px;"></div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -58,6 +80,7 @@
   document.getElementById('admin-back').innerHTML = Icons.back;
   document.getElementById('admin-unauthorized-icon').innerHTML = Icons.lock;
   document.getElementById('admin-paywall-icon').innerHTML = Icons.lock;
+  document.getElementById('admin-bypass-icon').innerHTML = Icons.lock;
 
   var user = DreamStore.getCurrentUser();
   if (!user) { location.href = 'login.html?next=admin.html'; }
@@ -141,6 +164,41 @@
         toggleEl.classList.remove('disabled');
         errorEl.textContent = "Couldn't reach the server — check your connection and try again.";
       });
+  });
+
+  // ===== Owner generation rate-limit bypass =====
+  var bypassBtn = document.getElementById('admin-bypass-btn');
+  var bypassSubEl = document.getElementById('admin-bypass-sub');
+  var bypassErrorEl = document.getElementById('admin-bypass-error');
+
+  function renderBypassStatus() {
+    var status = DreamStore.getOwnerBypassStatus();
+    if (status.active) {
+      bypassSubEl.textContent = 'Active until ' + new Date(status.expiresAt).toLocaleString() + ' — the per-network daily generation cap is skipped for this browser. The token balance and daily spend cap still apply, unchanged.';
+      bypassBtn.textContent = 'Disable';
+    } else {
+      bypassSubEl.textContent = 'Off — this browser is subject to the normal per-network daily generation cap, same as any other visitor.';
+      bypassBtn.textContent = 'Enable';
+    }
+  }
+  renderBypassStatus();
+
+  bypassBtn.addEventListener('click', function () {
+    bypassErrorEl.textContent = '';
+    if (DreamStore.getOwnerBypassStatus().active) {
+      DreamStore.clearOwnerBypass();
+      renderBypassStatus();
+      return;
+    }
+    bypassBtn.disabled = true;
+    DreamStore.verifyOwnerBypass().then(function (result) {
+      bypassBtn.disabled = false;
+      if (!result.ok) {
+        bypassErrorEl.textContent = "Couldn't enable the bypass — your account's password on file didn't verify against the owner account server-side.";
+        return;
+      }
+      renderBypassStatus();
+    });
   });
 </script>
 </body>
