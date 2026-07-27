@@ -280,3 +280,67 @@ test('js/store.js: dreams stay visible even when the ronbrightman username is ty
     await page.close();
   }
 });
+
+test('js/store.js: the local-fallback login path (attemptLocalLogin, used when account-login.js is unreachable) also pins casing and migrates legacy data, not just the server-confirmed path', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    // Force every account-login.js call to fail outright, so login()'s
+    // .catch() always degrades to attemptLocalLogin — this is a real,
+    // reachable path (a network hiccup), not a contrived one; see
+    // admin-rename-account.js's own header comment.
+    await page.route('**/.netlify/functions/account-login', function (route) {
+      route.abort('failed');
+    });
+    // Also block whatever backfillAccountServerSide's fire-and-forget
+    // registration call hits — it must never block or fail this test.
+    await page.route('**/.netlify/functions/account-register*', function (route) {
+      route.abort('failed');
+    });
+
+    await seedPreRenameLocalData(page);
+    await page.evaluate(function () {
+      var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      // Seed a LOCAL-ONLY account record for ronbrightman (the shape
+      // attemptLocalLogin itself requires — it only ever checks
+      // state.accounts, never the server) alongside the legacy throwaway
+      // dreams/characters seedPreRenameLocalData already put in place.
+      raw.accounts.ronbrightman = { password: 'localpw1', email: 'ronbrightman@gmail.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(raw));
+    });
+    // js/store.js only reads localStorage once, at page load — reload so
+    // its in-memory state actually picks up the account record just
+    // written above (same requirement seedPreRenameLocalData's own
+    // comment documents).
+    await safeGoto(page, baseUrl + '/login.html');
+
+    var result = await page.evaluate(function () {
+      // First fallback login, typed with one casing.
+      return window.DreamStore.login('Ronbrightman', 'localpw1').then(function (firstResult) {
+        window.DreamStore.logout();
+        // Second fallback login, typed with DIFFERENT casing — the exact
+        // scenario the round-3 review found unfixed on this path.
+        return window.DreamStore.login('RONBRIGHTMAN', 'localpw1').then(function (secondResult) {
+          return {
+            firstOk: firstResult.ok,
+            secondOk: secondResult.ok,
+            currentUser: window.DreamStore.getCurrentUser(),
+            myDreams: window.DreamStore.getMyDreams(),
+            characters: window.DreamStore.getCharacters()
+          };
+        });
+      });
+    });
+
+    assert.equal(result.firstOk, true, 'the local fallback must still succeed for a real local account');
+    assert.equal(result.secondOk, true);
+    assert.equal(result.currentUser.handle, '@ronbrightman', 'the local-fallback path must pin casing exactly like the server-confirmed path does');
+    var myDreamIds = result.myDreams.map(function (d) { return d.id; }).sort();
+    assert.deepEqual(myDreamIds, ['legacy-dream-1', 'legacy-dream-2'], 'legacy dreams must be migrated and stay visible across differently-cased fallback logins too');
+    assert.equal(result.characters.length, 1);
+  } finally {
+    await page.close();
+  }
+});

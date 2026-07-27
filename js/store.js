@@ -995,6 +995,19 @@
     if (!account) return { ok: false, error: 'No account found with that username or email.' };
     if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
     var username = loggedInViaEmail ? key : usernameOrEmail;
+    // Same one-off pin as login()'s server-confirmed branch, and for the
+    // identical reason (see migrateLegacyThrowawayAccountData's own doc
+    // comment) — this fallback is a real, reachable path (a network
+    // hiccup talking to account-login.js routes here just like a genuine
+    // "no server account" response does), and it's worse to miss here:
+    // finalizeDream/savePendingJob stamp NEW dreams/jobs with
+    // state.user.handle at creation time, so a dream created during a
+    // mis-cased fallback session would be PERMANENTLY orphaned, not just
+    // invisible until the next correctly-cased login.
+    if (key === LEGACY_ACCOUNT_RENAME.toUsername) {
+      username = LEGACY_ACCOUNT_RENAME.toUsername;
+    }
+    migrateLegacyThrowawayAccountData(key, username);
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
