@@ -499,6 +499,28 @@ test('a payment with no resolvable token amount is acknowledged but credits noth
   assert.equal(await entitlements.getEntitlement({}, 'notokens@example.com'), null);
 });
 
+test('a payment.succeeded event with no payment_id is acknowledged (200) but credits nothing -- hardening fix, tracker item for-product-store-launch-copy-sweep-purc-m6xhkx', async function () {
+  // A real Dodo Payment object always carries payment_id -- this
+  // simulates the malformed/unexpected case where it's somehow absent.
+  // creditTokenPackOnce used to credit unconditionally here (no way to
+  // dedupe a redelivery without a payment_id); it now fails closed
+  // instead, since crediting real tokens off an unverifiable event is a
+  // real gap, not an acceptable "escape hatch". See that function's own
+  // doc comment in lib/entitlements.js.
+  await seedZeroBalance('nopayidwebhook@example.com');
+  var payload = paymentPayload({
+    payment_id: undefined,
+    customer: { customer_id: 'cus_nopayid', email: 'nopayidwebhook@example.com' }
+  });
+  delete payload.data.payment_id;
+  var res = await handler(signedEvent(payload));
+  assert.equal(res.statusCode, 200, 'still acknowledged -- not worth Dodo redelivering something structurally missing payment_id');
+  assert.deepEqual(JSON.parse(res.body), { received: true });
+
+  var record = await entitlements.getEntitlement({}, 'nopayidwebhook@example.com');
+  assert.equal(record.tokens.balance, 0, 'balance must be untouched -- nothing should have been credited');
+});
+
 test('creditTokenPackOnce genuinely exhausting its retries (not a legitimate already-processed SKIP) surfaces as a real 500 E5 through the actual webhook handler, so Dodo redelivers', async function () {
   // The exhaustion-throws fix in lib/entitlements.js (creditTokenPackOnce /
   // creditTokenPackAmountOnce) was previously only exercised by calling

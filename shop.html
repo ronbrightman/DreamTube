@@ -55,16 +55,28 @@
   </div>
 
   <div class="px" style="flex:1; padding-bottom:30px;">
-    <!-- Beta/free-mode banner — this is the app's own "pricing screen"
+    <!-- Cost/free-grant banner — this is the app's own "pricing screen"
          equivalent (pricing.html was removed; the funnel's screen 14 says
-         the same thing pre-signup). Leads with the plain, unambiguous
-         claim first so nobody scanning this page for "how much does this
-         cost" gets even a moment of paywall anxiety before reaching the
-         free-tokens explanation below. See netlify/functions/lib/
-         entitlements.js for the real mechanics this describes. -->
-    <div class="auth-notice" id="shop-beta-banner">
-      <span class="icon" id="shop-beta-icon"></span>
-      <span><b>Free during beta — no card needed.</b> Every account gets tokens automatically; there's nothing to buy right now.</span>
+         something similar pre-signup). Store-launch copy sweep (tracker
+         item for-product-store-launch-copy-sweep-purc-m6xhkx): this used
+         to lead with "Free during beta — no card needed" directly above
+         three live Buy buttons -- a real, live contradiction once Dodo
+         Payments checkout actually went live (founder launched the store
+         2026-07-27). Replaced with the plain cost facts instead: what a
+         generation actually costs, and that free tokens still exist and
+         refill daily. Numbers here (100/10 per generation, 20/day up to
+         200 banked) must match lib/entitlements.js's real
+         VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_GRANT_AMOUNT/
+         GRANT_CEILING — see that file for the authoritative constants;
+         the daily-grant half is ALSO rendered live off tokenStatus in
+         #shop-cap-note further below, so this banner and that note now
+         say the same thing in two different spots by design (leads with
+         it here since it's the first thing a cost-scanning visitor
+         reads, repeats it there once real numbers are in) rather than
+         one hardcoded and one live going stale relative to each other. -->
+    <div class="auth-notice" id="shop-cost-banner">
+      <span class="icon" id="shop-cost-icon"></span>
+      <span><b>Videos cost 100 tokens, images 10.</b> Free tokens refill daily — up to 200 banked — and you can always top up below.</span>
     </div>
 
     <div class="token-balance-card">
@@ -101,7 +113,7 @@
         <div class="token-pack-price">$2.99</div>
       </div>
       <div class="token-pack-sub">100 tokens = 1 video or 10 images.</div>
-      <button class="btn btn-secondary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
+      <button class="btn btn-primary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
     </div>
 
     <div class="token-pack-card popular">
@@ -111,7 +123,7 @@
         <div class="token-pack-price">$7.99</div>
       </div>
       <div class="token-pack-sub">300 tokens = 3 videos or 30 images.</div>
-      <button class="btn btn-secondary btn-block" id="shop-buy-pack300" data-pack="pack300">Buy</button>
+      <button class="btn btn-primary btn-block" id="shop-buy-pack300" data-pack="pack300">Buy</button>
     </div>
 
     <div class="token-pack-card best">
@@ -121,8 +133,19 @@
         <div class="token-pack-price">$14.99</div>
       </div>
       <div class="token-pack-sub">700 tokens = 7 videos or 70 images.</div>
-      <button class="btn btn-secondary btn-block" id="shop-buy-pack700" data-pack="pack700">Buy</button>
+      <button class="btn btn-primary btn-block" id="shop-buy-pack700" data-pack="pack700">Buy</button>
     </div>
+
+    <!-- Trust line (store-launch copy sweep, tracker item
+         for-product-store-launch-copy-sweep-purc-m6xhkx) — the buy
+         buttons above went live with real Dodo Payments checkout with no
+         reassurance copy anywhere near them about what "Buy" actually
+         does (real checkout, real card, real receipt). Static text, not
+         provider-conditional: Dodo Payments is the founder's chosen and
+         approved processor (see AGENT_POLICY.md's escalation policy) and
+         is the only live path create-checkout-session-dodo.js actually
+         wires these buttons to today. -->
+    <div class="auth-sub" style="margin-top:8px; text-align:center;" id="shop-trust-line">Secure checkout via Dodo Payments — one-time purchase, no subscription — receipt to your email.</div>
 
     <div class="auth-sub" style="margin-top:8px;" id="shop-cap-note">Free tokens are capped — 20 every 24 hours, up to 200 banked. Buy a pack any time for more, right when you need it.</div>
   </div>
@@ -158,7 +181,7 @@
 
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('shop-back').innerHTML = Icons.back;
-  document.getElementById('shop-beta-icon').innerHTML = Icons.check;
+  document.getElementById('shop-cost-icon').innerHTML = Icons.check;
 
   // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
   // every other page's inline funnel script already defines locally (see

@@ -635,8 +635,25 @@ var MAX_CREDIT_ATTEMPTS = 3;
  */
 async function creditTokenPackOnce(event, email, paymentId, tokens) {
   if (!paymentId) {
-    await addTokens(event, email, tokens);
-    return { credited: true };
+    // Hardening fix (store-launch copy-sweep companion pass,
+    // for-product-store-launch-copy-sweep-purc-m6xhkx): this used to
+    // credit unconditionally here, with a comment calling it a
+    // "documented escape hatch" — but that's a real gap now that real
+    // money is involved. paymentId is the ONLY thing the dedup marker
+    // below keys on; with none, there is no way to tell a genuine
+    // (if malformed) event apart from a redelivery/replay of the exact
+    // same one, so crediting here would double- (or infinitely-) credit
+    // on every redelivery. A real Dodo `payment.succeeded` Payment object
+    // always carries `payment_id` — seeing this branch hit at all means
+    // something is wrong with the event, not that it's safe to trust.
+    // Fail closed: log loudly for ops visibility and skip crediting,
+    // rather than crediting real tokens off an unverifiable event. Not a
+    // `throw` — dodo-webhook.js's catch turns a throw into a 500 (asking
+    // Dodo to redeliver), which would just repeat this same unresolvable
+    // situation forever; this is a structural problem with the event, not
+    // a transient one worth retrying.
+    console.error('creditTokenPackOnce: payment.succeeded event has no payment_id -- refusing to credit tokens (nothing to dedupe a redelivery against). email=' + normalizeEmail(email) + ' tokens=' + tokens);
+    return { credited: false };
   }
 
   var claimId; // set fresh inside mutate() on whichever attempt actually writes
@@ -1070,8 +1087,12 @@ function refundedJobsStore() {
  * lands, per the founder's own spec.
  *
  * A missing/falsy jobId skips the dedup guard entirely and always refunds
- * — mirrors creditTokenPackOnce's own documented `!paymentId` escape
- * hatch. Shouldn't happen in practice (every real generation always has an
+ * — this used to mirror creditTokenPackOnce's own `!paymentId` behavior,
+ * but that one now fails closed instead (see its own doc comment, fixed
+ * for tracker item for-product-store-launch-copy-sweep-purc-m6xhkx —
+ * real-money crediting needed the stricter behavior; a token refund here
+ * is lower-stakes and out of scope for that pass). Shouldn't happen in
+ * practice (every real generation always has an
  * operationName), but this must not silently drop a legitimate refund if
  * it somehow did. NOT reachable via the real HTTP-exposed status endpoints
  * (video-status.js/image-status.js both require a non-empty `name` before
@@ -1253,7 +1274,12 @@ async function refundTokensOnce(event, email, jobId, amount) {
  * refundTokensOnce in production code.
  *
  * A missing/falsy jobId skips the dedup guard entirely and always credits
- * — mirrors creditTokenPackAmountOnce's own documented escape hatch.
+ * — mirrors creditTokenPackOnce's own OLD, pre-hardening-fix `!paymentId`
+ * behavior (see that function's own doc comment: it now fails closed
+ * instead, since real money is on the line there; this refund-side
+ * function's own fail-open behavior is lower-stakes and was intentionally
+ * left as-is by that same pass, see this function's own doc comment
+ * above for why).
  */
 async function refundTokenAmountOnce(event, email, jobId, amount) {
   var key = normalizeEmail(email);
