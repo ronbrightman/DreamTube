@@ -192,6 +192,19 @@ test('processing.html: the FB/IG in-app-browser nudge shows for Instagram\'s UA 
         var hint = await page.textContent('#proc-nudge-hint');
         assert.match(hint, new RegExp(expectHost), 'the escape hint must explicitly name the host app\'s own menu, never a bare "tap ⋯ above"');
         assert.match(hint, /Open in external browser/i);
+
+        // for-product-nudge-polish-founder-show-a--x72003: a static visual
+        // replica of the actual host-app menu row (icon + label, styled
+        // like a system menu item) must render alongside the text hint --
+        // not just plain text describing what to look for.
+        var hintTextOnly = await page.textContent('#proc-nudge-hint-text');
+        assert.match(hintTextOnly, new RegExp(expectHost), 'the host name must appear in the lead-in sentence regardless of host');
+        var replicaVisible = await page.locator('#proc-nudge-menu-replica').isVisible();
+        assert.equal(replicaVisible, true, 'the static menu-row replica must actually render, not just the plain-text hint');
+        var replicaLabel = await page.textContent('#proc-nudge-menu-replica .menu-row-replica-label');
+        assert.match(replicaLabel, /Open in external browser/i, 'the replica\'s label must show the exact menu-row wording to look for');
+        var replicaIconHtml = await page.locator('#proc-nudge-menu-replica-icon').innerHTML();
+        assert.match(replicaIconHtml, /<svg/, 'the replica must include an icon (not just bare text) to visually read as a system menu row');
       } else {
         assert.equal(await page.locator('#proc-nudge-card').isVisible(), false, 'a normal browser UA must never show the in-app nudge');
       }

@@ -471,6 +471,25 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-nudge-btn .icon{ width:14px; height:14px;}
 .proc-nudge-hint{ font-size:10.5px; color:var(--text-faint); text-align:center; margin-top:7px; transition:color .3s ease;}
 .proc-nudge-hint.proc-nudge-hint-emph{ color:var(--accent-trust); font-weight:700;}
+/* Static, non-interactive replica of the actual menu row a visitor has to
+   find inside their host app's own "..." menu (Instagram's/Facebook's
+   in-app-browser chrome) -- tracker item
+   for-product-nudge-polish-founder-show-a--x72003 (founder feedback): a
+   text-only hint left people unsure exactly what to look for, so this
+   renders a small mockup of that real menu row -- icon + label, a light
+   "system menu" card look deliberately distinct from this app's own dark
+   surfaces and Manrope type, using the OS system-font stack so it reads as
+   "not part of our UI" -- alongside the existing host-dynamic hint
+   sentence. Shared by processing.html's post-signup nudge card (inside
+   #proc-nudge-hint) and create.html's record-blocked panel (inside
+   #rec-inapp-hint) -- one visual language for the same instruction in both
+   places, not two separate implementations. aria-hidden in markup since
+   the adjacent hint sentence already carries the same information for
+   screen readers -- this is a decorative visual aid, not new content. */
+.menu-row-replica{ display:inline-flex; align-items:center; gap:9px; margin:8px auto 0; padding:9px 16px; background:#f2f2f4; border:1px solid rgba(0,0,0,.08); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.16); text-align:left; max-width:100%;}
+.menu-row-replica-icon{ flex:0 0 auto; width:18px; height:18px; display:flex; align-items:center; justify-content:center; color:#48484f;}
+.menu-row-replica-icon svg{ width:16px; height:16px;}
+.menu-row-replica-label{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:13px; font-weight:500; color:#1c1c1e;}
 .proc-fail{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;}
 .proc-fail-icon{ width:42px; height:42px; color:var(--danger);}
 .proc-fail-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; max-width:260px;}

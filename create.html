@@ -202,7 +202,13 @@
     <div style="font-size:13px; color:var(--text-muted); text-align:center; padding:0 14px; line-height:1.5;" id="rec-inapp-body"></div>
     <div style="width:100%; padding:0 4px;">
       <button type="button" class="proc-nudge-btn" id="rec-inapp-open-btn"></button>
-      <div class="proc-nudge-hint" id="rec-inapp-hint"></div>
+      <div class="proc-nudge-hint" id="rec-inapp-hint">
+        <span id="rec-inapp-hint-text"></span>
+        <div class="menu-row-replica" id="rec-inapp-menu-replica" aria-hidden="true">
+          <span class="menu-row-replica-icon" id="rec-inapp-menu-replica-icon"></span>
+          <span class="menu-row-replica-label">Open in external browser</span>
+        </div>
+      </div>
     </div>
     <button class="btn btn-ghost btn-block" id="rec-inapp-write-btn" style="margin:0 4px;">Write it instead</button>
   </div>
@@ -910,7 +916,15 @@
     document.getElementById('rec-inapp-body').textContent = "In-app browsers built into " + host + " don't allow microphone access, so recording won't work here. Open DreamTube in your real browser to record — or write your dream instead.";
     var openBtn = document.getElementById('rec-inapp-open-btn');
     openBtn.innerHTML = 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>';
-    document.getElementById('rec-inapp-hint').textContent = 'or tap ' + host + '’s ⋯ at the very top → "Open in external browser"';
+    // Same host-dynamic sentence + static menu-row-replica visual pattern as
+    // processing.html's nudge card (see .menu-row-replica in
+    // css/styles.css) — tracker item
+    // for-product-nudge-polish-founder-show-a--x72003 (founder feedback:
+    // "show the EXACT look of the menu item the user must find"), built
+    // once and reused in both places so they read as one consistent
+    // component rather than two separate implementations.
+    document.getElementById('rec-inapp-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for:';
+    document.getElementById('rec-inapp-menu-replica-icon').innerHTML = Icons.compass;
   }
 
   document.getElementById('rec-inapp-open-btn').addEventListener('click', function(){

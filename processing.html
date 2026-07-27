@@ -85,7 +85,13 @@
         <div class="proc-nudge-head"><span class="proc-nudge-dot" id="proc-nudge-icon"></span><span id="proc-nudge-title"></span></div>
         <div class="proc-nudge-body">Videos play smoother — and you stay signed in — in your real browser. Your dream will be right here waiting.</div>
         <button type="button" class="proc-nudge-btn" id="proc-nudge-open-btn"></button>
-        <div class="proc-nudge-hint" id="proc-nudge-hint"></div>
+        <div class="proc-nudge-hint" id="proc-nudge-hint">
+          <span id="proc-nudge-hint-text"></span>
+          <div class="menu-row-replica" id="proc-nudge-menu-replica" aria-hidden="true">
+            <span class="menu-row-replica-icon" id="proc-nudge-menu-replica-icon"></span>
+            <span class="menu-row-replica-label">Open in external browser</span>
+          </div>
+        </div>
       </div>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
@@ -641,7 +647,15 @@
     // above" reads to users as this app's own icon, not the host app's
     // chrome (the founder caught exactly this ambiguity in review of the
     // design mock — see the mock's own comment on .ig-chrome).
-    hint.textContent = 'or tap ' + host + '’s ⋯ at the very top → "Open in external browser"';
+    //
+    // The sentence now leads into a small static visual replica of the
+    // actual menu row (icon + "Open in external browser" label, styled
+    // like a system menu item — see .menu-row-replica in css/styles.css)
+    // rather than relying on text alone to describe it — tracker item
+    // for-product-nudge-polish-founder-show-a--x72003 (founder feedback:
+    // "show the EXACT look of the menu item the user must find").
+    document.getElementById('proc-nudge-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for:';
+    document.getElementById('proc-nudge-menu-replica-icon').innerHTML = Icons.compass;
     card.style.display = 'block';
 
     openBtn.addEventListener('click', function(){

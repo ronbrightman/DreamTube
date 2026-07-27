@@ -190,6 +190,19 @@ test('create.html?record=1: an Instagram in-app-webview UA never calls getUserMe
 
     var heading = await page.textContent('#create-heading');
     assert.equal(heading, 'Record your dream');
+
+    // for-product-nudge-polish-founder-show-a--x72003: same static
+    // menu-row-replica visual (icon + "Open in external browser" label)
+    // that processing.html's nudge card uses, so this reads as one
+    // consistent product component rather than a second implementation.
+    var hintTextOnly = await page.textContent('#rec-inapp-hint-text');
+    assert.match(hintTextOnly, /Instagram/, 'the lead-in sentence must still name the host app');
+    var replicaVisible = await page.locator('#rec-inapp-menu-replica').isVisible();
+    assert.equal(replicaVisible, true, 'the static menu-row replica must render inside the record-blocked panel too');
+    var replicaLabel = await page.textContent('#rec-inapp-menu-replica .menu-row-replica-label');
+    assert.match(replicaLabel, /Open in external browser/i);
+    var replicaIconHtml = await page.locator('#rec-inapp-menu-replica-icon').innerHTML();
+    assert.match(replicaIconHtml, /<svg/, 'the replica must include an icon, not just bare text');
   } finally {
     await context.close();
   }
@@ -211,6 +224,17 @@ test('create.html?record=1: a Facebook in-app-webview UA (iOS) never calls getUs
 
     var title = await page.textContent('#rec-inapp-title');
     assert.match(title, /Facebook/, 'the guard panel must name Facebook specifically, not a generic message');
+
+    // Same static menu-row-replica visual as the Instagram case above --
+    // must render for Facebook too, since the founder's ask is for one
+    // consistent visual pattern across both hosts (see this file's
+    // Instagram test for the fuller comment).
+    var hintTextOnly = await page.textContent('#rec-inapp-hint-text');
+    assert.match(hintTextOnly, /Facebook/, 'the lead-in sentence must name Facebook here, not a hardcoded Instagram');
+    var replicaVisible = await page.locator('#rec-inapp-menu-replica').isVisible();
+    assert.equal(replicaVisible, true, 'the static menu-row replica must render for the Facebook host case too');
+    var replicaLabel = await page.textContent('#rec-inapp-menu-replica .menu-row-replica-label');
+    assert.match(replicaLabel, /Open in external browser/i);
 
     // "Write it instead" must be a real, working fallback -- consistent with
     // this page's existing choice options -- not a dead end.
