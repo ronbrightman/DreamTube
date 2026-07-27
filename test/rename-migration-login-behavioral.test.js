@@ -296,7 +296,11 @@ test('js/store.js: the local-fallback login path (attemptLocalLogin, used when a
     });
     // Also block whatever backfillAccountServerSide's fire-and-forget
     // registration call hits — it must never block or fail this test.
-    await page.route('**/.netlify/functions/account-register*', function (route) {
+    // (The real endpoint is register-account.js, not account-register —
+    // this test's own static server serves no netlify/functions/* routes
+    // at all, so the fire-and-forget fetch fails naturally either way,
+    // but pin the real name here so this mock's intent matches reality.)
+    await page.route('**/.netlify/functions/register-account*', function (route) {
       route.abort('failed');
     });
 
@@ -339,6 +343,50 @@ test('js/store.js: the local-fallback login path (attemptLocalLogin, used when a
     assert.equal(result.currentUser.handle, '@ronbrightman', 'the local-fallback path must pin casing exactly like the server-confirmed path does');
     var myDreamIds = result.myDreams.map(function (d) { return d.id; }).sort();
     assert.deepEqual(myDreamIds, ['legacy-dream-1', 'legacy-dream-2'], 'legacy dreams must be migrated and stay visible across differently-cased fallback logins too');
+    assert.equal(result.characters.length, 1);
+  } finally {
+    await page.close();
+  }
+});
+
+test('js/store.js: importAccountBackup (the "Restore from backup" recovery flow) also pins casing and migrates legacy data for a differently-cased ronbrightman backup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    // A fresh/wiped browser: no local accounts entry at all yet, but the
+    // legacy throwaway dreams/characters ARE present (matches the other
+    // tests' seed) so this proves importAccountBackup's own migration
+    // call finds them too, not just the two login() paths.
+    await seedPreRenameLocalData(page);
+
+    var result = await page.evaluate(function () {
+      // The backup file itself carries a differently-cased username, the
+      // way a file exported before this round's fix existed could —
+      // proving the pin applies even to a stale/mis-cased backup, not
+      // just a fresh one.
+      var backup = {
+        dreamtubeBackupVersion: 1,
+        exportedAt: new Date().toISOString(),
+        username: 'RonBrightman',
+        account: { password: 'backuppw1', email: 'ronbrightman@gmail.com' },
+        dreams: [],
+        characters: []
+      };
+      var importResult = window.DreamStore.importAccountBackup(backup);
+      return {
+        importResult: importResult,
+        currentUser: window.DreamStore.getCurrentUser(),
+        myDreams: window.DreamStore.getMyDreams(),
+        characters: window.DreamStore.getCharacters()
+      };
+    });
+
+    assert.equal(result.importResult.ok, true, 'importing a fresh backup on a device with no existing account under this username must succeed');
+    assert.equal(result.currentUser.handle, '@ronbrightman', 'importAccountBackup must pin casing exactly like the two login paths do, not use the raw backup.username verbatim');
+    var myDreamIds = result.myDreams.map(function (d) { return d.id; }).sort();
+    assert.deepEqual(myDreamIds, ['legacy-dream-1', 'legacy-dream-2'], 'restoring a backup must also pick up this device\'s own legacy throwaway dreams, not just whatever the backup file itself contained');
     assert.equal(result.characters.length, 1);
   } finally {
     await page.close();

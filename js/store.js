@@ -810,6 +810,14 @@
   function commitLocalSignup(username, password, email) {
     var key = username.toLowerCase();
     state.accounts[key] = { password: password, email: email.toLowerCase(), createdAt: Date.now() };
+    // Realistically unreachable for the renamed account specifically (the
+    // server-side rename already claims u:ronbrightman, so a real signup
+    // attempt for it fails server-side before this offline-fallback path
+    // ever runs) — pinned anyway for the same reason every other
+    // state.user constructor in this file now routes through this: no
+    // more relying on "should be unreachable" reasoning per site, see
+    // pinLegacyRenameIdentity's own doc comment.
+    username = pinLegacyRenameIdentity(key, username);
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -976,6 +984,30 @@
   }
 
   /**
+   * The ONE place every `state.user = {...}` construction site in this
+   * file must route through, for this one hardcoded account. Review
+   * found three consecutive rounds of "one more state.user-setting code
+   * path got missed" (login()'s server-confirmed branch, then
+   * attemptLocalLogin, then importAccountBackup) because each round's
+   * fix was applied at its own call site instead of centralized here —
+   * this function exists specifically so a FOURTH such gap can't happen:
+   * every constructor of state.user for this account now calls this
+   * exact same function, so there is nowhere left for the same bug to
+   * hide. `key` must already be the canonical lowercase username (never
+   * the raw typed/backup value) — every caller below already computes
+   * this for its own purposes before constructing state.user, so this
+   * never adds a new lowercase() call, just centralizes what happens
+   * next. Returns the casing-pinned username to actually use.
+   */
+  function pinLegacyRenameIdentity(key, username) {
+    if (key === LEGACY_ACCOUNT_RENAME.toUsername) {
+      username = LEGACY_ACCOUNT_RENAME.toUsername;
+    }
+    migrateLegacyThrowawayAccountData(key, username);
+    return username;
+  }
+
+  /**
    * The pre-fix, fully-local login check — kept as the fallback for an
    * account that was created before the server-side store existed and was
    * never registered there (see backfillAccountServerSide below, which
@@ -995,19 +1027,7 @@
     if (!account) return { ok: false, error: 'No account found with that username or email.' };
     if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
     var username = loggedInViaEmail ? key : usernameOrEmail;
-    // Same one-off pin as login()'s server-confirmed branch, and for the
-    // identical reason (see migrateLegacyThrowawayAccountData's own doc
-    // comment) — this fallback is a real, reachable path (a network
-    // hiccup talking to account-login.js routes here just like a genuine
-    // "no server account" response does), and it's worse to miss here:
-    // finalizeDream/savePendingJob stamp NEW dreams/jobs with
-    // state.user.handle at creation time, so a dream created during a
-    // mis-cased fallback session would be PERMANENTLY orphaned, not just
-    // invisible until the next correctly-cased login.
-    if (key === LEGACY_ACCOUNT_RENAME.toUsername) {
-      username = LEGACY_ACCOUNT_RENAME.toUsername;
-    }
-    migrateLegacyThrowawayAccountData(key, username);
+    username = pinLegacyRenameIdentity(key, username);
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1164,21 +1184,6 @@
           // pre-fix local-only login always did.
           var typedIsUsername = usernameOrEmail.toLowerCase() === serverUsername;
           var displayUsername = typedIsUsername ? usernameOrEmail : serverUsername;
-          // One-off: pin this ONE renamed account's display casing to the
-          // canonical lowercase form always, regardless of how it's typed.
-          // Review of migrateLegacyThrowawayAccountData caught that letting
-          // typed casing drive state.user.handle (the normal behavior above)
-          // makes ownerHandle-tagged dreams only survive the FIRST post-
-          // rename login's casing — every dream accessor does a plain
-          // `d.ownerHandle === state.user.handle` match, so a later login
-          // typed with different casing (e.g. "Ronbrightman" vs
-          // "ronbrightman") would silently fail to find dreams already
-          // migrated under the earlier casing, with no self-healing path.
-          // Forcing one fixed handle string for this account closes that
-          // permanently.
-          if (serverUsername === LEGACY_ACCOUNT_RENAME.toUsername) {
-            displayUsername = LEGACY_ACCOUNT_RENAME.toUsername;
-          }
           if (!state.accounts[serverUsername]) {
             // Brand-new-to-this-device account — materialize a local
             // placeholder so the rest of this app's local-storage-
@@ -1200,12 +1205,7 @@
             state.accounts[serverUsername].password = password;
             if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
           }
-          // One-off: pick up any locally-cached dreams/characters still
-          // sitting under the old __probe_throwaway_user__ identity the
-          // moment a login resolves to the renamed ronbrightman account —
-          // see migrateLegacyThrowawayAccountData's own doc comment for
-          // why this can't be handled server-side at all.
-          migrateLegacyThrowawayAccountData(serverUsername, displayUsername);
+          displayUsername = pinLegacyRenameIdentity(serverUsername, displayUsername);
           state.user = { handle: '@' + displayUsername, username: displayUsername };
           persist();
           identifyForAnalytics(displayUsername);
@@ -1427,9 +1427,24 @@
         if (!existingIds[d.id]) state.dreams.push(d);
       });
       state.charactersByUser[key] = backup.characters || [];
-      state.user = { handle: '@' + backup.username, username: backup.username };
+      // Reachable, real path (see login.html's "Restore from backup" flow
+      // and profile.html's own export-a-backup instruction) — pinned like
+      // every other state.user constructor for the same reason, see
+      // pinLegacyRenameIdentity's own doc comment. Known, accepted edge
+      // case left as-is: a backup keyed to the OLD throwaway username
+      // restored AFTER the rename does not itself get migrated here
+      // (pinLegacyRenameIdentity/migrateLegacyThrowawayAccountData both
+      // key off the account resolving to the NEW name) — it simply
+      // restores the pre-rename identity locally, exactly as the backup
+      // file describes. That's a deliberate "restore what the file says"
+      // choice, not a gap: this function's whole contract is restoring
+      // exactly what was exported, and silently rewriting a restored
+      // backup's own identity to a different account would be a stranger
+      // kind of surprise than leaving it alone.
+      var username = pinLegacyRenameIdentity(key, backup.username);
+      state.user = { handle: '@' + username, username: username };
       persist();
-      identifyForAnalytics(backup.username);
+      identifyForAnalytics(username);
       return { ok: true, user: state.user };
     },
 
