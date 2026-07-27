@@ -72,6 +72,10 @@
   <img class="result-image" id="result-image" alt="" style="display:none;">
   <div class="result-scrim"></div>
   <div class="play-badge result-play" id="result-play-badge"><div class="badge-circle"><span class="icon" id="result-play-icon"></span></div></div>
+  <!-- Topbar keeps only back + share (plus the unrelated title/token-chip/
+       mute controls) — the old Explore/Profile nav icons are gone from
+       here, replaced by the compact CTA pair inside .result-panel below.
+       See tracker.html's for-product-build-result-html-first-vide-mupiua. -->
   <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
     <a class="icon-btn" href="explore.html" id="result-back" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
     <div id="result-topbar-title" style="font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">Your Dream</div>
@@ -79,11 +83,11 @@
       <div id="topbar-token-chip-slot"></div>
       <button class="icon-btn" id="mute-btn" title="Unmute" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
       <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
-      <a class="icon-btn" href="explore.html" id="result-nav-explore" title="Explore" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
-      <a class="icon-btn" href="profile.html" id="result-nav-profile" title="Profile" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
     </div>
   </div>
   <div class="result-panel">
+    <!-- Small font, clamped to 2 lines with tap-to-expand/collapse — see
+         setupExpandableQuote() below. -->
     <div class="dream-quote" id="result-quote" dir="auto">""</div>
     <div class="quote-more-hint" id="result-quote-hint" style="display:none;">Show more</div>
     <div class="result-tag-row">
@@ -94,22 +98,44 @@
          image but no video yet (dream.imageUrl && !dream.videoUrl), the
          single most prominent action on the screen at that point. See
          docs/IMAGE_GENERATION_SPEC.md §6 and js/store.js's
-         turnImageIntoVideo. -->
+         turnImageIntoVideo. Deliberately kept full-size/warm here — the
+         one CTA on this screen that does NOT shrink with the rest (founder-
+         explicit 2026-07-26 night: the token cost must stay clearly
+         visible, never restyled into a slim/subtle pill). -->
     <button class="btn btn-warm btn-block turn-video-cta" id="turn-video-btn" style="display:none;" title="Turn this into a video">
       <span class="interp-cta-label"><span class="icon" id="turn-video-icon"></span>Turn this into a video</span>
       <span class="feed-tag">100 tokens</span>
     </button>
-    <div class="action-row-compact">
-      <button class="btn btn-secondary" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
-      <button class="btn btn-secondary" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
-      <button class="btn btn-warm" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
-      <button class="btn btn-ghost" id="delete-btn" style="color:var(--danger); border-color:var(--danger);" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
-    </div>
-    <button class="btn btn-primary btn-block" id="make-another-btn" style="margin-bottom:10px;"><span class="icon" id="make-another-icon"></span>Make another dream</button>
-    <button class="btn btn-secondary interp-cta" id="interp-cta-btn" title="See an AI reflection on what this dream might mean">
-      <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> See what this might mean</span>
+
+    <!-- Dream interpretation — a slim pill ABOVE the CTA pair (absorbs the
+         already-approved interpretation-above-make-another cheap win, not a
+         separate change). Tap behavior is unchanged from the old
+         interp-cta-btn — opens the same #sheet-interp-overlay. -->
+    <button class="interp-pill" id="interp-cta-btn" title="See an AI reflection on what this dream might mean">
+      <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> What might this dream mean?</span>
       <span class="feed-tag" id="interp-private-pill">Private</span>
     </button>
+
+    <!-- Compact CTA pair — replaces the old topbar Explore/Profile nav
+         icons. Deliberately SMALL (founder asked the whole CTA area
+         shrunk from what it was). -->
+    <div class="result-cta-row">
+      <a class="btn btn-primary result-cta" href="explore.html" id="result-cta-explore"><span class="icon" id="result-cta-explore-icon"></span>Explore dreams</a>
+      <a class="btn result-cta result-cta-secondary" href="profile.html" id="result-cta-profile"><span class="icon" id="result-cta-profile-icon"></span>My profile</a>
+    </div>
+
+    <!-- Quiet small-link row — Edit / Publish / Make another (per spec),
+         plus Save/Delete in the same quiet style rather than dropped
+         (neither was called out for removal and both are real existing
+         functionality — every tap handler below is unchanged from before
+         this redesign). -->
+    <div class="result-quiet-links">
+      <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
+      <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+      <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
+      <button class="result-quiet-link" id="save-video-btn" title="Save the video file to your device"><span class="icon" id="save-video-icon"></span>Save</button>
+      <button class="result-quiet-link danger" id="delete-btn" title="Delete Dream"><span class="icon" id="delete-icon"></span>Delete</button>
+    </div>
   </div>
 
   <div class="sheet-overlay" id="sheet-interp-overlay">
@@ -286,9 +312,13 @@
       }
     } catch (e) { /* malformed/absent referrer -- keep the explore.html default */ }
   })();
-  document.getElementById('share-btn').innerHTML = Icons.share;
-  document.getElementById('result-nav-explore').innerHTML = Icons.compass;
-  document.getElementById('result-nav-profile').innerHTML = Icons.person;
+  // Standard iOS-style share icon (box + arrow escaping the top) — see
+  // js/icons.js's shareIos doc comment for why this is a new icon rather
+  // than reusing the existing `share` entry (which is a different
+  // paper-plane glyph, still used as-is by explore.html's feed action).
+  document.getElementById('share-btn').innerHTML = Icons.shareIos;
+  document.getElementById('result-cta-explore-icon').innerHTML = Icons.compass;
+  document.getElementById('result-cta-profile-icon').innerHTML = Icons.person;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('save-video-icon').innerHTML = Icons.download;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
@@ -568,9 +598,9 @@
   // A long dream caption used to grow this panel unbounded (it's an
   // absolutely-positioned overlay anchored to the bottom, so nothing
   // capped its height) -- long enough text could push it up over the
-  // topbar and hide the entire screen. Now it clamps to 3 lines by
-  // default with a tap-to-expand affordance, only shown when the text
-  // actually overflows.
+  // topbar and hide the entire screen. Now it clamps to 2 lines (small
+  // font, per the result.html redesign) by default with a tap-to-expand
+  // affordance, only shown when the text actually overflows.
   var quoteExpanded = false;
   function setupExpandableQuote(){
     var quote = document.getElementById('result-quote');
