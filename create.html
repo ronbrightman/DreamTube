@@ -300,6 +300,22 @@
   document.getElementById('re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
 
+  // Founder decision 2026-07-27 (tracker for-product-founder-solution-for-record--111tp1),
+  // superseding the blocked-panel-first approach shipped a few hours earlier (00a4718):
+  // when a detected FB/IG in-app webview can't support getUserMedia, don't show the
+  // Record it choice card at all and make the user tap it just to hit a dead end —
+  // Build it and Write it are two real, working alternatives sitting right there, so
+  // hiding the impossible option beats explaining why it's impossible. Per the founder's
+  // own framing: "capability-detect and HIDE, don't handhold." detectInAppHost() is
+  // declared further down this same top-level script (function declarations hoist, so
+  // it's already callable here). The #create-record-blocked panel below is kept — it's
+  // only reachable via startRecordingUI()'s own guard, which still exists unchanged for
+  // the one case hiding this card can't cover: a direct ?record=1 deep-link landing
+  // straight in a webview, where this choice screen is never shown at all.
+  if(detectInAppHost()){
+    document.getElementById('choice-record').style.display = 'none';
+  }
+
   // ===== Advanced: characters =====
   document.getElementById('adv-toggle').addEventListener('click', function(){
     var open = document.getElementById('adv-section').classList.toggle('open');

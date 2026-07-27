@@ -25,6 +25,23 @@
 // guard panel (#create-record-blocked) steers the visitor to their real
 // browser or to Write instead.
 //
+// FOLLOW-UP (tracker for-product-founder-solution-for-record--111tp1,
+// founder decision 2026-07-27): showing the blocked panel from a manual tap
+// turned out not to be the right default -- with two working alternatives
+// (Build it / Write it) sitting right on the same choice screen, the
+// founder's call was "capability-detect and HIDE, don't handhold." So
+// #choice-record is now omitted entirely from the choice screen's initial
+// render whenever detectInAppHost() finds an in-app webview -- it's simply
+// not there to tap. The #create-record-blocked guard panel itself is
+// UNCHANGED and still lives inside startRecordingUI() -- it's just no
+// longer reachable via a manual click once the card is hidden. It's kept
+// for the one case hiding the card can't cover: a direct ?record=1
+// deep-link landing straight in a webview, where the choice screen (and
+// therefore the now-hidden card) is never shown at all -- the auto-trigger
+// below still calls startRecordingUI() directly, hits the same guard, and
+// still needs *something* on screen instead of a silent getUserMedia
+// failure.
+//
 // Follows test/record-mode-behavioral.test.js's installMediaRecorderMock/
 // seedLoggedInUserAt conventions for exercising create.html's record flow
 // without touching a real microphone, and
@@ -257,12 +274,13 @@ test('create.html?record=1: on iOS, clicking "Open in my browser" never navigate
 });
 
 // ===========================================================================
-// Manual #choice-record click path (visiting create.html directly, no
-// ?record=1) -- the same guard inside startRecordingUI() must cover this
-// second call site too.
+// Choice-screen card visibility (visiting create.html directly, no
+// ?record=1) -- per the founder's 2026-07-27 follow-up decision, the
+// #choice-record card itself must not be offered at all in a detected
+// in-app webview, rather than being shown and blocking on click.
 // ===========================================================================
 
-test('create.html: without ?record=1, clicking #choice-record on a normal browser UA still calls getUserMedia unchanged', async function (t) {
+test('create.html: without ?record=1, a normal browser UA still shows #choice-record, and clicking it calls getUserMedia unchanged', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_ANDROID_CHROME_UA });
   try {
@@ -272,8 +290,11 @@ test('create.html: without ?record=1, clicking #choice-record on a normal browse
 
     await seedLoggedInUserAt(page, 'normalclickguard', '/create.html');
     await page.waitForSelector('#choice-record', { timeout: 5000 });
-    await page.click('#choice-record');
 
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(recordDisplay, 'none', 'a normal browser UA must still show the Record it card');
+
+    await page.click('#choice-record');
     await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
     var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
     assert.equal(getUserMediaCalls, 1, 'a manual Record-it tap on a normal browser UA must still call getUserMedia, unchanged');
@@ -282,7 +303,7 @@ test('create.html: without ?record=1, clicking #choice-record on a normal browse
   }
 });
 
-test('create.html: without ?record=1, clicking #choice-record inside an Instagram in-app webview never calls getUserMedia -- the guard panel shows instead', async function (t) {
+test('create.html: without ?record=1, an Instagram in-app webview UA never renders #choice-record at all -- Build it and Write it remain', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
   try {
@@ -291,21 +312,45 @@ test('create.html: without ?record=1, clicking #choice-record inside an Instagra
     await blockThirdParty(page);
 
     await seedLoggedInUserAt(page, 'igclickguard', '/create.html');
-    await page.waitForSelector('#choice-record', { timeout: 5000 });
-    await page.click('#choice-record');
+    await page.waitForSelector('#create-select', { timeout: 5000 });
 
-    await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'the Record it card must be hidden entirely inside a detected in-app webview -- not shown-then-blocked');
+
+    var buildDisplay = await page.locator('#choice-build').evaluate(function (el) { return getComputedStyle(el).display; });
+    var writeDisplay = await page.locator('#choice-write').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(buildDisplay, 'none', 'Build it must remain -- it is a real, working alternative');
+    assert.notEqual(writeDisplay, 'none', 'Write it must remain -- it is a real, working alternative');
+
     var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
-    assert.equal(getUserMediaCalls, 0, 'a manual Record-it tap inside an Instagram in-app webview must never call getUserMedia');
+    assert.equal(getUserMediaCalls, 0, 'with the card hidden, there is no way to trigger getUserMedia from the choice screen at all');
 
-    var title = await page.textContent('#rec-inapp-title');
-    assert.match(title, /Instagram/);
+    var blockedDisplay = await page.locator('#create-record-blocked').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(blockedDisplay, 'none', 'the blocked-state panel must not show on its own -- it only ever shows in response to an actual record attempt (the ?record=1 auto-trigger)');
   } finally {
     await context.close();
   }
 });
 
-test('create.html: the guard panel is reachable via the topbar Back button, returning to the Build/Write/Record choice screen', async function (t) {
+test('create.html: without ?record=1, a Facebook in-app webview UA (iOS) also never renders #choice-record', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: FB_IOS_UA });
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await seedLoggedInUserAt(page, 'fbclickguard', '/create.html');
+    await page.waitForSelector('#create-select', { timeout: 5000 });
+
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'the Record it card must be hidden for Facebook\'s in-app webview too, not just Instagram\'s');
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html?record=1: the guard panel (auto-triggered path) is still reachable via the topbar Back button, returning to the Build/Write choice screen with Record it hidden', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
   try {
@@ -313,9 +358,11 @@ test('create.html: the guard panel is reachable via the topbar Back button, retu
     var page = await context.newPage();
     await blockThirdParty(page);
 
-    await seedLoggedInUserAt(page, 'backfromguard', '/create.html');
-    await page.waitForSelector('#choice-record', { timeout: 5000 });
-    await page.click('#choice-record');
+    // The card-hiding fix means the guard panel can no longer be reached by
+    // clicking #choice-record (it's not there to click) -- the only path
+    // left into it is the ?record=1 deep-link auto-trigger, which still
+    // calls startRecordingUI() directly and hits the same unchanged guard.
+    await seedLoggedInUserAt(page, 'backfromguard', '/create.html?record=1');
     await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
 
     await page.click('#create-back');
@@ -325,6 +372,9 @@ test('create.html: the guard panel is reachable via the topbar Back button, retu
     assert.equal(blockedDisplay, 'none', 'Back must hide the guard panel');
     var heading = await page.textContent('#create-heading');
     assert.equal(heading, 'New Dream');
+
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'back on the choice screen, the Record it card is still correctly hidden for this in-app webview UA');
   } finally {
     await context.close();
   }
