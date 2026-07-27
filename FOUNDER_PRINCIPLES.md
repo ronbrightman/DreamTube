@@ -192,6 +192,16 @@ tight (curate, don't dump).
   stomping the other's in-progress edits). Dispatch to an isolated git
   worktree whenever more than one agent might touch the repo
   concurrently.
+- **Any founder-facing action ships with a UI/link, never curl
+  instructions as the final interface (ALWAYS, 2026-07-27).** When
+  something needs Ron to personally act, give him a direct page to
+  tap/type on, not a raw API command — even a `dryRun` curl with clear
+  instructions is not acceptable as the end state. An owner-only
+  endpoint that exists without a UI is unfinished work, not a
+  reasonable stopgap; build the UI in the same pass the endpoint ships
+  in, or as an immediate follow-up, not "later if he asks." This
+  applies retroactively too — audit for other owner-only, curl-only
+  endpoints whenever one turns up.
 
 ## Model selection (founder delegated this call 2026-07-23)
 
