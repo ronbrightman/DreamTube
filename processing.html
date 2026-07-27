@@ -643,6 +643,50 @@
     runGeneration();
   });
 
+  // Holds pollForCredit's own returned cancel() while a poll is actually
+  // in flight (either branch below) — null otherwise. Read by the
+  // pagehide listener further down (tracker item
+  // purchase-sheet-checkout-auto-resume-two--ltinmn, gap 1): pollForCredit
+  // already supported early cancellation, but nothing here ever called it,
+  // so a poll left running when the user navigates away could still fire
+  // onCredited -> runGeneration() after they've left, if the browser
+  // bfcache-restores this exact page later with the poll's setTimeout
+  // chain still alive. Same bug class as the already-fixed
+  // fix-pre-existing-photo-upload-cancel-reo item: an async callback not
+  // scoped/cancelled to the navigation that started it.
+  var activePollCancel = null;
+
+  /** Shared by both the marker-present and marker-missing checkout=success paths below — window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real ~75s poll window down to something a browser test can actually run in; undefined/absent in every real page load, so pollForCredit just falls back to its own real defaults. */
+  function startCreditPoll(neededBalance, source){
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    activePollCancel = PurchaseSheet.pollForCredit({
+      neededBalance: neededBalance,
+      intervalMs: pollOverrides.intervalMs,
+      maxMs: pollOverrides.maxMs,
+      onCredited: function(){
+        activePollCancel = null;
+        PurchaseSheet.fireBlockedActionResumed(source || 'blocked_action');
+        hidePaymentReceivedState();
+        initInAppNudge();
+        runGeneration();
+      },
+      onTimeout: function(){
+        activePollCancel = null;
+        showDegradedWaitState();
+      }
+    });
+  }
+
+  // Stops any in-flight credit poll the instant this page is left (real
+  // navigation, tab close, OR the page being frozen into bfcache) — the
+  // one moment a bfcache-restored resume of this exact poll would be
+  // stale. pagehide covers both plain navigation and the bfcache-freeze
+  // case (unlike beforeunload, which bfcache-eligible navigations skip
+  // entirely), so it's the only listener needed here.
+  window.addEventListener('pagehide', function(){
+    if(activePollCancel){ activePollCancel(); activePollCancel = null; }
+  });
+
   var checkoutParam = PurchaseSheet.readCheckoutParam();
   if(checkoutParam === 'cancelled'){
     // A cancel here means the sheet was opened from THIS page's own
@@ -672,27 +716,25 @@
         '"' + resumeDraft.caption + '" · ' + (resumeDraft.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
     }
 
-    var neededBalance = pendingPurchase.cost || currentMediaTypeCost();
-    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
-    // test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real
-    // ~75s poll window down to something a browser test can actually run
-    // in — undefined/absent in every real page load, so pollForCredit just
-    // falls back to its own real defaults.
-    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
-    PurchaseSheet.pollForCredit({
-      neededBalance: neededBalance,
-      intervalMs: pollOverrides.intervalMs,
-      maxMs: pollOverrides.maxMs,
-      onCredited: function(){
-        PurchaseSheet.fireBlockedActionResumed(pendingPurchase.source || 'blocked_action');
-        hidePaymentReceivedState();
-        initInAppNudge();
-        runGeneration();
-      },
-      onTimeout: function(){
-        showDegradedWaitState();
-      }
-    });
+    startCreditPoll(pendingPurchase.cost || currentMediaTypeCost(), pendingPurchase.source);
+  } else if(checkoutParam === 'success'){
+    // checkout=success but the dreamtube_pending_purchase sessionStorage
+    // marker is missing (gap 2, same tracker item as above) — private-
+    // browsing storage block, or the checkout completed in a different tab
+    // than it started in. We still KNOW the checkout succeeded (that's
+    // what the query param means), so this must not silently fall through
+    // to the plain "no checkout at all" else-branch below and fire
+    // runGeneration() immediately with zero polling grace period — that
+    // would defeat the whole auto-resume promise for exactly the rare case
+    // it exists to cover. There's no marker data to report a Purchase
+    // conversion event from (no pack/tokens/price/eventId), so
+    // fireSuccessPurchaseEvents is skipped rather than called with nothing
+    // meaningful to send; the poll itself uses the same grace-period
+    // window as the marker-present path above, just with the plain
+    // currentMediaTypeCost() fallback (pendingPurchase.cost doesn't exist
+    // here) and a generic 'blocked_action' source.
+    showPaymentReceivedState();
+    startCreditPoll(currentMediaTypeCost(), 'blocked_action');
   } else {
     initInAppNudge();
     runGeneration();

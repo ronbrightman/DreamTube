@@ -464,3 +464,150 @@ test('processing.html: when the token credit is still lagging past the poll wind
     await context.close();
   }
 });
+
+// ============================================================================
+// Robustness gaps found in review of the build above (tracker item
+// purchase-sheet-checkout-auto-resume-two--ltinmn, non-blocking, fixed in a
+// follow-up pass):
+//
+// 1. pollForCredit() (js/purchase-sheet.js) already returned a cancel()
+//    function, but processing.html never called it -- a poll left running
+//    when the user navigates away could still fire onCredited ->
+//    runGeneration() later if the browser bfcache-restores this exact page
+//    with the poll's setTimeout chain still alive. Same bug class as the
+//    already-fixed fix-pre-existing-photo-upload-cancel-reo item: an async
+//    callback not scoped/cancelled to the navigation that started it. Fixed
+//    by cancelling the active poll on 'pagehide'.
+//
+// 2. checkout=success with the dreamtube_pending_purchase marker missing
+//    (private-browsing storage block, or checkout completed in a different
+//    tab) used to fall straight through to an immediate runGeneration()
+//    call with zero polling grace period -- defeating the whole auto-resume
+//    promise for exactly the rare case it exists to cover. Fixed by giving
+//    that path the same polling grace period as the marker-present happy
+//    path, just with a currentMediaTypeCost() fallback (no pendingPurchase
+//    to read a real cost from) and no Purchase-conversion analytics fire
+//    (no marker data to report).
+// ============================================================================
+
+test('processing.html: pagehide cancels the in-flight credit poll -- a stale poll tick must not resume generation after the user has navigated away', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // Flips to a sufficient balance only AFTER the test cancels the poll --
+    // this is what actually proves cancellation (not merely "the balance
+    // never happened to cross the threshold") stopped the resume: without
+    // the pagehide fix, this credit landing would have satisfied the very
+    // next poll tick and fired runGeneration().
+    var creditLanded = false;
+    var tokenStatusCallCount = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      tokenStatusCallCount++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false }) });
+    });
+
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      generateVideoCalls.push(true);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:veo3.1:should-not-fire' }) });
+    });
+
+    // Shrinks the poll interval so several ticks fit comfortably inside the
+    // test's own timeout, same mechanism as the honest-degrade test above.
+    await page.addInitScript(function () {
+      window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 5000 };
+    });
+
+    await seedAccount(page, {
+      username: 'pagehidecancel',
+      draft: { caption: 'A dream about a slow-motion waterfall', style: 'Realistic', mediaType: 'video' },
+      pendingPurchase: { pack: 'pack100', tokens: 100, price: 2.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+    });
+
+    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#proc-payment-resume', { state: 'visible', timeout: 5000 });
+
+    // Let the poll actually start (at least one real tick) before cancelling
+    // it -- the test must not pass trivially just because the poll never
+    // got going in the first place.
+    await page.waitForRequest(/get-token-status/, { timeout: 3000 });
+    var callsAtCancel = tokenStatusCallCount;
+
+    await page.evaluate(function () { window.dispatchEvent(new Event('pagehide')); });
+    creditLanded = true;
+
+    // Several poll intervals' worth of real time (60ms interval, waited
+    // 500ms = ~8 ticks) -- if cancellation didn't actually stop the poll
+    // loop, at least one more tick would see the now-sufficient balance and
+    // fire onCredited -> runGeneration() within this window.
+    await page.waitForTimeout(500);
+
+    assert.equal(generateVideoCalls.length, 0, 'a poll cancelled on pagehide must never resume generation, even once the credit lands afterward');
+    assert.equal(page.url().indexOf('result.html'), -1, 'must not have navigated to result.html after the cancelled poll\'s target credit landed');
+    assert.ok(tokenStatusCallCount <= callsAtCancel + 1, 'the poll loop itself must stop scheduling further ticks once cancelled (allowing at most one already-in-flight request to land)');
+  } finally {
+    await context.close();
+  }
+});
+
+test('processing.html: checkout=success with the pending-purchase marker missing still gets a polling grace period instead of firing runGeneration() immediately (private-browsing storage block / cross-tab checkout)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // Balance starts short, then updates to sufficient partway through the
+    // grace-period poll -- proves this is real polling, not an immediate
+    // pass-through dressed up with a spinner.
+    var creditLanded = false;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false }) });
+    });
+
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      generateVideoCalls.push(true);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:veo3.1:missing-marker-resume' }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/missing-marker-video.mp4' }) });
+    });
+
+    // Shrinks the poll window the same way every other test in this file
+    // does -- see js/purchase-sheet.js's pollForCredit doc comment.
+    await page.addInitScript(function () {
+      window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 2000 };
+    });
+
+    // Deliberately NO pendingPurchase seeded -- simulates the
+    // dreamtube_pending_purchase sessionStorage marker being absent on
+    // return from checkout (private-browsing storage block, or the
+    // checkout completing in a different tab than it started in).
+    await seedAccount(page, {
+      username: 'missingmarker',
+      draft: { caption: 'A dream about a train through the clouds', style: 'Anime', mediaType: 'video' }
+    });
+
+    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    // THE FIX: must show the same "payment received / finishing up" grace
+    // state as the marker-present path, not fall straight through to an
+    // immediate runGeneration() call just because there's no marker to read
+    // a cost/source off of.
+    await page.waitForSelector('#proc-payment-resume', { state: 'visible', timeout: 3000 });
+    assert.equal(generateVideoCalls.length, 0, 'must not fire generation immediately just because the pending-purchase marker was missing');
+
+    await page.waitForTimeout(150);
+    creditLanded = true;
+
+    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    assert.equal(generateVideoCalls.length, 1, 'once the credit lands within the grace period, the blocked generation must still auto-resume even without marker data');
+    assert.equal(page.url().indexOf('checkout=success'), -1, 'the ?checkout=success param must still be stripped on the missing-marker path too');
+  } finally {
+    await context.close();
+  }
+});
