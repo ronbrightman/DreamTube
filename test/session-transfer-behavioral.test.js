@@ -298,6 +298,50 @@ test('result.html: the SAME ?bt= token cannot commit a session a second time (se
   }
 });
 
+test('result.html: a valid ?bt= token for a DIFFERENT account never silently replaces an already-signed-in session (round-2 review fix) -- but a valid token for the SAME already-signed-in account still commits cleanly', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, { token: 'stranger-token', username: 'strangeraccount', email: 'stranger@example.com' });
+
+    // This browser is ALREADY signed in as ownaccount -- e.g. a shared
+    // device, or someone else's own valid session-transfer link landing
+    // here (deliberately or via a copy-paste mistake).
+    await seedAccountWithDream(page, { username: 'ownaccount', dreamId: 'd-guard-1' });
+    await page.goto(baseUrl + '/result.html?id=d-guard-1&bt=stranger-token', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.ok(user, 'must still be signed in as SOMEONE -- must not have been signed out either');
+    assert.equal(user.username, 'ownaccount', 'a valid token minted for a DIFFERENT account must never silently replace the already-signed-in session');
+    assert.equal(page.url().indexOf('bt='), -1, 'the bt= param is still stripped from the URL regardless of whether it was honored');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: a valid ?bt= token for the SAME already-signed-in account is a harmless no-op refresh, not blocked by the different-account guard', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, { token: 'same-account-token', username: 'sameaccountuser', email: 'sameaccountuser@example.com' });
+
+    await seedAccountWithDream(page, { username: 'sameaccountuser', dreamId: 'd-guard-2' });
+    await page.goto(baseUrl + '/result.html?id=d-guard-2&bt=same-account-token', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.ok(user);
+    assert.equal(user.username, 'sameaccountuser', 'a token confirming the SAME identity that was already signed in must not be treated as a conflicting switch');
+  } finally {
+    await context.close();
+  }
+});
+
 test('result.html: an invalid/expired ?bt= token is a silent no-op -- falls through to the normal signed-out redirect, no error shown', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

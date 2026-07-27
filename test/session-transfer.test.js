@@ -38,6 +38,7 @@ function nextIp() {
 test.beforeEach(function () {
   mockBlobs.reset();
   delete process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IP_PER_DAY;
+  delete process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENTIFIER_PER_DAY;
   delete require.cache[require.resolve('../netlify/functions/create-session-transfer')];
   delete require.cache[require.resolve('../netlify/functions/verify-session-transfer')];
   delete require.cache[require.resolve('../netlify/functions/lib/session-transfer-token')];
@@ -132,6 +133,28 @@ test('create-session-transfer: exceeding MAX_SESSION_TRANSFER_ATTEMPTS_PER_IP_PE
   var body = JSON.parse(second.body);
   assert.equal(body.ok, false);
   assert.match(body.error, /^E5: rate_limited/);
+});
+
+test('create-session-transfer: exceeding MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENTIFIER_PER_DAY throttles repeated password guesses against ONE account even from rotating IPs (round-2 review fix -- this endpoint checks a real password just like account-login.js, so a per-IP-only cap alone would let an attacker guess one known @handle\'s password indefinitely by rotating IPs)', async function () {
+  process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENTIFIER_PER_DAY = '2';
+  var account = await registerTestAccount({ username: 'guesstarget2', password: 'realpassword1', email: 'guesstarget2@example.com' });
+  var handler = require('../netlify/functions/create-session-transfer').handler;
+
+  var first = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.username, password: 'wrong-guess-one' } }));
+  assert.equal(first.statusCode, 200); // 1st of 2 allowed identifier attempts (E4 incorrect_password)
+
+  var second = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.username, password: 'wrong-guess-two' } }));
+  assert.equal(second.statusCode, 200); // still under the per-identifier cap, even from a brand-new IP each time
+
+  var third = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: 'GuessTarget2', password: 'wrong-guess-three' } }));
+  assert.equal(third.statusCode, 429, 'a different IP does not bypass the per-identifier cap');
+  assert.match(JSON.parse(third.body).error, /^E5: rate_limited/);
+
+  // The real password, tried from yet another fresh IP, is ALSO blocked --
+  // the per-identifier cap protects the account regardless of whether the
+  // caller happens to know the real password on this particular attempt.
+  var fourth = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.username, password: account.password } }));
+  assert.equal(fourth.statusCode, 429);
 });
 
 // ===== verify-session-transfer.js: single-use, TTL'd consumption =====

@@ -595,11 +595,17 @@
   // session-transfer token is on it, same reasoning as the Android intent
   // URL above — so pasting it into Safari lands the user signed in, not
   // just on the right page. Same navigator.clipboard.writeText + toast
-  // pattern as result.html's own doShare, for a consistent feel.
+  // pattern as result.html's own doShare, for a consistent feel — except
+  // the toast copy here explicitly warns not to share this specific link
+  // (round-2 review finding: this URL is a live, single-use sign-in
+  // credential for the next ~15 minutes, sitting on the general OS
+  // clipboard — clipboard managers/sync and simple paste-into-the-wrong-
+  // place mistakes are a real exposure surface this copy should at least
+  // name, even though the single-use+short-TTL design already bounds it).
   function copyLinkForBrowser(){
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(location.href).then(function(){
-        showToast('Link copied — paste it in Safari');
+        showToast('Link copied — paste it in Safari. Keep it to yourself.');
       }).catch(function(){
         showToast("Couldn't copy link");
       });

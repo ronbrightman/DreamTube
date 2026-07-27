@@ -1147,10 +1147,26 @@
    * it never throws or blocks anything) — an accepted, narrow degrade,
    * not a bug: this session is real for everything else, it just never
    * had a password to cache.
+   *
+   * Round-2 review fix: refuses to commit if this browser is ALREADY
+   * signed in as a genuinely DIFFERENT account. Without this, a valid
+   * token minted for account A (a completely legitimate mint, using
+   * A's own real password) landing on a device already signed in as B
+   * would silently replace B's session with A's — reachable two ways:
+   * (a) benignly, a shared/reused device switching identity with zero
+   * warning the moment a stale/reused "open in browser" link lands; (b)
+   * as a session-fixation-style vector, since nothing stops account A's
+   * own holder from sending their own valid ?bt= URL to someone else —
+   * "check this out" — and having that person's browser silently become
+   * signed in AS A the moment they open it, with no confirmation, no
+   * indication their own prior session (if any) just got swapped out.
+   * A same-identity "refresh" (key already equals the signed-in user) is
+   * still allowed through — harmless, matches what was already there.
    */
   function commitTransferredSession(username, email) {
     var key = (username || '').toLowerCase();
     if (!key) return;
+    if (state.user && state.user.username && state.user.username.toLowerCase() !== key) return;
     if (!state.accounts[key]) {
       state.accounts[key] = { password: null, email: (email || '').toLowerCase() || null };
     } else if (email) {

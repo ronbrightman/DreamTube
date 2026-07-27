@@ -79,25 +79,38 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E3: missing_fields' }) };
   }
 
-  // Same per-IP daily cap shape as send-first-dream-email.js's own — this
-  // is effectively a login endpoint (it checks a real password), so it
-  // needs the same password-guessing throttle account-login.js itself
-  // has, not just a spam-cost throttle. Per-IP only (not also
-  // per-identifier like account-login.js) — this endpoint is called
-  // silently/automatically by the client's own already-cached password,
-  // never typed by a human, so there's no legitimate high-frequency
-  // per-account traffic pattern to distinguish from an attack the way
-  // account-login.js's two-bucket reasoning needs to.
-  var maxPerDay = parseInt(process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IP_PER_DAY, 10);
-  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 100;
+  // Round-2 review fix: a per-IP-only cap doesn't stop an attacker who
+  // knows a target's @handle (public on every Explore row) from
+  // password-guessing that ONE account by rotating IPs, up to the per-IP
+  // cap on each one — exactly the gap account-login.js's own two-bucket
+  // design exists to close, and this endpoint checks a password against
+  // the same real account, so it needs the same two buckets, not a
+  // lighter one. The earlier "no legitimate high-frequency per-account
+  // traffic to distinguish from an attack" reasoning was backwards: that
+  // absence is a reason for a STRICTER per-identifier cap, not none.
+  var maxPerIpPerDay = parseInt(process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IP_PER_DAY, 10);
+  if (!maxPerIpPerDay || maxPerIpPerDay <= 0) maxPerIpPerDay = 100;
+  var maxPerIdentifierPerDay = parseInt(process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENTIFIER_PER_DAY, 10);
+  if (!maxPerIdentifierPerDay || maxPerIdentifierPerDay <= 0) maxPerIdentifierPerDay = 30;
+
   var ip = rateLimit.clientIp(event);
-  var ipLimit = await rateLimit.checkAndIncrement(event, 'session-transfer-ip', ip, maxPerDay);
+  var ipLimit = await rateLimit.checkAndIncrement(event, 'session-transfer-ip', ip, maxPerIpPerDay);
   if (!ipLimit.allowed) {
+    return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E5: rate_limited' }) };
+  }
+  // Same canonical-username-resolution shape as account-login.js's own
+  // identifierKey (falls back to the raw, lowercased input if no account
+  // resolves at all, so an attacker can't dodge this bucket by guessing a
+  // username that happens not to exist).
+  var canonicalAccount = await accountStore.getByUsername(event, username);
+  var identifierKey = canonicalAccount ? canonicalAccount.username : username.toLowerCase();
+  var identifierLimit = await rateLimit.checkAndIncrement(event, 'session-transfer-identifier', identifierKey, maxPerIdentifierPerDay);
+  if (!identifierLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E5: rate_limited' }) };
   }
 
   try {
-    var loginCheck = await accountStore.verifyLogin(event, username, password);
+    var loginCheck = await accountStore.verifyLogin(event, username, password, canonicalAccount ? { record: canonicalAccount } : undefined);
     if (!loginCheck.ok) {
       return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E4: incorrect_password' }) };
     }
