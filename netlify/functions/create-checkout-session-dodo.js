@@ -76,10 +76,12 @@
 // relative successUrl/cancelUrl today.
 var REDIRECT_PATH_RE = /^\/(?!\/)/; // exactly one leading slash, not "//..." (protocol-relative)
 var REDIRECT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/; // defense in depth — belt-and-suspenders with the leading-slash check above, in case some exotic input could otherwise still parse as an absolute/scheme URL downstream
+var REDIRECT_CONTROL_CHAR_RE = /[\x00-\x1f\\]/; // defense in depth — reject embedded CR/LF/tab/other control chars and backslashes, in case any downstream consumer treats them differently than this function's own leading-slash/scheme checks assume
 function isSafeRedirectPath(candidate) {
   if (typeof candidate !== 'string' || !candidate) return false;
   if (!REDIRECT_PATH_RE.test(candidate)) return false;
   if (REDIRECT_SCHEME_RE.test(candidate)) return false;
+  if (REDIRECT_CONTROL_CHAR_RE.test(candidate)) return false;
   return true;
 }
 
