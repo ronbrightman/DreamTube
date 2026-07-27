@@ -33,7 +33,12 @@ test.beforeEach(function () {
 test('GET with no email -> a zero/inert status, no Blobs touched', async function () {
   var res = await getTokenStatusHandler(fakeEvent({ method: 'GET', ip: nextIp() }));
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 20 });
+  // grantCeiling/atCeiling added for tracker item
+  // for-product-bug-founder-high-token-chip--kn1v8t (see
+  // lib/entitlements.js's getTokenStatus doc comment) -- atCeiling is
+  // unconditionally false here since balance is always 0 on this
+  // no-email fast path.
+  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
 });
 
 test('GET with a brand-new email materializes the 220-token signup grant', async function () {

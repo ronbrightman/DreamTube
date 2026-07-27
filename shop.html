@@ -316,24 +316,43 @@
   function renderBalance(){
     if(!tokenStatus) return;
     balanceEl.textContent = tokenStatus.balance;
-    // Reads the daily-grant amount live off tokenStatus (see
-    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 20 as of Token Economy C,
-    // 2026-07-26 night) rather than a hardcoded number — a review
-    // finding on the image-generation branch: this line, plus
-    // profile.html's own copy of the same countdown, both hardcoded "100"
-    // and went stale silently the moment that constant changed, since
-    // neither is scoped to the image feature at all.
-    countdownEl.textContent = tokenStatus.nextGrantAt ? ('Next ' + tokenStatus.dailyGrantAmount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt)) : '';
+    // atCeiling (founder bug report for-product-bug-founder-high-token-chip--kn1v8t):
+    // once balance >= GRANT_CEILING (200), entitlements.js's syncTokens
+    // deliberately holds the daily grant back and never bumps lastGrantAt
+    // — so nextGrantAt is already in the past and formatTokenCountdown
+    // would render "now" forever ("Next 20 free tokens in now"), which
+    // reads as "due right now" when really the drip is just paused until
+    // balance actually drops. Read the server's explicit atCeiling flag
+    // instead of ever inferring "at ceiling" from a stale nextGrantAt —
+    // see lib/entitlements.js's getTokenStatus doc comment, and
+    // profile.html's identical fix for its own countdown.
+    if(tokenStatus.atCeiling){
+      countdownEl.textContent = 'Daily +' + tokenStatus.dailyGrantAmount + ' paused — you’re at the max';
+    } else {
+      // Reads the daily-grant amount live off tokenStatus (see
+      // lib/entitlements.js's DAILY_GRANT_AMOUNT, 20 as of Token Economy C,
+      // 2026-07-26 night) rather than a hardcoded number — a review
+      // finding on the image-generation branch: this line, plus
+      // profile.html's own copy of the same countdown, both hardcoded "100"
+      // and went stale silently the moment that constant changed, since
+      // neither is scoped to the image feature at all.
+      countdownEl.textContent = tokenStatus.nextGrantAt ? ('Next ' + tokenStatus.dailyGrantAmount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt)) : '';
+    }
     // Review round 2 on raise-daily-token-award-to-200: this static
     // '.auth-sub' note was a THIRD hardcoded copy of the daily-grant
     // number (a different phrasing again -- "100 every 24 hours" -- that
     // slipped past the grep patterns used for the other two locations
     // above). Fixed the same way: read live off tokenStatus rather than
     // ever hardcoding a number that only this page's own markup owns.
-    // 200 (the grant ceiling, as of Token Economy C) is left as a literal
-    // -- GRANT_CEILING isn't in get-token-status.js's response shape, and
-    // this branch's own scope explicitly excludes touching that constant.
-    capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to 200 banked. Buy a pack any time for more, right when you need it.';
+    // grantCeiling (the grant ceiling, 200 as of Token Economy C) is now
+    // ALSO read live off tokenStatus (see get-token-status.js /
+    // lib/entitlements.js's GRANT_CEILING export, added for tracker item
+    // for-product-bug-founder-high-token-chip--kn1v8t) rather than the
+    // literal this used to be — the 200 fallback below only covers a
+    // response that (for whatever reason) omits the field, it is not the
+    // primary path anymore.
+    var ceiling = tokenStatus.grantCeiling || 200;
+    capNoteEl.textContent = 'Free tokens are capped — ' + tokenStatus.dailyGrantAmount + ' every 24 hours, up to ' + ceiling + ' banked. Buy a pack any time for more, right when you need it.';
   }
   function loadBalance(){
     DreamStore.getTokenStatus().then(function(status){

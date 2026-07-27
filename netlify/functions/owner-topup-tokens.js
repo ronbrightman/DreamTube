@@ -18,8 +18,9 @@
 //         the email being credited and the email being authorized are always
 //         the same one. Returns the refreshed token status (same shape
 //         get-token-status.js returns: { balance, nextGrantAt,
-//         dailyGrantAmount }), so the client can redraw its balance from
-//         this one response without a second round-trip — same pattern
+//         dailyGrantAmount, grantCeiling, atCeiling }), so the client can
+//         redraw its balance from this one response without a second
+//         round-trip — same pattern
 //         grant-topup-bonus.js used to follow (see git history) before it
 //         was removed in the token-economy pivot; this is a new function
 //         built for the new model, not a resurrection of the old one (no

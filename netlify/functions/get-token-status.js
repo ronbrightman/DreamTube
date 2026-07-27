@@ -32,14 +32,16 @@ exports.handler = async function (event) {
 
   var rawEmail = (event.queryStringParameters && event.queryStringParameters.email) || '';
   if (!entitlements.normalizeEmail(rawEmail)) {
-    // dailyGrantAmount reads entitlements.js's real, live DAILY_GRANT_AMOUNT
-    // (20 as of Token Economy C, 2026-07-26 night) rather than a hardcoded
-    // literal — this whole branch is a no-Blobs-touch fast path (no email
-    // to look up), but there's no reason it can't still read the live
-    // exported constant instead of hand-maintaining its own stale copy. See
-    // tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy for why
-    // this exact bug class keeps recurring across retunes.
-    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: entitlements.DAILY_GRANT_AMOUNT }) };
+    // dailyGrantAmount/grantCeiling read entitlements.js's real, live
+    // constants (20 / 200 as of Token Economy C, 2026-07-26 night) rather
+    // than a hardcoded literal — this whole branch is a no-Blobs-touch fast
+    // path (no email to look up), but there's no reason it can't still read
+    // the live exported constants instead of hand-maintaining its own stale
+    // copy. See tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy
+    // for why this exact bug class keeps recurring across retunes.
+    // atCeiling is unconditionally false here — balance is always 0 on this
+    // no-email path, never anywhere near the ceiling.
+    return { statusCode: 200, body: JSON.stringify({ balance: 0, nextGrantAt: null, dailyGrantAmount: entitlements.DAILY_GRANT_AMOUNT, grantCeiling: entitlements.GRANT_CEILING, atCeiling: false }) };
   }
 
   var status = await entitlements.getTokenStatus(event, rawEmail);

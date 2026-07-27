@@ -660,6 +660,16 @@
     if(!tokenStatus) return;
     tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
     if(tokenStatus.balance < 100) tokenMetaEl.textContent = 'Out of tokens';
+    // atCeiling (founder bug report for-product-bug-founder-high-token-chip--kn1v8t):
+    // once balance >= GRANT_CEILING (200), entitlements.js's syncTokens
+    // deliberately holds the daily grant back and never bumps lastGrantAt
+    // — so nextGrantAt is already in the past and formatTokenCountdown
+    // would render "now" forever ("+20 in now"), which reads as "due right
+    // now" when really the drip is just paused until balance actually
+    // drops. Read the server's explicit atCeiling flag instead of ever
+    // inferring "at ceiling" from a stale nextGrantAt — see
+    // lib/entitlements.js's getTokenStatus doc comment.
+    else if(tokenStatus.atCeiling) tokenMetaEl.textContent = 'Daily +' + tokenStatus.dailyGrantAmount + ' paused — you’re at the max';
     // Daily-grant amount read live off tokenStatus (see
     // lib/entitlements.js's DAILY_GRANT_AMOUNT, 200 as of 2026-07-26's
     // token-economy retune) rather than hardcoded — see shop.html's own

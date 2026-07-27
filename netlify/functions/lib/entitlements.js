@@ -346,19 +346,42 @@ async function syncTokens(event, email) {
  * Reads this email's current token status, applying the lazy 220-token
  * first-ever-read grant and/or the lazy +20/24h drip (with its ≥200
  * ceiling) as needed — see the doc blocks above for the full mechanism.
- * Returns { balance, nextGrantAt, dailyGrantAmount }. nextGrantAt is an
- * epoch-ms timestamp (lastGrantAt + 24h) for the UI's live countdown (see
- * profile.html/style.html/result.html/processing.html/shop.html) — while
- * balance is held at the ≥200 ceiling this may already be in the past;
- * callers should treat that as "a grant is pending, due as soon as balance
- * drops", not render a negative countdown.
+ * Returns { balance, nextGrantAt, dailyGrantAmount, grantCeiling,
+ * atCeiling }. nextGrantAt is an epoch-ms timestamp (lastGrantAt + 24h)
+ * for the UI's live countdown (see profile.html/style.html/result.html/
+ * processing.html/shop.html) — while balance is held at the ≥200 ceiling
+ * this is already in the past (lastGrantAt is deliberately never bumped
+ * while held back, see syncTokens above), which is exactly what
+ * `atCeiling` exists to disambiguate for callers.
+ *
+ * `atCeiling` (added for tracker item
+ * for-product-bug-founder-high-token-chip--kn1v8t — the founder's own
+ * profile, sitting at the 200 ceiling, showed a permanent "+20 in now"):
+ * true whenever `balance >= GRANT_CEILING`, i.e. exactly the condition
+ * syncTokens uses to decide whether to hold the drip back. Every UI
+ * countdown renderer MUST branch on this explicit flag rather than
+ * inferring "at ceiling" from a past `nextGrantAt` — a past `nextGrantAt`
+ * used to be the only signal available, and every renderer collapsed it
+ * to "now" and rendered "+20 in now" forever for any account sitting
+ * at/above the ceiling, which is misleading (nothing is "due right now" —
+ * the grant is simply paused until the balance actually drops). See
+ * profile.html's/shop.html's own renderers for the fix.
+ *
+ * `grantCeiling` is exported alongside `atCeiling` so clients never need
+ * to hand-maintain their own copy of GRANT_CEILING (200 as of Token
+ * Economy C) to build ceiling-aware copy — the same "read the live
+ * constant instead of a literal that goes stale on the next retune"
+ * fix already applied to dailyGrantAmount, see tracker item
+ * recurring-bug-class-hardcoded-daily-gran-h6swgy.
  */
 async function getTokenStatus(event, email) {
   var tokens = await syncTokens(event, email);
   return {
     balance: tokens.balance,
     nextGrantAt: tokens.lastGrantAt + GRANT_INTERVAL_MS,
-    dailyGrantAmount: DAILY_GRANT_AMOUNT
+    dailyGrantAmount: DAILY_GRANT_AMOUNT,
+    grantCeiling: GRANT_CEILING,
+    atCeiling: tokens.balance >= GRANT_CEILING
   };
 }
 

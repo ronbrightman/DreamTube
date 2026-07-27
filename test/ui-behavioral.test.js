@@ -1752,3 +1752,88 @@ test('shop.html: the token countdown re-fetches (not just re-renders stale data)
     await context.close();
   }
 });
+
+/**
+ * Second founder report of a stuck-countdown bug class (tracker item
+ * for-product-bug-founder-high-token-chip--kn1v8t, screenshot
+ * 2026-07-26 23:19): the founder's own profile, balance 1500 (well above
+ * the 200-token ceiling), showed "1500 tokens · +20 in now" PERMANENTLY.
+ * Unlike the earlier c995790 fix (a stuck countdown that just needed a
+ * re-fetch once nextGrantAt genuinely passed), this account is AT the
+ * ceiling on purpose -- entitlements.js's syncTokens deliberately holds
+ * the daily grant back and never bumps lastGrantAt once balance >=
+ * GRANT_CEILING (200), so nextGrantAt stays in the past forever and no
+ * amount of re-fetching ever produces a future nextGrantAt again. There
+ * was previously NO correct rendering for this state at all -- every
+ * renderer collapsed a past nextGrantAt to "now" and showed "+N in now"
+ * indefinitely, which reads as "due right this second" when really the
+ * drip is simply paused. Fix: get-token-status.js now returns an explicit
+ * `atCeiling` boolean (see lib/entitlements.js's getTokenStatus), and
+ * profile.html/shop.html both branch on it to show honest "paused" copy
+ * instead of ever formatting a countdown from a past nextGrantAt.
+ */
+test('profile.html: an at-ceiling balance (>= 200) shows honest "paused" copy, never "+N in now"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Mirrors the exact founder-reported state: balance 1500 (well above
+    // the 200 ceiling), nextGrantAt already in the past (lastGrantAt was
+    // never bumped while held back), atCeiling true.
+    await mockTokenStatus(page, { balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true });
+    await seedLoggedInUserAt(page, baseUrl, 'foundermaxed', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var balance = await page.textContent('#profile-tokens-balance');
+    assert.match(balance, /1500 tokens/);
+
+    var meta = await page.textContent('#profile-tokens-meta');
+    assert.doesNotMatch(meta, /in now/i, 'must never render "+N in now" for an at-ceiling account');
+    assert.doesNotMatch(meta, /\+20 in/i, 'must not render a countdown at all while at ceiling');
+    assert.match(meta, /paused/i, 'should say something honest about the drip being paused');
+    assert.match(meta, /20/, 'should still mention the daily amount that is paused');
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html: an at-ceiling balance (>= 200) shows honest "paused" copy, never "in now"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true });
+    await seedLoggedInUserAt(page, baseUrl, 'foundermaxedshop', '/shop.html');
+    await page.waitForSelector('#shop-countdown:not(:empty)', { timeout: 5000 });
+
+    var balance = await page.textContent('#shop-balance');
+    assert.match(balance, /1500/);
+
+    var countdown = await page.textContent('#shop-countdown');
+    assert.doesNotMatch(countdown, /in now/i, 'must never render "in now" for an at-ceiling account');
+    assert.doesNotMatch(countdown, /^Next 20 free tokens in/i, 'must not render the normal countdown copy while at ceiling');
+    assert.match(countdown, /paused/i, 'should say something honest about the drip being paused');
+  } finally {
+    await context.close();
+  }
+});
+
+test('profile.html: a balance just under the ceiling (199) still shows a normal live countdown, not the paused copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 199, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await seedLoggedInUserAt(page, baseUrl, 'notyetmaxed', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var meta = await page.textContent('#profile-tokens-meta');
+    assert.doesNotMatch(meta, /paused/i, 'a below-ceiling balance must show the real countdown, not the at-ceiling copy');
+    assert.match(meta, /\+20 in/, 'should show the normal live countdown');
+  } finally {
+    await context.close();
+  }
+});

@@ -164,6 +164,60 @@ test('once balance drops back under the ceiling (e.g. from spending), the very n
   assert.equal(status.balance, 120, '100 + the now-unblocked +20 grant');
 });
 
+// ----- getTokenStatus: atCeiling / grantCeiling (tracker item
+// for-product-bug-founder-high-token-chip--kn1v8t — the founder's own
+// profile, sitting at the 200 ceiling, showed a permanent "+20 in now" in
+// the UI because every renderer inferred "at ceiling" from a stale, past
+// nextGrantAt instead of an explicit flag) -----
+
+test('atCeiling is true and grantCeiling is 200 when balance sits exactly at the ceiling', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.setEntitlement(ev, 'atceiling@example.com', {
+    tokens: { balance: 200, lastGrantAt: Date.now() - DAY_MS - 60000 }
+  });
+  var status = await entitlements.getTokenStatus(ev, 'atceiling@example.com');
+  assert.equal(status.atCeiling, true);
+  assert.equal(status.grantCeiling, 200);
+  // The exact bug: nextGrantAt is already in the past while atCeiling is
+  // true, since lastGrantAt is deliberately never bumped while held back.
+  // Callers must branch on atCeiling, not on nextGrantAt <= now.
+  assert.ok(status.nextGrantAt <= Date.now(), 'sanity: nextGrantAt really is in the past here, which is exactly what used to render "in now" forever');
+});
+
+test('atCeiling is true for a balance well above the ceiling too (e.g. the 220-token signup grant, or a manual top-up)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.setEntitlement(ev, 'wellabove@example.com', {
+    tokens: { balance: 1500, lastGrantAt: Date.now() - DAY_MS - 60000 }
+  });
+  var status = await entitlements.getTokenStatus(ev, 'wellabove@example.com');
+  assert.equal(status.balance, 1500);
+  assert.equal(status.atCeiling, true, 'the founder\'s own reported balance (1500) must read as at-ceiling');
+  assert.equal(status.grantCeiling, 200);
+});
+
+test('atCeiling is false just under the ceiling (199)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.setEntitlement(ev, 'undertheceiling@example.com', {
+    tokens: { balance: 199, lastGrantAt: Date.now() - 60000 } // not due for a grant either, isolates atCeiling from the drip
+  });
+  var status = await entitlements.getTokenStatus(ev, 'undertheceiling@example.com');
+  assert.equal(status.balance, 199);
+  assert.equal(status.atCeiling, false);
+});
+
+test('atCeiling flips to false the moment spending drops balance below the ceiling', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.setEntitlement(ev, 'flips@example.com', {
+    tokens: { balance: 200, lastGrantAt: Date.now() - 60000 }
+  });
+  var before = await entitlements.getTokenStatus(ev, 'flips@example.com');
+  assert.equal(before.atCeiling, true);
+
+  await entitlements.spendTokens(ev, 'flips@example.com', 100); // -> 100
+  var after = await entitlements.getTokenStatus(ev, 'flips@example.com');
+  assert.equal(after.atCeiling, false);
+});
+
 // ----- getTokenStatus: empty/missing email -----
 
 test('empty/missing email resolves to a throwaway zero balance and writes nothing', async function () {

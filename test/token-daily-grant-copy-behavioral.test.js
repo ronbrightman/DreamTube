@@ -25,10 +25,18 @@
 // dailyGrantAmount (7 -- not 10, not 100, and not 20/200 as of the
 // 2026-07-26 night "Token Economy C" retune) so a pass actually proves the
 // copy is read live, not coincidentally matching whatever the real
-// constant happens to be today. The "up to N banked" grant-ceiling literal
-// (shop.html's #shop-cap-note) is NOT read live -- see that page's own
-// comment on why -- so its test below asserts the real current ceiling
-// value (200) directly rather than mocking it.
+// constant happens to be today.
+//
+// (3) tracker item for-product-bug-founder-high-token-chip--kn1v8t
+// (2026-07-26 night, founder-reported): shop.html's #shop-cap-note "up to
+// N banked" grant-ceiling literal used to NOT be read live at all (it was
+// a hardcoded 200) -- fixed as part of that same item by adding
+// `grantCeiling` to get-token-status.js's / lib/entitlements.js's
+// getTokenStatus response, alongside the `atCeiling` flag that fixed the
+// actual reported bug (a permanent "+20 in now" for any at-ceiling
+// account). The cap-note test below now mocks a deliberately distinctive
+// grantCeiling too, for the same "prove it's live, not coincidence"
+// reason as dailyGrantAmount above.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -36,6 +44,7 @@ var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 var DISTINCTIVE_GRANT = 7;
+var DISTINCTIVE_CEILING = 321;
 
 var playwright = null;
 var unavailableReason = null;
@@ -182,17 +191,22 @@ test('shop.html: the countdown reads the live dailyGrantAmount, not a hardcoded 
   }
 });
 
-test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmount, not a hardcoded "100 every 24 hours"', async function (t) {
+test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmount AND grantCeiling, not hardcoded literals', async function (t) {
   // Review round 2 on raise-daily-token-award-to-200: a THIRD hardcoded
   // copy of the daily-grant number ("100 every 24 hours"), distinct from
   // #shop-countdown above and missed by the grep patterns used to find
   // the other two locations (result.html/style.html's #modal-quota-body).
+  // Later, tracker item for-product-bug-founder-high-token-chip--kn1v8t
+  // fixed the "up to N banked" half of this same note to also read
+  // tokenStatus.grantCeiling live instead of a hardcoded 200 -- mocking a
+  // deliberately distinctive grantCeiling here (321, not 200/500) proves
+  // that half is live too, not coincidentally matching today's real value.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: DISTINCTIVE_CEILING, atCeiling: false });
     await seedLoggedInUserAt(page, 'dailygrantshopcap', '/shop.html');
     await page.waitForSelector('#shop-cap-note', { timeout: 5000 });
     await page.waitForFunction(function () {
@@ -203,7 +217,8 @@ test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmou
     var capNote = await page.textContent('#shop-cap-note');
     assert.match(capNote, new RegExp(DISTINCTIVE_GRANT + ' every 24 hours'));
     assert.doesNotMatch(capNote, /100 every 24 hours/);
-    assert.match(capNote, /up to 200 banked/, 'the grant ceiling (200 as of Token Economy C) should still be present');
+    assert.match(capNote, new RegExp('up to ' + DISTINCTIVE_CEILING + ' banked'), 'the grant ceiling should be read live off tokenStatus.grantCeiling');
+    assert.doesNotMatch(capNote, /up to 200 banked/, 'must not still show the old hardcoded ceiling literal');
   } finally {
     await context.close();
   }
