@@ -1166,7 +1166,11 @@
   function commitTransferredSession(username, email) {
     var key = (username || '').toLowerCase();
     if (!key) return;
-    if (state.user && state.user.username && state.user.username.toLowerCase() !== key) return;
+    // Treat "signed in as someone whose username isn't readable" the same
+    // as "signed in as someone" — block, don't fall through — so this
+    // guard holds even against a malformed/legacy-shaped state.user, not
+    // just the well-formed shape every current constructor produces.
+    if (state.user && (!state.user.username || state.user.username.toLowerCase() !== key)) return;
     if (!state.accounts[key]) {
       state.accounts[key] = { password: null, email: (email || '').toLowerCase() || null };
     } else if (email) {

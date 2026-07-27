@@ -98,11 +98,17 @@ exports.handler = async function (event) {
   if (!ipLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E5: rate_limited' }) };
   }
-  // Same canonical-username-resolution shape as account-login.js's own
-  // identifierKey (falls back to the raw, lowercased input if no account
-  // resolves at all, so an attacker can't dodge this bucket by guessing a
-  // username that happens not to exist).
+  // Same canonical-identifier-resolution shape as account-login.js's own
+  // identifierKey — MUST include the getByEmail fallback, not just
+  // getByUsername: without it, an attacker who knows both a target's
+  // username (public on every Explore row) and email gets TWO independent
+  // rate-limit buckets for the same account (one keyed by username, one by
+  // the raw email string), doubling the allowed daily password guesses.
+  // Falls back to the raw, lowercased input only if no account resolves at
+  // all, so an attacker can't dodge this bucket by guessing an identifier
+  // that happens not to exist either.
   var canonicalAccount = await accountStore.getByUsername(event, username);
+  if (!canonicalAccount) canonicalAccount = await accountStore.getByEmail(event, username);
   var identifierKey = canonicalAccount ? canonicalAccount.username : username.toLowerCase();
   var identifierLimit = await rateLimit.checkAndIncrement(event, 'session-transfer-identifier', identifierKey, maxPerIdentifierPerDay);
   if (!identifierLimit.allowed) {
@@ -110,7 +116,10 @@ exports.handler = async function (event) {
   }
 
   try {
-    var loginCheck = await accountStore.verifyLogin(event, username, password, canonicalAccount ? { record: canonicalAccount } : undefined);
+    // Reuse the lookup just above instead of having verifyLogin redo the
+    // identical username-then-email resolution a second time (mirrors
+    // account-login.js's own { record: canonicalAccount } optimization).
+    var loginCheck = await accountStore.verifyLogin(event, username, password, { record: canonicalAccount });
     if (!loginCheck.ok) {
       return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E4: incorrect_password' }) };
     }

@@ -157,6 +157,25 @@ test('create-session-transfer: exceeding MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENT
   assert.equal(fourth.statusCode, 429);
 });
 
+test('create-session-transfer: submitting the account\'s EMAIL instead of its username does not open a second, independent rate-limit bucket for the same account (round-3 review fix -- mirrors account-login.js\'s getByEmail fallback in canonicalAccount resolution, closing a doubled-guess-budget bypass)', async function () {
+  process.env.MAX_SESSION_TRANSFER_ATTEMPTS_PER_IDENTIFIER_PER_DAY = '2';
+  var account = await registerTestAccount({ username: 'emailbypasstarget', password: 'realpassword1', email: 'emailbypasstarget@example.com' });
+  var handler = require('../netlify/functions/create-session-transfer').handler;
+
+  // Exhaust the per-identifier cap using the USERNAME.
+  var first = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.username, password: 'wrong-guess-one' } }));
+  assert.equal(first.statusCode, 200);
+  var second = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.username, password: 'wrong-guess-two' } }));
+  assert.equal(second.statusCode, 200);
+
+  // A third attempt against the SAME account, submitted via its EMAIL
+  // instead of its username, must land in the same bucket -- not a fresh
+  // one -- and be blocked.
+  var third = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: { username: account.email, password: 'wrong-guess-three' } }));
+  assert.equal(third.statusCode, 429, 'the email-addressed attempt must share the username-addressed bucket, not get its own');
+  assert.match(JSON.parse(third.body).error, /^E5: rate_limited/);
+});
+
 // ===== verify-session-transfer.js: single-use, TTL'd consumption =====
 
 test('verify-session-transfer: a freshly minted token verifies + consumes exactly once, returning {ok:true, username, email} matching account-login.js\'s own success shape', async function () {
