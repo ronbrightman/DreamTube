@@ -71,6 +71,13 @@ function blockThirdParty(page) {
   });
 }
 
+/** Pins start.html's screen-13 signup_email_first_variant A/B test (see that file's SIGNUP_VARIANT_KEY doc comment) to the control variant ('a' -- email + password shown together, unchanged), so a single fill-both-fields-then-click-once interaction stays deterministic instead of a 50/50 chance of landing on the email-first treatment variant, which hides #fn-password until a valid email is confirmed, and so the screen-13-copy assertions below check the control variant's own known copy. Must be called on the context before any page.goto(). */
+function pinSignupControlVariant(context) {
+  return context.addInitScript(function () {
+    localStorage.setItem('dreamtube_signup_variant', 'a');
+  });
+}
+
 /** Records every POST to start-pending-generation (the generate-during-signup call) without letting it hang -- fulfills as a definitive failure (no pendingId) since these tests care about whether the call fires at all, not the generate-during-signup mechanism itself (see test/ui-behavioral.test.js for that coverage). */
 function trackPendingGenerationCalls(page) {
   var calls = [];
@@ -84,6 +91,7 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     var pendingGenerationCalls = await trackPendingGenerationCalls(page);
@@ -129,6 +137,7 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     var pendingGenerationCalls = await trackPendingGenerationCalls(page);
@@ -284,6 +293,7 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
   try {
+    await pinSignupControlVariant(context);
     await installMediaRecorderMock(context);
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -346,6 +356,7 @@ test('start.html: a normal (no mode=record) visitor still sees the original scre
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
 

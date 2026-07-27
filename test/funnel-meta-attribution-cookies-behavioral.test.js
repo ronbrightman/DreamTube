@@ -78,6 +78,13 @@ async function readCookie(context, name) {
 
 var BASE_RESUME_PARAMS = 'resume=1&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos');
 
+/** Pins start.html's screen-13 signup_email_first_variant A/B test (see that file's SIGNUP_VARIANT_KEY doc comment) to the control variant ('a' -- email + password shown together, unchanged), so a single fill-both-fields-then-click-once interaction stays deterministic instead of a 50/50 chance of landing on the email-first treatment variant, which hides #fn-password until a valid email is confirmed. Must be called on the context before any page.goto(). */
+function pinSignupControlVariant(context) {
+  return context.addInitScript(function () {
+    localStorage.setItem('dreamtube_signup_variant', 'a');
+  });
+}
+
 test('start.html: fbc and fbp handoff params are persisted as real first-party cookies on this domain', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -146,6 +153,7 @@ test('start.html: the persisted fbc/fbp cookies actually reach a real conversion
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     var conversionCalls = await captureTrackConversion(page);

@@ -93,7 +93,26 @@ function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
+/**
+ * Pins start.html's screen-13 signup_email_first_variant A/B test (see
+ * that file's SIGNUP_VARIANT_KEY doc comment) to the control variant
+ * ('a' -- email + password shown together, unchanged) via
+ * page.addInitScript, so this file deterministically exercises the exact
+ * flow it was written for (single fill-both-fields-then-click-once
+ * interaction) instead of a 50/50 coin flip landing it on the email-first
+ * treatment variant, which hides #fn-password until a valid email is
+ * confirmed. See test/signup-email-first-variant-behavioral.test.js for
+ * the treatment variant's own equivalent token-guard coverage. Must be
+ * called before any page.goto().
+ */
+function pinSignupControlVariant(page) {
+  return page.addInitScript(function () {
+    localStorage.setItem('dreamtube_signup_variant', 'a');
+  });
+}
+
 async function reachScreen13(page, caption) {
+  await pinSignupControlVariant(page);
   await safeGoto(page, resumeUrl(caption));
   await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   await page.click('#fn-s11-continue');

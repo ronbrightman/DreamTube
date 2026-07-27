@@ -87,6 +87,13 @@ function blockThirdParty(page) {
   });
 }
 
+/** Pins start.html's screen-13 signup_email_first_variant A/B test (see that file's SIGNUP_VARIANT_KEY doc comment) to the control variant ('a' -- email + password shown together, unchanged), so a single fill-both-fields-then-click-once interaction (and any screen-13-copy assertion) stays deterministic instead of a 50/50 chance of landing on the email-first treatment variant, which hides #fn-password until a valid email is confirmed and shows different reassurance copy. Works on either a Page or a BrowserContext -- both expose addInitScript with the same signature. Must be called before any goto() on the same page/context. */
+function pinSignupControlVariant(pageOrContext) {
+  return pageOrContext.addInitScript(function () {
+    localStorage.setItem('dreamtube_signup_variant', 'a');
+  });
+}
+
 /** Intercepts DreamStore.getSharedFeed()'s underlying fetch so tests can force a resolved or failed shared feed without a real Netlify Functions runtime. */
 function mockGetFeed(page, feed, opts) {
   opts = opts || {};
@@ -161,6 +168,7 @@ function stubPendingGenerationAsUnavailable(page) {
 
 /** Drives start.html's funnel tail (Advanced screens/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. Skipping on the first Advanced screen (characters) jumps straight past camera/scenery too -- see the "Skip on any of the 3 screens" test below -- so one skip click is enough to reach the transition screen from here. */
 async function goToPricingScreen(page, email) {
+  await pinSignupControlVariant(page);
   await stubPendingGenerationAsUnavailable(page);
   await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
@@ -330,6 +338,7 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
@@ -1312,6 +1321,7 @@ test('pricing screen (14, now the token intro): Continue advances to the confirm
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1353,6 +1363,7 @@ test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullet
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1408,6 +1419,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1477,6 +1489,7 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1510,6 +1523,7 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1581,6 +1595,7 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1639,6 +1654,7 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1774,6 +1790,7 @@ test('email capture screen (13) shows the reassurance microcopy explaining why e
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
+    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });

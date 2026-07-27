@@ -324,6 +324,29 @@
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
+  // ===== Signup email-first A/B test (screen 13) — tracker item
+  // for-product-a-b-the-email-capture-signup-nri2fn =====
+  // Research (2026-07-27): the email_capture -> signup funnel step passes
+  // only ~36% (64% abandon) -- the single biggest deep-funnel leak,
+  // independent of ad spend/CPS. Test: email-first sequencing (collect
+  // email, THEN reveal the password field, instead of showing both at
+  // once -- see renderScreen13EmailFirst below), clearer "free to start,
+  // no card needed" framing, and a short social-proof line near the form.
+  // Same additive, local assignment shape as shop.html's own
+  // shop_palette_variant A/B test (see that file's "Shop palette A/B
+  // test" doc comment and docs/SHOP_PALETTE_REDESIGN_SPEC.md §8) --
+  // persisted in localStorage, sampled once via Math.random() < 0.5 the
+  // first time this page loads with no stored variant, and never
+  // reassigned after that; every later visit from this browser reads the
+  // same stored value. 'a' = control (current behavior, unchanged --
+  // email + password shown together). 'b' = treatment (email-first).
+  var SIGNUP_VARIANT_KEY = 'dreamtube_signup_variant';
+  var signupVariant = localStorage.getItem(SIGNUP_VARIANT_KEY);
+  if(signupVariant !== 'a' && signupVariant !== 'b'){
+    signupVariant = Math.random() < 0.5 ? 'a' : 'b';
+    localStorage.setItem(SIGNUP_VARIANT_KEY, signupVariant);
+  }
+
   // ===== Real social-proof count for screen 14 (pricing) =====
   // Replaces a hardcoded "12,400+ dreams brought to life this month" with
   // an actual count, computed client-side from the same real shared feed
@@ -1176,6 +1199,27 @@
     var reassurance = isRecordMode
       ? "Free to start — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready."
       : "Free to start — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.";
+
+    // Signup email-first A/B test -- see SIGNUP_VARIANT_KEY's own doc
+    // comment above. Registered + tracked once per actual arrival at this
+    // screen: renderScreen13 runs exactly once per navigation here (see
+    // render()/goToStep() below), even though the treatment variant's
+    // renderScreen13EmailFirst then does its own internal, non-navigating
+    // DOM swap from the email step to the password step -- that swap must
+    // NOT re-fire this. Fires for BOTH variants (not just 'b'), so
+    // PostHog has real impression counts for each arm to read the test
+    // out against. Same adjacent posthog.register()+track() shape as
+    // shop.html's own shop_palette_variant A/B test.
+    if(window.posthog && typeof window.posthog.register === 'function'){
+      try{ posthog.register({ signup_email_first_variant: signupVariant }); }catch(e){ /* analytics must never break the funnel */ }
+    }
+    track('signup_email_first_variant_shown', { variant: signupVariant });
+
+    if(signupVariant === 'b'){
+      renderScreen13EmailFirst(el, headline);
+      return;
+    }
+
     el.innerHTML =
       '<div class="fn-headline">' + headline + '</div>' +
       '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;">' +
@@ -1201,6 +1245,26 @@
       '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
       '<div class="fn-spacer"></div>';
 
+    wireScreen13Fields();
+  }
+
+  /**
+   * Shared submit wiring for screen 13's password step, used by BOTH
+   * variants -- the control markup above and the email-first treatment's
+   * renderScreen13EmailFirst's own password step below. Extracted so the
+   * token-guard-protected submission logic (signupAttemptToken bump,
+   * backBtn/continueBtn disable, attemptSignup call, both layers of the
+   * pendingPromise staleness re-check) exists in exactly ONE place
+   * regardless of which variant's markup led here -- this is a rendering/
+   * sequencing change between variants, not a second copy of the guarded
+   * logic itself. Assumes the DOM currently in `el` already contains
+   * #fn-pw-toggle, #fn-password (inside .fn-field-pw-wrap), #fn-email,
+   * #fn-signup-error, and #fn-s13-continue -- exactly what both the
+   * control variant's single-pass markup above and the treatment
+   * variant's own password-step markup render. Body unchanged from this
+   * screen's original single-variant implementation.
+   */
+  function wireScreen13Fields(){
     var pwToggle = document.getElementById('fn-pw-toggle');
     var pwInput = document.getElementById('fn-password');
     pwToggle.innerHTML = Icons.eye;
@@ -1326,6 +1390,105 @@
         });
       }, 0);
     });
+  }
+
+  // ===================================================================
+  // Screen 13 treatment (signupVariant === 'b') — email-first sequencing.
+  // Only the email field + a "Continue" affordance are shown first; once
+  // a valid email is entered, the password field is revealed in place
+  // via an internal, non-navigating DOM swap (renderEmailStep <->
+  // renderPasswordStep below) -- NOT a goToStep()/render() navigation, so
+  // this never re-fires funnel_step_viewed/ReachedEmailEntry/the
+  // variant-shown tracking above a second time. Also carries clearer
+  // "free to start, no card needed" framing and a short, real (never
+  // fake -- see dreamsThisMonthCount's own doc comment above) social-
+  // proof line reusing screen 14's existing .fn-proof-strip component.
+  //
+  // "No card needed" deliberately reuses the exact, currently-accurate
+  // claim wizard.html's own renderSignup and this file's renderScreen14
+  // already state -- NOT the retired "Free during beta" framing, which
+  // stopped being true the moment Dodo Payments checkout actually went
+  // live (see renderScreen14's store-launch-copy-sweep comment above and
+  // shop.html's own cost-banner comment) and would be a real, live
+  // contradiction if reintroduced here.
+  //
+  // The actual submission — email + password together, attemptSignup,
+  // both token-guard layers — is completely unchanged: this only changes
+  // WHEN the password field appears, not how signup itself is validated
+  // or submitted. wireScreen13Fields() (above) is the exact same
+  // function the control variant's markup calls, so that logic exists in
+  // exactly one place regardless of which variant rendered the DOM it
+  // wires up.
+  // ===================================================================
+  function renderScreen13EmailFirst(el, headline){
+    var treatmentReassurance = isRecordMode
+      ? 'Free to start, no card needed — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready.'
+      : 'Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.';
+    // Same real, never-fake count screen 14 already uses (see
+    // dreamsThisMonthCount's own doc comment above) — omitted entirely
+    // (not a placeholder number) if the feed fetch hasn't resolved yet or
+    // failed.
+    var proofStripHtml = (dreamsThisMonthCount !== null) ?
+      ('<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>') :
+      '';
+
+    function renderEmailStep(prefillEmail){
+      el.innerHTML =
+        '<div class="fn-headline">' + headline + '</div>' +
+        proofStripHtml +
+        '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
+        '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;" value="' + esc(prefillEmail || '') + '">' +
+        '<div class="fn-err-text" id="fn-signup-error"></div>' +
+        '<button class="fn-btn-primary" id="fn-s13-email-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
+        '<div class="fn-spacer"></div>';
+
+      var emailInput = document.getElementById('fn-email');
+      var errEl = document.getElementById('fn-signup-error');
+      var nextBtn = document.getElementById('fn-s13-email-continue');
+      function tryAdvance(){
+        var email = emailInput.value.trim();
+        errEl.textContent = '';
+        // Same format check as wireScreen13Fields' own continueBtn
+        // handler (and wizard.html's renderContact) -- presence AND
+        // shape, not just presence. The password step re-validates this
+        // same field again via wireScreen13Fields, so a directly-edited
+        // #fn-email (there isn't one in normal usage, but defense in
+        // depth costs nothing here) can't skip the check either.
+        if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
+        renderPasswordStep(email);
+      }
+      nextBtn.addEventListener('click', tryAdvance);
+      emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); tryAdvance(); } });
+      emailInput.focus();
+    }
+
+    function renderPasswordStep(email){
+      el.innerHTML =
+        '<div class="fn-headline">' + headline + '</div>' +
+        proofStripHtml +
+        '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
+        // Confirmed email, shown read-only -- same real "fn-email" id and
+        // .value wireScreen13Fields()/attemptSignup() below read from --
+        // plus a "Change email" affordance back to the email step. This
+        // is an in-screen state change, NOT a fresh screen-13 navigation
+        // (goToStep/render), so it never touches signupAttemptToken or
+        // backBtn -- nothing has been submitted yet at this point.
+        '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
+        '<button type="button" class="fn-small-link" id="fn-s13-change-email" style="margin:-6px 0 12px;">Change email</button>' +
+        '<div class="fn-field-pw-wrap">' +
+          '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
+          '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
+        '</div>' +
+        '<div class="fn-err-text" id="fn-signup-error"></div>' +
+        '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
+        '<div class="fn-spacer"></div>';
+
+      document.getElementById('fn-s13-change-email').addEventListener('click', function(){ renderEmailStep(email); });
+      wireScreen13Fields();
+      document.getElementById('fn-password').focus();
+    }
+
+    renderEmailStep('');
   }
 
   // ===================================================================
