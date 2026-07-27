@@ -96,22 +96,34 @@ var SCENERY_PLACE_MODIFIERS = {
  * touched here.
  *
  * A self character with a photo is described by the reference image
- * passed alongside the prompt (see callFalReferenceToVideo), not by text,
- * so its own description is left out of the character text here — but
- * the prompt still gets a short pointer tying "the dreamer" to that image.
+ * passed alongside the prompt (see callFalReferenceToVideo) as well as by
+ * text here — the photo alone can't carry corrective/clarifying details
+ * (e.g. "no beard") the model's own stylization might otherwise add, so
+ * when a description is also present both signals reach the model: the
+ * pointer line ties "the dreamer" to the reference image, and the
+ * description is appended to it rather than silently dropped. A photo-only
+ * self character (no description) still gets just the plain pointer line,
+ * unchanged from before.
  */
 function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
   var parts = [caption];
 
-  var hasPhotoSelf = (characters || []).some(function (c) { return c && c.isSelf && c.photoDataUrl; });
+  var photoSelf = (characters || []).filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
   var charTextParts = (characters || [])
     .filter(function (c) { return c && !c.photoDataUrl && typeof c.description === 'string' && c.description.trim(); })
     .map(function (c) {
       var who = c.isSelf ? 'the dreamer ("me")' : ((c.name || '').trim() || 'a character');
       return who + ': ' + c.description.trim();
     });
-  if (hasPhotoSelf) charTextParts.unshift('the dreamer ("me") appears as shown in the reference photo');
+  if (photoSelf) {
+    var photoSelfDescription = typeof photoSelf.description === 'string' ? photoSelf.description.trim() : '';
+    charTextParts.unshift(
+      photoSelfDescription
+        ? 'the dreamer ("me") appears as shown in the reference photo, with these specific details: ' + photoSelfDescription
+        : 'the dreamer ("me") appears as shown in the reference photo'
+    );
+  }
   if (charTextParts.length) parts.push('Characters — ' + charTextParts.join('; '));
 
   if (CAMERA_MODIFIERS[cameraView]) parts.push(CAMERA_MODIFIERS[cameraView]);
