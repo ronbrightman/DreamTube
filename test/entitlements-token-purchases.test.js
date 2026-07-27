@@ -16,11 +16,13 @@
 //      this codebase's other Blobs-race tests (see
 //      tracker-store.js's own writeItemsWithRetry and the race coverage
 //      around it).
-//   3. The `!paymentId` fallback branch, which intentionally skips the
-//      dedup guard entirely (documented in creditTokenPackOnce's own
-//      comment) — covered directly since dodo-webhook.js never actually
-//      calls it with a falsy paymentId (a real Dodo payload always has
-//      one), so nothing else in this test suite exercises that branch.
+//   3. The `!paymentId` branch, which now fails CLOSED (hardening fix,
+//      tracker item for-product-store-launch-copy-sweep-purc-m6xhkx) —
+//      it used to skip the dedup guard entirely and always credit, a real
+//      gap once real money was involved. Covered directly since
+//      dodo-webhook.js never actually calls it with a falsy paymentId (a
+//      real Dodo payload always has one), so nothing else in this test
+//      suite exercises that branch.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -92,15 +94,15 @@ test('a DIFFERENT payment_id for the same email credits again (dedup is per-paym
   assert.equal(record.tokens.balance, 200);
 });
 
-test('a missing/falsy payment_id skips the dedup guard entirely and always credits (documented escape hatch)', async function () {
+test('a missing/falsy payment_id refuses to credit at all (fails closed -- nothing to dedupe a redelivery against)', async function () {
   await seedZeroBalance('nopayid@example.com');
   var first = await entitlements.creditTokenPackOnce({}, 'nopayid@example.com', undefined, 100);
-  var second = await entitlements.creditTokenPackOnce({}, 'nopayid@example.com', undefined, 100);
-  assert.equal(first.credited, true);
-  assert.equal(second.credited, true, 'with no payment_id there is nothing to dedupe against, so both calls credit');
+  var second = await entitlements.creditTokenPackOnce({}, 'nopayid@example.com', null, 100);
+  assert.equal(first.credited, false, 'no payment_id means no way to dedupe a redelivery -- must not credit');
+  assert.equal(second.credited, false);
 
   var record = await entitlements.getEntitlement({}, 'nopayid@example.com');
-  assert.equal(record.tokens.balance, 200, 'both calls credited since there was no payment_id to guard with');
+  assert.equal(record.tokens.balance, 0, 'balance must stay untouched -- neither call should have credited anything');
 });
 
 // ----- The real regression test: genuine concurrency, not sequential -----
