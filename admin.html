@@ -67,6 +67,52 @@
       </div>
       <div class="err-text" id="admin-bypass-error" style="margin-top:8px;"></div>
 
+      <!-- Account rename (tracker.html's
+           for-product-owner-ui-for-the-account-ren-baguw7 item, and its own
+           standing rule: any founder-facing action ships with a UI/link —
+           curl instructions are never the final interface). Thin client for
+           the already-reviewed, already-merged admin-rename-account.js --
+           see that file's own header comment for the full request/response
+           shape and safety model. This panel adds no auth logic of its own:
+           admin-rename-account.js independently re-verifies the submitted
+           password server-side and re-checks it against OWNER_EMAIL on
+           every call, exactly like the Owner-bypass panel above relies on
+           verify-owner-bypass.js doing the same.
+
+           admin-rename-account.js is deliberately a ONE-OFF, hardcoded
+           tool -- SOURCE_USERNAME ('__probe_throwaway_user__') and
+           TARGET_USERNAME ('ronbrightman') are constants in that file, not
+           request parameters (see its header comment's "NOT a general
+           rename any account tool" note). The "Username or email" field
+           below is real and does something -- it's what verifyLogin checks
+           the password against -- but it does NOT choose which account
+           gets renamed; that's always __probe_throwaway_user__ ->
+           ronbrightman regardless of what's typed here. The "New username"
+           field is shown for clarity/reference (matches what the endpoint
+           will always produce) but is intentionally disabled rather than
+           free-editable, so this panel never implies a general-purpose
+           rename tool that doesn't actually exist server-side. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Account rename</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Rename the founder's account</div>
+          <div class="admin-row-sub">Calls admin-rename-account.js, the one-off tool that renames __probe_throwaway_user__ to ronbrightman. Always run a dry run first — its result is shown below before a real run is possible.</div>
+        </div>
+        <input class="field" id="admin-rename-source" type="text" placeholder="Username or email (for password check)" value="__probe_throwaway_user__" autocomplete="off" dir="auto">
+        <input class="field" id="admin-rename-target" type="text" value="ronbrightman" disabled title="Fixed server-side — this endpoint only ever renames to ronbrightman.">
+        <input class="field" id="admin-rename-password" type="password" placeholder="That account's real password" autocomplete="current-password">
+        <div class="choice-card" style="cursor:pointer; padding:12px 14px; margin-bottom:12px;" id="admin-rename-dryrun-row">
+          <div class="choice-text">
+            <div class="choice-title" style="font-size:14px;">Dry run</div>
+            <div class="admin-row-sub" id="admin-rename-dryrun-sub">On — previews the result, makes no changes.</div>
+          </div>
+          <div class="toggle-switch on" id="admin-rename-dryrun-toggle" role="switch" aria-checked="true" aria-label="Dry run"></div>
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="admin-rename-submit">Preview (dry run)</button>
+        <div class="err-text" id="admin-rename-error" style="margin-top:4px;"></div>
+        <div id="admin-rename-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -199,6 +245,136 @@
       }
       renderBypassStatus();
     });
+  });
+
+  // ===== Owner account rename (admin-rename-account.js) =====
+  var renameSourceEl = document.getElementById('admin-rename-source');
+  var renamePasswordEl = document.getElementById('admin-rename-password');
+  var renameDryRunRow = document.getElementById('admin-rename-dryrun-row');
+  var renameDryRunToggle = document.getElementById('admin-rename-dryrun-toggle');
+  var renameDryRunSub = document.getElementById('admin-rename-dryrun-sub');
+  var renameSubmitBtn = document.getElementById('admin-rename-submit');
+  var renameErrorEl = document.getElementById('admin-rename-error');
+  var renameResultEl = document.getElementById('admin-rename-result');
+
+  // Set once a dry run has completed with a real (ok:true) response --
+  // gates the real run below. Reset whenever the credential field changes,
+  // since a stale dry run previewed a different login than whatever is
+  // about to be submitted for real.
+  var lastDryRunOk = null;
+  renameSourceEl.addEventListener('input', function () { lastDryRunOk = null; });
+
+  function renameIsDryRun() {
+    return renameDryRunToggle.classList.contains('on');
+  }
+
+  function setRenameDryRun(on) {
+    renameDryRunToggle.classList.toggle('on', on);
+    renameDryRunToggle.setAttribute('aria-checked', String(on));
+    renameDryRunSub.textContent = on
+      ? 'On — previews the result, makes no changes.'
+      : 'Off — the next submit makes a REAL change (deletes the old account record).';
+    renameSubmitBtn.textContent = on ? 'Preview (dry run)' : 'Rename for real';
+    renameSubmitBtn.style.background = on ? '' : 'var(--danger)';
+    renameSubmitBtn.style.color = on ? '' : '#fff';
+    renameSubmitBtn.style.boxShadow = on ? '' : 'none';
+  }
+
+  renameDryRunRow.addEventListener('click', function () {
+    if (renameSubmitBtn.disabled) return;
+    setRenameDryRun(!renameIsDryRun());
+  });
+
+  var RENAME_STATUS_COPY = {
+    renamed: { preview: 'Would rename this account (fresh rename).', done: 'Renamed this account.' },
+    resumed: { preview: 'Would finish a previously interrupted rename.', done: 'Finished a previously interrupted rename.' },
+    already_done: { preview: 'Already renamed — nothing to do.', done: 'Already renamed — nothing was done.' },
+    nothing_to_do: { preview: 'Neither account exists — nothing to do.', done: 'Neither account existed — nothing was done.' }
+  };
+
+  var RENAME_ERROR_COPY = {
+    'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+    'E4: missing_fields': 'Enter a username/email and password.',
+    'E5: forbidden': "Couldn't verify — check the username/email and password (must be the account owner's real credentials).",
+    'E7: source_email_mismatch': "Refused: the source account's on-file email doesn't match the owner's email. Nothing was touched.",
+    'E8: target_taken': "Refused: an unrelated account already exists under the new username. Nothing was touched."
+  };
+
+  function renderRenameResult(dryRun, data) {
+    renameResultEl.style.display = 'block';
+    if (!data.ok) {
+      renameResultEl.textContent = '';
+      renameResultEl.style.display = 'none';
+      renameErrorEl.textContent = RENAME_ERROR_COPY[data.error] || (data.error && data.error.indexOf('E6') === 0 ? data.error.replace(/^E6:\s*/, '') : (data.error || "Something went wrong — try again."));
+      return;
+    }
+    renameErrorEl.textContent = '';
+    var copy = RENAME_STATUS_COPY[data.status] || { preview: data.status, done: data.status };
+    var lines = [(dryRun ? 'DRY RUN — ' : '') + (dryRun ? copy.preview : copy.done)];
+    if (data.account) {
+      lines.push('Account: ' + data.account.username + ' (' + data.account.email + ')');
+    }
+    if (data.feed) {
+      lines.push('Feed entries ' + (dryRun ? 'that would be updated' : 'updated') + ': ' + data.feed.updatedCount +
+        (data.feed.dreamIds && data.feed.dreamIds.length ? ' (' + data.feed.dreamIds.join(', ') + ')' : ''));
+    }
+    renameResultEl.textContent = lines.join('\n');
+  }
+
+  renameSubmitBtn.addEventListener('click', function () {
+    renameErrorEl.textContent = '';
+    var usernameOrEmail = renameSourceEl.value.trim();
+    var password = renamePasswordEl.value;
+    if (!usernameOrEmail || !password) {
+      renameErrorEl.textContent = 'Enter a username/email and password.';
+      return;
+    }
+
+    var dryRun = renameIsDryRun();
+
+    // Never let the real run be the first thing that fires -- require a
+    // successful dry run against these exact credentials first, so the
+    // dry-run result is always seen before any real (mutating) call is
+    // possible. Turning the toggle off alone is not enough.
+    if (!dryRun && !lastDryRunOk) {
+      renameErrorEl.textContent = 'Run a dry run first and check its result before running for real.';
+      return;
+    }
+
+    // Extra confirm step for the real run -- admin-rename-account.js's own
+    // password check + dry-run preview are real safeguards, but this
+    // endpoint deletes an account record, so a last explicit "are you
+    // sure" here costs nothing and catches an accidental click after the
+    // toggle was switched off.
+    if (!dryRun) {
+      var confirmed = window.confirm('This performs a REAL rename (not a preview) and will delete the old account record. Continue?');
+      if (!confirmed) return;
+    }
+
+    renameSubmitBtn.disabled = true;
+    renameDryRunToggle.classList.add('disabled');
+
+    fetch('/.netlify/functions/admin-rename-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, dryRun: dryRun })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        renameSubmitBtn.disabled = false;
+        renameDryRunToggle.classList.remove('disabled');
+        renderRenameResult(dryRun, result.data);
+        if (dryRun && result.data && result.data.ok) {
+          lastDryRunOk = true;
+        }
+      })
+      .catch(function () {
+        renameSubmitBtn.disabled = false;
+        renameDryRunToggle.classList.remove('disabled');
+        renameErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
+      });
   });
 </script>
 </body>
