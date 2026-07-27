@@ -671,36 +671,69 @@
   // fresh off processing.html -- not on a later revisit/reload of this
   // same page, and not on their 2nd+ video. Two independent guards must
   // both pass:
-  //   1. sessionStorage's dreamtube_just_generated_id (set by
-  //      processing.html right before this redirect, consumed here
-  //      exactly once) -- confirms this page load is the actual moment
-  //      generation just finished, not a later visit to an old result.
+  //   1. DreamStore.wasOperationJustCompleted(dream.sourceOperationName) --
+  //      a durable, server-side marker (tracker.html's
+  //      result-htmls-firstvideocreated-still-dep-qfg48t item,
+  //      founder-approved 2026-07-27) set by processing.html right before
+  //      this redirect and consumed here exactly once -- confirms this
+  //      page load is the actual moment generation just finished, not a
+  //      later visit to an old result. Replaces the old sessionStorage
+  //      `dreamtube_just_generated_id` marker, which didn't reliably
+  //      survive some FB/IG in-app-browser webview redirects (exactly
+  //      where this app's paid ad traffic lands) -- same semantics, a
+  //      durable carrier. Keyed by the job's own server-issued
+  //      operationName, NOT dream.id (a review finding: dream ids are
+  //      client-invented and already public elsewhere in this app --
+  //      explore.html/profile.html/watch.html links -- so keying on them
+  //      would let anyone who knows/guesses a dream id plant a marker for
+  //      it; operationName is server-issued, never shown in any UI/URL,
+  //      and independently re-verified server-side before a marker is
+  //      ever honored). See js/store.js's wasOperationJustCompleted and
+  //      finalizeDream doc comments, and
+  //      netlify/functions/lib/generation-completion-store.js, for the
+  //      full mechanics.
   //   2. DreamStore.markFirstVideoCreatedIfEligible(dream.id) -- confirms
   //      this is chronologically this account's first-ever completed
   //      dream, and atomically marks the account's one-time flag so it
-  //      can never fire again after this.
-  // See js/store.js's markFirstVideoCreatedIfEligible doc comment and
-  // js/analytics-config.js's fireMetaConversion (custom=true branch) for
-  // the full mechanics; docs/EVENT_TAXONOMY.md documents this event
-  // alongside every other one this codebase fires. Fire-and-forget: must
-  // never throw or block rendering.
+  //      can never fire again after this. Unchanged by this fix -- dream
+  //      ownership/count data is local-only, with no server-side
+  //      equivalent to move this guard to.
+  // See js/analytics-config.js's fireMetaConversion (custom=true branch)
+  // for the client+CAPI firing mechanics (one call fires both, sharing one
+  // event_id); docs/EVENT_TAXONOMY.md documents this event alongside every
+  // other one this codebase fires. Fire-and-forget: must never throw or
+  // block rendering.
   (function(){
+    // PostHog sanity-check signal, independent of the guards below --
+    // fires on every render where this looks like the account's only
+    // completed video (same eligibility computation as guard #2 above,
+    // minus its one-time flag), so a PostHog query comparing this event's
+    // count against first_video_created's own count reveals whether the
+    // durable-marker fix above actually closes the undercount. See
+    // js/store.js's isOnlyCompletedDream doc comment and
+    // docs/EVENT_TAXONOMY.md.
     try {
-      var justGeneratedId = sessionStorage.getItem('dreamtube_just_generated_id');
-      sessionStorage.removeItem('dreamtube_just_generated_id'); // consume once regardless of outcome below
-      if(!justGeneratedId || justGeneratedId !== dream.id) return;
-      if(!DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
-
-      track('first_video_created', { style: dream.style });
-      fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
-      // Retention email ("your dream is ready") -- see js/store.js's
-      // sendFirstDreamEmailBestEffort doc comment and
-      // send-first-dream-email.js's header comment. Same choke point as
-      // the KPI event just above, deliberately -- both gated on the same
-      // markFirstVideoCreatedIfEligible(dream.id) call already having
-      // returned true.
-      DreamStore.sendFirstDreamEmailBestEffort(dream);
+      if (DreamStore.isOnlyCompletedDream(dream.id)) {
+        track('first_video_result_view', { style: dream.style });
+      }
     } catch (e) { /* analytics must never break the app */ }
+
+    DreamStore.wasOperationJustCompleted(dream.sourceOperationName).then(function (justCompleted) {
+      try {
+        if (!justCompleted) return;
+        if (!DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
+
+        track('first_video_created', { style: dream.style });
+        fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
+        // Retention email ("your dream is ready") -- see js/store.js's
+        // sendFirstDreamEmailBestEffort doc comment and
+        // send-first-dream-email.js's header comment. Same choke point as
+        // the KPI event just above, deliberately -- both gated on the same
+        // markFirstVideoCreatedIfEligible(dream.id) call already having
+        // returned true.
+        DreamStore.sendFirstDreamEmailBestEffort(dream);
+      } catch (e) { /* analytics must never break the app */ }
+    }).catch(function () { /* analytics must never break the app -- network failure here is a no-op */ });
   })();
 
   // The video autoplays (muted) as soon as it has a src, so the badge only

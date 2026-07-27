@@ -58,6 +58,14 @@
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
 //                                                result.html's call site + js/analytics-config.js)
+//   markGenerationJustCompleted(operationName) -> fire-and-forget, POST /.netlify/functions/mark-generation-completed
+//       — durable (server-side, operationName-keyed and server-verified) replacement for the old
+//       sessionStorage "just generated" marker; called from processing.html right before its redirect.
+//   wasOperationJustCompleted(operationName) -> Promise<boolean>, POST /.netlify/functions/consume-generation-marker
+//       — durable counterpart to markGenerationJustCompleted, consumed exactly once by result.html.
+//   isOnlyCompletedDream(dreamId) -> local read-only query, same eligibility computation as
+//       markFirstVideoCreatedIfEligible minus its one-time flag — feeds the PostHog
+//       first_video_result_view sanity-check signal (see result.html's call site).
 //   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
 //       — the retention email ("your dream is ready") — see that function's own header comment.
 //       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
@@ -529,8 +537,25 @@
    * deliberately leaves the dream's original imageUrl in place
    * (provenance — not required for the v1 UI, but free to keep, per
    * docs/IMAGE_GENERATION_SPEC.md §6).
+   *
+   * operationName (added 2026-07-27, tracker.html's
+   * result-htmls-firstvideocreated-still-dep-qfg48t) is the server-issued
+   * job id (from generate-video.js/generate-image.js, see startGeneration
+   * below) that just resolved into this completion — stamped onto the
+   * dream as `sourceOperationName` so result.html can later prove, via
+   * DreamStore.wasOperationJustCompleted, that its render is the genuine
+   * moment-of-completion and not an ordinary revisit. See that function's
+   * own doc comment and netlify/functions/lib/generation-completion-store.js
+   * for why this REPLACED dreamId as the durable marker's key: dream ids
+   * are client-invented and already public (explore.html/profile.html/
+   * watch.html links), so anyone who knows/guesses one could otherwise
+   * plant a marker for someone else's dream. operationName is server-
+   * issued, never shown in any UI/URL, and independently re-verified
+   * server-side before a marker is ever honored (see mark-generation-
+   * completed.js) — not something an outside caller can target a specific
+   * victim account/dream with.
    */
-  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType) {
+  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName) {
     mediaType = mediaType === 'image' ? 'image' : 'video';
     var dream;
     if (sourceDreamId) {
@@ -544,7 +569,7 @@
       // back in the "never generated" state, so result.html shows the
       // plain CTA again and a fresh opt-in tap is required, per the design
       // spec's privacy/data-model section.
-      var patch = { caption: caption, style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null };
+      var patch = { caption: caption, style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null };
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
     } else {
@@ -554,7 +579,8 @@
         caption: caption, style: style, mediaType: mediaType,
         likes: 0, likedByMe: false, isPublished: false,
         videoUrl: mediaType === 'video' ? mediaUrl : null,
-        imageUrl: mediaType === 'image' ? mediaUrl : null
+        imageUrl: mediaType === 'image' ? mediaUrl : null,
+        sourceOperationName: operationName || null
       };
       // Images never set a duration — there's no clip length concept for a
       // still image (see explore.html/profile.html's guarded d.dur render).
@@ -617,6 +643,11 @@
     // balance a post-submission-failure refund lands on.
     var email = currentAccountEmail();
 
+    // Captured here (rather than threaded through pollUntilDone's own
+    // resolved value) so finalizeDream below can stamp it onto the
+    // completed dream — see that function's own doc comment for why.
+    var capturedOperationName = null;
+
     var operationPromise = resume
       ? Promise.resolve(resume.operationName)
       : fetch(submitUrl, {
@@ -654,6 +685,7 @@
         });
 
     return operationPromise.then(function (operationName) {
+      capturedOperationName = operationName;
       var startedAt = resume ? resume.startedAt : Date.now();
       savePendingJob({
         operationName: operationName, startedAt: startedAt,
@@ -675,7 +707,7 @@
       });
       return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
-      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType);
+      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName);
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
       // probing needs a real network round trip to the video itself and
@@ -1874,6 +1906,124 @@
           })
         }).catch(function () { /* best-effort, must never break the app */ });
       } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Durable, server-side replacement for the old sessionStorage
+     * `dreamtube_just_generated_id` marker (tracker.html's
+     * result-htmls-firstvideocreated-still-dep-qfg48t item,
+     * founder-approved 2026-07-27 -- "make the carrier durable"). Called
+     * from processing.html's attachTaskHandlers right before it redirects
+     * to result.html on a successful generation (fresh or regenerated),
+     * exactly where the old sessionStorage.setItem call used to be.
+     *
+     * POSTs to /.netlify/functions/mark-generation-completed, which
+     * durably records "this operation was just seen to complete" keyed by
+     * the JOB'S OWN operationName (see finalizeDream's doc comment for why
+     * this is operationName-keyed, NOT dreamId-keyed -- a review finding:
+     * dreamId is client-invented and already public elsewhere in this app,
+     * so keying on it let any unauthenticated caller plant a marker for a
+     * dreamId they merely knew/guessed, forging a false FirstVideoCreated
+     * for someone else's account on their next ordinary revisit.
+     * operationName is server-issued at submission time and never exposed
+     * in any UI/URL, and mark-generation-completed.js independently
+     * re-verifies it actually completed before honoring the write -- see
+     * that file and lib/generation-completion-store.js's own header
+     * comments for the full mechanics). `keepalive: true` gives this
+     * request its best chance of actually completing even though the page
+     * navigates away ~350ms later -- the same hazard (an in-flight request
+     * getting cut off by navigation) that made sessionStorage an
+     * unreliable carrier across some FB/IG in-app browser webview
+     * redirects in the first place; a plain fetch here would just move the
+     * same class of risk from "storage" to "network", not fix it.
+     *
+     * Fire-and-forget, best-effort: must never throw or delay the
+     * redirect it runs right before. A failure here (offline, a webview
+     * that kills the request anyway) means this specific completion's
+     * FirstVideoCreated fire may be missed -- an honest degrade, not a
+     * crash, same posture the old sessionStorage marker already had when
+     * storage was disabled.
+     */
+    markGenerationJustCompleted: function (operationName) {
+      if (!operationName) return;
+      try {
+        fetch('/.netlify/functions/mark-generation-completed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationName: operationName }),
+          keepalive: true
+        }).catch(function () { /* best-effort, must never break the app */ });
+      } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Durable counterpart to markGenerationJustCompleted above -- consumes
+     * (reads + deletes, exactly once) the durable marker for
+     * `operationName` via /.netlify/functions/consume-generation-marker,
+     * returning a Promise that resolves true only the first time this is
+     * called for an operationName that was actually just marked complete
+     * (and independently re-verified server-side, see mark-generation-
+     * completed.js). Every call after that (a reload of result.html, an
+     * operationName that was never marked/verified, or a network failure
+     * reaching the endpoint at all) resolves false. `operationName` here
+     * comes from the dream's own `sourceOperationName` field (see
+     * finalizeDream) -- an old/legacy dream with none never even attempts
+     * the network call, resolving false immediately (nothing to check).
+     *
+     * This is HALF of result.html's FirstVideoCreated eligibility check --
+     * the durable replacement for the old
+     * `sessionStorage.getItem('dreamtube_just_generated_id') ===
+     * dream.id` comparison, proving this page load is the actual moment
+     * generation just finished, not a later revisit/reload of an old
+     * result.html?id=... URL. Callers must still separately gate the
+     * actual conversion fire on markFirstVideoCreatedIfEligible(dreamId)
+     * above (the OTHER, unchanged half -- is this genuinely the account's
+     * first-ever completed dream) -- this function alone does not decide
+     * eligibility, exactly like the old sessionStorage read never did
+     * either. See docs/EVENT_TAXONOMY.md's "FirstVideoCreated" section for
+     * the full two-guard picture.
+     *
+     * Never rejects in a way a caller needs to special-case: a network/
+     * server failure resolves false (not fresh, don't fire) rather than
+     * throwing, the same honest "storage unavailable, marker missing"
+     * degrade the sessionStorage version already had.
+     */
+    wasOperationJustCompleted: function (operationName) {
+      if (!operationName) return Promise.resolve(false);
+      return fetch('/.netlify/functions/consume-generation-marker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operationName: operationName })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) { return !!(data && data.matched); })
+        .catch(function () { return false; });
+    },
+
+    /**
+     * Pure, read-only query: true if `dreamId` is (as far as this
+     * account's own local dream data can tell) this account's ONLY
+     * completed dream -- the exact same eligibility computation
+     * markFirstVideoCreatedIfEligible above makes, minus that function's
+     * one-time flag check-and-set. Unlike markFirstVideoCreatedIfEligible,
+     * this has no side effect and can be called repeatedly (including on
+     * an ordinary revisit, or for an account whose fire-once flag is
+     * already set) without consuming anything.
+     *
+     * Exists purely to feed a PostHog sanity-check signal
+     * (`first_video_result_view`, see result.html's call site and
+     * docs/EVENT_TAXONOMY.md) that's independent of FirstVideoCreated's
+     * own fire-once/durable-marker gating -- comparing this event's count
+     * against FirstVideoCreated's own count is what makes any remaining
+     * undercount (from the durable marker above still failing sometimes,
+     * e.g. total network loss) visible after this fix ships, per
+     * tracker.html's result-htmls-firstvideocreated-still-dep-qfg48t item.
+     */
+    isOnlyCompletedDream: function (dreamId) {
+      if (!state.user || !dreamId) return false;
+      var myHandle = state.user.handle;
+      var completed = state.dreams.filter(function (d) { return d.ownerHandle === myHandle && !!d.videoUrl; });
+      return completed.length === 1 && completed[0].id === dreamId;
     }
   };
 })();
