@@ -180,6 +180,33 @@
     </div>
   </div>
 
+  <!-- Shown by startRecordingUI() INSTEAD of attempting getUserMedia when an
+       FB/IG in-app webview is detected (Meta ad traffic very commonly lands
+       here — clicking an ad opens inside Instagram's/Facebook's own in-app
+       browser, which is well known to block or badly restrict getUserMedia
+       regardless of page code). Silently calling getUserMedia there just
+       produces a confusing "permission denied" error with misleading advice
+       (there's no browser-settings toggle inside a webview that fixes this).
+       See tracker item for-product-bug-founder-high-record-it-s-6ewhb4.
+       Mirrors processing.html's established in-app-webview detection/escape
+       convention (own copy of detectInAppHost()/buildAndroidChromeIntentUrl()
+       in the script below — this is a static multi-page site with no shared
+       JS bundle, same reason processing.html keeps its own copy rather than
+       a shared module), adapted for a pre-recording moment instead of a
+       mid-wait nudge: this is a hard block with no dismissible "continue
+       anyway", since recording genuinely will not work here, not a soft,
+       dismissible suggestion like processing.html's nudge card. -->
+  <div class="px rec-panel" id="create-record-blocked" style="display:none;">
+    <div class="proc-nudge-dot" id="rec-inapp-icon" style="width:44px; height:44px; border-radius:16px;"></div>
+    <div style="font-weight:800; font-size:16px; text-align:center; padding:0 10px;" id="rec-inapp-title"></div>
+    <div style="font-size:13px; color:var(--text-muted); text-align:center; padding:0 14px; line-height:1.5;" id="rec-inapp-body"></div>
+    <div style="width:100%; padding:0 4px;">
+      <button type="button" class="proc-nudge-btn" id="rec-inapp-open-btn"></button>
+      <div class="proc-nudge-hint" id="rec-inapp-hint"></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="rec-inapp-write-btn" style="margin:0 4px;">Write it instead</button>
+  </div>
+
   <div class="sheet-overlay" id="sheet-character-overlay">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -817,8 +844,90 @@
     textArea.focus();
   });
 
+  // ===== In-app webview detection (record-flow guard) =====
+  // Own copy of processing.html's detectInAppHost()/isAndroidUA()/
+  // buildAndroidChromeIntentUrl() — same UA-token detection (Facebook's
+  // in-app browser UA carries FBAN/FBAV, Instagram's carries the literal
+  // substring "Instagram"; neither appears in any normal browser UA), kept
+  // as a small per-page duplicate rather than a new shared module since this
+  // is a static multi-page site with no shared JS bundle (processing.html
+  // itself follows the same "each page owns its own copy" convention for
+  // this exact trio of helpers).
+  function detectInAppHost(){
+    var ua = navigator.userAgent || '';
+    if (/FBAN|FBAV/.test(ua)) return 'Facebook';
+    if (/Instagram/.test(ua)) return 'Instagram';
+    return null;
+  }
+  function isAndroidUA(){
+    return /Android/.test(navigator.userAgent || '');
+  }
+  function buildAndroidChromeIntentUrl(){
+    var target = location.href.replace(/^https?:\/\//, '');
+    var fallback = encodeURIComponent(location.href);
+    return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
+  }
+
+  var recordBlockedEl = document.getElementById('create-record-blocked');
+
+  /**
+   * Shown instead of ever calling getUserMedia when detectInAppHost() finds
+   * an in-app webview — hides every other panel and points the visitor at
+   * opening their real browser (Android: an intent:// Chrome URL that
+   * preserves the current URL including ?record=1, so tapping through lands
+   * them right back in a working record flow; iOS: no reliable programmatic
+   * escape exists, so the button instead emphasizes the host-app-menu hint,
+   * same tradeoff processing.html's nudge makes), or writing the dream
+   * instead.
+   */
+  function showRecordBlockedPanel(host){
+    hideError('select-error');
+    selectEl.style.display = 'none';
+    writeEl.style.display = 'none';
+    recordEl.style.display = 'none';
+    reviewEl.style.display = 'none';
+    recordBlockedEl.style.display = 'flex';
+    heading.textContent = 'Record your dream';
+
+    document.getElementById('rec-inapp-icon').innerHTML = Icons.globe;
+    document.getElementById('rec-inapp-title').textContent = host + ' blocks microphone access';
+    document.getElementById('rec-inapp-body').textContent = "In-app browsers built into " + host + " don't allow microphone access, so recording won't work here. Open DreamTube in your real browser to record — or write your dream instead.";
+    var openBtn = document.getElementById('rec-inapp-open-btn');
+    openBtn.innerHTML = 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>';
+    document.getElementById('rec-inapp-hint').textContent = 'or tap ' + host + '’s ⋯ at the very top → "Open in external browser"';
+  }
+
+  document.getElementById('rec-inapp-open-btn').addEventListener('click', function(){
+    if(isAndroidUA()){
+      location.href = buildAndroidChromeIntentUrl();
+    } else {
+      // iOS (and anything else that isn't Android): there is no reliable
+      // programmatic way to escape an in-app webview, so don't attempt one
+      // that would just silently fail — draw attention to the hint line
+      // instead, same as processing.html's own nudge does.
+      var hint = document.getElementById('rec-inapp-hint');
+      hint.classList.add('proc-nudge-hint-emph');
+      hint.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(function(){ hint.classList.remove('proc-nudge-hint-emph'); }, 1600);
+    }
+  });
+  document.getElementById('rec-inapp-write-btn').addEventListener('click', function(){
+    recordBlockedEl.style.display = 'none';
+    document.getElementById('choice-write').click();
+  });
+
   function startRecordingUI(){
     hideError('select-error');
+    var inAppHost = detectInAppHost();
+    if(inAppHost){
+      // Known-broken case: never call getUserMedia at all inside a detected
+      // FB/IG in-app webview — show the guard panel instead. See tracker
+      // item for-product-bug-founder-high-record-it-s-6ewhb4. Covers both
+      // callers of this function (the #choice-record click handler and the
+      // ?record=1 auto-trigger below), since both funnel through here.
+      showRecordBlockedPanel(inAppHost);
+      return;
+    }
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
       showError('select-error', "Recording isn't supported in this browser — try Write instead.");
       return;
@@ -861,12 +970,13 @@
       heading.textContent = 'New Dream';
       return;
     }
-    var open = [writeEl, recordEl, reviewEl].some(function(el){ return el.style.display === 'flex'; });
+    var open = [writeEl, recordEl, reviewEl, recordBlockedEl].some(function(el){ return el.style.display === 'flex'; });
     if(open){
       selectEl.style.display = 'block';
       writeEl.style.display = 'none';
       recordEl.style.display = 'none';
       reviewEl.style.display = 'none';
+      recordBlockedEl.style.display = 'none';
       heading.textContent = 'New Dream';
       clearInterval(recInterval);
       stopMediaStream();
