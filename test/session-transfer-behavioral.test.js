@@ -1,0 +1,395 @@
+// test/session-transfer-behavioral.test.js
+//
+// Real browser-driven coverage for the CLIENT side of tracker.html's
+// for-product-bug-fix-founder-high-in-app--sv3mym item (founder-reported,
+// HIGH priority): the session-transfer token round trip added to
+// processing.html/result.html via js/store.js's mintSessionTransferToken/
+// maintainSessionTransferUrl/consumeSessionTransferTokenFromUrlSync, plus
+// the "Copy link for your browser" fix for the iOS in-app-nudge button
+// that used to do nothing (see test/wait-screen-reassurance-and-inapp-
+// nudge-behavioral.test.js for the pre-existing nudge-card coverage this
+// builds on — that file's own iOS test still passes unchanged: this fix
+// adds a real action alongside the existing hint-emphasis behavior, it
+// doesn't remove it).
+//
+// The REAL server-side token mechanics (single-use, TTL, password-gated
+// minting) have direct Node-level coverage in test/session-transfer.test.js
+// — this file stubs both endpoints via page.route() (this repo's static
+// test server doesn't run real Netlify Functions, see helpers/
+// static-server.js's own header comment) and focuses purely on what the
+// BROWSER does with those responses: does it attach ?bt= to its own URL,
+// does it commit a session from a valid token, does it strip the param,
+// does an invalid token fall through silently, and — the specific leak
+// this feature's own security notes call out — does the token ever end up
+// on a URL other than processing.html/result.html's own address bar.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+var staticServer = require('./helpers/static-server');
+
+var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+
+var playwright = null;
+var unavailableReason = null;
+try {
+  playwright = require('playwright');
+} catch (e1) {
+  try {
+    playwright = require('/opt/node22/lib/node_modules/playwright');
+  } catch (e2) {
+    unavailableReason = 'Playwright is not resolvable in this environment (' + e2.message + ')';
+  }
+}
+
+var server = null;
+var browser = null;
+var baseUrl = null;
+
+test.before(async function () {
+  if (unavailableReason) return;
+  server = await staticServer.start();
+  baseUrl = server.url;
+  try {
+    browser = await playwright.chromium.launch({ executablePath: CHROMIUM_PATH });
+  } catch (e) {
+    unavailableReason = 'Could not launch Chromium at ' + CHROMIUM_PATH + ': ' + e.message;
+  }
+});
+
+test.after(async function () {
+  if (browser) await browser.close();
+  if (server) await server.close();
+});
+
+/** Aborts requests to third-party hosts every page here loads -- see CLAUDE.md on this sandbox's outbound network, and every other *-behavioral.test.js's identical helper. */
+function blockThirdParty(page) {
+  return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
+    route.abort();
+  });
+}
+
+var IG_ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/119.0.0.0 Mobile Safari/537.36 Instagram 302.0.0.23.114 Android (33/13; 420dpi; 1080x2246; google/redfin/redfin:13; en_US; 538815920)';
+var FB_IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/400.0.0.0.100;FBBV/1;FBDV/iPhone14,2;FBMD/iPhone;FBSN/iOS;FBSV/16.0;FBSS/3;FBID/phone;FBLC/en_US]';
+var NORMAL_IOS_SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+
+/** Same shape as wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft -- a signed-in account (with a real cached password, required for mintSessionTransferToken to have anything to send) plus a caption+style draft, landing processing.html on its normal fresh-generation path. */
+async function seedAccountWithDraft(page, opts) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + o.username, username: o.username };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[o.username] = { password: o.password || 'testpass1', email: o.email || (o.username + '@example.com') };
+    if (!state.dreams) state.dreams = [];
+    state.draft = Object.assign({ caption: 'A dream about flying over the city', style: 'Cinematic', mediaType: 'video' }, o.draft || {});
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, opts);
+}
+
+/** Signed-in account (with a completed, optionally published dream) for result.html, mirroring test/ui-behavioral.test.js's seedResultPage shape. */
+async function seedAccountWithDream(page, opts) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + o.username, username: o.username };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[o.username] = { password: o.password || 'testpass1', email: o.email || (o.username + '@example.com') };
+    if (!state.dreams) state.dreams = [];
+    state.dreams.push({
+      id: o.dreamId, ownerHandle: '@' + o.username, caption: 'A test dream', style: 'Cinematic',
+      videoUrl: 'https://example.com/fake-video.mp4', isPublished: !!o.isPublished,
+      likes: 0, likedByMe: false, dur: '0:08', sourceOperationName: null
+    });
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, opts);
+}
+
+/** A SIGNED-OUT browser (no state.user at all) that already knows about one account/dream pair -- simulates "the real server already has this account+dream; this particular browser/context just doesn't have a local session for it yet", the exact situation a session-transfer token is meant to fix. */
+async function seedSignedOutWithDream(page, opts) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    // Deliberately no state.user -- this browser starts signed out.
+    if (!state.accounts) state.accounts = {};
+    if (!state.dreams) state.dreams = [];
+    state.dreams.push({
+      id: o.dreamId, ownerHandle: '@' + o.username, caption: 'A test dream', style: 'Cinematic',
+      videoUrl: 'https://example.com/fake-video.mp4', isPublished: false,
+      likes: 0, likedByMe: false, dur: '0:08', sourceOperationName: null
+    });
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, opts);
+}
+
+/** Stubs POST /.netlify/functions/create-session-transfer to always mint a fixed token, recording every request body it saw. */
+function mockCreateSessionTransfer(page, token) {
+  var calls = [];
+  return page.route('**/.netlify/functions/create-session-transfer', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    calls.push(body);
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, token: token }) });
+  }).then(function () { return calls; });
+}
+
+/** Stubs POST /.netlify/functions/verify-session-transfer -- ok:true resolves once (then falls back to ok:false, mirroring the real single-use server behavior) for `okOnce`, everything else is ok:false. */
+function mockVerifySessionTransfer(page, okOnce) {
+  var consumed = false;
+  return page.route('**/.netlify/functions/verify-session-transfer', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    var match = okOnce && !consumed && body && body.token === okOnce.token;
+    if (match) {
+      consumed = true;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: okOnce.username, email: okOnce.email }) });
+    } else {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false }) });
+    }
+  });
+}
+
+/** Mocks a never-finishing generation, same as wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's own helper -- keeps processing.html parked on the wait screen. */
+function mockNeverFinishingGeneration(page) {
+  return Promise.all([
+    page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast/test-op' }) });
+    }),
+    page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+    })
+  ]);
+}
+
+// ===== "Copy link for your browser" (non-Android nudge button fix) =====
+
+test('processing.html: on iOS, the nudge button is relabeled "Copy link for your browser" and actually copies the current URL (including the ?bt= token) to the clipboard, with the right toast', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: FB_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockNeverFinishingGeneration(page);
+    await mockCreateSessionTransfer(page, 'ios-copy-token-abc123');
+    await seedAccountWithDraft(page, { username: 'ioscopyuser' });
+    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
+    var btnLabel = await page.textContent('#proc-nudge-open-btn');
+    assert.match(btnLabel, /Copy link for your browser/, 'non-Android must relabel the button to describe what it actually does now');
+
+    // Wait for maintainSessionTransferUrl's mint to land on the address bar.
+    await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
+    var urlAtClick = page.url();
+    assert.match(urlAtClick, /[?&]bt=ios-copy-token-abc123(&|$)/, 'the token must actually be on the address bar before the button is used');
+
+    await page.click('#proc-nudge-open-btn');
+    await page.waitForSelector('.toast.show', { timeout: 3000 });
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Link copied.*Safari/i, 'toast copy must confirm the paste-in-Safari instruction from the tracker item');
+
+    var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
+    assert.equal(clipboardText, urlAtClick, 'clipboard must contain exactly the current URL, including its ?bt= token');
+
+    // The pre-existing hint-emphasis behavior (test/wait-screen-reassurance-
+    // and-inapp-nudge-behavioral.test.js's own iOS coverage) must still work
+    // alongside the new copy action, not be replaced by it.
+    var hintHasEmphasis = await page.evaluate(function () {
+      return document.getElementById('proc-nudge-hint').classList.contains('proc-nudge-hint-emph');
+    });
+    assert.equal(hintHasEmphasis, true, 'the emphasized hint must still appear alongside the new copy action, per the fix\'s own "keep the emphasized hint" instruction');
+  } finally {
+    await context.close();
+  }
+});
+
+test('processing.html: on Android, the nudge button keeps the "Open in my browser" label and its intent:// URL carries the ?bt= session-transfer token too', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var IG_ANDROID = IG_ANDROID_UA;
+  var context = await browser.newContext({ userAgent: IG_ANDROID });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockNeverFinishingGeneration(page);
+    await mockCreateSessionTransfer(page, 'android-intent-token-xyz789');
+    await seedAccountWithDraft(page, { username: 'androidtokenuser' });
+    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
+    var btnLabel = await page.textContent('#proc-nudge-open-btn');
+    assert.match(btnLabel, /Open in my browser/, 'Android must keep the existing "Open in my browser" label -- this fix only changes the non-Android branch');
+
+    await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
+
+    var intentUrl = await page.evaluate(function () { return buildAndroidChromeIntentUrl(); });
+    assert.match(intentUrl, /^intent:\/\//);
+    assert.match(intentUrl, /bt=android-intent-token-xyz789/, 'the Android intent:// URL must also carry the session-transfer token, per the fix\'s own instruction');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== token round-trip: mint -> land with ?bt= -> verify/consume -> session committed -> param stripped =====
+
+test('result.html: landing with a VALID ?bt= token commits a real local session (without ever hitting the sign-in redirect) and strips the param from the URL', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, { token: 'valid-roundtrip-token', username: 'transferreduser', email: 'transferred@example.com' });
+
+    await seedSignedOutWithDream(page, { username: 'transferreduser', dreamId: 'd-transfer-1' });
+    await page.goto(baseUrl + '/result.html?id=d-transfer-1&bt=valid-roundtrip-token', { waitUntil: 'domcontentloaded' });
+
+    // A signed-out visitor without a valid token would have been redirected
+    // to login.html immediately -- this must NOT happen here.
+    await page.waitForTimeout(300);
+    assert.match(page.url(), /result\.html/, 'a valid transfer token must commit the session before the sign-in guard runs, never redirecting to login.html');
+
+    var committedUser = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.ok(committedUser, 'a session must actually be committed');
+    assert.equal(committedUser.username, 'transferreduser');
+    assert.equal(committedUser.handle, '@transferreduser');
+
+    assert.equal(page.url().indexOf('bt='), -1, 'the ?bt= param must be stripped from the address bar once consumed, valid or not');
+    assert.match(page.url(), /id=d-transfer-1/, 'stripping bt= must not disturb the ?id= param this page actually needs');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: the SAME ?bt= token cannot commit a session a second time (server-side single-use is respected client-side too)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, { token: 'once-only-token', username: 'onceonlyuser', email: 'onceonly@example.com' });
+    await seedSignedOutWithDream(page, { username: 'onceonlyuser', dreamId: 'd-once-1' });
+
+    // First load: consumes the token, commits the session -- same as the
+    // round-trip test above.
+    await page.goto(baseUrl + '/result.html?id=d-once-1&bt=once-only-token', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    var firstUser = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.ok(firstUser);
+
+    // A completely fresh, still-signed-out browser context re-uses the
+    // exact same token string (the mock's own `consumed` flag makes the
+    // stub degrade to ok:false on this second call, exactly like the real
+    // single-use server would) -- must fall through to login.html, never
+    // commit a second session from the same token.
+    var context2 = await browser.newContext();
+    try {
+      var page2 = await context2.newPage();
+      await blockThirdParty(page2);
+      await seedSignedOutWithDream(page2, { username: 'onceonlyuser', dreamId: 'd-once-1' });
+      await page2.goto(baseUrl + '/result.html?id=d-once-1&bt=once-only-token', { waitUntil: 'domcontentloaded' });
+      await page2.waitForURL('**/login.html', { timeout: 5000 });
+      assert.match(page2.url(), /login\.html/, 'a reused token must fall through to the ordinary signed-out flow');
+    } finally {
+      await context2.close();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: an invalid/expired ?bt= token is a silent no-op -- falls through to the normal signed-out redirect, no error shown', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    var consoleErrors = [];
+    page.on('pageerror', function (err) { consoleErrors.push(String(err)); });
+    await blockThirdParty(page);
+    // No okOnce match at all -- every verify call returns ok:false, exactly
+    // like a garbage/expired/already-consumed token would server-side.
+    await mockVerifySessionTransfer(page, null);
+    await seedSignedOutWithDream(page, { username: 'nobodyhome', dreamId: 'd-invalid-1' });
+
+    await page.goto(baseUrl + '/result.html?id=d-invalid-1&bt=totally-made-up-garbage-token', { waitUntil: 'domcontentloaded' });
+    await page.waitForURL('**/login.html', { timeout: 5000 });
+    assert.match(page.url(), /login\.html/, 'an invalid token must fall through to the ordinary signed-out redirect');
+
+    assert.equal(consoleErrors.length, 0, 'an invalid token must never surface a JS error to the page');
+  } finally {
+    await context.close();
+  }
+});
+
+test('processing.html: an invalid ?bt= token is also a silent no-op there, with the param stripped and the normal draft-required guard still applying', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, null);
+    // No seedAccountWithDraft -- signed out, exactly like a stale/garbage
+    // bt link landing on a browser with no session at all.
+    await page.goto(baseUrl + '/processing.html?bt=garbage-token-here', { waitUntil: 'domcontentloaded' });
+    await page.waitForURL('**/login.html', { timeout: 5000 });
+    assert.match(page.url(), /login\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== leak prevention: the token must never end up on a share link =====
+
+test('result.html: the session-transfer token minted for the address bar never leaks onto the Share button\'s explore.html link', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: IG_ANDROID_UA, permissions: ['clipboard-read', 'clipboard-write'] });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockCreateSessionTransfer(page, 'share-leak-check-token');
+    // navigator.share is stripped so doShare() falls back to the same
+    // clipboard-copy path result.html already uses on a browser without
+    // the native share sheet -- lets this test read the exact URL that
+    // would have been shared.
+    await context.addInitScript(function () { delete navigator.__proto__.share; Object.defineProperty(navigator, 'share', { value: undefined }); });
+
+    await seedAccountWithDream(page, { username: 'shareleaktest', dreamId: 'd-share-1', isPublished: true });
+    await page.goto(baseUrl + '/result.html?id=d-share-1', { waitUntil: 'domcontentloaded' });
+
+    // Confirm the transfer token really did land on THIS page's own
+    // address bar first -- otherwise the negative assertion below would
+    // be vacuous.
+    await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
+    assert.match(page.url(), /bt=share-leak-check-token/);
+
+    await page.click('#share-btn');
+    await page.waitForSelector('.toast.show', { timeout: 3000 });
+    var sharedUrl = await page.evaluate(function () { return navigator.clipboard.readText(); });
+
+    assert.match(sharedUrl, /\/explore\.html\?id=d-share-1$/, 'the shared link must be the plain explore.html dream link');
+    assert.equal(sharedUrl.indexOf('bt='), -1, 'the session-transfer token living on THIS page\'s own address bar must never appear on a link handed out to someone else');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: a normal (non-webview) browser never gets a ?bt= token attached to its URL at all', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var mintCalls = await mockCreateSessionTransfer(page, 'should-never-be-used');
+    await seedAccountWithDream(page, { username: 'normalbrowseruser', dreamId: 'd-normal-1' });
+    await page.goto(baseUrl + '/result.html?id=d-normal-1', { waitUntil: 'domcontentloaded' });
+
+    // Give the (in this case, correctly-never-fired) mint a moment it
+    // would have used if maintainSessionTransferUrl mistakenly ran outside
+    // a detected webview.
+    await page.waitForTimeout(300);
+    assert.equal(page.url().indexOf('bt='), -1, 'a normal browser must never get a session-transfer token attached to its URL');
+    assert.equal(mintCalls.length, 0, 'create-session-transfer must never even be called outside a detected FB/IG webview');
+  } finally {
+    await context.close();
+  }
+});
