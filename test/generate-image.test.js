@@ -270,12 +270,12 @@ test('mock mode: the E412 token gate still applies to an email with insufficient
 
 // ----- buildImagePrompt / exports -----
 
-test('buildImagePrompt folds style/camera/scenery in, but omits any reference-photo pointer line even when a photo-only self character is present', function () {
+test('buildImagePrompt folds style/camera/scenery in, omits any reference-photo pointer line even when a photo self character is present, but still includes that character\'s text description', function () {
   var genImage = require('../netlify/functions/generate-image');
   var prompt = genImage.buildImagePrompt(
     'a dream about flying',
     'Cartoon',
-    [{ name: 'Me', isSelf: true, photoDataUrl: 'data:image/png;base64,AAAA' }],
+    [{ name: 'Me', isSelf: true, photoDataUrl: 'data:image/png;base64,AAAA', description: 'no beard, short hair' }],
     'Close-up', 'Night', 'Urban'
   );
   assert.ok(prompt.indexOf('a dream about flying') !== -1);
@@ -283,6 +283,7 @@ test('buildImagePrompt folds style/camera/scenery in, but omits any reference-ph
   assert.ok(prompt.indexOf('nighttime') !== -1);
   assert.ok(prompt.indexOf('urban setting') !== -1);
   assert.ok(prompt.indexOf('reference photo') === -1, 'flux/dev has no photo-conditioning path — no pointer line should ever be emitted');
+  assert.ok(prompt.indexOf('no beard, short hair') !== -1, 'flux/dev never sees the photo, so a description on a photo-having character must still reach the prompt as the only appearance signal it gets');
 });
 
 test('buildImagePrompt includes a text-described character (non-photo)', function () {

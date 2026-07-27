@@ -74,13 +74,22 @@ var SCENERY_PLACE_MODIFIERS = {
  * matches this codebase's existing "each Netlify function is self-
  * contained" convention (see video-status.js's own header comment making
  * the same call for its duplicated falErrorMessage/humanizeFalDetail).
+ *
+ * Unlike generate-video.js's buildPrompt, a character's text description is
+ * included here EVEN when photoDataUrl is also set — this model never sees
+ * the photo at all (no photo-conditioning path, see header comment above),
+ * so a photo-having self character with no text description would
+ * otherwise get zero appearance information in the prompt. Only the
+ * reference-photo pointer LINE is skipped (a line pointing at an image this
+ * model never receives would just confuse it) — the description itself is
+ * never gated on photoDataUrl.
  */
 function buildImagePrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
   var parts = [caption];
 
   var charTextParts = (characters || [])
-    .filter(function (c) { return c && !c.photoDataUrl && typeof c.description === 'string' && c.description.trim(); })
+    .filter(function (c) { return c && typeof c.description === 'string' && c.description.trim(); })
     .map(function (c) {
       var who = c.isSelf ? 'the dreamer ("me")' : ((c.name || '').trim() || 'a character');
       return who + ': ' + c.description.trim();
