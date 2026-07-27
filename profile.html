@@ -656,10 +656,24 @@
   var tokenBalanceEl = document.getElementById('profile-tokens-balance');
   var tokenMetaEl = document.getElementById('profile-tokens-meta');
   var tokenStatus = null;
+  // Mirrors style.html's/result.html's/processing.html's own local
+  // IMAGE_TOKEN_COST/VIDEO_TOKEN_COST copies (no shared JS module in this
+  // codebase — see js/store.js's header comment) — needed below so "low
+  // balance" copy can actually tell whether the cheapest generation type
+  // (an image) is still affordable, not just whether a video is.
+  var IMAGE_TOKEN_COST = 10;
+  var VIDEO_TOKEN_COST = 100;
   function renderTokenText(){
     if(!tokenStatus) return;
     tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
-    if(tokenStatus.balance < 100) tokenMetaEl.textContent = 'Out of tokens';
+    // Media-aware label (hardening fix, tracker item
+    // for-product-store-launch-copy-sweep-purc-m6xhkx): a flat "Out of
+    // tokens" below 100 was misleading a user who could still afford the
+    // 10-token image path — only actually zero-balance-for-everything
+    // (can't even afford an image) is "Out of tokens"; anything under a
+    // video's cost but still image-affordable is "Low" instead.
+    if(tokenStatus.balance < IMAGE_TOKEN_COST) tokenMetaEl.textContent = 'Out of tokens';
+    else if(tokenStatus.balance < VIDEO_TOKEN_COST) tokenMetaEl.textContent = 'Low';
     // atCeiling (founder bug report for-product-bug-founder-high-token-chip--kn1v8t):
     // once balance >= GRANT_CEILING (200), entitlements.js's syncTokens
     // deliberately holds the daily grant back and never bumps lastGrantAt
