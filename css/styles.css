@@ -622,6 +622,58 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .token-chip-meta{ font-size:11px; font-weight:600; color:rgba(255,255,255,.82); white-space:nowrap;}
 .token-chip-cta{ font-size:11px; font-weight:800; color:#fff; white-space:nowrap; border-left:1px solid rgba(255,255,255,.35); padding-left:8px;}
 
+/* ===== Compact topbar balance chip (create.html/style.html/result.html) =====
+   tracker item for-product-build-out-of-tokens-purchase-2y8hyw, item 3.
+   Extends .token-chip above (same pill shape/class-name convention, see
+   js/purchase-sheet.js's mountBalanceChip/renderBalanceChip) rather than a
+   new design system — smaller for a topbar slot, and state-tinted
+   (healthy/low) instead of the fixed --gradient-ig fill, per the
+   founder-approved mock (docs/design/out-of-tokens-sheet.html, branch
+   claude/manager-onboarding-xcq4ul): --accent-growth green once the
+   balance is comfortable, --accent-value amber (the same "premium
+   currency" gold this codebase already uses for the shop's "Best value"
+   pack) once it drops under 100. Includes the small circled-plus
+   affordance the founder explicitly added to that mock on 2026-07-26. */
+.token-chip-compact{ margin-top:0; padding:5px 5px 5px 12px; gap:6px; background:var(--surface-alt); border:1px solid var(--border-strong); box-shadow:none;}
+.token-chip-compact .token-chip-balance{ font-size:12px; font-weight:800; color:var(--text-primary);}
+.token-chip-compact.healthy{ border-color:rgba(95,184,138,.5);}
+.token-chip-compact.healthy .token-chip-balance{ color:#a8e0c2;}
+.token-chip-compact.low{ border-color:rgba(217,166,83,.6);}
+.token-chip-compact.low .token-chip-balance{ color:var(--accent-value);}
+.token-chip-plus{ flex:none; width:16px; height:16px; border-radius:50%; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); color:#fff; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; line-height:1;}
+
+/* ===== Out-of-tokens purchase sheet (js/purchase-sheet.js) =====
+   tracker item for-product-build-out-of-tokens-purchase-2y8hyw. Reuses the
+   existing .sheet-overlay/.sheet/.sheet-handle bottom-sheet pattern
+   already used by result.html's edit/character/interp sheets, rather than
+   the old centered .modal-overlay/.modal-card this replaces — matching
+   the founder-approved mock (docs/design/out-of-tokens-sheet.html, branch
+   claude/manager-onboarding-xcq4ul). Behavior is locked; only minor
+   visual tweaks may follow. */
+.purchase-sheet-title{ font-size:17px; font-weight:800; text-align:center; margin-bottom:6px;}
+.purchase-sheet-body{ font-size:13px; color:var(--text-muted); text-align:center; line-height:1.5; margin-bottom:14px;}
+.purchase-sheet-body b{ color:var(--text-primary);}
+.purchase-meter{ height:8px; border-radius:100px; background:var(--surface-alt); margin-bottom:6px; overflow:hidden;}
+.purchase-meter i{ display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--accent-trust),#9ab0ff); border-radius:100px; transition:width .3s ease;}
+.purchase-meter-label{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-faint); margin-bottom:16px;}
+.purchase-buy-btn{ width:100%; font-family:var(--font-body); font-weight:800; font-size:14.5px; border:none; border-radius:100px; padding:15px; background:#fff; color:#000; box-shadow:0 4px 14px -6px rgba(0,0,0,.5); margin-bottom:10px; cursor:pointer;}
+.purchase-buy-btn:disabled{ opacity:.5; cursor:not-allowed;}
+.purchase-error{ text-align:center; font-size:12px; color:var(--danger); margin-bottom:10px;}
+.purchase-see-all{ text-align:center; font-size:12.5px; color:var(--accent-trust); font-weight:700; margin-bottom:14px; cursor:pointer;}
+.purchase-wait-line{ text-align:center; font-size:12px; color:var(--text-muted); padding-top:12px; border-top:1px solid var(--border); margin-bottom:8px;}
+.purchase-trust{ text-align:center; font-size:10.5px; color:var(--text-faint);}
+
+/* ===== "Payment received" resume state (processing.html) =====
+   Shown after a successful checkout return, while polling for the
+   webhook's token credit (js/purchase-sheet.js's pollForCredit) — the
+   founder-approved mock's Frame 2. Reuses .proc-wrap's existing full-
+   screen wait-state layout rather than a new page. */
+.proc-payment-resume{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:0 26px; text-align:center;}
+.proc-payment-check{ width:64px; height:64px; border-radius:50%; background:rgba(95,184,138,.15); border:1.5px solid var(--accent-growth); display:flex; align-items:center; justify-content:center; color:var(--accent-growth); font-size:26px;}
+.proc-payment-resume h2{ font-size:17px; font-weight:800; margin:0;}
+.proc-payment-resume p{ font-size:12.5px; color:var(--text-muted); line-height:1.5; margin:0;}
+.proc-payment-caption{ font-size:10.5px; color:var(--text-faint);}
+
 /* ===== Token shop (shop.html) =====
    Palette per docs/SHOP_PALETTE_REDESIGN_SPEC.md — the shop used to be the
    one place besides the two documented --gradient-ig spots (bottom-nav "+",

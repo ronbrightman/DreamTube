@@ -49,6 +49,39 @@
 //   E5 invalid_pack           — pack wasn't "pack100", "pack300", or "pack700"
 //   E6 missing_product_id     — DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700 not configured for the requested pack
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
+//   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
+//
+// ── Open-redirect guard on successUrl/cancelUrl (security fix, added for
+//    tracker item for-product-build-out-of-tokens-purchase-2y8hyw) ──
+// Until this fix, `payload.successUrl`/`payload.cancelUrl` were honored
+// completely verbatim with no validation at all — an internal audit
+// flagged this as a live open-redirect surface (an attacker-controlled
+// checkout link could send a paying user's browser anywhere after
+// checkout). It stayed latent only because no real caller ever actually
+// constructed a custom value here — shop.html always omits both fields,
+// relying on the defaults below. The out-of-tokens purchase sheet
+// (js/purchase-sheet.js) is the FIRST real caller to pass a genuine
+// custom successUrl (carrying it back to processing.html to auto-resume
+// the blocked generation, see that file's own header comment), so this
+// had to be closed before that feature could ship, not after.
+// isSafeRedirectPath enforces "relative path only" — not just
+// "same-origin", which would still mean trusting this function's own
+// derivation of `origin` (below) from request headers (x-forwarded-host/
+// host), an attacker-influenceable value in a misconfigured proxy setup.
+// A same-app-origin-relative PATH sidesteps that trust question entirely:
+// it can only ever resolve against whatever origin this function itself
+// already computed, never anywhere else. Every legitimate caller in this
+// codebase (js/purchase-sheet.js) only ever needs a same-app path
+// anyway — there is no real use case for an absolute or protocol-
+// relative successUrl/cancelUrl today.
+var REDIRECT_PATH_RE = /^\/(?!\/)/; // exactly one leading slash, not "//..." (protocol-relative)
+var REDIRECT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/; // defense in depth — belt-and-suspenders with the leading-slash check above, in case some exotic input could otherwise still parse as an absolute/scheme URL downstream
+function isSafeRedirectPath(candidate) {
+  if (typeof candidate !== 'string' || !candidate) return false;
+  if (!REDIRECT_PATH_RE.test(candidate)) return false;
+  if (REDIRECT_SCHEME_RE.test(candidate)) return false;
+  return true;
+}
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
@@ -118,11 +151,27 @@ exports.handler = async function (event) {
   // shop.html is the real checkout entry point (unlike the original
   // subscription branch, written before any pricing/checkout UI existed),
   // so default back there rather than a placeholder page. The caller may
-  // still override both, same as create-checkout-session.js.
+  // still override both — js/purchase-sheet.js does exactly this to send
+  // a blocked-action checkout back to processing.html for auto-resume —
+  // but only with a same-app-relative path; see isSafeRedirectPath's own
+  // doc comment above for why this is checked here, server-side, rather
+  // than trusted from the client.
   var host = event.headers['x-forwarded-host'] || event.headers.host;
   var origin = host ? ('https://' + host) : '';
-  var returnUrl = payload.successUrl || (origin + '/shop.html?checkout=success');
-  var cancelUrl = payload.cancelUrl || (origin + '/shop.html?checkout=cancelled');
+  var returnUrl = origin + '/shop.html?checkout=success';
+  if (payload.successUrl) {
+    if (!isSafeRedirectPath(payload.successUrl)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E8: invalid_redirect_url: successUrl must be a relative path' }) };
+    }
+    returnUrl = origin + payload.successUrl;
+  }
+  var cancelUrl = origin + '/shop.html?checkout=cancelled';
+  if (payload.cancelUrl) {
+    if (!isSafeRedirectPath(payload.cancelUrl)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E8: invalid_redirect_url: cancelUrl must be a relative path' }) };
+    }
+    cancelUrl = origin + payload.cancelUrl;
+  }
 
   // Shared between this checkout session and dodo-webhook.js's eventual
   // server-side Purchase fire (P0 reporting instrumentation — see

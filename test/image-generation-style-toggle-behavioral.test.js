@@ -6,8 +6,12 @@
 // above #generate-btn. Covers:
 //   1. Video is pre-selected on load (existing behavior unchanged unless a
 //      user deliberately picks Image).
-//   2. Tapping Image relabels the Generate button, updates the token-cost
-//      copy in #modal-quota, and tapping back to Video reverts both.
+//   2. Tapping Image relabels the Generate button; tapping back to Video
+//      reverts it. The out-of-tokens purchase sheet's own per-mediaType
+//      arithmetic (10 tokens for image / 100 for video — formerly a static
+//      copy on the old #modal-quota this replaced, tracker item
+//      for-product-build-out-of-tokens-purchase-2y8hyw) is covered directly
+//      in test/out-of-tokens-purchase-sheet-behavioral.test.js.
 //   3. End to end: picking Image and generating actually produces an
 //      image-type dream (mediaType:'image', imageUrl set, no videoUrl) via
 //      processing.html's dispatch to DreamStore.generateImage ->
@@ -92,7 +96,7 @@ async function reachStyleScreen(page, caption) {
   await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
 }
 
-test('style.html: Video is pre-selected; tapping Image relabels the button and swaps the token-cost copy, and tapping back to Video reverts both', async function (t) {
+test('style.html: Video is pre-selected; tapping Image relabels the button, and tapping back to Video reverts it', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -108,8 +112,6 @@ test('style.html: Video is pre-selected; tapping Image relabels the button and s
     assert.equal(videoActive, true, 'Video must be pre-selected on load');
     assert.equal(imageActiveInitially, false);
     assert.equal(await page.textContent('#generate-btn'), 'Generate Video');
-    var initialQuotaCopy = await page.textContent('#modal-quota-body');
-    assert.match(initialQuotaCopy, /100 tokens/);
 
     // ----- Tap Image -----
     await page.click('.media-type-btn[data-media-type="image"]');
@@ -118,15 +120,39 @@ test('style.html: Video is pre-selected; tapping Image relabels the button and s
     assert.equal(imageActive, true);
     assert.equal(videoActiveAfter, false);
     assert.equal(await page.textContent('#generate-btn'), 'Generate Image');
-    var imageQuotaCopy = await page.textContent('#modal-quota-body');
-    assert.match(imageQuotaCopy, /10 tokens/);
-    assert.doesNotMatch(imageQuotaCopy, /generating a video/i);
 
     // ----- Tap back to Video -----
     await page.click('.media-type-btn[data-media-type="video"]');
     assert.equal(await page.textContent('#generate-btn'), 'Generate Video');
-    var revertedQuotaCopy = await page.textContent('#modal-quota-body');
-    assert.match(revertedQuotaCopy, /100 tokens/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: the out-of-tokens purchase sheet reads the currently-selected media type\'s real cost (10 for image / 100 for video), not a copy fixed at page load', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Low enough to block BOTH media types, so toggling alone (no balance
+    // change) is what proves the sheet's arithmetic tracks the selection.
+    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await seedLoggedInUserAt(page, 'toggleblocked', '/create.html');
+    await reachStyleScreen(page, 'A dream about flying over a glowing city at night');
+    await page.waitForTimeout(200); // let the async getTokenStatus() pre-check resolve
+
+    await page.click('.style-card[data-style="Cartoon"]');
+    await page.click('.media-type-btn[data-media-type="image"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    assert.match(await page.textContent('#ps-title'), /this image needs 10 tokens/);
+
+    await page.evaluate(function () { document.getElementById('purchase-sheet-overlay').classList.remove('open'); });
+    await page.click('.media-type-btn[data-media-type="video"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    assert.match(await page.textContent('#ps-title'), /this video needs 100 tokens/);
   } finally {
     await context.close();
   }

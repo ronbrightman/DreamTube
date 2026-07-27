@@ -168,12 +168,58 @@ test('default return/cancel URLs point back to shop.html, derived from the reque
   assert.equal(sentBody.cancel_url, 'https://dreamtube1.netlify.app/shop.html?checkout=cancelled');
 });
 
-test('caller-supplied successUrl/cancelUrl override the defaults', async function () {
+test('caller-supplied successUrl/cancelUrl override the defaults, resolved against this request\'s own origin', async function () {
   var captured = stubFetchCapture();
-  await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'https://example.com/ok', cancelUrl: 'https://example.com/no' } }));
+  await handler(fakeEvent({
+    method: 'POST',
+    headers: { host: 'dreamtube1.netlify.app' },
+    body: { email: 'buyer@example.com', pack: 'pack100', successUrl: '/processing.html?checkout=success', cancelUrl: '/style.html?checkout=cancelled' }
+  }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
-  assert.equal(sentBody.return_url, 'https://example.com/ok');
-  assert.equal(sentBody.cancel_url, 'https://example.com/no');
+  assert.equal(sentBody.return_url, 'https://dreamtube1.netlify.app/processing.html?checkout=success');
+  assert.equal(sentBody.cancel_url, 'https://dreamtube1.netlify.app/style.html?checkout=cancelled');
+});
+
+// ============================================================================
+// Open-redirect guard (security fix, tracker item
+// for-product-build-out-of-tokens-purchase-2y8hyw) — successUrl/cancelUrl
+// used to be honored completely verbatim with no validation (see this
+// file's own header comment for the full story). Only a same-app-relative
+// path (exactly one leading slash, no scheme, no protocol-relative "//")
+// is accepted; anything else must be rejected with 400 E8, not silently
+// substituted or partially trusted.
+// ============================================================================
+
+test('SECURITY: a cross-origin absolute successUrl is rejected -> 400 E8, and Dodo is never called', async function () {
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'https://evil.example.com/steal' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
+  assert.equal(captured.calls.length, 0, 'must reject before ever creating a real Dodo checkout session');
+});
+
+test('SECURITY: a cross-origin absolute cancelUrl is rejected -> 400 E8', async function () {
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', cancelUrl: 'https://evil.example.com/steal' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
+});
+
+test('SECURITY: a same-origin absolute successUrl is still rejected — relative-path-only, not merely same-origin', async function () {
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'https://dreamtube1.netlify.app/processing.html' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
+});
+
+test('SECURITY: a protocol-relative successUrl ("//evil.example.com/...") is rejected', async function () {
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: '//evil.example.com/steal' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
+});
+
+test('SECURITY: a scheme-prefixed successUrl without a leading slash (e.g. "javascript:...") is rejected', async function () {
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'javascript:alert(1)' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
 });
 
 test('Dodo API rejects the request -> 502 E7', async function () {

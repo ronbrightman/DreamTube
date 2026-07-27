@@ -76,6 +76,7 @@
     <a class="icon-btn" href="explore.html" id="result-back" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
     <div id="result-topbar-title" style="font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">Your Dream</div>
     <div style="display:flex; align-items:center; gap:8px;">
+      <div id="topbar-token-chip-slot"></div>
       <button class="icon-btn" id="mute-btn" title="Unmute" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
       <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
       <a class="icon-btn" href="explore.html" id="result-nav-explore" title="Explore" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
@@ -244,34 +245,28 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="modal-quota">
-    <div class="modal-card">
-      <div class="modal-title">Out of tokens for now</div>
-      <!-- Same fix as style.html's #modal-quota (reachable from the initial
-           generate flow) -- this is result.html's own separate copy of the
-           same modal, reached from "Generate Again" and "Turn this into a
-           video" on an existing dream. Never frame running out of tokens
-           as "pay to continue" (no live payment flow exists at all right
-           now) -- purely a wait-a-bit state: the daily free grant refills
-           automatically. id'd (modal-quota-body) so the real daily-grant
-           number can be read live from tokenStatus.dailyGrantAmount rather
-           than hardcoded -- see updateQuotaBodyCopy() below; this static
-           text is a pre-JS placeholder only. -->
-      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 20 more automatically within 24 hours.</div>
-      <div class="modal-row">
-        <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
-        <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
-      </div>
-    </div>
-  </div>
-
   <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  // A purchase sheet opened from THIS page always sends the checkout's
+  // successUrl to processing.html (the one page that knows how to
+  // auto-resume from the draft — see js/purchase-sheet.js), so this page
+  // only ever sees ?checkout=cancelled (its own cancelUrl points back at
+  // itself, e.g. result.html?id=...&checkout=cancelled). Cleared quietly,
+  // no error shown, per spec. Strips only the checkout param (keeps
+  // ?id=... intact) before the dreamId parse below runs.
+  (function handleCheckoutCancelled(){
+    if(PurchaseSheet.readCheckoutParam() === 'cancelled'){
+      PurchaseSheet.clearPendingPurchaseMarker();
+      PurchaseSheet.fireCheckoutCancelled('blocked_action');
+    }
+  })();
 
   document.getElementById('result-back').innerHTML = Icons.back;
   // The back button is a hardcoded link to explore.html by default, which
@@ -910,75 +905,97 @@
   // Convenience-only, client-side pre-check (see js/store.js's
   // getTokenStatus doc comment) — fetched once on load, never awaited at
   // click time, so a slow/failed/never-resolving fetch simply leaves
-  // tokenStatus null and Generate Again behaves exactly as it does today
-  // (fail open). The real enforcement is generate-video.js's server-side
-  // E112 check — it applies uniformly here (edit/regenerate, "Turn this
-  // into a video") and on style.html's fresh-generation path, since all
-  // funnel through the same generate-video.js call site via
-  // processing.html's runGeneration(), and costs the same flat 100 tokens
-  // either way.
+  // tokenStatus null and Generate Again/Turn-into-video behave exactly as
+  // they do today (fail open). The real enforcement is generate-video.js's
+  // server-side E112 check (or generate-image.js's E412 for an image
+  // regenerate) — both funnel through the same generate-video/generate-image
+  // call sites via processing.html's runGeneration().
+  var IMAGE_TOKEN_COST = 10;
+  var VIDEO_TOKEN_COST = 100;
   var tokenStatus = null;
-  var quotaBody = document.getElementById('modal-quota-body');
-  // Fallback only for the brief window before getTokenStatus() resolves —
-  // mirrors entitlements.js's real DAILY_GRANT_AMOUNT (20 as of Token
-  // Economy C, 2026-07-26 night), same reasoning as style.html's own
-  // copy of this constant — read live off tokenStatus.dailyGrantAmount
-  // rather than hardcoded, so a future retune can't drift this copy again.
-  var DEFAULT_DAILY_GRANT_AMOUNT = 20;
-  function updateQuotaBodyCopy(){
-    var grant = (tokenStatus && tokenStatus.dailyGrantAmount) || DEFAULT_DAILY_GRANT_AMOUNT;
-    quotaBody.textContent = 'Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.';
-  }
-  updateQuotaBodyCopy();
+  var topbarChip = PurchaseSheet.mountBalanceChip(document.getElementById('topbar-token-chip-slot'));
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
-    updateQuotaBodyCopy();
+    PurchaseSheet.renderBalanceChip(topbarChip, status);
   }).catch(function(){ tokenStatus = null; });
 
-  function tokensBlockGeneration(){
-    return !!(tokenStatus && tokenStatus.balance < 100);
+  function tokensBlockGeneration(cost){
+    return !!(tokenStatus && tokenStatus.balance < cost);
   }
 
-  var quotaModal = document.getElementById('modal-quota');
+  // "Generate Again" (Edit sheet) keeps the dream's existing mediaType —
+  // there is deliberately no media-type picker on the Edit sheet (see
+  // docs/IMAGE_GENERATION_SPEC.md §7's explicit scope cut), so its real
+  // cost/arithmetic must match whichever mediaType it will actually
+  // regenerate as, not an assumed flat 100 (an image-type dream costs 10
+  // to regenerate, same as a fresh image generation).
+  function regenerateAgainMediaType(){ return dream.mediaType === 'image' ? 'image' : 'video'; }
+  function regenerateAgainCost(){ return regenerateAgainMediaType() === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST; }
 
-  function proceedWithGenerateAgain(){
+  // The FULL blocked action's draft, in one place so both the unblocked
+  // path (proceedWithGenerateAgain) and the purchase-sheet's persistDraft
+  // (blocked path) call the exact same persistence — see
+  // js/purchase-sheet.js's header comment for the audit-found bug this
+  // fixes: previously ONLY the unblocked path ever called setDraft here.
+  function persistGenerateAgainDraft(){
     var text = document.getElementById('edit-text').value.trim();
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
-    // Regenerating keeps the dream's existing mediaType — there is
-    // deliberately no media-type picker on the Edit sheet (see
-    // docs/IMAGE_GENERATION_SPEC.md §7's explicit scope cut: switching type
-    // mid-edit is "start a fresh dream" instead, via Make another dream).
     // sourceImageUrl is explicitly cleared so a stale value from an earlier
     // "Turn this into a video" attempt on a DIFFERENT dream this session
     // can never leak into an unrelated regenerate.
     DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
+  }
+
+  function proceedWithGenerateAgain(){
+    persistGenerateAgainDraft();
     location.href = 'processing.html';
   }
 
+  // ===== Out-of-tokens purchase sheet =====
+  // Founder directive 2026-07-26: "the store must come up whenever a user
+  // tries any action without enough tokens" — replaces the old
+  // #modal-quota this screen used to share between "Generate Again" and
+  // "Turn this into a video" (a plain "wait or visit the shop" dialog with
+  // no arithmetic, no one-tap purchase, and — the audit-found bug — no
+  // draft persistence at all before either redirect).
   document.getElementById('edit-generate-again').addEventListener('click', function(){
-    if(tokensBlockGeneration()){ quotaModal.classList.add('open'); return; }
+    var cost = regenerateAgainCost();
+    if(tokensBlockGeneration(cost)){
+      PurchaseSheet.show({
+        mediaType: regenerateAgainMediaType(),
+        cost: cost,
+        balance: tokenStatus ? tokenStatus.balance : 0,
+        tokenStatus: tokenStatus,
+        source: 'blocked_action',
+        persistDraft: persistGenerateAgainDraft
+      });
+      return;
+    }
     proceedWithGenerateAgain();
-  });
-  document.getElementById('quota-cancel').addEventListener('click', function(){
-    quotaModal.classList.remove('open');
-  });
-  document.getElementById('quota-buy').addEventListener('click', function(){
-    location.href = 'shop.html';
   });
 
   // ===== "Turn this into a video" upsell =====
-  // Same client-side token pre-check as Generate Again above (100 tokens —
-  // a video costs the same flat 100 regardless of how it was triggered),
-  // reusing the same #modal-quota (its existing "Generating a video costs
-  // 100 tokens..." copy already reads correctly for this trigger — see
-  // docs/IMAGE_GENERATION_SPEC.md §6, no change needed there). On enough
-  // tokens: DreamStore.turnImageIntoVideo sets the draft, then this
-  // navigates to processing.html — mirroring proceedWithGenerateAgain
-  // exactly, reusing the full-screen progress/fail-state machinery already
-  // built and tested rather than a new inline spinner.
+  // Always a video regenerate (100 tokens), regardless of the source
+  // dream's own mediaType (it's always an image being turned INTO a
+  // video). DreamStore.turnImageIntoVideo already sets the full draft
+  // (caption/style/sourceDreamId/sourceImageUrl/mediaType) in one call —
+  // using it directly as persistDraft fixes the audit-found bug here too:
+  // previously it was only ever called on the UNBLOCKED path, so a
+  // blocked "Turn this into a video" tap left no draft to resume from at
+  // all.
   document.getElementById('turn-video-btn').addEventListener('click', function(){
-    if(tokensBlockGeneration()){ quotaModal.classList.add('open'); return; }
+    if(tokensBlockGeneration(VIDEO_TOKEN_COST)){
+      PurchaseSheet.show({
+        mediaType: 'video',
+        cost: VIDEO_TOKEN_COST,
+        balance: tokenStatus ? tokenStatus.balance : 0,
+        tokenStatus: tokenStatus,
+        source: 'blocked_action',
+        persistDraft: function(){ DreamStore.turnImageIntoVideo(dream.id); }
+      });
+      return;
+    }
     if(DreamStore.turnImageIntoVideo(dream.id)){ location.href = 'processing.html'; }
   });
 

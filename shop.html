@@ -183,6 +183,17 @@
   }
   track('shop_palette_variant_shown', { variant: shopVariant });
 
+  // tracker item for-product-build-out-of-tokens-purchase-2y8hyw — the
+  // out-of-tokens purchase sheet's own "See all packs" link and the
+  // create/style/result topbar balance chip both land here with a
+  // ?source= query param (blocked_action / balance_chip respectively);
+  // this is the shared entry-point view event for however a visitor
+  // reached the shop, direct navigation included (source stays null in
+  // that case, an honest "unknown"/organic entry rather than a guessed
+  // value).
+  var shopEntrySource = new URLSearchParams(location.search).get('source');
+  track('store_viewed', { source: shopEntrySource });
+
   // ============================================================================
   // Token packs — wired to the live Dodo Payments checkout
   // ----------------------------------------------------------------------------
@@ -259,6 +270,8 @@
     var originalLabel = button.textContent;
     button.disabled = true;
     button.textContent = 'Redirecting…';
+
+    track('checkout_started', { source: shopEntrySource, pack: pack });
 
     fetch('/.netlify/functions/create-checkout-session-dodo', {
       method: 'POST',
@@ -458,6 +471,7 @@
       // Clearing it here is what makes the success branch's "marker present
       // = a real purchase just completed" guarantee actually hold.
       sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+      track('checkout_cancelled', { source: shopEntrySource });
       showToast('Checkout cancelled — no charge made');
     }
   })();

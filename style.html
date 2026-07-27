@@ -67,7 +67,7 @@
 <body>
 
 <div id="app">
-  <div class="topbar"><a class="icon-btn" href="create.html" id="style-back"></a><div style="font-weight:700; font-size:14px;">Choose a style</div><div style="width:36px;"></div></div>
+  <div class="topbar"><a class="icon-btn" href="create.html" id="style-back"></a><div style="font-weight:700; font-size:14px;">Choose a style</div><div id="topbar-token-chip-slot"></div></div>
   <div class="px" style="flex:1; display:flex; flex-direction:column;">
     <div class="style-grid" id="style-grid">
       <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cartoon</div></div></div>
@@ -90,30 +90,12 @@
     <button class="btn btn-primary btn-block" id="generate-btn" disabled style="margin-bottom:22px;">Generate Video</button>
   </div>
 
-  <div class="modal-overlay" id="modal-quota">
-    <div class="modal-card">
-      <div class="modal-title">Out of tokens for now</div>
-      <!-- Free during beta — this deliberately never frames running out of
-           tokens as "pay to continue" (there's no live payment flow at all
-           right now). It's purely a wait-a-bit state: the daily free grant
-           refills automatically, no purchase required. See shop.html's own
-           beta banner for the same framing. id'd (modal-quota-body) so the
-           image-vs-video picker below can swap this copy in place — see
-           updateMediaTypeUI(). This static text is a pre-JS placeholder
-           only (updateMediaTypeUI() overwrites it synchronously on load,
-           before this modal is ever shown) — its daily-grant number is
-           kept in sync with DEFAULT_DAILY_GRANT_AMOUNT below by hand. -->
-      <div class="modal-body" id="modal-quota-body">Generating a video costs 100 tokens. Free during beta — no card needed — you'll get 20 more automatically within 24 hours.</div>
-      <div class="modal-row">
-        <button class="btn btn-ghost" style="flex:1;" id="quota-cancel">Not now</button>
-        <button class="btn btn-warm" style="flex:1;" id="quota-buy">Token shop</button>
-      </div>
-    </div>
-  </div>
+
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('style-back').innerHTML = Icons.back;
@@ -121,6 +103,18 @@
   Array.prototype.forEach.call(document.querySelectorAll('.sc-check'), function(el){ el.innerHTML = Icons.check; });
   var draft = DreamStore.getDraft();
   if(!draft.caption){ location.href = 'create.html'; }
+
+  // A purchase sheet opened from THIS page always sends the checkout's
+  // successUrl to processing.html (the one page that knows how to
+  // auto-resume from the draft — see js/purchase-sheet.js), so this page
+  // only ever sees ?checkout=cancelled (its own cancelUrl points back at
+  // itself). Cleared quietly, no error shown, per spec.
+  (function handleCheckoutCancelled(){
+    if(PurchaseSheet.readCheckoutParam() === 'cancelled'){
+      PurchaseSheet.clearPendingPurchaseMarker();
+      PurchaseSheet.fireCheckoutCancelled('blocked_action');
+    }
+  })();
 
   var selected = null;
   var grid = document.getElementById('style-grid');
@@ -142,13 +136,16 @@
   // today (fail open). The real enforcement is generate-video.js's
   // server-side E112 check (or generate-image.js's E412) — the threshold
   // checked below reacts to whichever media type is currently selected.
-  // Declared before the media-type picker below since its quota copy reads
-  // tokenStatus.dailyGrantAmount live (see DEFAULT_DAILY_GRANT_AMOUNT's own
-  // comment for why a hardcoded number is exactly the bug class this fixes).
+  //
+  // Topbar balance chip (tracker item
+  // for-product-build-out-of-tokens-purchase-2y8hyw, item 3) — reuses the
+  // same tokenStatus fetch below, no extra network call.
+  var topbarChip = PurchaseSheet.mountBalanceChip(document.getElementById('topbar-token-chip-slot'));
+
   var tokenStatus = null;
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
-    updateMediaTypeUI(); // refresh the quota copy below with the real daily-grant number, in case it rendered first with the fallback
+    PurchaseSheet.renderBalanceChip(topbarChip, status);
   }).catch(function(){ tokenStatus = null; });
 
   // ===== Image-vs-video picker (Direction A — segmented toggle) =====
@@ -159,29 +156,12 @@
   var VIDEO_TOKEN_COST = 100;
   var selectedMediaType = 'video';
   var mediaTypeRow = document.getElementById('media-type-row');
-  var quotaBody = document.getElementById('modal-quota-body');
-
-  // Fallback only for the brief window before the async getTokenStatus()
-  // call above resolves (this screen's copy is re-rendered the instant it
-  // does) — mirrors entitlements.js's real DAILY_GRANT_AMOUNT (20 as of
-  // Token Economy C, 2026-07-26 night) and js/store.js's own no-email
-  // fallback of the same value, so this never goes stale on its own if
-  // that constant changes again without every hardcoded copy of the
-  // number being hunted down by hand (the actual bug this replaces).
-  var DEFAULT_DAILY_GRANT_AMOUNT = 20;
-  function dailyGrantAmountText(){
-    return (tokenStatus && tokenStatus.dailyGrantAmount) || DEFAULT_DAILY_GRANT_AMOUNT;
-  }
 
   function updateMediaTypeUI(){
     Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){
       b.classList.toggle('active', b.dataset.mediaType === selectedMediaType);
     });
     genBtn.textContent = selectedMediaType === 'image' ? 'Generate Image' : 'Generate Video';
-    var grant = dailyGrantAmountText();
-    quotaBody.textContent = selectedMediaType === 'image'
-      ? ('Generating an image costs 10 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.')
-      : ('Generating a video costs 100 tokens. Free during beta — no card needed — you\'ll get ' + grant + ' more automatically within 24 hours.');
   }
   mediaTypeRow.addEventListener('click', function(e){
     var btn = e.target.closest('.media-type-btn');
@@ -201,17 +181,31 @@
     location.href = 'processing.html';
   }
 
-  var quotaModal = document.getElementById('modal-quota');
-
+  // ===== Out-of-tokens purchase sheet =====
+  // Founder directive 2026-07-26: "the store must come up whenever a user
+  // tries any action without enough tokens" — replaces the old
+  // #modal-quota (a plain "wait or visit the shop" dialog with no
+  // arithmetic, no one-tap purchase, and no draft persistence). Fixes the
+  // audit-found bug that used to leave this screen's picked style/media
+  // type unsaved whenever generation was blocked: persistDraft below runs
+  // BEFORE the sheet ever renders (see js/purchase-sheet.js's show()),
+  // not only on the unblocked path proceedToGenerate() already covered.
   genBtn.addEventListener('click', function(){
-    if(tokensBlockGeneration()){ quotaModal.classList.add('open'); return; }
+    if(tokensBlockGeneration()){
+      var cost = selectedMediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
+      PurchaseSheet.show({
+        mediaType: selectedMediaType,
+        cost: cost,
+        balance: tokenStatus ? tokenStatus.balance : 0,
+        tokenStatus: tokenStatus,
+        source: 'blocked_action',
+        persistDraft: function(){
+          DreamStore.setDraft({ style: selected, mediaType: selectedMediaType, sourceImageUrl: null });
+        }
+      });
+      return;
+    }
     proceedToGenerate();
-  });
-  document.getElementById('quota-cancel').addEventListener('click', function(){
-    quotaModal.classList.remove('open');
-  });
-  document.getElementById('quota-buy').addEventListener('click', function(){
-    location.href = 'shop.html';
   });
 </script>
 </body>

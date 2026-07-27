@@ -109,12 +109,34 @@
         <button class="btn btn-ghost btn-block" id="fail-edit-btn">Edit Dream</button>
       </div>
     </div>
+    <!-- "Payment received" resume state (tracker item
+         for-product-build-out-of-tokens-purchase-2y8hyw) — shown right
+         after a successful Dodo checkout return from the out-of-tokens
+         purchase sheet, while js/purchase-sheet.js's pollForCredit waits
+         for the webhook's token credit to actually land (Netlify Blobs is
+         only eventually consistent, up to ~60s — see
+         lib/entitlements.js's own doc comment). Founder-approved mock's
+         Frame 2 (docs/design/out-of-tokens-sheet.html, branch
+         claude/manager-onboarding-xcq4ul). -->
+    <div class="proc-payment-resume" id="proc-payment-resume" style="display:none;">
+      <div class="proc-payment-check" id="proc-payment-check"></div>
+      <h2 id="proc-payment-title">Payment received</h2>
+      <p id="proc-payment-copy">Finishing up — picking your dream back up…</p>
+      <div class="spinner-inline" id="proc-payment-spinner"></div>
+      <p class="proc-payment-caption" id="proc-payment-draft-summary"></p>
+      <!-- Honest-degrade path: shown only once the poll window (~75s)
+           elapses without the credit landing yet — never a silent error,
+           per spec ("tokens on the way — tap Generate when your balance
+           updates"). -->
+      <button class="btn btn-primary btn-block" id="proc-payment-manual-btn" style="display:none;">Generate</button>
+    </div>
   </div>
 
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <!-- Cloudflare Turnstile: baseline bot-abuse layer in front of the real
      generation call below (netlify/functions/generate-video.js's E113
      guardrail). No-ops safely (no script load, no network call, no delay)
@@ -139,6 +161,15 @@
     var pending = DreamStore.getPendingJob();
     if(pending && pending.mediaType) return pending.mediaType;
     return DreamStore.getDraft().mediaType === 'image' ? 'image' : 'video';
+  }
+
+  // Mirrors style.html's/result.html's own IMAGE_TOKEN_COST/VIDEO_TOKEN_COST
+  // — needed here for the out-of-tokens purchase sheet's arithmetic on the
+  // E112/E412 fail path below.
+  var IMAGE_TOKEN_COST = 10;
+  var VIDEO_TOKEN_COST = 100;
+  function currentMediaTypeCost(){
+    return currentMediaType() === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
   }
 
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
@@ -429,23 +460,47 @@
         reasonEl.style.display = 'none';
       }
       // E112 specifically: an immediate retry would just fail the same way
-      // again (see the doc block above), so retry-btn's label/behavior
-      // swaps to navigating to the token shop instead of re-running
-      // generation — same pattern the old E111 handling used, just pointing
-      // at shop.html instead of an inline top-up sheet (there's no
-      // backend purchase call yet, see shop.html's own header comment).
-      // E412 is generate-image.js's own insufficient-tokens code (see that
-      // file's error-code doc block) — same "an immediate retry would just
-      // fail the same way again" reasoning as E112, just on the image path.
+      // again (see the doc block above), so this brings up the out-of-
+      // tokens purchase sheet directly (founder directive 2026-07-26: "the
+      // store must come up whenever a user tries any action without enough
+      // tokens") rather than just relabeling retry-btn and waiting for a
+      // second tap. E412 is generate-image.js's own insufficient-tokens
+      // code (see that file's error-code doc block) — same "an immediate
+      // retry would just fail the same way again" reasoning as E112, just
+      // on the image path. No persistDraft needed here — unlike style.html/
+      // result.html, the draft is ALREADY fully intact by the time
+      // generate-video.js/generate-image.js can even return E112/E412
+      // (submission itself required a complete draft) — see this file's
+      // own header note and js/purchase-sheet.js's doc comment on this.
       if(match && (match[1] === 'E112' || match[1] === 'E412')){
         tokenFailContext = true;
         retryBtn.textContent = 'Get more tokens';
+        openTokenPurchaseSheet();
       }
     });
   }
 
+  function openTokenPurchaseSheet(){
+    var mediaType = currentMediaType();
+    var cost = currentMediaTypeCost();
+    DreamStore.getTokenStatus().then(function(status){
+      PurchaseSheet.show({
+        mediaType: mediaType,
+        cost: cost,
+        balance: status.balance,
+        tokenStatus: status,
+        source: 'blocked_action'
+      });
+    }).catch(function(){
+      // Convenience-only fetch failed — fail open to the plain shop link
+      // rather than leaving retry-btn's "Get more tokens" label with
+      // nothing to do.
+      location.href = 'shop.html?source=blocked_action';
+    });
+  }
+
   retryBtn.addEventListener('click', function(){
-    if(tokenFailContext){ location.href = 'shop.html'; return; }
+    if(tokenFailContext){ openTokenPurchaseSheet(); return; }
     runGeneration();
   });
   document.getElementById('fail-edit-btn').addEventListener('click', function(){
@@ -524,9 +579,95 @@
       card.style.display = 'none';
     });
   }
-  initInAppNudge();
+  // ===== "Payment received" resume state + auto-resume =====
+  // Reached only when the browser returns here from a real Dodo checkout
+  // started by the out-of-tokens purchase sheet (js/purchase-sheet.js) —
+  // successUrl always points to THIS page (?checkout=success), since this
+  // is the one page that already knows how to run a generation straight
+  // off whatever's in the draft/pendingJob. See that file's own header
+  // comment for the full "why processing.html" reasoning and the
+  // draft-persistence bug this whole feature fixes.
+  document.getElementById('proc-payment-check').innerHTML = Icons.check;
 
-  runGeneration();
+  function showPaymentReceivedState(){
+    document.getElementById('proc-live').style.display = 'none';
+    document.getElementById('proc-fail').style.display = 'none';
+    document.getElementById('proc-payment-resume').style.display = 'flex';
+  }
+  function hidePaymentReceivedState(){
+    document.getElementById('proc-payment-resume').style.display = 'none';
+  }
+  // Honest-degrade path (spec: never error, never pretend) — shown only
+  // once pollForCredit's ~75s window elapses without the webhook credit
+  // landing yet. A manual "Generate" tap just re-runs the exact same
+  // resume (runGeneration() reads the same intact draft/pendingJob) —
+  // if the balance genuinely hasn't updated yet, generate-video.js's own
+  // E112/E412 gate below is the same safety net it always is.
+  function showDegradedWaitState(){
+    document.getElementById('proc-payment-copy').textContent = 'Tokens on the way — tap Generate when your balance updates.';
+    document.getElementById('proc-payment-spinner').style.display = 'none';
+    document.getElementById('proc-payment-manual-btn').style.display = 'flex';
+  }
+  document.getElementById('proc-payment-manual-btn').addEventListener('click', function(){
+    hidePaymentReceivedState();
+    initInAppNudge();
+    runGeneration();
+  });
+
+  var checkoutParam = PurchaseSheet.readCheckoutParam();
+  if(checkoutParam === 'cancelled'){
+    // A cancel here means the sheet was opened from THIS page's own
+    // E112/E412 fail state (its cancelUrl points back at itself) —
+    // cleared quietly, no error, per spec. draft/pendingJob are untouched
+    // either way, so falling through to the normal load flow below is
+    // correct: it'll just show the same fail state again (still short on
+    // tokens) rather than silently attempting a submission that would
+    // only fail again.
+    PurchaseSheet.clearPendingPurchaseMarker();
+    PurchaseSheet.fireCheckoutCancelled('blocked_action');
+  }
+
+  var pendingPurchase = (checkoutParam === 'success') ? PurchaseSheet.consumePendingPurchaseMarker() : null;
+
+  if(checkoutParam === 'success' && pendingPurchase){
+    // A purchase completed through THIS entry point never lands on
+    // shop.html, so shop.html's own copy of this Purchase-conversion fire
+    // never runs for it — fire it here instead (same marker shape, same
+    // dedup mechanics — see js/purchase-sheet.js's own doc comment).
+    PurchaseSheet.fireSuccessPurchaseEvents(pendingPurchase);
+
+    showPaymentReceivedState();
+    var resumeDraft = DreamStore.getDraft();
+    if(resumeDraft && resumeDraft.caption){
+      document.getElementById('proc-payment-draft-summary').textContent =
+        '"' + resumeDraft.caption + '" · ' + (resumeDraft.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
+    }
+
+    var neededBalance = pendingPurchase.cost || currentMediaTypeCost();
+    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
+    // test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real
+    // ~75s poll window down to something a browser test can actually run
+    // in — undefined/absent in every real page load, so pollForCredit just
+    // falls back to its own real defaults.
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    PurchaseSheet.pollForCredit({
+      neededBalance: neededBalance,
+      intervalMs: pollOverrides.intervalMs,
+      maxMs: pollOverrides.maxMs,
+      onCredited: function(){
+        PurchaseSheet.fireBlockedActionResumed(pendingPurchase.source || 'blocked_action');
+        hidePaymentReceivedState();
+        initInAppNudge();
+        runGeneration();
+      },
+      onTimeout: function(){
+        showDegradedWaitState();
+      }
+    });
+  } else {
+    initInAppNudge();
+    runGeneration();
+  }
 </script>
 </body>
 </html>

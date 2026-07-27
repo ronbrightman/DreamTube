@@ -1601,17 +1601,27 @@ test('shop.html leads with an explicit "Free during beta, no card needed" banner
   }
 });
 
-test("style.html's out-of-tokens modal reads as a free/automatic wait state, never a payment prompt", async function (t) {
+// The two tests below used to assert style.html's/result.html's
+// #modal-quota was a purely free/automatic wait state that must NEVER show
+// a dollar amount -- correct for the (pre-store-launch) beta period this
+// app was in when they were written. Founder directive 2026-07-26 (tracker
+// item for-product-build-out-of-tokens-purchase-2y8hyw), on the eve of the
+// real store launch, explicitly SUPERSEDES that framing: "the store must
+// come up whenever a user tries any action without enough tokens" -- a
+// real one-tap purchase CTA with a real price, replacing #modal-quota with
+// the out-of-tokens purchase sheet (js/purchase-sheet.js). The one part of
+// the OLD requirement that still holds, and is now spec'd explicitly
+// rather than just implied by "no dollar amounts": the free daily-grant
+// path must stay honest and visible, never hidden, alongside the new buy
+// CTA -- these two tests are rewritten to check exactly that balance.
+test("style.html's out-of-tokens purchase sheet shows a real price AND keeps the free daily-grant path honest and visible (supersedes the old beta-era 'no dollar amounts' framing per founder directive 2026-07-26)", async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Zero balance forces the modal open on Generate -- the exact moment a
-    // confused "why do I need to pay" reaction would occur if the copy read
-    // as a paywall instead of a free, automatic refill.
-    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
-    await seedLoggedInUserAt(page, baseUrl, 'quotamodaltester', '/create.html');
+    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100, grantCeiling: 200, atCeiling: false });
+    await seedLoggedInUserAt(page, baseUrl, 'quotasheettester', '/create.html');
     await page.click('#choice-write');
     await page.fill('#dream-text', 'A dream about flying over a glowing city at night');
     await page.click('#write-continue');
@@ -1619,43 +1629,42 @@ test("style.html's out-of-tokens modal reads as a free/automatic wait state, nev
     await page.click('.style-card[data-style="Cartoon"]');
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
-    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 
-    var modalText = await page.textContent('#modal-quota');
-    assert.match(modalText, /free during beta/i, 'the token wall must explicitly say this is free during beta');
-    assert.match(modalText, /no card needed/i);
-    assert.doesNotMatch(modalText, /\$\d/, 'no dollar amount should appear in the out-of-tokens modal -- there is no live payment flow to point to');
+    var sheetText = await page.textContent('#purchase-sheet-overlay');
+    assert.match(sheetText, /\$\d/, 'the one-tap purchase CTA must show a real price now -- the store launched');
+    assert.match(sheetText, /100 free tokens in/i, 'the free daily-grant path must stay visible alongside the buy CTA, never hidden');
+    assert.match(sheetText, /Secure checkout via Dodo/i);
   } finally {
     await context.close();
   }
 });
 
-test("result.html has its own separate copy of the out-of-tokens modal (reached from Generate Again) and it must read the same free/automatic way, not as a payment prompt", async function (t) {
-  // Regression test for a review finding: result.html's #modal-quota (shown
-  // from the Edit sheet's "Generate Again", i.e. regenerating/editing an
-  // existing dream) is a SEPARATE copy of the same markup style.html has,
-  // not a shared component -- the style.html fix alone missed this one
-  // entirely, and it still read "You're out of tokens ... visit the shop to
-  // top up sooner" with no beta-free framing until this test/fix.
+test("result.html's out-of-tokens purchase sheet (reached from Generate Again) reads the same way as style.html's -- a real price AND the honest free daily-grant path, both visible", async function (t) {
+  // Regression test for a review finding on the ORIGINAL #modal-quota this
+  // sheet replaced: result.html had its own separate copy of that markup,
+  // not a shared component, and a fix applied to style.html alone missed
+  // it. js/purchase-sheet.js structurally closes that recurring bug class
+  // (tracker.html's recurring-pattern-a-ui-copy-behavior-fix-9mmjgh) --
+  // one shared module, not per-page hand-copies -- so this test now mainly
+  // proves that's actually true in practice on this call site too.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Zero balance forces the modal open on Generate Again -- same
-    // "why do I need to pay" risk moment as style.html's own modal.
-    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 });
+    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100, grantCeiling: 200, atCeiling: false });
     await seedResultPage(page, baseUrl, 'd-quota-modal-test');
     await page.waitForSelector('#open-edit-sheet', { timeout: 5000 });
     await page.click('#open-edit-sheet');
     await page.waitForSelector('#edit-generate-again', { timeout: 5000 });
     await page.click('#edit-generate-again');
-    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 
-    var modalText = await page.textContent('#modal-quota');
-    assert.match(modalText, /free during beta/i, 'the token wall must explicitly say this is free during beta');
-    assert.match(modalText, /no card needed/i);
-    assert.doesNotMatch(modalText, /\$\d/, 'no dollar amount should appear in the out-of-tokens modal -- there is no live payment flow to point to');
+    var sheetText = await page.textContent('#purchase-sheet-overlay');
+    assert.match(sheetText, /\$\d/, 'the one-tap purchase CTA must show a real price now -- the store launched');
+    assert.match(sheetText, /100 free tokens in/i, 'the free daily-grant path must stay visible alongside the buy CTA, never hidden');
+    assert.match(sheetText, /Secure checkout via Dodo/i);
   } finally {
     await context.close();
   }
