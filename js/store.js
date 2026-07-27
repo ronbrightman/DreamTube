@@ -810,6 +810,14 @@
   function commitLocalSignup(username, password, email) {
     var key = username.toLowerCase();
     state.accounts[key] = { password: password, email: email.toLowerCase(), createdAt: Date.now() };
+    // Realistically unreachable for the renamed account specifically (the
+    // server-side rename already claims u:ronbrightman, so a real signup
+    // attempt for it fails server-side before this offline-fallback path
+    // ever runs) — pinned anyway for the same reason every other
+    // state.user constructor in this file now routes through this: no
+    // more relying on "should be unreachable" reasoning per site, see
+    // pinLegacyRenameIdentity's own doc comment.
+    username = pinLegacyRenameIdentity(key, username);
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -904,6 +912,101 @@
     return 'That username is already taken.';
   }
 
+  // One-off pair for the tracker item for-product-correct-founder-account-
+  // user-flutrx (see netlify/functions/admin-rename-account.js's own header
+  // comment for the server-side half of this rename) — hardcoded, on
+  // purpose: this is a one-off correction for one real account, not a
+  // general "migrate any rename" feature (the tracker item's own explicit
+  // scope note). If another rename like this is ever needed, add another
+  // hardcoded pair/call rather than generalizing this into a real feature.
+  var LEGACY_ACCOUNT_RENAME = { fromUsername: '__probe_throwaway_user__', toUsername: 'ronbrightman' };
+
+  /**
+   * Re-stamps this BROWSER's own locally-cached data from the old
+   * throwaway username onto the new one, the moment a login resolves to
+   * LEGACY_ACCOUNT_RENAME.toUsername. admin-rename-account.js only ever
+   * touches SERVER-side state (the account record, the shared feed) — it
+   * has no way to reach into any browser's localStorage at all — so
+   * without this, the very next login after that server-side rename would
+   * hit login()'s existing "brand-new-to-this-device account" branch
+   * below and silently show an empty account: state.dreams (filtered by
+   * `d.ownerHandle === state.user.handle`, see getMyDreams/getDreamInsight/
+   * getAccountBackup/etc.) and state.charactersByUser (keyed by lowercased
+   * username) both stay local-only and keyed to the OLD identity forever,
+   * unless something explicitly re-keys them. On the founder's own real,
+   * actively-used account, that would look exactly like his dreams had
+   * been destroyed by the rename, not merely relabeled.
+   *
+   * Safe to call on every login (cheap, idempotent) — once the data has
+   * actually moved once, there's nothing left under the old handle/key to
+   * find on any later call, so this becomes a permanent no-op after the
+   * first real run. Only re-stamps dreams onto the new handle (never
+   * pushes new entries — state.dreams is the one array shared by every
+   * account that's ever used this browser, mutating d.ownerHandle in
+   * place is safe exactly the same way toggleLike's own in-place dream
+   * mutation is), and only moves charactersByUser's old-username entry
+   * over if the new username doesn't already have real character data of
+   * its own (defensive — never clobber data that's already legitimately
+   * there under the new identity).
+   *
+   * Does NOT touch state.pendingJob — that's a single, short-lived
+   * in-flight-generation slot (see savePendingJob/scopedPendingJob), not
+   * a growing collection like dreams/characters; by the time this one-off
+   * server-side rename actually runs, any pendingJob from testing under
+   * the old throwaway identity is realistically long since resolved or
+   * abandoned, and migrating a stale one risks resurfacing a confusing
+   * "resume this old job" prompt for nothing.
+   */
+  function migrateLegacyThrowawayAccountData(serverUsername, displayUsername) {
+    if (serverUsername !== LEGACY_ACCOUNT_RENAME.toUsername) return;
+
+    // Match the old handle case-insensitively — the throwaway account may
+    // have been logged into more than once with different typed casing
+    // before this rename, and getMyDreams/etc.'s `===` match against
+    // state.user.handle would otherwise silently leave a differently-cased
+    // dream orphaned (unreachable under either the old or new identity).
+    var oldHandleLower = ('@' + LEGACY_ACCOUNT_RENAME.fromUsername).toLowerCase();
+    // login() now always pins displayUsername to the canonical lowercase
+    // form for this one account (see its own comment), so this always
+    // lands on the exact same handle string on every future login too —
+    // no risk of the re-tag itself drifting across sessions.
+    var newHandle = '@' + (displayUsername || LEGACY_ACCOUNT_RENAME.toUsername);
+    state.dreams.forEach(function (d) {
+      if ((d.ownerHandle || '').toLowerCase() === oldHandleLower) d.ownerHandle = newHandle;
+    });
+
+    var oldCharacters = state.charactersByUser[LEGACY_ACCOUNT_RENAME.fromUsername];
+    var newCharacters = state.charactersByUser[LEGACY_ACCOUNT_RENAME.toUsername];
+    if (oldCharacters && oldCharacters.length && (!newCharacters || !newCharacters.length)) {
+      state.charactersByUser[LEGACY_ACCOUNT_RENAME.toUsername] = oldCharacters;
+      delete state.charactersByUser[LEGACY_ACCOUNT_RENAME.fromUsername];
+    }
+  }
+
+  /**
+   * The ONE place every `state.user = {...}` construction site in this
+   * file must route through, for this one hardcoded account. Review
+   * found three consecutive rounds of "one more state.user-setting code
+   * path got missed" (login()'s server-confirmed branch, then
+   * attemptLocalLogin, then importAccountBackup) because each round's
+   * fix was applied at its own call site instead of centralized here —
+   * this function exists specifically so a FOURTH such gap can't happen:
+   * every constructor of state.user for this account now calls this
+   * exact same function, so there is nowhere left for the same bug to
+   * hide. `key` must already be the canonical lowercase username (never
+   * the raw typed/backup value) — every caller below already computes
+   * this for its own purposes before constructing state.user, so this
+   * never adds a new lowercase() call, just centralizes what happens
+   * next. Returns the casing-pinned username to actually use.
+   */
+  function pinLegacyRenameIdentity(key, username) {
+    if (key === LEGACY_ACCOUNT_RENAME.toUsername) {
+      username = LEGACY_ACCOUNT_RENAME.toUsername;
+    }
+    migrateLegacyThrowawayAccountData(key, username);
+    return username;
+  }
+
   /**
    * The pre-fix, fully-local login check — kept as the fallback for an
    * account that was created before the server-side store existed and was
@@ -924,6 +1027,7 @@
     if (!account) return { ok: false, error: 'No account found with that username or email.' };
     if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
     var username = loggedInViaEmail ? key : usernameOrEmail;
+    username = pinLegacyRenameIdentity(key, username);
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1087,7 +1191,10 @@
             // etc.) doesn't break from a missing accounts entry. Dreams/
             // characters for this username are deliberately left empty —
             // syncing those is out of scope, see
-            // tracker.html's sync-private-dreams-videos-later item.
+            // tracker.html's sync-private-dreams-videos-later item. The
+            // ONE hardcoded exception is migrateLegacyThrowawayAccountData
+            // below, for the one-off ronbrightman rename specifically —
+            // see that function's own doc comment.
             state.accounts[serverUsername] = { password: password, email: (data.email || '').toLowerCase() };
           } else {
             // Already known locally (e.g. this is the account's original
@@ -1098,6 +1205,7 @@
             state.accounts[serverUsername].password = password;
             if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
           }
+          displayUsername = pinLegacyRenameIdentity(serverUsername, displayUsername);
           state.user = { handle: '@' + displayUsername, username: displayUsername };
           persist();
           identifyForAnalytics(displayUsername);
@@ -1319,9 +1427,24 @@
         if (!existingIds[d.id]) state.dreams.push(d);
       });
       state.charactersByUser[key] = backup.characters || [];
-      state.user = { handle: '@' + backup.username, username: backup.username };
+      // Reachable, real path (see login.html's "Restore from backup" flow
+      // and profile.html's own export-a-backup instruction) — pinned like
+      // every other state.user constructor for the same reason, see
+      // pinLegacyRenameIdentity's own doc comment. Known, accepted edge
+      // case left as-is: a backup keyed to the OLD throwaway username
+      // restored AFTER the rename does not itself get migrated here
+      // (pinLegacyRenameIdentity/migrateLegacyThrowawayAccountData both
+      // key off the account resolving to the NEW name) — it simply
+      // restores the pre-rename identity locally, exactly as the backup
+      // file describes. That's a deliberate "restore what the file says"
+      // choice, not a gap: this function's whole contract is restoring
+      // exactly what was exported, and silently rewriting a restored
+      // backup's own identity to a different account would be a stranger
+      // kind of surprise than leaving it alone.
+      var username = pinLegacyRenameIdentity(key, backup.username);
+      state.user = { handle: '@' + username, username: username };
       persist();
-      identifyForAnalytics(backup.username);
+      identifyForAnalytics(username);
       return { ok: true, user: state.user };
     },
 
