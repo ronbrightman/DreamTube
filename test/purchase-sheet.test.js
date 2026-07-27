@@ -1,0 +1,73 @@
+// test/purchase-sheet.test.js
+//
+// Unit coverage for js/purchase-sheet.js's pure (no-DOM) logic — the
+// smallest-sufficient-pack selection, the shortfall arithmetic, and the
+// daily-grant countdown/wait-line text — required() directly the same way
+// test/wizard-chips.test.js already does for js/wizard-chips.js (see that
+// file's own dual window/module.exports pattern). DOM/flow behavior (the
+// sheet actually appearing, draft persistence, checkout redirect, auto-
+// resume, the honest-degrade path) is covered by
+// test/out-of-tokens-purchase-sheet-behavioral.test.js instead, since that
+// needs a real browser.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+
+var PurchaseSheet = require('../js/purchase-sheet');
+
+test('PACK_INFO matches shop.html\'s Token Economy C lineup', function () {
+  assert.deepEqual(PurchaseSheet.PACK_INFO, {
+    pack100: { tokens: 100, price: 2.99 },
+    pack300: { tokens: 300, price: 7.99 },
+    pack700: { tokens: 700, price: 14.99 }
+  });
+});
+
+test('neededTokens: the exact shortfall, never negative', function () {
+  assert.equal(PurchaseSheet.neededTokens(40, 100), 60);
+  assert.equal(PurchaseSheet.neededTokens(0, 10), 10);
+  assert.equal(PurchaseSheet.neededTokens(100, 100), 0);
+  assert.equal(PurchaseSheet.neededTokens(150, 100), 0, 'never negative even if balance already covers the cost');
+});
+
+test('pickSmallestSufficientPack: picks the cheapest pack that alone covers the shortfall', function () {
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(1), 'pack100');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(60), 'pack100');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(100), 'pack100');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(101), 'pack300');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(300), 'pack300');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(301), 'pack700');
+});
+
+test('pickSmallestSufficientPack: falls back to the largest pack when nothing alone is sufficient', function () {
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(5000), 'pack700');
+});
+
+test('formatTokenCountdown: hours+minutes / minutes-only / "now"', function () {
+  var now = Date.now();
+  assert.equal(PurchaseSheet.formatTokenCountdown(now + (6 * 3600000) + (12 * 60000)), '6h 12m');
+  assert.equal(PurchaseSheet.formatTokenCountdown(now + (42 * 60000)), '42m');
+  assert.equal(PurchaseSheet.formatTokenCountdown(now - 1000), 'now');
+  assert.equal(PurchaseSheet.formatTokenCountdown(null), '');
+});
+
+test('waitLineText: the honest free-path escape line, read live off tokenStatus', function () {
+  var now = Date.now();
+  assert.equal(
+    PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: now + (3 * 3600000), atCeiling: false }),
+    'Or wait — 20 free tokens in 3h 0m'
+  );
+});
+
+test('waitLineText: atCeiling never renders a stale "in now" countdown (the exact bug tracker item for-product-bug-founder-high-token-chip--kn1v8t fixed elsewhere)', function () {
+  var now = Date.now();
+  assert.equal(
+    PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: now - 999999, atCeiling: true }),
+    'Daily +20 tokens paused — you’re at the max'
+  );
+});
+
+test('waitLineText: no tokenStatus / no nextGrantAt -> empty, never throws', function () {
+  assert.equal(PurchaseSheet.waitLineText(null), '');
+  assert.equal(PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: null, atCeiling: false }), '');
+});

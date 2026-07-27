@@ -405,3 +405,43 @@ intent signal, upstream of the eventual conversion event.
 
 - `start.html` — the `TAGS[cur] === 'email_capture'` check in `render()`
 - `netlify/functions/track-conversion.js` — `ReachedEmailEntry` added to `ALLOWED_EVENT_NAMES`
+
+### Out-of-tokens purchase sheet (out_of_tokens_shown / out_of_tokens_choice / store_viewed / checkout_started / checkout_cancelled / blocked_action_resumed)
+
+Founder directive, 2026-07-26 (tracker item
+`for-product-build-out-of-tokens-purchase-2y8hyw`): "the store must come
+up whenever a user tries any action without enough tokens." PostHog only
+for every event below — these are product/funnel signals about the
+purchase flow itself, not ad-optimization conversions (the existing
+`Purchase`/`purchase_completed` pair above already covers the actual
+money-conversion moment for Meta; these are additive, upstream/downstream
+of it). All six share `js/purchase-sheet.js` as their one fire site,
+except `store_viewed`/`checkout_started`/`checkout_cancelled` on
+shop.html itself (see below) — kept in this one place rather than
+duplicated per call site, mirroring how `track-conversion.js`'s
+`ALLOWED_EVENT_NAMES` centralizes Meta's own allowlist.
+
+| | |
+|---|---|
+| **`out_of_tokens_shown`** | Fires every time the purchase sheet (`PurchaseSheet.show()`) actually renders — the "store came up" moment itself. `{ source, mediaType, cost, balance, needed, pack }` — `pack` is whichever pack `pickSmallestSufficientPack` picked for the one-tap CTA at that moment |
+| **`out_of_tokens_choice`** | Fires once per sheet interaction, whichever of the three exits the user takes: `choice: 'buy_pack'` (tapped the primary CTA — precedes `checkout_started` below), `'see_all_packs'` (tapped the secondary link), or `'dismiss'` (closed the sheet without acting, e.g. tap-outside). `{ source, choice, pack }` (`pack` only on `buy_pack`) |
+| **`store_viewed`** | Fires from `shop.html`'s own load, reading whatever `?source=` query param got it there (`blocked_action` from the sheet's "See all packs" link or a processing.html E112/E412 fail state routed here on a convenience-fetch failure; `balance_chip` from the create/style/result topbar chip; `null` for a direct/organic visit — never guessed). `{ source }` |
+| **`checkout_started`** | Fires right before POSTing to `create-checkout-session-dodo.js`, from BOTH `js/purchase-sheet.js`'s buy button and `shop.html`'s own `purchasePack()` (unified — a checkout initiated via the sheet's own one-tap buy and one initiated by browsing to a shop.html pack card are the same funnel step). `{ source, pack }` |
+| **`checkout_cancelled`** | Fires on a `?checkout=cancelled` return, from `style.html`/`result.html`/`processing.html` (via `PurchaseSheet.fireCheckoutCancelled`, only ever `source: 'blocked_action'` at those call sites — their cancelUrl always points back at themselves) and from `shop.html`'s own existing cancelled branch (`source` from that page's own `?source=`, or `null` for a direct shop visit). `{ source }` |
+| **`blocked_action_resumed`** | The actual "auto-resume" moment — fires from `processing.html` once `PurchaseSheet.pollForCredit` confirms the post-checkout token credit has landed and the originally-blocked generation is about to re-run via the intact draft. Never fires on the honest-degrade path (poll timeout) — that path requires a manual "Generate" tap instead, which just calls the same generation function directly without this event (the resume wasn't automatic in that case). `{ source }` |
+
+**Why `checkout_started`/`checkout_cancelled` also touch shop.html, not just the new sheet:** `source` describes where a checkout journey *began* (`blocked_action`, `balance_chip`, or organic), not just whether it started from `js/purchase-sheet.js`'s own buy button — a visit that starts at the sheet's "See all packs" link and completes the purchase on shop.html itself is still part of the same blocked-action funnel, and would otherwise be invisible in this pair of events.
+
+**Draft-persistence bug this feature's build also fixed (not a new event, but load-bearing for `blocked_action_resumed` to ever be honest):** `style.html` previously only called `DreamStore.setDraft(...)` inside `proceedToGenerate()`, skipped entirely on the blocked path; `result.html` never persisted the edit sheet's caption/style (or `turnImageIntoVideo`'s own draft) before its old quota modal at all. `PurchaseSheet.show()`'s `persistDraft` callback is now the single choke point every blocked-action call site routes through, called BEFORE the sheet ever renders — see `js/purchase-sheet.js`'s own header comment for the full story, and `test/out-of-tokens-purchase-sheet-behavioral.test.js` for the regression coverage.
+
+**Files touched:**
+
+- `js/purchase-sheet.js` — new, the shared sheet/balance-chip/checkout-return module (all six events' actual `trackLocal`/`fire*` implementations live here except shop.html's own two call sites below)
+- `style.html` / `result.html` / `processing.html` — replaced the old per-page `#modal-quota` with `PurchaseSheet.show()`; `result.html`'s and `style.html`'s blocked-action click handlers now call `persistDraft` before ever showing the sheet
+- `create.html` / `style.html` / `result.html` — new topbar balance chip (`PurchaseSheet.mountBalanceChip`/`renderBalanceChip`)
+- `shop.html` — `store_viewed` on load (reads `?source=`), `checkout_started` in `purchasePack()`, `checkout_cancelled` in the existing cancelled branch
+- `netlify/functions/create-checkout-session-dodo.js` — new relative-path-only allowlist guard (`isSafeRedirectPath`, error code `E8`) on `successUrl`/`cancelUrl`, closing an open-redirect gap this feature's own custom successUrl usage would otherwise have widened from latent to actually exploitable — see that file's own header comment
+- `css/styles.css` — new `.purchase-*`/`.token-chip-compact`/`.proc-payment-*` rules
+- `test/create-checkout-session-dodo.test.js` — new `SECURITY:`-prefixed coverage for the redirect guard
+- `test/purchase-sheet.test.js` — unit coverage for the pure pack-selection/arithmetic/countdown logic
+- `test/out-of-tokens-purchase-sheet-behavioral.test.js` — new, real-browser coverage of the sheet appearing with correct arithmetic on all three blocked-action entry points, draft persistence before redirect, the auto-resume round trip, and the honest-degrade path

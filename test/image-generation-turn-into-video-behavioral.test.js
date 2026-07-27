@@ -191,7 +191,14 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
   }
 });
 
-test('result.html: an insufficient balance opens the existing #modal-quota instead of proceeding, and never calls generate-video.js', async function (t) {
+test('result.html: an insufficient balance opens the out-of-tokens purchase sheet instead of proceeding, and never calls generate-video.js', async function (t) {
+  // The old #modal-quota this replaced (tracker item
+  // for-product-build-out-of-tokens-purchase-2y8hyw) is now
+  // #purchase-sheet-overlay (js/purchase-sheet.js) — see
+  // test/out-of-tokens-purchase-sheet-behavioral.test.js for the full
+  // arithmetic + draft-persistence coverage of this exact call site; this
+  // test just keeps its original narrower scope (blocked = no navigation,
+  // no generate-video.js call).
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -214,9 +221,9 @@ test('result.html: an insufficient balance opens the existing #modal-quota inste
     await page.waitForTimeout(200);
     await page.click('#turn-video-btn');
 
-    await page.waitForSelector('#modal-quota.open', { timeout: 5000 });
-    var modalText = await page.textContent('#modal-quota');
-    assert.match(modalText, /100 tokens/);
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    var sheetText = await page.textContent('#purchase-sheet-overlay');
+    assert.match(sheetText, /100 tokens/);
     assert.equal(page.url().indexOf('processing.html'), -1, 'must not navigate away when tokens are insufficient');
     assert.equal(generateVideoCalls.length, 0);
   } finally {

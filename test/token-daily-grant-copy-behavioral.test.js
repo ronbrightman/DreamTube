@@ -118,38 +118,49 @@ async function seedLoggedInUserWithDraftAt(page, username, path) {
   await page.goto(baseUrl + path, { waitUntil: 'domcontentloaded' });
 }
 
-test('style.html: #modal-quota-body reads the live dailyGrantAmount for both Video and Image copy, not a hardcoded 100', async function (t) {
+// The two tests below used to check the old #modal-quota-body's static
+// "you'll get N more automatically" copy on style.html/result.html.
+// That modal was replaced by the out-of-tokens purchase sheet (tracker
+// item for-product-build-out-of-tokens-purchase-2y8hyw) — the equivalent
+// "read the live daily-grant number, not a hardcoded literal" concern now
+// lives in the sheet's own wait-line (js/purchase-sheet.js's
+// waitLineText(), unit-tested directly in test/purchase-sheet.test.js).
+// These two are now real-browser regression coverage that style.html/
+// result.html actually WIRE the live tokenStatus into that wait line —
+// the balance is set low enough to actually trigger the sheet, since
+// (unlike the old always-rendered modal copy) the wait line only renders
+// once the sheet is shown.
+test('style.html: the purchase sheet\'s wait line reads the live dailyGrantAmount, not a hardcoded 100', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: 200, atCeiling: false });
     await seedLoggedInUserWithDraftAt(page, 'dailygrantstyle', '/style.html');
     await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
-    // Give the async getTokenStatus() a moment to resolve and re-render.
+    // Give the async getTokenStatus() a moment to resolve.
     await page.waitForTimeout(250);
 
-    var videoCopy = await page.textContent('#modal-quota-body');
-    assert.match(videoCopy, new RegExp('get ' + DISTINCTIVE_GRANT + ' more automatically'));
-    assert.doesNotMatch(videoCopy, /get 100 more/);
+    await page.click('.style-card[data-style="Cartoon"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 
-    await page.click('.media-type-btn[data-media-type="image"]');
-    var imageCopy = await page.textContent('#modal-quota-body');
-    assert.match(imageCopy, new RegExp('get ' + DISTINCTIVE_GRANT + ' more automatically'));
-    assert.doesNotMatch(imageCopy, /get 100 more/);
+    var waitLine = await page.textContent('#ps-wait-line');
+    assert.match(waitLine, new RegExp(DISTINCTIVE_GRANT + ' free tokens in'));
+    assert.doesNotMatch(waitLine, /100 free tokens/);
   } finally {
     await context.close();
   }
 });
 
-test('result.html: #modal-quota-body reads the live dailyGrantAmount, not a hardcoded 100', async function (t) {
+test('result.html: the purchase sheet\'s wait line reads the live dailyGrantAmount, not a hardcoded 100', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: 200, atCeiling: false });
 
     await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(function () {
@@ -165,9 +176,13 @@ test('result.html: #modal-quota-body reads the live dailyGrantAmount, not a hard
     await page.goto(baseUrl + '/result.html?id=dream-daily-grant', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(250);
 
-    var copy = await page.textContent('#modal-quota-body');
-    assert.match(copy, new RegExp('get ' + DISTINCTIVE_GRANT + ' more automatically'));
-    assert.doesNotMatch(copy, /get 100 more/);
+    await page.click('#open-edit-sheet');
+    await page.click('#edit-generate-again');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var waitLine = await page.textContent('#ps-wait-line');
+    assert.match(waitLine, new RegExp(DISTINCTIVE_GRANT + ' free tokens in'));
+    assert.doesNotMatch(waitLine, /100 free tokens/);
   } finally {
     await context.close();
   }

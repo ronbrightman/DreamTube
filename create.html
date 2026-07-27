@@ -67,7 +67,7 @@
 <body>
 
 <div id="app">
-  <div class="topbar"><div class="icon-btn" id="create-back"></div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div style="width:36px;"></div></div>
+  <div class="topbar"><div class="icon-btn" id="create-back"></div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div id="topbar-token-chip-slot"></div></div>
 
   <div class="px" id="create-select" style="flex:1; padding-top:6px;">
     <div class="section-label" style="margin-top:10px;">Describe a dream</div>
@@ -250,8 +250,20 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/wizard-chips.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  // Topbar balance chip (tracker item
+  // for-product-build-out-of-tokens-purchase-2y8hyw, item 3) — no gate
+  // lives on this screen (tokens aren't spent until style.html/
+  // processing.html), so this is purely the ambient entry point into the
+  // shop; a dedicated fetch since this page has no other reason to call
+  // getTokenStatus().
+  var topbarChip = PurchaseSheet.mountBalanceChip(document.getElementById('topbar-token-chip-slot'));
+  DreamStore.getTokenStatus().then(function(status){
+    PurchaseSheet.renderBalanceChip(topbarChip, status);
+  }).catch(function(){ /* ambient only — never block the rest of the page on this */ });
 
   document.getElementById('create-back').innerHTML = Icons.back;
   document.querySelector('.choice-icon-build').innerHTML = Icons.plus;
