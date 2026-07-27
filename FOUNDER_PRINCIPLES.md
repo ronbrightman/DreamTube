@@ -110,6 +110,23 @@ tight (curate, don't dump).
   media-constrained. **Smoke-test the real funnel on a real phone in the
   in-app browser before pointing paid traffic at it** (DM yourself the link in
   Messenger/IG — that's the only faithful test; a UA override isn't enough).
+- **Proactive QA is the expectation, not a nice-to-have (2026-07-27,
+  Record-it lesson).** The founder found the Record-it-in-a-webview bug
+  himself, by testing the real ad link — that should have been caught first,
+  by routine end-to-end QA on the REAL environment mix this traffic actually
+  hits (a real mobile viewport, inside the actual FB/IG in-app webview, not
+  just a desktop browser or a UA override). Don't wait to be told; go look
+  for this class of gap before shipping something paid traffic will hit.
+- **Capability-detect and HIDE, don't handhold (2026-07-27, Record-it
+  lesson).** When an action genuinely cannot complete for a given user/
+  environment and a real alternative already exists, the right fix is to
+  detect that up front and not show the broken option at all — not to build
+  an explainer, a workaround flow, or a "here's why this failed" screen. The
+  founder's own correction to the first Record-it fix: the initial version
+  (a blocked-state explainer panel, still worth keeping for the rare deep-
+  link edge case where something must be shown) was a good instinct but the
+  wrong default — hiding the impossible choice up front is simpler and never
+  disappoints a user who never saw it as an option.
 
 ## Creative
 
