@@ -1274,7 +1274,12 @@ async function refundTokensOnce(event, email, jobId, amount) {
  * refundTokensOnce in production code.
  *
  * A missing/falsy jobId skips the dedup guard entirely and always credits
- * — mirrors creditTokenPackAmountOnce's own documented escape hatch.
+ * — mirrors creditTokenPackOnce's own OLD, pre-hardening-fix `!paymentId`
+ * behavior (see that function's own doc comment: it now fails closed
+ * instead, since real money is on the line there; this refund-side
+ * function's own fail-open behavior is lower-stakes and was intentionally
+ * left as-is by that same pass, see this function's own doc comment
+ * above for why).
  */
 async function refundTokenAmountOnce(event, email, jobId, amount) {
   var key = normalizeEmail(email);
