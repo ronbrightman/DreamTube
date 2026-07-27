@@ -2087,6 +2087,92 @@ test('shop.html: an at-ceiling balance (>= 200) shows honest "paused" copy, neve
   }
 });
 
+/**
+ * Follow-up from fix-token-chip-at-ceiling-display (commit 8156f1e),
+ * tracker item token-countdown-60s-refetch-timer-polls--o12s5e: the two
+ * "re-fetches once it reaches now" tests above prove the interval DOES
+ * re-fetch once nextGrantAt passes for a normal account. But for an
+ * at-ceiling account, entitlements.js's syncTokens deliberately never
+ * bumps lastGrantAt while balance is at/above GRANT_CEILING, so
+ * nextGrantAt sits in the past PERMANENTLY -- without the atCeiling
+ * check, that same "nextGrantAt <= now -> refetch" branch would fire a
+ * real get-token-status.js fetch every single 60s tick, forever, for as
+ * long as the page stays open. Not a display bug (rendering was already
+ * correct) -- unbounded, unnecessary network polling. Fix: skip the
+ * refetch branch when tokenStatus.atCeiling is true.
+ */
+test('profile.html: an at-ceiling account never re-fetches on the 60s countdown tick', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.clock.install({ time: Date.now() });
+
+    var callCount = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      callCount++;
+      // Always the same at-ceiling state -- nextGrantAt permanently in
+      // the past, exactly like a real held-back grant never bumps it.
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true
+      }) });
+    });
+
+    await seedLoggedInUserAt(page, baseUrl, 'ceilingnopoll', '/profile.html');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('profile-tokens-balance');
+      return el && el.textContent.indexOf('1500') !== -1;
+    }, null, { timeout: 5000 });
+    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
+
+    // Two full interval ticks -- an at-ceiling account's nextGrantAt is
+    // always in the past, so the old code would re-fetch on every tick.
+    await page.clock.fastForward(65000);
+    await page.clock.fastForward(65000);
+
+    assert.equal(callCount, 1, 'must not re-fetch on any tick while atCeiling is true -- nextGrantAt never becomes "not passed" for this account');
+    var metaText = await page.textContent('#profile-tokens-meta');
+    assert.match(metaText, /paused/i, 'should still render the honest paused copy after ticks with no re-fetch');
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html: an at-ceiling account never re-fetches on the 60s countdown tick', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.clock.install({ time: Date.now() });
+
+    var callCount = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      callCount++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true
+      }) });
+    });
+
+    await seedLoggedInUserAt(page, baseUrl, 'ceilingnopollshop', '/shop.html');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-balance');
+      return el && el.textContent.indexOf('1500') !== -1;
+    }, null, { timeout: 5000 });
+    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
+
+    await page.clock.fastForward(65000);
+    await page.clock.fastForward(65000);
+
+    assert.equal(callCount, 1, 'must not re-fetch on any tick while atCeiling is true -- nextGrantAt never becomes "not passed" for this account');
+    var countdownText = await page.textContent('#shop-countdown');
+    assert.match(countdownText, /paused/i, 'should still render the honest paused copy after ticks with no re-fetch');
+  } finally {
+    await context.close();
+  }
+});
+
 test('profile.html: a balance just under the ceiling (199) still shows a normal live countdown, not the paused copy', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

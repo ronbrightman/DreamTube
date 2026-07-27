@@ -401,9 +401,14 @@
   // grant has actually landed server-side — re-rendering from the same
   // cached tokenStatus forever would leave the balance/countdown stuck
   // showing "now" (same bug reported on profile.html's copy of this
-  // pattern). Re-fetch in that case instead of just re-formatting.
+  // pattern). Re-fetch in that case instead of just re-formatting. EXCEPT
+  // while atCeiling: syncTokens deliberately never bumps lastGrantAt
+  // at/above GRANT_CEILING, so nextGrantAt sits in the past permanently
+  // for that account — without this check every tick would re-fetch
+  // forever for as long as the page stays open (tracker item
+  // token-countdown-60s-refetch-timer-polls).
   setInterval(function(){
-    if(tokenStatus && tokenStatus.nextGrantAt && tokenStatus.nextGrantAt <= Date.now()) loadBalance();
+    if(tokenStatus && !tokenStatus.atCeiling && tokenStatus.nextGrantAt && tokenStatus.nextGrantAt <= Date.now()) loadBalance();
     else renderBalance();
   }, 60000);
 
