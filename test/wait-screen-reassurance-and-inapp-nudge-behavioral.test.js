@@ -189,18 +189,27 @@ test('processing.html: the FB/IG in-app-browser nudge shows for Instagram\'s UA 
         await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
         var title = await page.textContent('#proc-nudge-title');
         assert.match(title, new RegExp(expectHost), 'nudge header must name the actual detected host app (' + expectHost + '), got: ' + title);
-        var hint = await page.textContent('#proc-nudge-hint');
-        assert.match(hint, new RegExp(expectHost), 'the escape hint must explicitly name the host app\'s own menu, never a bare "tap ⋯ above"');
-        assert.match(hint, /Open in external browser/i);
+        // REVIEW FIX: assert on the VISIBLE-ONLY hint-text span, not the
+        // whole #proc-nudge-hint container -- textContent() on the
+        // container would also pick up text from the aria-hidden replica
+        // below, so a check against the container can't actually tell
+        // apart "the accessible sentence carries the instruction" from
+        // "only the hidden replica does." The literal label MUST be in
+        // this visible sentence for a screen-reader user to get it at all.
+        var hintTextOnly = await page.textContent('#proc-nudge-hint-text');
+        assert.match(hintTextOnly, new RegExp(expectHost), 'the host name must appear in the lead-in sentence regardless of host');
+        assert.match(hintTextOnly, /Open in external browser/i, 'the literal instruction must be in the ACCESSIBLE sentence itself, not only inside the aria-hidden visual replica');
 
         // for-product-nudge-polish-founder-show-a--x72003: a static visual
         // replica of the actual host-app menu row (icon + label, styled
         // like a system menu item) must render alongside the text hint --
-        // not just plain text describing what to look for.
-        var hintTextOnly = await page.textContent('#proc-nudge-hint-text');
-        assert.match(hintTextOnly, new RegExp(expectHost), 'the host name must appear in the lead-in sentence regardless of host');
+        // not just plain text describing what to look for. It is purely
+        // decorative (the accessible sentence above already carries the
+        // same instruction), so it must stay aria-hidden.
         var replicaVisible = await page.locator('#proc-nudge-menu-replica').isVisible();
         assert.equal(replicaVisible, true, 'the static menu-row replica must actually render, not just the plain-text hint');
+        var replicaAriaHidden = await page.locator('#proc-nudge-menu-replica').getAttribute('aria-hidden');
+        assert.equal(replicaAriaHidden, 'true', 'the decorative replica must stay aria-hidden since its info is already in the accessible sentence above');
         var replicaLabel = await page.textContent('#proc-nudge-menu-replica .menu-row-replica-label');
         assert.match(replicaLabel, /Open in external browser/i, 'the replica\'s label must show the exact menu-row wording to look for');
         var replicaIconHtml = await page.locator('#proc-nudge-menu-replica-icon').innerHTML();
@@ -217,6 +226,32 @@ test('processing.html: the FB/IG in-app-browser nudge shows for Instagram\'s UA 
   await checkNudgeFor(FB_IOS_UA, 'Facebook');
   await checkNudgeFor(NORMAL_ANDROID_CHROME_UA, null);
   await checkNudgeFor(NORMAL_IOS_SAFARI_UA, null);
+});
+
+test('processing.html: the menu-row replica does not overflow the nudge card on a narrow mobile viewport', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: IG_ANDROID_UA, viewport: { width: 320, height: 568 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockNeverFinishingGeneration(page);
+    await seedAccountWithDraft(page, { username: 'nudgenarrow' + Math.random().toString(36).slice(2, 8) });
+    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#proc-nudge-menu-replica', { state: 'visible', timeout: 5000 });
+
+    var cardBox = await page.locator('#proc-nudge-card').boundingBox();
+    var replicaBox = await page.locator('#proc-nudge-menu-replica').boundingBox();
+    assert.ok(cardBox && replicaBox, 'both the nudge card and the menu-row replica must have a real layout box at 320px width');
+    assert.ok(replicaBox.x >= cardBox.x - 1 && (replicaBox.x + replicaBox.width) <= (cardBox.x + cardBox.width) + 1,
+      'the menu-row replica must not overflow the nudge card horizontally at a 320px viewport');
+
+    var hasHorizontalScroll = await page.evaluate(function () {
+      return document.documentElement.scrollWidth > document.documentElement.clientWidth;
+    });
+    assert.equal(hasHorizontalScroll, false, 'the page must not gain horizontal scroll from the new replica at a narrow viewport');
+  } finally {
+    await context.close();
+  }
 });
 
 test('processing.html: dismissing the in-app nudge hides it immediately and it never shows again on a later visit in the same browser', async function (t) {

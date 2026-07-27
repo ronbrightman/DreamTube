@@ -922,9 +922,12 @@
     // for-product-nudge-polish-founder-show-a--x72003 (founder feedback:
     // "show the EXACT look of the menu item the user must find"), built
     // once and reused in both places so they read as one consistent
-    // component rather than two separate implementations.
-    document.getElementById('rec-inapp-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for:';
-    document.getElementById('rec-inapp-menu-replica-icon').innerHTML = Icons.compass;
+    // component rather than two separate implementations. REVIEW FIX: the
+    // literal label must be in this visible sentence, not only inside the
+    // aria-hidden replica below (a screen reader previously heard "...then
+    // look for:" and nothing else).
+    document.getElementById('rec-inapp-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for “Open in external browser”:';
+    document.getElementById('rec-inapp-menu-replica-icon').innerHTML = Icons.externalLink;
   }
 
   document.getElementById('rec-inapp-open-btn').addEventListener('click', function(){

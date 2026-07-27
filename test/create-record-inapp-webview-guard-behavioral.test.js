@@ -195,10 +195,16 @@ test('create.html?record=1: an Instagram in-app-webview UA never calls getUserMe
     // menu-row-replica visual (icon + "Open in external browser" label)
     // that processing.html's nudge card uses, so this reads as one
     // consistent product component rather than a second implementation.
+    // REVIEW FIX: assert on the VISIBLE-ONLY hint-text span (the literal
+    // instruction must be accessible, not only inside the aria-hidden
+    // decorative replica below).
     var hintTextOnly = await page.textContent('#rec-inapp-hint-text');
     assert.match(hintTextOnly, /Instagram/, 'the lead-in sentence must still name the host app');
+    assert.match(hintTextOnly, /Open in external browser/i, 'the literal instruction must be in the ACCESSIBLE sentence itself, not only inside the aria-hidden visual replica');
     var replicaVisible = await page.locator('#rec-inapp-menu-replica').isVisible();
     assert.equal(replicaVisible, true, 'the static menu-row replica must render inside the record-blocked panel too');
+    var replicaAriaHidden = await page.locator('#rec-inapp-menu-replica').getAttribute('aria-hidden');
+    assert.equal(replicaAriaHidden, 'true', 'the decorative replica must stay aria-hidden since its info is already in the accessible sentence above');
     var replicaLabel = await page.textContent('#rec-inapp-menu-replica .menu-row-replica-label');
     assert.match(replicaLabel, /Open in external browser/i);
     var replicaIconHtml = await page.locator('#rec-inapp-menu-replica-icon').innerHTML();
@@ -285,9 +291,13 @@ test('create.html?record=1: on iOS, clicking "Open in my browser" never navigate
     await page.waitForTimeout(200);
     assert.match(page.url(), /create\.html/, 'clicking the button on iOS must never navigate away from create.html');
 
-    var hint = await page.textContent('#rec-inapp-hint');
-    assert.match(hint, /Facebook/, 'the hint must explicitly name the host app\'s own menu');
-    assert.match(hint, /Open in external browser/i);
+    // Assert on the visible-only span, not the whole #rec-inapp-hint
+    // container -- the container also contains the aria-hidden decorative
+    // replica, so a container-level check can't tell apart "the accessible
+    // sentence carries this" from "only the hidden replica does."
+    var hintTextOnly = await page.textContent('#rec-inapp-hint-text');
+    assert.match(hintTextOnly, /Facebook/, 'the hint must explicitly name the host app\'s own menu');
+    assert.match(hintTextOnly, /Open in external browser/i, 'the literal instruction must be in the ACCESSIBLE sentence itself');
     var hintHasEmphasis = await page.evaluate(function () {
       return document.getElementById('rec-inapp-hint').classList.contains('proc-nudge-hint-emph');
     });

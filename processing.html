@@ -648,14 +648,18 @@
     // chrome (the founder caught exactly this ambiguity in review of the
     // design mock — see the mock's own comment on .ig-chrome).
     //
-    // The sentence now leads into a small static visual replica of the
-    // actual menu row (icon + "Open in external browser" label, styled
-    // like a system menu item — see .menu-row-replica in css/styles.css)
-    // rather than relying on text alone to describe it — tracker item
-    // for-product-nudge-polish-founder-show-a--x72003 (founder feedback:
-    // "show the EXACT look of the menu item the user must find").
-    document.getElementById('proc-nudge-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for:';
-    document.getElementById('proc-nudge-menu-replica-icon').innerHTML = Icons.compass;
+    // The visible sentence names the exact label to look for (REVIEW FIX:
+    // the label previously lived only inside the aria-hidden replica below,
+    // so a screen-reader user heard "...then look for:" and nothing else —
+    // the literal instruction must be in the accessible text itself). The
+    // sentence is followed by a small static visual replica of the actual
+    // menu row (icon + label, styled like a system menu item — see
+    // .menu-row-replica in css/styles.css), marked aria-hidden since it's a
+    // purely decorative echo of the same instruction, not new information —
+    // tracker item for-product-nudge-polish-founder-show-a--x72003 (founder
+    // feedback: "show the EXACT look of the menu item the user must find").
+    document.getElementById('proc-nudge-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for “Open in external browser”:';
+    document.getElementById('proc-nudge-menu-replica-icon').innerHTML = Icons.externalLink;
     card.style.display = 'block';
 
     openBtn.addEventListener('click', function(){
