@@ -88,6 +88,20 @@ miss. Check new/changed code against these specifically:
   is worth flagging as a security concern even if it matches the
   existing pattern — the existing pattern is a known limitation, not a
   license to extend it further without comment.
+- **Security-sensitive tokens must be bound at issuance, not just
+  checked for liveness at use.** This exact bug has shipped twice: (1)
+  video-status.js/image-status.js once trusted a client-supplied email
+  unbound to the actual job submitter (fixed via lib/job-owners.js
+  binding job id -> submitting email); (2) the owner-per-ip-generation-
+  bypass branch's lib/owner-bypass.js minted a bypass token that only
+  checked liveness/TTL, never binding it to OWNER_EMAIL, so a leaked
+  token could be replayed with any email. lib/dream-share-token.js
+  (bound to dreamId) and lib/session-transfer-token.js (bound to a
+  specific account at mint time) show the right pattern already exists
+  in this codebase. Any new token/credential must be checked against
+  what it's actually meant to authorize (whose action, which resource)
+  at the point it's minted, not just checked for "is this still valid"
+  at the point it's used.
 - **Safety-sensitive content boundaries.** This app has an explicit,
   deliberate boundary around not helping route around fal.ai/Veo's
   content-policy rejections (e.g. real photos of minors). Flag anything
