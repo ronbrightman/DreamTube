@@ -655,7 +655,7 @@ test('result.html redesign: the bottom panel is a translucent gradient, not a so
   }
 });
 
-test('result.html redesign: Edit / Publish / Make another / Save / Delete all still trigger their existing behaviors from the new quiet small-link row', async function (t) {
+test('result.html redesign: Edit / Publish / Make another / Save all still trigger their existing behaviors from the quiet small-link row, and Delete is genuinely NOT among them', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -665,12 +665,24 @@ test('result.html redesign: Edit / Publish / Make another / Save / Delete all st
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // All five must be present in the quiet-link row and visible.
-    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'save-video-btn', 'delete-btn'];
+    // Exactly these four must be present in the quiet-link row and visible --
+    // matching the approved mock (docs/design/result-redesign-variant-a.html),
+    // which shows only Edit / Publish / Make another (Save kept alongside,
+    // not called out for removal).
+    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'save-video-btn'];
     for (var i = 0; i < ids.length; i++) {
       var visible = await page.locator('.result-quiet-links #' + ids[i]).isVisible();
       assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
     }
+    var quietLinkCount = await page.locator('.result-quiet-links button').count();
+    assert.equal(quietLinkCount, 4, 'the bottom quiet-link row should have exactly 4 buttons, no more');
+
+    // Regression check for tracker.html's
+    // for-product-result-screen-delete-is-too--6axxko: a bare #delete-btn
+    // must not exist ANYWHERE on the page (not just hidden/moved within the
+    // bottom bar) -- it was fully relocated into the Edit sheet.
+    var deleteBtnCount = await page.locator('#delete-btn').count();
+    assert.equal(deleteBtnCount, 0, '#delete-btn should not exist anywhere on the page -- Delete moved into the Edit sheet');
 
     // Edit still opens the edit sheet.
     await page.click('#open-edit-sheet');
@@ -691,19 +703,116 @@ test('result.html redesign: Edit / Publish / Make another / Save / Delete all st
       return t.classList.contains('show') && t.textContent === 'Published to Explore';
     }, null, { timeout: 5000 });
 
-    // Delete still opens the delete confirmation modal.
-    await page.click('#delete-btn');
+    // Make another still clears the draft and navigates to create.html.
+    await page.click('#make-another-btn');
+    await page.waitForURL(/create\.html/, { timeout: 5000 });
+    assert.match(page.url(), /create\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: Delete now lives as a small red text link at the bottom of the Edit sheet, reads as an edit-your-content concern, and still runs the exact same confirm-then-delete flow', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-edit-sheet-delete-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+
+    // Not reachable from the bottom bar at all.
+    var deleteInQuietLinks = await page.locator('.result-quiet-links #edit-delete-link').count();
+    assert.equal(deleteInQuietLinks, 0, 'the delete link must not live in the bottom quiet-link row');
+
+    // Open the Edit sheet -- the link lives inside it, styled as a quiet
+    // red text link (matching the existing char-delete-link treatment),
+    // not a button, and not visually competing with Generate Again/Cancel.
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
+    var deleteLink = page.locator('#sheet-edit-overlay #edit-delete-link');
+    assert.ok(await deleteLink.isVisible(), '#edit-delete-link should be visible inside the Edit sheet');
+    var deleteLinkColor = await deleteLink.evaluate(function (el) { return getComputedStyle(el).color; });
+    var dangerColor = await page.evaluate(function () {
+      return getComputedStyle(document.documentElement).getPropertyValue('--danger').trim();
+    });
+    // Both should resolve to the same red -- spot-check via a temp element
+    // rather than string-comparing rgb() vs. a possible hex custom property.
+    var dangerColorRgb = await page.evaluate(function (c) {
+      var d = document.createElement('div');
+      d.style.color = c;
+      document.body.appendChild(d);
+      var rgb = getComputedStyle(d).color;
+      d.remove();
+      return rgb;
+    }, dangerColor);
+    assert.equal(deleteLinkColor, dangerColorRgb, 'the delete link should render in the app\'s danger/red color');
+
+    // Tapping it closes the Edit sheet and opens the SAME delete
+    // confirmation modal -- same copy, same Cancel/Delete buttons -- just
+    // reached from the new location.
+    await deleteLink.click();
+    await page.waitForFunction(function () {
+      var el = document.getElementById('sheet-edit-overlay');
+      return el && !el.classList.contains('open');
+    }, null, { timeout: 5000 });
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
+    assert.match(await page.textContent('#delete-modal-body'), /can't be undone/);
+
+    // Cancel backs out without deleting anything.
     await page.click('#delete-cancel');
     await page.waitForFunction(function () {
       var el = document.getElementById('modal-delete');
       return el && !el.classList.contains('open');
     }, null, { timeout: 5000 });
+    var stillThereAfterCancel = await page.evaluate(function (id) {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      return state.dreams.some(function (d) { return d.id === id; });
+    }, dreamId);
+    assert.ok(stillThereAfterCancel, 'cancelling should not delete the dream');
 
-    // Make another still clears the draft and navigates to create.html.
-    await page.click('#make-another-btn');
-    await page.waitForURL(/create\.html/, { timeout: 5000 });
-    assert.match(page.url(), /create\.html/);
+    // Go through the flow again and actually confirm -- the real deletion
+    // mechanics (DreamStore.deleteDream + navigation to profile.html) must
+    // be untouched, not rebuilt, by the relocation.
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
+    await page.click('#edit-delete-link');
+    await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
+    await page.click('#delete-confirm');
+    await page.waitForURL(/profile\.html/, { timeout: 5000 });
+    assert.match(page.url(), /profile\.html/);
+    var stillThereAfterDelete = await page.evaluate(function (id) {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      return state.dreams.some(function (d) { return d.id === id; });
+    }, dreamId);
+    assert.equal(stillThereAfterDelete, false, 'confirming delete should actually remove the dream from the store');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: deleting a published dream from the relocated Edit-sheet link still shows the extended Explore-removal warning (unchanged copy)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-edit-sheet-delete-published-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.evaluate(function (id) {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      state.dreams.forEach(function (d) { if (d.id === id) d.isPublished = true; });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    }, dreamId);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
+    await page.click('#edit-delete-link');
+    await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
+    assert.match(await page.textContent('#delete-modal-body'), /removed from Explore immediately/, 'a published dream should still get the extended warning copy');
   } finally {
     await context.close();
   }
