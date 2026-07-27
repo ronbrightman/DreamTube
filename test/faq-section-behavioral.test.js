@@ -210,3 +210,55 @@ test('profile.html Settings: the account-deletion FAQ answer describes the real,
     await page.close();
   }
 });
+
+test('profile.html Settings: FAQ reflects the image-generation option and its real, lower token cost, not the stale "every generation costs 100" claim', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockOwnerCheck(page);
+  await mockTokenStatus(page);
+  try {
+    await seedUser(page);
+    await safeGoto(page, baseUrl + '/profile.html');
+    await page.click('#account-btn');
+    await page.waitForSelector('#sheet-account-overlay.open');
+
+    var whatIsItem = page.locator('#faq-list .faq-item[data-faq-index="0"]');
+    await whatIsItem.locator('.faq-question').click();
+    await page.waitForSelector('#faq-list .faq-item[data-faq-index="0"] .faq-answer', { state: 'visible' });
+    var whatIsAnswer = await whatIsItem.locator('.faq-answer').textContent();
+    assert.match(whatIsAnswer, /image/i, 'DreamTube can also generate a still image, not just video -- the FAQ should say so');
+
+    var tokensItem = page.locator('#faq-list .faq-item[data-faq-index="1"]');
+    await tokensItem.locator('.faq-question').click();
+    await page.waitForSelector('#faq-list .faq-item[data-faq-index="1"] .faq-answer', { state: 'visible' });
+    var tokensAnswer = await tokensItem.locator('.faq-answer').textContent();
+    assert.match(tokensAnswer, /100 tokens/, 'a video generation must still be described as costing 100 tokens');
+    assert.match(tokensAnswer, /10\b/, 'an image generation costs 10 tokens (style.html/generate-image.js IMAGE_TOKEN_COST) -- the FAQ must not claim every generation costs the same 100');
+    assert.doesNotMatch(tokensAnswer, /Every generation.*100 tokens/i, 'must not claim a single flat cost for every generation now that image generation is cheaper');
+
+    // result.html's own regenerateAgainCost() charges IMAGE_TOKEN_COST (10)
+    // for an image-type dream's regenerate, not VIDEO_TOKEN_COST (100) --
+    // review round-1 finding: this answer was missed in the first pass and
+    // still claimed a flat 100 for every regenerate.
+    var editItem = page.locator('#faq-list .faq-item[data-faq-index="4"]');
+    await editItem.locator('.faq-question').click();
+    await page.waitForSelector('#faq-list .faq-item[data-faq-index="4"] .faq-answer', { state: 'visible' });
+    var editAnswer = await editItem.locator('.faq-answer').textContent();
+    assert.match(editAnswer, /100 tokens/, 'a video regenerate must still be described as costing 100 tokens');
+    assert.match(editAnswer, /10\b/, 'an image regenerate costs 10 tokens, same as generate-image.js\'s cost -- the FAQ must not claim a flat 100 for every regenerate');
+
+    // generate-image.js's flux/dev model is pure text-to-image -- a photo
+    // is never sent to or used by it (docs/IMAGE_GENERATION_SPEC.md #7.5).
+    // Review round-1 finding: the photo FAQ answer overclaimed this works
+    // for image generation the same as video.
+    var photoItem = page.locator('#faq-list .faq-item[data-faq-index="6"]');
+    await photoItem.locator('.faq-question').click();
+    await page.waitForSelector('#faq-list .faq-item[data-faq-index="6"] .faq-answer', { state: 'visible' });
+    var photoAnswer = await photoItem.locator('.faq-answer').textContent();
+    assert.match(photoAnswer, /video/i, 'the self-photo answer must clarify this applies to video generation');
+    assert.match(photoAnswer, /image.*text|text.*image/i, 'the self-photo answer must clarify image generation is text-only and does not use a photo');
+  } finally {
+    await page.close();
+  }
+});
