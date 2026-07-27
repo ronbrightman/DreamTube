@@ -957,6 +957,54 @@ test('result.html topbar title stays on one line and does not overlap the back b
   }
 });
 
+test('result.html: the overflow (⋯) trigger never visually collides with the quiet-links buttons, at 375px and 320px', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding: .result-quiet-links is display:flex/justify-content:center
+  // and, as a block-level flex container, its own bounding box always spans
+  // the FULL width of .result-actions-wrap regardless of where its centered
+  // children actually render -- so this test deliberately checks the actual
+  // rightmost BUTTON (#save-video-btn) rather than the row container's own
+  // box, which would show a false "overlap" against #result-more-trigger
+  // (absolutely positioned at that same container's right:0 edge) purely
+  // from container geometry, never proving anything about real content.
+  // Fixed via padding-right on .result-quiet-links (see css/styles.css)
+  // sized to the trigger's width plus a safe gap; this test proves the
+  // actual rendered buttons stay clear of the trigger at both viewport
+  // widths this file already treats as the realistic range (see the
+  // 375px/320px topbar tests above).
+  for (var i = 0; i < 2; i++) {
+    var width = i === 0 ? 375 : 320;
+    var context = await browser.newContext({ viewport: { width: width, height: 800 } });
+    try {
+      var page = await context.newPage();
+      await blockThirdParty(page);
+      var dreamId = 'd-overflow-overlap-' + width;
+      await seedResultPage(page, baseUrl, dreamId);
+      await page.waitForSelector('#result-more-btn', { timeout: 5000 });
+
+      var boxes = await page.$$eval(
+        '#save-video-btn, #result-more-btn',
+        function (els) {
+          return els.map(function (el) {
+            var r = el.getBoundingClientRect();
+            return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+          });
+        }
+      );
+      assert.equal(boxes.length, 2, 'expected the Save button (rightmost quiet-link) and the overflow trigger, and nothing else');
+      boxes.forEach(function (b) {
+        assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
+      });
+      var save = boxes[0], trigger = boxes[1];
+      var overlapsHorizontally = save.left < trigger.right && trigger.left < save.right;
+      var overlapsVertically = save.top < trigger.bottom && trigger.top < save.bottom;
+      assert.ok(!(overlapsHorizontally && overlapsVertically), '#save-video-btn and #result-more-btn should not visually overlap at ' + width + 'px');
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 // ===========================================================================
 // Advanced screen (9) / pricing screen (14) fixes -- commit ae7da62.
 // ===========================================================================
