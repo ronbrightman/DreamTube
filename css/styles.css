@@ -534,9 +534,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-cta-secondary{ background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(4px);}
 .result-cta-secondary:hover{ background:rgba(50,50,50,.7);}
 
-/* Quiet small-link row — Edit / Publish / Make another (per spec), plus
-   Save/Delete kept in the same quiet style rather than dropped (neither
-   was called out for removal and both are real existing functionality). */
+/* Quiet small-link row — Edit / Publish / Make another (per the approved
+   mock, docs/design/result-redesign-variant-a.html), plus Save kept in
+   the same quiet style rather than dropped (not called out for removal
+   and real existing functionality). Delete used to live here too but
+   moved into the Edit sheet as a small red text link -- see result.html's
+   #edit-delete-link and tracker.html's
+   for-product-result-screen-delete-is-too--6axxko. */
 .result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:16px; flex-wrap:wrap; padding-top:2px;}
 .result-quiet-link{
   display:flex; align-items:center; gap:5px; font-family:var(--font-body); font-size:11px; font-weight:600;
@@ -546,8 +550,6 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-quiet-link:hover{ color:#fff;}
 .result-quiet-link:disabled{ opacity:.4; cursor:not-allowed;}
 .result-quiet-link .icon{ width:13px; height:13px;}
-.result-quiet-link.danger{ color:#ff8080;}
-.result-quiet-link.danger:hover{ color:var(--danger);}
 .interp-loading-row{ display:flex; align-items:center; gap:10px; padding:8px 0 20px; color:var(--text-muted); font-size:14px;}
 .interp-text{ font-size:14.5px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
 .interp-disclosure{ font-size:12px; color:var(--text-faint); line-height:1.4; margin:10px 0 16px;}
