@@ -16,10 +16,13 @@
 // markup, a stat line's real presence/absence) aren't observable by
 // calling js/store.js's functions in isolation.
 //
-// Also covers result.html's Save-button/OS-share-sheet fix and its new
-// Explore/Profile topbar nav links (title-wrap fix included), plus the 5
-// Advanced-screen/pricing fixes from commit ae7da62 (the lighter --surface
-// chip color shared with create.html's Advanced accordion, screen 14's
+// Also covers result.html's Save-button/OS-share-sheet fix, its topbar
+// title-wrap fix, and the first-video-screen redesign (tracker.html's
+// for-product-build-result-html-first-vide-mupiua) that later moved
+// Explore/Profile out of the topbar and into a compact CTA pair in the
+// panel, plus the 5 Advanced-screen/pricing fixes from commit ae7da62
+// (the lighter --surface chip color shared with create.html's Advanced
+// accordion, screen 14's
 // genuinely-selectable pricing cards, and screen 14's new paywall content).
 //
 // The Advanced-screen dark-mode contrast test from that same commit has
@@ -440,7 +443,7 @@ test('result.html Save always triggers a real file download, never the OS share 
   }
 });
 
-test('result.html topbar has working Explore and Profile nav links that do not overlap the title or each other', async function (t) {
+test('result.html redesign: topbar keeps only back + share (plus title/mute/token-chip) -- the old Explore/Profile nav icons are gone from the topbar, replaced by the compact CTA pair in the panel', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -448,24 +451,24 @@ test('result.html topbar has working Explore and Profile nav links that do not o
     await blockThirdParty(page);
     var dreamId = 'd-nav-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#result-nav-explore', { timeout: 5000 });
+    await page.waitForSelector('#result-back', { timeout: 5000 });
 
-    var exploreHref = await page.$eval('#result-nav-explore', function (el) { return el.getAttribute('href'); });
-    var profileHref = await page.$eval('#result-nav-profile', function (el) { return el.getAttribute('href'); });
-    assert.equal(exploreHref, 'explore.html');
-    assert.equal(profileHref, 'profile.html');
+    // The old #result-nav-explore/#result-nav-profile topbar links no
+    // longer exist at all -- tracker.html's
+    // for-product-build-result-html-first-vide-mupiua spec item 2.
+    assert.equal(await page.locator('#result-nav-explore').count(), 0, 'the old topbar Explore nav icon must be gone');
+    assert.equal(await page.locator('#result-nav-profile').count(), 0, 'the old topbar Profile nav icon must be gone');
+    assert.equal(await page.locator('.topbar #result-nav-explore, .topbar #result-nav-profile').count(), 0);
 
-    // Layout sanity: every topbar element must have a real box (not
-    // collapsed/hidden), and none of them may overlap each other --
-    // guards against the four-icon-button right-hand cluster crowding out
-    // the title or wrapping onto the video underneath.
-    var boxes = await page.$$eval('.topbar #result-back, .topbar #mute-btn, .topbar #share-btn, .topbar #result-nav-explore, .topbar #result-nav-profile', function (els) {
+    // Layout sanity: every remaining topbar element must have a real box
+    // (not collapsed/hidden), and none of them may overlap each other.
+    var boxes = await page.$$eval('.topbar #result-back, .topbar #mute-btn, .topbar #share-btn', function (els) {
       return els.map(function (el) {
         var r = el.getBoundingClientRect();
         return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
       });
     });
-    assert.equal(boxes.length, 5, 'expected back + mute + share + explore + profile all present');
+    assert.equal(boxes.length, 3, 'expected back + mute + share, and nothing else, in the topbar icon cluster');
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
     });
@@ -483,11 +486,234 @@ test('result.html topbar has working Explore and Profile nav links that do not o
     var panelTop = await page.$eval('.result-panel', function (el) { return el.getBoundingClientRect().top; });
     var navBottom = Math.max.apply(null, boxes.map(function (b) { return b.bottom; }));
     assert.ok(navBottom < panelTop, 'topbar nav must sit entirely above the result-panel');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the compact CTA pair (Explore dreams / My profile) in the panel has working links, sits above the quiet small-link row, and is visually small (a real shrink from the old full-size buttons)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-cta-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('#result-cta-explore', { timeout: 5000 });
+
+    var exploreHref = await page.$eval('#result-cta-explore', function (el) { return el.getAttribute('href'); });
+    var profileHref = await page.$eval('#result-cta-profile', function (el) { return el.getAttribute('href'); });
+    assert.equal(exploreHref, 'explore.html');
+    assert.equal(profileHref, 'profile.html');
+
+    // Deliberately small: the founder explicitly asked for the whole CTA
+    // area to be shrunk -- a real regression check, not just presence.
+    // The app's normal full-size .btn is ~15px vertical padding / ~14.5px
+    // font (see css/styles.css's .btn rule); these must read meaningfully
+    // smaller than that.
+    var ctaBox = await page.$eval('#result-cta-explore', function (el) {
+      var cs = getComputedStyle(el);
+      var r = el.getBoundingClientRect();
+      return { height: r.height, fontSize: parseFloat(cs.fontSize) };
+    });
+    assert.ok(ctaBox.height < 40, 'the compact CTA pair should be visibly smaller than the app\'s normal full-size buttons (got height ' + ctaBox.height + 'px)');
+    assert.ok(ctaBox.fontSize <= 13, 'the compact CTA pair\'s label should use a small font (got ' + ctaBox.fontSize + 'px)');
+
+    // The CTA pair must sit above the quiet small-link row (Edit/Publish/
+    // Make another/...), matching the approved mock's vertical order.
+    var ctaRowBottom = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().bottom; });
+    var quietLinksTop = await page.$eval('.result-quiet-links', function (el) { return el.getBoundingClientRect().top; });
+    assert.ok(ctaRowBottom <= quietLinksTop + 1, 'the CTA pair should sit above (or flush with) the quiet small-link row, not below it');
 
     // Clicking through actually navigates.
-    await page.click('#result-nav-explore');
+    await page.click('#result-cta-explore');
     await page.waitForURL(/explore\.html/, { timeout: 5000 });
     assert.match(page.url(), /explore\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the dream-interpretation pill renders ABOVE the compact CTA pair, and still opens the same reflection sheet on tap', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-interp-pill-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
+
+    var interpBottom = await page.$eval('#interp-cta-btn', function (el) { return el.getBoundingClientRect().bottom; });
+    var ctaRowTop = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().top; });
+    assert.ok(interpBottom <= ctaRowTop + 1, 'the interpretation pill must render above the CTA pair (absorbs the interpretation-above-make-another cheap win)');
+
+    // Behavior unchanged: tapping still opens the reflection bottom sheet.
+    await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#sheet-interp-overlay.open', { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the prompt/caption clamps to 2 lines by default and expands/collapses on click', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    var dreamId = 'd-clamp-test';
+    var longCaption = 'I was flying over a city made entirely of glass, and every single window showed a different memory from my childhood, and no matter how hard I tried to land the streets kept turning into rivers and the rivers kept turning into staircases that led nowhere at all.';
+    await page.evaluate(function (args) {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@tester', username: 'tester' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+      if (!state.dreams) state.dreams = [];
+      state.dreams.push({
+        id: args.id,
+        ownerHandle: '@tester',
+        caption: args.caption,
+        style: 'Cinematic',
+        videoUrl: 'https://example.com/fake-video.mp4',
+        isPublished: false,
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    }, { id: dreamId, caption: longCaption });
+    await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#result-quote', { timeout: 5000 });
+
+    // Font must actually be small, per spec.
+    var fontSize = await page.$eval('#result-quote', function (el) { return parseFloat(getComputedStyle(el).fontSize); });
+    assert.ok(fontSize <= 14, 'the caption should render in a small font (got ' + fontSize + 'px)');
+
+    // Clamped to 2 lines by default -- with text this long, the full
+    // (unclamped) height must be noticeably taller than the clamped box.
+    var clampedHeight = await page.$eval('#result-quote', function (el) { return el.getBoundingClientRect().height; });
+    var isClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
+    assert.ok(isClamped, 'the caption should start clamped');
+    await page.waitForSelector('#result-quote-hint', { state: 'visible', timeout: 5000 });
+    assert.match(await page.textContent('#result-quote-hint'), /Show more/);
+
+    // Click to expand -- clamp class comes off, hint flips to "Show less",
+    // and the box grows to fit the full text.
+    await page.click('#result-quote');
+    var expandedIsClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
+    assert.equal(expandedIsClamped, false, 'clicking the caption should remove the clamp');
+    assert.match(await page.textContent('#result-quote-hint'), /Show less/);
+    var expandedHeight = await page.$eval('#result-quote', function (el) { return el.getBoundingClientRect().height; });
+    assert.ok(expandedHeight > clampedHeight, 'expanding should grow the box past its clamped height');
+
+    // Click again to collapse back.
+    await page.click('#result-quote');
+    var recollapsedIsClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
+    assert.ok(recollapsedIsClamped, 'clicking again should re-clamp the caption');
+    assert.match(await page.textContent('#result-quote-hint'), /Show more/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the bottom panel is a translucent gradient, not a solid black slab -- the video stays visible behind it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-scrim-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('.result-scrim', { timeout: 5000 });
+
+    var bg = await page.$eval('.result-scrim', function (el) { return getComputedStyle(el).backgroundImage; });
+    // Must be a gradient (not a flat solid fill), and its darkest stop must
+    // not exceed the spec's ~0.72 ceiling (the old design peaked at 0.95).
+    assert.match(bg, /gradient/, 'the scrim should be a gradient, not a flat fill');
+    var alphaMatches = bg.match(/rgba?\([^)]*\)/g) || [];
+    var maxAlpha = 0;
+    alphaMatches.forEach(function (rgba) {
+      var parts = rgba.replace(/rgba?\(|\)/g, '').split(',').map(function (s) { return parseFloat(s); });
+      var alpha = parts.length === 4 ? parts[3] : 1;
+      if (alpha > maxAlpha) maxAlpha = alpha;
+    });
+    assert.ok(maxAlpha <= 0.75, 'the scrim\'s darkest stop should not exceed ~0.72 (got ' + maxAlpha + '), no solid black slab');
+    assert.ok(maxAlpha > 0, 'the scrim should still darken toward the bottom for text legibility');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: Edit / Publish / Make another / Save / Delete all still trigger their existing behaviors from the new quiet small-link row', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-quiet-links-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+
+    // All five must be present in the quiet-link row and visible.
+    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'save-video-btn', 'delete-btn'];
+    for (var i = 0; i < ids.length; i++) {
+      var visible = await page.locator('.result-quiet-links #' + ids[i]).isVisible();
+      assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
+    }
+
+    // Edit still opens the edit sheet.
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
+    await page.click('#edit-cancel');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('sheet-edit-overlay');
+      return el && !el.classList.contains('open');
+    }, null, { timeout: 5000 });
+
+    // Publish still opens the publish confirmation modal (unchanged
+    // publish/unpublish behavior).
+    await page.click('#publish-btn');
+    await page.waitForSelector('#modal-publish.open', { timeout: 5000 });
+    await page.click('#publish-confirm');
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && t.textContent === 'Published to Explore';
+    }, null, { timeout: 5000 });
+
+    // Delete still opens the delete confirmation modal.
+    await page.click('#delete-btn');
+    await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
+    await page.click('#delete-cancel');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('modal-delete');
+      return el && !el.classList.contains('open');
+    }, null, { timeout: 5000 });
+
+    // Make another still clears the draft and navigates to create.html.
+    await page.click('#make-another-btn');
+    await page.waitForURL(/create\.html/, { timeout: 5000 });
+    assert.match(page.url(), /create\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the top Share icon still keeps its publishes-if-private behavior, now rendered as the standard iOS-style share icon', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-share-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('#share-btn svg', { timeout: 5000 });
+
+    // Unpublished dream: Share must route through the publish modal first
+    // (unchanged existing behavior), not a plain visual re-skin only.
+    await page.click('#share-btn');
+    await page.waitForSelector('#modal-publish.open', { timeout: 5000 });
   } finally {
     await context.close();
   }
@@ -496,11 +722,12 @@ test('result.html topbar has working Explore and Profile nav links that do not o
 test('result.html topbar title stays on one line and does not overlap the back button or icon cluster at 320px', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   // 320px is the narrowest realistic phone viewport (e.g. iPhone SE 1st
-  // gen / older Android) -- the tightest width the five-icon-button
-  // topbar (back + mute + share + explore + profile) has to share with
-  // the "Your Dream" title. The 375px test above doesn't include the
-  // title element in its layout assertions at all, so it could not have
-  // caught the title wrapping to two lines at this narrower width.
+  // gen / older Android) -- the tightest width the three-icon-button
+  // topbar (back + mute + share) has to share with the "Your Dream" title
+  // (Explore/Profile moved out of the topbar entirely -- see the redesign
+  // test above). The 375px test above doesn't include the title element in
+  // its layout assertions at all, so it could not have caught the title
+  // wrapping to two lines at this narrower width.
   var context = await browser.newContext({ viewport: { width: 320, height: 800 } });
   try {
     var page = await context.newPage();
@@ -553,7 +780,7 @@ test('result.html topbar title stays on one line and does not overlap the back b
     // both the wrap itself and any future crowding that makes the title
     // physically collide with the back button or the icon-button cluster.
     var boxes = await page.$$eval(
-      '.topbar #result-back, .topbar #result-topbar-title, .topbar #mute-btn, .topbar #share-btn, .topbar #result-nav-explore, .topbar #result-nav-profile',
+      '.topbar #result-back, .topbar #result-topbar-title, .topbar #mute-btn, .topbar #share-btn',
       function (els) {
         return els.map(function (el) {
           var r = el.getBoundingClientRect();
@@ -561,7 +788,7 @@ test('result.html topbar title stays on one line and does not overlap the back b
         });
       }
     );
-    assert.equal(boxes.length, 6, 'expected back + title + mute + share + explore + profile all present');
+    assert.equal(boxes.length, 4, 'expected back + title + mute + share, and nothing else');
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
     });

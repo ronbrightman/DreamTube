@@ -481,34 +481,73 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-bg{ position:absolute; inset:0; background:var(--surface);}
 .result-video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; cursor:pointer;}
 .result-image{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
-.result-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.95) 0%, rgba(0,0,0,.62) 42%, rgba(0,0,0,.1) 68%); pointer-events:none;}
+/* Translucent gradient overlay, not a solid slab — the video/image stays
+   visible behind the panel (result.html redesign, tracker.html's
+   for-product-build-result-html-first-vide-mupiua, founder-approved
+   2026-07-26 "now it's perfect"). Caps out at rgba(0,0,0,.72) at the very
+   bottom (vs. the old .95 near-opaque slab) and fades to fully transparent
+   well before the topbar, instead of the old gradient's harsh 68% stop. */
+.result-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.72) 0%, rgba(0,0,0,.48) 45%, rgba(0,0,0,.16) 72%, transparent 100%); pointer-events:none;}
 .play-badge{ display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:1; transition:opacity .2s ease;}
 .play-badge .badge-circle{ width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.35); backdrop-filter:blur(4px); color:#fff; display:flex; align-items:center; justify-content:center;}
 .play-badge .badge-circle .icon{ width:22px; height:22px;}
 .play-badge.hidden{ opacity:0; pointer-events:none;}
 .result-play{ position:absolute; top:34%; left:50%; transform:translate(-50%,-50%); z-index:1;}
-.result-panel{ position:absolute; left:0; right:0; bottom:0; padding:18px 22px calc(24px + env(safe-area-inset-bottom,0px)); z-index:2;}
-.dream-quote{ font-size:18px; font-weight:600; margin-bottom:4px; line-height:1.4; cursor:pointer;}
-.dream-quote.clamped{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;}
-.quote-more-hint{ font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:10px; cursor:pointer;}
-.result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-.result-tag-row .feed-tag, .interp-cta .feed-tag, .turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
+.result-panel{ position:absolute; left:0; right:0; bottom:0; padding:14px 20px calc(20px + env(safe-area-inset-bottom,0px)); z-index:2;}
+/* Small font, clamped to 2 lines with tap-to-expand/collapse (was 18px/
+   3-line-clamp — shrunk as part of the same redesign above). */
+.dream-quote{ font-size:13px; font-weight:600; margin-bottom:4px; line-height:1.45; cursor:pointer; text-shadow:0 1px 6px rgba(0,0,0,.7);}
+.dream-quote.clamped{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;}
+.quote-more-hint{ font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:8px; cursor:pointer;}
+.result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;}
+.result-tag-row .feed-tag, .interp-pill .feed-tag, .turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
 .result-tag-row .feed-tag.pub{ background:rgba(255,255,255,.92); color:#000;}
-.action-row-compact{ display:flex; gap:8px; margin:16px 0 10px;}
-.action-row-compact .btn{ flex:1; padding:10px 6px; font-size:11.5px; font-weight:700; gap:5px;}
-.action-row-compact .btn .icon{ width:15px; height:15px;}
 
 /* "Turn this into a video" upsell CTA — the one emphasized action on an
    image-type dream's result screen (see docs/IMAGE_GENERATION_SPEC.md §6).
-   Same layout shape as .interp-cta below (label left, cost pill right),
-   deliberately its own class since the two CTAs are visually related but
-   functionally unrelated. */
-.turn-video-cta{ width:100%; justify-content:space-between; margin:14px 0 2px;}
+   Deliberately UNCHANGED/full-size by the redesign below — founder-explicit
+   2026-07-26 night decision: every other CTA on this screen shrinks, this
+   one keeps its clearly visible "100 tokens" cost pill and warm-button
+   prominence. Same layout shape as .interp-pill below (label left, cost
+   pill right). */
+.turn-video-cta{ width:100%; justify-content:space-between; margin:10px 0 8px;}
 
-/* "What this dream might mean" — CTA row + bottom sheet (Direction B) on Result */
-.interp-cta{ width:100%; justify-content:space-between; margin:2px 0 0;}
+/* "What this dream might mean" — now a slim pill sitting ABOVE the compact
+   CTA pair (absorbs the already-approved interpretation-above-make-another
+   cheap win). Tap behavior is unchanged — opens the same bottom sheet. */
+.interp-pill{
+  width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  border:1px solid rgba(255,255,255,.18); border-radius:100px; padding:8px 14px;
+  background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
+  font-family:var(--font-body); font-size:12px; color:#eee; cursor:pointer;
+  margin:2px 0 10px; -webkit-tap-highlight-color:transparent;
+}
 .interp-cta-label{ display:flex; align-items:center; gap:6px;}
 .interp-sparkle{ font-size:15px; line-height:1;}
+
+/* Compact CTA pair (Explore dreams / My profile) — replaces the old
+   topbar Explore/Profile nav icons; deliberately SMALL, founder asked the
+   whole CTA area shrunk from what it was. */
+.result-cta-row{ display:flex; gap:8px; margin:0 0 10px;}
+.result-cta{ flex:1; padding:9px 10px; font-size:12.5px; gap:5px;}
+.result-cta .icon{ width:14px; height:14px;}
+.result-cta-secondary{ background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(4px);}
+.result-cta-secondary:hover{ background:rgba(50,50,50,.7);}
+
+/* Quiet small-link row — Edit / Publish / Make another (per spec), plus
+   Save/Delete kept in the same quiet style rather than dropped (neither
+   was called out for removal and both are real existing functionality). */
+.result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:16px; flex-wrap:wrap; padding-top:2px;}
+.result-quiet-link{
+  display:flex; align-items:center; gap:5px; font-family:var(--font-body); font-size:11px; font-weight:600;
+  color:rgba(255,255,255,.75); background:none; border:none; cursor:pointer; padding:4px; margin:0;
+  text-decoration:none; text-shadow:0 1px 4px rgba(0,0,0,.6); -webkit-tap-highlight-color:transparent;
+}
+.result-quiet-link:hover{ color:#fff;}
+.result-quiet-link:disabled{ opacity:.4; cursor:not-allowed;}
+.result-quiet-link .icon{ width:13px; height:13px;}
+.result-quiet-link.danger{ color:#ff8080;}
+.result-quiet-link.danger:hover{ color:var(--danger);}
 .interp-loading-row{ display:flex; align-items:center; gap:10px; padding:8px 0 20px; color:var(--text-muted); font-size:14px;}
 .interp-text{ font-size:14.5px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
 .interp-disclosure{ font-size:12px; color:var(--text-faint); line-height:1.4; margin:10px 0 16px;}

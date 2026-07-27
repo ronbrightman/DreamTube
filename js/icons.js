@@ -101,6 +101,19 @@
     // 24x24/currentColor/stroke-only convention as every other entry here.
     // Deliberately generic rather than a brand logo — no Instagram/
     // Facebook mark reproduced anywhere in this app.
-    externalLink: svg('<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M15 3h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M10 14L21 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    externalLink: svg('<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M15 3h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M10 14L21 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    // Added for the result.html first-video-screen redesign (tracker.html's
+    // for-product-build-result-html-first-vide-mupiua, founder-approved
+    // Variant A mock) — the topbar Share button specifically asked for a
+    // "standard iOS-style share icon" (the box-with-an-arrow-escaping-its-
+    // top glyph from iOS/macOS's native share sheet), which is visually
+    // distinct from the existing `share` entry above (a paper-plane/arrow
+    // glyph, kept as-is and unchanged — still used by explore.html's feed
+    // action button, out of scope for this build). No existing icon in
+    // this file matched that specific iOS convention, confirmed by grep,
+    // so this is a new addition rather than a reuse — same 24x24/
+    // currentColor/stroke-only convention as every other entry here.
+    shareIos: svg('<path d="M12 15V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
   };
 })();
