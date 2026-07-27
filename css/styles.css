@@ -984,3 +984,21 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    into (one form, a `type` distinction — see profile.html's script —
    rather than two separate pipelines/forms). */
 .support-compose{ margin-top:12px;}
+
+/* FAQ accordion (Settings > FAQ, tracker.html's idea-faq-section item) —
+   each .faq-item toggles independently via its own .open class (siblings
+   untouched), same open/close + rotating-chevron shape as create.html's
+   .adv-section/.adv-toggle/.adv-content, just one row per question
+   instead of one shared panel. */
+.faq-item{ border:1px solid var(--border); border-radius:var(--radius-md); margin-bottom:8px; overflow:hidden;}
+.faq-item:last-child{ margin-bottom:0;}
+.faq-question{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:13px 14px; cursor:pointer; font-size:13.5px; font-weight:700;
+  transition:background-color .15s ease;
+}
+.faq-question:hover{ background:var(--surface-alt);}
+.faq-chevron{ width:15px; height:15px; color:var(--text-faint); flex:none; transition:transform .2s ease;}
+.faq-item.open .faq-chevron{ transform:rotate(180deg);}
+.faq-answer{ display:none; padding:0 14px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.5;}
+.faq-item.open .faq-answer{ display:block;}

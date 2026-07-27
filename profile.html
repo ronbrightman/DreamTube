@@ -138,6 +138,102 @@
         <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
       </div>
 
+      <!-- FAQ (tracker.html's idea-faq-section item) — static, no backend
+           involvement, content-only. Each item is an independent accordion
+           row (question tap toggles its own answer, siblings untouched),
+           mirroring create.html's #adv-section/#adv-toggle/#adv-content
+           open/close + rotating-chevron convention — the closest existing
+           "real accordion" pattern in this codebase — rather than
+           inventing a different interaction. Content is the tracker's own
+           drafted Q&A, lightly edited in two places against current
+           reality rather than the draft's original figures: (1) the
+           account-deletion answer, originally flagged
+           "doesn't exist yet — confirm/build before publishing", now
+           describes the actual, live Settings > Danger zone > Delete
+           account flow (see that section below in this same sheet); (2)
+           the token-amount answer's numbers, which the draft wrote before
+           this session's later token-economy retunes — see
+           netlify/functions/lib/entitlements.js's INITIAL_GRANT (220, not
+           the draft's 200) / DAILY_GRANT_AMOUNT (20, not 100) constants,
+           and shop.html's packs, which are a live real purchase now, not
+           the "coming soon" placeholder the draft described. Every other
+           answer is the tracker's draft verbatim. -->
+      <div class="settings-section">
+        <div class="section-label">FAQ</div>
+        <div id="faq-list">
+          <div class="faq-item" data-faq-index="0">
+            <div class="faq-question">
+              <span>What is DreamTube?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Type or record a description of a dream, and DreamTube turns it into a short AI-generated video.</div>
+          </div>
+          <div class="faq-item" data-faq-index="1">
+            <div class="faq-question">
+              <span>How do tokens work?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Every generation — a new dream, an edit, or a regenerate — costs 100 tokens. You start with 220 free, plus 20 more every day automatically. Need more than that? You can buy token packs anytime in the Shop.</div>
+          </div>
+          <div class="faq-item" data-faq-index="2">
+            <div class="faq-question">
+              <span>My generation failed. Do I get my tokens back?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Yes, automatically, every time. If something still seems off, contact support below and we'll sort it out.</div>
+          </div>
+          <div class="faq-item" data-faq-index="3">
+            <div class="faq-question">
+              <span>How long does a video take to generate?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Usually under a minute or two — you'll see progress on screen while it renders.</div>
+          </div>
+          <div class="faq-item" data-faq-index="4">
+            <div class="faq-question">
+              <span>Can I edit a dream after it's made?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Yes — change the text or style and regenerate. Each regenerate costs another 100 tokens, same as a new dream.</div>
+          </div>
+          <div class="faq-item" data-faq-index="5">
+            <div class="faq-question">
+              <span>What's "Advanced"?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Optional extras before you generate: add characters (including yourself, via photo or description), pick a camera angle, and set the time/place of the scene.</div>
+          </div>
+          <div class="faq-item" data-faq-index="6">
+            <div class="faq-question">
+              <span>Can I use my own photo?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Yes, for yourself specifically. Photos of other people aren't supported yet, for safety reasons.</div>
+          </div>
+          <div class="faq-item" data-faq-index="7">
+            <div class="faq-question">
+              <span>Is my dream public or private?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Private by default. You choose if and when to publish a dream to Explore, where other users can see it.</div>
+          </div>
+          <div class="faq-item" data-faq-index="8">
+            <div class="faq-question">
+              <span>Can I delete a dream, or my account?</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Yes to both. You can delete any dream you've created any time. You can also permanently delete your whole account — go to Settings &gt; Danger zone &gt; Delete account below, confirm with your password, and it's gone for good: your account, dreams, and token balance are all removed. (Billing history is kept separately by our payment processor, as usual.)</div>
+          </div>
+          <div class="faq-item" data-faq-index="9">
+            <div class="faq-question">
+              <span>Something's wrong / I have another question</span>
+              <span class="icon faq-chevron"></span>
+            </div>
+            <div class="faq-answer">Use the contact form below — we read every message.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Owner-only manual top-up — resolves the "owner bypass for the
            token gate" question the founder's own way: not an E112
            exemption (generate-video.js's gate stays unconditional for
@@ -325,6 +421,22 @@
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
   document.getElementById('support-row-chevron').innerHTML = Icons.chevronDown;
+
+  // ===== FAQ accordion (tracker.html's idea-faq-section item) =====
+  // Static content, no backend involvement. Each .faq-item toggles
+  // independently on its own .faq-question tap — a sibling item's open/
+  // closed state is untouched, unlike the single shared support-compose
+  // panel above. One listener per row (set of items is fixed at
+  // page-load, not built dynamically), same direct-getElementById-style
+  // wiring the rest of this file already uses rather than event
+  // delegation with closest().
+  Array.prototype.forEach.call(document.querySelectorAll('#faq-list .faq-item'), function(item){
+    var question = item.querySelector('.faq-question');
+    question.querySelector('.faq-chevron').innerHTML = Icons.chevronDown;
+    question.addEventListener('click', function(){
+      item.classList.toggle('open');
+    });
+  });
 
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
