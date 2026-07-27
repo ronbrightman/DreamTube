@@ -95,7 +95,7 @@
     <div class="proc-fail" id="proc-fail" style="display:none;">
       <div class="proc-fail-icon"></div>
       <div class="proc-title">That dream didn't<br>come through</div>
-      <div class="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
+      <div class="proc-fail-copy" id="proc-fail-copy">Something went wrong while generating your video. Your dream is saved — nothing is lost.</div>
       <!-- Auto-refund tracker item idea-auto-refund-policy (founder-approved
            2026-07-26): shown only when video-status.js/image-status.js
            actually credited a refund for this specific failure (see
@@ -189,6 +189,17 @@
     document.getElementById('proc-sub').textContent = isImage
       ? 'Image generation only takes a few seconds.'
       : 'Video generation takes about 1-2 minutes.';
+    // Media-aware fail-state copy (hardening fix, tracker item
+    // for-product-store-launch-copy-sweep-purc-m6xhkx): this used to be
+    // static markup that always said "video", even when the failed
+    // generation was actually an image (currentMediaType() already
+    // existed and drove the live-state copy above, but nothing set this
+    // one). Set once here, alongside the rest of this function's
+    // media-aware copy, rather than only at the moment of failure — it's
+    // cheap, and currentMediaType() doesn't change mid-generation anyway.
+    document.getElementById('proc-fail-copy').textContent = isImage
+      ? 'Something went wrong while generating your image. Your dream is saved — nothing is lost.'
+      : 'Something went wrong while generating your video. Your dream is saved — nothing is lost.';
   }
   applyMediaTypeCopy();
 

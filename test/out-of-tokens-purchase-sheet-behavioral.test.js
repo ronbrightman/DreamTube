@@ -309,6 +309,60 @@ test('processing.html: an E112 (insufficient tokens) generation failure auto-ope
 });
 
 // ============================================================================
+// Media-aware fail-state copy (hardening fix, tracker item
+// for-product-store-launch-copy-sweep-purc-m6xhkx): the fail screen's own
+// copy ("Something went wrong while generating your ___") used to be
+// static markup that always said "video", even for a failed image
+// generation — misleading on the image path. Fixed to read
+// currentMediaType() the same way the live-state title/sub already did.
+// ============================================================================
+test('processing.html: a failed VIDEO generation shows "video" in the fail copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 500, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E199: unknown_error' }) });
+    });
+
+    await seedAccount(page, { username: 'failcopyvideo', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'video' } });
+    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
+    var copy = await page.textContent('#proc-fail-copy');
+    assert.match(copy, /generating your video/i);
+    assert.doesNotMatch(copy, /generating your image/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test('processing.html: a failed IMAGE generation shows "image" in the fail copy, not "video"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 500, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await page.route('**/.netlify/functions/generate-image', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E199: unknown_error' }) });
+    });
+
+    await seedAccount(page, { username: 'failcopyimage', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'image' } });
+    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
+    var copy = await page.textContent('#proc-fail-copy');
+    assert.match(copy, /generating your image/i);
+    assert.doesNotMatch(copy, /generating your video/i);
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
 // Post-checkout auto-resume — processing.html?checkout=success
 // ============================================================================
 test('processing.html: a mocked successful checkout return auto-resumes the exact blocked generation from the intact draft', async function (t) {
