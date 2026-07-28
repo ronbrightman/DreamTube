@@ -59,7 +59,10 @@ test('a brand-new email claims successfully -- 200, claimed:true, real balance/s
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.claimed, true);
-  assert.equal(body.balance, 240);
+  // 2026-07-28 first-claim-bonus amendment: this account's very first-ever
+  // claim grants 100, not the normal 20.
+  assert.equal(body.balance, 320, '220 + 100 first-ever-claim bonus');
+  assert.equal(body.amountClaimed, 100);
   assert.equal(body.streak, 1);
   assert.equal(typeof body.nextClaimAt, 'number');
 });

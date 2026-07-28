@@ -661,3 +661,86 @@ test('copy sweep: the out-of-tokens sheet\'s wait line never says "wait" (the ol
     await context.close();
   }
 });
+
+// ============================================================================
+// 2026-07-28 first-claim-bonus amendment (founder-approved, tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub): a first-ever claimer's
+// dailyClaimAmount is 100, not 20. These prove the claim sheet's big
+// number, its button label, its error-recovery label, and the topbar
+// chip's "+N" pill all show the REAL server-reported 100 -- never a
+// hardcoded 20 -- confirming js/purchase-sheet.js's existing
+// `!= null ? amount : 20` fallback pattern is genuinely reading the live
+// field, not coincidentally matching a stale literal.
+// ============================================================================
+
+test('first-claim bonus: the claim sheet shows 100 (not 20) up front, and the topbar chip pill also shows +100, when the server reports dailyClaimAmount: 100', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await seedLoggedInUserAt(page, 'firstclaimbonusui', '/create.html');
+
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    assert.equal(await page.textContent('#claim-sheet-amount-num'), '100', 'the claim sheet\'s big reward number must show the real 100 first-claim bonus, never a hardcoded 20');
+    assert.match(await page.textContent('#claim-sheet-btn-label'), /Claim 100 tokens/);
+
+    var plusText = await page.textContent('.token-chip-plus');
+    assert.equal(plusText.trim(), '+100', 'the topbar chip pill must also show the real +100, not +20');
+  } finally {
+    await context.close();
+  }
+});
+
+test('first-claim bonus: a successful 100-token claim animates the balance from 220 to 320', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await mockClaim(page, { claimed: true, balance: 320, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 });
+
+    await seedLoggedInUserAt(page, 'firstclaimbonusclaim', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-btn');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-balance');
+      var numEl = document.getElementById('claim-sheet-balance-num');
+      return el && el.style.display !== 'none' && numEl && numEl.textContent === '320';
+    }, { timeout: 3000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('first-claim bonus: a failed claim restores the button label to "Claim 100 tokens", not a stale hardcoded 20', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    // A malformed/error response (data.error present) is what js/store.js's
+    // claimDailyTokens throws on, driving purchase-sheet.js's runClaim()
+    // into its .catch() branch -- see that function's own doc comment.
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E5: claim_write_failed' }) });
+    });
+
+    await seedLoggedInUserAt(page, 'firstclaimbonuserror', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-btn');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-error');
+      return el && el.style.display !== 'none' && el.textContent.length > 0;
+    }, { timeout: 3000 });
+    var label = await page.textContent('#claim-sheet-btn-label');
+    assert.match(label, /Claim 100 tokens/, 'the error-recovery label must restore the real 100 amount, never fall back to a hardcoded 20');
+  } finally {
+    await context.close();
+  }
+});

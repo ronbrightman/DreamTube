@@ -66,7 +66,11 @@
 // never-before-seen email (unchanged — the funnel's free onboarding video
 // (100) plus one additional day-1 video (100) plus 2 images (20)), plus a
 // further +20/day the user must actively CLAIM (claim-daily-tokens.js) —
-// this REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
+// EXCEPT the account's first-ever claim ever, which grants +100 instead
+// (2026-07-28 founder amendment — "enough to make more videos on the
+// second day" — see FIRST_CLAIM_BONUS_AMOUNT's own doc comment below for
+// the full reasoning and why this is keyed off a once-only firstClaimAt
+// marker, not a streak day). This REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
 // "daily token claim", founder decision, replacing part of "Token Economy
 // C"). The old drip (and its ≥200 grant ceiling — see the retired
 // GRANT_CEILING) auto-materialized tokens on any read with nothing for the
@@ -261,7 +265,9 @@ var INITIAL_GRANT = 220;
 // DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
 // entirely, see the doc block at the top of this file. Flat 20/day in v1
 // (no escalating amounts — explicitly out of scope, see claim-daily-
-// tokens.js's own doc comment).
+// tokens.js's own doc comment) EXCEPT the account's first-ever claim ever,
+// which grants FIRST_CLAIM_BONUS_AMOUNT (100) instead — see that constant's
+// own doc comment below and claimDailyTokens' amount-selection logic.
 //
 // CLAIM_COOLDOWN_MS (20h, not 24h): a ROLLING cooldown measured purely off
 // the server clock (`now - lastClaimAt >= CLAIM_COOLDOWN_MS`) — never a
@@ -284,6 +290,48 @@ var INITIAL_GRANT = 220;
 var CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000;
 var STREAK_CONTINUITY_MS = 48 * 60 * 60 * 1000;
 var DAILY_CLAIM_AMOUNT = 20;
+
+// FIRST_CLAIM_BONUS_AMOUNT (2026-07-28, founder-approved economy amendment,
+// tracker item for-product-daily-claim-bugs-founder-rea-kei2ub, relayed via
+// Manager): the account's FIRST-EVER successful daily claim grants 100
+// tokens instead of the usual 20 — founder's own words, "I want users to
+// have enough to make more videos on the second day so let's make the free
+// tokens on the second day be 100". A returning day-2 user who claims for
+// the very first time can then afford another full video (100 tokens) on
+// top of whatever they still have left from the 220-token signup grant.
+//
+// Deliberately a CLAIM-COUNT/`firstClaimAt` rule, NOT a streak-day-2 rule:
+// a streak-based "day 2 of a streak gets 100" would re-grant the bonus
+// after every streak reset caused by a missed day (see tokens.streak's own
+// doc comment — a missed day resets the streak to 1, and under a
+// streak-based rule that reset "day 2" would recur indefinitely), making it
+// trivially farmable just by skipping a day now and then. first-claim-EVER
+// happens at most once per account, ever, matching the founder's actual
+// intent (a returning user affording their next video), not a repeatable
+// exploit. See `firstClaimAt` (claimDailyTokens below) for the actual
+// once-only marker this is keyed off, and getTokenStatus for how this
+// is projected to the client BEFORE a claim happens (so every UI surface
+// shows the real upcoming amount, never a hardcoded 20 — the recurring bug
+// class documented in tracker item
+// recurring-bug-class-hardcoded-daily-gran-h6swgy).
+//
+// Abuse exposure: the one-time +80 delta (100 vs the usual 20) is bounded
+// by the SAME per-IP daily cap that already guards the 220-token signup
+// grant (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" rate-limit
+// bucket, see below) — a genuinely first-ever claim can only ever happen
+// for an email whose tokens were never initialized before (no
+// `tokens.lastClaimAt` AND no `firstClaimAt`, see the `isFirstEverClaim`
+// check in claimDailyTokens), and claimDailyTokens always calls syncTokens
+// first (see its own doc comment), which is exactly the choke point that
+// cap already enforces on brand-new emails. So farming the bonus requires
+// farming brand-new accounts in the first place — already capped at
+// MAX_TOKEN_GRANTS_PER_IP_PER_DAY (default 5) per IP per day, same as
+// today's INITIAL_GRANT exposure — not a new, wider abuse surface.
+// claim-daily-tokens.js's OWN "claim-ip"/"claim-email" rate-limit bucket
+// (20/day default) is a separate, looser guard against retry-hammering a
+// single already-known email; it is not what bounds this specific
+// exposure, the token-init cap is.
+var FIRST_CLAIM_BONUS_AMOUNT = 100;
 
 // Per-IP daily cap on brand-new-email token initializations — see
 // AGENT_POLICY.md / the founder's token-economy spec for the abuse vector:
@@ -366,6 +414,14 @@ async function syncTokens(event, email, opts) {
   // building the `tokens` sub-object it writes, so adding this field here
   // never risks it getting persisted into `record.tokens` itself.
   var firstPackPurchaseAt = record && record.firstPackPurchaseAt;
+  // `firstClaimAt` (2026-07-28 first-claim-bonus amendment, see
+  // FIRST_CLAIM_BONUS_AMOUNT's own doc comment) — same top-level-sibling
+  // shape as firstPackPurchaseAt above (stamped by claimDailyTokens, never
+  // inside `record.tokens`), carried through here purely so getTokenStatus
+  // below can project the correct upcoming claim amount BEFORE a claim
+  // happens. Same "never risks leaking into record.tokens" reasoning as
+  // firstPackPurchaseAt applies here too.
+  var firstClaimAt = record && record.firstClaimAt;
 
   if (!record || !record.tokens) {
     // First-ever token read for this email — see the per-IP cap doc block
@@ -390,10 +446,10 @@ async function syncTokens(event, email, opts) {
       : { balance: 0 }; // capped for today — see doc block above, not a permanent block
 
     await setEntitlement(event, key, { tokens: fresh });
-    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt });
+    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
   }
 
-  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt });
+  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
 }
 
 /**
@@ -437,7 +493,26 @@ async function syncTokens(event, email, opts) {
  * comparison lives entirely in the caller (generate-video.js/
  * generate-image.js) against whatever balance this returns, unconditional
  * either way.
+ *
+ * `dailyClaimAmount` (2026-07-28 first-claim-bonus amendment — see
+ * FIRST_CLAIM_BONUS_AMOUNT's own doc comment): this is the amount THIS
+ * user would actually be credited if they claimed right now — not always
+ * the flat DAILY_CLAIM_AMOUNT. An account that has never completed a
+ * claim (no `firstClaimAt` AND no `tokens.lastClaimAt` — see
+ * hasCompletedAnyClaim below, the exact same check claimDailyTokens uses
+ * to decide the amount it actually credits) sees FIRST_CLAIM_BONUS_AMOUNT
+ * (100) here; every other account sees the normal DAILY_CLAIM_AMOUNT (20).
+ * Every UI surface (the claim sheet's big number, its button label, the
+ * topbar chip's "+N" pill, the out-of-tokens sheet's inline claim button)
+ * reads this field live rather than hand-maintaining its own literal — see
+ * js/purchase-sheet.js and tracker item
+ * recurring-bug-class-hardcoded-daily-gran-h6swgy for why that discipline
+ * matters here specifically.
  */
+function hasCompletedAnyClaim(firstClaimAt, lastClaimAt) {
+  return !!(firstClaimAt || lastClaimAt);
+}
+
 async function getTokenStatus(event, email, opts) {
   var tokens = await syncTokens(event, email, opts);
   var lastClaimAt = tokens.lastClaimAt || 0;
@@ -446,7 +521,7 @@ async function getTokenStatus(event, email, opts) {
     balance: tokens.balance,
     claimable: (Date.now() - lastClaimAt) >= CLAIM_COOLDOWN_MS,
     nextClaimAt: nextClaimAt,
-    dailyClaimAmount: DAILY_CLAIM_AMOUNT,
+    dailyClaimAmount: hasCompletedAnyClaim(tokens.firstClaimAt, lastClaimAt) ? DAILY_CLAIM_AMOUNT : FIRST_CLAIM_BONUS_AMOUNT,
     streak: tokens.streak || 0,
     hasMadeFirstPurchase: !!tokens.firstPackPurchaseAt
   };
@@ -503,18 +578,40 @@ async function getTokenStatus(event, email, opts) {
  * existing "Couldn't claim right now" retry copy already covers.
  *
  * Returns EXACTLY the two documented response shapes (see this file's own
- * doc block and claim-daily-tokens.js):
- *   { claimed: true,  balance, streak, nextClaimAt } — a genuine claim,
- *     just written and confirmed.
+ * doc block and claim-daily-tokens.js), PLUS `amountClaimed` on a genuine
+ * claim (2026-07-28 first-claim-bonus amendment — see
+ * FIRST_CLAIM_BONUS_AMOUNT's own doc comment): the ACTUAL amount just
+ * credited (100 on a genuine first-ever claim, 20 otherwise), so the
+ * client shows what really happened rather than assuming a flat 20:
+ *   { claimed: true,  balance, streak, nextClaimAt, amountClaimed } — a
+ *     genuine claim, just written and confirmed.
  *   { claimed: false, nextClaimAt }                  — not yet claimable
  *     (including "someone else's concurrent claim already landed" — the
  *     SKIP case above); NOT an error, a normal, expected outcome (see
  *     claim-daily-tokens.js's own doc comment on why this is a 200, not a
- *     4xx).
+ *     4xx). No `amountClaimed` here — nothing was actually credited.
  *
  * A missing/empty email resolves to `{ claimed: false, nextClaimAt: 0 }` —
  * mirrors syncTokens' own "an unidentifiable caller never creates a
  * phantom record, and never claims anything" guard.
+ *
+ * `firstClaimAt`: a top-level record field (sibling of
+ * lastClaimAttemptId/firstPackPurchaseAt, never inside `tokens`), stamped
+ * to `now` the first time this email's `mutate` below computes
+ * `isFirstEverClaim: true`, and NEVER overwritten again afterward
+ * (`rec.firstClaimAt || now`) — see FIRST_CLAIM_BONUS_AMOUNT's own doc
+ * comment for the full reasoning (once-only, first-claim-EVER, not
+ * streak-based). `isFirstEverClaim` itself checks BOTH `rec.firstClaimAt`
+ * AND `tokens.lastClaimAt` (via hasCompletedAnyClaim, the exact same check
+ * getTokenStatus uses to project the upcoming amount) — not `firstClaimAt`
+ * alone — specifically so an account that already completed a claim under
+ * the pre-2026-07-28 flat-20-only regime (real accounts exist from
+ * earlier the same day this bonus shipped, before this field existed) is
+ * correctly recognized as having already had its "first claim" and never
+ * retroactively re-granted the bonus just because `firstClaimAt` was never
+ * backfilled for it. `tokens.lastClaimAt` alone is sufficient signal for
+ * that grandfather case since it is ONLY ever set by a genuine successful
+ * claim (see that field's own doc comment at the top of this file).
  */
 async function claimDailyTokens(event, email) {
   var key = normalizeEmail(email);
@@ -528,7 +625,7 @@ async function claimDailyTokens(event, email) {
   await syncTokens(event, key);
 
   var now = Date.now();
-  var newBalance, newStreak;
+  var newBalance, newStreak, claimAmount;
 
   // `attemptId`: a fresh random token per call, NOT derived from `now` —
   // two genuinely concurrent claims for the same email (two open tabs, a
@@ -570,11 +667,18 @@ async function claimDailyTokens(event, email) {
       var gap = now - lastClaimAt;
       var previousStreak = tokens.streak || 0;
       newStreak = (tokens.lastClaimAt && gap < STREAK_CONTINUITY_MS) ? previousStreak + 1 : 1;
-      newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + DAILY_CLAIM_AMOUNT);
+      // See FIRST_CLAIM_BONUS_AMOUNT's own doc comment and this function's
+      // doc comment above for the full reasoning — grandfathers any
+      // account whose tokens.lastClaimAt was already set before
+      // firstClaimAt existed, so it's never re-granted the bonus.
+      var isFirstEverClaim = !hasCompletedAnyClaim(rec.firstClaimAt, tokens.lastClaimAt);
+      claimAmount = isFirstEverClaim ? FIRST_CLAIM_BONUS_AMOUNT : DAILY_CLAIM_AMOUNT;
+      newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + claimAmount);
       return Object.assign({}, rec, {
         email: key,
         tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak },
         lastClaimAttemptId: attemptId,
+        firstClaimAt: rec.firstClaimAt || now,
         updatedAt: now
       });
     },
@@ -594,19 +698,19 @@ async function claimDailyTokens(event, email) {
     // "was this actually my own write" hazard the exhaustion branch below
     // already guards against, just reachable one step earlier here.
     if (result.current && result.current.lastClaimAttemptId === attemptId) {
-      return { claimed: true, balance: result.current.tokens.balance, streak: result.current.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+      return { claimed: true, balance: result.current.tokens.balance, streak: result.current.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
     }
     var currentLastClaimAt = (result.current && result.current.tokens && result.current.tokens.lastClaimAt) || 0;
     return { claimed: false, nextClaimAt: currentLastClaimAt + CLAIM_COOLDOWN_MS };
   }
 
   if (result.ok) {
-    return { claimed: true, balance: newBalance, streak: newStreak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+    return { claimed: true, balance: newBalance, streak: newStreak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
   }
 
   var finalRead = await getEntitlement(event, key);
   if (finalRead && finalRead.lastClaimAttemptId === attemptId) {
-    return { claimed: true, balance: finalRead.tokens.balance, streak: finalRead.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+    return { claimed: true, balance: finalRead.tokens.balance, streak: finalRead.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
   }
   throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' without ever confirming the claim landed');
 }
@@ -1643,6 +1747,7 @@ module.exports = {
   // recurring-bug-class-hardcoded-daily-gran-h6swgy.
   INITIAL_GRANT,
   DAILY_CLAIM_AMOUNT,
+  FIRST_CLAIM_BONUS_AMOUNT,
   CLAIM_COOLDOWN_MS,
   STREAK_CONTINUITY_MS,
   FIRST_PURCHASE_BONUS_MULTIPLIER

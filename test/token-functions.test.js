@@ -49,7 +49,9 @@ test('GET with a brand-new email materializes the 220-token signup grant, claima
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.balance, 220);
-  assert.equal(body.dailyClaimAmount, 20);
+  // 2026-07-28 first-claim-bonus amendment: a brand-new, never-claimed
+  // account's NEXT claim amount is the 100-token first-claim bonus.
+  assert.equal(body.dailyClaimAmount, 100);
   assert.equal(body.claimable, true);
   assert.equal(body.streak, 0);
   assert.equal(typeof body.nextClaimAt, 'number');

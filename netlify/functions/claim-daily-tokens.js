@@ -13,8 +13,12 @@
 // limiting only.
 //
 // Response shapes:
-//   200 { claimed: true,  balance, streak, nextClaimAt } — a genuine claim
-//        just landed.
+//   200 { claimed: true,  balance, streak, nextClaimAt, amountClaimed } —
+//        a genuine claim just landed. amountClaimed (2026-07-28 first-
+//        claim-bonus amendment — see lib/entitlements.js's
+//        FIRST_CLAIM_BONUS_AMOUNT doc comment) is the REAL amount just
+//        credited (100 on a genuine first-ever claim for this account, 20
+//        otherwise) — the client shows this, never assumes a flat 20.
 //   200 { claimed: false, nextClaimAt }                  — not yet
 //        claimable (the 20h rolling cooldown hasn't elapsed). This is
 //        DELIBERATELY a 200, not a 4xx/E-code — a client tapping the claim

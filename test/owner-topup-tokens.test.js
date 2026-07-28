@@ -52,7 +52,9 @@ test('POST from the owner credits the amount and returns the refreshed token sta
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
     assert.equal(body.balance, 720, '220 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
-    assert.equal(body.dailyClaimAmount, 20);
+    // A never-claimed account (a manual top-up doesn't count as a claim)
+    // sees the real 100-token first-claim bonus as its next claim amount.
+    assert.equal(body.dailyClaimAmount, 100);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
     assert.equal(record.tokens.balance, 720);

@@ -54,7 +54,10 @@ test('a never-before-seen email gets the 220-token signup grant on first read, a
   var ev = fakeEvent({ ip: nextIp() });
   var status = await entitlements.getTokenStatus(ev, 'brandnew@example.com');
   assert.equal(status.balance, 220);
-  assert.equal(status.dailyClaimAmount, 20);
+  // 2026-07-28 first-claim-bonus amendment: a never-claimed account's
+  // NEXT claim amount is the 100-token first-claim bonus, not the normal
+  // 20 -- see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT doc comment.
+  assert.equal(status.dailyClaimAmount, 100);
   assert.equal(typeof status.nextClaimAt, 'number');
 
   var record = await entitlements.getEntitlement(ev, 'brandnew@example.com');
@@ -107,6 +110,25 @@ test('claimable is false, and nextClaimAt is in the future, right after a claim'
   assert.ok(status.nextClaimAt > Date.now(), 'the 20h cooldown has not elapsed yet');
 });
 
+// ----- getTokenStatus: dailyClaimAmount projects the REAL next-claim amount
+// (2026-07-28 first-claim-bonus amendment) -----
+
+test('getTokenStatus for a not-yet-claimed account returns dailyClaimAmount: 100 (the first-claim bonus)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var status = await entitlements.getTokenStatus(ev, 'neverclaimedyet@example.com'); // -> 220, never claimed
+  assert.equal(status.dailyClaimAmount, 100);
+});
+
+test('getTokenStatus for an already-claimed-once account returns dailyClaimAmount: 20 (the normal amount)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.getTokenStatus(ev, 'claimedonce@example.com'); // -> 220
+  var claimResult = await entitlements.claimDailyTokens(ev, 'claimedonce@example.com');
+  assert.equal(claimResult.amountClaimed, 100, 'sanity: the first claim really did get the bonus');
+
+  var status = await entitlements.getTokenStatus(ev, 'claimedonce@example.com');
+  assert.equal(status.dailyClaimAmount, 20, 'the NEXT claim for an account that has already claimed once is the normal amount, not another 100');
+});
+
 // ----- getTokenStatus: empty/missing email -----
 
 test('empty/missing email resolves to a throwaway zero balance and writes nothing', async function () {
@@ -145,7 +167,7 @@ test('spendTokens preserves lastClaimAt/streak untouched -- a spend must never r
 
   await entitlements.spendTokens(ev, 'spendclaim@example.com', 100);
   var record = await entitlements.getEntitlement(ev, 'spendclaim@example.com');
-  assert.equal(record.tokens.balance, 140, '220 + 20 claimed - 100 spent');
+  assert.equal(record.tokens.balance, 220, '220 + 100 first-ever-claim bonus - 100 spent');
   assert.equal(record.tokens.streak, 1, 'streak untouched by the spend');
   assert.ok(record.tokens.lastClaimAt, 'lastClaimAt untouched by the spend (still set from the earlier claim)');
 
@@ -176,7 +198,7 @@ test('the Nth+1 brand-new email from the same IP in one day gets balance 0 inste
   assert.equal(status3.balance, 0, 'over the per-IP cap for today');
 });
 
-test('a capped-out brand-new email is not permanently blocked -- it can still claim its first +20 immediately (no lastClaimAt was ever stamped, same as any other never-claimed account)', async function () {
+test('a capped-out brand-new email is not permanently blocked -- it can still claim its first-ever bonus immediately (no lastClaimAt was ever stamped, same as any other never-claimed account)', async function () {
   process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '1';
   var ip = nextIp();
   await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'allowed@example.com');
@@ -184,10 +206,11 @@ test('a capped-out brand-new email is not permanently blocked -- it can still cl
   var denied = await entitlements.getTokenStatus(deniedEvent, 'denied@example.com');
   assert.equal(denied.balance, 0);
   assert.equal(denied.claimable, true, 'still claimable -- the IP cap only ever gates the one-time signup grant, not the daily claim');
+  assert.equal(denied.dailyClaimAmount, 100, 'a never-claimed account (even one whose signup grant was capped) sees the real first-claim bonus amount');
 
   var claimResult = await entitlements.claimDailyTokens(deniedEvent, 'denied@example.com');
   assert.equal(claimResult.claimed, true);
-  assert.equal(claimResult.balance, 20, '0 (capped signup grant) + 20 claimed');
+  assert.equal(claimResult.balance, 100, '0 (capped signup grant) + 100 first-ever-claim bonus');
 });
 
 test('each IP gets its own daily cap bucket — a different IP is unaffected by another IP already being over the limit', async function () {
@@ -247,7 +270,7 @@ test('addTokens does not change lastClaimAt/streak (purely additive to balance, 
 
   await entitlements.addTokens(ev, 'timing-topup@example.com', 100);
   var record = await entitlements.getEntitlement(ev, 'timing-topup@example.com');
-  assert.equal(record.tokens.balance, 340, '220 + 20 claimed + 100 top-up');
+  assert.equal(record.tokens.balance, 420, '220 + 100 first-ever-claim bonus + 100 top-up');
   assert.equal(record.tokens.lastClaimAt, claimedAt, 'lastClaimAt must be unchanged by a manual top-up');
   assert.equal(record.tokens.streak, 1, 'streak must be unchanged by a manual top-up');
 });

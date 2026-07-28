@@ -917,3 +917,75 @@ test('style.html: NOT claimable -> the inline claim button stays hidden entirely
     await context.close();
   }
 });
+
+// ============================================================================
+// 2026-07-28 first-claim-bonus amendment (founder-approved, tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub): the out-of-tokens
+// sheet's inline "Claim +N" affordance must show the REAL server-reported
+// amount too, not a hardcoded 20 -- proven here with a first-ever-claimer's
+// 100-token bonus.
+// ============================================================================
+
+test('style.html: the inline claim button shows "Claim +100 free tokens" (not +20) when the server reports the first-claim bonus', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+
+    await seedAccount(page, { username: 'firstclaiminline', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    // A claimable tokenStatus also auto-opens the dedicated claim sheet --
+    // dismiss it first, same as the existing claimable-state test above.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+    var claimLabel = await page.textContent('#ps-claim-label');
+    assert.match(claimLabel, /Claim \+100 free tokens/, 'must read the real 100 first-claim bonus, never a hardcoded 20');
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: a failed inline claim restores the button label to "Claim +100 free tokens", not a stale hardcoded 20', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    // A malformed/error response (data.error present) drives
+    // js/purchase-sheet.js's claimInline() into its .catch() branch -- see
+    // that function's own doc comment.
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E5: claim_write_failed' }) });
+    });
+
+    await seedAccount(page, { username: 'firstclaiminlineerr', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+
+    await page.click('#ps-claim-btn');
+    await page.waitForSelector('#ps-error:visible', { timeout: 3000 });
+    var claimLabel = await page.textContent('#ps-claim-label');
+    assert.match(claimLabel, /Claim \+100 free tokens/, 'the error-recovery label must restore the real 100 amount, never fall back to a hardcoded 20');
+  } finally {
+    await context.close();
+  }
+});

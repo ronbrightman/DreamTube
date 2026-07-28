@@ -71,3 +71,11 @@ test('waitLineText: no tokenStatus / no nextClaimAt -> empty, never throws', fun
   assert.equal(PurchaseSheet.waitLineText(null), '');
   assert.equal(PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: null, claimable: false }), '');
 });
+
+test('waitLineText: reads the live 100-token first-claim-bonus amount when the server reports it, not a hardcoded 20 (2026-07-28 first-claim-bonus amendment)', function () {
+  var now = Date.now();
+  assert.equal(
+    PurchaseSheet.waitLineText({ dailyClaimAmount: 100, nextClaimAt: now - 999999, claimable: true }),
+    'Or claim 100 free tokens above'
+  );
+});

@@ -265,6 +265,20 @@ toward cheaper models (cost over speed — they run in the background).
 - Hard-paywall funnel model long-term; **free during beta** for now.
 - Keep internal strategy docs out of the public site (they're 404'd in
   `netlify.toml`) — add new internal docs to that list.
+- **First-claim bonus (2026-07-28, founder amendment):** the daily claim's
+  amount is 20 tokens except an account's very FIRST-EVER claim, which
+  grants 100 — his own words, "I want users to have enough to make more
+  videos on the second day." Deliberately built as a claim-count/
+  `firstClaimAt` rule, NOT a streak-day-2 rule: a streak-based version
+  would re-grant the bonus after every missed-day streak reset, making it
+  farmable just by skipping a day now and then. First-claim-EVER happens
+  at most once per account, ever, matching what he actually wants (a
+  returning day-2 user affording another video), not a repeatable exploit.
+  Abuse exposure (the one-time +80 delta) is bounded by the same per-IP
+  cap that already guards the 220-token signup grant, since a genuine
+  first-ever claim requires a genuinely new, never-initialized account.
+  See `netlify/functions/lib/entitlements.js`'s `FIRST_CLAIM_BONUS_AMOUNT`
+  doc comment for the full mechanism.
 
 ## Cross-session working (growth ⇄ product ⇄ Manager)
 
