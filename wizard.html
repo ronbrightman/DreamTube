@@ -790,9 +790,11 @@
   // ===================================================================
   // Step 7 — Contact capture (the retention pivot). Email is required
   // (it's also the token-economy identity generate-video.js's E112 gate
-  // keys on — see start-pending-generation.js); WhatsApp is optional.
-  // Kicks off generation the moment this completes ("generate during
-  // signup" — see start-pending-generation.js/dream-webhook.js).
+  // keys on — see start-pending-generation.js). WhatsApp is PARKED (see
+  // renderContact's own comment below) — no code path can deliver to it
+  // today, so contactWhatsapp always stays ''. Kicks off generation the
+  // moment this completes ("generate during signup" — see
+  // start-pending-generation.js/dream-webhook.js).
   // ===================================================================
   var contactEmail = '';
   var contactWhatsapp = '';
