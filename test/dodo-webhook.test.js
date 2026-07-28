@@ -701,7 +701,7 @@ test('a payment whose customer block carries no customer_id (or no customer bloc
 
   var payload = paymentPayload({
     payment_id: 'pay_no_customer_id',
-    metadata: { dreamtube_email: 'nocustomerid@example.com', dreamtube_pack: 'pack100', dreamtube_tokens: 100 }
+    metadata: { dreamtube_email: 'nocustomerid@example.com', dreamtube_pack: 'pack100', dreamtube_tokens: 200 }
   });
   delete payload.data.customer;
   var res = await handler(signedEvent(payload));
@@ -709,7 +709,14 @@ test('a payment whose customer block carries no customer_id (or no customer bloc
 
   var record = await entitlements.getEntitlement({}, 'nocustomerid@example.com');
   assert.equal(record.dodoCustomerId, 'cus_preexisting', 'setEntitlement\'s own undefined-key-dropping merge must leave the prior value intact, not blank it out');
-  assert.equal(record.tokens.balance, 100, 'the credit itself must still land via the metadata email fallback');
+  // The credit actually resolves via paymentPayload's own default product_cart
+  // (pdt_pack100_test -> pack100 -> 200 tokens, pack enrichment 2026-07-28),
+  // not via the metadata.dreamtube_tokens fallback this test's own comment
+  // used to imply -- product_cart is never overridden here, so
+  // resolvePackTokens' product-id branch wins first. Kept metadata's
+  // dreamtube_tokens numerically consistent above anyway to avoid misleading
+  // a future reader into thinking it's the credited value.
+  assert.equal(record.tokens.balance, 200, 'the credit itself must still land even with no customer block present');
 });
 
 test('pack700\'s first purchase credits 2100 tokens (1400 base x 1.5, pack enrichment 2026-07-28)', async function () {
