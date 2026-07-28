@@ -11,9 +11,19 @@
 // Backed by a single Netlify Blobs store ("dreamtube-entitlements"),
 // ONE RECORD PER NORMALIZED EMAIL:
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
-//     tokens: { balance, lastGrantAt },
+//     tokens: { balance, lastClaimAt, streak },
 //     appliedTokenPackPaymentIds, refundedJobIds,
 //     firstPackPurchaseAt }
+//
+// tokens.lastClaimAt / tokens.streak (added 2026-07-28, "daily token
+// claim" — replaces the old lazy background +20/24h drip entirely, see
+// claim-daily-tokens.js and the big doc block below) are the ONLY
+// per-user grant-timing state left on this record. A record with no
+// tokens.lastClaimAt at all (every account that predates this feature)
+// reads as claimable immediately — claimDailyTokens/getTokenStatus below
+// both treat a missing lastClaimAt as `0`, and `now - 0` is always well
+// past the cooldown, per the founder's own explicit confirmation on the
+// tracker item that shipped this.
 //
 // refundedJobIds: a short-lived per-email list of generation job ids
 // (operationName values) whose spend is in the process of being (or has
@@ -52,35 +62,38 @@
 // an edit/regenerate, or a style change — all three already funnel through
 // the same generate-video.js call site, see that file; a cheaper 10-token
 // image generation was added later, see generate-image.js). Balance is
-// earned for free (220 on first read of a never-before-seen email, +20
-// every 24h, lazily, see below — the daily amount was retuned 2026-07-24
-// from the original 200/+100 to 290/+10 so a new signup nets exactly 190
-// tokens after its one free onboarding video, then raised 2026-07-26
-// (morning) from +10 to +200/day (2 fresh videos' worth) after new users
-// were found to choke once the 290-token signup grant ran out and the +10
-// trickle left them stuck for days, then retuned again 2026-07-26 (night,
-// "Token Economy C", founder-approved) to 220 initial / +20 per day / 200
-// ceiling — 220 covers the funnel's free onboarding video (100) plus one
-// additional day-1 video (100) plus 2 images (20); the daily drip was cut
-// back down to +20 once real token packs (see the 3-pack lineup below)
-// existed as the actual "need more, buy more" path, rather than a fast
-// free drip doing that job. 220 > the new 200 ceiling is deliberate and
-// fine — see the GRANT_CEILING doc comment below — the drip simply
-// resumes once balance actually drops below 200) — this remains true even
+// earned partly for free and partly by claiming: 220 on first read of a
+// never-before-seen email (unchanged — the funnel's free onboarding video
+// (100) plus one additional day-1 video (100) plus 2 images (20)), plus a
+// further +20/day the user must actively CLAIM (claim-daily-tokens.js) —
+// this REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
+// "daily token claim", founder decision, replacing part of "Token Economy
+// C"). The old drip (and its ≥200 grant ceiling — see the retired
+// GRANT_CEILING) auto-materialized tokens on any read with nothing for the
+// user to do; the founder's own stated reasoning for the switch was that a
+// standard "daily reward, must tap to claim" pattern (games, Duolingo,
+// TikTok-style check-ins) drives a real return-visit habit a silent
+// background drip never could, and removes any need for a ceiling at all —
+// see claim-daily-tokens.js's own header comment for the full claim
+// mechanism (rolling 20h server-clock cooldown, no calendar days) and why
+// an un-claimed idle account now accumulates nothing (no ceiling needed,
+// since nothing accrues without an active tap). This remains true even
 // now that shop.html's token packs are a live, real purchase (see
 // creditTokenPackOnce below and
-// docs/PAYWALL_SETUP.md): the free grant and paid packs are both additive
-// to the same balance, never either/or. Because every token anyone can
-// ever spend was, from day one, either free-earned or (now) purchased —
-// never gated behind a subscription that had to exist first — this gate
-// is UNCONDITIONAL AND LIVE FROM THE START, unlike the old subscription
-// paywall (PAYWALL_ENABLED, E108/E111) which stayed default-off until real
-// Stripe checkout existed — being entitled there required having actually
-// paid, so gating on it before a checkout flow existed would have
-// hard-blocked everyone. This model can never fully
-// block anyone (the daily drip guarantees continued access), it just rate-
-// limits free usage to a sustainable level. See generate-video.js's E112
-// doc block and AGENT_POLICY.md for the full reasoning.
+// docs/PAYWALL_SETUP.md): the free/claimed grants and paid packs are both
+// additive to the same balance, never either/or. Because every token
+// anyone can ever spend was, from day one, either free-earned/claimed or
+// (now) purchased — never gated behind a subscription that had to exist
+// first — this gate is UNCONDITIONAL AND LIVE FROM THE START, unlike the
+// old subscription paywall (PAYWALL_ENABLED, E108/E111) which stayed
+// default-off until real Stripe checkout existed — being entitled there
+// required having actually paid, so gating on it before a checkout flow
+// existed would have hard-blocked everyone. This model can never fully
+// block anyone (the 220-token signup grant plus a daily claim guarantee
+// continued access), it just rate-limits free usage to a sustainable
+// level, now gated behind an active tap rather than a silent drip. See
+// generate-video.js's E112 doc block and AGENT_POLICY.md for the full
+// reasoning.
 //
 // `active`/`plan`/`stripeCustomerId`/`stripeSubscriptionId` are kept on the
 // record shape but are NOT read by the generation gate anymore — the
@@ -99,41 +112,29 @@
 // creditTokenPackAmountOnce's `firstPackPurchaseAt` handling below).
 //
 // tokens.balance: the email's current spendable token count. Never goes
-// negative (spendTokens floors at 0); the ≥200 daily-grant ceiling below is
-// the only thing that keeps it from growing unbounded for an idle account.
+// negative (spendTokens floors at 0). No ceiling of any kind (the old
+// ≥200 GRANT_CEILING is retired along with the drip it guarded — see the
+// doc block above): an idle account accumulates nothing beyond whatever
+// it already has, since nothing accrues without an active claim tap, so
+// there is no unbounded-idle-accrual risk left for a ceiling to guard
+// against.
 //
-// tokens.lastGrantAt: epoch-ms timestamp of the most recent grant this
-// record actually received — either the one-time 220-token signup grant, or
-// the most recent +20 daily drip. getTokenStatus lazily compares this
-// against "now" on every read to decide whether a daily grant is due — the
-// entire reset/grant mechanism, no scheduled function involved (this
-// codebase has none and none should be added, see AGENT_POLICY.md), same
-// shape of lazy-catch-up-on-read this file already used for the old
-// system's monthly quota reset.
+// tokens.lastClaimAt: epoch-ms timestamp of the most recent SUCCESSFUL
+// daily claim (claim-daily-tokens.js), or absent entirely for any account
+// that hasn't claimed yet — including every account that predates this
+// feature, which the founder confirmed must read as claimable immediately
+// (see claimDailyTokens/getTokenStatus below, both of which treat a
+// missing lastClaimAt as `0`). Never touched by the old lazy-grant
+// machinery; the only writer is claimDailyTokens.
 //
-// Why a single lazy grant per read, not a multi-day catch-up loop: if an
-// email goes unread for, say, 5 days, a strict "credit +20 for every full
-// 24h elapsed" reading would hand it +100 in one shot. This file
-// deliberately does the simpler thing instead — one +20 grant per lazy
-// check, then lastGrantAt snaps to "now" — mirroring exactly how the old
-// monthly quota reset never compounded across multiple skipped months
-// either, it just snapped `used` to 0 once. This is the more conservative
-// (cheaper, simpler to reason about) of the two readings of "20 tokens
-// every 24 hours, granted lazily on read" and was chosen deliberately for
-// that reason.
-//
-// ≥200 grant ceiling: getTokenStatus skips the +20 daily grant entirely
-// (leaving lastGrantAt untouched, so the very next read re-checks
-// immediately once the balance actually drops) once balance is already
-// ≥200 (2 video generations' worth, or 20 image generations' worth) — an
-// idle account that never spends must not silently accumulate unbounded
-// free value while still fully honoring "20/day" for anyone actually using
-// the product. Note the brand-new 220-token signup grant is deliberately
-// ABOVE this 200 ceiling — that's fine and intentional (see the doc block
-// at the top of this file): the drip simply stays paused until the account
-// actually spends down below 200, exactly the same "skip while ≥ceiling"
-// logic already handles for any other reason a balance sits at/above it.
-// See getTokenStatus.
+// tokens.streak: display-only claim-streak counter (v1: no escalation, no
+// milestones, no freeze mechanic tied to it — see claim-daily-tokens.js's
+// own doc comment). Bumped to `previous + 1` on a claim whose gap since
+// the last claim is under 48h (a deliberately generous continuity window,
+// wider than the 20h cooldown itself, so an early-in-the-day claim one day
+// followed by a late-in-the-day claim the next doesn't break the streak),
+// reset to `1` on any longer gap (including the very first-ever claim,
+// where there is no previous claim to be continuous with).
 //
 // Per-IP daily cap on brand-new signup-bonus grants: see the big comment
 // on syncTokens below for what this raises the cost of and why it's
@@ -251,16 +252,38 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-// "Token Economy C" (founder-approved 2026-07-26 night) — see the doc
-// block at the top of this file for the full retune history/reasoning.
 // 220 initial = free funnel video (100) + one additional day-1 video (100)
-// + 2 images (20). 220 > GRANT_CEILING (200) is intentional: the drip
-// simply resumes once balance actually drops below 200 — do not add
-// special-casing to force the initial grant under the ceiling.
+// + 2 images (20) — unchanged by the daily-claim switch (2026-07-28), see
+// the doc block at the top of this file for the full retune history.
 var INITIAL_GRANT = 220;
-var DAILY_GRANT_AMOUNT = 20;
-var GRANT_CEILING = 200;
-var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+// The daily-claim mechanism (claim-daily-tokens.js) — replaces the old
+// DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
+// entirely, see the doc block at the top of this file. Flat 20/day in v1
+// (no escalating amounts — explicitly out of scope, see claim-daily-
+// tokens.js's own doc comment).
+//
+// CLAIM_COOLDOWN_MS (20h, not 24h): a ROLLING cooldown measured purely off
+// the server clock (`now - lastClaimAt >= CLAIM_COOLDOWN_MS`) — never a
+// calendar-day/timezone comparison anywhere in this mechanism. This is
+// deliberate and the single most important property of this feature (the
+// growth research that proposed it called this out as the #1 bug class
+// for daily-reward mechanics): a strict 24h-or-calendar-day cooldown
+// either lets a user claim earlier and earlier each day by claiming right
+// at the boundary (calendar-day version), or creates a real risk of
+// missing a whole day if "today" is computed in the wrong timezone/across
+// a DST transition (naive 24h-from-midnight version). 20h (4h shorter than
+// a full day) instead gives every legitimate daily claimer comfortable
+// slack to claim at roughly the same time each day without ever having to
+// watch a clock, while still only allowing one claim per rolling ~day.
+//
+// STREAK_CONTINUITY_MS (48h): the window a NEW claim's gap-since-last-claim
+// must fall under to continue (rather than reset) the streak — see
+// tokens.streak's own doc comment above for why this is wider than the
+// cooldown itself.
+var CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+var STREAK_CONTINUITY_MS = 48 * 60 * 60 * 1000;
+var DAILY_CLAIM_AMOUNT = 20;
 
 // Per-IP daily cap on brand-new-email token initializations — see
 // AGENT_POLICY.md / the founder's token-economy spec for the abuse vector:
@@ -285,20 +308,26 @@ var GRANT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 //
 // A NEW email whose IP is already over today's cap does not get hard-
 // blocked forever — it gets 0 tokens today (not the usual E112 rejection,
-// since this isn't the generation gate) with lastGrantAt stamped to now, so
-// the normal +20/24h lazy drip picks it up starting tomorrow exactly like
-// any other account. This only ever runs once per email (the branch it's
-// in is only reached while `tokens` has never been set), so a legitimate
-// user is never repeatedly rate-limited just for reading their own
-// already-initialized balance.
+// since this isn't the generation gate); the account is otherwise created
+// normally and can still claim its first +20 via claim-daily-tokens.js as
+// soon as the founder-confirmed "no lastClaimAt yet -> claimable
+// immediately" rule allows (see that function). This only ever runs once
+// per email (the branch it's in is only reached while `tokens` has never
+// been set), so a legitimate user is never repeatedly rate-limited just
+// for reading their own already-initialized balance.
 var MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT = 5;
 
 /**
- * The actual lazy grant engine, shared by getTokenStatus (read) and
- * spendTokens (spend) so both always see the same up-to-date balance before
- * acting on it. Returns the raw `{ balance, lastGrantAt }` tokens sub-object
- * (already persisted if anything changed) — never the full public
- * getTokenStatus shape, callers that want that call getTokenStatus itself.
+ * The read-side engine, shared by getTokenStatus (read) and spendTokens
+ * (spend) so both always see the same up-to-date balance before acting on
+ * it. Returns the raw `{ balance, lastClaimAt, streak }` tokens sub-object
+ * (already persisted if this was the first-ever read for this email) —
+ * never the full public getTokenStatus shape, callers that want that call
+ * getTokenStatus itself. NOTE: unlike its pre-2026-07-28 self, this no
+ * longer applies any daily grant — it only ever materializes the one-time
+ * INITIAL_GRANT on a brand-new email's first read. The daily +20 is now
+ * claimed, not synced — see claimDailyTokens below, the only writer of
+ * lastClaimAt/streak.
  *
  * Safe to call with an empty/missing email: returns a throwaway zero
  * balance and writes nothing, mirroring this file's existing "an
@@ -315,19 +344,17 @@ var MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT = 5;
  * full "owner testing on a rate-limited IP" mechanism this closes, and the
  * for-product-founder-hit-the-per-ip-gener-7mjq2l tracker item this
  * implements. Deliberately narrow: this flag is never read anywhere else
- * in this function or file — it has no effect on the ≥200 grant ceiling,
- * the +20/24h drip, spendTokens, addTokens, or (critically) the E112/E412
- * balance-threshold check itself, which callers apply completely
- * independently of this — a bypassed IP still gets exactly INITIAL_GRANT
- * (220) tokens, no more, same as any other brand-new email that simply
- * wasn't IP-capped.
+ * in this function or file — it has no effect on the daily claim,
+ * spendTokens, addTokens, or (critically) the E112/E412 balance-threshold
+ * check itself, which callers apply completely independently of this — a
+ * bypassed IP still gets exactly INITIAL_GRANT (220) tokens, no more, same
+ * as any other brand-new email that simply wasn't IP-capped.
  */
 async function syncTokens(event, email, opts) {
   var key = normalizeEmail(email);
-  if (!key) return { balance: 0, lastGrantAt: Date.now() };
+  if (!key) return { balance: 0 };
 
   var record = await getEntitlement(event, key);
-  var now = Date.now();
   // `firstPackPurchaseAt` lives at the TOP LEVEL of the entitlement record
   // (stamped by creditTokenPackAmountOnce, see its own doc comment), never
   // inside `record.tokens` — so it has to be read off `record` here and
@@ -335,9 +362,9 @@ async function syncTokens(event, email, opts) {
   // assumed to already be part of whatever `record.tokens` holds. Every
   // existing caller of syncTokens (spendTokens, addTokens,
   // creditTokenPackAmountOnce, refund crediting) explicitly picks only
-  // `balance`/`lastGrantAt` back off this return value when building the
-  // `tokens` sub-object it writes, so adding this field here never risks
-  // it getting persisted into `record.tokens` itself.
+  // `balance`/`lastClaimAt`/`streak` back off this return value when
+  // building the `tokens` sub-object it writes, so adding this field here
+  // never risks it getting persisted into `record.tokens` itself.
   var firstPackPurchaseAt = record && record.firstPackPurchaseAt;
 
   if (!record || !record.tokens) {
@@ -351,66 +378,46 @@ async function syncTokens(event, email, opts) {
       ? { allowed: true }
       : await rateLimit.checkAndIncrement(event, 'token-init', ip, maxInitPerIp);
 
+    // No lastClaimAt stamped here — a brand-new record deliberately has
+    // none, which is exactly the "claimable immediately" state (see
+    // claimDailyTokens/getTokenStatus, both of which treat a missing
+    // lastClaimAt as `0`). This also covers every pre-existing account
+    // that predates this feature and never got a tokens.lastClaimAt at
+    // all — same fresh-read path, same immediately-claimable outcome, per
+    // the founder's own explicit confirmation.
     var fresh = ipCheck.allowed
-      ? { balance: INITIAL_GRANT, lastGrantAt: now }
-      : { balance: 0, lastGrantAt: now }; // capped for today — see doc block above, not a permanent block
+      ? { balance: INITIAL_GRANT }
+      : { balance: 0 }; // capped for today — see doc block above, not a permanent block
 
     await setEntitlement(event, key, { tokens: fresh });
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt });
   }
 
-  var tokens = record.tokens;
-  var elapsed = now - (tokens.lastGrantAt || 0);
-  if (elapsed >= GRANT_INTERVAL_MS && tokens.balance < GRANT_CEILING) {
-    var granted = { balance: tokens.balance + DAILY_GRANT_AMOUNT, lastGrantAt: now };
-    await setEntitlement(event, key, { tokens: granted });
-    return Object.assign({}, granted, { firstPackPurchaseAt: firstPackPurchaseAt });
-  }
-  // Either not due yet, or due but held back by the ≥200 ceiling — in the
-  // ceiling case lastGrantAt is deliberately left untouched (not bumped to
-  // `now`) so the very next read re-checks immediately once the balance
-  // actually drops below the ceiling, rather than waiting a further 24h.
-  return Object.assign({}, tokens, { firstPackPurchaseAt: firstPackPurchaseAt });
+  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt });
 }
 
 /**
- * Reads this email's current token status, applying the lazy 220-token
- * first-ever-read grant and/or the lazy +20/24h drip (with its ≥200
- * ceiling) as needed — see the doc blocks above for the full mechanism.
- * Returns { balance, nextGrantAt, dailyGrantAmount, grantCeiling,
- * atCeiling }. nextGrantAt is an epoch-ms timestamp (lastGrantAt + 24h)
- * for the UI's live countdown (see profile.html/style.html/result.html/
- * processing.html/shop.html) — while balance is held at the ≥200 ceiling
- * this is already in the past (lastGrantAt is deliberately never bumped
- * while held back, see syncTokens above), which is exactly what
- * `atCeiling` exists to disambiguate for callers.
+ * Reads this email's current token status, applying the one-time 220-token
+ * first-ever-read grant if needed (see syncTokens above) — the daily +20 is
+ * a separate, explicit CLAIM (claimDailyTokens below), never applied
+ * lazily by this read. Returns
+ * { balance, claimable, nextClaimAt, dailyClaimAmount, streak,
+ * hasMadeFirstPurchase }.
  *
- * `atCeiling` (added for tracker item
- * for-product-bug-founder-high-token-chip--kn1v8t — the founder's own
- * profile, sitting at the 200 ceiling, showed a permanent "+20 in now"):
- * true whenever `balance >= GRANT_CEILING`, i.e. exactly the condition
- * syncTokens uses to decide whether to hold the drip back. Every UI
- * countdown renderer MUST branch on this explicit flag rather than
- * inferring "at ceiling" from a past `nextGrantAt` — a past `nextGrantAt`
- * used to be the only signal available, and every renderer collapsed it
- * to "now" and rendered "+20 in now" forever for any account sitting
- * at/above the ceiling, which is misleading (nothing is "due right now" —
- * the grant is simply paused until the balance actually drops). See
- * profile.html's/shop.html's own renderers for the fix.
+ * `claimable`: true whenever `now - lastClaimAt >= CLAIM_COOLDOWN_MS` (a
+ * missing lastClaimAt reads as `0`, so a never-claimed account — brand new
+ * or pre-existing — is always claimable). This is a READ-ONLY projection
+ * for the UI (the pulsing chip state, the claim sheet's own enable/disable)
+ * — it has no side effect and never itself grants anything; only
+ * claimDailyTokens actually credits tokens, and it independently
+ * recomputes this same condition server-side rather than trusting a
+ * client's claim that a previous getTokenStatus call said `claimable:true`
+ * (a stale read plus a delayed claim tap must not be able to claim twice).
  *
- * `grantCeiling` is exported alongside `atCeiling` so clients never need
- * to hand-maintain their own copy of GRANT_CEILING (200 as of Token
- * Economy C) to build ceiling-aware copy — the same "read the live
- * constant instead of a literal that goes stale on the next retune"
- * fix already applied to dailyGrantAmount, see tracker item
- * recurring-bug-class-hardcoded-daily-gran-h6swgy.
- *
- * Optional 3rd arg `opts` is forwarded as-is to syncTokens — see that
- * function's own doc comment for `opts.ownerBypass`. This does NOT change
- * the E112/E412 threshold check itself (`balance < 100`/`< 10`) — that
- * comparison lives entirely in the caller (generate-video.js/
- * generate-image.js) against whatever balance this returns, unconditional
- * either way.
+ * `nextClaimAt`: an epoch-ms timestamp (lastClaimAt + CLAIM_COOLDOWN_MS,
+ * or effectively "now" for a never-claimed account since lastClaimAt reads
+ * as 0) for the UI's own countdown, same "epoch-ms the client formats
+ * itself" shape the old nextGrantAt used.
  *
  * `hasMadeFirstPurchase` (added for tracker item
  * for-product-shop-first-purchase-50-bonus-bzx2d4): true once this email
@@ -422,17 +429,92 @@ async function syncTokens(event, email, opts) {
  * false advertising. Deliberately exposes only this derived boolean, never
  * the raw `firstPackPurchaseAt` timestamp itself, since the UI has no
  * legitimate use for the actual purchase time and there's no reason to
- * leak more than it needs.
+ * leak more than it needs. Untouched by the daily-claim switch.
+ *
+ * Optional 3rd arg `opts` is forwarded as-is to syncTokens — see that
+ * function's own doc comment for `opts.ownerBypass`. This does NOT change
+ * the E112/E412 threshold check itself (`balance < 100`/`< 10`) — that
+ * comparison lives entirely in the caller (generate-video.js/
+ * generate-image.js) against whatever balance this returns, unconditional
+ * either way.
  */
 async function getTokenStatus(event, email, opts) {
   var tokens = await syncTokens(event, email, opts);
+  var lastClaimAt = tokens.lastClaimAt || 0;
+  var nextClaimAt = lastClaimAt + CLAIM_COOLDOWN_MS;
   return {
     balance: tokens.balance,
-    nextGrantAt: tokens.lastGrantAt + GRANT_INTERVAL_MS,
-    dailyGrantAmount: DAILY_GRANT_AMOUNT,
-    grantCeiling: GRANT_CEILING,
-    atCeiling: tokens.balance >= GRANT_CEILING,
+    claimable: (Date.now() - lastClaimAt) >= CLAIM_COOLDOWN_MS,
+    nextClaimAt: nextClaimAt,
+    dailyClaimAmount: DAILY_CLAIM_AMOUNT,
+    streak: tokens.streak || 0,
     hasMadeFirstPurchase: !!tokens.firstPackPurchaseAt
+  };
+}
+
+/**
+ * The daily-claim writer — called only from claim-daily-tokens.js's POST
+ * handler. Re-derives claimability itself, server-side, off the SAME
+ * `now - lastClaimAt >= CLAIM_COOLDOWN_MS` rolling check getTokenStatus
+ * uses (never trusting a client-supplied "I know I'm claimable" signal —
+ * a stale getTokenStatus read plus a delayed tap must not be able to
+ * double-claim), and — when claimable — credits DAILY_CLAIM_AMOUNT (20)
+ * onto the balance, bumps lastClaimAt to `now`, and updates the streak, ALL
+ * in one `setEntitlement` call (a single Blobs `setJSON` write — see this
+ * file's header comment on why one write, not two, is what "atomic" means
+ * here: setEntitlement's patch fully replaces the `tokens` key in one
+ * shot, so balance/lastClaimAt/streak can never end up written
+ * inconsistently with each other the way two separate writes could).
+ *
+ * Streak: `gap = now - (lastClaimAt || now)` — for the very first claim
+ * ever (no lastClaimAt), this reads as `gap = 0`, which is NOT `< 0`... but
+ * IS `< STREAK_CONTINUITY_MS`, which would wrongly continue a "streak" that
+ * never existed. To avoid that, the streak calculation explicitly checks
+ * `tokens.lastClaimAt` truthiness first — a genuinely-never-claimed
+ * account always starts its streak at 1, regardless of what the gap math
+ * alone would say. Otherwise: `gap < STREAK_CONTINUITY_MS` (48h) ->
+ * `previousStreak + 1`, else resets to `1` — see tokens.streak's own doc
+ * comment (top of file) for why 48h, not 20h/24h.
+ *
+ * Returns EXACTLY the two documented response shapes (see this file's own
+ * doc block and claim-daily-tokens.js):
+ *   { claimed: true,  balance, streak, nextClaimAt } — a genuine claim,
+ *     just written.
+ *   { claimed: false, nextClaimAt }                  — not yet claimable;
+ *     NOT an error, a normal, expected outcome (see claim-daily-tokens.js's
+ *     own doc comment on why this is a 200, not a 4xx).
+ *
+ * A missing/empty email resolves to `{ claimed: false, nextClaimAt: 0 }` —
+ * mirrors syncTokens' own "an unidentifiable caller never creates a
+ * phantom record, and never claims anything" guard.
+ */
+async function claimDailyTokens(event, email) {
+  var key = normalizeEmail(email);
+  if (!key) return { claimed: false, nextClaimAt: 0 };
+
+  var tokens = await syncTokens(event, key);
+  var now = Date.now();
+  var lastClaimAt = tokens.lastClaimAt || 0;
+  var nextClaimAt = lastClaimAt + CLAIM_COOLDOWN_MS;
+
+  if (now - lastClaimAt < CLAIM_COOLDOWN_MS) {
+    return { claimed: false, nextClaimAt: nextClaimAt };
+  }
+
+  var gap = now - lastClaimAt;
+  var previousStreak = tokens.streak || 0;
+  var newStreak = (tokens.lastClaimAt && gap < STREAK_CONTINUITY_MS) ? previousStreak + 1 : 1;
+  var newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + DAILY_CLAIM_AMOUNT);
+
+  await setEntitlement(event, key, {
+    tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak }
+  });
+
+  return {
+    claimed: true,
+    balance: newBalance,
+    streak: newStreak,
+    nextClaimAt: now + CLAIM_COOLDOWN_MS
   };
 }
 
@@ -452,7 +534,11 @@ async function spendTokens(event, email, amount) {
   if (!key) return null;
   var tokens = await syncTokens(event, key);
   var newBalance = Math.max(0, tokens.balance - amount);
-  return setEntitlement(event, key, { tokens: { balance: newBalance, lastGrantAt: tokens.lastGrantAt } });
+  // lastClaimAt/streak carried through unchanged — a spend must never
+  // reset the claim cooldown or streak, same "purely additive/subtractive
+  // to balance only" discipline this file already applies everywhere else
+  // a full `tokens` sub-object gets rewritten.
+  return setEntitlement(event, key, { tokens: { balance: newBalance, lastClaimAt: tokens.lastClaimAt, streak: tokens.streak } });
 }
 
 // Sanity ceiling on the *total* balance addTokens can ever produce — not a
@@ -470,23 +556,20 @@ var MAX_TOKEN_BALANCE = 1000000;
  * Direct, immediate credit to this email's balance — the manual "top up my
  * balance" counterpart to spendTokens' manual deduction, both built on the
  * same syncTokens-then-setEntitlement shape. Deliberately separate from the
- * automatic daily-grant machinery syncTokens drives: `lastGrantAt` is
- * carried through unchanged (not bumped to "now"), so a top-up never resets
- * or delays the next automatic +20/24h drip — it is purely additive to
- * `balance`, nothing else about the record's grant timing changes because
- * of it. (syncTokens itself may still apply an already-*due* lazy grant as
- * part of reading the current balance before adding to it, exactly as
- * spendTokens already does — that's the normal lazy-grant mechanism firing
- * on read, not something this function triggers.) Result is capped at
- * MAX_TOKEN_BALANCE (see above). No-ops (returns null, writes nothing) for
- * an empty/missing email, matching spendTokens' and syncTokens' own guard.
+ * daily-claim machinery: `lastClaimAt`/`streak` are carried through
+ * unchanged (never bumped/reset), so a top-up never resets or delays the
+ * next daily claim's cooldown/streak — it is purely additive to `balance`,
+ * nothing else about the record's claim state changes because of it.
+ * Result is capped at MAX_TOKEN_BALANCE (see above). No-ops (returns null,
+ * writes nothing) for an empty/missing email, matching spendTokens' and
+ * syncTokens' own guard.
  */
 async function addTokens(event, email, amount) {
   var key = normalizeEmail(email);
   if (!key) return null;
   var tokens = await syncTokens(event, key);
   var newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + amount);
-  return setEntitlement(event, key, { tokens: { balance: newBalance, lastGrantAt: tokens.lastGrantAt } });
+  return setEntitlement(event, key, { tokens: { balance: newBalance, lastClaimAt: tokens.lastClaimAt, streak: tokens.streak } });
 }
 
 // ============================================================================
@@ -946,7 +1029,7 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
   // over whatever its own internal read saw) — this function follows the
   // same pattern for the same reason. Getting this wrong would silently
   // overwrite a real grant that just landed (up to 220 tokens for a
-  // brand-new email's first-ever read, or 20 for a daily drip).
+  // brand-new email's first-ever read).
   var syncedTokens = await syncTokens(event, key);
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
@@ -971,7 +1054,7 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
       var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + creditAmount);
       return Object.assign({}, rec, {
         email: key,
-        tokens: { balance: newBalance, lastGrantAt: syncedTokens.lastGrantAt },
+        tokens: { balance: newBalance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak },
         appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
         firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
@@ -1344,8 +1427,8 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
   // Same "use syncTokens' own returned value as the balance base, never a
   // later independent re-read" discipline as creditTokenPackAmountOnce —
   // see that function's own doc comment for the read-your-own-write hazard
-  // this avoids (a just-landed daily/signup grant getting silently
-  // clobbered by a stale re-read).
+  // this avoids (a just-landed signup grant getting silently clobbered by
+  // a stale re-read).
   var syncedTokens = await syncTokens(event, key);
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
@@ -1361,7 +1444,7 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
       var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + amount);
       return Object.assign({}, rec, {
         email: key,
-        tokens: { balance: newBalance, lastGrantAt: syncedTokens.lastGrantAt },
+        tokens: { balance: newBalance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak },
         refundedJobIds: refundedList.concat([jobId]),
         updatedAt: Date.now()
       });
@@ -1408,7 +1491,7 @@ async function forgetRefundedJobId(event, email, jobId) {
 /**
  * Permanently deletes an email's entire entitlement record — the token
  * ledger half of delete-account.js's account-deletion flow. Removes the
- * balance/lastGrantAt, the dormant Stripe subscription fields
+ * balance/lastClaimAt/streak, the dormant Stripe subscription fields
  * (active/plan/stripeCustomerId/stripeSubscriptionId — see this file's own
  * header comment for why they're still on the record shape even though
  * unused), and appliedTokenPackPaymentIds (the short-lived Dodo
@@ -1449,6 +1532,7 @@ module.exports = {
   isEntitled,
   setEntitlement,
   getTokenStatus,
+  claimDailyTokens,
   spendTokens,
   addTokens,
   creditTokenPackOnce,
@@ -1465,7 +1549,8 @@ module.exports = {
   // recurring bug class documented in tracker item
   // recurring-bug-class-hardcoded-daily-gran-h6swgy.
   INITIAL_GRANT,
-  DAILY_GRANT_AMOUNT,
-  GRANT_CEILING,
+  DAILY_CLAIM_AMOUNT,
+  CLAIM_COOLDOWN_MS,
+  STREAK_CONTINUITY_MS,
   FIRST_PURCHASE_BONUS_MULTIPLIER
 };

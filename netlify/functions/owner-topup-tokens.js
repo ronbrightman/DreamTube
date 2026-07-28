@@ -6,11 +6,12 @@
 // lib/entitlements.js's token-economy doc block), but a self-service way for
 // the owner specifically to top up their own balance from profile.html's
 // account sheet whenever they want to keep testing without waiting on the
-// daily drip. See AGENT_POLICY.md / the founder's own explicit call on this.
+// daily claim's 20h cooldown. See AGENT_POLICY.md / the founder's own
+// explicit call on this.
 //
 // POST { email, amount, targetUsername? } -> credits `amount` tokens onto
 //         a balance via lib/entitlements.js's addTokens (see that function
-//         for why this never touches lastGrantAt), but ONLY when the
+//         for why this never touches lastClaimAt/streak), but ONLY when the
 //         REQUESTING `email` (normalized) matches OWNER_EMAIL (normalized)
 //         — otherwise 403. AUTHORIZATION IS UNCHANGED from this file's
 //         original, narrower shape: it is always the requester's own
@@ -39,8 +40,8 @@
 //         approved 2026-07-28: a one-off 800-token gift to his son's
 //         account, username benbrightman14) for why this was extended.
 //         Returns the refreshed token status of the CREDITED account (same
-//         shape get-token-status.js returns: { balance, nextGrantAt,
-//         dailyGrantAmount, grantCeiling, atCeiling, hasMadeFirstPurchase }),
+//         shape get-token-status.js returns: { balance, claimable,
+//         nextClaimAt, dailyClaimAmount, streak, hasMadeFirstPurchase }),
 //         plus `creditedEmail`/`targetUsername` so a caller crediting a
 //         target account can tell (and log) whose balance this response
 //         actually describes, rather than assuming it's always the
