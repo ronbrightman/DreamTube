@@ -738,6 +738,68 @@ test('style.html: dismissing the out-of-tokens sheet (tap outside) while an inli
   }
 });
 
+test('style.html: dismissing while an inline claim is in flight, then reopening the sheet BEFORE the original request resolves, does not corrupt the reopened sheet', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding (round 3): capturing `current` into a local (round 2's
+  // fix) stopped the crash, but a stale-but-non-null capture could still
+  // mutate the shared #ps-claim-btn/#ps-claim-label/#ps-error nodes after
+  // the sheet was dismissed and reopened for a different blocked action.
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    var pageErrors = [];
+    page.on('pageerror', function (err) { pageErrors.push(err); });
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 60, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
+          resolve();
+        }, 500);
+      });
+    });
+
+    await seedAccount(page, { username: 'claiminlinereopen', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+
+    await page.click('#ps-claim-btn'); // kicks off the 500ms-delayed request
+    await page.click('#purchase-sheet-overlay', { position: { x: 5, y: 5 } }); // dismiss immediately
+    await page.waitForSelector('#purchase-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    // Reopen (same blocked action, still not claimed since nothing has
+    // refreshed the tokenStatus yet) BEFORE the original request resolves.
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+    var labelOnReopen = await page.textContent('#ps-claim-label');
+    assert.match(labelOnReopen, /Claim \+20 free tokens/, 'reopened sheet starts fresh with its normal idle claim label');
+
+    // Let the original (dismissed instance's) delayed request resolve
+    // while the REOPENED sheet is what's on screen.
+    await page.waitForTimeout(800);
+
+    var stillOpen = await page.evaluate(function () {
+      return document.getElementById('purchase-sheet-overlay').classList.contains('open');
+    });
+    assert.ok(stillOpen, 'the reopened sheet must still be open');
+    var labelAfter = await page.textContent('#ps-claim-label');
+    assert.match(labelAfter, /Claim \+20 free tokens/, 'the reopened sheet\'s claim label must not be overwritten by the stale dismissed instance\'s response');
+    assert.equal(pageErrors.length, 0, 'no uncaught error -- ' + pageErrors.map(function (e) { return e.message; }).join('; '));
+  } finally {
+    await context.close();
+  }
+});
+
 test('style.html: NOT claimable -> the inline claim button stays hidden entirely, only the buy CTA shows', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

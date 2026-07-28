@@ -136,6 +136,17 @@
   // ==========================================================================
   var SHEET_ID = 'purchase-sheet-overlay';
   var current = null; // the opts object passed to the most recent show() call
+  // Review finding (round 3): capturing `current` into a local before an
+  // async gap (round 2's fix) stops a null-deref crash, but doesn't stop a
+  // STALE-but-non-null capture from still mutating shared singleton DOM
+  // (btn/label/#ps-error) after the sheet has been dismissed and reopened
+  // for a different blocked action. Same instance-guard pattern already
+  // used elsewhere in this codebase (create.html's charSheetToken,
+  // profile.html's identitySheetToken): bumped on every show()/hide(),
+  // captured locally by claimInline() before its async call, re-checked
+  // once it resolves so a stale attempt's DOM-mutating side effects no-op
+  // entirely rather than corrupting whatever sheet instance is now open.
+  var currentGen = 0;
 
   function trackLocal(name, props) {
     if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.capture === 'function') {
@@ -220,13 +231,27 @@
    * at the one function its own finding named. hide() (tap-outside
    * dismiss on THIS sheet) nulls `current` with no in-flight guard, so
    * dismissing while a claim request is still pending crashed the
-   * .catch() on `current.tokenStatus` being null. Fixed the same way:
-   * capture the triggering `current` into a local `claimTarget` before
-   * the async gap, close over that instead.
+   * .catch() on `current.tokenStatus` being null. Fixed by capturing the
+   * triggering `current` into a local `claimTarget` before the async gap.
+   *
+   * Review finding (round 3): that fix stopped the CRASH but not the
+   * deeper issue — a stale (non-null) `claimTarget` can still mutate the
+   * shared singleton `#ps-claim-btn`/`#ps-claim-label`/`#ps-error` DOM
+   * nodes after the sheet was dismissed and reopened for a DIFFERENT
+   * blocked action, corrupting whatever the user is now looking at. Fixed
+   * the same instance-guard way this codebase already uses elsewhere
+   * (create.html's charSheetToken, profile.html's identitySheetToken):
+   * `currentGen` is bumped on every show()/hide(), captured here as
+   * `myGen` before the async call, and every DOM-mutating branch below is
+   * gated on `myGen === currentGen` — a stale attempt's side effects
+   * simply no-op rather than touching a sheet instance they don't belong
+   * to. `daily_claim_completed` still fires either way (it's an accurate
+   * record of what genuinely happened server-side, not a DOM mutation).
    */
   function claimInline() {
     if (!current) return;
     var claimTarget = current;
+    var myGen = currentGen;
     var btn = document.getElementById('ps-claim-btn');
     var label = document.getElementById('ps-claim-label');
     btn.disabled = true;
@@ -237,16 +262,19 @@
         // hadn't actually elapsed — not an error, just nothing to reflect.
         // The button simply disappears since there's genuinely nothing left
         // to claim right now.
+        if (myGen !== currentGen) return;
         claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false });
         renderClaimOption();
         return;
       }
       trackLocal('daily_claim_completed', { source: claimTarget.source || null, streak: data.streak, balance: data.balance, surface: 'out_of_tokens_sheet' });
+      if (myGen !== currentGen) return;
       claimTarget.balance = data.balance;
       claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
       renderClaimOption();
       renderPurchaseAmounts();
     }).catch(function () {
+      if (myGen !== currentGen) return;
       btn.disabled = false;
       label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + ((claimTarget.tokenStatus && claimTarget.tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
       showError('Couldn’t claim right now — try again in a moment');
@@ -376,6 +404,7 @@
 
     ensureMounted();
     current = opts;
+    currentGen++;
 
     var balance = typeof opts.balance === 'number' ? opts.balance : 0;
     var cost = typeof opts.cost === 'number' ? opts.cost : 100;
@@ -411,6 +440,7 @@
       if (typeof current.onDismiss === 'function') current.onDismiss();
     }
     current = null;
+    currentGen++;
   }
 
   // ==========================================================================
@@ -512,6 +542,13 @@
   // ==========================================================================
   var CLAIM_SHEET_ID = 'claim-sheet-overlay';
   var currentClaim = null; // the opts object passed to the most recent showClaimSheet() call
+  // Same instance-guard purpose as `currentGen` above (see its own doc
+  // comment) — bumped on every showClaimSheet()/hideClaimSheet(), captured
+  // by runClaim() before its async call so a stale attempt (the sheet was
+  // dismissed and reopened before the original request resolved) can't
+  // run its ritual/auto-close against a sheet instance it doesn't belong
+  // to (review finding, round 3).
+  var claimGen = 0;
 
   function ensureClaimMounted() {
     if (document.getElementById(CLAIM_SHEET_ID)) return;
@@ -588,6 +625,7 @@
     opts = opts || {};
     ensureClaimMounted();
     currentClaim = opts;
+    claimGen++;
 
     var status = opts.tokenStatus || {};
     var amount = status.dailyClaimAmount != null ? status.dailyClaimAmount : 20;
@@ -619,6 +657,7 @@
       if (typeof currentClaim.onDismiss === 'function') currentClaim.onDismiss();
     }
     currentClaim = null;
+    claimGen++;
   }
 
   /**
@@ -640,14 +679,30 @@
    * claim's onClaimed callback (so the caller's balance chip never
    * refreshes) and its daily_claim_completed analytics fire, even though
    * the tokens really were credited. Fixed by capturing the triggering
-   * opts in a LOCAL `claimOpts` at the top, before the async gap — the
-   * callbacks below close over this local, never the shared var, so a
-   * concurrent dismiss can no longer corrupt an in-flight claim's own
-   * outcome handling.
+   * opts in a LOCAL `claimOpts` at the top, before the async gap.
+   *
+   * Review finding (round 3): capturing `claimOpts` stopped the CRASH but
+   * not the deeper issue — a stale (non-null) `claimOpts` can still run
+   * the whole success ritual (count-up, confetti, streak text) and,
+   * worse, forcibly auto-close a DIFFERENT sheet instance the user
+   * reopened in the meantime (dismiss -> tap the still-"claimable" chip
+   * again before this request resolves -> a genuinely new showClaimSheet()
+   * session is now open when the ORIGINAL request finally settles). Fixed
+   * with the same instance-guard this codebase already uses elsewhere
+   * (create.html's charSheetToken, profile.html's identitySheetToken):
+   * `claimGen` is bumped on every showClaimSheet()/hideClaimSheet(),
+   * captured here as `myGen`, and every DOM-mutating/auto-close branch
+   * below is gated on `myGen === claimGen`. `daily_claim_completed` and
+   * `onClaimed` still fire unconditionally either way — they're accurate
+   * regardless of sheet staleness (the credit genuinely happened, and the
+   * caller's balance chip should refresh no matter which sheet instance
+   * is currently on screen) — only the sheet-instance-local ritual/close
+   * is gated.
    */
   function runClaim() {
     if (!currentClaim) return;
     var claimOpts = currentClaim;
+    var myGen = claimGen;
     var btn = document.getElementById('claim-sheet-btn');
     var label = document.getElementById('claim-sheet-btn-label');
     var errEl = document.getElementById('claim-sheet-error');
@@ -660,23 +715,27 @@
         // Not an error (see claim-daily-tokens.js's own doc comment) — most
         // likely another tab/request already claimed this cooldown window.
         // Nothing left to claim; say so plainly and let the user dismiss.
+        if (myGen !== claimGen) return;
         label.textContent = 'Already claimed';
         errEl.textContent = 'Looks like you already claimed today — check back later.';
         errEl.style.display = 'block';
         return;
       }
+      trackLocal('daily_claim_completed', { source: claimOpts.source || null, streak: data.streak, balance: data.balance, surface: 'claim_sheet' });
+      var onClaimed = claimOpts.onClaimed;
+      if (typeof onClaimed === 'function') onClaimed(data);
+      if (myGen !== claimGen) return;
       var amount = (claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20;
       animateCountUp(amount, 650);
       fireConfetti();
       document.getElementById('claim-sheet-streak').textContent = 'Day ' + data.streak;
       label.textContent = 'Claimed!';
-      trackLocal('daily_claim_completed', { source: claimOpts.source || null, streak: data.streak, balance: data.balance, surface: 'claim_sheet' });
-      var onClaimed = claimOpts.onClaimed;
       setTimeout(function () {
+        if (myGen !== claimGen) return;
         hideClaimSheet(true);
-        if (typeof onClaimed === 'function') onClaimed(data);
       }, 1100);
     }).catch(function () {
+      if (myGen !== claimGen) return;
       btn.disabled = false;
       label.textContent = 'Claim ' + ((claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20) + ' tokens';
       errEl.textContent = 'Couldn’t claim right now — try again in a moment';

@@ -261,6 +261,69 @@ test('claim sheet: tapping Claim calls the real endpoint, shows the streak line,
   }
 });
 
+test('claim sheet: dismissing while a claim is in flight, then reopening BEFORE the original request resolves, does not corrupt the reopened sheet', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding (round 3): capturing the triggering opts into a local
+  // (round 1's fix) stops a null-deref crash on dismiss-during-flight, but
+  // a stale-but-non-null capture could still run its whole success ritual
+  // (count-up, confetti, streak text) against — and forcibly auto-close —
+  // a DIFFERENT sheet instance the user reopened before the original
+  // request settled. This test dismisses while claiming, reopens via the
+  // chip (still showing claimable, since nothing has refreshed it yet),
+  // lets the ORIGINAL delayed request resolve, and confirms the REOPENED
+  // sheet stays open and untouched by it.
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      // Deliberately delayed so the test can dismiss + reopen WHILE this
+      // original request is still in flight -- the exact race the fix closes.
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
+          resolve();
+        }, 500);
+      });
+    });
+
+    await seedLoggedInUserAt(page, 'claimreopen', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+
+    // Tap Claim (kicks off the delayed request), then immediately dismiss.
+    await page.click('#claim-sheet-btn');
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    // Reopen via the chip (still shows claimable -- nothing has refreshed
+    // it yet) BEFORE the original 500ms-delayed request resolves.
+    await page.click('#topbar-token-chip', { force: true });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    var streakOnReopen = await page.textContent('#claim-sheet-streak');
+    assert.match(streakOnReopen, /Day 3/, 'reopened sheet starts fresh, showing the next-streak-number for THIS session');
+
+    // Let the ORIGINAL request's delayed response land while the REOPENED
+    // sheet is what's actually on screen.
+    await page.waitForTimeout(900);
+
+    // The reopened sheet must still be open -- the stale original request
+    // must not have force-closed it.
+    var stillOpen = await page.evaluate(function () {
+      return document.getElementById('claim-sheet-overlay').classList.contains('open');
+    });
+    assert.ok(stillOpen, 'the REOPENED sheet must still be open -- a stale resolved request from the dismissed instance must not auto-close it');
+
+    // The reopened sheet's own button must still read its normal idle
+    // label -- the stale request's "Claimed!"/ritual must not have
+    // overwritten it.
+    var labelAfter = await page.textContent('#claim-sheet-btn-label');
+    assert.match(labelAfter, /Claim \d+ tokens/, 'the reopened sheet\'s button label must not be overwritten by the stale dismissed instance\'s "Claimed!" text');
+  } finally {
+    await context.close();
+  }
+});
+
 test('claim sheet: dismissing without claiming fires daily_claim_dismissed, never daily_claim_completed', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
