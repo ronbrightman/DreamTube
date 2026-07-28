@@ -43,14 +43,24 @@ growth-owned).
 ## What's built and live (main branch, all tested)
 
 - **Monetization:** pivoted from subscription/quota to a one-time
-  token ledger — retuned to "Token Economy C" 2026-07-26 night
-  (founder-approved): 220-token signup grant, +20/day automatic, 200
-  ceiling. Dodo Payments is the chosen, live payment provider — checkout
-  + webhook + idempotent crediting all merged and tested, now a 3-pack
-  lineup (100/$2.99, 300/$7.99, 700/$14.99) plus a one-time +50%
-  first-purchase bonus; still needs **Ron's own** account/API-key setup
-  (3 Dodo products this time) before it can process a real charge
-  (founder action, not something this session can do).
+  token ledger. 220-token signup grant. Daily free tokens are now an
+  ACTIVE claim (2026-07-28 daily-claim switch, no more automatic drip/
+  ceiling): 100 tokens on an account's very first-ever claim, 20 on
+  every claim after that. Dodo Payments is the chosen, live payment
+  provider — checkout + webhook + idempotent crediting all merged and
+  tested. Pack enrichment (2026-07-28, founder-approved, same prices):
+  200 tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99 (doubled from
+  the original 100/300/700 lineup after the veo3.1/lite cost cut below
+  — internal pack100/pack300/pack700 identifiers and Dodo product env
+  vars kept their original names, only the credited amount changed)
+  plus a one-time +50% first-purchase bonus. A standard video
+  generation now defaults to fal-ai/veo3.1/lite (~80% cheaper than the
+  prior Fast default, env-configurable revert); reference-to-video
+  (Me-photo) and image-to-video stay on Fast. **The store went LIVE
+  with real money 2026-07-27** — Dodo is processing real charges.
+  Still needs **Ron's own** action to rename the 3 Dodo dashboard
+  products to match the new doubled pack amounts (founder action, not
+  something this session can do).
 - **Shop palette A/B test:** the token shop's red/hot visual palette
   (founder feedback) was redesigned into two calmer directions, shipped
   as a live 50/50 in-product A/B test (not a founder pick-one) with a
