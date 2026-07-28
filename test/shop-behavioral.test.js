@@ -114,7 +114,7 @@ test('all three token-pack buttons are enabled and say "Buy" (no longer disabled
   }
 });
 
-test('clicking a pack button posts {email, pack} and redirects to the returned checkout url on success', async function (t) {
+test('clicking a pack button posts {email, pack, password} (returning-buyer prefill, tracker item for-product-repeat-purchase-friction-dod-b6pzs6 — seedShopPage\'s account has a locally-cached password, same as a real signed-in session) and redirects to the returned checkout url on success', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -132,7 +132,50 @@ test('clicking a pack button posts {email, pack} and redirects to the returned c
     await page.click('#shop-buy-pack700');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
 
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack700' });
+    // password is DreamStore.getCachedPassword()'s value for this signed-in
+    // account — seedShopPage's own seed matches state.accounts.shopper's
+    // real shape (see that function's own comment), so this now mirrors
+    // what a genuinely signed-in browser sends. Never a requirement server-
+    // side (see create-checkout-session-dodo.js's own header comment) —
+    // this is a pure client-side convenience send.
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack700', password: 'testpass1' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('a signed-in account with NO locally-cached password (e.g. established via a session-transfer token) posts the bare {email, pack} -- no password field at all', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@shopper', username: 'shopper' };
+      // No `password` key at all on this account -- mirrors an account
+      // established purely via a session-transfer token, which never
+      // carries a password locally (see DreamStore.getCachedPassword's own
+      // doc comment).
+      state.accounts = { shopper: { email: 'shopper@example.com' } };
+      if (!state.dreams) state.dreams = [];
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    var capturedBody = null;
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      capturedBody = route.request().postDataJSON();
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_test' }) });
+    });
+
+    await page.click('#shop-buy-pack100');
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack100' });
   } finally {
     await context.close();
   }

@@ -1711,6 +1711,29 @@
       return currentAccountEmail();
     },
 
+    /**
+     * The CURRENTLY signed-in account's own already-cached local password,
+     * or null if there is none to give (not signed in, or this account has
+     * no locally-cached password at all — e.g. one established purely via
+     * a session-transfer token, see commitTransferredSession's own doc
+     * comment). Same "no new re-auth prompt, the password is already on
+     * hand" shape as mintSessionTransferToken above — added for shop.html's
+     * returning-buyer checkout prefill (create-checkout-session-dodo.js's
+     * OPTIONAL password field, tracker item
+     * for-product-repeat-purchase-friction-dod-b6pzs6): that endpoint only
+     * ever attaches a stored Dodo customer_id / enables saved payment
+     * methods after verifying this password server-side, and falls back
+     * silently to today's plain checkout if it's missing or wrong — so
+     * handing it over here is a pure convenience, never something whose
+     * absence should surface as an error to the caller.
+     */
+    getCachedPassword: function () {
+      if (!state.user) return null;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      return (account && account.password) || null;
+    },
+
     /** The current user's account-creation timestamp (epoch ms), or null if unknown — either not logged in, or (the common case for now) an account that was created before this field existed, since there's no real history to backfill for those (same "don't fabricate" reasoning as tracker-store.js's createdAt/doneAt/startedAt). Used by the Settings support/feedback form to report "days since signup" as real context, never a guessed one. */
     getAccountCreatedAt: function () {
       return currentAccountCreatedAt();

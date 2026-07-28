@@ -86,6 +86,22 @@
 // double-credit) — "analytics must never break the app" applies just as
 // much to a webhook as it does to a page.
 // ---------------------------------------------------------------------
+//
+// Dodo customer id capture (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6): a payment.succeeded
+// Payment's `customer` block also carries `customer_id` (Dodo's own
+// identifier for the buyer, alongside the `email` this file already reads
+// into payEmail) — stamped onto the entitlement record as `dodoCustomerId`
+// (see lib/entitlements.js's own doc comment) whenever present, regardless
+// of whether this call ends up crediting anything new (a redelivery of an
+// already-processed payment still carries the same real customer_id, and
+// re-stamping the same value is a harmless no-op). create-checkout-
+// session-dodo.js reads this back on a LATER purchase to attach the
+// checkout to the buyer's existing Dodo customer instead of a bare email —
+// but only after its own real-password verification gate; see that file's
+// header comment for why a bare stored customer id is never enough on its
+// own to unlock that.
+// ---------------------------------------------------------------------
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
@@ -290,9 +306,36 @@ exports.handler = async function (event) {
       var payment = dodoEvent.data || {};
       var payEmail = (payment.customer && payment.customer.email) ||
         (payment.metadata && payment.metadata.dreamtube_email);
+      var dodoCustomerId = payment.customer && payment.customer.customer_id;
       var tokens = resolvePackTokens(payment);
 
       if (payEmail && tokens) {
+        // Best-effort capture, scoped to a genuinely resolvable token-pack
+        // payment (same condition as the credit itself just below) rather
+        // than any payment event at all — an event this codebase can't
+        // even determine a token amount for is treated as unprocessable
+        // (see the "acknowledged, nothing credited" comment further down),
+        // and must not have the side effect of conjuring a brand-new,
+        // otherwise-empty entitlement record purely to hold a customer id.
+        // Runs on every delivery, including a redelivery of an already-
+        // credited payment (see this file's own header comment on why
+        // re-stamping the same value is a safe no-op) — this only ever
+        // needs `payEmail`/`dodoCustomerId` to be present, independent of
+        // creditTokenPackOnce's own dedup below. Never blocks/throws on
+        // its own; a failure here must not turn a successful token credit
+        // into a 500 (mirrors firePurchaseConversion's own "analytics must
+        // never break the app" posture, just for this bookkeeping field
+        // instead of analytics).
+        if (dodoCustomerId) {
+          try {
+            await entitlements.setEntitlement(event, payEmail, { dodoCustomerId: dodoCustomerId });
+          } catch (e) {
+            // Non-fatal — worst case a later checkout just doesn't see a
+            // stored customer id yet and falls back to today's bare-email
+            // checkout, exactly as if this purchase had never carried one.
+          }
+        }
+
         var creditResult = await entitlements.creditTokenPackOnce(event, payEmail, payment.payment_id, tokens);
         // creditTokenPackOnce's own doc comment flags `credited: true` as
         // exactly the signal a caller should gate a one-time side effect
