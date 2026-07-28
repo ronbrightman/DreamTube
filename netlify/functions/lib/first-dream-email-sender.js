@@ -106,9 +106,27 @@ function profileUrl(event) {
 
 function buildHtml(opts) {
   var bannerColor = colorForStyle(opts.style);
+  // COPY FIX (tracker.html's for-product-bug-founder-affects-all-funn-
+  // 0efe7t, gap #5): this used to read "Your first dream is ready to
+  // watch." here, but the ONLY guard behind this send is
+  // lib/first-dream-email-store.js's markSentOnce -- "has THIS account
+  // ever gotten this email before", not "is this account's dream actually
+  // its first ever" -- and the automatic path (mark-generation-completed.js)
+  // never has a caption to fall back on (see this file's own header
+  // comment on why), so it hits this exact branch every time. A legacy
+  // account with prior dreams that simply hadn't triggered this email
+  // before (e.g. it predates this feature, or its earlier dreams never
+  // got a job-owners record) would get told this is its "first" dream,
+  // which may well be false. Adding a REAL first-ness check would mean
+  // this choke point fetching the account's full dream history just to
+  // word one sentence -- a real cost for a cosmetic detail. Picked the
+  // smaller, more consistent fix instead: drop the "first" claim and keep
+  // this generic, matching the caption-present branch right above (which
+  // already never says "first" either) and the email's own subject line
+  // ("Your dream is ready -- here's your video").
   var readyLine = opts.caption
     ? 'Your dream is ready to watch: <b>' + esc(opts.caption) + '</b>'
-    : 'Your first dream is ready to watch.';
+    : 'Your dream is ready to watch.';
   return (
     '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
     '<div style="height:160px;border-radius:14px;background:' + bannerColor + ';margin-bottom:18px;"></div>' +
@@ -120,10 +138,33 @@ function buildHtml(opts) {
 }
 
 /**
+ * Fires 'first_dream_email_skipped' server-side for every no-op/failure
+ * branch below (tracker.html's for-product-bug-founder-affects-all-funn-
+ * 0efe7t item, gap #6: "every skip reason in the email chain is invisible
+ * -- console.log only"). Same fire-and-forget discipline as the
+ * 'first_dream_email_sent' event this file already fires -- best-effort,
+ * never throws, never affects the caller's own return value. `username`
+ * may be null (e.g. the missing_identity branch, which by definition has
+ * no verified username) -- falls back to whatever identifying string IS
+ * on hand (an email, or 'unknown'), same distinct_id-fallback precedent
+ * video-status.js's refundAndReport already establishes for a
+ * PostHog fire that needs to happen even without a resolved account.
+ */
+async function reportSkip(username, email, reason, auto) {
+  try {
+    await posthogCapture.captureEvent({
+      event: 'first_dream_email_skipped',
+      distinct_id: username || email || 'unknown',
+      properties: { reason: reason, auto: !!auto }
+    });
+  } catch (e) { /* analytics must never break the app */ }
+}
+
+/**
  * Guarded send: checks (and atomically claims) firstDreamEmailStore's
  * per-account "already sent" flag BEFORE attempting anything, sends via
  * Resend only if this call actually won that claim, and best-effort fires
- * the 'first_dream_email_sent' PostHog event on an actual successful
+ * the 'first_dream_email_sent' PostHog event ONLY on an actual, accepted
  * send. Never throws — every failure mode (guard loss, no Resend key
  * configured, Resend itself rejecting the send) resolves normally.
  *
@@ -138,27 +179,55 @@ function buildHtml(opts) {
  *   caption/style (optional) — cosmetic personalization only, see header
  *             comment on why the automatic path omits these
  *
- * Returns { ok:true, sent:true } on an actual send, or
- * { ok:true, sent:false, skipped:<reason> } for every no-op case
- * (already sent, no RESEND_API_KEY, missing identity) — this function
- * itself never signals failure to its caller; every caller here treats
- * this as best-effort, exactly like the rest of this codebase's other
- * analytics-adjacent/notification sends.
+ * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
+ * send, or { ok:true, sent:false, skipped:<reason> } for every other case
+ * (already sent, no RESEND_API_KEY, missing identity, or Resend itself
+ * rejecting/failing the request) — this function itself never signals
+ * failure to its caller; every caller here treats this as best-effort,
+ * exactly like the rest of this codebase's other analytics-adjacent/
+ * notification sends. A 'first_dream_email_skipped' PostHog event fires
+ * for every one of these skip/failure reasons too (see reportSkip above)
+ * — this used to be genuinely invisible (console.log only).
+ *
+ * RESEND-FAILURE FIX (tracker.html's for-product-bug-founder-affects-all-
+ * funn-0efe7t item, gap #6): a Resend 4xx/network failure used to still
+ * return `sent:true` AND leave the guard's one-time-ever marker burned —
+ * meaning a real account whose send genuinely failed would never get a
+ * legitimate retry (the marker already said "sent") and callers reporting
+ * on this return value would believe an email went out that never did.
+ * Both are wrong: the guard is now released (firstDreamEmailStore.
+ * releaseFailedSend) on any non-2xx/network failure, and this reports
+ * sent:false / skipped:'resend_rejected'|'resend_network_failure' instead
+ * — a later attempt (a regenerate, or the client-triggered fallback) can
+ * genuinely succeed where this one didn't.
  */
 async function sendIfEligible(event, opts) {
   opts = opts || {};
   var username = opts.username;
   var email = opts.email;
-  if (!username || !email) return { ok: true, sent: false, skipped: 'missing_identity' };
+  if (!username || !email) {
+    await reportSkip(username, email, 'missing_identity', opts.auto);
+    return { ok: true, sent: false, skipped: 'missing_identity' };
+  }
 
   var guard = await firstDreamEmailStore.markSentOnce(event, username, opts.dreamId);
   if (!guard.ok) {
-    return { ok: true, sent: false, skipped: guard.alreadySent ? 'already_sent' : (guard.error || 'guard_failed') };
+    var guardReason = guard.alreadySent ? 'already_sent' : (guard.error || 'guard_failed');
+    await reportSkip(username, email, guardReason, opts.auto);
+    return { ok: true, sent: false, skipped: guardReason };
   }
 
   var resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {
     console.log('first-dream-email-sender: RESEND_API_KEY not configured -- skipping send for ' + username);
+    // The guard was already won above (a real, singular claim of this
+    // account's one-time-ever email) — but with no key configured, no
+    // send was even attempted, let alone one that could later succeed on
+    // retry once RESEND_API_KEY IS configured, so this is released too,
+    // same as an actual Resend failure below (a config gap must not
+    // permanently burn a real account's one and only send).
+    await firstDreamEmailStore.releaseFailedSend(event, username, guard.claimId);
+    await reportSkip(username, email, 'no_resend_key', opts.auto);
     return { ok: true, sent: false, skipped: 'no_resend_key' };
   }
 
@@ -181,16 +250,28 @@ async function sendIfEligible(event, opts) {
         html: html
       })
     });
-    if (!res.ok) console.error('first-dream-email-sender: Resend rejected the send', res.status);
+    if (!res.ok) {
+      console.error('first-dream-email-sender: Resend rejected the send', res.status);
+      // See "RESEND-FAILURE FIX" above — release the claim so a later
+      // attempt can genuinely retry, rather than reporting a send that
+      // never happened.
+      await firstDreamEmailStore.releaseFailedSend(event, username, guard.claimId);
+      await reportSkip(username, email, 'resend_rejected', opts.auto);
+      return { ok: true, sent: false, skipped: 'resend_rejected' };
+    }
   } catch (sendErr) {
     console.error('first-dream-email-sender: Resend send failed (non-fatal)', sendErr);
+    await firstDreamEmailStore.releaseFailedSend(event, username, guard.claimId);
+    await reportSkip(username, email, 'resend_network_failure', opts.auto);
+    return { ok: true, sent: false, skipped: 'resend_network_failure' };
   }
 
   // Fire-and-forget, best-effort -- see header comment. Only fired for an
-  // actual attempted send (guard already won above), regardless of
-  // whether Resend itself ultimately accepted it, matching this
-  // codebase's existing "count the attempt, not the vendor's own
-  // delivery confirmation" discipline for every other analytics fire.
+  // ACCEPTED send (Resend returned 2xx above) -- see "RESEND-FAILURE FIX"
+  // for why this is no longer "count the attempt regardless of vendor
+  // confirmation" for this specific event (a rejected/failed attempt now
+  // reports via reportSkip's 'resend_rejected'/'resend_network_failure'
+  // instead, and releases the guard so it can be reattempted).
   try {
     await posthogCapture.captureEvent({
       event: 'first_dream_email_sent',

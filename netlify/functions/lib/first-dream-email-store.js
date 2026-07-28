@@ -116,7 +116,7 @@ async function markSentOnce(event, username, dreamId) {
     }
   });
 
-  if (result.ok) return { ok: true };
+  if (result.ok) return { ok: true, claimId: claimId };
   if (result.skipped) return { ok: false, alreadySent: true };
 
   // Genuine exhaustion, not the legitimate `skipped` case -- see this
@@ -126,4 +126,42 @@ async function markSentOnce(event, username, dreamId) {
   return { ok: false, error: 'exhausted' };
 }
 
-module.exports = { STORE_NAME, normalizeUsername, hasSent, markSentOnce };
+/**
+ * Releases a claim markSentOnce just won, for a caller whose actual send
+ * then failed (tracker.html's for-product-bug-founder-affects-all-funn-
+ * 0efe7t item, gap #6) -- without this, a Resend rejection/network failure
+ * would permanently burn the one-time-ever marker for a real account that
+ * never actually got an email, with no way to ever retry. Only deletes the
+ * record if it still matches `claimId` (the same fresh id markSentOnce's
+ * own mutate generated for THIS caller's winning write) -- i.e. this can
+ * only ever undo the caller's own just-won claim, never a different,
+ * legitimate send that happens to race in afterward (which would already
+ * have overwritten `claimId` with its own).
+ *
+ * Best-effort, matching every other write in this feature: a failure to
+ * release just means this specific account waits for its retention email
+ * a little longer (until a human notices/retries), never a crash, and
+ * never a double-send (the failed caller itself already knows it never
+ * actually sent anything).
+ */
+async function releaseFailedSend(event, username, claimId) {
+  var key = normalizeUsername(username);
+  if (!key || !claimId) return { ok: false };
+  try {
+    connectLambda(event);
+    var current = await store().get(key, { type: 'json' });
+    if (!current || current.claimId !== claimId) {
+      // Already overwritten by someone else's legitimate claim (or never
+      // landed at all) -- nothing of OURS to undo.
+      return { ok: false };
+    }
+    connectLambda(event);
+    await store().delete(key);
+    return { ok: true };
+  } catch (e) {
+    console.error('first-dream-email-store: failed to release a failed-send claim for ' + key + ' -- this account\'s marker stays burned until manually reset', e);
+    return { ok: false };
+  }
+}
+
+module.exports = { STORE_NAME, normalizeUsername, hasSent, markSentOnce, releaseFailedSend };
