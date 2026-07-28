@@ -172,14 +172,14 @@ test('deterministic story: "someone I know" subject uses the character\'s name',
   assert.equal(story, 'I was with Alex, meeting someone new inside a house, feeling joyful.');
 });
 
-test('deterministic story: "+ Something else" free-text escape hatches are honored for subject/place/action/mood', function () {
+test('deterministic story: "+ Something else" free-text escape hatches are honored for subject/place/action/mood, with a grammatical preposition prepended to a custom place (review finding: was missing "in", producing "...book a floating library")', function () {
   var story = WizardChips.buildDeterministicStory({
     subjectKey: 'other', subjectOtherText: 'my grandmother',
     placeKey: 'other', placeOtherText: 'a floating library',
     actionKey: 'other', actionOtherText: 'reading an impossible book',
     moodKey: 'other', moodOtherText: 'bittersweet'
   });
-  assert.equal(story, 'I was my grandmother, reading an impossible book a floating library, feeling bittersweet.');
+  assert.equal(story, 'I was my grandmother, reading an impossible book in a floating library, feeling bittersweet.');
 });
 
 test('deterministic story: unset action/mood fall back to the same documented defaults as assembleCaption (Flying, Dreamy/surreal)', function () {
