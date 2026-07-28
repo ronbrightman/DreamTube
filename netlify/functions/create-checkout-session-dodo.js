@@ -103,6 +103,53 @@
 //                                reasoning). Code number retired, never
 //                                reused.
 //
+// ── Returning-buyer prefill: real password verification before attaching a
+//    stored Dodo customer_id / enabling saved payment methods (tracker item
+//    for-product-repeat-purchase-friction-dod-b6pzs6, founder decision
+//    2026-07-28) ──
+// An OPTIONAL `password` field alongside `email`/`pack`. This is NEVER a
+// requirement for checkout to proceed — a missing or wrong password simply
+// falls back to exactly today's existing behavior (a bare `{email: email}`
+// customer object, no saved-methods flag, no error surfaced) — this is a
+// friction-reduction feature layered on top of the purchase flow, not an
+// auth gate on the flow itself. See lib/entitlements.js's dodoCustomerId
+// doc comment and dodo-webhook.js's header comment for where the stored
+// customer id itself comes from.
+//
+// WHY THIS GATE EXISTS AT ALL (the security gap an earlier build+review
+// round on this same tracker item correctly caught and held for founder
+// sign-off before shipping): Dodo Payments auto-attaches ANY incoming
+// checkout to an existing customer purely by EMAIL MATCH — this function
+// already accepts a bare, unverified client-supplied `email` (an existing,
+// accepted tradeoff for token bookkeeping — see the header comment above).
+// Unconditionally passing a stored customer_id + show_saved_payment_methods
+// off that bare email would let anyone who knows or guesses a real user's
+// email see THAT PERSON's saved payment methods surface at checkout, with
+// no password, no rate limit. The fix: only ever attach customer_id /
+// enable show_saved_payment_methods once the caller has proven, via a REAL
+// password check, that they actually ARE the account holder for that email
+// — otherwise this endpoint behaves exactly as it always has.
+//
+// Reuses accountStore.verifyLogin — the exact same real-password-check
+// primitive create-session-transfer.js already uses for an equivalent
+// "this needs to actually be the real account owner" bar (see that file's
+// own header comment) — including its per-IP + per-account-identifier
+// rate limiting on the password check itself (this endpoint is otherwise
+// unauthenticated and public, so a password field here is a guessable-
+// secret surface exactly like that file's own). Rate-limited attempts
+// degrade the SAME way a wrong/missing password does: silently fall back
+// to the bare-email checkout, never a 4xx/5xx that would block the actual
+// purchase over an anti-abuse check on an optional convenience feature.
+//
+// Client-side, shop.html supplies this from the CURRENTLY signed-in
+// account's own already-cached local password (state.accounts[key].password
+// via a new DreamStore.getCachedPassword() helper) — the exact same "no new
+// re-auth prompt, the password is already on hand" shape js/store.js's
+// mintSessionTransferToken already uses for create-session-transfer.js. A
+// signed-out visitor, or one whose local session has no cached password
+// (e.g. an account established purely via a session-transfer token), simply
+// sends no password at all and gets today's unchanged checkout.
+//
 // ── Open-redirect guard on successUrl/cancelUrl (security fix, added for
 //    tracker item for-product-build-out-of-tokens-purchase-2y8hyw) ──
 // Until this fix, `payload.successUrl`/`payload.cancelUrl` were honored
@@ -143,6 +190,18 @@ var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
 var entitlements = require('./lib/entitlements');
 var normalizeEmail = entitlements.normalizeEmail;
+var accountStore = require('./lib/account-store');
+var rateLimit = require('./lib/rate-limit');
+
+// Same two-bucket (per-IP + per-account-identifier) shape and same default
+// magnitudes as create-session-transfer.js's own rate limiting on its
+// equivalent real-password check — see that file's own doc comment for why
+// BOTH buckets are needed (a per-IP-only cap alone would let an attacker
+// who knows a target's email guess that ONE account's password by rotating
+// IPs). Separate env vars/bucket names from that file's own, since this
+// gates a different endpoint with its own independent quota.
+var DEFAULT_MAX_PASSWORD_ATTEMPTS_PER_IP_PER_DAY = 100;
+var DEFAULT_MAX_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY = 30;
 
 // Token amount per pack — mirrors the pricing shown in shop.html ("The
 // Vault"): 300 tokens/$0.99 (one-time starter), 500 tokens/$1.99, 1500
@@ -237,6 +296,57 @@ exports.handler = async function (event) {
   // LIST item 2) is unchanged: the public feed is a real spam surface;
   // a paid checkout is not — abusing it costs the abuser money.
 
+  // ── Returning-buyer prefill gate — see this file's own header comment
+  // for the full "why" ──
+  //
+  // `verifiedAccountOwner` only ever becomes true after a REAL password
+  // check against the account for this exact email — never from the bare
+  // presence of a `password` field alone. Every failure mode here (no
+  // password supplied, wrong password, no account exists for this email,
+  // rate-limited) leaves it false and falls straight through to today's
+  // unchanged bare-email checkout below; nothing in this block ever
+  // returns an error response or blocks the purchase.
+  var verifiedAccountOwner = false;
+  var dodoCustomerId;
+  var suppliedPassword = typeof payload.password === 'string' ? payload.password : '';
+
+  if (suppliedPassword) {
+    var maxPerIpPerDay = parseInt(process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IP_PER_DAY, 10);
+    if (!maxPerIpPerDay || maxPerIpPerDay <= 0) maxPerIpPerDay = DEFAULT_MAX_PASSWORD_ATTEMPTS_PER_IP_PER_DAY;
+    var maxPerIdentifierPerDay = parseInt(process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY, 10);
+    if (!maxPerIdentifierPerDay || maxPerIdentifierPerDay <= 0) maxPerIdentifierPerDay = DEFAULT_MAX_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY;
+
+    var ip = rateLimit.clientIp(event);
+    var ipLimit = await rateLimit.checkAndIncrement(event, 'checkout-password-verify-ip', ip, maxPerIpPerDay);
+
+    if (ipLimit.allowed) {
+      // Only this one lookup is available here (the request already only
+      // ever carries `email`, never a separate username) — mirrors
+      // create-session-transfer.js's own canonical-account resolution,
+      // just via email instead of username-then-email, since that's all
+      // this endpoint has to key a rate-limit bucket/verifyLogin lookup
+      // on. A rate-limited attempt never runs this lookup or the password
+      // check at all — same "don't do the expensive/sensitive work past
+      // an already-tripped limit" shape as create-session-transfer.js.
+      var canonicalAccount = await accountStore.getByEmail(event, email);
+      var identifierKey = canonicalAccount ? canonicalAccount.username : email;
+      var identifierLimit = await rateLimit.checkAndIncrement(event, 'checkout-password-verify-identifier', identifierKey, maxPerIdentifierPerDay);
+
+      if (identifierLimit.allowed) {
+        var loginCheck = await accountStore.verifyLogin(event, email, suppliedPassword, { record: canonicalAccount });
+        if (loginCheck.ok) {
+          verifiedAccountOwner = true;
+          var entitlementRecord = await entitlements.getEntitlement(event, email);
+          dodoCustomerId = entitlementRecord && entitlementRecord.dodoCustomerId;
+        }
+      }
+      // else: rate-limited on the per-account-identifier bucket — silently
+      // falls back to the bare-email checkout below, exactly like a wrong
+      // password would; see this file's header comment.
+    }
+    // else: rate-limited on the per-IP bucket — same silent fallback.
+  }
+
   // shop.html is the real checkout entry point (unlike the original
   // subscription branch, written before any pricing/checkout UI existed),
   // so default back there rather than a placeholder page. The caller may
@@ -283,9 +393,19 @@ exports.handler = async function (event) {
       environment: process.env.DODO_ENVIRONMENT || 'live_mode'
     });
 
-    var session = await client.checkoutSessions.create({
+    // Only ever attach the stored Dodo customer_id (and enable saved
+    // payment methods) once BOTH a real dodoCustomerId exists for this
+    // email AND the caller just proved real ownership of that email via
+    // the password gate above — either one alone is not enough:
+    // verifiedAccountOwner with no dodoCustomerId (a verified account that
+    // simply hasn't purchased before) has nothing to attach, and a
+    // dodoCustomerId with no verification is exactly the gap this whole
+    // feature exists to close. Every other case (new buyer, unverified
+    // request, rate-limited) is byte-for-byte today's existing bare-email
+    // customer object with no saved-methods flag at all.
+    var sessionParams = {
       product_cart: [{ product_id: productId, quantity: 1 }],
-      customer: { email: email },
+      customer: (verifiedAccountOwner && dodoCustomerId) ? { customer_id: dodoCustomerId } : { email: email },
       return_url: returnUrl,
       cancel_url: cancelUrl,
       // DreamTube sells token packs to individual consumers, not
@@ -329,7 +449,16 @@ exports.handler = async function (event) {
         // payment.succeeded).
         dreamtube_starter: pack === STARTER_PACK_ID
       }
-    });
+    };
+
+    // Default false (Dodo's own default) unless this is a verified,
+    // returning buyer with a real customer_id to attach — see the block
+    // above and this file's header comment.
+    if (verifiedAccountOwner && dodoCustomerId) {
+      sessionParams.show_saved_payment_methods = true;
+    }
+
+    var session = await client.checkoutSessions.create(sessionParams);
 
     return { statusCode: 200, body: JSON.stringify({ url: session.checkout_url, sessionId: session.session_id, eventId: eventId }) };
   } catch (e) {

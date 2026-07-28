@@ -10,7 +10,8 @@
 //
 // Backed by a single Netlify Blobs store ("dreamtube-entitlements"),
 // ONE RECORD PER NORMALIZED EMAIL:
-//   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
+//   { email, active, plan, stripeCustomerId, stripeSubscriptionId,
+//     dodoCustomerId, updatedAt,
 //     tokens: { balance, lastClaimAt, streak },
 //     appliedTokenPackPaymentIds, refundedJobIds,
 //     firstPackPurchaseAt,
@@ -29,6 +30,23 @@
 // images) that capability-type achievement grants add to. Deliberately no
 // ACTUAL achievement ids or grant sizes are wired to any real user-facing
 // trigger yet — see that doc block's own "SHIPS NO GRANTS" note.
+//
+// dodoCustomerId: the Dodo Payments customer id (payment.customer.customer_id
+// on a payment.succeeded webhook) for this email's most recent completed
+// Dodo purchase — stamped by dodo-webhook.js alongside the token credit (see
+// that file). Mirrors stripeCustomerId's own role for the dormant Stripe
+// backend, just for Dodo. Tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6: this is what lets
+// create-checkout-session-dodo.js attach a RETURNING buyer's checkout to
+// their existing Dodo customer (`customer_id` instead of a bare `email`)
+// and show their saved payment methods — but ONLY after this codebase's own
+// real-password verification (accountStore.verifyLogin, same bar
+// create-session-transfer.js already holds), never on a bare client-claimed
+// email alone. See that file's own header comment for the full security
+// reasoning: Dodo auto-attaches any checkout to an existing customer purely
+// by email match, so unconditionally passing customer_id/show_saved_payment_
+// methods off a bare email would let anyone who knows/guesses a real user's
+// email see THAT PERSON's saved payment methods at checkout.
 //
 // tokens.lastClaimAt / tokens.streak (added 2026-07-28, "daily token
 // claim" — replaces the old lazy background +20/24h drip entirely, see

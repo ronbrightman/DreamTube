@@ -523,23 +523,33 @@
       btn.disabled = true;
       label.textContent = 'Redirecting…';
 
+      // Returning-buyer prefill (tracker item
+      // for-product-repeat-purchase-friction-dod-b6pzs6) — same optional,
+      // already-cached-locally password shop.html's own purchasePack()
+      // sends; see that file's comment and DreamStore.getCachedPassword's
+      // own doc comment for the full reasoning. Omitted entirely when
+      // there's nothing cached, exactly like today.
+      var cachedPassword = DreamStore.getCachedPassword();
+      var checkoutBody = {
+        email: email,
+        pack: pack,
+        // Relative paths only — create-checkout-session-dodo.js's own
+        // server-side guard rejects anything else (see that file's
+        // header comment on the open-redirect fix this feature required).
+        // Home.html (tracker item for-product-funnel-ending-v2-founder-
+        // ins-tfuu0q — processing.html removed) is now the one page that
+        // knows how to pick a persisted draft back up and actually run
+        // the generation once the purchase lands — see that page's own
+        // "Dodo-checkout-return resume" script block.
+        successUrl: '/home.html?checkout=success',
+        cancelUrl: cancelUrlPath()
+      };
+      if (cachedPassword) checkoutBody.password = cachedPassword;
+
       fetch('/.netlify/functions/create-checkout-session-dodo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          pack: pack,
-          // Relative paths only — create-checkout-session-dodo.js's own
-          // server-side guard rejects anything else (see that file's
-          // header comment on the open-redirect fix this feature required).
-          // Home.html (tracker item for-product-funnel-ending-v2-founder-
-          // ins-tfuu0q — processing.html removed) is now the one page that
-          // knows how to pick a persisted draft back up and actually run
-          // the generation once the purchase lands — see that page's own
-          // "Dodo-checkout-return resume" script block.
-          successUrl: '/home.html?checkout=success',
-          cancelUrl: cancelUrlPath()
-        })
+        body: JSON.stringify(checkoutBody)
       })
         .then(function (res) { return res.json(); })
         .then(function (data) {
