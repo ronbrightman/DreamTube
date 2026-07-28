@@ -18,9 +18,14 @@
 //
 // dodoCustomerId: the Dodo Payments customer id (payment.customer.customer_id
 // on a payment.succeeded webhook) for this email's most recent completed
-// Dodo purchase — stamped by dodo-webhook.js alongside the token credit (see
-// that file). Mirrors stripeCustomerId's own role for the dormant Stripe
-// backend, just for Dodo. Tracker item
+// Dodo purchase — threaded through dodo-webhook.js's creditTokenPackOnce
+// call into creditTokenPackAmountOnce, which folds the stamp into the SAME
+// atomic retryingWrite that applies the token credit (see that function's
+// own doc comment for why this can't be a separate plain write: this
+// record's balance is also touched by spendTokens/addTokens, the highest-
+// frequency writers to this store, and a second unguarded write racing
+// them could silently clobber a concurrent spend). Mirrors stripeCustomerId's
+// own role for the dormant Stripe backend, just for Dodo. Tracker item
 // for-product-repeat-purchase-friction-dod-b6pzs6: this is what lets
 // create-checkout-session-dodo.js attach a RETURNING buyer's checkout to
 // their existing Dodo customer (`customer_id` instead of a bare `email`)
@@ -878,7 +883,7 @@ var MAX_CREDIT_ATTEMPTS = 3;
  * existing catch block already does the right thing once this function
  * actually throws instead of quietly returning success-shaped false.
  */
-async function creditTokenPackOnce(event, email, paymentId, tokens) {
+async function creditTokenPackOnce(event, email, paymentId, tokens, dodoCustomerId) {
   if (!paymentId) {
     // Hardening fix (store-launch copy-sweep companion pass,
     // for-product-store-launch-copy-sweep-purc-m6xhkx): this used to
@@ -961,7 +966,15 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
   // propagates straight out of this function too — deliberately, for the
   // same "let dodo-webhook.js's catch turn this into a retry" reason as
   // the marker write above.
-  await creditTokenPackAmountOnce(event, email, paymentId, tokens);
+  //
+  // `dodoCustomerId` (optional, undefined for every pre-existing caller)
+  // is threaded straight through to creditTokenPackAmountOnce, which folds
+  // it into this SAME write rather than dodo-webhook.js doing a second,
+  // separate, unguarded setEntitlement call — see that function's own doc
+  // comment on why a standalone write here would be a real data-integrity
+  // hazard (a review round-2 finding: it would race spendTokens, the
+  // highest-frequency writer to this same record).
+  await creditTokenPackAmountOnce(event, email, paymentId, tokens, dodoCustomerId);
 
   // At this point the balance credit is guaranteed to have landed exactly
   // once (creditTokenPackAmountOnce's own guarantee), regardless of how
@@ -1038,6 +1051,26 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * paymentId only ever applies the balance increment once. Used by
  * creditTokenPackOnce to make its 'pending'-marker resume path safe (see
  * that function's doc comment for the hazard this closes).
+ *
+ * `dodoCustomerId` (optional) is folded into this SAME write when present —
+ * NOT a separate setEntitlement call. This is deliberate (review round-2
+ * finding on tracker item for-product-repeat-purchase-friction-dod-b6pzs6):
+ * this entitlement record's `tokens.balance` is also written by
+ * spendTokens/addTokens, both plain unguarded read -> Object.assign ->
+ * setJSON calls (no retry, no verify) — and spendTokens is the single
+ * highest-frequency writer to this store (it fires on every generation). A
+ * standalone `setEntitlement(event, email, {dodoCustomerId})` call sitting
+ * right next to this credit (as dodo-webhook.js's first draft did) is
+ * exactly the same shape as spendTokens' own write: read -> merge -> write,
+ * no protection. Two such plain writes racing the SAME record can each read
+ * before the other writes and then each write back a patch built from a now-
+ * stale `existing` — whichever lands second silently reverts whatever field
+ * the other one had just changed (a balance dropping back to its pre-spend
+ * value, or a dodoCustomerId stamp disappearing). Folding the stamp into
+ * THIS retryingWrite's `mutate` instead means the customer-id write only
+ * ever happens as part of the same hardened read -> mutate -> write ->
+ * verify cycle that already defends the balance/appliedTokenPackPaymentIds
+ * fields below — one atomic write per payment credit, not two.
  *
  * WHY THIS NEEDS ITS OWN WRITE, NOT JUST "check a flag, then call
  * addTokens": recording "this paymentId's tokens were applied" and
@@ -1122,7 +1155,7 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  */
 var FIRST_PURCHASE_BONUS_MULTIPLIER = 1.5;
 
-async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
+async function creditTokenPackAmountOnce(event, email, paymentId, amount, dodoCustomerId) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
 
@@ -1163,13 +1196,21 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
       var isFirstPurchase = !rec.firstPackPurchaseAt;
       var creditAmount = isFirstPurchase ? Math.round(amount * FIRST_PURCHASE_BONUS_MULTIPLIER) : amount;
       var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + creditAmount);
-      return Object.assign({}, rec, {
+      var patch = {
         email: key,
         tokens: { balance: newBalance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak },
         appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
         firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
-      });
+      };
+      // Only ever set when a truthy customer id was actually passed in --
+      // never write an explicit `undefined` here, which would otherwise
+      // blank out a customer id a previous call already stamped on `rec`
+      // (Object.assign copies own-enumerable keys regardless of value, so
+      // an unconditional `dodoCustomerId: dodoCustomerId` would clobber it
+      // with undefined on every call that doesn't carry one).
+      if (dodoCustomerId) patch.dodoCustomerId = dodoCustomerId;
+      return Object.assign({}, rec, patch);
     },
     verify: function (verifyRead) {
       return !!(verifyRead && verifyRead.appliedTokenPackPaymentIds && verifyRead.appliedTokenPackPaymentIds.indexOf(paymentId) !== -1);
