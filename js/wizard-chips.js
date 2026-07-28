@@ -320,8 +320,15 @@
       ? ((input.actionOtherText || '').trim() || 'in the middle of something happening')
       : (STORY_ACTION_PHRASES[actionKey] || STORY_ACTION_PHRASES[DEFAULT_ACTION]);
 
+    // Review finding: every STORY_PLACE_PHRASES table entry already
+    // carries its own preposition ("in a city", "inside a house", ...) so
+    // `actionPhrase + ' ' + placePhrase` reads naturally -- but a custom
+    // "+ Something else" place has none of its own, producing a broken
+    // "exploring a floating library" (missing "in"). Prepend a generic
+    // preposition here, same role the table entries' own leading word
+    // already plays.
     var placePhrase = input.placeKey === 'other'
-      ? (input.placeOtherText || '').trim()
+      ? ((input.placeOtherText || '').trim() ? 'in ' + input.placeOtherText.trim() : '')
       : (STORY_PLACE_PHRASES[input.placeKey] || '');
 
     var timeClause = input.sceneryTime === 'Day' ? ' during the day' : (input.sceneryTime === 'Night' ? ' at night' : '');

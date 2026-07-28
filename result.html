@@ -1018,24 +1018,40 @@
     var text = document.getElementById('edit-text').value.trim();
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
+    // storyText/promptText (tracker item for-product-split-prompttext-
+    // storytext-f-yt5kc7, review round 1 fix): edit-text is pre-filled
+    // from dream.storyText||dream.caption (see render() above) — the
+    // PLAIN human sentence, never the chip flow's engineered prompt. A
+    // chip-created dream's real generation prompt (promptText) carries
+    // camera/lighting language (js/wizard-chips.js's inferCamera/
+    // inferLighting — e.g. "aerial wide shot", "hazy ethereal light")
+    // baked directly into its prose with NO separate structured field
+    // preserving it (cameraView is a distinct, independent Advanced-panel
+    // concept the chip flow never populates — see create.html's own
+    // camera-chip section). If this box's current value were always sent
+    // straight to generation, an UNEDITED "Generate Again" would silently
+    // rebuild the prompt from the plain story text alone, permanently
+    // losing that camera/lighting/style language even though the user
+    // changed nothing — a real, unintended change to what a paying user's
+    // regenerate actually produces, not a cosmetic issue.
+    //
+    // Fix: only treat this as a fresh, user-authored description (new
+    // storyText AND new promptText, matching Write-it/Record-it's own
+    // "typed text is both" semantics) when the box's value has ACTUALLY
+    // changed from what it was pre-filled with. An unedited box instead
+    // keeps sending the dream's own existing promptText (its full
+    // engineered prompt, camera/lighting/style intact) to generation —
+    // exactly what an unedited "Generate Again" always produced before
+    // this feature existed — while storyText/the displayed caption still
+    // stay the correct human sentence either way.
+    var originalStoryText = dream.storyText || dream.caption;
+    var textUnchanged = text === originalStoryText;
+    var newPromptText = textUnchanged ? (dream.promptText || dream.caption) : text;
+    var newStoryText = textUnchanged ? originalStoryText : text;
     // sourceImageUrl is explicitly cleared so a stale value from an earlier
     // "Turn this into a video" attempt on a DIFFERENT dream this session
     // can never leak into an unrelated regenerate.
-    //
-    // storyText: text (tracker item for-product-split-prompttext-
-    // storytext-f-yt5kc7) — the Edit Dream sheet edits the dream's own
-    // DISPLAYED text (storyText, post-split — edit-text was pre-filled
-    // from dream.storyText||dream.caption above), so the edited text
-    // becomes BOTH the new storyText and the new promptText (caption) —
-    // same "the user's own typed text is both the story and the prompt"
-    // semantics Write-it/Record-it already have. This means a regenerated
-    // chip-created dream's inferred camera/lighting language isn't
-    // re-derived after an edit here — an accepted, minor tradeoff (same
-    // one Write-it/Record-it always had), not a regression this feature
-    // introduces new user-facing confusion with (the edited text now
-    // correctly reads as a human story both before and after Generate
-    // Again, which it did NOT before this fix for a chips-created dream).
-    DreamStore.setDraft({ caption: text, storyText: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
+    DreamStore.setDraft({ caption: newPromptText, storyText: newStoryText, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
   }
 
   function proceedWithGenerateAgain(){
