@@ -360,7 +360,7 @@ test('variant "b": omits the social-proof line entirely (never a fake number) wh
   }
 });
 
-test('variant "b": "Change email" returns to the email step with the previously entered email prefilled, and does not touch signupAttemptToken/backBtn', async function (t) {
+test('variant "b": "Change email" returns to the email step with the previously entered email prefilled, and leaves Back enabled when nothing was in flight', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -383,8 +383,14 @@ test('variant "b": "Change email" returns to the email step with the previously 
     var prefilled = await page.inputValue('#fn-email');
     assert.equal(prefilled, 'change-me@example.com', 'the email step must be prefilled with the email already entered');
 
+    // Change email always bumps signupAttemptToken and resets backBtn now
+    // (tracker item start-html-variant-b-s-change-email-link-1kc3vs), same
+    // as the topbar Back handler -- but since nothing was submitted yet in
+    // this scenario, Back was never disabled to begin with, so it simply
+    // stays enabled. See the "immediate Continue -> Change email" test
+    // below for the mid-flight case this fix actually protects against.
     var backDisabledAfter = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
-    assert.equal(backDisabledAfter, false, 'Change email must not disable Back -- it is an in-screen state change, not a real Back navigation');
+    assert.equal(backDisabledAfter, false, 'Back must stay enabled after Change email when no attempt was in flight');
   } finally {
     await context.close();
   }
@@ -562,6 +568,116 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
 
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (B) signup');
     assert.equal(claimCalls[0].pendingId, 'pd-b-sig-B', 'must claim B\'s pendingId, never the abandoned A attempt\'s');
+  } finally {
+    await context.close();
+  }
+});
+
+test('variant "b": Signup Continue -> immediate "Change email" before attemptSignup resolves -- the stale, abandoned attempt must not force-navigate away from the email step the user navigated back to, or claim the wrong pending job (tracker item start-html-variant-b-s-change-email-link-1kc3vs)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var claimCalls = [];
+    var registerCalls = [];
+    var EMAIL_STALE = 'variant-b-changeemail-stale@example.com';
+    var EMAIL_NEW = 'variant-b-changeemail-new@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-b-changeemail-stale', operationName: 'fal:fake-model:req-b-changeemail-stale' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', async function (route) {
+      var body = JSON.parse(route.request().postData());
+      registerCalls.push(body);
+      // Deliberately delayed -- held back well past the point where the
+      // user has already clicked "Change email" and moved on, mirroring
+      // the other tests' abandoned-attempt shape above.
+      await new Promise(function (r) { setTimeout(r, 900); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    // Reach the password step, then click Continue -- fires the real
+    // (deliberately delayed) signup call, continueBtn/backBtn disabled
+    // for the duration.
+    await page.fill('#fn-email', EMAIL_STALE);
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+
+    // Immediately click "Change email" mid-flight -- unlike the topbar
+    // Back button, this link is never disabled by the in-flight Continue
+    // click above, so it stays clickable right now. This is the exact
+    // repro: the user backs out to fix their email while the abandoned
+    // attempt for EMAIL_STALE is still in flight.
+    await page.click('#fn-s13-change-email');
+    await page.waitForSelector('#fn-s13-email-continue', { timeout: 5000 });
+    assert.equal(await page.$('#fn-password'), null, 'must genuinely be back on the email step, password field gone');
+
+    // Back must also have been reset -- it lives outside the swapped
+    // screen DOM and would otherwise stay stuck disabled from the
+    // abandoned attempt.
+    var backDisabledAfterChangeEmail = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
+    assert.equal(backDisabledAfterChangeEmail, false, 'Back must be reset (re-enabled) by Change email, not left stuck disabled from the abandoned attempt');
+
+    // Sit idle right here -- deliberately not resubmitting -- while the
+    // stale, abandoned register-account response for EMAIL_STALE lands
+    // (900ms artificial delay above).
+    await new Promise(function (r) { setTimeout(r, 1100); });
+
+    var screenAfter = await page.evaluate(function () {
+      if (document.getElementById('fn-s13-email-continue')) return 'screen13-email-step';
+      if (document.getElementById('fn-s14-continue')) return 'screen14';
+      return 'other';
+    });
+    assert.equal(screenAfter, 'screen13-email-step', 'the stale, abandoned signup attempt\'s late settlement must never force-navigate the user away from the email step they navigated back to');
+    assert.equal(claimCalls.length, 0, 'the stale, abandoned attempt must not have claimed any pending job');
+
+    // Deliberately NOT asserting getCurrentUser() is null here. The real
+    // register-account.js call for EMAIL_STALE already succeeded server-
+    // side by the time its response lands, and js/store.js's own
+    // commitLocalSignupIfCurrent (gated by ITS OWN store-level
+    // signupCallSeq, tracker item dreamstore-signup-commits-state-user-
+    // unc-vv6rio -- see that function's doc comment) commits state.user
+    // as long as no NEWER DreamStore.signup() call has since started --
+    // which "Change email" alone never does, since it is a pure UI
+    // navigation, not a resubmission. This UI-level signupAttemptToken
+    // fix (like the existing sibling Back-button token-guard tests above,
+    // which have the same property and don't assert this either) can only
+    // gate this SCREEN's own downstream side effects -- navigation and
+    // claim-pending-generation -- not retroactively undo a real signup
+    // call already resolved ok deeper in the stack. Asserting the two
+    // things this fix actually guarantees (no force-navigation, no wrong
+    // claim) above is the correct, in-scope proof.
+
+    // Finish signup for real with the NEW email -- must still work
+    // normally.
+    await page.fill('#fn-email', EMAIL_NEW);
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
+
+    var currentUserAfterReal = await page.evaluate(function () { return window.DreamStore.getCurrentUser(); });
+    assert.ok(currentUserAfterReal, 'the real, resubmitted signup with the new email must have actually completed');
+    var accountEmailAfterReal = await page.evaluate(function () { return window.DreamStore.getAccountEmail(); });
+    assert.equal(accountEmailAfterReal, EMAIL_NEW, 'the account created must use the NEW email, never the stale one');
+    assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (new-email) signup');
   } finally {
     await context.close();
   }
