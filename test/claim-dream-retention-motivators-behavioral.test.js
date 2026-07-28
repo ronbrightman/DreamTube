@@ -158,6 +158,54 @@ test('claim_page_viewed fires with not_ready status when the dream has not finis
   }
 });
 
+test('claim_page_viewed fires with invalid_or_expired status on any other verify-pending-claim rejection', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifyPendingClaim(page, { ok: false, error: 'E3: token mismatch' });
+
+    await page.goto(baseUrl + '/claim-dream.html?pending=pd1&token=tok1', { waitUntil: 'domcontentloaded' });
+    await page.locator('#error-view').waitFor({ state: 'visible', timeout: 5000 });
+
+    var bodyText = await page.locator('#error-title').textContent();
+    assert.equal(bodyText, "This link has expired", 'existing expired/invalid copy must be unchanged');
+
+    var calls = await readPostHogCalls(page);
+    var viewedCalls = captureCallsNamed(calls, 'claim_page_viewed');
+    assert.equal(viewedCalls.length, 1);
+    assert.equal(viewedCalls[0][2].status, 'invalid_or_expired');
+  } finally {
+    await context.close();
+  }
+});
+
+test('claim_page_viewed fires with fetch_failed status when verify-pending-claim itself is unreachable', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/verify-pending-claim', function (route) {
+      route.abort('failed');
+    });
+
+    await page.goto(baseUrl + '/claim-dream.html?pending=pd1&token=tok1', { waitUntil: 'domcontentloaded' });
+    await page.locator('#error-view').waitFor({ state: 'visible', timeout: 5000 });
+
+    var bodyText = await page.locator('#error-title').textContent();
+    assert.equal(bodyText, "Couldn't load your dream", 'existing network-failure copy must be unchanged');
+
+    var calls = await readPostHogCalls(page);
+    var viewedCalls = captureCallsNamed(calls, 'claim_page_viewed');
+    assert.equal(viewedCalls.length, 1);
+    assert.equal(viewedCalls[0][2].status, 'fetch_failed');
+  } finally {
+    await context.close();
+  }
+});
+
 test('clicking #just-watch-link fires claim_page_maybe_later_clicked exactly once and leaves its existing hide-everything behavior unchanged', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

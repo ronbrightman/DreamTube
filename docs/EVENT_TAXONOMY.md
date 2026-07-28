@@ -499,3 +499,14 @@ above are centralized rather than duplicated per call site.
 - `test/entitlements-daily-claim.test.js` / `test/claim-daily-tokens.test.js` — server-side claim/streak/cooldown/rate-limit coverage
 - `test/daily-claim-behavioral.test.js` — real-browser coverage of the chip, claim sheet, auto-open-once, explore.html's new mount, and the copy sweep
 - `test/token-daily-grant-copy-behavioral.test.js` / `test/out-of-tokens-purchase-sheet-behavioral.test.js` / `test/ui-behavioral.test.js` / `test/purchase-sheet.test.js` / `test/owner-topup-tokens.test.js` / `test/entitlements-tokens.test.js` / `test/token-functions.test.js` — updated off the old `{nextGrantAt, dailyGrantAmount, grantCeiling, atCeiling}` shape to the new one, including removing tests for the now-retired ≥200 ceiling entirely
+
+### claim_page_viewed / claim_page_maybe_later_clicked
+
+Founder ask, 2026-07-28 (tracker item `for-product-claim-dream-html-retention-e-b27l7l`): `claim-dream.html` — the unauthenticated, publicly-linked page reached from a retention/abandonment email for a pending dream that was never claimed — previously fired no analytics at all (a deliberate prior default: "not part of the tracked funnel"). This ask explicitly overrides just the product-analytics half of that default (Meta Pixel stays unloaded on this page; only PostHog was added).
+
+| | |
+|---|---|
+| **`claim_page_viewed`** | Fires exactly once per page load, from whichever of the 5 terminal branches this visit lands on: `{ status: 'ready' \| 'not_ready' \| 'invalid_or_expired' \| 'missing_params' \| 'fetch_failed', hasParams: boolean }` |
+| **`claim_page_maybe_later_clicked`** | Fires when the "Just watching — maybe later" escape link is clicked, purely additive to that link's existing (unchanged) behavior — `{}` |
+
+**Files touched:** `claim-dream.html` — PostHog loading added to `<head>` (reads `POSTHOG_KEY`/`POSTHOG_HOST` from `js/analytics-config.js`, same snippet as every other page), a `track()` helper, a `viewedFired` once-guard, and two short benefit bullets next to the signup CTA (reusing `processing.html`'s `.proc-checklist`/`.proc-check-item` styling) — the "maybe later" escape itself is unchanged, both in position and in not being blocked by the bullets. `test/claim-dream-retention-motivators-behavioral.test.js` — new, real-browser coverage.
