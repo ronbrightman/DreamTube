@@ -676,6 +676,68 @@ test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA
   }
 });
 
+test('style.html: dismissing the out-of-tokens sheet (tap outside) while an inline claim is still in flight does not crash -- the genuinely successful claim still lands server-side', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding (round 2): claimInline() used to dereference the shared
+  // module-level `current` var directly inside its .then()/.catch()
+  // callbacks -- the identical stale-async-callback shape runClaim() (the
+  // dedicated claim sheet) was fixed for in round 1, unfixed here in this
+  // sibling function since round 1 only looked at the one function its
+  // own finding named. hide() (this test's tap-outside dismiss) nulls
+  // `current` with no in-flight guard, so this exact sequence used to
+  // throw a TypeError inside the delayed claim response's .then()/.catch(),
+  // an uncaught page error this test would surface via the pageerror spy
+  // below. Fixed by capturing `current` into a local `claimTarget` at the
+  // top of claimInline(), closed over instead of the shared var.
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    var pageErrors = [];
+    page.on('pageerror', function (err) { pageErrors.push(err); });
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    var claimCalls = 0;
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimCalls++;
+      // Deliberately delayed so the test can dismiss the sheet WHILE this
+      // request is still in flight -- the exact race the fix closes.
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 60, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
+          resolve();
+        }, 400);
+      });
+    });
+
+    await seedAccount(page, { username: 'claiminlinedismiss', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+
+    await page.click('#ps-claim-btn');
+    // Dismiss the whole sheet (tap outside) WHILE the 400ms-delayed claim
+    // response is still pending.
+    await page.click('#purchase-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#purchase-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    // Give the delayed response time to actually resolve and run its
+    // (now-dismissed-sheet) callback.
+    await page.waitForTimeout(700);
+
+    assert.equal(claimCalls, 1, 'the real claim-daily-tokens endpoint was actually called');
+    assert.equal(pageErrors.length, 0, 'no uncaught error from the claim response resolving after the sheet was dismissed -- ' + pageErrors.map(function (e) { return e.message; }).join('; '));
+  } finally {
+    await context.close();
+  }
+});
+
 test('style.html: NOT claimable -> the inline claim button stays hidden entirely, only the buy CTA shows', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

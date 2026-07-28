@@ -179,9 +179,21 @@ test('claim sheet: tapping Claim calls the real endpoint, shows the streak line,
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    // Stateful get-token-status mock (not the shared static mockTokenStatus
+    // helper) — this test needs the SECOND read (triggered by the chip's
+    // own onClaimed refresh, review finding round 2: the chip's click-to-
+    // claim path never used to refresh itself at all) to reflect the
+    // post-claim balance/claimable state, proving the refresh is a real
+    // server round-trip, not just an assumption.
+    var tokenStatusCalls = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      tokenStatusCalls++;
+      var status = tokenStatusCalls === 1
+        ? { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 }
+        : { balance: 120, claimable: false, nextClaimAt: Date.now() + 72000000, dailyClaimAmount: 20, streak: 3 };
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status) });
+    });
     var claimCalls = 0;
-    await mockClaim(page, { claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 72000000 });
     await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
       claimCalls++;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
@@ -220,6 +232,21 @@ test('claim sheet: tapping Claim calls the real endpoint, shows the streak line,
 
     // Sheet auto-closes shortly after a successful claim.
     await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    // Review finding (round 2): a claim triggered by tapping the CHIP
+    // itself (not the auto-opened sheet) used to leave the chip stuck
+    // showing the stale pre-claim balance and pulsing "claimable" — it had
+    // no onClaimed refresh wired up at all, unlike the auto-open path.
+    // Confirms the chip actually re-fetches and re-renders off the real
+    // post-claim tokenStatus.
+    await page.waitForFunction(function () {
+      return document.getElementById('topbar-token-chip-balance').textContent.indexOf('120') !== -1;
+    }, { timeout: 3000 });
+    var chipClaimableAfter = await page.evaluate(function () {
+      return document.getElementById('topbar-token-chip').classList.contains('claimable');
+    });
+    assert.equal(chipClaimableAfter, false, 'the chip must stop pulsing "claimable" once its own click-triggered claim actually lands');
+    assert.ok(tokenStatusCalls >= 2, 'the chip must re-fetch getTokenStatus after a successful claim, not just trust the pre-claim cached value');
 
     assert.ok(claimCalls >= 1, 'the real claim-daily-tokens endpoint was actually called');
     var phCalls = await page.evaluate(function () { return window.__phCalls; });

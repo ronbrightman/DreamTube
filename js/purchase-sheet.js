@@ -211,9 +211,22 @@
    * account can only claim once per cooldown). `daily_claim_completed`
    * fires ONLY here, on the real server-confirmed response — never
    * optimistically.
+   *
+   * Review finding (round 2): this used to dereference the shared
+   * module-level `current` directly inside the .then()/.catch()
+   * callbacks — the identical stale-async-callback shape runClaim() (the
+   * dedicated claim sheet's own button handler) was fixed for in round 1,
+   * just unfixed here in this sibling function since round 1 only looked
+   * at the one function its own finding named. hide() (tap-outside
+   * dismiss on THIS sheet) nulls `current` with no in-flight guard, so
+   * dismissing while a claim request is still pending crashed the
+   * .catch() on `current.tokenStatus` being null. Fixed the same way:
+   * capture the triggering `current` into a local `claimTarget` before
+   * the async gap, close over that instead.
    */
   function claimInline() {
     if (!current) return;
+    var claimTarget = current;
     var btn = document.getElementById('ps-claim-btn');
     var label = document.getElementById('ps-claim-label');
     btn.disabled = true;
@@ -224,19 +237,18 @@
         // hadn't actually elapsed — not an error, just nothing to reflect.
         // The button simply disappears since there's genuinely nothing left
         // to claim right now.
-        if (current) current.tokenStatus = Object.assign({}, current.tokenStatus || {}, { claimable: false });
+        claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false });
         renderClaimOption();
         return;
       }
-      trackLocal('daily_claim_completed', { source: (current && current.source) || null, streak: data.streak, balance: data.balance, surface: 'out_of_tokens_sheet' });
-      if (!current) return;
-      current.balance = data.balance;
-      current.tokenStatus = Object.assign({}, current.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
+      trackLocal('daily_claim_completed', { source: claimTarget.source || null, streak: data.streak, balance: data.balance, surface: 'out_of_tokens_sheet' });
+      claimTarget.balance = data.balance;
+      claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
       renderClaimOption();
       renderPurchaseAmounts();
     }).catch(function () {
       btn.disabled = false;
-      label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + ((current.tokenStatus && current.tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
+      label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + ((claimTarget.tokenStatus && claimTarget.tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
       showError('Couldn’t claim right now — try again in a moment');
     });
   }
@@ -431,7 +443,23 @@
     chipEl.addEventListener('click', function (e) {
       if (chipEl.getAttribute('data-claimable') !== 'true') return; // normal shop.html navigation
       e.preventDefault();
-      showClaimSheet({ source: 'balance_chip', tokenStatus: currentChipTokenStatus(chipEl) });
+      showClaimSheet({
+        source: 'balance_chip',
+        tokenStatus: currentChipTokenStatus(chipEl),
+        // Review finding (round 2): every page's own maybeAutoOpenClaimSheet
+        // wiring passes an onClaimed that re-fetches + re-renders the chip
+        // (see create.html/style.html/result.html/explore.html), but this
+        // chip's OWN click-to-claim path never did -- so a claim triggered
+        // by tapping the chip directly (rather than the auto-opened sheet)
+        // left the chip showing the stale pre-claim balance, still pulsing
+        // "claimable", until the next full page load. Self-contained here
+        // rather than requiring every page to wire it separately.
+        onClaimed: function () {
+          DreamStore.getTokenStatus().then(function (fresh) {
+            renderBalanceChip(chipEl, fresh);
+          }).catch(function () { /* stale chip until the next natural refresh -- not worth surfacing an error for */ });
+        }
+      });
     });
     return chipEl;
   }
