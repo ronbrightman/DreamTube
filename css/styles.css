@@ -192,6 +192,22 @@ body{
 .nav-item{ display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-faint); font-size:10.5px; font-weight:700; cursor:pointer; width:64px; text-decoration:none;}
 .nav-item.active{ color:var(--text-primary);}
 .nav-item .nav-icon{ font-size:21px;}
+/* New-likes badge dot (tracker item idea-notify-likes) — a plain dot on
+   the Profile tab's icon, no count digit (stays legible at this size).
+   DreamStore.getCachedNewLikesCount() drives its visibility on every
+   page with a bottom nav (see js/store.js's own doc block for when this
+   goes back to hidden). The wrap is a separate sibling element (not the
+   .nav-icon div itself) because every page's own script replaces
+   .nav-icon's innerHTML wholesale with an Icons.* SVG string — a badge
+   nested inside it would get wiped out the moment that runs.
+   [hidden] rather than an inline display:none so toggling it is a single
+   attribute flip from each page's own script. */
+.nav-icon-badge-wrap{ position:relative; display:inline-flex;}
+.nav-badge-dot{
+  position:absolute; top:-2px; right:-4px; width:9px; height:9px; border-radius:50%;
+  background:var(--danger); border:1.5px solid var(--bg-app);
+}
+.nav-badge-dot[hidden]{ display:none;}
 /* The Instagram-style gradient's second (and last) appearance. */
 .nav-create{
   width:52px; height:52px; border-radius:50%; flex:none; cursor:pointer; margin-top:-30px;
@@ -272,6 +288,14 @@ body{
 .profile-insight-card .pi-label{ font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#c9a8f0; margin-bottom:5px;}
 .profile-insight-card p{ font-size:12.5px; line-height:1.5; color:#eee;}
 .profile-insight-card b{ color:#fff;}
+
+/* New-likes notification banner (tracker item idea-notify-likes) — plain
+   surface card, not the gradient treatment .profile-insight-card uses,
+   since this is a transient status line rather than a recurring feature
+   card. */
+.new-likes-banner{ margin:0 20px 16px; padding:12px 16px; border-radius:14px; background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; gap:10px;}
+.new-likes-banner .icon{ width:18px; height:18px; color:var(--danger); flex:none;}
+.new-likes-banner span:last-child{ font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.4;}
 
 /* ===== Create ===== */
 .choice-card{

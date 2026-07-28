@@ -589,6 +589,70 @@
     try { localStorage.setItem(FEED_BACKFILL_KEY, '1'); } catch (e) { /* storage unavailable — will just retry next load */ }
   }
 
+  // ---------------------------------------------------------------------
+  // New-likes notification hook (tracker item idea-notify-likes, v1 —
+  // Manager-approved 2026-07-28): aggregate-count-only, no per-liker
+  // identity, no email — see this item's own tracker detail for full scope.
+  //
+  // Likes on a dream are stored server-side on the shared feed record
+  // (netlify/functions/like-dream.js's feed[idx].likes, fetched via
+  // get-feed.js). This account's own published dreams are tracked locally
+  // via getMyDreams()/isPublished, but the LOCAL .likes field only updates
+  // when THIS browser toggles a like itself (toggleSharedLike above) — it
+  // goes stale the moment anyone else likes one of this account's
+  // published dreams. There is no push/poll here (explicitly out of
+  // scope) — refreshNewLikesCount() below is a plain one-shot fetch,
+  // called only from profile.html on page load.
+  //
+  // Two localStorage keys, both plain per-browser state (no server
+  // storage — same posture as dreamtube_claim_sheet_shown_date and every
+  // other soft per-browser UI preference in this file):
+  //   - LIKES_SEEN_KEY: JSON map of { dreamId: lastSeenLikeCount }, this
+  //     account's own "have I already counted these likes" baseline per
+  //     dream. Missing an id (first time it's ever checked) seeds the
+  //     baseline from this browser's own last-known LOCAL like count
+  //     (the dream's .likes field, stale as it may be) rather than 0 or
+  //     the just-fetched current count — 0 would flag every pre-existing
+  //     like as "new" in one big burst, and the current count would make
+  //     delta always compute to 0 on literally every account's first-ever
+  //     check (seeding a baseline from the same fetch it's about to be
+  //     diffed against always yields zero), silently swallowing every
+  //     like accumulated by someone else since this browser last synced —
+  //     including this feature's own rollout day.
+  //   - LIKES_NEW_COUNT_KEY: the single cached integer every bottom-nav
+  //     page (home.html/explore.html/profile.html) reads synchronously,
+  //     with no fetch of its own, to decide whether to show the Profile
+  //     tab's badge dot. It holds whatever refreshNewLikesCount() last
+  //     computed. Visiting profile.html is what "clears" it for next
+  //     time: that visit both shows the current total (this call's
+  //     return value) AND immediately rolls LIKES_SEEN_KEY's baseline
+  //     forward to the current counts, so the NEXT refreshNewLikesCount()
+  //     call (the next profile.html load) naturally computes 0 and
+  //     overwrites LIKES_NEW_COUNT_KEY with it — which is what makes the
+  //     badge disappear on every page from that point on. Between those
+  //     two profile.html visits, the badge stays visible everywhere
+  //     (including a fresh explore.html/home.html load) since the cached
+  //     count hasn't been cleared yet — that's the intended "there's
+  //     something new to see on your profile" signal.
+  var LIKES_SEEN_KEY = 'dreamtube_likes_seen_v1';
+  var LIKES_NEW_COUNT_KEY = 'dreamtube_likes_new_count_v1';
+
+  function readLikesSeenMap() {
+    try {
+      var raw = localStorage.getItem(LIKES_SEEN_KEY);
+      var parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) { return {}; }
+  }
+
+  function writeLikesSeenMap(map) {
+    try { localStorage.setItem(LIKES_SEEN_KEY, JSON.stringify(map)); } catch (e) { /* storage unavailable — best-effort, see doc block above */ }
+  }
+
+  function writeCachedNewLikesCount(n) {
+    try { localStorage.setItem(LIKES_NEW_COUNT_KEY, String(n)); } catch (e) { /* storage unavailable — badge just won't show anywhere, no crash */ }
+  }
+
   /** The status-polling endpoint for a given mediaType — video-status.js (returns videoUrl) or image-status.js (returns imageUrl). Default 'video' matches every other mediaType default in this file. */
   function statusEndpointFor(mediaType) {
     return mediaType === 'image' ? '/.netlify/functions/image-status' : '/.netlify/functions/video-status';
@@ -2477,6 +2541,81 @@
         persist();
         return { likes: data.likes, likedByMe: !currentlyLiked };
       });
+    },
+
+    /**
+     * Synchronous, no-network read of the last total this account's
+     * refreshNewLikesCount() computed — see that function's own doc
+     * block, and the LIKES_NEW_COUNT_KEY comment above it, for the full
+     * "when does this go back to 0" story. This is what every bottom-nav
+     * page (home.html/explore.html/profile.html) calls on load to decide
+     * whether to show the Profile tab's badge dot — cheap enough to call
+     * on every page load, unlike refreshNewLikesCount which hits the
+     * network and is profile.html's job alone.
+     */
+    getCachedNewLikesCount: function () {
+      var raw;
+      try { raw = localStorage.getItem(LIKES_NEW_COUNT_KEY); } catch (e) { return 0; }
+      var n = parseInt(raw, 10);
+      return (isFinite(n) && n > 0) ? n : 0;
+    },
+
+    /**
+     * profile.html's own page-load hook — the ONLY place in the app that
+     * fetches the shared feed to check for new likes on this account's
+     * own published dreams (see the doc block above LIKES_SEEN_KEY for
+     * why: no polling, no push, a plain fetch on profile page load is
+     * enough per this feature's own scope). Resolves to the total new
+     * likes discovered THIS call (summed across every owned published
+     * dream, each floored at 0 so an unlike bringing a count down never
+     * produces a negative contribution) — also persists that total to
+     * LIKES_NEW_COUNT_KEY for every page's badge, and rolls
+     * LIKES_SEEN_KEY's baseline forward to today's counts so a second
+     * call with no further likes correctly resolves to 0.
+     *
+     * Resolves to 0 (no state mutated) on a logged-out account, an
+     * account with no published dreams, or any fetch failure — this
+     * never throws and never blocks the rest of profile.html's render.
+     */
+    refreshNewLikesCount: function () {
+      var myHandle = state.user ? state.user.handle : null;
+      var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle && d.isPublished; });
+      if (!mine.length) return Promise.resolve(0);
+      return fetch('/.netlify/functions/get-feed')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var feed = (data && data.feed) || [];
+          var feedLikesById = {};
+          feed.forEach(function (f) { feedLikesById[f.id] = f.likes || 0; });
+
+          var seen = readLikesSeenMap();
+          var total = 0;
+          mine.forEach(function (d) {
+            // Fallback to the local (possibly stale) count for a dream
+            // that hasn't synced to the shared feed yet at all — never
+            // treat "not in the feed response" as zero likes.
+            var current = feedLikesById.hasOwnProperty(d.id) ? feedLikesById[d.id] : (d.likes || 0);
+            // No seenMap entry yet (first time this dream is ever checked)?
+            // Seed the baseline from this browser's own last-known LOCAL
+            // like count (d.likes) — the last count this account actually
+            // observed before this feature existed — NOT the current feed
+            // value. Seeding from "current" would make delta always 0 on
+            // literally every account's first-ever check, silently
+            // swallowing every like already accumulated (including this
+            // feature's own rollout day). Seeding from the stale local
+            // count means a dream that picked up likes from other people
+            // while this browser's local record sat stale correctly shows
+            // up as new the first time it's checked, exactly once.
+            var baseline = seen.hasOwnProperty(d.id) ? seen[d.id] : (d.likes || 0);
+            total += Math.max(0, current - baseline);
+            seen[d.id] = current;
+          });
+
+          writeLikesSeenMap(seen);
+          writeCachedNewLikesCount(total);
+          return total;
+        })
+        .catch(function () { return 0; });
     },
 
     reset: function () { state = seed(); persist(); },
