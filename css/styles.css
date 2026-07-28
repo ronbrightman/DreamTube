@@ -582,7 +582,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 /* bottom sheet + modal + toast (used on Result) */
 .sheet-overlay{ position:absolute; inset:0; overflow:hidden; background:rgba(0,0,0,.6); z-index:10; opacity:0; pointer-events:none; transition:opacity .25s;}
 .sheet-overlay.open{ opacity:1; pointer-events:auto;}
-.sheet{ position:absolute; left:0; right:0; bottom:0; background:var(--bg-app); border-top:1px solid var(--border-strong); border-radius:26px 26px 0 0; padding:12px 22px calc(26px + env(safe-area-inset-bottom,0px)); transform:translateY(100%); transition:transform .3s cubic-bezier(.32,.72,0,1); z-index:11; box-shadow:0 -20px 50px rgba(0,0,0,.4); max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch;}
+/* max-height uses dvh (dynamic viewport height), matching #app's own
+   sizing (see #app's height:100dvh/min-height:100dvh above) — NOT plain
+   vh. On a real phone with the browser chrome/address-bar expanded,
+   static vh is measured against the larger chrome-collapsed viewport, so
+   a vh-based cap can end up MORE than 88% of #app's actual current
+   on-screen height, leaving no practically-tappable backdrop above the
+   sheet (tracker item for-product-sheet-dismissal-app-wide-fix-rlay70) —
+   invisible in headless/desktop testing, where vh and dvh coincide. dvh
+   tracks the same currently-visible viewport #app is sized against, so
+   the tappable gap this cap exists for is actually there. */
+.sheet{ position:absolute; left:0; right:0; bottom:0; background:var(--bg-app); border-top:1px solid var(--border-strong); border-radius:26px 26px 0 0; padding:12px 22px calc(26px + env(safe-area-inset-bottom,0px)); transform:translateY(100%); transition:transform .3s cubic-bezier(.32,.72,0,1); z-index:11; box-shadow:0 -20px 50px rgba(0,0,0,.4); max-height:88dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;}
 .sheet-overlay.open .sheet{ transform:translateY(0);}
 .sheet-handle{ width:38px; height:4px; background:var(--border-strong); border-radius:10px; margin:4px auto 16px;}
 .sheet-title{ font-size:18px; font-weight:700; margin-bottom:14px;}
@@ -764,7 +774,23 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .claim-inline-btn:disabled{ opacity:.5; cursor:not-allowed;}
 
-.claim-sheet{ text-align:center; position:relative; overflow:hidden;}
+/* No `position` override here on purpose -- this class is applied
+   alongside the base .sheet class on the SAME element (class="sheet
+   claim-sheet"), and .sheet already sets position:absolute (its bottom
+   sheet anchoring: left/right/bottom:0, transform:translateY, etc). This
+   used to redundantly set position:relative for .claim-sheet-confetti-
+   host's position:absolute;inset:0 to anchor against -- but since both
+   rules target the same element and this one comes later in the
+   cascade, position:relative silently WON over .sheet's position:absolute
+   (found via a real Playwright test failure: the claim sheet rendered
+   pinned to the top of its overlay with zero bottom-anchoring, height
+   equal to its own content instead of a proper bottom sheet, with no
+   tappable backdrop around it at all -- tracker item
+   for-product-sheet-dismissal-app-wide-fix-rlay70). position:absolute
+   is just as valid a positioning ancestor for the confetti host's
+   children, so simply not overriding it here fixes this with no other
+   change needed. */
+.claim-sheet{ text-align:center; overflow:hidden;}
 .claim-sheet-badge{ font-size:40px; line-height:1; margin-bottom:6px;}
 .claim-sheet-title{ font-size:17px; font-weight:800; margin-bottom:10px;}
 .claim-sheet-amount{ font-size:40px; font-weight:900; color:var(--accent-value); margin-bottom:4px;}
