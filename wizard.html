@@ -964,6 +964,42 @@
     });
   }
 
+  /**
+   * check-email.js availability check (tracker item
+   * for-product-money-leak-blocked-signups-e-v2g1vi) — fired BEFORE
+   * startPendingGeneration, so a signup that's guaranteed to be rejected
+   * (register-account.js's own E8 email_taken) never gets a real, billed
+   * fal.ai generation started for it in the first place. Resolves to a
+   * plain boolean, never rejects: `true` means "proceed exactly as
+   * before" (either genuinely available, or the check itself couldn't be
+   * completed — malformed response, rate-limited, network error) and
+   * `false` means "definitely already registered, block." Resilient
+   * fallback on any failure of THIS check — fail OPEN to the existing
+   * behavior rather than newly blocking a real user's funnel over an
+   * ancillary check's own infrastructure hiccup, same philosophy as
+   * startPendingGeneration's own resilient-fallback comment above (and
+   * check-email.js's own header comment on the same tradeoff). This
+   * endpoint is an additional, early UX nicety — register-account.js's
+   * own E8 check downstream is still the authoritative one regardless of
+   * what this reports.
+   */
+  function checkEmailAvailable(email){
+    return fetch('/.netlify/functions/check-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(result.ok && result.data && result.data.ok !== false && typeof result.data.available === 'boolean'){
+        return result.data.available;
+      }
+      return true; // resilient fallback -- see this function's own doc comment
+    }).catch(function(){
+      return true; // resilient fallback -- see this function's own doc comment
+    });
+  }
+
   function renderContact(el){
     assembleFromState();
     el.innerHTML =
@@ -1051,7 +1087,9 @@
       // this exact content.
       if(pendingId && comparisonKey === lastPendingSubmissionKey){
         // Nothing new to wait for -- pendingId is already correct and
-        // settled from an earlier completed attempt.
+        // settled from an earlier completed attempt. This content was
+        // already check-email-validated the first time it succeeded
+        // (below), so there's no need to re-check it again here.
         pendingGenerationPromise = Promise.resolve();
         DreamStore.setDraft(draftPatch);
         next();
@@ -1062,20 +1100,39 @@
       continueBtn.textContent = 'Starting your dream…';
       track('wizard_contact_captured', { has_whatsapp: !!contactWhatsapp });
 
-      pendingGenerationPromise = startPendingGeneration(submissionKey, comparisonKey, myToken);
-
-      // Advance immediately -- settlement (above, in startPendingGeneration)
-      // only ever WRITES state, it never navigates. See
-      // pendingGenerationPromise's own comment for the full "why": Back
-      // is never disabled here, so waiting for this fetch before
-      // advancing left a window where a since-abandoned attempt's async
-      // callback could force-navigate the user off of live shared `cur`
-      // state read at settlement time rather than fire time. Signup
-      // (renderSignup below) is what actually needs pendingId/
-      // pendingOperationName once they're ready -- it awaits
-      // pendingGenerationPromise itself before reading them.
-      DreamStore.setDraft(draftPatch);
-      next();
+      // check-email.js FIRST (tracker item
+      // for-product-money-leak-blocked-signups-e-v2g1vi) -- gates BOTH
+      // the real, billed startPendingGeneration call below AND advancing
+      // to Signup on its result, so an email that's guaranteed to be
+      // rejected at Signup never gets a real generation started for it.
+      // This is a deliberate, necessary change from the previous
+      // structure (review round 4's "next() fires synchronously, never
+      // waiting on any fetch") -- there is no way to honor "don't
+      // advance if this email is already taken" without waiting for
+      // SOMETHING to answer that question first. check-email.js is
+      // cheap/fast by design (a single Blobs read, not a fal.ai
+      // submission) specifically so this added wait stays small; the
+      // slow, real fal.ai call (startPendingGeneration) still never
+      // gates navigation once we get here -- it fires in parallel with
+      // next(), exactly as before.
+      //
+      // Token-guarded like every other async write/navigation in this
+      // step (see pendingGenerationToken's own comment) -- backBtn now
+      // also bumps this token (see the topbar Back handler below) since
+      // Continue no longer advances synchronously, so there's now a real
+      // window where Back can be clicked before this resolves.
+      pendingGenerationPromise = checkEmailAvailable(contactEmail).then(function(available){
+        if(myToken !== pendingGenerationToken) return; // stale -- a newer attempt (or a Back navigation) has since superseded this
+        if(!available){
+          continueBtn.disabled = false;
+          continueBtn.textContent = 'Continue';
+          errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+          return;
+        }
+        DreamStore.setDraft(draftPatch);
+        next();
+        return startPendingGeneration(submissionKey, comparisonKey, myToken);
+      });
     });
   }
 
@@ -1380,6 +1437,17 @@
     // every Back click, including ones that have nothing to do with
     // Signup -- there's simply nothing in flight for it to invalidate.
     signupAttemptToken++;
+    // Same reasoning, for Contact's own pendingGenerationToken (tracker
+    // item for-product-money-leak-blocked-signups-e-v2g1vi): Continue no
+    // longer calls next() synchronously -- it now waits on
+    // checkEmailAvailable() first (see renderContact's Continue handler)
+    // -- so there is a real window between a Continue click and its
+    // eventual next()/generation-fire where Back can be clicked before
+    // that resolves. Without this bump, a since-abandoned Continue
+    // click's belated check-email response could still fire
+    // startPendingGeneration and force-navigate to Signup well after the
+    // user has already navigated elsewhere via this very click.
+    pendingGenerationToken++;
     if(cur > 0){ goToStep(cur - 1); return; }
     location.href = 'index.html';
   });

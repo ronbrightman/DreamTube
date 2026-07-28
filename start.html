@@ -1141,6 +1141,43 @@
     return pendingGenerationPromise;
   }
 
+  /**
+   * check-email.js availability check (tracker item
+   * for-product-money-leak-blocked-signups-e-v2g1vi) — fired BEFORE
+   * getOrStartPendingGeneration/attemptSignup, so a signup that's
+   * guaranteed to be rejected (register-account.js's own E8 email_taken)
+   * never gets a real, billed fal.ai generation started for it. Resolves
+   * to a plain boolean, never rejects: `true` means "proceed exactly as
+   * before" (either genuinely available, or the check itself couldn't be
+   * completed at all) and `false` means "definitely already registered,
+   * block." Resilient fallback on any failure of THIS check — fail OPEN
+   * to the existing behavior rather than newly blocking a real user's
+   * funnel over an ancillary check's own infrastructure hiccup, same
+   * philosophy as startPendingGeneration's own resilient-fallback
+   * reasoning above (and check-email.js's own header comment). This is
+   * an additional, early UX nicety — register-account.js's own E8 check
+   * downstream (via attemptSignup) is still the authoritative one
+   * regardless of what this reports. Same shape as wizard.html's own
+   * copy of this function — duplicated, not shared, per this codebase's
+   * page-local-script convention (no bundler/ES modules, see CLAUDE.md).
+   */
+  function checkEmailAvailable(email){
+    return fetch('/.netlify/functions/check-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(result.ok && result.data && result.data.ok !== false && typeof result.data.available === 'boolean'){
+        return result.data.available;
+      }
+      return true; // resilient fallback -- see this function's own doc comment
+    }).catch(function(){
+      return true; // resilient fallback -- see this function's own doc comment
+    });
+  }
+
   // ===================================================================
   // Screen 13 — Email capture. Username is derived automatically from the
   // email's local part (never asked of the visitor) per the task spec.
@@ -1379,27 +1416,54 @@
       // no artificial minimum-delay to simulate on top of the real network
       // latency this now already has.
       setTimeout(function(){
-        // Generate-during-signup: fired in parallel with attemptSignup
-        // below, not after it, so the video gets a head start on whatever
-        // is left of the funnel (screens 14/15) instead of only starting
-        // once the visitor reaches processing.html. Goes through
-        // getOrStartPendingGeneration() (not startPendingGeneration()
-        // directly) so a signup retry with the same email — "email already
-        // taken", a transient network error, anything — reuses the
-        // already-in-flight-or-succeeded call instead of firing a second
-        // real, billed generation. See that function's own comment.
-        //
-        // Record-it (isRecordMode) skips this entirely — captionText is
-        // empty (nothing has been recorded yet), so there's no real dream
-        // to submit; firing this here would start a real, billed fal.ai
-        // generation off an empty caption. pendingPromise stays a resolved
-        // no-op promise instead of undefined so the `.then()` below still
-        // works — pendingId/pendingOperationName are simply never set in
-        // this path (they stay at their null initial values), so the
-        // claim-pending-generation call and DreamStore.adoptPendingGeneration
-        // downstream both naturally no-op too (see their own `if` guards).
-        var pendingPromise = isRecordMode ? Promise.resolve() : getOrStartPendingGeneration(email);
-        attemptSignup(email, password, function(ok, err, superseded){
+        // check-email.js FIRST (tracker item
+        // for-product-money-leak-blocked-signups-e-v2g1vi) -- gates BOTH
+        // getOrStartPendingGeneration (the real, billed fal.ai call) AND
+        // attemptSignup (which is cheap, but there's no point firing a
+        // signup we already know will be rejected, and firing it anyway
+        // would surface a second, redundant "already taken" message).
+        // Reuses the EXISTING signupAttemptToken/mySignupToken guard
+        // below rather than introducing a second token -- screen 13 is
+        // already ONE combined Contact+Signup step/attempt here (unlike
+        // wizard.html's separate Contact/Signup steps, which needed a
+        // dedicated pendingGenerationToken of their own), so the guard
+        // that already protects attemptSignup's callback is exactly the
+        // right one to protect this new async gate too: continueBtn/
+        // backBtn are already disabled for the duration (see above), and
+        // Back's own click handler already bumps signupAttemptToken (see
+        // the navigation engine's backBtn listener further down this
+        // file) -- both already cover the "user navigates away before
+        // this resolves" case with no changes needed there.
+        checkEmailAvailable(email).then(function(available){
+          if(mySignupToken !== signupAttemptToken) return; // stale -- same guard as attemptSignup's own callback below
+          if(!available){
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue';
+            backBtn.disabled = false;
+            errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+            return;
+          }
+          // Generate-during-signup: fired in parallel with attemptSignup
+          // below, not after it, so the video gets a head start on whatever
+          // is left of the funnel (screens 14/15) instead of only starting
+          // once the visitor reaches processing.html. Goes through
+          // getOrStartPendingGeneration() (not startPendingGeneration()
+          // directly) so a signup retry with the same email — "email already
+          // taken", a transient network error, anything — reuses the
+          // already-in-flight-or-succeeded call instead of firing a second
+          // real, billed generation. See that function's own comment.
+          //
+          // Record-it (isRecordMode) skips this entirely — captionText is
+          // empty (nothing has been recorded yet), so there's no real dream
+          // to submit; firing this here would start a real, billed fal.ai
+          // generation off an empty caption. pendingPromise stays a resolved
+          // no-op promise instead of undefined so the `.then()` below still
+          // works — pendingId/pendingOperationName are simply never set in
+          // this path (they stay at their null initial values), so the
+          // claim-pending-generation call and DreamStore.adoptPendingGeneration
+          // downstream both naturally no-op too (see their own `if` guards).
+          var pendingPromise = isRecordMode ? Promise.resolve() : getOrStartPendingGeneration(email);
+          attemptSignup(email, password, function(ok, err, superseded){
           // Stale -- a newer Signup attempt has since started (or this
           // one was superseded some other way). Discard everything,
           // including navigation: touching continueBtn/errEl here would
@@ -1454,6 +1518,7 @@
             }
             backBtn.disabled = false;
             next();
+          });
           });
         });
       }, 0);

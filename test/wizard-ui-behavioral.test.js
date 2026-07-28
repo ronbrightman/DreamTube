@@ -250,6 +250,108 @@ test('wizard.html: the Contact step never renders the parked WhatsApp toggle/fie
   }
 });
 
+// ===========================================================================
+// Money-leak fix (tracker item for-product-money-leak-blocked-signups-e-
+// v2g1vi): check-email.js is called BEFORE start-pending-generation fires,
+// so a Contact-capture submission for an email that already has an account
+// never burns a real, billed fal.ai generation for a signup that's
+// guaranteed to be rejected at the Signup step (register-account.js's own
+// E8 email_taken).
+// ===========================================================================
+
+test('wizard.html: Contact-capture with an email that already has an account never fires start-pending-generation, shows the you-already-have-an-account message inline, and never advances to Signup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    var checkEmailCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      checkEmailCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-taken-1', operationName: 'fal:fake-model:req-taken-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'already-taken@example.com');
+    await page.click('#fn-contact-continue');
+
+    // Inline message must show at the email field, right on Contact.
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('contact-error');
+      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
+    assert.equal(checkEmailCalls[0].email, 'already-taken@example.com');
+    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
+    assert.equal(await page.locator('#fn-username').count(), 0, 'must never have advanced to the Signup step for a blocked email');
+    assert.equal(await page.locator('#contact-email').count(), 1, 'must still be sitting on Contact capture');
+
+    // The Continue button must be usable again (not stuck disabled) so a
+    // visitor who corrects/changes the email can proceed normally.
+    assert.equal(await page.locator('#fn-contact-continue').isDisabled(), false, 'Continue must be re-enabled after the blocked-email response, not left stuck disabled');
+
+    // A link to login.html must be present in the inline message.
+    var loginLinkHref = await page.locator('#contact-error a').getAttribute('href');
+    assert.equal(loginLinkHref, 'login.html');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: check-email.js failing outright (network error / 5xx / rate-limited) fails OPEN -- a legitimate new-email visitor still proceeds through Contact capture and start-pending-generation still fires', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      // Simulate the endpoint itself failing outright (rate-limited/5xx)
+      // -- resilient fallback must treat this the same as "available".
+      route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E4: rate_limited' }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-failopen-1', operationName: 'fal:fake-model:req-failopen-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'legit-new-user@example.com');
+    await page.click('#fn-contact-continue');
+
+    // Must still reach Signup despite check-email itself failing.
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
+    assert.equal(startPendingCalls[0].email, 'legit-new-user@example.com');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: Back from Signup to contact-capture then Continue again does NOT re-submit start-pending-generation (no double fal.ai charge/token spend) -- see tracker item wizard-html-no-guard-against-resubmittin-n5b5k2', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
@@ -425,15 +527,22 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
   }
 });
 
-test('wizard.html: Contact-capture Continue advances to Signup SYNCHRONOUSLY, before the (deliberately delayed) start-pending-generation response resolves -- navigation no longer waits on the fetch at all (review round 4 structural fix)', async function (t) {
+test('wizard.html: Contact-capture Continue advances to Signup as soon as check-email.js resolves, WITHOUT waiting for the (deliberately delayed) start-pending-generation response -- the real, billed generation call still never gates navigation (review round 4 structural fix, preserved under the new money-leak check-email gate)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
+    // check-email.js itself resolves fast (that's the whole point of it
+    // being a cheap availability check, not a real fal.ai submission) --
+    // mocked here to fulfill immediately so this test isn't coupled to
+    // the static-file-server's own unmocked-404 timing.
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
+    });
     await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
       // Held back well past the assertion window below -- if navigation
-      // were still gated on this settling (the pre-round-4 shape), the
-      // short-timeout waitForSelector below would time out.
+      // were still gated on THIS settling, the short-timeout
+      // waitForSelector below would time out.
       await new Promise(function (r) { setTimeout(r, 800); });
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-sync-1', operationName: 'fal:fake-model:req-sync-1' }) });
     });
@@ -452,25 +561,33 @@ test('wizard.html: Contact-capture Continue advances to Signup SYNCHRONOUSLY, be
     await page.fill('#contact-email', 'sync-nav-test@example.com');
     await page.click('#fn-contact-continue');
 
-    // Signup must already be showing well before the mocked route's
-    // 800ms delay elapses -- proves next() fired synchronously, right
-    // after the request was FIRED, not after it SETTLED.
+    // Signup must already be showing well before the mocked
+    // start-pending-generation route's 800ms delay elapses -- proves
+    // next() fired once check-email (fast) resolved, not once the real
+    // generation call (slow) settled.
     await page.waitForSelector('#fn-username', { timeout: 300 });
   } finally {
     await page.close();
   }
 });
 
-test('wizard.html: clicking Continue then immediately clicking Back (no re-click on Contact) -- the abandoned request\'s belated settlement must not force-navigate the user anywhere once it lands (review round 4 literal repro)', async function (t) {
+test('wizard.html: clicking Continue then immediately clicking Back before check-email.js resolves -- the abandoned attempt\'s belated check-email response must not force-navigate forward, and must not fire start-pending-generation at all (money-leak fix\'s own check-email gate, same stale-callback discipline as the review round 4 fix for start-pending-generation itself)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     var startPendingCalls = [];
-    await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
-      var body = JSON.parse(route.request().postData());
-      startPendingCalls.push(body);
+    await page.route('**/.netlify/functions/check-email', async function (route) {
+      // Held back well past the assertion window below -- proves Back's
+      // pendingGenerationToken bump (added specifically for this new
+      // async gate) discards this belated response rather than letting
+      // it advance to Signup / fire a real generation for an attempt the
+      // user has already navigated away from.
       await new Promise(function (r) { setTimeout(r, 500); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-noback-1', operationName: 'fal:fake-model:req-noback-1' }) });
     });
 
@@ -485,14 +602,7 @@ test('wizard.html: clicking Continue then immediately clicking Back (no re-click
     await page.click('#fn-freetext-skip');
 
     // Small helper: identifies which screen is currently showing by
-    // checking for each screen's distinctive element. Deliberately does
-    // NOT assume next() already fired synchronously -- this same check
-    // is used both right after the two clicks below (where a REGRESSED,
-    // still-fetch-gated next() would leave the user on freetext-skip,
-    // one step short of contact-capture, rather than contact-capture
-    // itself) and again after the wait, so the core assertion (do these
-    // two reads match?) catches a forced navigation regardless of which
-    // screen the user happened to land on in between.
+    // checking for each screen's distinctive element.
     async function currentScreen() {
       if (await page.locator('#contact-email').count() > 0) return 'contact';
       if (await page.locator('#fn-freetext-skip').count() > 0) return 'freetext';
@@ -503,52 +613,25 @@ test('wizard.html: clicking Continue then immediately clicking Back (no re-click
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'noback-test@example.com');
     await page.click('#fn-contact-continue');
-    // The literal round-4 repro: click Back IMMEDIATELY, with no wait in
-    // between and WITHOUT ever re-clicking Continue on Contact (so
-    // pendingGenerationToken never bumps again) -- exactly the path
-    // neither the round-2 nor round-3 token guard touched, because
-    // those only guarded the WRITE, not navigation itself. Deliberately
-    // does NOT wait for '#fn-username' first -- that would itself block
-    // on next() having already fired, which is exactly the behavior
-    // under test, not something safe to assume going in.
+    // Click Back IMMEDIATELY, with no wait in between and WITHOUT ever
+    // re-clicking Continue on Contact -- Continue's own next() hasn't
+    // fired yet (it's still awaiting check-email.js's held-back
+    // response), so this lands one step back from Contact itself, on
+    // Free Text -- not on Signup, since nothing has advanced past
+    // Contact at this point.
     await page.click('#fnBack');
 
     var screenAfterBack = await currentScreen();
-    assert.notEqual(screenAfterBack, 'unknown', 'test setup assumption broken -- must have landed on a recognizable screen after Continue then Back');
+    assert.equal(screenAfterBack, 'freetext', 'Continue must NOT have advanced anywhere yet (still awaiting check-email.js) when Back was clicked, so Back lands one step behind Contact, on Free Text');
 
-    // Wait well past the request's 500ms delay -- its settlement lands
-    // while the user is sitting wherever they ended up above, having
-    // clicked nothing further at all.
+    // Wait well past check-email's 500ms delay -- its belated response
+    // lands while the user is sitting on Free Text, having clicked
+    // nothing further at all.
     await new Promise(function (r) { setTimeout(r, 700); });
 
     var screenAfterWait = await currentScreen();
-    // The core assertion: the abandoned request's belated settlement
-    // must never navigate on its own -- whatever screen the user was on
-    // right after the two clicks must be EXACTLY where they still are
-    // once the settlement lands, unprompted. (The round-4 bug: next()
-    // used to fire from inside the settlement handler itself, reading
-    // live `cur` at settlement time -- this assertion is code-shape
-    // agnostic on purpose, so it would have failed against the
-    // pre-round-4 structure too, not just documented the fixed
-    // structure's specific screen sequence.)
-    assert.equal(screenAfterWait, screenAfterBack, 'the abandoned request\'s settlement must never navigate on its own, regardless of which screen the user was already on when it landed');
-
-    // Now assert the ACTUAL fixed structure's specific, deterministic
-    // behavior: Continue synchronously advances to Signup, so an
-    // immediate Back lands squarely back on contact-capture (not
-    // freetext-skip, one step further back).
-    assert.equal(screenAfterBack, 'contact', 'Continue must have already advanced to Signup synchronously before Back was clicked, so Back lands on contact-capture');
-
-    // The write itself is still correct and useful (this isn't a stale
-    // attempt by token -- no newer Continue click ever fired) -- confirm
-    // by clicking Continue again with the SAME email: the guard should
-    // now recognize pendingId is already set for this content and skip
-    // re-POSTing, proving the settlement's state write landed even
-    // though it triggered no navigation.
-    await page.fill('#contact-email', 'noback-test@example.com');
-    await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    assert.equal(startPendingCalls.length, 1, 'the settled pendingId must have been recognized by the guard -- no second real POST for unchanged content');
+    assert.equal(screenAfterWait, screenAfterBack, 'the abandoned attempt\'s belated check-email response must never navigate on its own, regardless of which screen the user was already on when it landed');
+    assert.equal(startPendingCalls.length, 0, 'a stale, abandoned attempt\'s check-email response must never go on to fire a real, billed start-pending-generation call');
   } finally {
     await page.close();
   }
