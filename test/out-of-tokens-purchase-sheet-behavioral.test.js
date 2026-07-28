@@ -624,7 +624,19 @@ test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    // Stateful get-token-status mock (not the shared static mockTokenStatus
+    // helper) -- this test needs the SECOND read (triggered by claimInline's
+    // own onClaimed refresh, review finding round 4: claimInline never used
+    // to notify the page/topbar chip of a successful claim at all) to
+    // reflect the post-claim balance/claimable state.
+    var tokenStatusCalls = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      tokenStatusCalls++;
+      var status = tokenStatusCalls === 1
+        ? { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 }
+        : { balance: 60, claimable: false, nextClaimAt: Date.now() + 72000000, dailyClaimAmount: 20, streak: 3 };
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status) });
+    });
     var claimCalls = 0;
     await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
       claimCalls++;
@@ -671,6 +683,22 @@ test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA
     assert.equal(completedCalls.length, 1, 'daily_claim_completed fires exactly once, on the real server-confirmed response');
     assert.equal(completedCalls[0].props.streak, 3);
     assert.equal(completedCalls[0].props.balance, 60);
+
+    // Review finding (round 4): claimInline() used to update ONLY the
+    // sheet's own internal DOM -- the page's own cached tokenStatus and
+    // topbar chip never learned a claim had happened at all, so a retry
+    // of the same blocked action would still see stale (pre-claim) state.
+    // Confirms the page genuinely re-fetches and the topbar chip reflects
+    // the real post-claim balance/claimable state.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('topbar-token-chip-balance');
+      return el && el.textContent.indexOf('60') !== -1;
+    }, { timeout: 3000 });
+    var chipClaimableAfter = await page.evaluate(function () {
+      return document.getElementById('topbar-token-chip').classList.contains('claimable');
+    });
+    assert.equal(chipClaimableAfter, false, 'the topbar chip must stop pulsing "claimable" once the inline claim actually lands');
+    assert.ok(tokenStatusCalls >= 2, 'the page must re-fetch getTokenStatus after a successful inline claim, not just trust the pre-claim cached value');
   } finally {
     await context.close();
   }

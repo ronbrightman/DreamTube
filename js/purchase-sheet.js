@@ -247,6 +247,23 @@
    * simply no-op rather than touching a sheet instance they don't belong
    * to. `daily_claim_completed` still fires either way (it's an accurate
    * record of what genuinely happened server-side, not a DOM mutation).
+   *
+   * Review finding (round 4): this sheet's own internal DOM was the ONLY
+   * thing that ever refreshed after a successful inline claim — the
+   * caller's own cached `tokenStatus`/topbar balance chip never learned
+   * about it at all (unlike `runClaim()` above, which always calls
+   * `claimOpts.onClaimed(data)`). Concretely: style.html/result.html/
+   * processing.html each cache their own `tokenStatus` in a closure
+   * variable, checked by `tokensBlockGeneration()` on every later attempt
+   * — without this callback, a user who claims inline specifically to
+   * unblock a cheap action (the feature's own "instantly unblocks an
+   * image" promise) stays blocked on retry by stale client state, and the
+   * topbar chip keeps pulsing "claimable" after tokens were already
+   * claimed. Fixed by calling `claimTarget.onClaimed(data)` unconditionally
+   * on a real claim, same "fires regardless of sheet staleness" posture
+   * already used for `daily_claim_completed`/`runClaim`'s own `onClaimed`
+   * — the credit genuinely happened and the caller's state should reflect
+   * it no matter which sheet instance is currently on screen.
    */
   function claimInline() {
     if (!current) return;
@@ -268,6 +285,7 @@
         return;
       }
       trackLocal('daily_claim_completed', { source: claimTarget.source || null, streak: data.streak, balance: data.balance, surface: 'out_of_tokens_sheet' });
+      if (typeof claimTarget.onClaimed === 'function') claimTarget.onClaimed(data);
       if (myGen !== currentGen) return;
       claimTarget.balance = data.balance;
       claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
@@ -397,6 +415,18 @@
    *                     intact (processing.html's E112/E412 path).
    *   onDismiss      — optional zero-arg function, called when the sheet
    *                     is dismissed without buying (tap outside)
+   *   onClaimed      — optional function(data), called with the server's
+   *                     { claimed:true, balance, streak, nextClaimAt }
+   *                     response once the inline "Claim +N" button
+   *                     (claimInline, item 5 of the daily-claim spec)
+   *                     lands a real claim — so the caller can refresh its
+   *                     own cached tokenStatus/topbar balance chip (review
+   *                     finding, round 4: without this, a claim made
+   *                     specifically to unblock the current action left
+   *                     the caller's state stale, defeating this feature's
+   *                     own "instantly unblocks" promise). Same
+   *                     unconditional-regardless-of-staleness posture as
+   *                     showClaimSheet's own onClaimed.
    */
   function show(opts) {
     opts = opts || {};

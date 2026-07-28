@@ -212,6 +212,16 @@
         source: 'blocked_action',
         persistDraft: function(){
           DreamStore.setDraft({ style: selected, mediaType: selectedMediaType, sourceImageUrl: null });
+        },
+        // Review finding, round 4: without this, a claim made via the
+        // sheet's own inline "Claim +N" button (to unblock THIS action)
+        // left this page's own cached tokenStatus/topbar chip stale --
+        // same refresh already wired into maybeAutoOpenClaimSheet above.
+        onClaimed: function(){
+          DreamStore.getTokenStatus().then(function(fresh){
+            tokenStatus = fresh;
+            PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+          }).catch(function(){});
         }
       });
       return;

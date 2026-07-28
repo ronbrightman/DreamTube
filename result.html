@@ -1038,7 +1038,17 @@
         balance: tokenStatus ? tokenStatus.balance : 0,
         tokenStatus: tokenStatus,
         source: 'blocked_action',
-        persistDraft: persistGenerateAgainDraft
+        persistDraft: persistGenerateAgainDraft,
+        // Review finding, round 4: without this, a claim made via the
+        // sheet's own inline "Claim +N" button left this page's cached
+        // tokenStatus/topbar chip stale -- same refresh already wired
+        // into maybeAutoOpenClaimSheet above.
+        onClaimed: function(){
+          DreamStore.getTokenStatus().then(function(fresh){
+            tokenStatus = fresh;
+            PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+          }).catch(function(){});
+        }
       });
       return;
     }
@@ -1062,7 +1072,13 @@
         balance: tokenStatus ? tokenStatus.balance : 0,
         tokenStatus: tokenStatus,
         source: 'blocked_action',
-        persistDraft: function(){ DreamStore.turnImageIntoVideo(dream.id); }
+        persistDraft: function(){ DreamStore.turnImageIntoVideo(dream.id); },
+        onClaimed: function(){
+          DreamStore.getTokenStatus().then(function(fresh){
+            tokenStatus = fresh;
+            PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+          }).catch(function(){});
+        }
       });
       return;
     }
