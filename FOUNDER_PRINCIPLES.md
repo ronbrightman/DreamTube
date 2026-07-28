@@ -219,6 +219,26 @@ tight (curate, don't dump).
   in, or as an immediate follow-up, not "later if he asks." This
   applies retroactively too — audit for other owner-only, curl-only
   endpoints whenever one turns up.
+- **Every new thing and every change gets full QA — and ask Ron to QA
+  when needed (ALWAYS, 2026-07-28).** "Full QA" means end-to-end
+  behavioral coverage of the REAL chain the change lives in, not just
+  unit tests of the new function in isolation — a funnel-generated
+  first-video retention email stayed dead in production for days
+  because every unit test passed while the actual funnel→completion→
+  email chain was never exercised end to end. On a mobile-webview-sized
+  viewport for anything user-facing; with the content-not-mechanism
+  check (does the ACTUAL email/message/screen read right, not just "did
+  a send call fire") for anything purchase/checkout/email-facing.
+  **Founder-QA escalation:** when a change touches something Ron
+  personally uses or shapes first-user experience (onboarding,
+  checkout, emails, the result screen), post a `[for ron]` tracker
+  comment describing exactly what to walk through, and don't mark the
+  item done until he confirms — a passing pipeline is not the same
+  thing as Ron's own confirmation on anything in that category. Silent-
+  skip telemetry (an event fired on every skip/fail reason in a chain
+  that can fail invisibly) counts as QA infrastructure — build it
+  wherever a chain can go silently dead, not just where a failure would
+  be loud.
 
 ## Model selection (founder delegated this call 2026-07-23)
 
