@@ -69,6 +69,16 @@
 <div id="app" class="scroll-shell">
   <div class="topbar"><a class="icon-btn" href="create.html" id="style-back"></a><div style="font-weight:700; font-size:14px;">Choose a style</div><div id="topbar-token-chip-slot"></div></div>
   <div class="px" style="flex:1; display:flex; flex-direction:column; overflow-y:auto; min-height:0;">
+    <!-- Story recap card -- founder-required pre-generation preview (tracker
+         item for-product-split-prompttext-storytext-f-yt5kc7, point 4): the
+         user must see the actual human-readable dream description BEFORE
+         spending tokens, never the chip flow's own camera-direction/style
+         prompt text. See the script below for how #style-recap-text gets
+         populated. -->
+    <div class="story-recap-card" id="style-recap-card" style="display:none;">
+      <div class="story-recap-label">Your dream</div>
+      <div class="story-recap-text" id="style-recap-text" dir="auto"></div>
+    </div>
     <div class="style-grid" id="style-grid">
       <div class="style-card" data-style="Cartoon"><div class="sc-bg sc-cartoon"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cartoon</div></div></div>
       <div class="style-card" data-style="Cinematic"><div class="sc-bg sc-cinematic"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">Cinematic</div></div></div>
@@ -135,6 +145,49 @@
   Array.prototype.forEach.call(document.querySelectorAll('.sc-check'), function(el){ el.innerHTML = Icons.check; });
   var draft = DreamStore.getDraft();
   if(!draft.caption){ location.href = 'create.html'; }
+
+  // ===== Story recap card (tracker item
+  // for-product-split-prompttext-storytext-f-yt5kc7, point 4) =====
+  // create.html already computed an immediate, zero-cost storyText for
+  // every path (verbatim for Write-it/Record-it/chips-with-free-text; a
+  // deterministic chip-only template otherwise — see js/wizard-chips.js's
+  // buildDeterministicStory) and set draft.needsStoryRewrite true ONLY for
+  // that last case. This page is the natural "preview" moment (the user
+  // reads it, picks a style, then taps Generate) — reached via a real page
+  // navigation, so an in-flight fetch started on create.html couldn't have
+  // survived to here anyway. currentStoryText is what's ACTUALLY shown at
+  // all times; currentDraftPatch() below persists exactly this value, so
+  // whatever's on screen the instant Generate is tapped is what gets
+  // saved — never a promise of something better that never rendered.
+  var currentStoryText = draft.storyText || draft.caption;
+  function renderStoryRecap(){
+    var card = document.getElementById('style-recap-card');
+    var textEl = document.getElementById('style-recap-text');
+    if(!card || !textEl) return; // page has since navigated away -- see the fetch .then() below
+    if(!currentStoryText){ card.style.display = 'none'; return; }
+    textEl.textContent = currentStoryText;
+    card.style.display = 'block';
+  }
+  renderStoryRecap();
+
+  if(draft.needsStoryRewrite){
+    // Fire-and-forget, best-effort upgrade — never awaited, never blocks
+    // Generate, never shown as a loading/wait state (the deterministic
+    // template above is already presentable). A network failure, a slow
+    // response, or an E6xx rejection all silently no-op here, leaving
+    // currentStoryText exactly as it already was.
+    fetch('/.netlify/functions/rewrite-dream-story', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ promptText: draft.caption })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || !result.data || !result.data.storyText) return;
+      currentStoryText = result.data.storyText;
+      renderStoryRecap();
+    }).catch(function(){ /* best-effort — see comment above */ });
+  }
 
   // A purchase sheet opened from THIS page always sends the checkout's
   // successUrl to processing.html (the one page that knows how to
@@ -265,11 +318,19 @@
   // blocked path) so the two can never silently drift apart. audioOn/
   // musicStyle only ever meaningful on the video path — an image draft
   // always carries audioOn:false/musicStyle:null.
+  //
+  // storyText: currentStoryText (tracker item for-product-split-
+  // prompttext-storytext-f-yt5kc7) — reads whatever the recap card is
+  // CURRENTLY showing, live, at call time, same "never a stale snapshot"
+  // discipline as everything else here. This is what makes point 4's
+  // requirement literally true: the story saved onto the finished dream
+  // is always exactly what this screen showed before Generate was tapped.
   function currentDraftPatch(){
     return {
       style: selected, mediaType: selectedMediaType, sourceImageUrl: null,
       audioOn: selectedMediaType === 'video' ? audioOn : false,
-      musicStyle: (selectedMediaType === 'video' && audioOn) ? musicStyle : null
+      musicStyle: (selectedMediaType === 'video' && audioOn) ? musicStyle : null,
+      storyText: currentStoryText
     };
   }
 

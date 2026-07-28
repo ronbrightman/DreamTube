@@ -43,6 +43,19 @@
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
 //   generateImage(caption,style,opts) -> POST /.netlify/functions/generate-image (cheap
 //       still-image alternative, 10 tokens flat — see docs/IMAGE_GENERATION_SPEC.md)
+//       — `caption` above (both generateVideo/generateImage, and every one of
+//       finalizeDream/startGeneration/regenerateDream/adoptPendingGeneration/
+//       saveClaimedDream below) is, and always was, the full ENGINEERED
+//       generation prompt (promptText) — never altered by this feature.
+//       `opts.storyText`/`patch.storyText` (tracker item for-product-split-
+//       prompttext-storytext-f-yt5kc7) is the NEW, separate human-readable,
+//       first-person dream description shown everywhere a human looks
+//       (result.html/explore.html/share text) and fed to
+//       interpret-dream.js — see finalizeDream's own doc comment for
+//       exactly how the two combine onto a saved dream record, and for the
+//       forward-only fallback (a dream saved before this field existed has
+//       no distinct storyText/promptText at all — its one `caption` keeps
+//       serving both roles, unchanged).
 //   turnImageIntoVideo(dreamId)  -> local write (sets a draft), the "Turn this into a
 //       video" upsell on an image-type dream — see result.html's CTA
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
@@ -135,7 +148,25 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
+      // storyText (tracker item for-product-split-prompttext-storytext-
+      // f-yt5kc7): the human-readable, first-person dream description —
+      // shown on result.html/explore.html/share text and fed to
+      // interpret-dream.js. `caption` keeps its existing meaning
+      // unchanged (the full engineered string sent to generation,
+      // a.k.a. promptText) — see js/store.js's finalizeDream for how the
+      // two combine onto a saved dream record. Defaults '' so every
+      // existing draft-reader that predates this field (there are none
+      // left after this branch, but a browser's already-persisted
+      // localStorage draft from before this shipped effectively gets one
+      // via this seed shape on next load) behaves exactly like an empty
+      // string, never undefined.
+      // needsStoryRewrite: set true only by create.html's/wizard.html's
+      // "chips, no free text typed" path — tells style.html's/wizard.html's
+      // own preview step there's a pending opportunistic LLM story-rewrite
+      // fetch worth attempting (see js/wizard-chips.js's
+      // buildDeterministicStory/netlify/functions/rewrite-dream-story.js's
+      // own header comments) rather than nothing to do.
+      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -671,9 +702,34 @@
    * server-side before a marker is ever honored (see mark-generation-
    * completed.js) — not something an outside caller can target a specific
    * victim account/dream with.
+   *
+   * storyText (tracker item for-product-split-prompttext-storytext-
+   * f-yt5kc7): the human-readable, first-person dream description —
+   * distinct from `caption`, which is (and always was) the full
+   * engineered generation prompt. Falls back to `caption` itself when the
+   * caller doesn't have a distinct one (any caller not yet updated for
+   * this feature, or a resumed pre-existing pendingJob that predates it)
+   * — exactly matching this app's behavior before this field existed,
+   * where the one caption string served both roles. Every field this
+   * function stamps onto the dream reads from THIS resolved value, never
+   * the raw `storyText` argument directly, so a dream saved here is
+   * always internally consistent: `dream.storyText` (the deliberate new
+   * field for anything display/interpretation reads) and `dream.caption`
+   * (kept, unchanged in shape, as the backward-compatible alias every
+   * pre-existing reader in this app already uses — result.html/
+   * explore.html/share text/interpret-dream.js's caller are updated to
+   * prefer storyText explicitly, but nothing else in the app breaks if it
+   * doesn't get updated, since caption already carries the same value)
+   * both equal the same human text; `dream.promptText` carries the full
+   * engineered string that was actually sent to the model. Old dreams
+   * saved before this field existed simply never gained a `promptText`/
+   * distinct `storyText` at all (forward-only migration, per this
+   * tracker item's own explicit instruction) — every reader that falls
+   * back to `dream.caption` already handles that case for free.
    */
-  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName) {
+  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName, storyText) {
     mediaType = mediaType === 'image' ? 'image' : 'video';
+    var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -686,14 +742,18 @@
       // back in the "never generated" state, so result.html shows the
       // plain CTA again and a fresh opt-in tap is required, per the design
       // spec's privacy/data-model section.
-      var patch = { caption: caption, style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null };
+      var patch = {
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
+        style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null
+      };
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
     } else {
       dream = {
         id: newId(),
         ownerHandle: state.user ? state.user.handle : '@you',
-        caption: caption, style: style, mediaType: mediaType,
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
+        style: style, mediaType: mediaType,
         likes: 0, likedByMe: false, isPublished: false,
         videoUrl: mediaType === 'video' ? mediaUrl : null,
         imageUrl: mediaType === 'image' ? mediaUrl : null,
@@ -752,6 +812,18 @@
     // generation never takes a sourceImageUrl (there is no "image-to-image"
     // concept here).
     var sourceImageUrl = (mediaType === 'video' && opts.sourceImageUrl) ? opts.sourceImageUrl : null;
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7) — the human-readable dream description, distinct from
+    // `caption` (the full engineered generation prompt this function's
+    // `caption` argument always was). Never sent to generate-video.js/
+    // generate-image.js (they only ever want the engineered prompt) —
+    // only carried through savePendingJob (so a resumed job keeps it —
+    // see resumePendingJob below) and finalizeDream (so the completed
+    // dream record gets it). A caller that doesn't pass one (any
+    // not-yet-updated call site, or a legacy resumed job) simply gets
+    // finalizeDream's own caption fallback — see that function's doc
+    // comment.
+    var storyText = opts.storyText || null;
     var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
     // Captured once, up front, so the SAME value is used both on the
     // submission request below and later on every status poll (see
@@ -828,7 +900,7 @@
       var startedAt = resume ? resume.startedAt : Date.now();
       savePendingJob({
         operationName: operationName, startedAt: startedAt,
-        caption: caption, style: style, sourceDreamId: sourceDreamId,
+        caption: caption, storyText: storyText, style: style, sourceDreamId: sourceDreamId,
         mediaType: mediaType,
         // Audio/music toggle (tracker item for-product-audio-on-off-
         // choice-at-creat-dyyr98) — stamped onto the job itself (not just
@@ -856,7 +928,7 @@
       });
       return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
-      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName);
+      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText);
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
       // probing needs a real network round trip to the video itself and
@@ -2030,7 +2102,7 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
@@ -2039,7 +2111,8 @@
         characterIds: opts.characterIds, cameraView: opts.cameraView,
         sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
         turnstileToken: opts.turnstileToken,
-        audioOn: opts.audioOn, musicStyle: opts.musicStyle
+        audioOn: opts.audioOn, musicStyle: opts.musicStyle,
+        storyText: opts.storyText
       });
     },
 
@@ -2086,7 +2159,17 @@
         cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace,
         turnstileToken: patch.turnstileToken,
         mediaType: patch.mediaType, sourceImageUrl: patch.sourceImageUrl,
-        audioOn: true
+        audioOn: true,
+        // See finalizeDream's own doc comment — result.html's Edit Dream
+        // sheet edits the dream's DISPLAYED text (storyText, post-split),
+        // so patch.storyText (set by persistGenerateAgainDraft below)
+        // carries that edited human text through as-is. patch.caption
+        // (the SAME edited text — see persistGenerateAgainDraft) becomes
+        // the new promptText: an edit here has no separate chip-derived
+        // enrichment to re-apply, same "the user's own typed text is both
+        // the story and the prompt" semantics Write-it/Record-it already
+        // have.
+        storyText: patch.storyText
       });
     },
 
@@ -2119,7 +2202,13 @@
       var dream = findDream(dreamId);
       if (!dream || !dream.imageUrl) return false;
       Object.assign(state.draft, {
-        caption: dream.caption, style: dream.style, sourceDreamId: dream.id,
+        // promptText (falling back to caption for a pre-split dream) is
+        // the full engineered prompt — reused as-is so the resulting
+        // video keeps the same content the image was generated from.
+        // storyText (or its own caption fallback) is unchanged by
+        // becoming a video — same dream, same human description.
+        caption: dream.promptText || dream.caption, storyText: dream.storyText || dream.caption,
+        style: dream.style, sourceDreamId: dream.id,
         sourceImageUrl: dream.imageUrl, mediaType: 'video', restore: false
       });
       persist();
@@ -2150,9 +2239,17 @@
      * unchanged and always adopts a video — this parameter exists purely so
      * this method stays consistent with the rest of this file's mediaType
      * plumbing for any future caller of the pending-generation seam.
+     *
+     * storyText (optional 6th arg, tracker item for-product-split-
+     * prompttext-storytext-f-yt5kc7) — wizard.html's own chip-based
+     * pre-signup flow needs the same promptText/storyText split as
+     * create.html's (see that file's own header comment on why it gets
+     * "the same treatment"). Falls back to `caption` when omitted (a
+     * not-yet-updated caller, or a legacy pending job), same fallback
+     * finalizeDream itself applies.
      */
-    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType) {
-      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
+    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType, storyText) {
+      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, storyText: storyText || null, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
     },
 
     /**
@@ -2164,12 +2261,13 @@
      * generateVideo() completion produces, so result.html works unchanged
      * for it.
      */
-    saveClaimedDream: function (caption, style, videoUrl) {
+    saveClaimedDream: function (caption, style, videoUrl, storyText) {
       if (!state.user) return null;
+      var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
       var dream = {
         id: newId(),
         ownerHandle: state.user.handle,
-        caption: caption, style: style, mediaType: 'video',
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText, style: style, mediaType: 'video',
         likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
         videoUrl: videoUrl
       };
@@ -2202,6 +2300,11 @@
         // resolves straight to job.operationName), so there's no live
         // toggle to re-read here, only this job's own already-decided value.
         audioOn: job.audioOn,
+        // Same reasoning as audioOn above — job.storyText is whatever this
+        // job was originally submitted/adopted with (see savePendingJob's
+        // own call sites), re-stamped here rather than left to finalizeDream's
+        // caption fallback just because this is a resume.
+        storyText: job.storyText,
         resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },
@@ -2290,7 +2393,14 @@
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: d.caption, style: d.style })
+        // storyText (tracker item for-product-split-prompttext-storytext-
+        // f-yt5kc7): the interpretation LLM must read the human dream
+        // description, never the chip flow's camera-direction/style-
+        // modifier promptText. d.storyText falls back to d.caption for a
+        // dream saved before this field existed (see finalizeDream's own
+        // doc comment) — behaviorally identical to today for every
+        // existing dream, and correctly storyText-only for every new one.
+        body: JSON.stringify({ caption: d.storyText || d.caption, style: d.style })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');

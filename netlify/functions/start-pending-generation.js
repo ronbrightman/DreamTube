@@ -1,8 +1,16 @@
 // netlify/functions/start-pending-generation.js
 //
-// POST { email, whatsapp?, caption, style, characters?, cameraView?,
+// POST { email, whatsapp?, caption, storyText?, style, characters?, cameraView?,
 //        sceneryTime?, sceneryPlace?, characterIdsForGeneration?,
 //        turnstileToken?, mediaType? }
+//
+// storyText (optional, tracker item for-product-split-prompttext-
+// storytext-f-yt5kc7): the human-readable dream description wizard.html's
+// chip flow computes — bookkeeping only here (stored on the pending-dreams
+// record for verify-pending-claim.js/claim-dream.html to read back later —
+// see lib/pending-dreams.js's own doc comment). Never touches promptText/
+// `caption` below or anything this file actually sends to fal — this file's
+// existing prompt-assembly/submission logic is completely unchanged.
 // -> the dream-builder wizard's "generate during signup" + abandoned-dream
 // re-engagement seam (see wizard.html, dream-webhook.js,
 // docs/IDENTITY_RETENTION_PROJECT_SPEC.md's email+WhatsApp pivot, and
@@ -154,6 +162,7 @@ exports.handler = async function (event) {
   }
   var whatsapp = typeof payload.whatsapp === 'string' && payload.whatsapp.trim() ? payload.whatsapp.trim() : null;
   var caption = (payload.caption || '').trim();
+  var storyText = typeof payload.storyText === 'string' ? payload.storyText.trim() : '';
   var style = (payload.style || '').trim();
   if (!caption || !style) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E5: caption_and_style_required' }) };
@@ -214,7 +223,7 @@ exports.handler = async function (event) {
   // nothing downstream of this file currently reads it back off a pending
   // record (see the image branch's own webhookUrl comment below for why).
   var pending = await pendingDreams.create(event, {
-    email: email, whatsapp: whatsapp, caption: caption, style: style,
+    email: email, whatsapp: whatsapp, caption: caption, storyText: storyText, style: style,
     characterIdsForGeneration: characterIdsForGeneration,
     cameraView: cameraView, sceneryTime: sceneryTime, sceneryPlace: sceneryPlace,
     mediaType: mediaType

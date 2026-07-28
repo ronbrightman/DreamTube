@@ -691,14 +691,21 @@
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
     document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl) ? 'flex' : 'none';
-    document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7): the human-readable dream description, never the chip
+    // flow's own camera-direction/style-modifier promptText. Falls back
+    // to dream.caption for a dream saved before this field existed —
+    // that field already carries the same value for those (see
+    // js/store.js's finalizeDream doc comment), so this is a no-op
+    // behavior change for every pre-existing dream.
+    document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
     quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
     setupExpandableQuote();
     document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
     var privacyTag = document.getElementById('result-privacy-tag');
     privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
     privacyTag.classList.toggle('pub', !!dream.isPublished);
-    document.getElementById('edit-text').value = dream.caption;
+    document.getElementById('edit-text').value = dream.storyText || dream.caption;
     Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
@@ -1014,7 +1021,21 @@
     // sourceImageUrl is explicitly cleared so a stale value from an earlier
     // "Turn this into a video" attempt on a DIFFERENT dream this session
     // can never leak into an unrelated regenerate.
-    DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
+    //
+    // storyText: text (tracker item for-product-split-prompttext-
+    // storytext-f-yt5kc7) — the Edit Dream sheet edits the dream's own
+    // DISPLAYED text (storyText, post-split — edit-text was pre-filled
+    // from dream.storyText||dream.caption above), so the edited text
+    // becomes BOTH the new storyText and the new promptText (caption) —
+    // same "the user's own typed text is both the story and the prompt"
+    // semantics Write-it/Record-it already have. This means a regenerated
+    // chip-created dream's inferred camera/lighting language isn't
+    // re-derived after an edit here — an accepted, minor tradeoff (same
+    // one Write-it/Record-it always had), not a regression this feature
+    // introduces new user-facing confusion with (the edited text now
+    // correctly reads as a human story both before and after Generate
+    // Again, which it did NOT before this fix for a chips-created dream).
+    DreamStore.setDraft({ caption: text, storyText: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
   }
 
   function proceedWithGenerateAgain(){
@@ -1113,7 +1134,7 @@
   function doShare(){
     ShareSheet.show({
       dream: dream,
-      shareText: 'Check out my dream: "' + dream.caption + '" — create your own on DreamTube!',
+      shareText: 'Check out my dream: "' + (dream.storyText || dream.caption) + '" — create your own on DreamTube!',
       onToast: showToast
     });
   }

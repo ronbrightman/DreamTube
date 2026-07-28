@@ -145,3 +145,58 @@ test('style omitted entirely (not explicitly null) still defaults to Cinematic, 
   var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy' });
   assert.match(result.caption, /Cinematic style, dreamlike\.$/);
 });
+
+// ── buildDeterministicStory — tracker item split-prompttext-storytext ──
+// The zero-cost, always-available, non-LLM storyText fallback for "chips
+// selected, no free text typed". Must never contain camera/lighting/
+// style language (that's promptText's job, tested above via
+// assembleCaption) and must always read as a plain first-person sentence.
+
+test('deterministic story: subject "none" + defaults reads as a plain first-person sentence with no camera/lighting/style words', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'flying', placeKey: 'sky', moodKey: 'dreamy' });
+  assert.match(story, /^I was flying in an open sky, feeling dreamy and surreal\.$/);
+  assert.doesNotMatch(story, /shot|light|style|dreamlike/i);
+});
+
+test('deterministic story: "a stranger" subject reads "I was a stranger, ..." (spec\'s own worked example shape)', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'stranger', actionKey: 'exploring', placeKey: 'nature', sceneryTime: 'Night', moodKey: 'mysterious'
+  });
+  assert.equal(story, 'I was a stranger, exploring somewhere new in a natural outdoor landscape at night, feeling mysterious.');
+});
+
+test('deterministic story: "someone I know" subject uses the character\'s name', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'someone', character: { name: 'Alex' }, actionKey: 'meeting', placeKey: 'house', moodKey: 'joyful'
+  });
+  assert.equal(story, 'I was with Alex, meeting someone new inside a house, feeling joyful.');
+});
+
+test('deterministic story: "+ Something else" free-text escape hatches are honored for subject/place/action/mood', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'other', subjectOtherText: 'my grandmother',
+    placeKey: 'other', placeOtherText: 'a floating library',
+    actionKey: 'other', actionOtherText: 'reading an impossible book',
+    moodKey: 'other', moodOtherText: 'bittersweet'
+  });
+  assert.equal(story, 'I was my grandmother, reading an impossible book a floating library, feeling bittersweet.');
+});
+
+test('deterministic story: unset action/mood fall back to the same documented defaults as assembleCaption (Flying, Dreamy/surreal)', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none' });
+  assert.match(story, /^I was flying/);
+  assert.match(story, /dreamy and surreal\.$/);
+});
+
+test('deterministic story: Day/Night scenery adds a plain time clause, no lighting jargon', function () {
+  var day = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'running', placeKey: 'urban', sceneryTime: 'Day', moodKey: 'joyful' });
+  assert.match(day.toLowerCase(), /during the day/);
+  var night = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'running', placeKey: 'urban', sceneryTime: 'Night', moodKey: 'joyful' });
+  assert.match(night.toLowerCase(), /at night/);
+});
+
+test('deterministic story: never throws and always returns a non-empty sentence, even with no input at all', function () {
+  var story = WizardChips.buildDeterministicStory();
+  assert.ok(story.length > 0);
+  assert.match(story, /^I was/);
+});

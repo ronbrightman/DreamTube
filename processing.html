@@ -514,7 +514,13 @@
           // 'video' (see js/store.js's own request-body construction), and
           // regenerateDream's own opts destructuring simply never reads
           // these two keys at all (see its doc comment on why).
-          audioOn: d.audioOn, musicStyle: d.musicStyle
+          audioOn: d.audioOn, musicStyle: d.musicStyle,
+          // storyText (tracker item for-product-split-prompttext-storytext-
+          // f-yt5kc7) — the human-readable dream description style.html's
+          // preview card already finalized (see that file's own doc
+          // comment), read live off the draft same as every other field
+          // here so finalizeDream can stamp it onto the completed dream.
+          storyText: d.storyText
         };
         var freshTask = d.sourceDreamId
           ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
@@ -870,8 +876,13 @@
     showPaymentReceivedState();
     var resumeDraft = DreamStore.getDraft();
     if(resumeDraft && resumeDraft.caption){
+      // storyText (tracker item for-product-split-prompttext-storytext-
+      // f-yt5kc7) — this is a human-facing preview of the dream, never the
+      // engineered promptText. Falls back to .caption for a Write-it/
+      // Record-it draft or an older draft shape, where the two are the
+      // same value anyway.
       document.getElementById('proc-payment-draft-summary').textContent =
-        '"' + resumeDraft.caption + '" · ' + (resumeDraft.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
+        '"' + (resumeDraft.storyText || resumeDraft.caption) + '" · ' + (resumeDraft.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
     }
 
     startCreditPoll(pendingPurchase.cost || currentMediaTypeCost(), pendingPurchase.source);
@@ -895,7 +906,7 @@
     var resumeDraftNoMarker = DreamStore.getDraft();
     if(resumeDraftNoMarker && resumeDraftNoMarker.caption){
       document.getElementById('proc-payment-draft-summary').textContent =
-        '"' + resumeDraftNoMarker.caption + '" · ' + (resumeDraftNoMarker.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
+        '"' + (resumeDraftNoMarker.storyText || resumeDraftNoMarker.caption) + '" · ' + (resumeDraftNoMarker.style || '') + ' · ' + (currentMediaType() === 'image' ? 'Image' : 'Video');
     }
     startCreditPoll(currentMediaTypeCost(), 'blocked_action');
   } else {

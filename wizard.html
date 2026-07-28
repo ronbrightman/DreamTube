@@ -822,7 +822,9 @@
   // generation request. See js/wizard-chips.js for the algorithm itself.
   // ===================================================================
   var assembled = null; // { caption, characterIdsForGeneration }
-  function assembleFromState(){
+
+  /** Same chip-selection fields assembleCaption below takes, minus camera/POV/character-description/style — shared with buildDeterministicStory, which has no use for those (see js/wizard-chips.js's own doc comment). */
+  function currentChipFields(){
     var subjectKey = 'none';
     var character = null;
     if(staged.subjectCharacterId){
@@ -831,14 +833,70 @@
     } else if(subjectOtherKind){
       subjectKey = subjectOtherKind;
     }
-    assembled = WizardChips.assembleCaption({
+    return {
       subjectKey: subjectKey, character: character, subjectOtherText: subjectOtherText,
       placeKey: settingPlaceKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: actionKey, actionOtherText: actionOtherText, pov: povOn,
-      moodKey: moodKey, moodOtherText: moodOtherText,
-      style: chosenStyle, freeText: freeText
-    });
+      moodKey: moodKey, moodOtherText: moodOtherText
+    };
+  }
+
+  function assembleFromState(){
+    var chipFields = currentChipFields();
+    assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: chosenStyle, freeText: freeText }));
     return assembled;
+  }
+
+  // ===================================================================
+  // storyText (tracker item for-product-split-prompttext-storytext-
+  // f-yt5kc7) — wizard.html's own chip-based pre-signup flow gets the
+  // exact same treatment as create.html's "Build it" (see that file's own
+  // header comment): assembled.caption above is promptText (generation-
+  // only, camera-direction/style-modifier language), never shown to the
+  // user again. currentStoryText is what Step 7 (Contact)'s recap card
+  // actually shows, and what the real submission payload/draftPatch below
+  // carry — always whatever's CURRENTLY displayed, never a stale snapshot,
+  // same discipline as style.html's own version of this. See
+  // computeStoryText's own doc comment for the two-path logic (verbatim
+  // free text vs. a deterministic-then-opportunistically-LLM-upgraded chip
+  // sentence).
+  // ===================================================================
+  var currentStoryText = '';
+  var storyRewriteToken = 0; // bumped every recompute -- an in-flight fetch from a PRIOR chip-state (e.g. the user went back and changed something) must never clobber a newer one's result.
+
+  /**
+   * Recomputes currentStoryText for whatever's currently staged, fires the
+   * opportunistic LLM rewrite if needed, and re-renders Contact's recap
+   * card (only relevant while Contact is the visible screen — renderStoryRecap
+   * itself no-ops harmlessly if its elements aren't in the DOM, e.g. the
+   * user has since moved on to Signup).
+   */
+  function computeStoryText(){
+    var myToken = ++storyRewriteToken;
+    var hasFreeText = !!(freeText && freeText.trim());
+    currentStoryText = hasFreeText ? freeText.trim() : WizardChips.buildDeterministicStory(currentChipFields());
+    renderStoryRecap();
+    if(hasFreeText) return;
+    fetch('/.netlify/functions/rewrite-dream-story', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ promptText: assembled ? assembled.caption : '' })
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(myToken !== storyRewriteToken) return; // stale -- a newer recompute has since superseded this
+      if(!result.ok || !result.data || !result.data.storyText) return;
+      currentStoryText = result.data.storyText;
+      renderStoryRecap();
+    }).catch(function(){ /* best-effort -- deterministic template already shown */ });
+  }
+
+  function renderStoryRecap(){
+    var card = document.getElementById('fn-story-recap-card');
+    var textEl = document.getElementById('fn-story-recap-text');
+    if(!card || !textEl) return; // Contact isn't the current screen -- see computeStoryText's own comment
+    textEl.textContent = currentStoryText;
+    card.style.display = currentStoryText ? 'block' : 'none';
   }
 
   // ===================================================================
@@ -1005,6 +1063,17 @@
     el.innerHTML =
       '<div class="fn-headline">Where should we send your dream?</div>' +
       '<div class="fn-microcopy">We’ll email you your dream the moment it’s ready — even if you don’t finish signing up.</div>' +
+      // Story recap card -- founder-required pre-generation preview
+      // (tracker item for-product-split-prompttext-storytext-f-yt5kc7,
+      // point 4): this Contact step is the one right before Continue
+      // fires the real generation request, so it's this flow's own
+      // "preview" moment (create.html's equivalent chip flow uses
+      // style.html for the same role). See computeStoryText below for how
+      // #fn-story-recap-text gets populated.
+      '<div class="story-recap-card" id="fn-story-recap-card" style="display:none;">' +
+        '<div class="story-recap-label">Your dream</div>' +
+        '<div class="story-recap-text" id="fn-story-recap-text" dir="auto"></div>' +
+      '</div>' +
       '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
       // PARKED (founder decision 2026-07-28, tracker item
       // for-product-hide-the-whatsapp-field-in-w-clu9ju): the WhatsApp
@@ -1022,6 +1091,13 @@
       '<div class="fn-err-text" id="contact-error"></div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Continue</button>';
+
+    // Fires the deterministic-then-opportunistically-LLM-upgraded
+    // storyText computation now that #fn-story-recap-card actually exists
+    // in the DOM (see computeStoryText's own doc comment) -- called every
+    // time this screen renders (including a Back-then-forward revisit), so
+    // an edited chip selection or free-text always recomputes fresh.
+    computeStoryText();
 
     document.getElementById('contact-email').value = contactEmail;
     // PARKED alongside the WhatsApp toggle/field above -- see comment there.
@@ -1045,17 +1121,33 @@
         email: contactEmail, whatsapp: contactWhatsapp || null,
         caption: assembled.caption, style: chosenStyle,
         characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
-        sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey
+        sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey,
+        // storyText (tracker item for-product-split-prompttext-storytext-
+        // f-yt5kc7) — whatever the recap card is showing RIGHT NOW.
+        // Deliberately excluded from comparisonKey below (see that key's
+        // own comment): this can legitimately differ across two attempts
+        // for otherwise-identical chip content (a non-deterministic LLM
+        // rewrite, or one attempt catching the deterministic template
+        // before the rewrite resolved and a later one catching the
+        // upgrade) — it must never, by itself, make an unchanged
+        // submission look "changed" and trigger a real duplicate fal.ai
+        // charge.
+        storyText: currentStoryText
       };
       var submissionKey = JSON.stringify(payload);
       // Comparison-only key: normalizes email casing (mirrors the
       // server's entitlements.normalizeEmail) so retyping the same
       // address with different case isn't treated as a changed
-      // submission and forced through an unnecessary resubmit. The
-      // actual POST body above keeps the as-typed casing.
-      var comparisonKey = JSON.stringify(Object.assign({}, payload, { email: contactEmail.toLowerCase() }));
+      // submission and forced through an unnecessary resubmit, AND strips
+      // storyText (see payload's own comment above) — everything else
+      // (the fields that actually determine the real, billed generation)
+      // stays exactly as before. The actual POST body above keeps
+      // storyText and the as-typed email casing.
+      var comparisonPayload = Object.assign({}, payload, { email: contactEmail.toLowerCase() });
+      delete comparisonPayload.storyText;
+      var comparisonKey = JSON.stringify(comparisonPayload);
 
-      var draftPatch = { caption: assembled.caption, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey };
+      var draftPatch = { caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey };
 
       // Marks this click as the new current attempt -- see
       // pendingGenerationToken's own comment above for why this is
@@ -1379,7 +1471,12 @@
               }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
             }
             if(pendingOperationName && !pendingStartFailed){
-              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle);
+              // storyText (tracker item for-product-split-prompttext-
+              // storytext-f-yt5kc7) -- mediaType omitted (undefined),
+              // unchanged from before this feature: wizard.html always
+              // adopts a video, see adoptPendingGeneration's own doc
+              // comment.
+              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
             }
             track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
             location.href = 'processing.html';
