@@ -114,7 +114,7 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 40, nextGrantAt: Date.now() + (6 * 3600000) + (12 * 60000), dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + (6 * 3600000) + (12 * 60000), dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     await seedAccount(page, { username: 'styleblocked', draft: { caption: 'Flying over a glass city' } });
     await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
@@ -130,7 +130,7 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
     assert.match(body, /You have\s*40/);
     assert.match(body, /60 more/);
     var waitLine = await page.textContent('#ps-wait-line');
-    assert.match(waitLine, /Or wait — 20 free tokens in 6h 1[23]m/);
+    assert.match(waitLine, /Or claim 20 free tokens in 6h 1[23]m/);
     var buyLabel = await page.textContent('#ps-buy-label');
     assert.match(buyLabel, /Get 100 tokens · \$2\.99/);
 
@@ -153,7 +153,7 @@ test('style.html: tapping the buy button POSTs the smallest sufficient pack with
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 40, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var captured = null;
     await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
@@ -191,7 +191,7 @@ test('result.html "Generate Again": opens the purchase sheet with correct per-me
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 4, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 4, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     await seedAccount(page, {
       username: 'regenimage',
@@ -236,7 +236,7 @@ test('result.html "Turn this into a video": opens the purchase sheet with correc
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 30, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 30, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var ORIGINAL_IMAGE_URL = 'https://fal.media/files/sample/original-image.png';
     await seedAccount(page, {
@@ -284,7 +284,7 @@ test('processing.html: an E112 (insufficient tokens) generation failure auto-ope
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 25, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 25, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     await page.route('**/.netlify/functions/generate-video', function (route) {
       route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E112: insufficient_tokens' }) });
@@ -322,7 +322,7 @@ test('processing.html: a failed VIDEO generation shows "video" in the fail copy'
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 500, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 500, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
     await page.route('**/.netlify/functions/generate-video', function (route) {
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E199: unknown_error' }) });
     });
@@ -345,7 +345,7 @@ test('processing.html: a failed IMAGE generation shows "image" in the fail copy,
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 500, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 500, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
     await page.route('**/.netlify/functions/generate-image', function (route) {
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E199: unknown_error' }) });
     });
@@ -373,7 +373,7 @@ test('processing.html: a mocked successful checkout return auto-resumes the exac
     await blockThirdParty(page);
     // Balance is already sufficient on the very first poll — the credit
     // "already landed" by the time this page loads.
-    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 150, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var generateVideoCalls = [];
     await page.route('**/.netlify/functions/generate-video', function (route) {
@@ -422,7 +422,7 @@ test('processing.html: when the token credit is still lagging past the poll wind
     var page = await context.newPage();
     await blockThirdParty(page);
     // Balance never crosses the needed threshold during the (shrunk) poll window.
-    await mockTokenStatus(page, { balance: 40, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var generateVideoCalls = [];
     await page.route('**/.netlify/functions/generate-video', function (route) {
@@ -453,7 +453,7 @@ test('processing.html: when the token credit is still lagging past the poll wind
 
     // The manual fallback must still work once tapped (balance updates for real this time).
     await page.unroute('**/.netlify/functions/get-token-status*');
-    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 150, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
     await page.route('**/.netlify/functions/video-status*', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/degraded-resume-video.mp4' }) });
     });
@@ -506,7 +506,7 @@ test('processing.html: pagehide cancels the in-flight credit poll -- a stale pol
     var tokenStatusCallCount = 0;
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       tokenStatusCallCount++;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
     });
 
     var generateVideoCalls = [];
@@ -565,7 +565,7 @@ test('processing.html: checkout=success with the pending-purchase marker missing
     // pass-through dressed up with a spinner.
     var creditLanded = false;
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
     });
 
     var generateVideoCalls = [];
@@ -607,6 +607,93 @@ test('processing.html: checkout=success with the pending-purchase marker missing
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
     assert.equal(generateVideoCalls.length, 1, 'once the credit lands within the grace period, the blocked generation must still auto-resume even without marker data');
     assert.equal(page.url().indexOf('checkout=success'), -1, 'the ?checkout=success param must still be stripped on the missing-marker path too');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Inline "Claim +N" affordance (tracker item
+// for-product-build-the-daily-token-claim--fngrwd, item 5): "when a user is
+// blocked on insufficient tokens AND has an unclaimed daily grant available,
+// show Claim +20 above the existing buy-tokens CTA".
+// ============================================================================
+test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA, and claiming it updates the sheet live off the real server response', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    var claimCalls = 0;
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 60, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
+    });
+
+    await seedAccount(page, { username: 'claiminline', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    // A claimable tokenStatus also auto-opens the DEDICATED claim sheet on
+    // this same load (tracker item for-product-build-the-daily-token-claim
+    // --fngrwd, item 4) -- dismiss it first, same as a real user would,
+    // before the normal style-picking flow below can proceed.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+    var claimLabel = await page.textContent('#ps-claim-label');
+    assert.match(claimLabel, /Claim \+20 free tokens/);
+
+    await page.evaluate(function () {
+      window.__phCalls = [];
+      var orig = window.posthog.capture.bind(window.posthog);
+      window.posthog.capture = function (name, props) { window.__phCalls.push({ name: name, props: props }); return orig(name, props); };
+    });
+
+    await page.click('#ps-claim-btn');
+    await page.waitForFunction(function () {
+      var body = document.getElementById('ps-body');
+      return body && /You have\s*<b>60/.test(body.innerHTML);
+    }, { timeout: 3000 });
+
+    assert.equal(claimCalls, 1, 'the real claim-daily-tokens endpoint was called exactly once');
+    var claimBtnVisibleAfter = await page.isVisible('#ps-claim-btn');
+    assert.equal(claimBtnVisibleAfter, false, 'the claim button hides itself once claimed -- nothing left to claim this cooldown');
+
+    var phCalls = await page.evaluate(function () { return window.__phCalls; });
+    var completedCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_completed'; });
+    assert.equal(completedCalls.length, 1, 'daily_claim_completed fires exactly once, on the real server-confirmed response');
+    assert.equal(completedCalls[0].props.streak, 3);
+    assert.equal(completedCalls[0].props.balance, 60);
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: NOT claimable -> the inline claim button stays hidden entirely, only the buy CTA shows', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+
+    await seedAccount(page, { username: 'noclaiminline', draft: { caption: 'A dream about flying' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var claimBtnVisible = await page.isVisible('#ps-claim-btn');
+    assert.equal(claimBtnVisible, false);
   } finally {
     await context.close();
   }

@@ -58,7 +58,7 @@ function blockThirdParty(page) {
 
 function mockTokenStatus(page, status) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100 }) });
   });
 }
 

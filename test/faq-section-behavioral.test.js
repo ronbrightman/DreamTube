@@ -77,7 +77,7 @@ function mockOwnerCheck(page) {
 /** Mocks the real get-token-status GET so the token chip doesn't hang on a real network call. */
 function mockTokenStatus(page) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 220, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 220, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20 }) });
   });
 }
 
@@ -236,6 +236,13 @@ test('profile.html Settings: FAQ reflects the image-generation option and its re
     assert.match(tokensAnswer, /100 tokens/, 'a video generation must still be described as costing 100 tokens');
     assert.match(tokensAnswer, /10\b/, 'an image generation costs 10 tokens (style.html/generate-image.js IMAGE_TOKEN_COST) -- the FAQ must not claim every generation costs the same 100');
     assert.doesNotMatch(tokensAnswer, /Every generation.*100 tokens/i, 'must not claim a single flat cost for every generation now that image generation is cheaper');
+    // Copy sweep (2026-07-28 daily-claim switch, tracker item
+    // for-product-build-the-daily-token-claim--fngrwd): this exact answer
+    // used to say "plus 20 more every day automatically" -- that stopped
+    // being true the moment the daily +20 became an active claim, not a
+    // silent background drip.
+    assert.doesNotMatch(tokensAnswer, /every day automatically/i, 'the retired "automatic daily grant" promise must not still appear in the FAQ');
+    assert.match(tokensAnswer, /claim/i, 'the FAQ should describe the real mechanism -- claiming, not an automatic drip');
 
     // result.html's own regenerateAgainCost() charges IMAGE_TOKEN_COST (10)
     // for an image-type dream's regenerate, not VIDEO_TOKEN_COST (100) --

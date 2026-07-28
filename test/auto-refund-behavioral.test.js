@@ -221,7 +221,7 @@ test('processing.html: the refund copy from an earlier failure does not linger i
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:req-retry' }) });
     });
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 }) });
     });
     await page.unroute('**/.netlify/functions/video-status*');
     await page.route('**/.netlify/functions/video-status*', function (route) {

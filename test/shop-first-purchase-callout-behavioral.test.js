@@ -62,7 +62,7 @@ function blockThirdParty(page) {
 
 function mockTokenStatus(page, status) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0, hasMadeFirstPurchase: false }) });
   });
 }
 
@@ -93,7 +93,7 @@ test('shows a genuinely prominent, visible callout with the exact "first pack"/"
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0, hasMadeFirstPurchase: false });
     await seedShopPage(page, { presetVariant: 'a' });
 
     var callout = calloutLocator(page);
@@ -134,7 +134,7 @@ test('does NOT render when hasMadeFirstPurchase is true (repeat buyer already us
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 200, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true, hasMadeFirstPurchase: true });
+    await mockTokenStatus(page, { balance: 200, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0, hasMadeFirstPurchase: true });
     await seedShopPage(page);
 
     // Give renderBalance() a moment to run (waits on the balance number
@@ -159,7 +159,7 @@ test('does NOT render when hasMadeFirstPurchase is missing from the response (fa
     var page = await context.newPage();
     await blockThirdParty(page);
     // Old/degraded response shape with no hasMadeFirstPurchase field at all.
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20 });
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20 });
     await seedShopPage(page);
 
     await page.waitForFunction(function () {
@@ -205,7 +205,7 @@ test('styles correctly under both shop-variant-a and shop-variant-b palette vari
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0, hasMadeFirstPurchase: false });
 
     // Variant A — periwinkle-blue (--accent-trust: #6C8CFF -> rgb(108, 140, 255)),
     // same color the "best value" pack card's own A/B border uses in this variant.
@@ -225,7 +225,7 @@ test('styles correctly under both shop-variant-a and shop-variant-b palette vari
     context = await browser.newContext();
     var page2 = await context.newPage();
     await blockThirdParty(page2);
-    await mockTokenStatus(page2, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
+    await mockTokenStatus(page2, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0, hasMadeFirstPurchase: false });
     await seedShopPage(page2, { presetVariant: 'b' });
     await calloutLocator(page2).waitFor({ state: 'visible', timeout: 5000 });
     await page2.waitForFunction(function () {

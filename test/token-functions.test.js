@@ -33,29 +33,31 @@ test.beforeEach(function () {
 test('GET with no email -> a zero/inert status, no Blobs touched', async function () {
   var res = await getTokenStatusHandler(fakeEvent({ method: 'GET', ip: nextIp() }));
   assert.equal(res.statusCode, 200);
-  // grantCeiling/atCeiling added for tracker item
-  // for-product-bug-founder-high-token-chip--kn1v8t (see
-  // lib/entitlements.js's getTokenStatus doc comment) -- atCeiling is
-  // unconditionally false here since balance is always 0 on this
-  // no-email fast path. hasMadeFirstPurchase (tracker item
-  // for-product-shop-first-purchase-50-bonus-bzx2d4) is unconditionally
-  // false here too -- there's no identity on this no-email path that
-  // could have ever completed a purchase.
-  assert.deepEqual(JSON.parse(res.body), { balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
+  // claimable/nextClaimAt/dailyClaimAmount/streak (2026-07-28 daily-claim
+  // switch, tracker item for-product-build-the-daily-token-claim--fngrwd,
+  // see lib/entitlements.js's getTokenStatus doc comment) -- claimable is
+  // unconditionally false here since there's no identity on this no-email
+  // fast path to claim anything against. hasMadeFirstPurchase (tracker
+  // item for-product-shop-first-purchase-50-bonus-bzx2d4) is
+  // unconditionally false here too -- there's no identity on this
+  // no-email path that could have ever completed a purchase.
+  assert.deepEqual(JSON.parse(res.body), { balance: 0, claimable: false, nextClaimAt: null, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: false });
 });
 
-test('GET with a brand-new email materializes the 220-token signup grant', async function () {
+test('GET with a brand-new email materializes the 220-token signup grant, claimable immediately', async function () {
   var res = await getTokenStatusHandler(fakeEvent({ method: 'GET', ip: nextIp(), query: { email: 'fresh@example.com' } }));
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.balance, 220);
-  assert.equal(body.dailyGrantAmount, 20);
-  assert.equal(typeof body.nextGrantAt, 'number');
+  assert.equal(body.dailyClaimAmount, 20);
+  assert.equal(body.claimable, true);
+  assert.equal(body.streak, 0);
+  assert.equal(typeof body.nextClaimAt, 'number');
 });
 
 test('GET with an already-initialized email reads its real balance straight through', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'existing@example.com', { tokens: { balance: 340, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement(ev, 'existing@example.com', { tokens: { balance: 340 } });
   var res = await getTokenStatusHandler(fakeEvent({ method: 'GET', ip: nextIp(), query: { email: 'existing@example.com' } }));
   var body = JSON.parse(res.body);
   assert.equal(body.balance, 340);

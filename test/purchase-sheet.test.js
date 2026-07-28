@@ -51,23 +51,23 @@ test('formatTokenCountdown: hours+minutes / minutes-only / "now"', function () {
   assert.equal(PurchaseSheet.formatTokenCountdown(null), '');
 });
 
-test('waitLineText: the honest free-path escape line, read live off tokenStatus', function () {
+test('waitLineText: the honest free-path escape line, read live off tokenStatus (2026-07-28 daily-claim switch, claim-framed not grant-framed)', function () {
   var now = Date.now();
   assert.equal(
-    PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: now + (3 * 3600000), atCeiling: false }),
-    'Or wait — 20 free tokens in 3h 0m'
+    PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: now + (3 * 3600000), claimable: false }),
+    'Or claim 20 free tokens in 3h 0m'
   );
 });
 
-test('waitLineText: atCeiling never renders a stale "in now" countdown (the exact bug tracker item for-product-bug-founder-high-token-chip--kn1v8t fixed elsewhere)', function () {
+test('waitLineText: claimable renders a "claim now" line, never a stale countdown (tracker item for-product-build-the-daily-token-claim--fngrwd)', function () {
   var now = Date.now();
   assert.equal(
-    PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: now - 999999, atCeiling: true }),
-    'Daily +20 tokens paused — you’re at the max'
+    PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: now - 999999, claimable: true }),
+    'Or claim 20 free tokens above'
   );
 });
 
-test('waitLineText: no tokenStatus / no nextGrantAt -> empty, never throws', function () {
+test('waitLineText: no tokenStatus / no nextClaimAt -> empty, never throws', function () {
   assert.equal(PurchaseSheet.waitLineText(null), '');
-  assert.equal(PurchaseSheet.waitLineText({ dailyGrantAmount: 20, nextGrantAt: null, atCeiling: false }), '');
+  assert.equal(PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: null, claimable: false }), '');
 });

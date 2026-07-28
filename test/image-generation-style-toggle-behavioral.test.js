@@ -102,7 +102,7 @@ test('style.html: Video is pre-selected; tapping Image relabels the button, and 
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
     await seedLoggedInUserAt(page, 'toggletester', '/create.html');
     await reachStyleScreen(page, 'A dream about flying over a glowing city at night');
 
@@ -137,7 +137,7 @@ test('style.html: the out-of-tokens purchase sheet reads the currently-selected 
     await blockThirdParty(page);
     // Low enough to block BOTH media types, so toggling alone (no balance
     // change) is what proves the sheet's arithmetic tracks the selection.
-    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 5, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
     await seedLoggedInUserAt(page, 'toggleblocked', '/create.html');
     await reachStyleScreen(page, 'A dream about flying over a glowing city at night');
     await page.waitForTimeout(200); // let the async getTokenStatus() pre-check resolve
@@ -164,7 +164,7 @@ test('style.html: picking Image and generating actually dispatches to the image 
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
 
     var generateImageCalls = [];
     await page.route('**/.netlify/functions/generate-image', function (route) {

@@ -1,38 +1,32 @@
 // test/entitlements-tokens.test.js
 //
-// Unit coverage for the token-economy rewrite of
-// netlify/functions/lib/entitlements.js: getTokenStatus (the 220-token
-// first-ever-read grant, the lazy +20/24h drip, the ≥200 ceiling that
-// holds the drip back without compounding, and the per-IP daily cap on
-// brand-new-email grants) and spendTokens (deduct on demand, floor at 0,
-// no-op on a missing/empty email, and that it applies any pending lazy
-// grant before deducting).
+// Unit coverage for netlify/functions/lib/entitlements.js's token-economy
+// core: getTokenStatus (the 220-token first-ever-read grant, and the
+// claimable/nextClaimAt/streak projection off tokens.lastClaimAt/streak),
+// spendTokens (deduct on demand, floor at 0, no-op on a missing/empty
+// email, and that it preserves lastClaimAt/streak untouched), addTokens
+// (manual top-up, same preservation), and claimDailyTokens (the actual
+// daily-claim writer — see entitlements-daily-claim.test.js for its own
+// dedicated, more thorough coverage of the rolling cooldown/streak logic;
+// this file only re-checks that spendTokens/addTokens/getTokenStatus stay
+// consistent with whatever claimDailyTokens wrote).
 //
 // Numbers retuned 2026-07-24 (docs/IMAGE_GENERATION_SPEC.md §2b-revised):
-// INITIAL_GRANT 200->290, DAILY_GRANT_AMOUNT 100->10 (GRANT_CEILING stays
-// 500) — a new signup nets exactly 190 tokens after the wizard's one free
-// onboarding video (290-100), and the free tier tightens meaningfully over
-// time via a much smaller daily trickle.
+// INITIAL_GRANT 200->290, then 2026-07-26 morning 290->220 morning retune,
+// then retuned a third time 2026-07-26 night ("Token Economy C") to its
+// current 220 — 220 covers the funnel's free onboarding video (100) + one
+// additional day-1 video (100) + 2 images (20). Unaffected by the
+// 2026-07-28 daily-claim switch (this file's real subject): that switch
+// replaced the OLD lazy +20/24h drip (and its ≥200 GRANT_CEILING) with an
+// active daily CLAIM instead — see claim-daily-tokens.js and
+// lib/entitlements.js's own doc block for the full mechanism/history. The
+// old drip/ceiling tests that used to live in this file are gone; there is
+// no more automatic background grant to test, and no more ceiling to hold
+// one back.
 //
-// DAILY_GRANT_AMOUNT retuned again 2026-07-26 morning (tracker item
-// for-product-raise-daily-token-award-to-2-7rf8ut, founder-directed):
-// 10->200, because the 10/day trickle left new users stuck for days once
-// the 290-token signup grant ran out after ~2 videos.
-//
-// Retuned a THIRD time 2026-07-26 night ("Token Economy C", founder-
-// approved, tracker item for-product-build-token-economy-c-founde-i5i5pu):
-// INITIAL_GRANT 290->220, DAILY_GRANT_AMOUNT 200->20, GRANT_CEILING
-// 500->200. 220 covers the funnel's free onboarding video (100) + one
-// additional day-1 video (100) + 2 images (20); the daily drip was cut
-// back down to +20 now that real token packs (3-pack lineup, see
-// create-checkout-session-dodo.js) are the actual "need more" path. 220 >
-// the new 200 ceiling is intentional (see entitlements.js's own doc
-// comment) — the drip simply resumes once balance actually drops below
-// 200.
-//
-// generate-video-tokens.test.js additionally exercises both of these
-// through the actual generate-video.js handler (the E112 gate + when
-// spending does/doesn't fire).
+// generate-video-tokens.test.js additionally exercises spendTokens through
+// the actual generate-video.js handler (the E112 gate + when spending
+// does/doesn't fire).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -43,7 +37,6 @@ mockBlobs.install();
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
 
-var DAY_MS = 24 * 60 * 60 * 1000;
 var ipCounter = 0;
 function nextIp() {
   ipCounter += 1;
@@ -61,8 +54,8 @@ test('a never-before-seen email gets the 220-token signup grant on first read, a
   var ev = fakeEvent({ ip: nextIp() });
   var status = await entitlements.getTokenStatus(ev, 'brandnew@example.com');
   assert.equal(status.balance, 220);
-  assert.equal(status.dailyGrantAmount, 20);
-  assert.equal(typeof status.nextGrantAt, 'number');
+  assert.equal(status.dailyClaimAmount, 20);
+  assert.equal(typeof status.nextClaimAt, 'number');
 
   var record = await entitlements.getEntitlement(ev, 'brandnew@example.com');
   assert.ok(record, 'first read must persist a record (unlike the old quota system, which never wrote one just from being read)');
@@ -76,146 +69,42 @@ test('reading again right away does not re-grant — balance stays at 220', asyn
   assert.equal(status.balance, 220);
 });
 
-test('nextGrantAt is exactly lastGrantAt + 24h', async function () {
+// ----- getTokenStatus: claimable/streak, off a record with no lastClaimAt -----
+
+test('a brand-new signup grant has no lastClaimAt yet -> claimable immediately (founder-confirmed)', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  var before = Date.now();
-  var status = await entitlements.getTokenStatus(ev, 'timing@example.com');
-  var record = await entitlements.getEntitlement(ev, 'timing@example.com');
-  assert.equal(status.nextGrantAt, record.tokens.lastGrantAt + DAY_MS);
-  assert.ok(record.tokens.lastGrantAt >= before);
+  var status = await entitlements.getTokenStatus(ev, 'freshclaim@example.com');
+  assert.equal(status.claimable, true);
+  assert.equal(status.streak, 0, 'no claim has ever landed yet');
+  assert.ok(status.nextClaimAt <= Date.now(), 'a never-claimed account reads as claimable right now, not in the future');
 });
 
-// ----- getTokenStatus: lazy +20/24h drip -----
-
-test('24h+ elapsed since lastGrantAt, balance under the ceiling -> +20 grant, lastGrantAt bumped to now', async function () {
+test('a pre-existing account with no tokens.lastClaimAt field at all (predates this feature) is also claimable immediately', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'due@example.com', {
-    tokens: { balance: 50, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'due@example.com');
-  assert.equal(status.balance, 70);
-
-  var record = await entitlements.getEntitlement(ev, 'due@example.com');
-  assert.ok(Date.now() - record.tokens.lastGrantAt < 5000, 'lastGrantAt should have snapped to "now"');
+  // No lastClaimAt/streak at all -- exactly what a pre-2026-07-28 record
+  // looks like.
+  await entitlements.setEntitlement(ev, 'legacy@example.com', { tokens: { balance: 55 } });
+  var status = await entitlements.getTokenStatus(ev, 'legacy@example.com');
+  assert.equal(status.balance, 55, 'no daily-grant machinery silently changed the balance on read');
+  assert.equal(status.claimable, true);
 });
 
-test('a user who spent down low receives the current 20/day amount on the next accrual', async function () {
+test('getTokenStatus never itself grants the daily +20 -- reading repeatedly leaves the balance untouched even though claimable is true', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'nearzero@example.com', {
-    tokens: { balance: 8, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'nearzero@example.com');
-  assert.equal(status.balance, 28, '8 + the 20/day grant');
-  assert.equal(status.dailyGrantAmount, 20);
+  await entitlements.getTokenStatus(ev, 'readonly@example.com'); // -> 220, claimable
+  var status = await entitlements.getTokenStatus(ev, 'readonly@example.com');
+  var status2 = await entitlements.getTokenStatus(ev, 'readonly@example.com');
+  assert.equal(status.balance, 220);
+  assert.equal(status2.balance, 220, 'reading is not claiming -- only claimDailyTokens grants');
 });
 
-test('under 24h elapsed -> no grant yet, balance unchanged', async function () {
+test('claimable is false, and nextClaimAt is in the future, right after a claim', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'notyet@example.com', {
-    tokens: { balance: 50, lastGrantAt: Date.now() - (DAY_MS - 60000) }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'notyet@example.com');
-  assert.equal(status.balance, 50);
-});
-
-test('a single lazy read only ever grants one +20, regardless of how many days actually elapsed (no compounding, same precedent as the old monthly quota reset)', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'stale@example.com', {
-    tokens: { balance: 50, lastGrantAt: Date.now() - 5 * DAY_MS }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'stale@example.com');
-  assert.equal(status.balance, 70, 'exactly one +20 grant, not 5x20');
-});
-
-// ----- getTokenStatus: ≥200 ceiling -----
-
-test('balance already at the ≥200 ceiling -> grant skipped even though 24h elapsed, lastGrantAt left untouched', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  var staleTime = Date.now() - DAY_MS - 60000;
-  await entitlements.setEntitlement(ev, 'maxed@example.com', {
-    tokens: { balance: 200, lastGrantAt: staleTime }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'maxed@example.com');
-  assert.equal(status.balance, 200, 'ceiling holds the grant back');
-
-  var record = await entitlements.getEntitlement(ev, 'maxed@example.com');
-  assert.equal(record.tokens.lastGrantAt, staleTime, 'lastGrantAt must NOT advance while the grant is being held back');
-});
-
-test('balance just under the ceiling (199) still grants normally', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'almostmaxed@example.com', {
-    tokens: { balance: 199, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'almostmaxed@example.com');
-  assert.equal(status.balance, 219);
-});
-
-test('once balance drops back under the ceiling (e.g. from spending), the very next read grants immediately — lastGrantAt was never advanced while held back', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  var staleTime = Date.now() - DAY_MS - 60000;
-  await entitlements.setEntitlement(ev, 'recovered@example.com', {
-    tokens: { balance: 200, lastGrantAt: staleTime }
-  });
-  await entitlements.getTokenStatus(ev, 'recovered@example.com'); // held back, still 200
-
-  await entitlements.spendTokens(ev, 'recovered@example.com', 100); // -> 100, under the ceiling now
-  var status = await entitlements.getTokenStatus(ev, 'recovered@example.com');
-  assert.equal(status.balance, 120, '100 + the now-unblocked +20 grant');
-});
-
-// ----- getTokenStatus: atCeiling / grantCeiling (tracker item
-// for-product-bug-founder-high-token-chip--kn1v8t — the founder's own
-// profile, sitting at the 200 ceiling, showed a permanent "+20 in now" in
-// the UI because every renderer inferred "at ceiling" from a stale, past
-// nextGrantAt instead of an explicit flag) -----
-
-test('atCeiling is true and grantCeiling is 200 when balance sits exactly at the ceiling', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'atceiling@example.com', {
-    tokens: { balance: 200, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'atceiling@example.com');
-  assert.equal(status.atCeiling, true);
-  assert.equal(status.grantCeiling, 200);
-  // The exact bug: nextGrantAt is already in the past while atCeiling is
-  // true, since lastGrantAt is deliberately never bumped while held back.
-  // Callers must branch on atCeiling, not on nextGrantAt <= now.
-  assert.ok(status.nextGrantAt <= Date.now(), 'sanity: nextGrantAt really is in the past here, which is exactly what used to render "in now" forever');
-});
-
-test('atCeiling is true for a balance well above the ceiling too (e.g. the 220-token signup grant, or a manual top-up)', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'wellabove@example.com', {
-    tokens: { balance: 1500, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var status = await entitlements.getTokenStatus(ev, 'wellabove@example.com');
-  assert.equal(status.balance, 1500);
-  assert.equal(status.atCeiling, true, 'the founder\'s own reported balance (1500) must read as at-ceiling');
-  assert.equal(status.grantCeiling, 200);
-});
-
-test('atCeiling is false just under the ceiling (199)', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'undertheceiling@example.com', {
-    tokens: { balance: 199, lastGrantAt: Date.now() - 60000 } // not due for a grant either, isolates atCeiling from the drip
-  });
-  var status = await entitlements.getTokenStatus(ev, 'undertheceiling@example.com');
-  assert.equal(status.balance, 199);
-  assert.equal(status.atCeiling, false);
-});
-
-test('atCeiling flips to false the moment spending drops balance below the ceiling', async function () {
-  var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'flips@example.com', {
-    tokens: { balance: 200, lastGrantAt: Date.now() - 60000 }
-  });
-  var before = await entitlements.getTokenStatus(ev, 'flips@example.com');
-  assert.equal(before.atCeiling, true);
-
-  await entitlements.spendTokens(ev, 'flips@example.com', 100); // -> 100
-  var after = await entitlements.getTokenStatus(ev, 'flips@example.com');
-  assert.equal(after.atCeiling, false);
+  await entitlements.getTokenStatus(ev, 'justclaimed@example.com'); // -> 220
+  await entitlements.claimDailyTokens(ev, 'justclaimed@example.com');
+  var status = await entitlements.getTokenStatus(ev, 'justclaimed@example.com');
+  assert.equal(status.claimable, false);
+  assert.ok(status.nextClaimAt > Date.now(), 'the 20h cooldown has not elapsed yet');
 });
 
 // ----- getTokenStatus: empty/missing email -----
@@ -242,26 +131,26 @@ test('spendTokens deducts the given amount from balance', async function () {
 
 test('spendTokens floors at 0, never goes negative', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.setEntitlement(ev, 'lowbalance@example.com', { tokens: { balance: 40, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement(ev, 'lowbalance@example.com', { tokens: { balance: 40 } });
   await entitlements.spendTokens(ev, 'lowbalance@example.com', 100);
   var record = await entitlements.getEntitlement(ev, 'lowbalance@example.com');
   assert.equal(record.tokens.balance, 0);
 });
 
-test('spendTokens applies a pending lazy grant before deducting', async function () {
+test('spendTokens preserves lastClaimAt/streak untouched -- a spend must never reset the claim cooldown or streak', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  // Seeded under the 200 ceiling (so the lazy grant actually fires) and far
-  // enough above the 100-token spend that the grant's effect is clearly
-  // visible in the result rather than masked by spendTokens' own
-  // floor-at-0 — that's the whole point of this test: without the +20
-  // grant firing first, 100 - 100 would floor to 0, indistinguishable from
-  // a bug that skipped the grant entirely.
-  await entitlements.setEntitlement(ev, 'graceperiod@example.com', {
-    tokens: { balance: 100, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  await entitlements.spendTokens(ev, 'graceperiod@example.com', 100);
-  var record = await entitlements.getEntitlement(ev, 'graceperiod@example.com');
-  assert.equal(record.tokens.balance, 20, '100 + 20 granted - 100 spent = 20 (not floored to 0, proving the grant fired)');
+  await entitlements.getTokenStatus(ev, 'spendclaim@example.com'); // -> 220
+  var claimResult = await entitlements.claimDailyTokens(ev, 'spendclaim@example.com');
+  assert.equal(claimResult.claimed, true);
+
+  await entitlements.spendTokens(ev, 'spendclaim@example.com', 100);
+  var record = await entitlements.getEntitlement(ev, 'spendclaim@example.com');
+  assert.equal(record.tokens.balance, 140, '220 + 20 claimed - 100 spent');
+  assert.equal(record.tokens.streak, 1, 'streak untouched by the spend');
+  assert.ok(record.tokens.lastClaimAt, 'lastClaimAt untouched by the spend (still set from the earlier claim)');
+
+  var status = await entitlements.getTokenStatus(ev, 'spendclaim@example.com');
+  assert.equal(status.claimable, false, 'the spend did not reopen claimability early');
 });
 
 test('empty/missing email is a safe no-op for spendTokens, not a thrown error', async function () {
@@ -287,20 +176,18 @@ test('the Nth+1 brand-new email from the same IP in one day gets balance 0 inste
   assert.equal(status3.balance, 0, 'over the per-IP cap for today');
 });
 
-test('a capped-out brand-new email is not permanently blocked — it still gets folded into the normal +20/24h drip starting from its (denied) grant time', async function () {
+test('a capped-out brand-new email is not permanently blocked -- it can still claim its first +20 immediately (no lastClaimAt was ever stamped, same as any other never-claimed account)', async function () {
   process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '1';
   var ip = nextIp();
   await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'allowed@example.com');
   var deniedEvent = fakeEvent({ ip: ip });
   var denied = await entitlements.getTokenStatus(deniedEvent, 'denied@example.com');
   assert.equal(denied.balance, 0);
+  assert.equal(denied.claimable, true, 'still claimable -- the IP cap only ever gates the one-time signup grant, not the daily claim');
 
-  // Roll its lastGrantAt into the past to simulate 24h passing, then read again.
-  await entitlements.setEntitlement(deniedEvent, 'denied@example.com', {
-    tokens: { balance: 0, lastGrantAt: Date.now() - DAY_MS - 60000 }
-  });
-  var nextDay = await entitlements.getTokenStatus(deniedEvent, 'denied@example.com');
-  assert.equal(nextDay.balance, 20, 'picks up the normal daily drip the next day, same as any other account');
+  var claimResult = await entitlements.claimDailyTokens(deniedEvent, 'denied@example.com');
+  assert.equal(claimResult.claimed, true);
+  assert.equal(claimResult.balance, 20, '0 (capped signup grant) + 20 claimed');
 });
 
 test('each IP gets its own daily cap bucket — a different IP is unaffected by another IP already being over the limit', async function () {
@@ -352,22 +239,23 @@ test('addTokens on a never-before-seen email materializes the record starting fr
   assert.equal(record.tokens.balance, 520, '220 signup grant + 300 top-up');
 });
 
-test('addTokens does not change lastGrantAt (purely additive to balance, never resets or delays the automatic daily drip)', async function () {
+test('addTokens does not change lastClaimAt/streak (purely additive to balance, never resets or delays the next daily claim)', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  var staleTime = Date.now() - 1000; // recent, not due for a lazy grant
-  await entitlements.setEntitlement(ev, 'timing-topup@example.com', {
-    tokens: { balance: 50, lastGrantAt: staleTime }
-  });
+  await entitlements.getTokenStatus(ev, 'timing-topup@example.com'); // -> 220
+  var claimResult = await entitlements.claimDailyTokens(ev, 'timing-topup@example.com');
+  var claimedAt = claimResult.nextClaimAt - entitlements.CLAIM_COOLDOWN_MS;
+
   await entitlements.addTokens(ev, 'timing-topup@example.com', 100);
   var record = await entitlements.getEntitlement(ev, 'timing-topup@example.com');
-  assert.equal(record.tokens.balance, 150);
-  assert.equal(record.tokens.lastGrantAt, staleTime, 'lastGrantAt must be untouched by a manual top-up');
+  assert.equal(record.tokens.balance, 340, '220 + 20 claimed + 100 top-up');
+  assert.equal(record.tokens.lastClaimAt, claimedAt, 'lastClaimAt must be unchanged by a manual top-up');
+  assert.equal(record.tokens.streak, 1, 'streak must be unchanged by a manual top-up');
 });
 
 test('addTokens caps the resulting balance at a sane ceiling rather than growing without bound', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   await entitlements.setEntitlement(ev, 'huge-topup@example.com', {
-    tokens: { balance: 999900, lastGrantAt: Date.now() }
+    tokens: { balance: 999900 }
   });
   await entitlements.addTokens(ev, 'huge-topup@example.com', 5000);
   var record = await entitlements.getEntitlement(ev, 'huge-topup@example.com');

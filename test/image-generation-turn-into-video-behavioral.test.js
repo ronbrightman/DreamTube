@@ -88,7 +88,7 @@ test('result.html: "Turn this into a video" CTA is shown only for an image-type 
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
 
     await seedAccountWithDream(page, {
       username: 'ctavisibility',
@@ -113,7 +113,7 @@ test('result.html: the CTA is hidden for a plain video-type dream and for a drea
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
 
     await seedAccountWithDream(page, {
       username: 'ctahiddenvideo',
@@ -140,7 +140,7 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
 
     var generateVideoCalls = [];
     await page.route('**/.netlify/functions/generate-video', function (route) {
@@ -204,7 +204,7 @@ test('result.html: an insufficient balance opens the out-of-tokens purchase shee
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 10 });
+    await mockTokenStatus(page, { balance: 5, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
 
     var generateVideoCalls = [];
     await page.route('**/.netlify/functions/generate-video', function (route) {

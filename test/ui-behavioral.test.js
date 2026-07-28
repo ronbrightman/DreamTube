@@ -1952,7 +1952,7 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 150, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 150, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedLoggedInUserAt(page, baseUrl, 'shopbetatester', '/shop.html');
     await page.waitForSelector('#shop-cost-banner', { timeout: 5000 });
 
@@ -1963,8 +1963,8 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
     // contradicted the three live Buy buttons right below it once Dodo
     // Payments checkout actually went live -- replaced with the real
     // cost facts (must match lib/entitlements.js's real
-    // VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_GRANT_AMOUNT/
-    // GRANT_CEILING, not stale/guessed numbers).
+    // VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_CLAIM_AMOUNT, not
+    // stale/guessed numbers).
     assert.doesNotMatch(bannerText, /free during beta/i, 'the beta framing must be gone now that the store is live');
     assert.doesNotMatch(bannerText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- three live packs are right below it');
     assert.match(bannerText, /100 tokens/i, 'should state the real video cost');
@@ -2009,7 +2009,7 @@ test("style.html's out-of-tokens purchase sheet shows a real price AND keeps the
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 0, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
     await seedLoggedInUserAt(page, baseUrl, 'quotasheettester', '/create.html');
     await page.click('#choice-write');
     await page.fill('#dream-text', 'A dream about flying over a glowing city at night');
@@ -2022,7 +2022,7 @@ test("style.html's out-of-tokens purchase sheet shows a real price AND keeps the
 
     var sheetText = await page.textContent('#purchase-sheet-overlay');
     assert.match(sheetText, /\$\d/, 'the one-tap purchase CTA must show a real price now -- the store launched');
-    assert.match(sheetText, /100 free tokens in/i, 'the free daily-grant path must stay visible alongside the buy CTA, never hidden');
+    assert.match(sheetText, /claim 100 free tokens in/i, 'the free daily-claim path must stay visible alongside the buy CTA, never hidden');
     assert.match(sheetText, /Secure checkout via Dodo/i);
   } finally {
     await context.close();
@@ -2042,7 +2042,7 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 0, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 0, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
     await seedResultPage(page, baseUrl, 'd-quota-modal-test');
     await page.waitForSelector('#open-edit-sheet', { timeout: 5000 });
     await page.click('#open-edit-sheet');
@@ -2052,7 +2052,7 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
 
     var sheetText = await page.textContent('#purchase-sheet-overlay');
     assert.match(sheetText, /\$\d/, 'the one-tap purchase CTA must show a real price now -- the store launched');
-    assert.match(sheetText, /100 free tokens in/i, 'the free daily-grant path must stay visible alongside the buy CTA, never hidden');
+    assert.match(sheetText, /claim 100 free tokens in/i, 'the free daily-claim path must stay visible alongside the buy CTA, never hidden');
     assert.match(sheetText, /Secure checkout via Dodo/i);
   } finally {
     await context.close();
@@ -2063,16 +2063,21 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
  * Bug report (profile-improvements-kwivqb): "+100 in now" (the token
  * countdown) never resets once it reaches "now" -- because profile.html's
  * 60s setInterval only re-rendered the SAME cached tokenStatus object, it
- * never re-fetched get-token-status.js, so once nextGrantAt passed, the
- * displayed balance/countdown froze there forever even though a real grant
- * had already landed server-side. Fix: once nextGrantAt has passed, the
- * interval callback re-fetches instead of just re-formatting. Uses
- * page.clock to fast-forward past both the grant time and the 60s interval
- * without a real wait, and a second get-token-status.js route response
- * (a distinctly different balance) to prove a genuine second fetch
- * happened, not just a re-render of the first response.
+ * never re-fetched get-token-status.js, so once nextClaimAt passed, the
+ * displayed balance/countdown froze there forever even though the account
+ * had already become claimable server-side. Fix: once nextClaimAt has
+ * passed, the interval callback re-fetches instead of just re-formatting.
+ * Uses page.clock to fast-forward past both the claim-eligible time and the
+ * 60s interval without a real wait, and a second get-token-status.js route
+ * response (a distinctly different balance/claimable state) to prove a
+ * genuine second fetch happened, not just a re-render of the first
+ * response. 2026-07-28 daily-claim switch: this test's ORIGINAL "post-grant
+ * balance" story doesn't apply anymore (nothing auto-grants on read) -- it
+ * now proves the refetch correctly flips the UI into the claimable state
+ * once nextClaimAt passes, which is exactly the same underlying re-fetch
+ * mechanism, just observing a different outcome.
  */
-test('profile.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now"', async function (t) {
+test('profile.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now", flipping into the claimable state', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -2084,8 +2089,8 @@ test('profile.html: the token countdown re-fetches (not just re-renders stale da
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       callCount++;
       var body = callCount === 1
-        ? { balance: 90, nextGrantAt: Date.now() + 30000, dailyGrantAmount: 10 } // grant due in 30s
-        : { balance: 100, nextGrantAt: Date.now() + 86400000, dailyGrantAmount: 10 }; // post-grant state
+        ? { balance: 90, claimable: false, nextClaimAt: Date.now() + 30000, dailyClaimAmount: 10, streak: 2 } // claimable in 30s
+        : { balance: 90, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 10, streak: 2 }; // now claimable
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
@@ -2096,24 +2101,26 @@ test('profile.html: the token countdown re-fetches (not just re-renders stale da
     }, null, { timeout: 5000 });
     assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
 
-    // Advance past the 30s grant time, then past the 60s interval tick --
-    // the interval callback should notice nextGrantAt already passed and
-    // re-fetch, landing on the second (post-grant) mocked response.
+    // Advance past the 30s claim-eligible time, then past the 60s interval
+    // tick -- the interval callback should notice nextClaimAt already
+    // passed and re-fetch, landing on the second (claimable) mocked
+    // response.
     await page.clock.fastForward(65000);
     await page.waitForFunction(function () {
-      var el = document.getElementById('profile-tokens-balance');
-      return el && el.textContent.indexOf('100') !== -1;
+      var el = document.getElementById('profile-tokens-meta');
+      return el && /claim/i.test(el.textContent);
     }, null, { timeout: 5000 });
 
     assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
     var metaText = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(metaText, /in now/i, 'must not still read "in now" after the re-fetch picks up the new nextGrantAt');
+    assert.doesNotMatch(metaText, /in now/i, 'must not still read "in now" after the re-fetch');
+    assert.match(metaText, /Claim \+10 free/i, 'must reflect the newly-claimable state, not the stale countdown');
   } finally {
     await context.close();
   }
 });
 
-test('shop.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now"', async function (t) {
+test('shop.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now", revealing the claim button', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -2125,8 +2132,8 @@ test('shop.html: the token countdown re-fetches (not just re-renders stale data)
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       callCount++;
       var body = callCount === 1
-        ? { balance: 90, nextGrantAt: Date.now() + 30000, dailyGrantAmount: 10 }
-        : { balance: 100, nextGrantAt: Date.now() + 86400000, dailyGrantAmount: 10 };
+        ? { balance: 90, claimable: false, nextClaimAt: Date.now() + 30000, dailyClaimAmount: 10, streak: 0 }
+        : { balance: 90, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 10, streak: 0 };
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
@@ -2138,48 +2145,38 @@ test('shop.html: the token countdown re-fetches (not just re-renders stale data)
     assert.equal(callCount, 1);
 
     await page.clock.fastForward(65000);
-    await page.waitForFunction(function () {
-      var el = document.getElementById('shop-balance');
-      return el && el.textContent.indexOf('100') !== -1;
-    }, null, { timeout: 5000 });
+    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
 
     assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
     var countdownText = await page.textContent('#shop-countdown');
-    assert.doesNotMatch(countdownText, /in now/i, 'must not still read "in now" after the re-fetch picks up the new nextGrantAt');
+    assert.doesNotMatch(countdownText, /in now/i, 'must not still read "in now" after the re-fetch');
   } finally {
     await context.close();
   }
 });
 
 /**
- * Second founder report of a stuck-countdown bug class (tracker item
- * for-product-bug-founder-high-token-chip--kn1v8t, screenshot
- * 2026-07-26 23:19): the founder's own profile, balance 1500 (well above
- * the 200-token ceiling), showed "1500 tokens · +20 in now" PERMANENTLY.
- * Unlike the earlier c995790 fix (a stuck countdown that just needed a
- * re-fetch once nextGrantAt genuinely passed), this account is AT the
- * ceiling on purpose -- entitlements.js's syncTokens deliberately holds
- * the daily grant back and never bumps lastGrantAt once balance >=
- * GRANT_CEILING (200), so nextGrantAt stays in the past forever and no
- * amount of re-fetching ever produces a future nextGrantAt again. There
- * was previously NO correct rendering for this state at all -- every
- * renderer collapsed a past nextGrantAt to "now" and showed "+N in now"
- * indefinitely, which reads as "due right this second" when really the
- * drip is simply paused. Fix: get-token-status.js now returns an explicit
- * `atCeiling` boolean (see lib/entitlements.js's getTokenStatus), and
- * profile.html/shop.html both branch on it to show honest "paused" copy
- * instead of ever formatting a countdown from a past nextGrantAt.
+ * 2026-07-28 daily-claim switch (tracker item
+ * for-product-build-the-daily-token-claim--fngrwd): the old ≥200
+ * GRANT_CEILING this section used to test (tracker item
+ * for-product-bug-founder-high-token-chip--kn1v8t -- a permanent "+20 in
+ * now" for any at-ceiling account) is RETIRED ENTIRELY, not just fixed
+ * again -- see lib/entitlements.js's own doc block for why no ceiling is
+ * needed anymore (nothing accrues without an active claim tap, so there's
+ * nothing left for a ceiling to guard against). The equivalent honesty
+ * property this section now tests: a CLAIMABLE account (any balance, no
+ * ceiling-adjacent special-casing) shows the live "Claim +N free" copy,
+ * never a stale "+N in now" countdown, and does NOT re-fetch on every 60s
+ * tick just because it's sitting in the (now perfectly stable, not
+ * permanently-past) claimable state.
  */
-test('profile.html: an at-ceiling balance (>= 200) shows honest "paused" copy, never "+N in now"', async function (t) {
+test('profile.html: a claimable balance shows honest "Claim +N free" copy, never "+N in now"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Mirrors the exact founder-reported state: balance 1500 (well above
-    // the 200 ceiling), nextGrantAt already in the past (lastGrantAt was
-    // never bumped while held back), atCeiling true.
-    await mockTokenStatus(page, { balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true });
+    await mockTokenStatus(page, { balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4 });
     await seedLoggedInUserAt(page, baseUrl, 'foundermaxed', '/profile.html');
     await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
 
@@ -2187,52 +2184,36 @@ test('profile.html: an at-ceiling balance (>= 200) shows honest "paused" copy, n
     assert.match(balance, /1500 tokens/);
 
     var meta = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(meta, /in now/i, 'must never render "+N in now" for an at-ceiling account');
-    assert.doesNotMatch(meta, /\+20 in/i, 'must not render a countdown at all while at ceiling');
-    assert.match(meta, /paused/i, 'should say something honest about the drip being paused');
-    assert.match(meta, /20/, 'should still mention the daily amount that is paused');
+    assert.doesNotMatch(meta, /in now/i, 'must never render "+N in now" for a claimable account');
+    assert.match(meta, /Claim \+20 free/i, 'should show the honest, actionable claim copy');
   } finally {
     await context.close();
   }
 });
 
-test('shop.html: an at-ceiling balance (>= 200) shows honest "paused" copy, never "in now"', async function (t) {
+test('shop.html: a claimable balance shows the "Claim N free tokens" button, never "in now"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true });
+    await mockTokenStatus(page, { balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4 });
     await seedLoggedInUserAt(page, baseUrl, 'foundermaxedshop', '/shop.html');
-    await page.waitForSelector('#shop-countdown:not(:empty)', { timeout: 5000 });
+    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
 
     var balance = await page.textContent('#shop-balance');
     assert.match(balance, /1500/);
 
     var countdown = await page.textContent('#shop-countdown');
-    assert.doesNotMatch(countdown, /in now/i, 'must never render "in now" for an at-ceiling account');
-    assert.doesNotMatch(countdown, /^Next 20 free tokens in/i, 'must not render the normal countdown copy while at ceiling');
-    assert.match(countdown, /paused/i, 'should say something honest about the drip being paused');
+    assert.doesNotMatch(countdown, /in now/i, 'must never render "in now" for a claimable account');
+    var claimLabel = await page.textContent('#shop-claim-label');
+    assert.match(claimLabel, /Claim 20 free tokens/i);
   } finally {
     await context.close();
   }
 });
 
-/**
- * Follow-up from fix-token-chip-at-ceiling-display (commit 8156f1e),
- * tracker item token-countdown-60s-refetch-timer-polls--o12s5e: the two
- * "re-fetches once it reaches now" tests above prove the interval DOES
- * re-fetch once nextGrantAt passes for a normal account. But for an
- * at-ceiling account, entitlements.js's syncTokens deliberately never
- * bumps lastGrantAt while balance is at/above GRANT_CEILING, so
- * nextGrantAt sits in the past PERMANENTLY -- without the atCeiling
- * check, that same "nextGrantAt <= now -> refetch" branch would fire a
- * real get-token-status.js fetch every single 60s tick, forever, for as
- * long as the page stays open. Not a display bug (rendering was already
- * correct) -- unbounded, unnecessary network polling. Fix: skip the
- * refetch branch when tokenStatus.atCeiling is true.
- */
-test('profile.html: an at-ceiling account never re-fetches on the 60s countdown tick', async function (t) {
+test('profile.html: a claimable account never re-fetches on the 60s countdown tick (it is a stable state until actually claimed, not a race against a stale countdown)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -2243,10 +2224,11 @@ test('profile.html: an at-ceiling account never re-fetches on the 60s countdown 
     var callCount = 0;
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       callCount++;
-      // Always the same at-ceiling state -- nextGrantAt permanently in
-      // the past, exactly like a real held-back grant never bumps it.
+      // Always the same claimable state -- nextClaimAt permanently in the
+      // past until the user actually taps claim, which this test never
+      // does.
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true
+        balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4
       }) });
     });
 
@@ -2257,20 +2239,21 @@ test('profile.html: an at-ceiling account never re-fetches on the 60s countdown 
     }, null, { timeout: 5000 });
     assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
 
-    // Two full interval ticks -- an at-ceiling account's nextGrantAt is
-    // always in the past, so the old code would re-fetch on every tick.
+    // Two full interval ticks -- a claimable account's nextClaimAt is
+    // always in the past until claimed, so a naive re-fetch check would
+    // hammer the endpoint on every tick.
     await page.clock.fastForward(65000);
     await page.clock.fastForward(65000);
 
-    assert.equal(callCount, 1, 'must not re-fetch on any tick while atCeiling is true -- nextGrantAt never becomes "not passed" for this account');
+    assert.equal(callCount, 1, 'must not re-fetch on any tick while already claimable -- nextClaimAt never becomes "not passed" until an actual claim happens');
     var metaText = await page.textContent('#profile-tokens-meta');
-    assert.match(metaText, /paused/i, 'should still render the honest paused copy after ticks with no re-fetch');
+    assert.match(metaText, /Claim/i, 'should still render the claimable copy after ticks with no re-fetch');
   } finally {
     await context.close();
   }
 });
 
-test('shop.html: an at-ceiling account never re-fetches on the 60s countdown tick', async function (t) {
+test('shop.html: a claimable account never re-fetches on the 60s countdown tick', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -2282,7 +2265,7 @@ test('shop.html: an at-ceiling account never re-fetches on the 60s countdown tic
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       callCount++;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        balance: 1500, nextGrantAt: Date.now() - 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: true
+        balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4
       }) });
     });
 
@@ -2296,26 +2279,26 @@ test('shop.html: an at-ceiling account never re-fetches on the 60s countdown tic
     await page.clock.fastForward(65000);
     await page.clock.fastForward(65000);
 
-    assert.equal(callCount, 1, 'must not re-fetch on any tick while atCeiling is true -- nextGrantAt never becomes "not passed" for this account');
-    var countdownText = await page.textContent('#shop-countdown');
-    assert.match(countdownText, /paused/i, 'should still render the honest paused copy after ticks with no re-fetch');
+    assert.equal(callCount, 1, 'must not re-fetch on any tick while already claimable');
+    var claimBtnVisible = await page.isVisible('#shop-claim-btn');
+    assert.equal(claimBtnVisible, true, 'should still show the claim button after ticks with no re-fetch');
   } finally {
     await context.close();
   }
 });
 
-test('profile.html: a balance just under the ceiling (199) still shows a normal live countdown, not the paused copy', async function (t) {
+test('profile.html: a NOT-yet-claimable balance still shows a normal live countdown, not the claim copy', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 199, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 199, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedLoggedInUserAt(page, baseUrl, 'notyetmaxed', '/profile.html');
     await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
 
     var meta = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(meta, /paused/i, 'a below-ceiling balance must show the real countdown, not the at-ceiling copy');
+    assert.doesNotMatch(meta, /^Claim/i, 'a not-yet-claimable balance must show the real countdown, not the claim copy');
     assert.match(meta, /\+20 in/, 'should show the normal live countdown');
   } finally {
     await context.close();
@@ -2339,7 +2322,7 @@ test('profile.html: a balance that can still afford an image (e.g. 50) shows "Lo
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 50, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedLoggedInUserAt(page, baseUrl, 'lowbalanceimageok', '/profile.html');
     await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
 
@@ -2357,7 +2340,7 @@ test('profile.html: a balance that can\'t even afford an image (e.g. 5) still sh
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 5, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedLoggedInUserAt(page, baseUrl, 'trulyoutoftokens', '/profile.html');
     await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
 

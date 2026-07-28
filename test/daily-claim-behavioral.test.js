@@ -1,0 +1,494 @@
+// test/daily-claim-behavioral.test.js
+//
+// Real-browser coverage for the daily token claim's UI (tracker item
+// for-product-build-the-daily-token-claim--fngrwd): the pulsing balance
+// chip, the dedicated claim sheet (open on tap, count-up + confetti on a
+// real claim, events), the once-per-day auto-open, explore.html's new
+// chip mount, and a copy-sweep pass confirming the old "automatic daily
+// grant" promise is genuinely gone from the surfaces this build touched.
+//
+// The claim/streak/cooldown SERVER logic itself is covered in depth by
+// test/entitlements-daily-claim.test.js and test/claim-daily-tokens.test.js
+// (plain node --test, no browser needed for that part) — this file only
+// exercises the client wiring: does tapping the chip/button actually call
+// the real endpoint, does the UI reflect a genuine server-confirmed
+// response (never optimistic), and does the claim-framed copy actually
+// replace the old automatic-grant copy everywhere it used to live.
+
+var test = require('node:test');
+var assert = require('node:assert/strict');
+var staticServer = require('./helpers/static-server');
+
+var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+
+var playwright = null;
+var unavailableReason = null;
+try {
+  playwright = require('playwright');
+} catch (e1) {
+  try {
+    playwright = require('/opt/node22/lib/node_modules/playwright');
+  } catch (e2) {
+    unavailableReason = 'Playwright is not resolvable in this environment (' + e2.message + ')';
+  }
+}
+
+var server = null;
+var browser = null;
+var baseUrl = null;
+
+test.before(async function () {
+  if (unavailableReason) return;
+  server = await staticServer.start();
+  baseUrl = server.url;
+  try {
+    browser = await playwright.chromium.launch({ executablePath: CHROMIUM_PATH });
+  } catch (e) {
+    unavailableReason = 'Could not launch Chromium at ' + CHROMIUM_PATH + ': ' + e.message;
+  }
+});
+
+test.after(async function () {
+  if (browser) await browser.close();
+  if (server) await server.close();
+});
+
+function blockThirdParty(page) {
+  return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
+    route.abort();
+  });
+}
+
+function mockTokenStatus(page, status) {
+  return page.route('**/.netlify/functions/get-token-status*', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status) });
+  });
+}
+
+function mockGetFeed(page, feed) {
+  return page.route('**/.netlify/functions/get-feed', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: feed || [], dreamOfDayId: null }) });
+  });
+}
+
+async function seedLoggedInUserAt(page, username, path) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (u) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + u, username: u };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[u] = { password: 'testpass1', email: u + '@example.com' };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, username);
+  await page.goto(baseUrl + path, { waitUntil: 'domcontentloaded' });
+}
+
+function mockClaim(page, response) {
+  return page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+  });
+}
+
+// ============================================================================
+// Balance chip: pulsing claimable state + tap-to-open
+// ============================================================================
+
+test('create.html: the topbar chip pulses (claimable class) and shows a live +N badge when claimable, plain otherwise', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 150, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 1 });
+    await seedLoggedInUserAt(page, 'chippulse', '/create.html');
+    await page.waitForSelector('#topbar-token-chip', { timeout: 5000 });
+    // The auto-open sheet fires on this same load -- dismiss it first so it
+    // doesn't intercept the chip click below.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+
+    var isClaimable = await page.evaluate(function () {
+      return document.getElementById('topbar-token-chip').classList.contains('claimable');
+    });
+    assert.equal(isClaimable, true);
+    var plusText = await page.textContent('.token-chip-plus');
+    assert.equal(plusText.trim(), '+20');
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html: NOT claimable -> chip has no pulsing class, tapping it navigates to shop.html as normal', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 150, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await seedLoggedInUserAt(page, 'chipnotclaimable', '/create.html');
+    await page.waitForSelector('#topbar-token-chip', { timeout: 5000 });
+    await page.waitForTimeout(200);
+
+    var isClaimable = await page.evaluate(function () {
+      return document.getElementById('topbar-token-chip').classList.contains('claimable');
+    });
+    assert.equal(isClaimable, false);
+
+    await page.click('#topbar-token-chip');
+    await page.waitForURL('**/shop.html*', { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html: tapping the CLAIMABLE chip opens the claim sheet instead of navigating away', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 150, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 1 });
+    await seedLoggedInUserAt(page, 'chiptapclaim', '/create.html');
+    // Dismiss the auto-opened sheet first so this test cleanly exercises a
+    // deliberate chip tap afterward.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    // force:true -- the pulsing .claimable CSS animation (a scale transform,
+    // see css/styles.css) means the chip's bounding box never stops moving,
+    // so Playwright's normal actionability "element is stable" wait would
+    // hang forever; a real tap on an animated element works fine in an
+    // actual browser regardless.
+    await page.click('#topbar-token-chip', { force: true });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    assert.equal(page.url().indexOf('shop.html'), -1, 'must NOT have navigated to shop.html');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Claim sheet: count-up, server-confirmed completion, streak line, events
+// ============================================================================
+
+test('claim sheet: tapping Claim calls the real endpoint, shows the streak line, and fires daily_claim_completed only after the server confirms', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 2 });
+    var claimCalls = 0;
+    await mockClaim(page, { claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 72000000 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 72000000 }) });
+    });
+
+    await seedLoggedInUserAt(page, 'claimsheetflow', '/create.html');
+    // The sheet auto-opens on THIS load already (before a posthog spy can
+    // be installed, since it fires synchronously off the page's own
+    // initial tokenStatus fetch) -- dismiss it, install the spy, then
+    // reopen deliberately via the chip so daily_claim_shown is observed
+    // fresh, same pattern as every other page-load-then-spy test in this
+    // suite.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    await page.evaluate(function () {
+      window.__phCalls = [];
+      var orig = window.posthog.capture.bind(window.posthog);
+      window.posthog.capture = function (name, props) { window.__phCalls.push({ name: name, props: props }); return orig(name, props); };
+    });
+
+    await page.click('#topbar-token-chip', { force: true });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+
+    var streakBefore = await page.textContent('#claim-sheet-streak');
+    assert.match(streakBefore, /Day 3/, 'shows the NEXT streak number this claim would produce (current 2 + 1)');
+
+    await page.click('#claim-sheet-btn');
+    await page.waitForFunction(function () {
+      return document.getElementById('claim-sheet-amount-num').textContent === '20';
+    }, { timeout: 3000 });
+
+    var streakAfter = await page.textContent('#claim-sheet-streak');
+    assert.match(streakAfter, /Day 3/, 'reflects the real server-returned streak once claimed');
+
+    // Sheet auto-closes shortly after a successful claim.
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    assert.ok(claimCalls >= 1, 'the real claim-daily-tokens endpoint was actually called');
+    var phCalls = await page.evaluate(function () { return window.__phCalls; });
+    var shownCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_shown'; });
+    var completedCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_completed'; });
+    assert.ok(shownCalls.length >= 1, 'daily_claim_shown fired when the sheet opened');
+    assert.equal(completedCalls.length, 1, 'daily_claim_completed fires exactly once, only on the real confirmed response');
+    assert.equal(completedCalls[0].props.streak, 3);
+    assert.equal(completedCalls[0].props.balance, 120);
+  } finally {
+    await context.close();
+  }
+});
+
+test('claim sheet: dismissing without claiming fires daily_claim_dismissed, never daily_claim_completed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    var claimCalls = 0;
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 120, streak: 1, nextClaimAt: Date.now() + 72000000 }) });
+    });
+
+    await seedLoggedInUserAt(page, 'claimsheetdismiss', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+
+    await page.evaluate(function () {
+      window.__phCalls = [];
+      var orig = window.posthog.capture.bind(window.posthog);
+      window.posthog.capture = function (name, props) { window.__phCalls.push({ name: name, props: props }); return orig(name, props); };
+    });
+
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    assert.equal(claimCalls, 0, 'dismissing must never itself trigger a claim -- the real cooldown/guard is server-side only');
+    var phCalls = await page.evaluate(function () { return window.__phCalls; });
+    var dismissedCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_dismissed'; });
+    var completedCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_completed'; });
+    assert.equal(dismissedCalls.length, 1);
+    assert.equal(completedCalls.length, 0, 'daily_claim_completed must never fire optimistically / on dismiss');
+  } finally {
+    await context.close();
+  }
+});
+
+test('claim sheet: a "not yet claimable" server response (lost a race) shows an honest message, no false completion', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await mockClaim(page, { claimed: false, nextClaimAt: Date.now() + 72000000 });
+
+    await seedLoggedInUserAt(page, 'claimsheetrace', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-btn');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-error');
+      return el && el.style.display !== 'none' && el.textContent.length > 0;
+    }, { timeout: 3000 });
+    var errorText = await page.textContent('#claim-sheet-error');
+    assert.match(errorText, /already claimed/i);
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Auto-open once per day (localStorage presentation throttle only)
+// ============================================================================
+
+test('claim sheet auto-opens on first eligible page load when claimable, but not again on a second load the same day', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await seedLoggedInUserAt(page, 'autoopenonce', '/create.html');
+
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } }); // dismiss without claiming
+
+    // A second navigation to a page that also mounts the chip, same
+    // browser/localStorage -- must NOT auto-open again today. The chip
+    // remains the fallback entry point.
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' }).catch(function () {});
+    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#topbar-token-chip', { timeout: 5000 });
+    await page.waitForTimeout(400);
+
+    var sheetOpenAgain = await page.evaluate(function () {
+      var el = document.getElementById('claim-sheet-overlay');
+      return !!(el && el.classList.contains('open'));
+    });
+    assert.equal(sheetOpenAgain, false, 'must not auto-open a second time the same day -- the chip is the fallback now');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the auto-open marker is a PURE presentation throttle -- claimable state (and the ability to actually claim) survives even when auto-open is suppressed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await seedLoggedInUserAt(page, 'presentationonly', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+
+    // Simulate "already auto-shown today" directly, then reload -- the
+    // sheet must not auto-open, but the CHIP must still show the claimable
+    // pulsing state and still work as a manual entry point.
+    await page.evaluate(function () {
+      localStorage.setItem('dreamtube_claim_sheet_shown_date', new Date().toDateString());
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#topbar-token-chip', { timeout: 5000 });
+    await page.waitForTimeout(300);
+
+    var autoOpened = await page.evaluate(function () {
+      var el = document.getElementById('claim-sheet-overlay');
+      return !!(el && el.classList.contains('open'));
+    });
+    assert.equal(autoOpened, false);
+
+    var isClaimable = await page.evaluate(function () {
+      return document.getElementById('topbar-token-chip').classList.contains('claimable');
+    });
+    assert.equal(isClaimable, true, 'the presentation throttle must never affect the real claimable state');
+
+    await page.click('#topbar-token-chip', { force: true }); // see the identical force:true note above -- the pulsing animation never "stabilizes"
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// explore.html: the one page that was missing the chip entirely
+// ============================================================================
+
+test('explore.html: the token chip is mounted in the topbar for a signed-in visitor, and pulses when claimable', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await seedLoggedInUserAt(page, 'exploretokenchip', '/explore.html');
+    await page.waitForSelector('#explore-token-chip-slot .token-chip-compact', { timeout: 5000 });
+
+    var isClaimable = await page.evaluate(function () {
+      var chip = document.querySelector('#explore-token-chip-slot .token-chip-compact');
+      return chip && chip.classList.contains('claimable');
+    });
+    assert.equal(isClaimable, true);
+  } finally {
+    await context.close();
+  }
+});
+
+test('explore.html: no chip is mounted at all for a logged-out visitor (no account balance to show)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, []);
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    var chipHtml = await page.evaluate(function () {
+      var slot = document.getElementById('explore-token-chip-slot');
+      return slot ? slot.innerHTML.trim() : null;
+    });
+    assert.equal(chipHtml, '', 'the slot must stay empty for a logged-out visitor');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Copy sweep: the old "automatic daily grant" promise must be gone
+// ============================================================================
+
+test('copy sweep: shop.html no longer promises tokens "refill" automatically or mentions a banked ceiling anywhere on the page', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedLoggedInUserAt(page, 'shopcopysweep', '/shop.html');
+    await page.waitForSelector('#shop-cap-note:not(:empty)', { timeout: 5000 });
+
+    var bodyText = await page.textContent('body');
+    assert.doesNotMatch(bodyText, /refill(s|ed|ing)? daily/i, 'the old "refill daily" automatic-grant framing must be gone');
+    assert.doesNotMatch(bodyText, /banked/i, 'the retired ceiling concept ("up to N banked") must be gone');
+    assert.doesNotMatch(bodyText, /capped/i, 'the retired "tokens are capped" framing must be gone');
+  } finally {
+    await context.close();
+  }
+});
+
+test('copy sweep: profile.html FAQ + token meta never say tokens arrive "automatically"/"every day" in the daily-token context', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 500, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedLoggedInUserAt(page, 'profilecopysweep', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var metaText = await page.textContent('#profile-tokens-meta');
+    assert.doesNotMatch(metaText, /automatically/i);
+
+    await page.click('#account-btn');
+    await page.waitForSelector('#sheet-account-overlay.open', { timeout: 5000 });
+    var faqQuestion = page.locator('.faq-question', { hasText: 'How do tokens work?' });
+    await faqQuestion.click();
+    await page.waitForTimeout(150);
+    var faqAnswer = await page.locator('.faq-answer').nth(1).textContent();
+    assert.doesNotMatch(faqAnswer, /every day automatically/i);
+    assert.match(faqAnswer, /claim/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test('copy sweep: the out-of-tokens sheet\'s wait line never says "wait" (the old grant-framed escape line) -- always "claim"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 5, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@waitlinesweep', username: 'waitlinesweep' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.waitlinesweep = { password: 'testpass1', email: 'waitlinesweep@example.com' };
+      state.draft = Object.assign({}, state.draft, { caption: 'A dream about flying', style: null, mediaType: null, sourceImageUrl: null });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Cartoon"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var waitLine = await page.textContent('#ps-wait-line');
+    assert.doesNotMatch(waitLine, /\bwait\b/i, 'the old "Or wait —" grant-framed phrasing must be entirely gone');
+    assert.match(waitLine, /claim/i);
+  } finally {
+    await context.close();
+  }
+});

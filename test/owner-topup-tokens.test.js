@@ -3,7 +3,8 @@
 // Covers netlify/functions/owner-topup-tokens.js: owner-only enforcement
 // (same shape as admin-paywall-toggle.test.js), amount validation (positive
 // integer, capped at MAX_AMOUNT_PER_CALL), that it doesn't touch
-// lastGrantAt, and that a non-owner or malformed request changes nothing.
+// lastClaimAt/streak, and that a non-owner or malformed request changes
+// nothing.
 // Run with: node --test test/
 
 var test = require('node:test');
@@ -51,7 +52,7 @@ test('POST from the owner credits the amount and returns the refreshed token sta
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
     assert.equal(body.balance, 720, '220 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
-    assert.equal(body.dailyGrantAmount, 20);
+    assert.equal(body.dailyClaimAmount, 20);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
     assert.equal(record.tokens.balance, 720);
@@ -187,24 +188,25 @@ test('an amount exactly at the per-call cap (5000) is accepted', function () {
   });
 });
 
-// ----- lastGrantAt untouched -----
+// ----- lastClaimAt/streak untouched -----
 
-test('a successful top-up does not touch lastGrantAt', function () {
+test('a successful top-up does not touch lastClaimAt/streak', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var handler = require('../netlify/functions/owner-topup-tokens').handler;
     var seedEvent = fakeEvent({});
     var staleTime = Date.now() - 1000;
-    await entitlements.setEntitlement(seedEvent, OWNER_EMAIL, { tokens: { balance: 100, lastGrantAt: staleTime } });
+    await entitlements.setEntitlement(seedEvent, OWNER_EMAIL, { tokens: { balance: 100, lastClaimAt: staleTime, streak: 3 } });
 
     await handler(fakeEvent({ method: 'POST', body: { email: OWNER_EMAIL, amount: 250 } }));
 
     var record = await entitlements.getEntitlement(seedEvent, OWNER_EMAIL);
     assert.equal(record.tokens.balance, 350);
-    assert.equal(record.tokens.lastGrantAt, staleTime, 'lastGrantAt must be unchanged by a manual top-up');
+    assert.equal(record.tokens.lastClaimAt, staleTime, 'lastClaimAt must be unchanged by a manual top-up');
+    assert.equal(record.tokens.streak, 3, 'streak must be unchanged by a manual top-up');
   });
 });
 
-test('a rejected (non-owner) request changes lastGrantAt for no one — no record touched at all', function () {
+test('a rejected (non-owner) request changes lastClaimAt for no one — no record touched at all', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var handler = require('../netlify/functions/owner-topup-tokens').handler;
     var res = await handler(fakeEvent({

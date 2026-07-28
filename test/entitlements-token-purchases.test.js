@@ -504,9 +504,12 @@ test('a redelivered (same payment_id) first-purchase event does not re-apply the
 // Confirms firstPackPurchaseAt (a top-level field on the entitlement
 // record, stamped by creditTokenPackAmountOnce above — NOT a field inside
 // record.tokens) actually flows through syncTokens into getTokenStatus's
-// returned shape, across all three of syncTokens' return branches (brand-
-// new record, due-for-a-daily-grant record, and the plain
-// not-due/held-back passthrough), and that the raw timestamp itself is
+// returned shape, across both of syncTokens' return branches (brand-new
+// record, and the plain passthrough — the OLD third "due-for-a-daily-grant"
+// branch is gone entirely as of the 2026-07-28 daily-claim switch, see
+// lib/entitlements.js's own doc block), AND across a daily CLAIM
+// (claimDailyTokens, which writes its own fresh `tokens` sub-object
+// independently of syncTokens), and that the raw timestamp itself is
 // never leaked to the client — only the derived boolean. -----
 
 test('getTokenStatus returns hasMadeFirstPurchase: false for an email that has never completed a pack purchase', async function () {
@@ -525,19 +528,13 @@ test('getTokenStatus returns hasMadeFirstPurchase: true once creditTokenPackOnce
   assert.equal(status.firstPackPurchaseAt, undefined, 'the raw timestamp itself must never be exposed to the client, only the derived boolean');
 });
 
-test('getTokenStatus keeps returning hasMadeFirstPurchase: true across a later daily-grant-due read (the granted branch of syncTokens must carry firstPackPurchaseAt through too, not just the plain passthrough branch)', async function () {
+test('getTokenStatus keeps returning hasMadeFirstPurchase: true across a later daily CLAIM (2026-07-28 daily-claim switch: syncTokens no longer has a separate "granted" branch at all -- claimDailyTokens is now the only thing that ever changes balance/lastClaimAt/streak outside a purchase, so this proves firstPackPurchaseAt survives THAT write too, not just the plain passthrough the tests above already cover)', async function () {
   await seedZeroBalanceNoPriorPurchase('grantedafterpurchase@example.com');
   await entitlements.creditTokenPackOnce({}, 'grantedafterpurchase@example.com', 'pay_granted_after', 100);
 
-  // Force the daily grant to be due on the NEXT getTokenStatus read, so
-  // this exercises syncTokens' "elapsed >= GRANT_INTERVAL_MS" branch
-  // specifically (the second of syncTokens' three return paths) rather
-  // than just the plain not-due passthrough the tests above already cover.
-  var record = await entitlements.getEntitlement({}, 'grantedafterpurchase@example.com');
-  await entitlements.setEntitlement({}, 'grantedafterpurchase@example.com', {
-    tokens: { balance: record.tokens.balance, lastGrantAt: Date.now() - (25 * 60 * 60 * 1000) }
-  });
+  var claimResult = await entitlements.claimDailyTokens({}, 'grantedafterpurchase@example.com');
+  assert.equal(claimResult.claimed, true, 'sanity: the claim itself succeeded');
 
   var status = await entitlements.getTokenStatus({}, 'grantedafterpurchase@example.com');
-  assert.equal(status.hasMadeFirstPurchase, true, 'firstPackPurchaseAt must survive the daily-grant branch of syncTokens, not just the passthrough branch');
+  assert.equal(status.hasMadeFirstPurchase, true, 'firstPackPurchaseAt must survive a daily claim, which writes a fresh `tokens` sub-object of its own');
 });

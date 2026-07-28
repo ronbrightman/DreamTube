@@ -79,7 +79,7 @@ function mockOwnerCheck(page) {
 /** Mocks the real get-token-status GET so profile.html's token chip doesn't hang on a real network call. */
 function mockTokenStatus(page) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 220, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 20 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 220, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20 }) });
   });
 }
 

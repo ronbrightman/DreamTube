@@ -464,3 +464,38 @@ duplicated per call site, mirroring how `track-conversion.js`'s
 - `test/create-checkout-session-dodo.test.js` — new `SECURITY:`-prefixed coverage for the redirect guard
 - `test/purchase-sheet.test.js` — unit coverage for the pure pack-selection/arithmetic/countdown logic
 - `test/out-of-tokens-purchase-sheet-behavioral.test.js` — new, real-browser coverage of the sheet appearing with correct arithmetic on all three blocked-action entry points, draft persistence before redirect, the auto-resume round trip, and the honest-degrade path
+
+### Daily token claim (daily_claim_shown / daily_claim_completed / daily_claim_dismissed)
+
+Founder decision, 2026-07-28 (tracker items
+`for-growth-research-founder-directed-dai-kguvk3` /
+`for-product-build-the-daily-token-claim--fngrwd`): the old lazy
+background +20/24h drip (and its ≥200 grant ceiling) is retired in favor
+of a standard "tap to claim" daily-reward pattern (games, Duolingo,
+TikTok-style check-ins) — see `lib/entitlements.js`'s own doc block for
+the full mechanism (a rolling 20h server-clock cooldown, a display-only
+streak, no more ceiling). All three events fire from
+`js/purchase-sheet.js` (both the dedicated claim sheet and the out-of-
+tokens sheet's inline "Claim +N" affordance) and from `shop.html`'s own
+inline claim button, mirroring how the out-of-tokens sheet's own events
+above are centralized rather than duplicated per call site.
+
+| | |
+|---|---|
+| **`daily_claim_shown`** | Fires whenever a claim surface actually becomes visible: the dedicated claim sheet opening (`{ source, surface: 'claim_sheet' }`, `source` one of `'balance_chip'` \| `'auto_open'` \| a page-specific auto-open source like `'profile_auto_open'`), or the out-of-tokens sheet's inline claim button appearing (`{ source, surface: 'out_of_tokens_sheet' }`). Never fires just because `tokenStatus.claimable` is true somewhere off-screen — only on an actual render |
+| **`daily_claim_completed`** | Fires ONLY once `DreamStore.claimDailyTokens()`/`POST claim-daily-tokens.js` resolves with a genuine `claimed: true` — never optimistically, never on tap alone. `{ source, streak, balance, surface }` (`surface` one of `'claim_sheet'` \| `'out_of_tokens_sheet'` \| `'shop_balance_card'`) |
+| **`daily_claim_dismissed`** | Fires when the dedicated claim sheet is closed (tap outside) without claiming. `{ source }`. Deliberately NOT fired for the out-of-tokens sheet's inline claim button (dismissing that whole sheet already fires `out_of_tokens_choice: 'dismiss'` above — a second, redundant dismiss event for the same tap would double-count) |
+
+**Why `claimable` alone never implies a fire:** unlike the old lazy drip (which materialized tokens as a side effect of a plain read), a claim is a real user action with a real event trail — `getTokenStatus`'s `claimable` field is a pure read-only projection (see `lib/entitlements.js`'s own doc comment), so `daily_claim_shown` only fires when a claim surface is actually rendered on screen, and `daily_claim_completed` only fires on the server's own confirmed response, matching this build's explicit "never optimistic" requirement.
+
+**Files touched:**
+
+- `netlify/functions/lib/entitlements.js` — `claimDailyTokens` (the actual claim/streak/cooldown logic), `getTokenStatus`'s new `{balance, claimable, nextClaimAt, dailyClaimAmount, streak}` shape (replaces `{nextGrantAt, dailyGrantAmount, grantCeiling, atCeiling}`), `GRANT_CEILING`/`DAILY_GRANT_AMOUNT`/`GRANT_INTERVAL_MS`/the lazy-drip branch of `syncTokens` all removed
+- `netlify/functions/claim-daily-tokens.js` — new, the claim endpoint (its own `claim-ip`/`claim-email` rate-limit bucket)
+- `netlify/functions/get-token-status.js` / `js/store.js` — updated to the new response shape; `js/store.js` gains `claimDailyTokens()`
+- `js/purchase-sheet.js` — `waitLineText` flips to claim-framed copy; `mountBalanceChip`/`renderBalanceChip` gain the pulsing claimable state + tap-to-claim; new `showClaimSheet`/`hideClaimSheet`/`maybeAutoOpenClaimSheet`; the out-of-tokens sheet gains the inline claim button
+- `create.html` / `style.html` / `result.html` / `profile.html` / `shop.html` — auto-open wiring + claim UI; `explore.html` — new topbar chip mount (previously the one page missing it)
+- `css/styles.css` — pulsing chip state, inline claim button, claim sheet + confetti
+- `test/entitlements-daily-claim.test.js` / `test/claim-daily-tokens.test.js` — server-side claim/streak/cooldown/rate-limit coverage
+- `test/daily-claim-behavioral.test.js` — real-browser coverage of the chip, claim sheet, auto-open-once, explore.html's new mount, and the copy sweep
+- `test/token-daily-grant-copy-behavioral.test.js` / `test/out-of-tokens-purchase-sheet-behavioral.test.js` / `test/ui-behavioral.test.js` / `test/purchase-sheet.test.js` / `test/owner-topup-tokens.test.js` / `test/entitlements-tokens.test.js` / `test/token-functions.test.js` — updated off the old `{nextGrantAt, dailyGrantAmount, grantCeiling, atCeiling}` shape to the new one, including removing tests for the now-retired ≥200 ceiling entirely

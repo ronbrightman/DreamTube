@@ -1,6 +1,10 @@
 // test/token-daily-grant-copy-behavioral.test.js
 //
-// Regression coverage for review findings across two branches:
+// Regression coverage for review findings across two branches, PLUS the
+// 2026-07-28 daily-claim switch (tracker item
+// for-product-build-the-daily-token-claim--fngrwd) that flipped every one
+// of these copy sites from grant-framing to claim-framing:
+//
 // (1) image-generation branch — style.html, result.html, shop.html
 // (#shop-countdown), and profile.html all hardcoded the literal number
 // "100" in their daily-free-grant copy ("...you'll get 100 more
@@ -9,7 +13,7 @@
 // this same branch (docs/IMAGE_GENERATION_SPEC.md §2b-revised) but these
 // four hardcoded strings were missed — two (style.html/result.html) were
 // disclosed as known-stale, two (shop.html/profile.html) were NOT and are
-// not even scoped to the image feature (DAILY_GRANT_AMOUNT is global, so
+// not even scoped to the image feature (the daily amount is global, so
 // every user would have seen a 10x-wrong number regardless of ever
 // touching image generation).
 // (2) raise-daily-token-award-to-200 branch (10 -> 200, 2026-07-26),
@@ -18,33 +22,32 @@
 // phrasing again that slipped past the grep patterns used to find the
 // first four.
 //
-// Fix: all four now read tokenStatus.dailyGrantAmount live instead of a
+// Fix: all four read the daily amount live off tokenStatus instead of a
 // hardcoded literal (see js/store.js's getTokenStatus / get-token-status.js
 // / lib/entitlements.js's getTokenStatus, which already return this field
-// for exactly this purpose). These tests mock a deliberately distinctive
-// dailyGrantAmount (7 -- not 10, not 100, and not 20/200 as of the
-// 2026-07-26 night "Token Economy C" retune) so a pass actually proves the
-// copy is read live, not coincidentally matching whatever the real
-// constant happens to be today.
+// for exactly this purpose — now called `dailyClaimAmount`, since
+// 2026-07-28's daily-claim switch renamed it from `dailyGrantAmount`
+// alongside the actual mechanism change). These tests mock a deliberately
+// distinctive dailyClaimAmount (7 -- not 10, not 100, and not 20 as of the
+// current retune) so a pass actually proves the copy is read live, not
+// coincidentally matching whatever the real constant happens to be today.
 //
-// (3) tracker item for-product-bug-founder-high-token-chip--kn1v8t
-// (2026-07-26 night, founder-reported): shop.html's #shop-cap-note "up to
-// N banked" grant-ceiling literal used to NOT be read live at all (it was
-// a hardcoded 200) -- fixed as part of that same item by adding
-// `grantCeiling` to get-token-status.js's / lib/entitlements.js's
-// getTokenStatus response, alongside the `atCeiling` flag that fixed the
-// actual reported bug (a permanent "+20 in now" for any at-ceiling
-// account). The cap-note test below now mocks a deliberately distinctive
-// grantCeiling too, for the same "prove it's live, not coincidence"
-// reason as dailyGrantAmount above.
+// (3) 2026-07-28 daily-claim switch itself: the OLD "≥200 grant ceiling"
+// (tracker item for-product-bug-founder-high-token-chip--kn1v8t)'s
+// `grantCeiling`/`atCeiling` fields are RETIRED ENTIRELY — there is no
+// ceiling anymore (see lib/entitlements.js's own doc block: an idle
+// account accumulates nothing without an active claim tap, so there's
+// nothing left for a ceiling to guard against). shop.html's #shop-cap-note
+// no longer mentions a ceiling number at all — this file's old
+// "grantCeiling read live" test is replaced with a plain "no ceiling
+// number anywhere in this copy" assertion instead.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
-var DISTINCTIVE_GRANT = 7;
-var DISTINCTIVE_CEILING = 321;
+var DISTINCTIVE_CLAIM_AMOUNT = 7;
 
 var playwright = null;
 var unavailableReason = null;
@@ -122,21 +125,23 @@ async function seedLoggedInUserWithDraftAt(page, username, path) {
 // "you'll get N more automatically" copy on style.html/result.html.
 // That modal was replaced by the out-of-tokens purchase sheet (tracker
 // item for-product-build-out-of-tokens-purchase-2y8hyw) — the equivalent
-// "read the live daily-grant number, not a hardcoded literal" concern now
-// lives in the sheet's own wait-line (js/purchase-sheet.js's
-// waitLineText(), unit-tested directly in test/purchase-sheet.test.js).
-// These two are now real-browser regression coverage that style.html/
-// result.html actually WIRE the live tokenStatus into that wait line —
-// the balance is set low enough to actually trigger the sheet, since
-// (unlike the old always-rendered modal copy) the wait line only renders
-// once the sheet is shown.
-test('style.html: the purchase sheet\'s wait line reads the live dailyGrantAmount, not a hardcoded 100', async function (t) {
+// "read the live daily amount, not a hardcoded literal" concern now lives
+// in the sheet's own wait-line (js/purchase-sheet.js's waitLineText(),
+// unit-tested directly in test/purchase-sheet.test.js). These two are now
+// real-browser regression coverage that style.html/result.html actually
+// WIRE the live tokenStatus into that wait line — the balance is set low
+// enough to actually trigger the sheet, since (unlike the old
+// always-rendered modal copy) the wait line only renders once the sheet
+// is shown. claimable:false + a future nextClaimAt exercises the
+// countdown half of waitLineText specifically (see
+// test/purchase-sheet.test.js for the claimable:true "claim now" half).
+test('style.html: the purchase sheet\'s wait line reads the live dailyClaimAmount, not a hardcoded 100', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 5, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
     await seedLoggedInUserWithDraftAt(page, 'dailygrantstyle', '/style.html');
     await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
     // Give the async getTokenStatus() a moment to resolve.
@@ -147,20 +152,21 @@ test('style.html: the purchase sheet\'s wait line reads the live dailyGrantAmoun
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 
     var waitLine = await page.textContent('#ps-wait-line');
-    assert.match(waitLine, new RegExp(DISTINCTIVE_GRANT + ' free tokens in'));
+    assert.match(waitLine, new RegExp('claim ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens in'));
     assert.doesNotMatch(waitLine, /100 free tokens/);
+    assert.doesNotMatch(waitLine, /wait —/, 'the old "Or wait —" grant-framed phrasing must be gone entirely');
   } finally {
     await context.close();
   }
 });
 
-test('result.html: the purchase sheet\'s wait line reads the live dailyGrantAmount, not a hardcoded 100', async function (t) {
+test('result.html: the purchase sheet\'s wait line reads the live dailyClaimAmount, not a hardcoded 100', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 5, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: 200, atCeiling: false });
+    await mockTokenStatus(page, { balance: 5, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
 
     await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(function () {
@@ -181,78 +187,103 @@ test('result.html: the purchase sheet\'s wait line reads the live dailyGrantAmou
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 
     var waitLine = await page.textContent('#ps-wait-line');
-    assert.match(waitLine, new RegExp(DISTINCTIVE_GRANT + ' free tokens in'));
+    assert.match(waitLine, new RegExp('claim ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens in'));
     assert.doesNotMatch(waitLine, /100 free tokens/);
   } finally {
     await context.close();
   }
 });
 
-test('shop.html: the countdown reads the live dailyGrantAmount, not a hardcoded "Next 100 free tokens"', async function (t) {
+test('shop.html: the countdown reads the live dailyClaimAmount, not a hardcoded "Next 100 free tokens"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    await mockTokenStatus(page, { balance: 50, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
     await seedLoggedInUserAt(page, 'dailygrantshop', '/shop.html');
     await page.waitForSelector('#shop-countdown:not(:empty)', { timeout: 5000 });
 
     var countdown = await page.textContent('#shop-countdown');
-    assert.match(countdown, new RegExp('Next ' + DISTINCTIVE_GRANT + ' free tokens in'));
+    assert.match(countdown, new RegExp('Next ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens claimable in'));
     assert.doesNotMatch(countdown, /Next 100 free tokens/);
+    // The claim button must stay hidden while not yet claimable.
+    var claimBtnVisible = await page.isVisible('#shop-claim-btn');
+    assert.equal(claimBtnVisible, false);
   } finally {
     await context.close();
   }
 });
 
-test('shop.html: the "Free tokens are capped" note reads the live dailyGrantAmount AND grantCeiling, not hardcoded literals', async function (t) {
-  // Review round 2 on raise-daily-token-award-to-200: a THIRD hardcoded
-  // copy of the daily-grant number ("100 every 24 hours"), distinct from
-  // #shop-countdown above and missed by the grep patterns used to find
-  // the other two locations (result.html/style.html's #modal-quota-body).
-  // Later, tracker item for-product-bug-founder-high-token-chip--kn1v8t
-  // fixed the "up to N banked" half of this same note to also read
-  // tokenStatus.grantCeiling live instead of a hardcoded 200 -- mocking a
-  // deliberately distinctive grantCeiling here (321, not 200/500) proves
-  // that half is live too, not coincidentally matching today's real value.
+test('shop.html: claimable state shows a live-amount "Claim N free tokens" button, and the copy sweep removed the old grant-ceiling literal entirely', async function (t) {
+  // 2026-07-28 daily-claim switch: shop.html's #shop-cap-note used to read
+  // "Free tokens are capped — N every 24 hours, up to M banked" (M being
+  // entitlements.js's GRANT_CEILING) -- that whole ceiling concept is
+  // retired now (see lib/entitlements.js's own doc block: no ceiling is
+  // needed once nothing accrues without an active claim). This test
+  // proves BOTH halves of the fix: the claim button reads the live amount
+  // (not a hardcoded 100/20), and the cap note contains no lingering
+  // "banked"/ceiling-number literal from the old mechanism.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT, grantCeiling: DISTINCTIVE_CEILING, atCeiling: false });
+    await mockTokenStatus(page, { balance: 50, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
     await seedLoggedInUserAt(page, 'dailygrantshopcap', '/shop.html');
-    await page.waitForSelector('#shop-cap-note', { timeout: 5000 });
-    await page.waitForFunction(function () {
-      var el = document.getElementById('shop-cap-note');
-      return el && el.textContent.indexOf('capped') !== -1 && !/100 every 24 hours/.test(el.textContent);
-    }, { timeout: 5000 });
+    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
+
+    var claimLabel = await page.textContent('#shop-claim-label');
+    assert.match(claimLabel, new RegExp('Claim ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens'));
+    assert.doesNotMatch(claimLabel, /Claim 100 free tokens/);
 
     var capNote = await page.textContent('#shop-cap-note');
-    assert.match(capNote, new RegExp(DISTINCTIVE_GRANT + ' every 24 hours'));
-    assert.doesNotMatch(capNote, /100 every 24 hours/);
-    assert.match(capNote, new RegExp('up to ' + DISTINCTIVE_CEILING + ' banked'), 'the grant ceiling should be read live off tokenStatus.grantCeiling');
-    assert.doesNotMatch(capNote, /up to 200 banked/, 'must not still show the old hardcoded ceiling literal');
+    assert.match(capNote, new RegExp(DISTINCTIVE_CLAIM_AMOUNT + ' claimable once a day'));
+    assert.doesNotMatch(capNote, /banked/, 'the retired grant-ceiling concept ("up to N banked") must not appear anywhere in this copy');
+    assert.doesNotMatch(capNote, /capped/, 'the retired "tokens are capped" framing must not appear anywhere in this copy');
   } finally {
     await context.close();
   }
 });
 
-test('profile.html: the token countdown reads the live dailyGrantAmount, not a hardcoded "+100 in"', async function (t) {
+test('profile.html: the token countdown reads the live dailyClaimAmount, not a hardcoded "+100 in"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Balance must be >= 100 (VIDEO_TOKEN_COST) or profile.html shows "Out of tokens" instead of the countdown.
-    await mockTokenStatus(page, { balance: 500, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: DISTINCTIVE_GRANT });
+    // Balance must be >= 100 (VIDEO_TOKEN_COST) or profile.html shows "Out
+    // of tokens" instead of the countdown; claimable:false or the
+    // claimable-state copy (tested separately below) would take priority.
+    await mockTokenStatus(page, { balance: 500, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
     await seedLoggedInUserAt(page, 'dailygrantprofile', '/profile.html');
     await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
 
     var meta = await page.textContent('#profile-tokens-meta');
-    assert.match(meta, new RegExp('\\+' + DISTINCTIVE_GRANT + ' in'));
+    assert.match(meta, new RegExp('\\+' + DISTINCTIVE_CLAIM_AMOUNT + ' in'));
     assert.doesNotMatch(meta, /\+100 in/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('profile.html: claimable state shows the live "Claim +N free" copy and the pulsing chip class', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 500, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 2 });
+    await seedLoggedInUserAt(page, 'dailygrantprofileclaimable', '/profile.html');
+    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
+
+    var meta = await page.textContent('#profile-tokens-meta');
+    assert.match(meta, new RegExp('Claim \\+' + DISTINCTIVE_CLAIM_AMOUNT + ' free'));
+
+    var isClaimable = await page.evaluate(function () {
+      return document.getElementById('profile-tokens').classList.contains('claimable');
+    });
+    assert.equal(isClaimable, true);
   } finally {
     await context.close();
   }

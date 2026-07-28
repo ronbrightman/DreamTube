@@ -89,7 +89,7 @@ function mockOwnerCheck(page, isOwner) {
 /** Mocks the real get-token-status GET (or whatever route DreamStore.getTokenStatus hits) so the token chip doesn't hang on a real network call. */
 function mockTokenStatus(page) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 200, nextGrantAt: Date.now() + 3600000, dailyGrantAmount: 100 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 200, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100 }) });
   });
 }
 
