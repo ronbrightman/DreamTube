@@ -170,6 +170,85 @@ test('create.html: tapping the CLAIMABLE chip opens the claim sheet instead of n
 });
 
 // ============================================================================
+// BUG 1 fix (tracker item for-product-daily-claim-bugs-founder-rea-kei2ub,
+// 2026-07-28): the claim sheet used to show a big "+0" above "Day 1" the
+// instant it opened (the reward-amount element was hardcoded to '0' until
+// a claim actually succeeded), even though the button correctly already
+// said "Claim 20 tokens" — confusing enough that both the founder and a
+// real user screenshotted it. Founder directive: match the Duolingo/
+// mobile-game daily-reward pattern exactly — show the REAL reward amount
+// up front the instant the sheet opens, never a 0 placeholder, and move
+// the count-up ritual to the BALANCE (old -> new) after a successful
+// claim instead of re-animating the reward amount a second time.
+// ============================================================================
+
+test('BUG 1 fix: the claim sheet shows the REAL reward amount the instant it opens -- never a "0" placeholder, even before any claim happens', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // A non-default amount (25, not the usual 20) so this test can't
+    // accidentally pass off a hardcoded '20' fallback happening to match —
+    // it must be reading the real dailyClaimAmount from tokenStatus.
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 25, streak: 3 });
+    await seedLoggedInUserAt(page, 'bug1rewardupfront', '/create.html');
+
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    // Read the amount immediately on open -- no waitForFunction/settle time
+    // given, since the whole point of the fix is that this is correct the
+    // instant the sheet opens, with no async count-up needed to reach it.
+    var amountOnOpen = await page.textContent('#claim-sheet-amount-num');
+    assert.equal(amountOnOpen, '25', 'must show the real reward amount immediately on open, never "0"');
+    var btnLabel = await page.textContent('#claim-sheet-btn-label');
+    assert.match(btnLabel, /Claim 25 tokens/, 'the button label and the big amount display must agree from the very first frame');
+
+    // The balance count-up display must stay hidden until a claim actually
+    // succeeds -- it has nothing to show yet.
+    var balanceVisible = await page.evaluate(function () {
+      var el = document.getElementById('claim-sheet-balance');
+      return el && el.style.display !== 'none';
+    });
+    assert.equal(balanceVisible, false, 'the balance count-up line must stay hidden until a claim actually succeeds');
+  } finally {
+    await context.close();
+  }
+});
+
+test('BUG 1 fix: a successful claim animates the BALANCE (old -> new), not the reward amount a second time', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 3 });
+    await mockClaim(page, { claimed: true, balance: 120, streak: 4, nextClaimAt: Date.now() + 72000000 });
+
+    await seedLoggedInUserAt(page, 'bug1balancecountup', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+
+    assert.equal(await page.textContent('#claim-sheet-amount-num'), '20', 'reward amount already correct on open');
+
+    await page.click('#claim-sheet-btn');
+    // The balance line becomes visible and counts up to the real post-claim
+    // balance (100 + 20 = 120) once the server confirms the claim.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-balance');
+      var numEl = document.getElementById('claim-sheet-balance-num');
+      return el && el.style.display !== 'none' && numEl && numEl.textContent === '120';
+    }, { timeout: 3000 });
+
+    // The reward amount display must NOT have been re-animated/reset back
+    // through 0 at any point -- it should read exactly the reward amount
+    // (20) throughout, never re-counting up a second time on success.
+    var amountAfter = await page.textContent('#claim-sheet-amount-num');
+    assert.equal(amountAfter, '20', 'the reward amount must stay exactly as shown on open -- the count-up ritual belongs to the balance now, not this element again');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
 // Claim sheet: count-up, server-confirmed completion, streak line, events
 // ============================================================================
 

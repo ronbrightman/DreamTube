@@ -95,6 +95,41 @@ var { getStore, connectLambda } = require('@netlify/blobs');
 
 var DEFAULT_MAX_ATTEMPTS = 3;
 
+// Delay (ms) inserted between attempts (never before the FIRST one, and
+// never after the last — a doomed final attempt gains nothing from a
+// trailing pause). Root cause of tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub's BUG 2 ("Couldn't
+// claim right now" for a genuinely eligible real user): every attempt in
+// this loop used to fire back-to-back with ZERO elapsed time between
+// them, against a store this file's own header comment already
+// documents as only eventually consistent (entitlements.js's own header
+// comment cites propagation lag up to ~60s in the worst case). Three
+// rapid-fire attempts within the same handful of milliseconds gives that
+// propagation no real time to catch up, so a verify-read can plausibly
+// fail to see its own just-completed write on EVERY attempt, exhausting
+// the loop and surfacing a genuine (if rare) failure to a genuinely
+// eligible user — exactly the class of bug a synchronous in-memory mock
+// store can never reproduce, since it has no propagation lag to model in
+// the first place.
+//
+// This does not change the retry COUNT or the read/mutate/verify
+// contract — purely additive real-world reliability, benefiting all four
+// call sites documented at the top of this file, not just the daily
+// claim (tracker-store.js/pending-dreams.js/support-store.js all share
+// the exact same underlying hazard). 200ms is the founder-approved range
+// (150-250ms, 2026-07-28): large enough to matter against real
+// propagation lag, trivial against any Netlify Function's execution
+// budget (worst case here is maxAttempts-1 delays — 2 x 200ms = 400ms —
+// against a multi-second function timeout), and overridable per call via
+// `options.retryDelayMs` (test/blobs-retry.test.js passes 0 on the
+// exhaustion-focused tests that don't need it, to keep this file's own
+// test run fast).
+var DEFAULT_RETRY_DELAY_MS = 200;
+
+function delay(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
 // Sentinel `mutate(current)` can return to abort the whole operation
 // immediately without writing or retrying — see the doc block above.
 // A unique Symbol so it can never collide with a real value a caller
@@ -110,6 +145,11 @@ var SKIP = Symbol('blobs-retry-skip');
  *   mutate(current) -> next | SKIP    (required) — synchronous.
  *   verify(verifyReadValue) -> boolean (required) — synchronous.
  *   maxAttempts: number (default 3)
+ *   retryDelayMs: number (default 200) — real elapsed delay inserted
+ *     between attempts (never before the first), to give Blobs' eventual
+ *     consistency a genuine window to propagate before the next
+ *     verify-read — see this constant's own doc comment above. Pass 0 to
+ *     disable entirely (e.g. a test that wants the old instant behavior).
  *
  * Returns one of:
  *   { ok: true,  skipped: false, value: <mutated>, current: <last read> }
@@ -122,11 +162,15 @@ async function retryingWrite(event, storeName, key, options) {
   var mutate = options.mutate;
   var verify = options.verify;
   var maxAttempts = options.maxAttempts || DEFAULT_MAX_ATTEMPTS;
+  var retryDelayMs = typeof options.retryDelayMs === 'number' ? options.retryDelayMs : DEFAULT_RETRY_DELAY_MS;
 
   var lastMutated;
   var lastCurrent;
 
   for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0 && retryDelayMs > 0) {
+      await delay(retryDelayMs);
+    }
     var current = await read(event);
     lastCurrent = current;
 
@@ -151,4 +195,4 @@ async function retryingWrite(event, storeName, key, options) {
   return { ok: false, skipped: false, value: lastMutated, current: lastCurrent };
 }
 
-module.exports = { retryingWrite, SKIP, DEFAULT_MAX_ATTEMPTS };
+module.exports = { retryingWrite, SKIP, DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_DELAY_MS };

@@ -76,6 +76,7 @@ test('a verify that fails on the first attempt but passes on a later one retries
 
   var result = await blobsRetry.retryingWrite({}, STORE_NAME, 'k2', {
     maxAttempts: 3,
+    retryDelayMs: 0, // this test is about retry MECHANICS, not the real-world delay — see the dedicated delay tests below
     read: rawRead('k2'),
     mutate: function (current) {
       mutateCalls++;
@@ -105,6 +106,7 @@ test('every attempt failing verify exhausts maxAttempts and returns ok:false wit
 
   var result = await blobsRetry.retryingWrite({}, STORE_NAME, 'k3', {
     maxAttempts: 3,
+    retryDelayMs: 0, // this test is about the attempt COUNT, not the real-world delay — see the dedicated delay tests below
     read: rawRead('k3'),
     mutate: function (current) {
       attempts++;
@@ -124,6 +126,7 @@ test('maxAttempts defaults to 3 when omitted', async function () {
   var attempts = 0;
 
   await blobsRetry.retryingWrite({}, STORE_NAME, 'k4', {
+    retryDelayMs: 0, // this test is about the attempt COUNT, not the real-world delay — see the dedicated delay tests below
     read: rawRead('k4'),
     mutate: function (current) { attempts++; return { count: current.count + 1 }; },
     verify: function () { return false; }
@@ -198,6 +201,7 @@ test('a write that lands but whose SKIP-triggering precondition only becomes tru
 
   var result = await blobsRetry.retryingWrite({}, STORE_NAME, 'k8', {
     maxAttempts: 3,
+    retryDelayMs: 0, // this test is about SKIP semantics, not the real-world delay — see the dedicated delay tests below
     read: rawRead('k8'),
     mutate: function (current) {
       attempt++;
@@ -232,6 +236,7 @@ test('CONCURRENCY: two concurrent retryingWrite calls racing a claim-marker writ
     var myClaim;
     return blobsRetry.retryingWrite({}, STORE_NAME, 'race-1', {
       maxAttempts: 3,
+      retryDelayMs: 0, // this test is about race resolution, not the real-world delay — see the dedicated delay tests below
       read: rawRead('race-1'),
       mutate: function (current) {
         if (current) return blobsRetry.SKIP; // someone already claimed it
@@ -260,6 +265,7 @@ test('CONCURRENCY: repeated trials stay consistent (rules out a lucky single pas
       var myClaim;
       return blobsRetry.retryingWrite({}, STORE_NAME, key, {
         maxAttempts: 3,
+        retryDelayMs: 0, // this test is about race resolution across many trials, not the real-world delay — see the dedicated delay tests below
         read: rawRead(key),
         mutate: function (current) {
           if (current) return blobsRetry.SKIP;
@@ -292,4 +298,47 @@ test('a custom read() (e.g. one that defaults a missing store to a non-null valu
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.value, { list: ['item'] });
+});
+
+// ----- Inter-attempt delay (root cause fix for tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub's BUG 2 -- see this
+// file's own DEFAULT_RETRY_DELAY_MS doc comment) -----
+
+test('a real delay is inserted between attempts (never before the first) -- exhausting 3 attempts with retryDelayMs:60 takes at least the 2 delays\' worth of real time', async function () {
+  mockBlobs.seed(STORE_NAME, 'k10', { count: 0 });
+  var attempts = 0;
+  var start = Date.now();
+
+  var result = await blobsRetry.retryingWrite({}, STORE_NAME, 'k10', {
+    maxAttempts: 3,
+    retryDelayMs: 60,
+    read: rawRead('k10'),
+    mutate: function (current) { attempts++; return { count: current.count + 1 }; },
+    verify: function () { return false; } // never passes -- exhausts all 3 attempts, 2 delays
+  });
+
+  var elapsed = Date.now() - start;
+  assert.equal(attempts, 3);
+  assert.equal(result.ok, false);
+  assert.ok(elapsed >= 110, 'two 60ms delays between three attempts should add up to close to 120ms of real elapsed time, got ' + elapsed + 'ms');
+});
+
+test('retryDelayMs:0 disables the delay entirely -- exhausting 3 attempts stays near-instant', async function () {
+  mockBlobs.seed(STORE_NAME, 'k11', { count: 0 });
+  var start = Date.now();
+
+  await blobsRetry.retryingWrite({}, STORE_NAME, 'k11', {
+    maxAttempts: 3,
+    retryDelayMs: 0,
+    read: rawRead('k11'),
+    mutate: function (current) { return { count: current.count + 1 }; },
+    verify: function () { return false; }
+  });
+
+  var elapsed = Date.now() - start;
+  assert.ok(elapsed < 50, 'retryDelayMs:0 must skip the delay entirely across all attempts, got ' + elapsed + 'ms');
+});
+
+test('retryDelayMs defaults to DEFAULT_RETRY_DELAY_MS (200ms, the founder-approved value) when omitted', function () {
+  assert.equal(blobsRetry.DEFAULT_RETRY_DELAY_MS, 200);
 });

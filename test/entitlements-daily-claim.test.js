@@ -333,3 +333,73 @@ test('a single claim call whose OWN verify-read lags, then loops into a fresh re
   var record = await entitlements.getEntitlement(ev, email);
   assert.equal(record.tokens.balance, 20, 'exactly one credit must have landed, not zero and not two');
 });
+
+// BUG 2 (tracker item for-product-daily-claim-bugs-founder-rea-kei2ub,
+// 2026-07-28): a real, genuinely eligible user tapped Claim and got
+// "Couldn't claim right now -- try again in a moment". Root cause:
+// blobs-retry.js's retryingWrite used to fire all `maxAttempts` (3 for
+// this call site) back-to-back with ZERO elapsed real time between them,
+// against a store this codebase's own docs (entitlements.js's header
+// comment) say can lag up to ~60s under real eventual consistency. Three
+// attempts within the same handful of milliseconds gives that lag no
+// real window to resolve, so a verify-read (or even a plain read()) can
+// plausibly keep missing an already-committed write on every single
+// attempt -- exhausting the loop and throwing, even though the claim
+// itself would have genuinely succeeded if only the next attempt had
+// waited a little.
+//
+// This test simulates exactly that: EVERY read against this store (both
+// the loop's own read() and its verify-read) is intercepted to keep
+// returning the OLD, pre-claim snapshot -- "this read hasn't picked up
+// the just-written update yet, it's still returning whatever was already
+// converged before" -- for a fixed real-time LAG_MS window since the
+// test started, then falls through to the real, already-committed data
+// once that window has elapsed. This models propagation lag as a
+// function of genuine wall-clock time, the one thing a synchronous
+// in-memory mock can't otherwise reproduce (nothing here behaves
+// differently just because more *attempts* happened -- only real elapsed
+// time resolves it). With the OLD zero-delay behavior, all 3 attempts
+// (plus the final catch-up read) fire within milliseconds -- nowhere
+// near enough real time to clear LAG_MS -- so every one of them keeps
+// seeing the stale pre-claim snapshot and the claim throws. With the
+// fix's real inter-attempt delay, by the 3rd attempt enough wall-clock
+// time has genuinely passed for a fresh read to see the already-
+// committed write (recognized as this call's own attemptId, so it
+// reports claimed:true via the existing self-clobber/SKIP handling —
+// see claimDailyTokens' own doc comment) -- succeeding where the
+// zero-delay version would have exhausted.
+test('a read() (and its verify-read) that keeps returning the stale pre-claim snapshot for a real ~250ms propagation-lag window still lands the claim once the fix\'s inter-attempt delay gives it enough real time -- proving the delay does something a synchronous mock can\'t fake by attempt count alone', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'propagationlag@example.com';
+  // 25h ago -- comfortably past the 20h cooldown, so this is genuinely
+  // claimable regardless of how any individual read is intercepted below.
+  await entitlements.setEntitlement(ev, email, { tokens: { balance: 100, lastClaimAt: Date.now() - (25 * HOUR_MS), streak: 4 } });
+  var preClaimRecord = await entitlements.getEntitlement(ev, email);
+
+  var testStart = Date.now();
+  var LAG_MS = 250;
+  // callIndex 1 is syncTokens' own pre-claim getEntitlement read, made
+  // before any write in this call -- letting it through as-is is
+  // equivalent to returning preClaimRecord anyway (nothing has been
+  // written yet at that point), just written this way to make the "call
+  // 1 is special" reasoning explicit. Every read from callIndex 2 onward
+  // (the retry loop's own read() calls AND every verify-read) is subject
+  // to the simulated lag, all seeing the exact same stale snapshot until
+  // LAG_MS has genuinely elapsed.
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) return null;
+    if (Date.now() - testStart < LAG_MS) return { value: preClaimRecord };
+    return null; // lag window has passed -- fall through to the real, already-committed value
+  });
+
+  try {
+    var result = await entitlements.claimDailyTokens(ev, email);
+    assert.equal(result.claimed, true, 'the claim must still land once the fix\'s real inter-attempt delay gives the simulated propagation lag enough wall-clock time to clear');
+    assert.equal(result.balance, 120, '100 + 20');
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 120, 'exactly one credit must have landed');
+});
