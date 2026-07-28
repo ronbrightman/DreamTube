@@ -85,6 +85,20 @@
     { key: 'flying', label: 'Flying/floating', phrase: 'flying through' },
     { key: 'running', label: 'Running/chasing/chased', phrase: 'running, chasing and being chased through' },
     { key: 'falling', label: 'Falling', phrase: 'falling through' },
+    // Nielsen/Zadra 2003 ("Typical Dreams of Canadian University Students,"
+    // Dreaming 13(4), N=1181, replicated by Schredl 2004) found these to be
+    // the most common dream archetypes/themes after chasing (81.5%, already
+    // 'running' above) and falling (73.8%, already 'falling' above) — added
+    // here in that same published prevalence order (67.1% down through
+    // their top ten) so the highest-prevalence real archetypes surface
+    // before the open-ended, non-ranked options below. Teeth-falling-out is
+    // the most famous dream trope in pop culture but scores under 24% in
+    // this same study (outside their top 30) and is deliberately left out.
+    { key: 'exam', label: 'Back in school, taking a test', phrase: 'taking an exam back in school, in' },
+    { key: 'late', label: 'Arriving too late', phrase: 'rushing to get somewhere but arriving too late, in' },
+    { key: 'trying', label: 'Trying again and again', phrase: 'trying to do the same thing again and again without success, in' },
+    { key: 'newroom', label: 'Discovering a new room', phrase: 'discovering a hidden room that was never there before, in' },
+    { key: 'child', label: 'Being a child again', phrase: 'being a child again, playing in' },
     { key: 'exploring', label: 'Exploring somewhere new', phrase: 'exploring' },
     { key: 'calm', label: 'A calm still moment', phrase: 'sitting in a calm, still moment in' },
     { key: 'magical', label: 'Something magical happens', phrase: 'witnessing something magical happen in' },
@@ -277,6 +291,11 @@
   // their own instead.
   var STORY_ACTION_PHRASES = {
     flying: 'flying', running: 'running, chasing and being chased', falling: 'falling',
+    exam: 'taking an exam I never studied for, back in school',
+    late: 'rushing to get somewhere, but arriving too late',
+    trying: 'trying to do the same thing again and again without success',
+    newroom: 'discovering a hidden room that was never there before',
+    child: 'a child again',
     exploring: 'exploring somewhere new', calm: 'sitting in a calm, still moment',
     magical: 'watching something magical happen', meeting: 'meeting someone new'
   };

@@ -200,3 +200,51 @@ test('deterministic story: never throws and always returns a non-empty sentence,
   assert.ok(story.length > 0);
   assert.match(story, /^I was/);
 });
+
+// ── Research-backed archetype chips — tracker item
+// for-product-quiz-wizard-add-the-scientif-ffgf8l, citing Nielsen/Zadra
+// 2003 (Dreaming 13(4), N=1181, replicated by Schredl 2004). 'chased' and
+// 'falling' were already covered by the pre-existing 'running'/'falling'
+// ACTION_CHIPS entries -- only the remaining five needed new chips.
+
+test('deterministic story: "Back in school, taking a test" (exam) reads as a plain grammatical sentence', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'exam', moodKey: 'tense' });
+  assert.equal(story, 'I was taking an exam I never studied for, back in school, feeling tense.');
+});
+
+test('deterministic story: "Arriving too late" reads as a plain grammatical sentence, with a place appended', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'late', placeKey: 'urban', moodKey: 'tense' });
+  assert.equal(story, 'I was rushing to get somewhere, but arriving too late in a city, feeling tense.');
+});
+
+test('deterministic story: "Trying again and again" reads as a plain grammatical sentence', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'trying', moodKey: 'tense' });
+  assert.equal(story, 'I was trying to do the same thing again and again without success, feeling tense.');
+});
+
+test('deterministic story: "Discovering a new room" reads as a plain grammatical sentence, with a place appended', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'newroom', placeKey: 'house', moodKey: 'mysterious' });
+  assert.equal(story, 'I was discovering a hidden room that was never there before inside a house, feeling mysterious.');
+});
+
+test('deterministic story: "Being a child again" reads as a plain grammatical sentence ("I was a child again," not "I was being")', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'child', moodKey: 'joyful' });
+  assert.equal(story, 'I was a child again, feeling joyful.');
+});
+
+test('all five new research-backed action chips exist in ACTION_CHIPS with a label and prompt phrase', function () {
+  ['exam', 'late', 'trying', 'newroom', 'child'].forEach(function (key) {
+    var chip = WizardChips.ACTION_CHIPS.filter(function (c) { return c.key === key; })[0];
+    assert.ok(chip, 'expected an ACTION_CHIPS entry for key ' + key);
+    assert.ok(chip.label && chip.label.length > 0);
+    assert.ok(chip.phrase && chip.phrase.length > 0);
+  });
+});
+
+test('assembleCaption produces a sane, non-empty prompt caption for each of the five new action chips', function () {
+  ['exam', 'late', 'trying', 'newroom', 'child'].forEach(function (key) {
+    var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: key, moodKey: 'dreamy', style: 'Cinematic' });
+    assert.match(result.caption, /style, dreamlike\.$/);
+    assert.ok(result.caption.length > 0);
+  });
+});
