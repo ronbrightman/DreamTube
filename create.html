@@ -1441,6 +1441,25 @@
    * every create.html path once style.html's Generate button runs, so
    * baking one in here too would double (and, for anyone who picks a
    * style other than Cinematic, contradict) it.
+   *
+   * storyText (tracker item for-product-split-prompttext-storytext-
+   * f-yt5kc7): assembled.caption above is promptText — camera-direction/
+   * style-modifier language, generation-only, never shown to the user as
+   * "their dream" again. Two cases, per the founder's own amendment:
+   *   - buildFreeText non-empty: the user's OWN words are storyText,
+   *     completely verbatim — the chip-derived context is NOT woven in
+   *     here at all (it still rides along in promptText/assembled.caption
+   *     for generation, unchanged). Their sentence stands alone.
+   *   - buildFreeText empty: there's no human sentence to fall back to
+   *     except one built purely from the chip selections. buildDeterministicStory
+   *     gives an immediate, zero-cost, always-available one; style.html's
+   *     own load then opportunistically tries to upgrade it via
+   *     rewrite-dream-story.js (fired as soon as the preview step loads,
+   *     so it's very likely already resolved by the time Generate is
+   *     tapped) — see that file's header comment for why this can't
+   *     literally run "parallel with generation" and still be visible at
+   *     preview time, and style.html's own script for the resolution.
+   *     needsStoryRewrite:true is what tells style.html to attempt that.
    */
   function finishBuildWizard(){
     var subjectKey = 'none';
@@ -1451,15 +1470,21 @@
     } else if(buildSubjectOtherKind){
       subjectKey = buildSubjectOtherKind;
     }
-    var assembled = WizardChips.assembleCaption({
+    var chipFields = {
       subjectKey: subjectKey, character: character, subjectOtherText: buildSubjectOtherText,
       placeKey: buildSettingPlaceKey, placeOtherText: buildSettingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: buildActionKey, actionOtherText: buildActionOtherText, pov: buildPovOn,
-      moodKey: buildMoodKey, moodOtherText: buildMoodOtherText,
-      style: null, freeText: buildFreeText
-    });
+      moodKey: buildMoodKey, moodOtherText: buildMoodOtherText
+    };
+    var assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: null, freeText: buildFreeText }));
+
+    var hasFreeText = !!(buildFreeText && buildFreeText.trim());
+    var storyText = hasFreeText ? buildFreeText.trim() : WizardChips.buildDeterministicStory(chipFields);
+
     DreamStore.setDraft({
       caption: assembled.caption,
+      storyText: storyText,
+      needsStoryRewrite: !hasFreeText,
       characterIds: assembled.characterIdsForGeneration,
       sceneryPlace: buildSettingPlaceKey
     });
@@ -1488,7 +1513,13 @@
   });
 
   writeContinue.addEventListener('click', function(){
-    DreamStore.setDraft({ caption: textArea.value.trim(), sourceDreamId: null });
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7): Write-it's own words are already exactly the human
+    // dream description -- no rewrite/enrichment needed, matches this
+    // path's existing (unchanged) behavior. needsStoryRewrite:false tells
+    // style.html's preview card there's nothing to fetch.
+    var text = textArea.value.trim();
+    DreamStore.setDraft({ caption: text, storyText: text, needsStoryRewrite: false, sourceDreamId: null });
     location.href = 'style.html';
   });
 
@@ -1655,7 +1686,10 @@
       showError('transcript-error', 'Type something before continuing — or re-record.');
       return;
     }
-    DreamStore.setDraft({ caption: edited, sourceDreamId: null });
+    // storyText -- same "already the human dream description, verbatim"
+    // treatment as Write-it above (tracker item for-product-split-
+    // prompttext-storytext-f-yt5kc7).
+    DreamStore.setDraft({ caption: edited, storyText: edited, needsStoryRewrite: false, sourceDreamId: null });
     // Checked against the user's edited text, not the discarded raw
     // transcript -- an edit is what actually gets submitted as the caption,
     // so that's what needs to correctly link to the saved self character.
@@ -1681,7 +1715,17 @@
   // If arriving with a restore flag (from a failed generation), pre-fill Write mode.
   if(draft && draft.restore && draft.caption){
     document.getElementById('choice-write').click();
-    textArea.value = draft.caption;
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7): pre-fills the editable Write box with the human dream
+    // description, not the chip flow's camera-direction promptText, for a
+    // failed chip-created dream being retried here. Falls back to
+    // .caption for a Write-it/Record-it draft (same value either way).
+    // Re-submitting from here (writeContinue above) sets storyText AND
+    // promptText to whatever's edited -- same "the user's own typed text
+    // is both the story and the prompt" tradeoff Write-it/Record-it
+    // already accept elsewhere, so a retried chip-dream's inferred
+    // camera/lighting language isn't re-derived after an edit here.
+    textArea.value = draft.storyText || draft.caption;
     updateCharCount();
     DreamStore.setDraft({ restore: false });
   } else if(new URLSearchParams(location.search).get('record') === '1'){

@@ -167,6 +167,18 @@ body{
 }
 .auth-notice .icon{ width:18px; height:18px; flex:none; color:var(--text-faint); margin-top:1px;}
 
+/* ===== Story recap card (style.html / wizard.html Contact step) =====
+   tracker item for-product-split-prompttext-storytext-f-yt5kc7 (founder-
+   required, point 4): the pre-generation preview must show the FINAL,
+   human-readable storyText the user will see everywhere else — never the
+   chip flow's own camera-direction/style-modifier promptText, and never
+   blank/a placeholder. See style.html's/wizard.html's own scripts for how
+   this gets populated (an immediate deterministic value, opportunistically
+   upgraded by an in-flight LLM rewrite before Generate/Continue is tapped). */
+.story-recap-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px; margin-bottom:14px;}
+.story-recap-label{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); margin-bottom:6px;}
+.story-recap-text{ font-size:14px; line-height:1.5; font-weight:600; color:var(--text-primary);}
+
 /* ===== Home / Profile ===== */
 .section-label{ font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-faint); margin:16px 0 10px;}
 .gen-banner{ display:flex; align-items:center; gap:10px; margin:14px 20px 0; padding:12px 14px; background:var(--surface); border-radius:14px;}

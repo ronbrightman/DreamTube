@@ -192,7 +192,11 @@
       }
 
       document.getElementById('ready-video').src = data.videoUrl;
-      document.getElementById('ready-caption').textContent = data.caption || '';
+      // storyText (tracker item for-product-split-prompttext-storytext-
+      // f-yt5kc7): the human-readable dream description, never the chip
+      // flow's engineered promptText/caption. Falls back to data.caption
+      // for a pending record predating this field.
+      document.getElementById('ready-caption').textContent = data.storyText || data.caption || '';
       showView('ready-view');
       fireClaimPageViewed('ready');
 
@@ -220,7 +224,7 @@
       document.getElementById('signup-view').style.display = (!loggedIn) ? 'block' : 'none';
 
       function finishClaim(){
-        var dream = DreamStore.saveClaimedDream(data.caption, data.style, data.videoUrl);
+        var dream = DreamStore.saveClaimedDream(data.caption, data.style, data.videoUrl, data.storyText);
         fetch('/.netlify/functions/claim-pending-generation', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pendingId: pendingId, email: data.email })

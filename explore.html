@@ -218,6 +218,18 @@
     // every visitor). Only shown in the unfiltered feed — a filtered view
     // (one style/user) is an intentional subset, not "the first thing
     // anyone sees."
+    // tracker item for-product-split-prompttext-storytext-f-yt5kc7: `d`
+    // comes from the shared feed (DreamStore.getSharedFeed, above) — a
+    // dream only ever reaches this feed via syncPublishedDreamToFeed
+    // (js/store.js), whose own payload sends `caption: dream.caption`,
+    // and js/store.js's finalizeDream guarantees dream.caption already
+    // EQUALS dream.storyText (the human-readable description) for every
+    // dream saved after this feature shipped — see that function's own
+    // doc comment. So d.caption here is already storyText's value; there
+    // is no separate d.storyText on the feed's own wire shape to prefer
+    // (publish-dream.js/get-feed.js's request/response schema is
+    // deliberately untouched by this feature — no reason to grow it when
+    // the existing field already carries the right value).
     var dowBadge = isDreamOfDay
       ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
       : '';
