@@ -14,6 +14,7 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var accountStore = require('../netlify/functions/lib/account-store');
 
 var OWNER_EMAIL = 'founder@dreamtube.example';
 
@@ -213,5 +214,128 @@ test('a rejected (non-owner) request changes lastGrantAt for no one — no recor
     assert.equal(res.statusCode, 403);
     var record = await entitlements.getEntitlement(fakeEvent({}), 'stranger@example.com');
     assert.equal(record, null);
+  });
+});
+
+// ----- targetUsername (tracker item for-product-extend-owner-top-up-with-a-t-2hmopn) -----
+
+test('self-top-up (no targetUsername) still works exactly as before — regression', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, amount: 500 }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.balance, 720, '220 signup grant + 500 top-up, same as before targetUsername existed');
+    assert.equal(body.creditedEmail, OWNER_EMAIL);
+    assert.equal(body.targetUsername, null);
+
+    var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
+    assert.equal(record.tokens.balance, 720);
+  });
+});
+
+test('a top-up with a valid targetUsername credits the target account, NOT the owner\'s own', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var setupEvent = fakeEvent({});
+    var created = await accountStore.createAccount(setupEvent, {
+      username: 'benbrightman14',
+      email: 'ben@example.com',
+      password: 'somepassword1'
+    });
+    assert.ok(created.ok);
+
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, amount: 800, targetUsername: 'benbrightman14' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.creditedEmail, 'ben@example.com');
+    assert.equal(body.targetUsername, 'benbrightman14');
+    assert.equal(body.balance, 1020, '220 signup grant + 800 gift for the target account');
+
+    var targetRecord = await entitlements.getEntitlement(fakeEvent({}), 'ben@example.com');
+    assert.equal(targetRecord.tokens.balance, 1020, 'the target account was credited');
+
+    var ownerRecord = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
+    assert.equal(ownerRecord, null, "the owner's own balance must be untouched by a gifted top-up");
+  });
+});
+
+test('a top-up with a targetUsername normalizes case/whitespace the same way account-store.js does', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var setupEvent = fakeEvent({});
+    await accountStore.createAccount(setupEvent, {
+      username: 'benbrightman14',
+      email: 'ben@example.com',
+      password: 'somepassword1'
+    });
+
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, amount: 800, targetUsername: '  BenBrightman14  ' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.creditedEmail, 'ben@example.com');
+
+    var targetRecord = await entitlements.getEntitlement(fakeEvent({}), 'ben@example.com');
+    assert.equal(targetRecord.tokens.balance, 1020);
+  });
+});
+
+test('a top-up with a nonexistent targetUsername returns a clear error and credits nothing', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, amount: 800, targetUsername: 'nobody-with-this-username' }
+    }));
+    assert.equal(res.statusCode, 404);
+    assert.match(JSON.parse(res.body).error, /^E6: target_account_not_found/);
+
+    var ownerRecord = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
+    assert.equal(ownerRecord, null, 'a rejected target lookup must not fall back to crediting the owner');
+  });
+});
+
+test('requesting-owner auth is still enforced when a targetUsername is named — a non-owner request is rejected regardless', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var setupEvent = fakeEvent({});
+    await accountStore.createAccount(setupEvent, {
+      username: 'benbrightman14',
+      email: 'ben@example.com',
+      password: 'somepassword1'
+    });
+
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: 'not-the-owner@example.com', amount: 800, targetUsername: 'benbrightman14' }
+    }));
+    assert.equal(res.statusCode, 403);
+    assert.match(JSON.parse(res.body).error, /^E5: forbidden/);
+
+    var targetRecord = await entitlements.getEntitlement(fakeEvent({}), 'ben@example.com');
+    assert.equal(targetRecord, null, 'a non-owner request must credit nothing, even naming a real targetUsername');
+  });
+});
+
+test('a blank/whitespace-only targetUsername is treated as no target (self-top-up)', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var handler = require('../netlify/functions/owner-topup-tokens').handler;
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      body: { email: OWNER_EMAIL, amount: 500, targetUsername: '   ' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.creditedEmail, OWNER_EMAIL);
+    assert.equal(body.targetUsername, null);
   });
 });

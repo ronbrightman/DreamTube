@@ -271,17 +271,22 @@
            token gate" question the founder's own way: not an E112
            exemption (generate-video.js's gate stays unconditional for
            every email, owner included), but a self-service way for the
-           owner specifically to top up their own balance for testing. See
-           netlify/functions/owner-topup-tokens.js. Hidden by default and
-           only shown once ownerTopupCheck below confirms, server-side,
-           that the signed-in account's email is OWNER_EMAIL — never a
-           hardcoded email comparison here. -->
+           owner specifically to top up their own balance for testing (or,
+           since tracker item for-product-extend-owner-top-up-with-a-t-2hmopn,
+           to gift tokens to another account by username — see
+           netlify/functions/owner-topup-tokens.js's own header comment for
+           the full mechanism; AUTHORIZATION IS UNCHANGED, this only adds
+           WHO the already-verified owner's credit lands on). Hidden by
+           default and only shown once ownerTopupCheck below confirms,
+           server-side, that the signed-in account's email is OWNER_EMAIL —
+           never a hardcoded email comparison here. -->
       <div id="owner-topup-block" class="settings-section" style="display:none;">
         <div class="section-label">Owner tools</div>
-        <div class="auth-sub" style="margin-bottom:10px;">Top up your own token balance for testing.</div>
+        <div class="auth-sub" style="margin-bottom:10px;">Top up a token balance for testing — leave the account field as-is to top up your own.</div>
+        <input class="field" id="owner-topup-target" type="text" placeholder="Target username (optional — defaults to your own account)" style="margin-bottom:8px;" aria-label="Target username (optional)">
         <div style="display:flex; gap:8px;">
           <input class="field" id="owner-topup-amount" type="number" min="1" max="5000" step="1" value="500" style="margin-bottom:0;" aria-label="Top-up amount">
-          <button class="btn btn-secondary" id="owner-topup-btn" style="white-space:nowrap;">Top up my balance</button>
+          <button class="btn btn-secondary" id="owner-topup-btn" style="white-space:nowrap;">Top up balance</button>
         </div>
       </div>
 
@@ -444,6 +449,18 @@
 <script src="js/store.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  // Same local posthog.capture wrapper every other page defines (result.html/
+  // shop.html/start.html/wizard.html/explore.html) -- analytics must never
+  // break the app, so failures are swallowed. profile.html didn't need this
+  // before owner_topup (tracker item
+  // for-product-extend-owner-top-up-with-a-t-2hmopn) was the first event
+  // fired from this page.
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
   document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
@@ -1012,21 +1029,52 @@
     if(!amount || amount <= 0){ showToast('Enter a valid amount'); return; }
     if(amount > 5000){ showToast('Max 5000 per top-up'); return; }
     var email = DreamStore.getAccountEmail();
+    // Optional — see owner-topup-tokens.js's own header comment. Blank
+    // means "top up my own account", exactly the original behavior; a
+    // non-blank value redirects the credit at that username instead, never
+    // changing whose request is being authorized (still `email` above).
+    var targetUsername = document.getElementById('owner-topup-target').value.trim();
+    var requestBody = { email: email, amount: amount };
+    if(targetUsername) requestBody.targetUsername = targetUsername;
     btn.disabled = true;
     fetch('/.netlify/functions/owner-topup-tokens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, amount: amount })
+      body: JSON.stringify(requestBody)
     })
       .then(function(res){
-        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+        return res.json().then(function(data){ return { ok: res.ok, status: res.status, data: data }; });
       })
       .then(function(result){
         btn.disabled = false;
-        if(!result.ok){ showToast("Couldn't top up — try again."); return; }
-        tokenStatus = result.data;
-        renderTokenText();
-        showToast('Balance topped up to ' + result.data.balance + ' tokens');
+        if(!result.ok){
+          if(result.status === 404){ showToast("No account found for that username."); return; }
+          showToast("Couldn't top up — try again.");
+          return;
+        }
+        // Only redraw THIS account's own displayed balance for a genuine
+        // self-top-up (no target given) -- when a targetUsername was sent,
+        // the response describes the TARGET account's balance instead,
+        // which must never overwrite what this page shows for the
+        // signed-in owner.
+        if(!targetUsername){
+          tokenStatus = result.data;
+          renderTokenText();
+        }
+        // owner_topup analytics event (tracker item
+        // for-product-extend-owner-top-up-with-a-t-2hmopn) -- includes the
+        // target account for auditability, same "no raw email in analytics
+        // props" discipline every other track() call site in this codebase
+        // already follows.
+        track('owner_topup', {
+          amount: amount,
+          target: targetUsername || 'self',
+          self_top_up: !targetUsername
+        });
+        showToast(targetUsername
+          ? 'Topped up ' + targetUsername + "'s balance to " + result.data.balance + ' tokens'
+          : 'Balance topped up to ' + result.data.balance + ' tokens');
+        if(targetUsername) document.getElementById('owner-topup-target').value = '';
       })
       .catch(function(){
         btn.disabled = false;

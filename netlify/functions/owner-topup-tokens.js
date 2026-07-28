@@ -8,39 +8,79 @@
 // account sheet whenever they want to keep testing without waiting on the
 // daily drip. See AGENT_POLICY.md / the founder's own explicit call on this.
 //
-// POST { email, amount } -> credits `amount` tokens directly onto that
-//         email's balance via lib/entitlements.js's addTokens (see that
-//         function for why this never touches lastGrantAt), but ONLY when
-//         the given email (normalized) matches OWNER_EMAIL (normalized) —
-//         otherwise 403. This is deliberately narrow: a self-service top-up
-//         for the owner's own account, not a general "grant tokens to any
-//         email" admin tool — there is no separate "target email" parameter,
-//         the email being credited and the email being authorized are always
-//         the same one. Returns the refreshed token status (same shape
-//         get-token-status.js returns: { balance, nextGrantAt,
-//         dailyGrantAmount, grantCeiling, atCeiling }), so the client can
-//         redraw its balance from this one response without a second
-//         round-trip — same pattern
-//         grant-topup-bonus.js used to follow (see git history) before it
-//         was removed in the token-economy pivot; this is a new function
-//         built for the new model, not a resurrection of the old one (no
-//         "TEMPORARY bypass" framing here — this really is the intended
-//         mechanism, not a stand-in for a payment call that hasn't been
-//         wired up yet).
+// POST { email, amount, targetUsername? } -> credits `amount` tokens onto
+//         a balance via lib/entitlements.js's addTokens (see that function
+//         for why this never touches lastGrantAt), but ONLY when the
+//         REQUESTING `email` (normalized) matches OWNER_EMAIL (normalized)
+//         — otherwise 403. AUTHORIZATION IS UNCHANGED from this file's
+//         original, narrower shape: it is always the requester's own
+//         identity that has to match OWNER_EMAIL, exactly as before this
+//         `targetUsername` parameter was added — nothing about that check
+//         (below, still `requestEmail !== ownerEmail`) was touched. What
+//         changed is WHICH ACCOUNT GETS CREDITED once that authorization
+//         passes:
+//           - `targetUsername` omitted/blank (the original, still-default
+//             behavior): credits the same `email` that was just verified
+//             against OWNER_EMAIL — i.e. self-top-up, byte-for-byte the
+//             same as before this parameter existed.
+//           - `targetUsername` present: resolves it to an email via
+//             lib/account-store.js's getByUsername (the same server-side
+//             account store admin-rename-account.js already uses to
+//             resolve a username to its on-file record — reused here, not
+//             reimplemented) and credits THAT email instead. 404s with
+//             E6 if no account exists under that username — this can never
+//             silently no-op or fall back to crediting the owner instead.
+//         This still isn't a general "grant tokens to any email" admin
+//         tool in the sense of being reachable by anyone — it's reachable
+//         by exactly the same one caller as before (the verified owner),
+//         who can now direct a credit at a named recipient account instead
+//         of only ever their own. See tracker item
+//         for-product-extend-owner-top-up-with-a-t-2hmopn (founder-
+//         approved 2026-07-28: a one-off 800-token gift to his son's
+//         account, username benbrightman14) for why this was extended.
+//         Returns the refreshed token status of the CREDITED account (same
+//         shape get-token-status.js returns: { balance, nextGrantAt,
+//         dailyGrantAmount, grantCeiling, atCeiling, hasMadeFirstPurchase }),
+//         plus `creditedEmail`/`targetUsername` so a caller crediting a
+//         target account can tell (and log) whose balance this response
+//         actually describes, rather than assuming it's always the
+//         requester's own — same pattern grant-topup-bonus.js used to
+//         follow (see git history) before it was removed in the
+//         token-economy pivot; this is a new function built for the new
+//         model, not a resurrection of the old one.
 //
 // Same owner-check pattern as admin-paywall-toggle.js's POST: trusts
 // client-supplied identity (the codebase's existing, documented tradeoff —
 // see that file's own header comment for the full reasoning) rather than
-// building real auth, but independently re-verifies the email server-side
-// on every write regardless of anything the client claims or however
-// profile.html decided whether to show the control at all.
+// building real auth, but independently re-verifies the REQUESTING email
+// server-side on every write regardless of anything the client claims or
+// however profile.html decided whether to show the control at all. This
+// weak-boundary tradeoff is deliberately NOT strengthened here — extending
+// what an already-authorized owner can direct their own top-up at is not
+// the same thing as widening who can reach this endpoint at all, and this
+// change doesn't touch that boundary either way.
 //
 // `amount` cap: rejects anything above MAX_AMOUNT_PER_CALL (5000) in one
 // call. This is a basic sanity guard against a typo/fat-finger (e.g. an
 // extra zero) — not a security boundary, since only the owner can ever
 // reach this endpoint at all, and there is nothing stopping the owner from
 // simply calling it again. It exists purely so a mistaken amount can't
-// silently create an absurd balance in one shot.
+// silently create an absurd balance in one shot. Applies identically
+// whether the credit lands on the owner's own account or a named target.
+//
+// Race protection: this still calls entitlements.js's addTokens exactly as
+// before — a single plain, unretried setEntitlement write, NOT wrapped in
+// lib/blobs-retry.js's read->mutate->write->verify loop. That's existing,
+// documented precedent (see entitlements.js's own "Residual, undefended
+// race" note on creditTokenPackAmountOnce, which calls out this exact
+// owner-topup-tokens.js call site as an accepted plain write), not a gap
+// newly introduced by adding `targetUsername` — this function still only
+// ever performs one single top-up write per call, same as before, just
+// possibly against a different key. blobs-retry.js's stronger guarantee
+// exists for genuinely concurrent/idempotency-sensitive writers (a webhook
+// that can be redelivered, two near-simultaneous requests for the same
+// key) — a manual, one-off owner-initiated top-up (self or gifted) has
+// neither property, so no new protection is warranted here.
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as admin-paywall-toggle.js — a new, standalone function, not part of
@@ -53,9 +93,16 @@
 //   E4 amount_invalid      — `amount` wasn't a positive integer, or exceeded
 //                             MAX_AMOUNT_PER_CALL
 //   E5 forbidden           — POST body's `email` (normalized) didn't match
-//                             OWNER_EMAIL (normalized)
+//                             OWNER_EMAIL (normalized) — this is always the
+//                             REQUESTER's identity, regardless of what
+//                             targetUsername (if any) was also sent
+//   E6 target_account_not_found — `targetUsername` was given but no account
+//                             is registered under it (lib/account-store.js's
+//                             getByUsername came back empty) — nothing is
+//                             credited when this fires
 
 var entitlements = require('./lib/entitlements');
+var accountStore = require('./lib/account-store');
 
 var MAX_AMOUNT_PER_CALL = 5000;
 
@@ -87,7 +134,26 @@ exports.handler = async function (event) {
     return { statusCode: 403, body: JSON.stringify({ error: 'E5: forbidden' }) };
   }
 
-  await entitlements.addTokens(event, requestEmail, amount);
-  var status = await entitlements.getTokenStatus(event, requestEmail);
-  return { statusCode: 200, body: JSON.stringify(status) };
+  // Authorization above is unconditional and already decided by this point
+  // — everything below only decides WHICH account the now-authorized
+  // owner's credit lands on, never whether they're allowed to credit at
+  // all (see header comment).
+  var targetUsername = typeof payload.targetUsername === 'string' ? payload.targetUsername.trim() : '';
+  var creditedEmail = requestEmail; // default: self-top-up, unchanged from before targetUsername existed
+
+  if (targetUsername) {
+    var targetAccount = await accountStore.getByUsername(event, targetUsername);
+    if (!targetAccount) {
+      return { statusCode: 404, body: JSON.stringify({ error: 'E6: target_account_not_found' }) };
+    }
+    creditedEmail = entitlements.normalizeEmail(targetAccount.email);
+  }
+
+  await entitlements.addTokens(event, creditedEmail, amount);
+  var status = await entitlements.getTokenStatus(event, creditedEmail);
+  var body = Object.assign({}, status, {
+    creditedEmail: creditedEmail,
+    targetUsername: targetUsername || null
+  });
+  return { statusCode: 200, body: JSON.stringify(body) };
 };
