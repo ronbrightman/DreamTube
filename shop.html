@@ -47,14 +47,14 @@
 </head>
 <body>
 
-<div id="app">
+<div id="app" class="scroll-shell">
   <div class="topbar">
     <a class="icon-btn" id="shop-back" href="profile.html"></a>
     <div class="topbar-logo" style="font-size:16px;">Token shop</div>
     <div style="width:36px;"></div>
   </div>
 
-  <div class="px" style="flex:1; padding-bottom:30px;">
+  <div class="px" style="flex:1; padding-bottom:30px; overflow-y:auto; min-height:0;">
     <!-- Cost/daily-claim banner — this is the app's own "pricing screen"
          equivalent (pricing.html was removed; the funnel's screen 14 says
          something similar pre-signup). Store-launch copy sweep (tracker

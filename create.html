@@ -67,7 +67,7 @@
 </head>
 <body>
 
-<div id="app">
+<div id="app" class="scroll-shell">
   <div class="topbar"><div class="icon-btn" id="create-back"></div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div id="topbar-token-chip-slot"></div></div>
 
   <div class="px" id="create-select" style="flex:1; padding-top:6px;">
@@ -1090,6 +1090,22 @@
   var buildCharEditingId = null;
   var buildCharSubMode = 'describe';
   var buildCharPendingPhotoDataUrl = null;
+  // Per-sheet-instance guard, same pattern as the regular character
+  // sheet's own charSheetToken above (and profile.html's
+  // identitySheetToken/wizard.html's charSheetToken) -- bumped on every
+  // open/close, captured locally before the async resize starts,
+  // re-checked before its resolve/catch handler writes anything. Without
+  // it, picking a photo then cancelling before resizeImageFile resolves,
+  // then reopening this sheet for a DIFFERENT character, could let the
+  // stale resize silently overwrite the wrong character's photo state
+  // once it finally settled (tracker item wizard-html-character-photo-
+  // upload-has-t-wqnubp documents the same bug class elsewhere in this
+  // app). Added alongside the sheet-dismissal fix (tracker item
+  // for-product-sheet-dismissal-app-wide-fix-rlay70, review round 1)
+  // since that fix newly wires tap-outside-close and fast drag-dismiss
+  // onto this exact sheet, making the race far easier to trigger by
+  // accident than the deliberate Cancel tap this previously required.
+  var buildCharSheetToken = 0;
 
   function buildCharChipDisplayName(c){ return c.name || (c.isSelf ? 'Me' : ''); }
   function buildCharChipHTML(c, selected){
@@ -1122,6 +1138,7 @@
   }
 
   function openBuildCharSheet(mode, existing){
+    buildCharSheetToken++;
     buildCharEditingId = existing ? existing.id : null;
     document.getElementById('build-char-sheet-title').textContent = mode === 'self' ? (existing ? 'Edit yourself' : 'Add yourself') : (existing ? 'Edit character' : 'Add a character');
     var nameInput = document.getElementById('build-char-name-input');
@@ -1136,7 +1153,10 @@
     setBuildCharSubMode(mode === 'self' && buildCharPendingPhotoDataUrl ? 'photo' : 'describe');
     document.getElementById('build-sheet-character-overlay').classList.add('open');
   }
-  function closeBuildCharSheet(){ document.getElementById('build-sheet-character-overlay').classList.remove('open'); }
+  function closeBuildCharSheet(){
+    buildCharSheetToken++;
+    document.getElementById('build-sheet-character-overlay').classList.remove('open');
+  }
   function renderBuildCharPhotoPreview(){
     var preview = document.getElementById('build-char-photo-preview');
     var removeLink = document.getElementById('build-char-photo-remove');
@@ -1169,10 +1189,16 @@
     e.target.value = '';
     if(!file) return;
     document.getElementById('build-char-error').textContent = '';
+    // See buildCharSheetToken's own doc comment above for why this guard
+    // exists -- same tokenAtPick pattern as the regular character
+    // sheet's own char-photo-input handler a few hundred lines up.
+    var tokenAtPick = buildCharSheetToken;
     resizeImageFile(file, 768, 0.82).then(function(dataUrl){
+      if(tokenAtPick !== buildCharSheetToken) return;
       buildCharPendingPhotoDataUrl = dataUrl;
       renderBuildCharPhotoPreview();
     }).catch(function(){
+      if(tokenAtPick !== buildCharSheetToken) return;
       document.getElementById('build-char-error').textContent = "Couldn't read that photo — try a different image.";
     });
   });
