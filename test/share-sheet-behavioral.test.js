@@ -450,6 +450,94 @@ test('share mini-sheet: Save to device falls back to opening the raw media URL w
   }
 });
 
+test('share mini-sheet: Save to device dismissed before its fetch resolves, then reopened for a DIFFERENT dream, does not let the stale resolution fire navigator.share for the abandoned dream or clobber the reopened sheet\'s button/label state', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Sibling regression test to js/purchase-sheet.js's own currentGen-guard
+  // coverage (test/out-of-tokens-purchase-sheet-behavioral.test.js
+  // ~L181-242 and ~L830-891). js/share-sheet.js's header comment claims
+  // the exact same currentGen pattern (myGen captured before fetchAsBlob,
+  // checked in both .then() and .catch() before any DOM mutation), and it
+  // IS implemented correctly on manual trace, but nothing here actually
+  // exercised it: start "Save to device" for dream A, dismiss before its
+  // fetch resolves, reopen the sheet for dream B, then let A's fetch
+  // resolve while B's sheet is on screen and confirm it's a genuine no-op.
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await installPosthogStub(page);
+    await page.addInitScript(function () {
+      window.__shareCalls = [];
+      navigator.share = function (data) { window.__shareCalls.push(data); return Promise.resolve(); };
+      navigator.canShare = function (data) { return !!(data && data.files); };
+    });
+
+    var STALE_MEDIA_URL = 'https://example.com/fake-video-stale.mp4';
+    var OTHER_MEDIA_URL = 'https://example.com/fake-video-other.mp4';
+
+    var resolveStaleFetch;
+    var staleFetchGate = new Promise(function (resolve) { resolveStaleFetch = resolve; });
+    await page.route(STALE_MEDIA_URL, function (route) {
+      staleFetchGate.then(function () {
+        route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('stale-dream-bytes') });
+      });
+    });
+    await page.route(OTHER_MEDIA_URL, function (route) {
+      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('other-dream-bytes') });
+    });
+    await page.route('**/.netlify/functions/get-feed*', function (route) {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          feed: [
+            { id: 'd-share-stale-A', ownerHandle: '@other', caption: 'The abandoned dream', style: 'Cinematic', videoUrl: STALE_MEDIA_URL, imageUrl: null, mediaType: 'video', likes: 1 },
+            { id: 'd-share-stale-B', ownerHandle: '@other', caption: 'The reopened dream', style: 'Cinematic', videoUrl: OTHER_MEDIA_URL, imageUrl: null, mediaType: 'video', likes: 2 }
+          ],
+          dreamOfDayId: null
+        })
+      });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('[data-share="d-share-stale-A"]', { timeout: 5000 });
+
+    // Open the sheet for dream A, tap Save (kicks off the fetch this test
+    // holds open via staleFetchGate), then dismiss before it can resolve.
+    await page.click('[data-share="d-share-stale-A"]');
+    await waitForSheetSettled(page);
+    await page.click('#share-opt-save');
+    await page.waitForSelector('#share-opt-save-label:has-text("Preparing")', { timeout: 3000 });
+    await page.click('#share-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#share-sheet-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+
+    // Reopen the sheet for a DIFFERENT dream (B) while A's fetch is still
+    // gated open -- this bumps currentGen past the abandoned attempt's
+    // own captured myGen.
+    await page.click('[data-share="d-share-stale-B"]');
+    await waitForSheetSettled(page);
+    var labelOnReopen = await page.textContent('#share-opt-save-label');
+    assert.match(labelOnReopen, /Save to device/, 'reopened sheet must start fresh with its normal idle label, not carry over dream A\'s "Preparing…" state');
+    var disabledOnReopen = await page.evaluate(function () { return document.getElementById('share-opt-save').disabled; });
+    assert.equal(disabledOnReopen, false, 'reopened sheet\'s Save button must not be stuck disabled from dream A\'s abandoned in-flight attempt');
+
+    // Now let dream A's stale fetch resolve while dream B's sheet is what
+    // is actually on screen.
+    resolveStaleFetch();
+    await page.waitForTimeout(600);
+
+    var shareCallsAfter = await page.evaluate(function () { return window.__shareCalls; });
+    assert.equal(shareCallsAfter.length, 0, 'the abandoned dream A attempt must never fire navigator.share once its fetch resolves after being superseded');
+
+    var labelAfter = await page.textContent('#share-opt-save-label');
+    assert.match(labelAfter, /Save to device/, 'dream B\'s sheet must still show its own normal idle label -- dream A\'s stale resolution must not touch it');
+    var sheetStillOpen = await page.evaluate(function () { return document.getElementById('share-sheet-overlay').classList.contains('open'); });
+    assert.ok(sheetStillOpen, 'dream B\'s sheet must still be open -- the stale resolution must not have called hide() on it');
+  } finally {
+    await context.close();
+  }
+});
+
 // ============================================================================
 // 4. Both real call sites open the same shared sheet.
 // ============================================================================
