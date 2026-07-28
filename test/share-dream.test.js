@@ -120,6 +120,15 @@ test('host header respected via x-forwarded-host, same pattern every other email
   assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube1\.netlify\.app\/explore\.html\?id=d-host-1">/);
 });
 
+test('a crafted x-forwarded-host header cannot break out of the inline <script> tag (JSON.stringify alone does not escape < / >)', async function () {
+  await seedFeed([{ id: 'd-xss-1', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: null, imageUrl: 'https://x/i.png', mediaType: 'image', likes: 0 }]);
+  var evilHost = 'evil.example</script><script>alert(1)</script>';
+  var event = fakeEvent({ method: 'GET', query: { id: 'd-xss-1' }, headers: { host: 'dreamtube1.netlify.app', 'x-forwarded-host': evilHost } });
+  var res = await handler(event);
+  assert.equal(res.statusCode, 200);
+  assert.doesNotMatch(res.body, /<\/script><script>alert\(1\)<\/script>/, 'a crafted Host header must never produce an unescaped </script><script> sequence in the response body');
+});
+
 test('a Blobs read failure is treated the same as "not found" -- a gentle redirect, never a raw 500', async function () {
   mockBlobs.setReadOverride('dreamtube-feed', function () { throw new Error('boom'); });
   var res = await handler(getEvent({ id: 'd-whatever' }));

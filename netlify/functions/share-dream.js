@@ -61,6 +61,28 @@ function redirectTo(location) {
   return { statusCode: 302, headers: { Location: location }, body: '' };
 }
 
+/**
+ * Safe pattern for embedding a JSON value inside an inline <script> block:
+ * JSON.stringify only escapes quotes/backslashes/control chars per the JSON
+ * spec, NOT `<` or `>` -- so a raw JSON.stringify(...) result can still
+ * contain a literal `</script>` sequence that breaks out of the tag early.
+ * canonicalUrl is built from siteOrigin(event), which is itself derived
+ * directly from the client-suppliable x-forwarded-host/host request header
+ * with zero escaping -- so this is a real injection vector, not just theory.
+ * Escaping `<`/`>` alone is sufficient: the browser's HTML tokenizer looks
+ * for a literal less-than sign followed by "/script" to end the tag, so
+ * replacing every literal `<`/`>` with its \uXXXX JS escape (a JS engine
+ * decodes these back to the original characters at runtime, so the
+ * resulting URL string used by location.replace is unaffected) already
+ * prevents any `</script>` sequence from surviving in the raw HTML
+ * response.
+ */
+function jsonForInlineScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
+}
+
 function renderPreviewPage(dream, origin) {
   var canonicalUrl = origin + '/explore.html?id=' + encodeURIComponent(dream.id);
   var title = dream.caption ? dream.caption : 'A dream on DreamTube';
@@ -78,7 +100,7 @@ function renderPreviewPage(dream, origin) {
     '<meta property="og:url" content="' + escapeHtml(canonicalUrl) + '">\n' +
     '<meta http-equiv="refresh" content="0;url=' + escapeHtml(canonicalUrl) + '">\n' +
     '</head><body>\n' +
-    '<script>location.replace(' + JSON.stringify(canonicalUrl) + ');</script>\n' +
+    '<script>location.replace(' + jsonForInlineScript(canonicalUrl) + ');</script>\n' +
     '<p>Redirecting to <a href="' + escapeHtml(canonicalUrl) + '">DreamTube</a>…</p>\n' +
     '</body></html>';
 
