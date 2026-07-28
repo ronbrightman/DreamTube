@@ -132,7 +132,7 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
     var waitLine = await page.textContent('#ps-wait-line');
     assert.match(waitLine, /Or claim 20 free tokens in 6h 1[23]m/);
     var buyLabel = await page.textContent('#ps-buy-label');
-    assert.match(buyLabel, /Get 100 tokens · \$2\.99/);
+    assert.match(buyLabel, /Get 200 tokens · \$2\.99/);
 
     // THE BUG FIX: the sheet must have already persisted the full blocked
     // action's draft (style + mediaType), not only on an unblocked path.
@@ -456,7 +456,7 @@ test('processing.html: a mocked successful checkout return auto-resumes the exac
     await seedAccount(page, {
       username: 'autoresume',
       draft: { caption: 'A dream about flying whales over the ocean', style: 'Cinematic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 100, price: 2.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
@@ -507,7 +507,7 @@ test('processing.html: when the token credit is still lagging past the poll wind
     await seedAccount(page, {
       username: 'degradepath',
       draft: { caption: 'A dream about a lighthouse in the fog', style: 'Realistic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 100, price: 2.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
@@ -591,7 +591,7 @@ test('processing.html: pagehide cancels the in-flight credit poll -- a stale pol
     await seedAccount(page, {
       username: 'pagehidecancel',
       draft: { caption: 'A dream about a slow-motion waterfall', style: 'Realistic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 100, price: 2.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });

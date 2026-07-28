@@ -54,17 +54,21 @@
 
   // ==========================================================================
   // Pure logic (no DOM) — token packs, arithmetic, countdown formatting.
-  // Mirrors shop.html's own PACK_INFO (Token Economy C, founder-approved
-  // 2026-07-26 night: 100/$2.99, 300/$7.99, 700/$14.99). Kept as its own
-  // copy rather than a shared import (this codebase has no bundler/require
-  // for browser code — see js/store.js's header comment) — same "one small
-  // local map, not a shared module" convention shop.html's own PACK_INFO
-  // comment already documents.
+  // Mirrors shop.html's own PACK_INFO (pack enrichment, founder-approved
+  // 2026-07-28, "go for A": 200/$2.99, 600/$7.99, 1400/$14.99 — doubled
+  // from the original Token Economy C amounts at the same prices; internal
+  // names pack100/pack300/pack700 unchanged, so pack100 no longer literally
+  // means "100 tokens" — see create-checkout-session-dodo.js's PACK_TOKENS
+  // comment for the full naming-drift note). Kept as its own copy rather
+  // than a shared import (this codebase has no bundler/require for browser
+  // code — see js/store.js's header comment) — same "one small local map,
+  // not a shared module" convention shop.html's own PACK_INFO comment
+  // already documents.
   // ==========================================================================
   var PACK_INFO = {
-    pack100: { tokens: 100, price: 2.99 },
-    pack300: { tokens: 300, price: 7.99 },
-    pack700: { tokens: 700, price: 14.99 }
+    pack100: { tokens: 200, price: 2.99 },
+    pack300: { tokens: 600, price: 7.99 },
+    pack700: { tokens: 1400, price: 14.99 }
   };
   var PACK_ORDER = ['pack100', 'pack300', 'pack700'];
 
@@ -73,10 +77,12 @@
    * cheapest pack whose token amount alone covers the shortfall. In
    * practice, since every generation costs at most 100 tokens (video) or
    * 10 (image) and balance is never negative, `neededTokens` never
-   * exceeds 100 — so pack100 (100 tokens) is always sufficient today.
-   * Written generally (not hardcoded to pack100) so this stays correct if
-   * a future, larger-cost action is ever added without anyone having to
-   * remember to revisit this specific function.
+   * exceeds 100 — so pack100 (200 tokens as of the pack-enrichment change)
+   * is always sufficient today. Written generally (not hardcoded to
+   * pack100) so this stays correct if a future, larger-cost action is
+   * ever added without anyone having to remember to revisit this specific
+   * function, AND so it automatically tracks PACK_INFO's token amounts
+   * rather than a second hardcoded copy of them.
    */
   function pickSmallestSufficientPack(neededTokensAmount) {
     for (var i = 0; i < PACK_ORDER.length; i++) {

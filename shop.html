@@ -142,33 +142,36 @@
          states what the tokens buy in BOTH media types (1 video = 100
          tokens, 1 image = 10 tokens — see style.html's own IMAGE_TOKEN_COST/
          VIDEO_TOKEN_COST) since either media type can be generated from
-         the same balance. -->
+         the same balance. Token amounts per pack doubled from the original
+         Token Economy C lineup by the pack-enrichment change (founder-
+         approved 2026-07-28, same prices) — see the "Pricing" comment
+         further down in this file's script block for the full note. -->
     <div class="token-pack-card">
       <div class="token-pack-row">
-        <div class="token-pack-amt">100 tokens</div>
+        <div class="token-pack-amt">200 tokens</div>
         <div class="token-pack-price">$2.99</div>
       </div>
-      <div class="token-pack-sub">100 tokens = 1 video or 10 images.</div>
+      <div class="token-pack-sub">200 tokens = 2 videos or 20 images.</div>
       <button class="btn btn-primary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
     </div>
 
     <div class="token-pack-card popular">
       <div class="token-pack-badge token-pack-badge-popular">Most popular</div>
       <div class="token-pack-row">
-        <div class="token-pack-amt">300 tokens</div>
+        <div class="token-pack-amt">600 tokens</div>
         <div class="token-pack-price">$7.99</div>
       </div>
-      <div class="token-pack-sub">300 tokens = 3 videos or 30 images.</div>
+      <div class="token-pack-sub">600 tokens = 6 videos or 60 images.</div>
       <button class="btn btn-primary btn-block" id="shop-buy-pack300" data-pack="pack300">Buy</button>
     </div>
 
     <div class="token-pack-card best">
       <div class="token-pack-badge">Best value</div>
       <div class="token-pack-row">
-        <div class="token-pack-amt">700 tokens</div>
+        <div class="token-pack-amt">1400 tokens</div>
         <div class="token-pack-price">$14.99</div>
       </div>
-      <div class="token-pack-sub">700 tokens = 7 videos or 70 images.</div>
+      <div class="token-pack-sub">1400 tokens = 14 videos or 140 images.</div>
       <button class="btn btn-primary btn-block" id="shop-buy-pack700" data-pack="pack700">Buy</button>
     </div>
 
@@ -277,19 +280,27 @@
   // button, never a stuck/broken UI, same "flag, don't fake it" rule this
   // file followed while the buttons were still disabled placeholders.
   //
-  // Pricing (Token Economy C, founder-approved 2026-07-26 night): 100
-  // tokens for $2.99, 300 tokens for $7.99 (badged "Most popular"), 700
-  // tokens for $14.99 (badged "Best value"). The actual amount charged is
-  // whatever the Dodo product behind DODO_PRODUCT_PACK_100/
-  // DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700 is configured for —
-  // nothing here enforces these stay in sync; keep them matched by hand
-  // when setting up (or changing) those Dodo products. A user's first-ever
-  // successful pack purchase additionally credits +50% tokens, applied
-  // server-side by dodo-webhook.js/lib/entitlements.js — see this page's
-  // own "First pack" note above the cards; not reflected in PACK_INFO
-  // below, which mirrors the BASE pack tokens shown on each price tag
-  // (used only for the purchase_completed analytics event's `tokens`
-  // property, not for crediting — crediting is entirely server-side).
+  // Pricing (pack enrichment, founder-approved 2026-07-28, "go for A" —
+  // doubled every pack's token contents from the original Token Economy C
+  // amounts, same prices, a repricing sweep after the veo3.1/lite cost
+  // cut): 200 tokens for $2.99, 600 tokens for $7.99 (badged "Most
+  // popular"), 1400 tokens for $14.99 (badged "Best value"). The internal
+  // names pack100/pack300/pack700 (and DODO_PRODUCT_PACK_100/_300/_700)
+  // deliberately kept their original "100/300/700" naming — only the
+  // token amount changed — so pack100 no longer literally means "100
+  // tokens" anywhere in this codebase; see
+  // create-checkout-session-dodo.js's PACK_TOKENS comment for the fuller
+  // naming-drift note. The actual amount charged is whatever the Dodo
+  // product behind DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/
+  // DODO_PRODUCT_PACK_700 is configured for — nothing here enforces these
+  // stay in sync; keep them matched by hand when setting up (or changing)
+  // those Dodo products. A user's first-ever successful pack purchase
+  // additionally credits +50% tokens, applied server-side by
+  // dodo-webhook.js/lib/entitlements.js — see this page's own "First
+  // pack" note above the cards; not reflected in PACK_INFO below, which
+  // mirrors the BASE pack tokens shown on each price tag (used only for
+  // the purchase_completed analytics event's `tokens` property, not for
+  // crediting — crediting is entirely server-side).
   // ============================================================================
 
   function showToast(msg){
@@ -304,17 +315,17 @@
   // exists at all.
   var PENDING_PURCHASE_KEY = 'dreamtube_pending_purchase';
 
-  // Mirrors the pricing shown in this page's own markup above (100
-  // tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99) — kept as one small
+  // Mirrors the pricing shown in this page's own markup above (200
+  // tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99) — kept as one small
   // local map right next to purchasePack rather than re-deriving/
   // hardcoding these numbers a second time somewhere disconnected from the
   // visible price tags (same "one local helper, not a shared module"
   // convention as this file's own formatTokenCountdown). See the "Token
   // packs" header comment above for where these numbers came from.
   var PACK_INFO = {
-    pack100: { tokens: 100, price: 2.99 },
-    pack300: { tokens: 300, price: 7.99 },
-    pack700: { tokens: 700, price: 14.99 }
+    pack100: { tokens: 200, price: 2.99 },
+    pack300: { tokens: 600, price: 7.99 },
+    pack700: { tokens: 1400, price: 14.99 }
   };
 
   function purchasePack(pack, button){

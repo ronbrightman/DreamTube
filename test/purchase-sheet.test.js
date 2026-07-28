@@ -15,11 +15,11 @@ var assert = require('node:assert/strict');
 
 var PurchaseSheet = require('../js/purchase-sheet');
 
-test('PACK_INFO matches shop.html\'s Token Economy C lineup', function () {
+test('PACK_INFO matches shop.html\'s pack-enrichment lineup (2026-07-28: doubled tokens, same prices)', function () {
   assert.deepEqual(PurchaseSheet.PACK_INFO, {
-    pack100: { tokens: 100, price: 2.99 },
-    pack300: { tokens: 300, price: 7.99 },
-    pack700: { tokens: 700, price: 14.99 }
+    pack100: { tokens: 200, price: 2.99 },
+    pack300: { tokens: 600, price: 7.99 },
+    pack700: { tokens: 1400, price: 14.99 }
   });
 });
 
@@ -33,10 +33,10 @@ test('neededTokens: the exact shortfall, never negative', function () {
 test('pickSmallestSufficientPack: picks the cheapest pack that alone covers the shortfall', function () {
   assert.equal(PurchaseSheet.pickSmallestSufficientPack(1), 'pack100');
   assert.equal(PurchaseSheet.pickSmallestSufficientPack(60), 'pack100');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(100), 'pack100');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(101), 'pack300');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(300), 'pack300');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(301), 'pack700');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(200), 'pack100');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(201), 'pack300');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(600), 'pack300');
+  assert.equal(PurchaseSheet.pickSmallestSufficientPack(601), 'pack700');
 });
 
 test('pickSmallestSufficientPack: falls back to the largest pack when nothing alone is sufficient', function () {

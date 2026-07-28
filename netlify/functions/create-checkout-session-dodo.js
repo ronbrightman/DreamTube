@@ -3,9 +3,11 @@
 // POST { email, pack } -> creates a Dodo Payments Checkout Session for a
 // one-time DreamTube token-pack purchase and returns { url } for the
 // client to redirect the browser to. `pack` is "pack100", "pack300", or
-// "pack700" (100 tokens / $2.99, 300 tokens / $7.99, 700 tokens / $14.99
-// — "Token Economy C", founder-approved 2026-07-26 night — see
-// shop.html). A user's first-ever successful pack purchase additionally
+// "pack700" (200 tokens / $2.99, 600 tokens / $7.99, 1400 tokens / $14.99
+// — pack enrichment, founder-approved 2026-07-28, doubled from the
+// original Token Economy C amounts at the same prices; internal names
+// unchanged, see PACK_TOKENS below — see shop.html). A user's first-ever
+// successful pack purchase additionally
 // credits +50% tokens — applied server-side by dodo-webhook.js /
 // lib/entitlements.js on the confirmed payment, nothing here needs to
 // know about it (this function only ever creates the checkout session,
@@ -90,17 +92,24 @@ var DodoPayments = require('dodopayments').default;
 var { normalizeEmail } = require('./lib/entitlements');
 
 // Token amount per pack — mirrors the pricing already shown in shop.html
-// (100 tokens/$2.99, 300 tokens/$7.99, 700 tokens/$14.99 — "Token Economy
-// C", founder-approved 2026-07-26 night). The actual dollar amount charged
-// lives entirely on the Dodo product configured for each env var below,
-// not here; this amount is only used for the metadata fallback
-// dodo-webhook.js reads if its product_id -> pack mapping ever changes
-// after a purchase was made (see that file's resolvePackTokens). Does NOT
-// include the +50% first-purchase bonus — that's decided and applied
-// entirely server-side on the webhook's crediting path (see
-// lib/entitlements.js's creditTokenPackAmountOnce), never known at
-// checkout-creation time.
-var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
+// (200 tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99 — pack
+// enrichment, founder-approved 2026-07-28, "go for A": doubled every
+// pack's token contents at the same prices, a repricing sweep after the
+// veo3.1/lite cost cut. The internal names pack100/pack300/pack700 (and
+// DODO_PRODUCT_PACK_100/_300/_700 below) deliberately keep their original
+// "100/300/700" naming — renaming identifiers across the codebase and the
+// Dodo dashboard product ids was judged not worth it for a pure token-
+// amount change, so these names no longer describe their own token count;
+// treat pack100 as "the first/cheapest pack", not literally 100 tokens).
+// The actual dollar amount charged lives entirely on the Dodo product
+// configured for each env var below, not here; this amount is only used
+// for the metadata fallback dodo-webhook.js reads if its product_id ->
+// pack mapping ever changes after a purchase was made (see that file's
+// resolvePackTokens). Does NOT include the +50% first-purchase bonus —
+// that's decided and applied entirely server-side on the webhook's
+// crediting path (see lib/entitlements.js's creditTokenPackAmountOnce),
+// never known at checkout-creation time.
+var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
 
 // USD price per pack, mirrors shop.html's own PACK_INFO map — used only for
 // the metadata.dreamtube_price fallback below, the same "belt-and-
