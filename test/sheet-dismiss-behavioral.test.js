@@ -853,24 +853,27 @@ test('drag-dismiss velocity branch in isolation: a FAST flick dismisses even tho
     await page.mouse.click(resetBox.x + resetBox.width / 2, Math.max(1, resetBox.y - 10));
     await page.waitForSelector('#sheet-account-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
 
-    // Fast steps (8ms apart) covering a short 80px -- js/sheet-dismiss.js
-    // measures velocity off the ACTUAL wall-clock gap between dispatched
-    // touchmove events (Date.now()), not the requested delay, so what
-    // matters is real elapsed time staying reasonably close to what's
-    // requested. Sized with generous headroom against CI/heavy-parallel-
-    // load timer jitter (this codebase's own documented flaky-test-file
-    // shape): even if the real per-step gap balloons to 5x the requested
-    // 8ms, velocity still comes out around 1.5px/ms, well clear of
-    // VELOCITY_THRESHOLD (0.6px/ms) -- an earlier, tighter version of
-    // this test (2ms steps, 40px total) flaked under the full file's
-    // load for exactly this reason. The 80px total distance still stays
-    // far short of the ~223px (30% of this sheet's height) distance
-    // threshold, so the isolation holds regardless.
+    // Fast steps (8ms apart, 40px each) covering a short 80px total --
+    // js/sheet-dismiss.js measures velocity off the ACTUAL wall-clock gap
+    // between dispatched touchmove events (Date.now()), not the requested
+    // delay, so what matters is real elapsed time staying reasonably close
+    // to what's requested. Sized with generous headroom against CI/heavy-
+    // parallel-load timer jitter (this codebase's own documented
+    // flaky-test-file shape): velocity = 40px / dt must stay above
+    // VELOCITY_THRESHOLD (0.6px/ms), i.e. dt must stay under ~66ms -- over
+    // 8x the requested 8ms per-step gap -- before this test would flake.
+    // (An earlier version used 4 steps of 20px each, whose real safe
+    // margin was only ~4.16x nominal -- ~33ms -- not the 5x its own
+    // comment claimed; fixed by widening to fewer, larger steps instead of
+    // just correcting the arithmetic, for a genuinely comfortable margin.)
+    // The 80px total distance still stays far short of the ~223px (30% of
+    // this sheet's height) distance threshold, so the isolation holds
+    // regardless.
     await page.click('#account-btn');
     await waitForSheetSettled(page, '#sheet-account-overlay');
     var box = await page.locator('#sheet-account-overlay .sheet').boundingBox();
     assert.ok(80 < box.height * DISMISS_RATIO_FOR_TEST_SANITY, 'sanity: the 80px flick distance must genuinely stay under this sheet\'s own 30% distance threshold for this test to isolate the velocity branch');
-    await dragSheet(page, '#sheet-account-overlay .sheet', { startY: box.y + 20, deltaY: 80, steps: 4, stepDelayMs: 8 });
+    await dragSheet(page, '#sheet-account-overlay .sheet', { startY: box.y + 20, deltaY: 80, steps: 2, stepDelayMs: 8 });
     await page.waitForSelector('#sheet-account-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
   } finally {
     await context.close();
