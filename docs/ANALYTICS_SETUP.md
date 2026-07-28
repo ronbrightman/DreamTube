@@ -147,6 +147,37 @@ a deliberate privacy decision**:
 **For any future free-text field carrying personal content** (quiz-funnel
 screens, etc.), add the same `ph-no-capture` class to that element.
 
+## `is_test` person property: excluding test/internal traffic
+
+Tracker item `for-product-data-hygiene-tag-exclude-tes-2lp0uw`: nearly all
+`purchase_completed` events (22 of 23 at the time this was found) turned
+out to be test fixtures — `@example.com` emails, `__probe_..._..__`-style
+throwaway usernames a privacy browser/extension injects (see `js/store.js`'s
+`signup()` for the incident this pattern comes from) — that the existing
+Israel-geo filter never catches, since most of these run with US person-geo.
+This was contaminating the Business Overview dashboard's Purchases/Revenue
+tiles.
+
+Per PostHog's own documented pattern (Project settings → "Filter out
+internal and test users", driven off a dedicated person property, not a
+per-event one), `js/store.js`'s `identifyForAnalytics()` now sets a
+person property, `is_test: true` (via `posthog.setPersonProperties()`),
+right after `identify()`, whenever the identity being identified is:
+
+- a known founder account (`ronbrightman`, `benbrightman14` — his son's
+  account, see `owner-topup-tokens.js`'s header comment) — excluded from
+  revenue reporting per the founder's standing "no contaminated data" rule
+- an `@example.com` email (checked directly, and via the account's
+  on-file email, since the distinct_id here is normally a username)
+- a probe-style username matching `/^__.+__$/` — the same shape
+  `register-account.js`'s E10 `suspicious_username` check already rejects
+
+This is capture-time tagging only — best-effort, non-blocking, same
+try/catch discipline as every other analytics call in this file. Wiring
+the actual dashboard-level exclusion using this property (Business
+Overview and any other dashboard) is Manager's own follow-up per that
+tracker item, not part of this change.
+
 ## Files touched by this setup
 
 - `js/analytics-config.js` — the two placeholder keys (new file)

@@ -1116,6 +1116,67 @@
     }
 
     try { window.posthog.identify(usernameOrEmail); } catch (e) { /* analytics must never break auth */ }
+
+    // Tracker item for-product-data-hygiene-tag-exclude-tes-2lp0uw: 22 of 23
+    // purchase_completed events in PostHog turned out to be test fixtures
+    // (@example.com emails, __probe_..._..__-style throwaway usernames) that
+    // the existing Israel-geo filter never catches, contaminating the new
+    // Business Overview dashboard's Purchases/Revenue tiles. Best-practice
+    // fix per PostHog's own docs (Project settings -> "Filter out internal
+    // and test users", driven off a dedicated person property) is to tag a
+    // PERSON property once at identify time — not a per-event property
+    // re-sent on every capture() call — so this is the one seam every real
+    // identify() already goes through. This only makes the data taggable;
+    // wiring the actual dashboard-level exclusion using it is explicitly
+    // Manager's own follow-up per that tracker item, not this change.
+    if (isTestOrInternalIdentity(usernameOrEmail)) {
+      try {
+        if (typeof window.posthog.setPersonProperties === 'function') {
+          window.posthog.setPersonProperties({ is_test: true });
+        }
+      } catch (e) { /* analytics must never break auth */ }
+    }
+  }
+
+  // Founder's own real accounts — excluded from revenue reporting per the
+  // founder's standing "no contaminated data" rule. benbrightman14 is a
+  // confirmed, founder-approved secondary identity (his son's account — see
+  // owner-topup-tokens.js's own header comment on tracker item
+  // for-product-extend-owner-top-up-with-a-t-2hmopn). These are USERNAMEs,
+  // not emails: identifyForAnalytics is always called with the account's
+  // username (the distinct_id this app identifies with), never its email —
+  // see every call site above (commitLocalSignup/attemptLocalLogin/etc.).
+  // Deliberately NOT OWNER_EMAIL itself: that's a server-only env var (see
+  // lib/owner-bypass.js) with no client-side equivalent, and profile.html's
+  // owner-topup-block already establishes this codebase's convention of
+  // never hardcoding the real owner email client-side for an owner check.
+  // The founder's known usernames serve this analytics-labeling purpose
+  // just as well without that tradeoff — this is a low-stakes reporting
+  // tag, not a privilege/security check.
+  var TEST_OR_INTERNAL_USERNAMES = { ronbrightman: true, benbrightman14: true };
+
+  /**
+   * True if `usernameOrEmail` (whatever identifyForAnalytics was just asked
+   * to identify as) should be tagged `is_test` in PostHog: a known founder
+   * account, an `@example.com` test-fixture email (checked directly, and
+   * via the matching account's on-file email in state.accounts, since the
+   * distinct_id identifyForAnalytics receives is normally a username, not
+   * an email), or a probe-style throwaway username matching the exact
+   * `/^__.+__$/` shape register-account.js's E10 suspicious_username check
+   * and this file's own signup() already treat as a synthetic autofill
+   * placeholder rather than a real human-chosen name (see signup()'s own
+   * comment for the incident this pattern comes from) — reused here rather
+   * than a new heuristic, per the tracker item's own explicit instruction.
+   */
+  function isTestOrInternalIdentity(usernameOrEmail) {
+    var raw = String(usernameOrEmail || '');
+    var key = raw.toLowerCase();
+    if (TEST_OR_INTERNAL_USERNAMES[key]) return true;
+    if (/^__.+__$/.test(raw)) return true;
+    if (/@example\.com$/i.test(raw)) return true;
+    var account = state.accounts[key];
+    if (account && account.email && /@example\.com$/i.test(account.email)) return true;
+    return false;
   }
 
   /**
