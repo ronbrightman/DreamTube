@@ -51,7 +51,16 @@
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
 
-var MAX_CHECK_EMAIL_PER_IP_PER_DAY_DEFAULT = 120;
+// 2x register-account.js's own MAX_REGISTRATIONS_PER_IP_PER_DAY default
+// (20) rather than an unreviewed round number — this endpoint is cheaper
+// per-request than a real signup (no account write), so some headroom
+// above that bar is reasonable for legitimate multi-attempt use (a typo'd
+// email, a funnel Back+resubmit), but it should stay in the same
+// ballpark, not an order of magnitude more permissive, given this is a
+// real enumeration surface with a lower per-attempt cost to an attacker
+// than signup itself (review finding on
+// for-product-money-leak-blocked-signups-e-v2g1vi).
+var MAX_CHECK_EMAIL_PER_IP_PER_DAY_DEFAULT = 40;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {

@@ -568,6 +568,111 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
 });
 
 // ===========================================================================
+// Money-leak fix (tracker item for-product-money-leak-blocked-signups-e-
+// v2g1vi) -- variant "b"'s own equivalent of
+// test/funnel-signup-navigation-token-guard-behavioral.test.js's
+// control-variant coverage for the same fix (that file pins itself to
+// variant 'a' -- see its own pinSignupControlVariant doc comment -- and
+// explicitly defers variant b's coverage to this file). checkEmailAvailable()
+// lives inside wireScreen13Fields' #fn-s13-continue handler (see that
+// function's own doc comment above -- it is the exact same function both
+// variants call), which for variant b only exists once the email step has
+// been confirmed and the password step has rendered -- so these tests drive
+// the full two-step interaction (email step, then password step) rather
+// than filling both fields at once like the control-variant tests do.
+// ===========================================================================
+
+test('variant "b": screen 13 submission with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline, and stays on the password step', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var startPendingCalls = [];
+    var registerCalls = [];
+    var checkEmailCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      checkEmailCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-b-taken-1', operationName: 'fal:fake-model:req-b-taken-1' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      registerCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E8: email_taken' }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'variant-b-already-taken@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
+    assert.equal(checkEmailCalls[0].email, 'variant-b-already-taken@example.com');
+    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
+    assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must not even attempt a signup already known to be rejected');
+    assert.equal(await page.locator('#fn-password').count(), 1, 'must still be sitting on the password step');
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14');
+
+    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-continue').disabled; });
+    var backDisabled = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
+    assert.equal(continueDisabled, false, 'Continue must be re-enabled after the blocked-email response, not left stuck disabled');
+    assert.equal(backDisabled, false, 'Back must be re-enabled after the blocked-email response');
+
+    var loginLinkHref = await page.locator('#fn-signup-error a').getAttribute('href');
+    assert.equal(loginLinkHref, 'login.html');
+  } finally {
+    await context.close();
+  }
+});
+
+test('variant "b": check-email.js failing outright (rate-limited/5xx) fails OPEN -- a legitimate new-email visitor still signs up normally and start-pending-generation still fires', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E4: rate_limited' }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-b-failopen-1', operationName: 'fal:fake-model:req-b-failopen-1' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'variant-b-legit-new-user@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
+    assert.equal(startPendingCalls[0].email, 'variant-b-legit-new-user@example.com');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
 // PostHog registration/tracking -- both variants, plus confirming the
 // internal email-step -> password-step DOM swap doesn't double-fire.
 // ===========================================================================
