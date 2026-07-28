@@ -344,6 +344,22 @@ exports.handler = async function (event) {
       // via the `feature_flags` field; a top-level key here is silently
       // ignored by Dodo's API and would leave the real default, true, in
       // effect).
+      // Dodo billing-field reduction, explicit written assumption (review
+      // finding, same tracker item as the returning-buyer prefill above):
+      // the SDK also exposes a `minimal_address` checkout-session field,
+      // which reads like it could reduce the address/billing fields Dodo
+      // collects at checkout. Its own docs state it only applies "when
+      // confirm is true" -- i.e. Dodo's inline/embedded confirm flow. This
+      // codebase's checkout is the hosted-redirect flow (checkoutSessions
+      // .create -> session.checkout_url, the browser redirected there, never
+      // anything resembling an inline confirm) -- so minimal_address
+      // plausibly does nothing for this integration. Not verified against a
+      // real Dodo checkout session (no live credentials in this environment
+      // -- see this file's own header comment on why nothing here can be
+      // exercised end-to-end yet); deliberately NOT set here rather than set
+      // on an unverified assumption that it helps. Revisit once real Dodo
+      // credentials exist and this can actually be checked against a live
+      // checkout session.
       feature_flags: { allow_tax_id: false },
       // Carries the normalized email + pack + token amount + shared
       // event_id through as a fallback identity/amount source alongside

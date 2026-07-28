@@ -23,6 +23,17 @@
 //      dodo-webhook.js never actually calls it with a falsy paymentId (a
 //      real Dodo payload always has one), so nothing else in this test
 //      suite exercises that branch.
+//   4. The dodoCustomerId fold-in (tracker item
+//      for-product-repeat-purchase-friction-dod-b6pzs6, review round-2
+//      finding) — creditTokenPackOnce's optional 5th `dodoCustomerId`
+//      argument is folded into creditTokenPackAmountOnce's own existing
+//      hardened write rather than a second, separate, unguarded
+//      setEntitlement call. Forces a concurrent spendTokens call's read to
+//      land exactly in the gap this record's own doc comment describes
+//      ("your write happens first, then spendTokens' own read... could
+//      silently drop the dodoCustomerId you just stamped") via mock-blobs'
+//      read-override mechanism, deterministically, rather than hoping
+//      natural Promise scheduling happens to hit that exact window.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -442,6 +453,81 @@ test('concurrent races on DIFFERENT payment_ids for the same email both go throu
 
   assert.equal(results[0].credited, true);
   assert.equal(results[1].credited, true);
+});
+
+// ----- dodoCustomerId fold-in vs. a concurrent spendTokens call (review
+// round-2 finding, tracker item for-product-repeat-purchase-friction-dod-
+// b6pzs6) -----
+//
+// The bug this closes: dodo-webhook.js's first draft stamped dodoCustomerId
+// via a SEPARATE, plain, unguarded `entitlements.setEntitlement(event,
+// email, {dodoCustomerId})` call sitting next to (not folded into)
+// creditTokenPackOnce's own hardened credit. spendTokens (generate-video.js's
+// per-generation deduction — the single highest-frequency writer to this
+// same per-email record) is ALSO a plain, unguarded read -> Object.assign ->
+// setJSON, with no retry/verify. Two such plain writes racing the same
+// record can each build their patch from a stale pre-the-other's-write
+// `existing`, so whichever lands second silently reverts or drops whatever
+// the other had just changed — see creditTokenPackAmountOnce's own doc
+// comment (the "WHY THIS NEEDS ITS OWN WRITE" section it grew as part of
+// this fix) for the fuller mechanics.
+//
+// This test forces the SPECIFIC "reverse ordering" interleaving flagged by
+// review: dodoCustomerId gets stamped, THEN a concurrent spendTokens call's
+// own internal read (inside its setEntitlement call) sees a STALE,
+// pre-stamp snapshot -- its subsequent write, built from that stale
+// snapshot, carries no dodoCustomerId key at all, so if this were a bare
+// passthrough write it would silently blank out the just-stamped value.
+// Forced deterministically via mock-blobs' read-override mechanism (rather
+// than hoping Promise.all's natural scheduling happens to hit this exact
+// window -- empirically, plain unforced concurrency here does NOT reliably
+// reproduce the race either way, so a real regression test needs the forced
+// interleaving) at the exact read call-count spendTokens' own setEntitlement
+// call issues when raced against creditTokenPackOnce this way (verified
+// against this file's own mock-blobs call ordering, not a guess).
+test('creditTokenPackOnce\'s dodoCustomerId stamp (folded into creditTokenPackAmountOnce\'s existing hardened write) survives a concurrent spendTokens call whose own read is forced to land BEFORE the stamp/credit write -- the exact "reverse ordering" clobber the review flagged for the old separate-write shape', async function () {
+  var email = 'dodoraceconcurrency@example.com';
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 100, lastClaimAt: Date.now() },
+    firstPackPurchaseAt: Date.now() - 999999999 // isolate from the separate first-purchase-bonus behavior
+  });
+  var preRaceSnapshot = await entitlements.getEntitlement({}, email);
+
+  // Call #3 against the entitlements store, in this exact race shape, is
+  // spendTokens' own setEntitlement()-internal read (verified by tracing
+  // this file's own mock-blobs call sequence for
+  // Promise.all([creditTokenPackOnce(...), spendTokens(...)]) -- NOT a
+  // guess). Forcing it to see the pre-race snapshot simulates spendTokens'
+  // read having raced in *before* creditTokenPackOnce's dodoCustomerId
+  // stamp/credit write, even though (in this deterministic single-process
+  // test) spendTokens' own write physically happens afterward -- exactly
+  // the "read happened first, write lands second" shape a real concurrent
+  // request against genuinely eventually-consistent Blobs could hit.
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 3) return { value: preRaceSnapshot };
+    return false;
+  });
+
+  await Promise.all([
+    entitlements.creditTokenPackOnce({}, email, 'pay_dodo_race_concurrency', 100, 'cus_dodo_race_concurrency'),
+    entitlements.spendTokens({}, email, 30)
+  ]);
+
+  mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.dodoCustomerId, 'cus_dodo_race_concurrency', 'the dodoCustomerId stamp must survive a concurrent spendTokens call racing in around it, not get silently dropped');
+  // Balance itself, under this exact forced interleaving, lands on 200
+  // (100 initial + 100 credited, the concurrent spend's own effect not
+  // reflected) rather than a fully-reconciled 170 -- this is
+  // creditTokenPackAmountOnce's OWN pre-existing, separately documented and
+  // accepted "syncedTokens snapshot, never re-read mid-flight" tradeoff
+  // (see that function's own doc comment's "Residual, undefended race"
+  // section, which already calls this out for addTokens and is unrelated
+  // to the dodoCustomerId fix this test is about) -- not something this
+  // fix changes or is scoped to close. The field that matters for THIS
+  // fix, dodoCustomerId, is asserted above.
+  assert.equal(record.tokens.balance, 200, '100 initial + 100 credited, under creditTokenPackAmountOnce\'s own pre-existing accepted balance-snapshot behavior -- see comment above');
 });
 
 // ----- First-purchase bonus (+50%, Token Economy C, founder-approved
