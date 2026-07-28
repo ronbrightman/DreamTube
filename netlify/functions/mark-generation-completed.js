@@ -48,16 +48,34 @@
 // for-product-activate-automatic-retention-4n74rw item, founder-approved
 // -- "start sending... AUTOMATICALLY... do not wait for manual
 // triggering"): this is THE genuine, singular, server-verified
-// "generation just completed" choke point for every normal signed-in
-// generation path this app has (fresh video, regenerate, reference-to-
-// video, image-to-video, and image generation -- all funnel through
-// generate-video.js/generate-image.js's own recordJobOwnerBestEffort call
-// at submission time, see lib/job-owners.js). There is genuinely no real
-// fal WEBHOOK for any of these -- dream-webhook.js is fal's only actual
-// webhook target in this app, and it's wired ONLY to the separate,
-// pre-signup abandoned-dream flow (see generate-video.js's own
-// withWebhook comment) -- so this client-polled-then-server-re-verified
-// endpoint IS the closest thing to a real completion signal this app has,
+// "generation just completed" choke point for every generation path this
+// app has that ends with the browser landing on processing.html --
+// fresh video, regenerate, reference-to-video, image-to-video, and image
+// generation for an already-signed-in account (generate-video.js/
+// generate-image.js's own recordJobOwnerBestEffort call at submission
+// time), AND the dream-builder wizard's pre-signup "generate during
+// signup" funnel path (start-pending-generation.js) once its generation
+// is claimed by a real signup and the SAME browser continues on to
+// processing.html exactly like the normal path -- see that file's own
+// recordJobOwnerBestEffort (added for tracker.html's
+// for-product-bug-founder-affects-all-funn-0efe7t fix, 2026-07-28) for why
+// it now also writes to this same lib/job-owners.js store at its own
+// submission time, rather than only the two signed-in-generation files
+// above. (CORRECTED 2026-07-28 -- this paragraph used to describe the
+// funnel path as covered ONLY by dream-webhook.js's separate webhook
+// below, which was true for the *abandoned* case but silently implied the
+// *completed* funnel case had no job-owners record at all and therefore
+// no automatic email either -- that was the actual bug, not a documented
+// design choice; see start-pending-generation.js's own header comment for
+// the full root-cause writeup.) There is genuinely no real fal WEBHOOK for
+// any of the signed-in-generation paths -- dream-webhook.js is fal's only
+// actual webhook target in this app, and it's wired ONLY to the funnel's
+// own pre-signup ABANDONED-dream flow (see generate-video.js's own
+// withWebhook comment and dream-webhook.js's own "already-claimed skips
+// the send" handling, which is what keeps a completed funnel user from
+// getting that separate abandonment email too) -- so this
+// client-polled-then-server-re-verified endpoint IS the closest thing to
+// a real completion signal this app has for every one of these paths,
 // exactly the choke point the tracker item asked to trace and confirm
 // before wiring into.
 //
@@ -105,6 +123,29 @@ var jobOwners = require('./lib/job-owners');
 var accountStore = require('./lib/account-store');
 var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 var rateLimit = require('./lib/rate-limit');
+var posthogCapture = require('./lib/posthog-capture');
+
+/**
+ * Best-effort 'first_dream_email_skipped' fire for maybeSendAutomaticFirst
+ * DreamEmail's own early-return branches (see that function's doc comment)
+ * -- distinct from, and fired BEFORE ever reaching, lib/first-dream-email-
+ * sender.js's own identically-named event/reportSkip, since these three
+ * branches return before that shared core is ever called at all. Same
+ * distinct_id-fallback precedent as that file's reportSkip (and
+ * video-status.js's refundAndReport before it): falls back to whatever
+ * identifying string is on hand, since a resolved account (and its raw
+ * username -- the real posthog.identify() convention) doesn't exist yet at
+ * this point for two of these three branches.
+ */
+async function reportAutoSkip(emailOrNull, reason) {
+  try {
+    await posthogCapture.captureEvent({
+      event: 'first_dream_email_skipped',
+      distinct_id: emailOrNull || 'unknown',
+      properties: { reason: reason, auto: true }
+    });
+  } catch (e) { /* analytics must never break the app */ }
+}
 
 var FAL_API_BASE = 'https://queue.fal.run';
 
@@ -255,10 +296,27 @@ exports.handler = async function (event) {
  * never fetches its full result payload, so there is nothing to
  * personalize with without accepting new client-trusted input at exactly
  * the one place in this feature that currently needs none at all.
+ *
+ * SILENT-SKIP TELEMETRY (tracker.html's for-product-bug-founder-affects-
+ * all-funn-0efe7t item, gap #6): each of these no-op branches now ALSO
+ * fires 'first_dream_email_skipped' server-side (lib/posthog-capture.js —
+ * same helper/pattern dodo-webhook.js's/video-status.js's own server-side
+ * fires already use) before returning, so a silent no-op is at least
+ * visible in PostHog instead of only ever a console.log line nobody's
+ * watching in production. Still never a distinguishable HTTP response —
+ * see this file's own top-level header comment on why that stays true —
+ * this is observability, not a behavior/contract change.
  */
 async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
-  if (!ownerRecord || !ownerRecord.email) return; // no recorded owner -- nothing to do (see header comment)
+  if (!ownerRecord || !ownerRecord.email) {
+    // No recorded owner -- nothing to do (see header comment). No
+    // resolvable identity at all here, so distinct_id falls back to
+    // 'unknown' (see reportAutoSkip below) -- same as the automatic path's
+    // shared reportSkip in lib/first-dream-email-sender.js.
+    await reportAutoSkip(null, 'no_job_owner_record');
+    return;
+  }
 
   // Video-only scope, matching send-first-dream-email.js's own documented
   // scope decision -- an unrecorded/unrecognized mediaType (a job
@@ -266,10 +324,18 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   // (no auto-send), never assumed to be 'video'. See lib/job-owners.js's
   // header comment on why mediaType can't be derived from operationName
   // alone (mock-mode operationNames are identical strings for both kinds).
-  if (ownerRecord.mediaType !== 'video') return;
+  if (ownerRecord.mediaType !== 'video') {
+    await reportAutoSkip(ownerRecord.email, 'non_video_media_type');
+    return;
+  }
 
   var account = await accountStore.getByEmail(event, ownerRecord.email);
-  if (!account || !account.username) return; // no real registered account behind this email -- nothing safe to send to
+  if (!account || !account.username) {
+    // No real registered account behind this email -- nothing safe to
+    // send to (a local-only legacy account never backfilled server-side).
+    await reportAutoSkip(ownerRecord.email, 'no_matching_account');
+    return;
+  }
 
   await firstDreamEmailSender.sendIfEligible(event, {
     username: account.username,

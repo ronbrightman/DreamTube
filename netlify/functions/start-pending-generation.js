@@ -72,6 +72,7 @@ var entitlements = require('./lib/entitlements');
 var promptCondenser = require('./lib/prompt-condenser');
 var turnstile = require('./lib/turnstile');
 var pendingDreams = require('./lib/pending-dreams');
+var jobOwners = require('./lib/job-owners');
 var genVideo = require('./generate-video');
 var genImage = require('./generate-image');
 
@@ -79,6 +80,39 @@ var TURNSTILE_SECRET_PLACEHOLDER = 'REPLACE_WITH_REAL_TURNSTILE_SECRET_KEY';
 
 function mockOperationName() {
   return 'mock:' + Date.now() + ':' + crypto.randomUUID();
+}
+
+// ROOT-CAUSE FIX (tracker.html's for-product-bug-founder-affects-all-funn-
+// 0efe7t, founder-traced 2026-07-28): this file reuses generate-video.js's/
+// generate-image.js's buildPrompt/callFal*/resolveDuration exports directly
+// (see this file's own header comment on why) rather than calling either
+// file's exports.handler — which means it also BYPASSED the handler-local
+// recordJobOwnerBestEffort call each of those files makes right alongside
+// its own spendTokens (see generate-video.js's/generate-image.js's own
+// identically-named function and lib/job-owners.js's header comment for the
+// full mechanism). Practical effect: NO funnel-started generation ever
+// wrote a job-owners record, so mark-generation-completed.js's
+// maybeSendAutomaticFirstDreamEmail (called once the SAME funnel user
+// finishes signup and their generation completes — see wizard.html's/
+// start.html's own handoff to processing.html) could never resolve an
+// owner for the operationName and silently no-opped for every single
+// funnel user, every time — this is the bug's actual root cause, not the
+// email/copy/telemetry issues layered on top of it.
+//
+// Mirrors generate-video.js's/generate-image.js's own recordJobOwnerBestEffort
+// EXACTLY (same wrap-in-try/catch, same fail-open-on-write-failure
+// reasoning — see either file's own doc comment) — this is the SAME
+// mechanism, not a new one, replicated here because this file's mock
+// branch and both real (video/image) branches each mint their own
+// operationName independently rather than going through either handler.
+// `mediaType` is passed through (not hardcoded to one kind, unlike either
+// of those two files' own copies) since this single file handles both.
+async function recordJobOwnerBestEffort(event, operationName, email, mediaType) {
+  try {
+    await jobOwners.recordJobOwner(event, operationName, email, mediaType);
+  } catch (e) {
+    console.error('start-pending-generation: failed to record job owner (refund auth binding + automatic first-dream email binding) for ' + operationName + ' — a later refund attempt AND the automatic first-dream retention email for this job will both fail closed', e);
+  }
 }
 
 function webhookUrlFor(event, pendingId) {
@@ -183,6 +217,7 @@ exports.handler = async function (event) {
   if (mockMode) {
     await entitlements.spendTokens(event, email, tokenCost);
     var mockOp = mockOperationName();
+    await recordJobOwnerBestEffort(event, mockOp, email, mediaType);
     await pendingDreams.update(event, pending.id, { operationName: mockOp });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: mockOp }) };
   }
@@ -207,6 +242,7 @@ exports.handler = async function (event) {
         return { statusCode: imageResult.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + imageResult.error }) };
       }
       await entitlements.spendTokens(event, email, tokenCost);
+      await recordJobOwnerBestEffort(event, imageResult.operationName, email, 'image');
       await pendingDreams.update(event, pending.id, { operationName: imageResult.operationName });
       return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: imageResult.operationName }) };
     } catch (e) {
@@ -232,6 +268,7 @@ exports.handler = async function (event) {
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, tokenCost);
+    await recordJobOwnerBestEffort(event, result.operationName, email, 'video');
     await pendingDreams.update(event, pending.id, { operationName: result.operationName });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: result.operationName }) };
   } catch (e) {
