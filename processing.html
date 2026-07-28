@@ -305,27 +305,69 @@
     clearInterval(timeInterval);
   }
 
+  // Tracker: for-product-blank-grey-tile-in-the-wait--9p1xwu -- a video
+  // dream's thumbnail used to render as a bare <video> with no `poster`,
+  // so until the video actually painted its first decoded frame, the
+  // tile's own container background (--surface, a dark near-black grey)
+  // showed through -- reading as a "blank grey square" in a screenshot.
+  // Rather than a data-URI poster image, the video element itself gets
+  // the *same* style-specific gradient DreamStore.gradientFor() already
+  // gives image dreams, set as its own inline CSS `background` -- a
+  // <video> with no decoded frame yet is just an empty replaced element,
+  // so its own background paints normally and is instantly covered by
+  // the real frame once one is available. Never grey, from the very
+  // first render, no wrapper element or extra asset needed.
   function previewThumbHTML(d){
     var media = d.videoUrl
-      ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata"></video>'
+      ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata" style="background:'+DreamStore.gradientFor(d)+'"></video>'
       : '<div class="ppt-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<div class="proc-preview-thumb">'+media+'</div>';
   }
+
+  /** Shared swap-to-gradient-fallback logic, used both for a genuine video error and for the load-timeout case below -- extracted so neither call site duplicates the gradient-swap DOM code. */
+  function swapPreviewToGradient(el, dream){
+    var bg = document.createElement('div');
+    bg.className = 'ppt-bg';
+    bg.style.background = DreamStore.gradientFor(dream);
+    el.replaceWith(bg);
+  }
+
+  // How long a preview video gets to prove it's actually going to play
+  // before we give up and self-heal to the gradient fallback. This only
+  // catches the "silently never started" case (autoplay blocked, slow/
+  // stalled network) that no `error` event would ever fire for -- a
+  // genuine decode/network error is still handled immediately below,
+  // this is just the backstop for videos that neither error out nor
+  // ever actually start.
+  var PREVIEW_LOAD_TIMEOUT_MS = 2500;
 
   // These are decorative background loops (no play/pause control makes
   // sense on a 64px thumbnail) -- so instead of a control to recover a
   // stalled video, a load/decode error just swaps it for the same gradient
   // fallback already used when there's no videoUrl at all, rather than
-  // leaving a frozen/broken video sitting there while waiting.
+  // leaving a frozen/broken video sitting there while waiting. A video
+  // that neither errors out NOR ever actually starts playing (blocked
+  // autoplay, a stalled/slow connection) gets the same treatment once
+  // PREVIEW_LOAD_TIMEOUT_MS elapses -- otherwise it would just sit on its
+  // own gradient background forever, which is fine visually but never
+  // self-heals to confirm the tile is alive.
   function wirePreviewErrorFallback(row, dreams){
     Array.prototype.forEach.call(row.querySelectorAll('.ppt-bg'), function(el, i){
       if(el.tagName !== 'VIDEO') return;
+      var settled = false;
+      function settle(){ settled = true; }
       el.addEventListener('error', function(){
-        var bg = document.createElement('div');
-        bg.className = 'ppt-bg';
-        bg.style.background = DreamStore.gradientFor(dreams[i]);
-        el.replaceWith(bg);
+        if(settled) return;
+        settle();
+        swapPreviewToGradient(el, dreams[i]);
       });
+      el.addEventListener('loadeddata', settle);
+      el.addEventListener('playing', settle);
+      setTimeout(function(){
+        if(settled) return;
+        settle();
+        swapPreviewToGradient(el, dreams[i]);
+      }, PREVIEW_LOAD_TIMEOUT_MS);
     });
   }
 
