@@ -65,14 +65,14 @@ function signedEvent(payloadObj, opts) {
  */
 async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, {
-    tokens: { balance: 0, lastGrantAt: Date.now() },
+    tokens: { balance: 0, lastClaimAt: Date.now() },
     firstPackPurchaseAt: Date.now() - 999999999
   });
 }
 
 /** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used by the first-purchase-bonus tests below, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. */
 async function seedZeroBalanceNoPriorPurchase(email) {
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastClaimAt: Date.now() } });
 }
 
 function paymentPayload(overrides) {

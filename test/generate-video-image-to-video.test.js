@@ -51,7 +51,7 @@ function stubFetchRejected() {
 }
 
 async function balance(email, amount) {
-  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastGrantAt: Date.now() } });
+  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastClaimAt: Date.now() } });
 }
 
 test.beforeEach(async function () {
@@ -63,7 +63,7 @@ test.beforeEach(async function () {
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   delete process.env.TURNSTILE_SECRET_KEY;
-  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {

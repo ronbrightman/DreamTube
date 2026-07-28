@@ -58,7 +58,7 @@ test.beforeEach(function () {
  * purchases.test.js's/dodo-webhook.test.js's own seedZeroBalance.
  */
 async function seedZeroBalance(email) {
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastClaimAt: Date.now() } });
 }
 
 /**
@@ -265,7 +265,7 @@ test('a marker left "pending" where the balance was ALREADY applied (only the fl
   // succeeded (balance already bumped, jobId recorded in
   // refundedJobIds) but the marker never got flipped to 'committed'.
   await entitlements.setEntitlement({}, email, {
-    tokens: { balance: 100, lastGrantAt: Date.now() },
+    tokens: { balance: 100, lastClaimAt: Date.now() },
     refundedJobIds: [jobId]
   });
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
@@ -289,7 +289,7 @@ test('a marker already "committed" is a genuine redelivery and is never resumed 
   await seedZeroBalance(email);
   await seedJobOwner(email, jobId); // must pass the ownership check to actually reach the marker logic this test is about
 
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastClaimAt: Date.now() } });
   mockBlobs.seed(entitlements.REFUNDED_JOBS_STORE_NAME, jobId, {
     email: email,
     amount: 100,
@@ -335,7 +335,7 @@ test("refundTokenAmountOnce bases the new balance on syncTokens' own returned va
   // BEFORE the signup grant's write (from call #2) has propagated to it.
   mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
     if (callIndex === 3) {
-      return { value: { email: key, tokens: { balance: 0, lastGrantAt: Date.now() - 100000 } } };
+      return { value: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } } };
     }
     return null; // fall through to the real stored value for every other call
   });

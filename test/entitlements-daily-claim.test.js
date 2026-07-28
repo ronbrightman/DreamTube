@@ -223,3 +223,68 @@ test('claiming daily just under 48h apart, three days running, keeps incrementin
   assert.equal(day3.streak, 3);
   assert.equal(day3.balance, 220 + 20 * 3);
 });
+
+// ----- Round 1 review findings: record-shape safety + real concurrency -----
+
+test('firstPackPurchaseAt (a top-level record field, not nested in tokens) survives a claim -- the tokens-key full-replace inside claimDailyTokens must not clobber it', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'claimafterpurchase@example.com';
+  await entitlements.setEntitlement(ev, email, { tokens: { balance: 10 }, firstPackPurchaseAt: 1700000000000 });
+
+  var result = await entitlements.claimDailyTokens(ev, email);
+  assert.equal(result.claimed, true);
+  assert.equal(result.balance, 30);
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.firstPackPurchaseAt, 1700000000000, 'a claim must never touch fields outside tokens.{balance,lastClaimAt,streak}');
+});
+
+test('two CONCURRENT claimDailyTokens calls for the SAME email land exactly one credit between them, not two', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'claimracer@example.com';
+  await entitlements.setEntitlement(ev, email, { tokens: { balance: 0 } });
+
+  // Both calls start before either awaits through to completion --
+  // Promise.all invokes both synchronously, interleaving at each internal
+  // await point exactly the way two open tabs (or a retried client
+  // request) racing the claim button would. A bare read-then-write
+  // (the pre-fix implementation) lets both calls observe "claimable" off
+  // the same stale read before either writes, so both compute
+  // balance+20 from the SAME base -- the second write overwrites the
+  // first, and only one +20 actually lands even though the caller saw
+  // TWO { claimed: true } responses. This test fails against that
+  // implementation (only one claimed:true, but re-claiming immediately
+  // after would wrongly succeed again since the loser's write silently
+  // reset the cooldown) and passes against the real blobsRetry-guarded
+  // one (the loser gets an honest { claimed: false }, and the balance
+  // reflects exactly one credit).
+  var results = await Promise.all([
+    entitlements.claimDailyTokens(ev, email),
+    entitlements.claimDailyTokens(ev, email)
+  ]);
+
+  var claimedCount = results.filter(function (r) { return r.claimed; }).length;
+  assert.equal(claimedCount, 1, 'exactly one of the two concurrent claims should report claimed:true');
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 20, 'a genuinely concurrent double-claim attempt must still only credit tokens once');
+  assert.equal(record.tokens.streak, 1);
+});
+
+test('three CONCURRENT claimDailyTokens calls for the SAME email still land exactly one credit', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'claimracer3@example.com';
+  await entitlements.setEntitlement(ev, email, { tokens: { balance: 0 } });
+
+  var results = await Promise.all([
+    entitlements.claimDailyTokens(ev, email),
+    entitlements.claimDailyTokens(ev, email),
+    entitlements.claimDailyTokens(ev, email)
+  ]);
+
+  var claimedCount = results.filter(function (r) { return r.claimed; }).length;
+  assert.equal(claimedCount, 1, 'exactly one of the three concurrent claims should report claimed:true');
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 20);
+});

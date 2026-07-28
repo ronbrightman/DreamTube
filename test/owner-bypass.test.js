@@ -352,7 +352,7 @@ test('generate-video: WITHOUT a bypass token, the normal per-IP rate limit still
     var realFetch = global.fetch;
     stubFalOk();
     var ip = nextGenVideoIp();
-    await entitlements.setEntitlement({}, 'novibypass@example.com', { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, 'novibypass@example.com', { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: 'novibypass@example.com' };
     var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
     var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
@@ -373,7 +373,7 @@ test('generate-video: a VERIFIED owner bypass token skips the per-IP rate limit 
     var realFetch = global.fetch;
     stubFalOk();
     var ip = nextGenVideoIp();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: OWNER_EMAIL, ownerBypassToken: token };
     // Same IP, same email, 3 requests in a row -- would 429 on the 2nd
     // without the bypass (cap is 1/day), all 3 must succeed with it.
@@ -395,7 +395,7 @@ test('generate-video: an INVALID/expired/unknown bypass token is silently ignore
     var realFetch = global.fetch;
     stubFalOk();
     var ip = nextGenVideoIp();
-    await entitlements.setEntitlement({}, 'fakebypasser@example.com', { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, 'fakebypasser@example.com', { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: 'fakebypasser@example.com', ownerBypassToken: 'a-completely-made-up-token-nobody-issued' };
     var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
     var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
@@ -429,7 +429,7 @@ test('generate-video: THE CRITICAL BINDING PROPERTY -- a valid, live bypass toke
     stubFalOk();
     var ip = nextGenVideoIp();
     var attackerEmail = 'attacker-controlled@example.com';
-    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: attackerEmail, ownerBypassToken: realOwnerToken };
     // Cap is 1/day on this IP -- the 2nd request must 429 exactly like it
     // would with no token attached at all, proving the live-but-mismatched
@@ -453,7 +453,7 @@ test('generate-video: THE MOST IMPORTANT PROPERTY -- DAILY_SPEND_CAP_USD (E110) 
     var token = await issueOwnerToken();
     var realFetch = global.fetch;
     stubFalOk();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     // Pre-fill today's spend-guard counter right up to the cap, exactly
     // like test/generate-video-tokens.test.js's own E110 test does.
     var todayUtc = new Date().toISOString().slice(0, 10);
@@ -477,7 +477,7 @@ test('generate-video: THE SECOND MOST IMPORTANT PROPERTY -- E112 (insufficient t
     var token = await issueOwnerToken();
     var realFetch = global.fetch;
     stubFalOk();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 0, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 0, lastClaimAt: Date.now() } });
     var res = await handler(fakeEvent({
       method: 'POST', ip: nextGenVideoIp(),
       body: { caption: 'a dream', style: 'Cartoon', email: OWNER_EMAIL, ownerBypassToken: token }
@@ -531,7 +531,7 @@ test('generate-image: a verified owner bypass token skips the per-IP rate limit 
     var realFetch = global.fetch;
     stubFalOk();
     var ip = nextGenVideoIp();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: OWNER_EMAIL, ownerBypassToken: token };
     var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
     var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
@@ -552,7 +552,7 @@ test('generate-image: a valid, live bypass token bound to the OWNER email must N
     stubFalOk();
     var ip = nextGenVideoIp();
     var attackerEmail = 'attacker-controlled-image@example.com';
-    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, attackerEmail, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: attackerEmail, ownerBypassToken: realOwnerToken };
     var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
     var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
@@ -571,7 +571,7 @@ test('generate-image: WITHOUT a bypass, E409 still fires normally', function () 
     var realFetch = global.fetch;
     stubFalOk();
     var ip = nextGenVideoIp();
-    await entitlements.setEntitlement({}, 'imgnobypass@example.com', { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, 'imgnobypass@example.com', { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var body = { caption: 'a dream', style: 'Cartoon', email: 'imgnobypass@example.com' };
     var r1 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
     var r2 = await handler(fakeEvent({ method: 'POST', ip: ip, body: body }));
@@ -591,7 +591,7 @@ test('generate-image: DAILY_SPEND_CAP_USD (E410) is enforced even with a verifie
     var token = await issueOwnerToken();
     var realFetch = global.fetch;
     stubFalOk();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
     var todayUtc = new Date().toISOString().slice(0, 10);
     mockBlobs.seed('dreamtube-spend-guard', 'spend:' + todayUtc, 1);
     var res = await handler(fakeEvent({
@@ -613,7 +613,7 @@ test('generate-image: E412 (insufficient tokens) is enforced even with a verifie
     var token = await issueOwnerToken();
     var realFetch = global.fetch;
     stubFalOk();
-    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 5, lastGrantAt: Date.now() } });
+    await entitlements.setEntitlement({}, OWNER_EMAIL, { tokens: { balance: 5, lastClaimAt: Date.now() } });
     var res = await handler(fakeEvent({
       method: 'POST', ip: nextGenVideoIp(),
       body: { caption: 'a dream', style: 'Cartoon', email: OWNER_EMAIL, ownerBypassToken: token }

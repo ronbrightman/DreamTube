@@ -69,7 +69,7 @@ test.beforeEach(async function () {
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   // mockBlobs.reset() just wiped this too — reseed so DEFAULT_EMAIL always
   // has plenty of tokens for whichever test runs next.
-  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {
@@ -155,7 +155,7 @@ test('mock mode: spend guard (E110) still applies — a pre-tripped daily cap bl
 
 test('mock mode: the token gate (E112) still applies to an email with insufficient balance', async function () {
   process.env.GENERATION_MOCK_MODE = 'true';
-  await entitlements.setEntitlement({}, 'broke@example.com', { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, 'broke@example.com', { tokens: { balance: 0, lastClaimAt: Date.now() } });
   var res = await handler(genEvent({ body: { email: 'broke@example.com' } }));
   assert.equal(res.statusCode, 402);
   assert.match(JSON.parse(res.body).error, /^E112: insufficient_tokens/);

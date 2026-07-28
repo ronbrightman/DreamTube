@@ -59,7 +59,7 @@ function installFetchSpy() {
 }
 
 async function balance(email, amount) {
-  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastGrantAt: Date.now() } });
+  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastClaimAt: Date.now() } });
 }
 
 test.beforeEach(async function () {
@@ -70,7 +70,7 @@ test.beforeEach(async function () {
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   delete process.env.TURNSTILE_SECRET_KEY;
-  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {
@@ -262,7 +262,7 @@ test('mock mode: validation still runs — E404, no fetch at all', async functio
 
 test('mock mode: the E412 token gate still applies to an email with insufficient balance', async function () {
   process.env.GENERATION_MOCK_MODE = 'true';
-  await entitlements.setEntitlement({}, 'broke-mock-image@example.com', { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, 'broke-mock-image@example.com', { tokens: { balance: 0, lastClaimAt: Date.now() } });
   var res = await handler(genEvent({ body: { email: 'broke-mock-image@example.com' } }));
   assert.equal(res.statusCode, 402);
   assert.match(JSON.parse(res.body).error, /^E412: insufficient_tokens/);

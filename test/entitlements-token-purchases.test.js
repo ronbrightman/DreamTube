@@ -57,14 +57,14 @@ test.beforeEach(function () {
  */
 async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, {
-    tokens: { balance: 0, lastGrantAt: Date.now() },
+    tokens: { balance: 0, lastClaimAt: Date.now() },
     firstPackPurchaseAt: Date.now() - 999999999
   });
 }
 
-/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used only by the first-purchase-bonus tests, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. */
+/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used only by the first-purchase-bonus tests, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. No lastClaimAt seeded either -- one caller below (the daily-claim survival test) needs this account genuinely claimable, and the rest don't care about claim timing at all. */
 async function seedZeroBalanceNoPriorPurchase(email) {
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 0 } });
 }
 
 test('credits tokens onto a fresh email and reports credited:true', async function () {
@@ -199,7 +199,7 @@ test('a marker left "pending" where the balance was ALREADY applied (only the fl
   // writes. This is the specific ambiguous case creditTokenPackAmountOnce's
   // idempotency check exists to resolve correctly.
   await entitlements.setEntitlement({}, email, {
-    tokens: { balance: 100, lastGrantAt: Date.now() },
+    tokens: { balance: 100, lastClaimAt: Date.now() },
     appliedTokenPackPaymentIds: [paymentId]
   });
   mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
@@ -222,7 +222,7 @@ test('a marker already "committed" is a genuine redelivery and is never resumed 
   var paymentId = 'pay_committed_1';
   await seedZeroBalance(email);
 
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastClaimAt: Date.now() } });
   mockBlobs.seed(entitlements.TOKEN_PURCHASES_STORE_NAME, paymentId, {
     email: email,
     tokens: 100,
@@ -315,7 +315,7 @@ test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returne
   // the real current state.
   mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
     if (callIndex === 3) {
-      return { value: { email: key, tokens: { balance: 0, lastGrantAt: Date.now() - 100000 } } };
+      return { value: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } } };
     }
     return null; // fall through to the real stored value for every other call
   });

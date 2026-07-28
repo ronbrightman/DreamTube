@@ -458,31 +458,59 @@ async function getTokenStatus(event, email, opts) {
  * `now - lastClaimAt >= CLAIM_COOLDOWN_MS` rolling check getTokenStatus
  * uses (never trusting a client-supplied "I know I'm claimable" signal —
  * a stale getTokenStatus read plus a delayed tap must not be able to
- * double-claim), and — when claimable — credits DAILY_CLAIM_AMOUNT (20)
- * onto the balance, bumps lastClaimAt to `now`, and updates the streak, ALL
- * in one `setEntitlement` call (a single Blobs `setJSON` write — see this
- * file's header comment on why one write, not two, is what "atomic" means
- * here: setEntitlement's patch fully replaces the `tokens` key in one
- * shot, so balance/lastClaimAt/streak can never end up written
- * inconsistently with each other the way two separate writes could).
+ * double-claim).
  *
- * Streak: `gap = now - (lastClaimAt || now)` — for the very first claim
- * ever (no lastClaimAt), this reads as `gap = 0`, which is NOT `< 0`... but
- * IS `< STREAK_CONTINUITY_MS`, which would wrongly continue a "streak" that
- * never existed. To avoid that, the streak calculation explicitly checks
- * `tokens.lastClaimAt` truthiness first — a genuinely-never-claimed
- * account always starts its streak at 1, regardless of what the gap math
- * alone would say. Otherwise: `gap < STREAK_CONTINUITY_MS` (48h) ->
- * `previousStreak + 1`, else resets to `1` — see tokens.streak's own doc
- * comment (top of file) for why 48h, not 20h/24h.
+ * ----------------------------------------------------------------------
+ * CONCURRENCY (review finding, round 1): a bare read -> setEntitlement
+ * write is NOT safe against two genuinely concurrent claim attempts for
+ * the same email (two open tabs, a retried client request) — this file's
+ * own header comment and creditTokenPackOnce/refundTokensOnce already
+ * document, with a proven-in-this-file's-own-test-suite incident, why a
+ * naive single write is unsafe under this codebase's eventually-
+ * consistent Blobs reads. Fixed the same documented way every other
+ * balance-mutating path in this file already does: blobsRetry.retryingWrite
+ * re-checks the SAME cooldown condition fresh on every attempt (inside
+ * `mutate`, off that attempt's own read), SKIPping if some other request
+ * already claimed this window between our outer syncTokens call and this
+ * attempt's read — so two racing claims can land at most ONE credit
+ * between them, never two, and the loser gets an honest `claimed:false`
+ * (not a fabricated success) with `nextClaimAt` derived from whichever
+ * record actually won. `verify` deliberately checks a fresh random
+ * `attemptId` (see that var's own doc comment below), NOT `lastClaimAt
+ * === now` — two genuinely concurrent calls can capture the IDENTICAL
+ * `now` millisecond, which would make both writes look indistinguishable
+ * to a timestamp-based verify and let both report `claimed:true` (caught
+ * by this file's own round-1-of-round-1 concurrency test before this was
+ * corrected).
+ *
+ * Streak: `gap = now - lastClaimAt` inside `mutate`, using THAT attempt's
+ * own fresh `lastClaimAt` (never the outer syncTokens call's, which could
+ * be stale by the time this attempt's write actually lands) — the
+ * `tokens.lastClaimAt` truthiness check still guards the first-claim-ever
+ * case the same way (a missing lastClaimAt must start streak at 1, never
+ * "continue" a streak that never existed, regardless of what the gap math
+ * alone would say). `gap < STREAK_CONTINUITY_MS` (48h) -> `previousStreak
+ * + 1`, else resets to `1` — see tokens.streak's own doc comment (top of
+ * file) for why 48h, not 20h/24h.
+ *
+ * Exhaustion (every attempt's verify failed): same fail-loud posture as
+ * creditTokenPackAmountOnce — one more plain, unhurried read to catch the
+ * common "our write actually landed, only the verify-read lagged" case
+ * before ever reporting success; if that still doesn't show OUR `now`
+ * stamped as lastClaimAt, throws rather than silently returning a
+ * not-claimed result that could actually mask a real (if rare) failure —
+ * claim-daily-tokens.js's handler turns this into a 500 the client's
+ * existing "Couldn't claim right now" retry copy already covers.
  *
  * Returns EXACTLY the two documented response shapes (see this file's own
  * doc block and claim-daily-tokens.js):
  *   { claimed: true,  balance, streak, nextClaimAt } — a genuine claim,
- *     just written.
- *   { claimed: false, nextClaimAt }                  — not yet claimable;
- *     NOT an error, a normal, expected outcome (see claim-daily-tokens.js's
- *     own doc comment on why this is a 200, not a 4xx).
+ *     just written and confirmed.
+ *   { claimed: false, nextClaimAt }                  — not yet claimable
+ *     (including "someone else's concurrent claim already landed" — the
+ *     SKIP case above); NOT an error, a normal, expected outcome (see
+ *     claim-daily-tokens.js's own doc comment on why this is a 200, not a
+ *     4xx).
  *
  * A missing/empty email resolves to `{ claimed: false, nextClaimAt: 0 }` —
  * mirrors syncTokens' own "an unidentifiable caller never creates a
@@ -492,30 +520,83 @@ async function claimDailyTokens(event, email) {
   var key = normalizeEmail(email);
   if (!key) return { claimed: false, nextClaimAt: 0 };
 
-  var tokens = await syncTokens(event, key);
+  // Ensures the lazy first-read INITIAL_GRANT (syncTokens) has already
+  // landed before this record is touched via blobsRetry directly below —
+  // same sequencing creditTokenPackAmountOnce follows, for the same
+  // reason (a brand-new email's first-ever grant must exist before any
+  // later credit path reads/mutates the record).
+  await syncTokens(event, key);
+
   var now = Date.now();
-  var lastClaimAt = tokens.lastClaimAt || 0;
-  var nextClaimAt = lastClaimAt + CLAIM_COOLDOWN_MS;
+  var newBalance, newStreak;
 
-  if (now - lastClaimAt < CLAIM_COOLDOWN_MS) {
-    return { claimed: false, nextClaimAt: nextClaimAt };
-  }
+  // `attemptId`: a fresh random token per call, NOT derived from `now` —
+  // two genuinely concurrent claims for the same email (two open tabs, a
+  // retried client request) can easily capture the IDENTICAL `Date.now()`
+  // millisecond (near-certain when triggered synchronously, e.g. by this
+  // file's own concurrency tests, and entirely plausible under real
+  // production load too). `verify` originally compared
+  // `verifyRead.tokens.lastClaimAt === now` — but if both racers land on
+  // the same `now`, BOTH writes look identical and BOTH verifies pass,
+  // so both calls report `claimed:true` even though only one is the
+  // record's actual final state (the classic "verify returns true for
+  // both callers" hazard this file's own header comment already warns
+  // about for a naive design). Stamping a random `attemptId` — astronomically
+  // unlikely to collide between two genuinely different calls even in the
+  // same millisecond — and checking THAT for equality instead gives each
+  // attempt a way to tell whether the persisted record actually reflects
+  // its own write or a concurrent racer's, regardless of timestamp
+  // collisions. Lives at the TOP LEVEL of the record (a sibling of
+  // firstPackPurchaseAt/appliedTokenPackPaymentIds), not inside `tokens`,
+  // so `tokens` itself stays exactly `{balance, lastClaimAt, streak}` —
+  // no cleanup write needed, a stale value here is inert (only ever
+  // compared against a fresh `attemptId` a later call mints for itself).
+  var attemptId = crypto.randomBytes(12).toString('hex');
 
-  var gap = now - lastClaimAt;
-  var previousStreak = tokens.streak || 0;
-  var newStreak = (tokens.lastClaimAt && gap < STREAK_CONTINUITY_MS) ? previousStreak + 1 : 1;
-  var newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + DAILY_CLAIM_AMOUNT);
-
-  await setEntitlement(event, key, {
-    tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak }
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return store().get(key, { type: 'json' });
+    },
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var tokens = rec.tokens || { balance: 0 };
+      var lastClaimAt = tokens.lastClaimAt || 0;
+      // Fresh, per-attempt re-check — a concurrent claim from another
+      // request/tab may have already landed between our outer syncTokens
+      // read above and this attempt's read.
+      if (now - lastClaimAt < CLAIM_COOLDOWN_MS) return blobsRetry.SKIP;
+      var gap = now - lastClaimAt;
+      var previousStreak = tokens.streak || 0;
+      newStreak = (tokens.lastClaimAt && gap < STREAK_CONTINUITY_MS) ? previousStreak + 1 : 1;
+      newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + DAILY_CLAIM_AMOUNT);
+      return Object.assign({}, rec, {
+        email: key,
+        tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak },
+        lastClaimAttemptId: attemptId,
+        updatedAt: now
+      });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.lastClaimAttemptId === attemptId);
+    }
   });
 
-  return {
-    claimed: true,
-    balance: newBalance,
-    streak: newStreak,
-    nextClaimAt: now + CLAIM_COOLDOWN_MS
-  };
+  if (result.skipped) {
+    var currentLastClaimAt = (result.current && result.current.tokens && result.current.tokens.lastClaimAt) || 0;
+    return { claimed: false, nextClaimAt: currentLastClaimAt + CLAIM_COOLDOWN_MS };
+  }
+
+  if (result.ok) {
+    return { claimed: true, balance: newBalance, streak: newStreak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+  }
+
+  var finalRead = await getEntitlement(event, key);
+  if (finalRead && finalRead.lastClaimAttemptId === attemptId) {
+    return { claimed: true, balance: finalRead.tokens.balance, streak: finalRead.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+  }
+  throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' without ever confirming the claim landed');
 }
 
 /**

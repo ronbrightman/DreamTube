@@ -51,7 +51,7 @@ function genEvent(overrides) {
 }
 
 async function balance(email, amount) {
-  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastGrantAt: Date.now() } });
+  return entitlements.setEntitlement({}, email, { tokens: { balance: amount, lastClaimAt: Date.now() } });
 }
 
 test.beforeEach(async function () {

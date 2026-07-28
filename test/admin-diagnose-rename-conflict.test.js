@@ -148,7 +148,7 @@ test('POST reports both accounts accurately (distinct emails/data) and makes zer
       { id: 'dream-3', ownerHandle: '@' + TARGET, caption: 'c', style: 'z', likes: 0, publishedAt: 3 },
       { id: 'dream-4', ownerHandle: '@someone-else', caption: 'd', style: 'w', likes: 0, publishedAt: 4 }
     ]);
-    seedTokens(OWNER_EMAIL, { balance: 150, lastGrantAt: Date.now() });
+    seedTokens(OWNER_EMAIL, { balance: 150, lastClaimAt: Date.now() });
 
     var spy = spyOnBlobWrites();
     try {
@@ -215,8 +215,8 @@ test('POST reports different emails when u:ronbrightman genuinely belongs to som
     await seedAccount(event, { username: SOURCE, email: OWNER_EMAIL, password: 'realfounderpw1' });
     var accountStore = require('../netlify/functions/lib/account-store');
     await accountStore.createAccount(event, { username: TARGET, email: 'unrelated-real-user@example.com', password: 'someoneelsepw' });
-    seedTokens(OWNER_EMAIL, { balance: 40, lastGrantAt: Date.now() });
-    seedTokens('unrelated-real-user@example.com', { balance: 999, lastGrantAt: Date.now() });
+    seedTokens(OWNER_EMAIL, { balance: 40, lastClaimAt: Date.now() });
+    seedTokens('unrelated-real-user@example.com', { balance: 999, lastClaimAt: Date.now() });
 
     var spy = spyOnBlobWrites();
     try {

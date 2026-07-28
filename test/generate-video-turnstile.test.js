@@ -76,7 +76,7 @@ test.beforeEach(async function () {
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   delete process.env.GENERATION_MOCK_MODE;
-  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {
@@ -168,7 +168,7 @@ test('secret key configured + a token Cloudflare accepts -> generation proceeds 
 test('secret key configured + a valid token: tokens are still spent normally (E113 sits alongside E112, not instead of it)', async function () {
   process.env.TURNSTILE_SECRET_KEY = 'test-secret-key';
   installRoutedFetch({ success: true });
-  await entitlements.setEntitlement({}, 'turnstilespend@example.com', { tokens: { balance: 300, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, 'turnstilespend@example.com', { tokens: { balance: 300, lastClaimAt: Date.now() } });
   var res = await handler(genEvent({ body: { email: 'turnstilespend@example.com', turnstileToken: 'good-token' } }));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'turnstilespend@example.com');

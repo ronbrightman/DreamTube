@@ -600,9 +600,26 @@
    * `claimed:true`. On success: count-up animation + brief confetti (both
    * pure ritual, no further server round-trip), then auto-closes the sheet
    * shortly after so the ritual has time to land before it disappears.
+   *
+   * Review finding (round 1): this used to keep dereferencing the shared
+   * module-level `currentClaim` INSIDE the .then()/.catch() callbacks —
+   * exactly the stale-async-callback bug shape this codebase has hit and
+   * fixed before (the identitySheetToken/charSheetToken instance-guard
+   * pattern on the photo-upload sheets). If the user tapped outside the
+   * sheet (hideClaimSheet(false), which nulls currentClaim) while this
+   * request was still in flight, the callback would dereference `null`
+   * and throw — silently dropping a genuinely successful server-side
+   * claim's onClaimed callback (so the caller's balance chip never
+   * refreshes) and its daily_claim_completed analytics fire, even though
+   * the tokens really were credited. Fixed by capturing the triggering
+   * opts in a LOCAL `claimOpts` at the top, before the async gap — the
+   * callbacks below close over this local, never the shared var, so a
+   * concurrent dismiss can no longer corrupt an in-flight claim's own
+   * outcome handling.
    */
   function runClaim() {
     if (!currentClaim) return;
+    var claimOpts = currentClaim;
     var btn = document.getElementById('claim-sheet-btn');
     var label = document.getElementById('claim-sheet-btn-label');
     var errEl = document.getElementById('claim-sheet-error');
@@ -620,20 +637,20 @@
         errEl.style.display = 'block';
         return;
       }
-      var amount = (currentClaim.tokenStatus && currentClaim.tokenStatus.dailyClaimAmount) || 20;
+      var amount = (claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20;
       animateCountUp(amount, 650);
       fireConfetti();
       document.getElementById('claim-sheet-streak').textContent = 'Day ' + data.streak;
       label.textContent = 'Claimed!';
-      trackLocal('daily_claim_completed', { source: currentClaim.source || null, streak: data.streak, balance: data.balance, surface: 'claim_sheet' });
-      var onClaimed = currentClaim.onClaimed;
+      trackLocal('daily_claim_completed', { source: claimOpts.source || null, streak: data.streak, balance: data.balance, surface: 'claim_sheet' });
+      var onClaimed = claimOpts.onClaimed;
       setTimeout(function () {
         hideClaimSheet(true);
         if (typeof onClaimed === 'function') onClaimed(data);
       }, 1100);
     }).catch(function () {
       btn.disabled = false;
-      label.textContent = 'Claim ' + ((currentClaim.tokenStatus && currentClaim.tokenStatus.dailyClaimAmount) || 20) + ' tokens';
+      label.textContent = 'Claim ' + ((claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20) + ' tokens';
       errEl.textContent = 'Couldn’t claim right now — try again in a moment';
       errEl.style.display = 'block';
     });

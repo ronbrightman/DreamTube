@@ -72,7 +72,7 @@ function stubFalAndPosthog(statusBody, resultBody, resultOk) {
 }
 
 async function seedZeroBalance(email) {
-  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastGrantAt: Date.now() } });
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastClaimAt: Date.now() } });
 }
 
 /**

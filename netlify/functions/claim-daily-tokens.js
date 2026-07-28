@@ -25,6 +25,12 @@
 //        the error codes below.
 //   429 { error: 'E4: rate_limited: ...' } — see the rate-limiting doc
 //        block below.
+//   500 { error: 'E5: claim_write_failed' } — claimDailyTokens genuinely
+//        exhausted its blobsRetry attempts without ever confirming the
+//        write landed (see that function's own doc comment) — a real,
+//        if rare, transient failure, not a normal "not yet claimable"
+//        outcome. The client's existing "Couldn't claim right now — try
+//        again in a moment" copy already covers this.
 //
 // Error codes (local to this function, same small-number-scheme reasoning
 // as get-token-status.js/register-account.js — a standalone function, not
@@ -38,6 +44,7 @@
 //                            already take
 //   E4 rate_limited       — MAX_CLAIMS_PER_IP_PER_DAY (or the per-email
 //                            twin) exceeded for today
+//   E5 claim_write_failed — see the 500 response above
 //
 // Rate limiting: its OWN bucket ("claim-ip"/"claim-email"), scoped
 // separately from generate-video.js's/generate-image.js's "ip"/"email"
@@ -87,6 +94,14 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E4: rate_limited: too many claim attempts on this account today, try again tomorrow' }) };
   }
 
-  var result = await entitlements.claimDailyTokens(event, email);
+  var result;
+  try {
+    result = await entitlements.claimDailyTokens(event, email);
+  } catch (e) {
+    // claimDailyTokens only ever throws on genuine blobsRetry exhaustion
+    // (see its own doc comment) — everything else it handles itself and
+    // returns normally (including "not yet claimable", a 200, not this).
+    return { statusCode: 500, body: JSON.stringify({ error: 'E5: claim_write_failed' + (e && e.message ? ': ' + e.message : '') }) };
+  }
   return { statusCode: 200, body: JSON.stringify(result) };
 };
