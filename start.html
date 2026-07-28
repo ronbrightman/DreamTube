@@ -1612,8 +1612,13 @@
         // .value wireScreen13Fields()/attemptSignup() below read from --
         // plus a "Change email" affordance back to the email step. This
         // is an in-screen state change, NOT a fresh screen-13 navigation
-        // (goToStep/render), so it never touches signupAttemptToken or
-        // backBtn -- nothing has been submitted yet at this point.
+        // (goToStep/render) -- but unlike the topbar Back button, this
+        // link is never disabled while an attempt is in flight (tracker
+        // item start-html-variant-b-s-change-email-link-1kc3vs), so its
+        // click handler below still bumps signupAttemptToken (and resets
+        // backBtn, which lives outside `el` and would otherwise survive
+        // this DOM swap still disabled) exactly like the topbar Back
+        // handler does further down this file.
         '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
         '<button type="button" class="fn-small-link" id="fn-s13-change-email" style="margin:-6px 0 12px;">Change email</button>' +
         '<div class="fn-field-pw-wrap">' +
@@ -1627,7 +1632,31 @@
         '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
         '<div class="fn-spacer"></div>';
 
-      document.getElementById('fn-s13-change-email').addEventListener('click', function(){ renderEmailStep(email); });
+      document.getElementById('fn-s13-change-email').addEventListener('click', function(){
+        // Invalidates any in-flight Signup attempt the moment the user
+        // navigates back to re-enter their email -- same reasoning, and
+        // same signupAttemptToken bump, as the topbar Back handler's own
+        // click handler further down this file. This link is a SEPARATE
+        // escape hatch from the topbar Back button -- it is never
+        // disabled by wireScreen13Fields' continueBtn handler (only
+        // continueBtn/backBtn are, see that handler's own comment), so
+        // without this it stayed clickable for the full duration of an
+        // in-flight checkEmailAvailable/attemptSignup call. Repro
+        // (tracker item start-html-variant-b-s-change-email-link-1kc3vs):
+        // reach this step, click Continue, immediately click Change
+        // email before it resolves -- the screen swapped back to email
+        // entry, but the abandoned attempt's mySignupToken===
+        // signupAttemptToken check still passed once it settled late,
+        // silently creating the account and force-navigating to screen
+        // 14 with the OLD email/password the user was mid-change on.
+        // Also resets backBtn -- it lives outside `el` (the topbar, not
+        // this screen's own DOM) and so survives this in-screen swap
+        // untouched; if the abandoned attempt had already disabled it,
+        // it would otherwise stay stuck disabled on the email step.
+        signupAttemptToken++;
+        backBtn.disabled = false;
+        renderEmailStep(email);
+      });
       wireScreen13Fields();
       document.getElementById('fn-password').focus();
     }
