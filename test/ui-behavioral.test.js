@@ -412,8 +412,16 @@ test('result.html: Save is gone entirely (founder feedback 2026-07-28 -- redunda
 
     var deleteBtn = page.locator('#delete-btn');
     assert.ok(await deleteBtn.isVisible(), '#delete-btn should be visible as an ordinary quiet link');
-    assert.ok(await page.locator('.result-quiet-links #delete-btn').count() > 0, '#delete-btn must live inside .result-quiet-links, same row as Edit/Publish/Make another');
-    assert.ok(await deleteBtn.evaluate(function (el) { return el.classList.contains('result-quiet-link-danger'); }), '#delete-btn should carry the danger-tint modifier class on its icon, not full red/emphasized styling');
+    assert.ok(await page.locator('.result-quiet-links #delete-btn').count() > 0, '#delete-btn must live inside .result-quiet-links, same row as Edit/Publish');
+    // 5th iteration (founder 2026-07-28, tracker.html's
+    // for-product-result-quiet-row-v5-founder--4dnf5u): the old 4th-iteration
+    // .result-quiet-link-danger modifier tinted the icon fully red in
+    // practice, so it's gone entirely now -- Delete must carry NO modifier
+    // class and its color must match its neighbors exactly.
+    assert.ok(!(await deleteBtn.evaluate(function (el) { return el.classList.contains('result-quiet-link-danger'); })), '#delete-btn must NOT carry the old danger-tint modifier class -- it rendered fully red in practice and was removed');
+    var deleteColor = await deleteBtn.evaluate(function (el) { return getComputedStyle(el).color; });
+    var editColor = await page.locator('#open-edit-sheet').evaluate(function (el) { return getComputedStyle(el).color; });
+    assert.equal(deleteColor, editColor, "Delete's own text color must match Edit's exactly -- no residual color");
   } finally {
     await context.close();
   }
@@ -467,7 +475,7 @@ test('result.html redesign: topbar keeps only back + share (plus title/mute/toke
   }
 });
 
-test('result.html redesign: the compact CTA pair (Explore dreams / My profile) in the panel has working links, sits above the quiet small-link row, and is visually small (a real shrink from the old full-size buttons)', async function (t) {
+test('result.html redesign: the compact CTA trio (Make another / Explore dreams / My profile) in the panel has working links, sits above the quiet small-link row, and is visually small (a real shrink from the old full-size buttons)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -486,25 +494,80 @@ test('result.html redesign: the compact CTA pair (Explore dreams / My profile) i
     // area to be shrunk -- a real regression check, not just presence.
     // The app's normal full-size .btn is ~15px vertical padding / ~14.5px
     // font (see css/styles.css's .btn rule); these must read meaningfully
-    // smaller than that.
+    // smaller than that. 5th iteration (tracker.html's
+    // for-product-result-quiet-row-v5-founder--4dnf5u) added a 3rd pill to
+    // this row (Make another), so two of the three labels now wrap to 2
+    // lines at this width -- a real, acceptable side effect of 3 pills
+    // sharing the row (verified clean via screenshot), not a regression of
+    // the "compact" intent: the font stays small and each pill is still
+    // only ~1/3 of the row's width, nothing close to a full-width button.
     var ctaBox = await page.$eval('#result-cta-explore', function (el) {
       var cs = getComputedStyle(el);
       var r = el.getBoundingClientRect();
       return { height: r.height, fontSize: parseFloat(cs.fontSize) };
     });
-    assert.ok(ctaBox.height < 40, 'the compact CTA pair should be visibly smaller than the app\'s normal full-size buttons (got height ' + ctaBox.height + 'px)');
-    assert.ok(ctaBox.fontSize <= 13, 'the compact CTA pair\'s label should use a small font (got ' + ctaBox.fontSize + 'px)');
+    assert.ok(ctaBox.height < 56, 'the compact CTA trio should stay well short of a real full-size button/row height (got height ' + ctaBox.height + 'px)');
+    assert.ok(ctaBox.fontSize <= 13, 'the compact CTA trio\'s label should use a small font (got ' + ctaBox.fontSize + 'px)');
 
-    // The CTA pair must sit above the quiet small-link row (Edit/Publish/
-    // Make another/...), matching the approved mock's vertical order.
+    // Exactly 3 pills now, and none of them spans the full row width --
+    // the compact/small intent, restated for 3 items instead of 2.
+    var ctaWidths = await page.$$eval('.result-cta-row .result-cta', function (els) { return els.map(function (el) { return el.getBoundingClientRect().width; }); });
+    assert.equal(ctaWidths.length, 3, 'expected exactly 3 pills in the CTA row (Make another / Explore dreams / My profile)');
+    var rowWidth = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().width; });
+    ctaWidths.forEach(function (w) { assert.ok(w < rowWidth * 0.6, 'no single CTA pill should dominate the row (got ' + w + 'px of a ' + rowWidth + 'px row)'); });
+
+    // The CTA trio must sit above the quiet small-link row (Edit/Publish/
+    // Delete), matching the approved mock's vertical order.
     var ctaRowBottom = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().bottom; });
     var quietLinksTop = await page.$eval('.result-quiet-links', function (el) { return el.getBoundingClientRect().top; });
-    assert.ok(ctaRowBottom <= quietLinksTop + 1, 'the CTA pair should sit above (or flush with) the quiet small-link row, not below it');
+    assert.ok(ctaRowBottom <= quietLinksTop + 1, 'the CTA trio should sit above (or flush with) the quiet small-link row, not below it');
 
     // Clicking through actually navigates.
     await page.click('#result-cta-explore');
     await page.waitForURL(/explore\.html/, { timeout: 5000 });
     assert.match(page.url(), /explore\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html 5th iteration (founder, tracker.html\'s for-product-result-quiet-row-v5-founder--4dnf5u): "Make another" is promoted into the CTA row as the one primary (white-fill) pill, visually distinguished from the now-secondary Explore dreams / My profile pills', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-make-another-elevated-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('.result-cta-row', { timeout: 5000 });
+
+    // "Make another" now lives in the CTA row (not the quiet-link row
+    // below), carries the app's one "primary" white-fill class, and is
+    // visually distinct (a real CSS/class difference, not just presence)
+    // from its now-secondary neighbors.
+    assert.equal(await page.locator('.result-cta-row #make-another-btn').count(), 1, '#make-another-btn should live inside .result-cta-row now');
+    assert.equal(await page.locator('.result-quiet-links #make-another-btn').count(), 0, '#make-another-btn should no longer be inside .result-quiet-links');
+    var makeAnotherClasses = await page.locator('#make-another-btn').evaluate(function (el) { return el.className; });
+    assert.match(makeAnotherClasses, /\bbtn-primary\b/, '#make-another-btn should carry the btn-primary (white-fill) class');
+    assert.ok(!/\bresult-cta-secondary\b/.test(makeAnotherClasses), '#make-another-btn should NOT carry the secondary/translucent class');
+
+    var exploreClasses = await page.locator('#result-cta-explore').evaluate(function (el) { return el.className; });
+    var profileClasses = await page.locator('#result-cta-profile').evaluate(function (el) { return el.className; });
+    assert.match(exploreClasses, /\bresult-cta-secondary\b/, '#result-cta-explore should now carry the secondary/translucent class (Make another took the one primary slot)');
+    assert.match(profileClasses, /\bresult-cta-secondary\b/, '#result-cta-profile should still carry the secondary/translucent class');
+    assert.ok(!/\bbtn-primary\b/.test(exploreClasses), '#result-cta-explore should NOT carry btn-primary anymore');
+
+    // Real rendered-color difference, not just class names -- primary is
+    // white-fill (#fff background), secondary is the dark translucent fill.
+    var makeAnotherBg = await page.locator('#make-another-btn').evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
+    var exploreBg = await page.locator('#result-cta-explore').evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
+    assert.equal(makeAnotherBg, 'rgb(255, 255, 255)', '#make-another-btn should render with a solid white background');
+    assert.notEqual(makeAnotherBg, exploreBg, "Make another's background must render visibly different from Explore dreams' now-secondary background");
+
+    // Still fully functional: clicking clears the draft and navigates.
+    await page.click('#make-another-btn');
+    await page.waitForURL(/create\.html/, { timeout: 5000 });
+    assert.match(page.url(), /create\.html/);
   } finally {
     await context.close();
   }
@@ -622,7 +685,7 @@ test('result.html redesign: the bottom panel is a translucent gradient, not a so
   }
 });
 
-test('result.html FINAL placement (4th iteration): Edit / Publish / Make another / Delete are the exactly-4 quiet links, Save is gone, Delete is a genuinely ordinary link (not the overflow menu, not red/emphasized) and still runs the exact same confirm-then-delete flow', async function (t) {
+test('result.html 5th iteration (founder, tracker.html\'s for-product-result-quiet-row-v5-founder--4dnf5u): Edit / Publish / Delete are the exactly-3 quiet links (Make another promoted out to the CTA row), Save is gone, Delete carries NO color of its own anywhere in the row (not even the 4th iteration\'s icon-only danger tint, which rendered fully red in practice) and still runs the exact same confirm-then-delete flow', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -632,17 +695,16 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Exactly these four must be present in the quiet-link row and visible,
-    // per the FINAL placement (tracker.html's
-    // for-product-result-screen-quiet-row-fina-btv7nr) -- Save is gone,
-    // Delete has taken its slot.
-    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'delete-btn'];
+    // Exactly these three must be present in the quiet-link row and
+    // visible -- Make another moved out to the CTA row above (see its own
+    // dedicated test), Save is gone, Delete stays here.
+    var ids = ['open-edit-sheet', 'publish-btn', 'delete-btn'];
     for (var i = 0; i < ids.length; i++) {
       var visible = await page.locator('.result-quiet-links #' + ids[i]).isVisible();
       assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
     }
     var quietLinkCount = await page.locator('.result-quiet-links button').count();
-    assert.equal(quietLinkCount, 4, 'the quiet-link row should have exactly 4 buttons, no more, no 5th overflow-trigger sibling');
+    assert.equal(quietLinkCount, 3, 'the quiet-link row should have exactly 3 buttons now (Edit/Publish/Delete) -- Make another moved to the CTA row');
 
     // The overflow trigger + menu from the 3rd iteration must be fully
     // gone, not just hidden -- founder feedback that an unlabeled kebab
@@ -652,13 +714,20 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     assert.equal(await page.locator('#overflow-delete-link').count(), 0, '#overflow-delete-link must not exist anywhere on the page');
     assert.equal(await page.locator('#edit-delete-link').count(), 0, '#edit-delete-link (the 2nd-iteration Edit-sheet placement) must not exist anywhere on the page');
 
-    // Delete reads as an ORDINARY quiet link, not emphasized/red overall --
-    // only its icon carries a danger tint, per the founder's explicit "not
-    // red, not emphasized" instruction (the whole point of this 4th fix).
+    // Delete reads as a genuinely ORDINARY quiet link -- no color of its
+    // own at all now, not even the 4th iteration's icon-only --danger tint
+    // (that tint rendered as a fully red icon in practice, the founder's
+    // whole complaint driving this 5th iteration). Check both the link's
+    // own text color AND its icon's rendered color/fill against Edit's.
+    assert.ok(!(await page.locator('#delete-btn').evaluate(function (el) { return el.classList.contains('result-quiet-link-danger'); })), '#delete-btn must not carry the old .result-quiet-link-danger modifier class at all');
     var deleteBtn = page.locator('#delete-btn');
     var deleteBtnColor = await deleteBtn.evaluate(function (el) { return getComputedStyle(el).color; });
     var editBtnColor = await page.locator('#open-edit-sheet').evaluate(function (el) { return getComputedStyle(el).color; });
     assert.equal(deleteBtnColor, editBtnColor, 'the Delete link\'s own text color must match the other quiet links exactly -- no full-red/emphasized styling');
+    var deleteIconColor = await page.locator('#delete-btn .icon').evaluate(function (el) { return getComputedStyle(el).color; });
+    var editIconColor = await page.locator('#open-edit-sheet .icon').evaluate(function (el) { return getComputedStyle(el).color; });
+    assert.equal(deleteIconColor, editIconColor, "Delete's icon color must match Edit's icon color exactly -- no residual red/danger tint on the icon");
+    assert.doesNotMatch(deleteIconColor, /255,\s*48,\s*64/, "Delete's icon must not render in the app's --danger red (#FF3040) at all");
 
     // Edit still opens the edit sheet.
     await page.click('#open-edit-sheet');
@@ -686,6 +755,11 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     assert.match(await page.textContent('#delete-modal-body'), /can't be undone/);
 
+    // The confirm dialog's own destructive button is UNCHANGED -- red is
+    // still allowed (in fact expected) there, just never in the row itself.
+    var confirmBg = await page.locator('#delete-confirm').evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
+    assert.equal(confirmBg, 'rgb(255, 48, 64)', "the confirm dialog's own #delete-confirm button should still render with the app's --danger red background, unchanged");
+
     // Cancel backs out without deleting anything.
     await page.click('#delete-cancel');
     await page.waitForFunction(function () {
@@ -709,23 +783,6 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
       return state.dreams.some(function (d) { return d.id === id; });
     }, dreamId);
     assert.equal(stillThereAfterDelete, false, 'confirming delete should actually remove the dream from the store');
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html: Make another still clears the draft and navigates to create.html (unchanged behavior, still present as the 3rd of the 4 quiet links)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPage(page, baseUrl, 'd-make-another-test');
-    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
-
-    await page.click('#make-another-btn');
-    await page.waitForURL(/create\.html/, { timeout: 5000 });
-    assert.match(page.url(), /create\.html/);
   } finally {
     await context.close();
   }
@@ -860,12 +917,14 @@ test('result.html topbar title stays on one line and does not overlap the back b
   }
 });
 
-test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/Delete) fit on a single row at 375px and 320px, including for an image-type dream where the Turn-into-video CTA is also present', async function (t) {
+test('result.html 5th iteration (tracker.html\'s for-product-result-quiet-row-v5-founder--4dnf5u): the 3-pill CTA row (Make another/Explore dreams/My profile) AND the 3-link quiet row (Edit/Publish/Delete) both still fit at 375px and 320px, including for an image-type dream where the Turn-into-video CTA is also present', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  // Founder spec for this iteration explicitly calls out testing at a
-  // mobile-width viewport that 4 links fit one row, including image-type
-  // dreams (Turn-into-video present) -- tracker.html's
-  // for-product-result-screen-quiet-row-fina-btv7nr.
+  // Founder spec for this iteration explicitly calls out re-verifying, at a
+  // mobile-width viewport, that everything still fits now that Make another
+  // moved from the quiet row into a 3rd CTA pill -- a real regression risk
+  // per tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u
+  // (carried over from the 4th iteration's own equivalent check,
+  // for-product-result-screen-quiet-row-fina-btv7nr).
   for (var i = 0; i < 2; i++) {
     var width = i === 0 ? 375 : 320;
     for (var j = 0; j < 2; j++) {
@@ -905,21 +964,54 @@ test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/
             return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
           });
         });
-        assert.equal(boxes.length, 4, 'expected exactly the 4 quiet links at ' + width + 'px (image dream: ' + isImageDream + ')');
+        assert.equal(boxes.length, 3, 'expected exactly the 3 quiet links (Edit/Publish/Delete) at ' + width + 'px (image dream: ' + isImageDream + ')');
         boxes.forEach(function (b) {
           assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
         });
-        // All 4 on one row: every box shares (roughly) the same vertical
+        // All 3 on one row: every box shares (roughly) the same vertical
         // center -- a wrapped 2nd row would show a materially different top.
         var tops = boxes.map(function (b) { return b.top; });
         var maxTopDelta = Math.max.apply(null, tops) - Math.min.apply(null, tops);
-        assert.ok(maxTopDelta < 4, 'all 4 quiet links should sit on a single row at ' + width + 'px (image dream: ' + isImageDream + '), got a ' + maxTopDelta + 'px top spread');
+        assert.ok(maxTopDelta < 4, 'all 3 quiet links should sit on a single row at ' + width + 'px (image dream: ' + isImageDream + '), got a ' + maxTopDelta + 'px top spread');
         // No pairwise horizontal overlap between any two links.
         for (var a = 0; a < boxes.length; a++) {
           for (var b2 = a + 1; b2 < boxes.length; b2++) {
             var overlaps = boxes[a].left < boxes[b2].right && boxes[b2].left < boxes[a].right;
             assert.ok(!overlaps, boxes[a].id + ' and ' + boxes[b2].id + ' should not overlap at ' + width + 'px');
           }
+        }
+
+        // Same fit check for the 3-pill CTA row above it (Make another /
+        // Explore dreams / My profile) -- this is the row that actually
+        // changed shape in this iteration, so it's the real regression risk.
+        var ctaBoxes = await page.$$eval('.result-cta-row .result-cta', function (els) {
+          return els.map(function (el) {
+            var r = el.getBoundingClientRect();
+            return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+          });
+        });
+        assert.equal(ctaBoxes.length, 3, 'expected exactly 3 CTA pills at ' + width + 'px (image dream: ' + isImageDream + ')');
+        ctaBoxes.forEach(function (b) {
+          assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
+          assert.ok(b.left >= 0 && b.right <= width, b.id + ' should stay fully within the ' + width + 'px viewport (got left=' + b.left + ', right=' + b.right + ')');
+        });
+        var ctaTops = ctaBoxes.map(function (b) { return b.top; });
+        var ctaMaxTopDelta = Math.max.apply(null, ctaTops) - Math.min.apply(null, ctaTops);
+        assert.ok(ctaMaxTopDelta < 4, 'all 3 CTA pills should sit on a single row at ' + width + 'px (image dream: ' + isImageDream + '), got a ' + ctaMaxTopDelta + 'px top spread');
+        for (var c1 = 0; c1 < ctaBoxes.length; c1++) {
+          for (var c2 = c1 + 1; c2 < ctaBoxes.length; c2++) {
+            var ctaOverlaps = ctaBoxes[c1].left < ctaBoxes[c2].right && ctaBoxes[c2].left < ctaBoxes[c1].right;
+            assert.ok(!ctaOverlaps, ctaBoxes[c1].id + ' and ' + ctaBoxes[c2].id + ' should not overlap at ' + width + 'px');
+          }
+        }
+
+        // The CTA row and the Turn-into-video CTA (image dreams only) must
+        // not collide either -- the iteration-4 regression risk this test
+        // was originally written to catch, re-checked for the new row shape.
+        if (isImageDream) {
+          var turnVideoBottom = await page.$eval('#turn-video-btn', function (el) { return el.getBoundingClientRect().bottom; });
+          var ctaRowTop = Math.min.apply(null, ctaBoxes.map(function (b) { return b.top; }));
+          assert.ok(turnVideoBottom <= ctaRowTop + 1, 'Turn-into-video should sit fully above the CTA row at ' + width + 'px, not overlap it');
         }
       } finally {
         await context.close();

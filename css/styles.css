@@ -554,25 +554,39 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .interp-cta-label{ display:flex; align-items:center; gap:6px;}
 .interp-sparkle{ font-size:15px; line-height:1;}
 
-/* Compact CTA pair (Explore dreams / My profile) — replaces the old
-   topbar Explore/Profile nav icons; deliberately SMALL, founder asked the
-   whole CTA area shrunk from what it was. */
+/* Compact CTA trio (Make another / Explore dreams / My profile) --
+   replaces the old topbar Explore/Profile nav icons; deliberately SMALL,
+   founder asked the whole CTA area shrunk from what it was. 5th iteration
+   (founder, 2026-07-28 -- tracker.html's
+   for-product-result-quiet-row-v5-founder--4dnf5u): "Make another" moved
+   here from the quiet-link row below and takes the one PRIMARY (white
+   fill) slot -- it's the core creation loop and was reading as an
+   afterthought at its old size/position. Explore dreams / My profile
+   both now use the secondary (translucent) pill style to make room; only
+   one item holds the app's "primary" white-fill treatment at a time,
+   matching how the rest of this screen (Turn-into-video, Generate Again)
+   always singles out exactly one recommended action. */
 .result-cta-row{ display:flex; gap:8px; margin:0 0 10px;}
 .result-cta{ flex:1; padding:9px 10px; font-size:12.5px; gap:5px;}
 .result-cta .icon{ width:14px; height:14px;}
 .result-cta-secondary{ background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(4px);}
 .result-cta-secondary:hover{ background:rgba(50,50,50,.7);}
 
-/* Quiet small-link row — Edit / Publish / Make another / Delete. FINAL
-   placement (founder, 4th iteration, 2026-07-28) -- Delete is an ordinary
-   quiet link here now, same muted styling as the other three, just with
-   its icon (only) tinted toward --danger via .result-quiet-link-danger so
-   it's discoverable without reading as a recommended action. Two earlier
-   placements (a big bottom-bar button, then an overflow "⋯" menu) were
-   both tried and rejected -- see tracker.html's
-   for-product-result-screen-quiet-row-fina-btv7nr,
+/* Quiet small-link row — Edit / Publish / Delete. 5th iteration (founder,
+   2026-07-28 -- tracker.html's
+   for-product-result-quiet-row-v5-founder--4dnf5u): the 4th iteration's
+   icon-only --danger tint on Delete rendered as a fully red icon in
+   practice (the one colored thing in the row, reopening the original
+   "too prominent" complaint through color instead of size/position), so
+   the tint is removed entirely here -- Delete is now visually IDENTICAL
+   to its neighbors, no color at all. Red belongs only on the confirm
+   dialog's own destructive button (#delete-confirm), never in this row.
+   "Make another" moved out to the CTA row above (see its own comment).
+   Earlier Delete placements (a big bottom-bar button, an Edit-sheet red
+   link, an overflow "⋯" menu) were all tried and rejected too -- see
+   tracker.html's for-product-result-screen-quiet-row-fina-btv7nr,
    for-product-result-screen-delete-is-too--6axxko, and
-   no-delete-video-2rlysi. Save was removed entirely in this same pass
+   no-delete-video-2rlysi. Save was removed entirely in an earlier pass
    (redundant with topbar Share). */
 .result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:9px; flex-wrap:wrap; padding-top:2px;}
 .result-quiet-link{
@@ -583,7 +597,6 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-quiet-link:hover{ color:#fff;}
 .result-quiet-link:disabled{ opacity:.4; cursor:not-allowed;}
 .result-quiet-link .icon{ width:13px; height:13px;}
-.result-quiet-link-danger .icon{ color:var(--danger);}
 .interp-loading-row{ display:flex; align-items:center; gap:10px; padding:8px 0 20px; color:var(--text-muted); font-size:14px;}
 .interp-text{ font-size:14.5px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
 .interp-disclosure{ font-size:12px; color:var(--text-faint); line-height:1.4; margin:10px 0 16px;}

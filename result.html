@@ -116,35 +116,54 @@
       <span class="feed-tag" id="interp-private-pill">Private</span>
     </button>
 
-    <!-- Compact CTA pair — replaces the old topbar Explore/Profile nav
-         icons. Deliberately SMALL (founder asked the whole CTA area
-         shrunk from what it was). -->
+    <!-- Compact CTA trio — Make another / Explore dreams / My profile.
+         5th iteration (founder, 2026-07-28, screenshot of live v4 --
+         tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u):
+         "Make another" was the 3rd quiet link below and read as an
+         afterthought even though it's the core creation loop (make a new
+         dream), so it's promoted OUT of the quiet row and into this CTA
+         area as its own compact pill -- now the one PRIMARY (white-fill)
+         pill, since it's the single most valuable next action on this
+         screen. Explore dreams / My profile step down to the secondary
+         (translucent) pill style to make room for that one primary slot,
+         but keep their existing hrefs/behavior unchanged. Still
+         deliberately SMALL overall (founder asked the whole CTA area
+         shrunk from what it was, pre-redesign). -->
     <div class="result-cta-row">
-      <a class="btn btn-primary result-cta" href="explore.html" id="result-cta-explore"><span class="icon" id="result-cta-explore-icon"></span>Explore dreams</a>
+      <button class="btn btn-primary result-cta" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
+      <a class="btn result-cta result-cta-secondary" href="explore.html" id="result-cta-explore"><span class="icon" id="result-cta-explore-icon"></span>Explore dreams</a>
       <a class="btn result-cta result-cta-secondary" href="profile.html" id="result-cta-profile"><span class="icon" id="result-cta-profile-icon"></span>My profile</a>
     </div>
 
-    <!-- Quiet small-link row — Edit / Publish / Make another / Delete.
-         FINAL placement (founder, 4th iteration, 2026-07-28 — see
-         tracker.html's for-product-result-screen-quiet-row-fina-btv7nr).
-         History, so this doesn't loop a 5th time: (1) big bottom-bar
+    <!-- Quiet small-link row — Edit / Publish / Delete.
+         5th iteration (founder, 2026-07-28 -- tracker.html's
+         for-product-result-quiet-row-v5-founder--4dnf5u): the founder
+         screenshotted the live 4th-iteration row and found Delete's icon
+         rendering fully RED -- the "subtle danger tint" the 4th iteration
+         allowed rendered, in practice, as plain var(--danger) applied to
+         a small solid-color icon, i.e. not subtle at all, and once again
+         the single most eye-catching thing in the row (the original
+         "too prominent" complaint, just returning through color instead
+         of size/position). Fix: Delete is now visually IDENTICAL to its
+         neighbors -- no color at all, same muted grey. Red is reserved
+         for the confirm dialog's own destructive button (#delete-confirm
+         below), which already existed and is unchanged. Make another
+         moved out to the CTA row above (see its comment); this leaves
+         exactly Edit / Publish / Delete here.
+         Full history, so this doesn't loop a 6th time: (1) big bottom-bar
          Delete — too prominent; (2) Edit-sheet red link — too buried
          (no-delete-video-2rlysi); (3) overflow (⋯) menu — founder couldn't
-         find it, an unlabeled trigger hiding the one action that mattered.
-         This fix addresses both complaints at once: Save is removed
-         entirely (redundant — Share in the topbar covers sending/
-         downloading, and every dream self-saves to the profile), and
-         Delete takes the freed slot as an ordinary quiet link — same
-         muted styling as Edit/Publish/Make another, just its icon tinted
-         toward --danger so it's discoverable without reading as a
-         recommended action. See tracker.html's
-         for-product-result-screen-delete-is-too--6axxko and
+         find it, an unlabeled trigger hiding the one action that mattered;
+         (4) ordinary quiet link with an icon-only --danger tint — the
+         tint rendered fully red in practice, reopening complaint (1)
+         through color. See tracker.html's
+         for-product-result-screen-delete-is-too--6axxko,
+         for-product-result-screen-quiet-row-fina-btv7nr and
          no-delete-video-2rlysi for the earlier iterations. -->
     <div class="result-quiet-links">
       <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
       <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
-      <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
-      <button class="result-quiet-link result-quiet-link-danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
+      <button class="result-quiet-link" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
   </div>
 
@@ -226,12 +245,12 @@
       <button class="btn btn-primary btn-block" id="edit-generate-again">Generate Again</button>
       <div style="height:10px;"></div>
       <span class="link-text" id="edit-cancel" style="cursor:pointer;">Cancel</span>
-      <!-- Delete does not live here -- it's the 4th quiet link on the main
-           result screen (#delete-btn), same row as Edit/Publish/Make
-           another. See tracker.html's
-           for-product-result-screen-quiet-row-fina-btv7nr for why (this
-           Edit-sheet placement and an overflow-menu placement were both
-           tried and rejected first -- for-product-result-screen-delete-
+      <!-- Delete does not live here -- it's a quiet link on the main
+           result screen (#delete-btn), same row as Edit/Publish. See
+           tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u
+           and for-product-result-screen-quiet-row-fina-btv7nr for why
+           (this Edit-sheet placement and an overflow-menu placement were
+           both tried and rejected first -- for-product-result-screen-delete-
            is-too--6axxko, no-delete-video-2rlysi). -->
     </div>
   </div>
@@ -1144,16 +1163,20 @@
     }
   });
 
-  // ===== Delete (4th quiet link) =====
-  // FINAL placement (4th iteration, founder 2026-07-28) -- Delete is now
-  // an ordinary quiet link (#delete-btn) on the main result screen, same
-  // row and tap-target size as Edit/Publish/Make another. Earlier
-  // placements (big bottom-bar button, Edit-sheet red link, overflow menu)
-  // are all superseded -- see tracker.html's
+  // ===== Delete (quiet link) =====
+  // 5th iteration (founder 2026-07-28, tracker.html's
+  // for-product-result-quiet-row-v5-founder--4dnf5u) -- Delete is an
+  // ordinary quiet link (#delete-btn) on the main result screen, same row
+  // and tap-target size as Edit/Publish, with NO color of its own (the
+  // 4th iteration's icon-only --danger tint rendered fully red in
+  // practice and was removed -- red now lives only on #delete-confirm
+  // below, the confirm dialog's own destructive button). Earlier
+  // placements (big bottom-bar button, Edit-sheet red link, overflow menu,
+  // icon-tinted quiet link) are all superseded -- see tracker.html's
   // for-product-result-screen-quiet-row-fina-btv7nr for why each one
   // failed. The confirmation modal, its copy, and DreamStore.deleteDream +
   // navigate-to-profile.html below are unchanged from every prior
-  // iteration -- only the entry point moved.
+  // iteration -- only the entry point's styling changed.
   document.getElementById('delete-btn').addEventListener('click', function(){
     // Deleting a published dream also unpublishes it (DreamStore.deleteDream
     // calls removePublishedDreamFromFeed) -- that's real, existing behavior,
