@@ -111,6 +111,21 @@
     --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
     background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3));
     font-family:var(--fn-font-body);
+    /* #app's own base rule (css/styles.css) only sets min-height:100dvh
+       -- a floor, not a cap. .sheet-overlay is position:absolute;inset:0
+       against #app (its nearest positioning ancestor), so on a real
+       Subject-step character sheet with a lot of characters, #app could
+       grow taller than one viewport and the sheet would anchor to the
+       bottom of THAT oversized box instead of the visible screen --
+       reproducing the exact "sheet unreachable" bug this whole fix
+       exists to close, via a different mechanism (tracker item
+       for-product-sheet-dismissal-app-wide-fix-rlay70, review round 1).
+       height:100dvh matches the same real cap result.html/profile.html
+       already rely on via their own .fill/.scroll-shell classes --
+       .fn-screen below already has the matching overflow-y:auto;
+       min-height:0 internal-scroll half of that pattern, just missing
+       this outer half until now. */
+    height:100dvh;
   }
 
   .fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
@@ -405,75 +420,67 @@
     if(otherReveal) otherReveal.style.display = subjectOtherKind === 'other' ? 'block' : 'none';
   }
 
-  function renderSubject(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Step 1 of 5</div>' +
-      '<div class="fn-headline">Who’s the dream about?</div>' +
-      '<div class="fn-microcopy">No writing needed — just tap. You can always add your own words.</div>' +
-      '<div class="char-chip-row" id="subject-chip-row"></div>' +
-      '<div class="fn-chip-row" id="subject-other-row">' +
-        '<span class="fn-chip" data-subj-other="stranger">A stranger</span>' +
-        '<span class="fn-chip" data-subj-other="animal">An animal or creature</span>' +
-        '<span class="fn-chip" data-subj-other="none">No people — just a place/thing</span>' +
-        '<span class="fn-chip" data-subj-other="other">+ Something else</span>' +
-      '</div>' +
-      '<div class="fn-other-reveal" id="subject-other-reveal" style="display:none;">' +
-        '<input class="fn-field" id="subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-subject-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="fn-subject-skip" style="cursor:pointer;">Skip</span>' +
-      '<div class="sheet-overlay" id="sheet-character-overlay">' +
-        '<div class="sheet">' +
-          '<div class="sheet-handle"></div>' +
-          '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
-          '<input class="fn-field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
-          '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
-            '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
-            '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
-          '</div>' +
-          '<textarea class="fn-field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
-          '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
-            '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
-            '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
-            '<input type="file" accept="image/*" id="char-photo-input" style="display:none;">' +
-            '<button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>' +
-            '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
-          '</div>' +
-          '<div class="err-text" id="char-error"></div>' +
-          '<button class="fn-btn-primary" id="char-save-btn" type="button">Save</button>' +
-          '<div style="height:10px;"></div>' +
-          '<span class="fn-small-link" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
-          '<div style="height:8px;"></div>' +
-          '<span class="fn-small-link" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
-        '</div>' +
-      '</div>';
+  // Mounted ONCE, as a direct child of #app -- NOT rebuilt inside
+  // renderSubject's own el.innerHTML (which used to embed this sheet's
+  // markup directly inside #fnScreen, the funnel's own scrollable
+  // internal region). That nesting was the real root cause behind a
+  // review finding on tracker item
+  // for-product-sheet-dismissal-app-wide-fix-rlay70 (round 1): a
+  // position:absolute descendant of a scrolling, position:relative
+  // ancestor (#fnScreen -- see its own .fn-screen{...position:relative;
+  // overflow-y:auto...} rule) is positioned against THAT ancestor's own
+  // scrollable content box, not the real viewport or even #app's own
+  // (now correctly capped, see #app.funnel-app's height:100dvh above)
+  // box -- so if #fnScreen ever scrolls for ANY reason (a real user
+  // scroll, or the browser's own scroll-anchoring compensating for a
+  // layout shift elsewhere on a long Subject screen), the sheet's
+  // rendered position moves with it, independent of anything this
+  // fix's own #app height cap can address. Confirmed via a real
+  // Playwright repro: inflating #fnScreen's content and opening the
+  // sheet left it rendered entirely off-screen (negative y), with
+  // tap-outside unable to reach it at all.
+  //
+  // The fix matches how every other sheet in the app is structured
+  // (result.html/profile.html/create.html/start.html/js/purchase-
+  // sheet.js): always a direct child of #app itself, never nested
+  // inside an inner scrolling sub-region. ensureCharSheetMounted()
+  // below is the one-time mount + wire, matching js/purchase-sheet.js's
+  // own ensureMounted() convention -- idempotent (checked via
+  // charSheetMounted) since renderSubject (and so this call) can run
+  // again on a later revisit to the Subject step (goToStep(0) via Back).
+  var charSheetMounted = false;
+  function ensureCharSheetMounted(){
+    if(charSheetMounted) return;
+    charSheetMounted = true;
 
-    document.getElementById('subject-chip-row').addEventListener('click', function(e){
-      var editTarget = e.target.closest('[data-char-edit]');
-      if(editTarget){
-        var c = staged.characters.filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
-        if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
-        return;
-      }
-      var chip = e.target.closest('[data-char-select]');
-      if(!chip) return;
-      staged.subjectCharacterId = chip.dataset.charSelect;
-      subjectOtherKind = null;
-      renderSubjectChips();
-    });
-    document.getElementById('subject-other-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      subjectOtherKind = subjectOtherKind === chip.dataset.subjOther ? null : chip.dataset.subjOther;
-      staged.subjectCharacterId = null;
-      renderSubjectChips();
-      if(subjectOtherKind === 'other') document.getElementById('subject-other-input').focus();
-    });
-    document.getElementById('subject-other-input').addEventListener('input', function(e){
-      subjectOtherText = e.target.value;
-    });
-    if(subjectOtherText) document.getElementById('subject-other-input').value = subjectOtherText;
+    var wrap = document.createElement('div');
+    wrap.className = 'sheet-overlay';
+    wrap.id = 'sheet-character-overlay';
+    wrap.innerHTML =
+      '<div class="sheet">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
+        '<input class="fn-field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
+        '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
+          '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
+          '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
+        '</div>' +
+        '<textarea class="fn-field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
+        '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
+          '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
+          '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
+          '<input type="file" accept="image/*" id="char-photo-input" style="display:none;">' +
+          '<button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>' +
+          '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
+        '</div>' +
+        '<div class="err-text" id="char-error"></div>' +
+        '<button class="fn-btn-primary" id="char-save-btn" type="button">Save</button>' +
+        '<div style="height:10px;"></div>' +
+        '<span class="fn-small-link" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
+        '<div style="height:8px;"></div>' +
+        '<span class="fn-small-link" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
+      '</div>';
+    document.getElementById('app').appendChild(wrap);
 
     document.getElementById('char-mode-row').addEventListener('click', function(e){
       var btn = e.target.closest('.char-mode-btn');
@@ -537,6 +544,54 @@
       closeCharSheet();
       renderSubjectChips();
     });
+  }
+
+  function renderSubject(el){
+    el.innerHTML =
+      '<div class="fn-eyebrow">Step 1 of 5</div>' +
+      '<div class="fn-headline">Who’s the dream about?</div>' +
+      '<div class="fn-microcopy">No writing needed — just tap. You can always add your own words.</div>' +
+      '<div class="char-chip-row" id="subject-chip-row"></div>' +
+      '<div class="fn-chip-row" id="subject-other-row">' +
+        '<span class="fn-chip" data-subj-other="stranger">A stranger</span>' +
+        '<span class="fn-chip" data-subj-other="animal">An animal or creature</span>' +
+        '<span class="fn-chip" data-subj-other="none">No people — just a place/thing</span>' +
+        '<span class="fn-chip" data-subj-other="other">+ Something else</span>' +
+      '</div>' +
+      '<div class="fn-other-reveal" id="subject-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary" id="fn-subject-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="fn-subject-skip" style="cursor:pointer;">Skip</span>';
+
+    ensureCharSheetMounted();
+
+    document.getElementById('subject-chip-row').addEventListener('click', function(e){
+      var editTarget = e.target.closest('[data-char-edit]');
+      if(editTarget){
+        var c = staged.characters.filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
+        if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
+        return;
+      }
+      var chip = e.target.closest('[data-char-select]');
+      if(!chip) return;
+      staged.subjectCharacterId = chip.dataset.charSelect;
+      subjectOtherKind = null;
+      renderSubjectChips();
+    });
+    document.getElementById('subject-other-row').addEventListener('click', function(e){
+      var chip = e.target.closest('.fn-chip');
+      if(!chip) return;
+      subjectOtherKind = subjectOtherKind === chip.dataset.subjOther ? null : chip.dataset.subjOther;
+      staged.subjectCharacterId = null;
+      renderSubjectChips();
+      if(subjectOtherKind === 'other') document.getElementById('subject-other-input').focus();
+    });
+    document.getElementById('subject-other-input').addEventListener('input', function(e){
+      subjectOtherText = e.target.value;
+    });
+    if(subjectOtherText) document.getElementById('subject-other-input').value = subjectOtherText;
 
     renderSubjectChips();
     document.getElementById('fn-subject-continue').addEventListener('click', next);
