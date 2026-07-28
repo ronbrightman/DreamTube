@@ -491,3 +491,84 @@ test('logout(): clears any pending pre-account marker so a signed-out session le
     await page.close();
   }
 });
+
+test('deleteAccount(): wipeAllLocalState clears any pending pre-account marker too, same as logout()', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockSignupSucceeds(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+    var signupResult = await page.evaluate(function () {
+      return window.DreamStore.signup('deleteacctuser', 'password123', 'deleteacctuser@example.com');
+    });
+    assert.equal(signupResult.ok, true);
+
+    // Simulate a marker still present at the moment of deletion (identify
+    // ForAnalytics already consumed the real signup-time one -- this
+    // proves wipeAllLocalState's own clearPreAccountMarker() call, not
+    // just a marker that happened to already be gone).
+    await page.evaluate(function (key) { localStorage.setItem(key, 'ph-leftover-marker'); }, PRE_ACCOUNT_KEY);
+    await page.evaluate(function (key) { localStorage.setItem(key, String(Date.now())); }, PRE_ACCOUNT_WRITTEN_AT_KEY);
+
+    await page.route('**/.netlify/functions/delete-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    var deleteResult = await page.evaluate(function () {
+      return window.DreamStore.deleteAccount('password123');
+    });
+    assert.equal(deleteResult.ok, true);
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    var writtenAt = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_WRITTEN_AT_KEY);
+    assert.equal(marker, null, 'deleteAccount() must clear the pre-account marker via wipeAllLocalState');
+    assert.equal(writtenAt, null);
+  } finally {
+    await page.close();
+  }
+});
+
+test('readLivePreAccountMarker TTL boundary: a marker just UNDER the TTL still aliases; a marker just OVER it does not', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockSignupSucceeds(page);
+  try {
+    // Just under the TTL -- must still be treated as live.
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-just-under-ttl'); });
+    await page.evaluate(function (args) {
+      localStorage.setItem(args.key, String(Date.now() - args.ttl + 5000));
+    }, { key: PRE_ACCOUNT_WRITTEN_AT_KEY, ttl: PRE_ACCOUNT_MARKER_TTL_MS });
+
+    var underResult = await page.evaluate(function () {
+      return window.DreamStore.signup('undertheboundary', 'password123', 'undertheboundary@example.com');
+    });
+    assert.equal(underResult.ok, true);
+    var underCalls = await readPostHogCalls(page);
+    assert.equal(callsNamed(underCalls, 'alias').length, 1, 'a marker just under the TTL must still be aliased -- not treated as expired');
+  } finally {
+    await page.close();
+  }
+
+  var page2 = await browser.newPage();
+  await blockThirdParty(page2);
+  await mockSignupSucceeds(page2);
+  try {
+    // Just over the TTL -- must be treated as expired.
+    await safeGoto(page2, baseUrl + '/wizard.html');
+    await page2.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-just-over-ttl'); });
+    await page2.evaluate(function (args) {
+      localStorage.setItem(args.key, String(Date.now() - args.ttl - 5000));
+    }, { key: PRE_ACCOUNT_WRITTEN_AT_KEY, ttl: PRE_ACCOUNT_MARKER_TTL_MS });
+
+    var overResult = await page2.evaluate(function () {
+      return window.DreamStore.signup('overtheboundary', 'password123', 'overtheboundary@example.com');
+    });
+    assert.equal(overResult.ok, true);
+    var overCalls = await readPostHogCalls(page2);
+    assert.equal(callsNamed(overCalls, 'alias').length, 0, 'a marker just over the TTL must be treated as expired -- never aliased');
+  } finally {
+    await page2.close();
+  }
+});
