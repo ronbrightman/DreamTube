@@ -2308,35 +2308,64 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * grant mechanism (220 on first-ever read, +20/24h lazily thereafter,
-     * capped once balance is already ≥200). Resolves to
-     * { balance:0, nextGrantAt:null, dailyGrantAmount:20, grantCeiling:200,
-     * atCeiling:false } with no network
-     * call at all when there's no logged-in account or no email on file
-     * (a legacy account that never added one — signup requires an email
-     * today, see signup() above) since the server side has nothing to key
-     * a balance on without one either way. Used by profile.html's/
-     * style.html's/result.html's/processing.html's/shop.html's token UI —
+     * mechanism (220 on first-ever read; the daily +20 must be actively
+     * CLAIMED via claimDailyTokens/claim-daily-tokens.js, never applied
+     * lazily by this read — see that file's 2026-07-28 "daily token claim"
+     * doc block). Resolves to
+     * { balance:0, claimable:false, nextClaimAt:null, dailyClaimAmount:20,
+     * streak:0, hasMadeFirstPurchase:false } with no network call at all
+     * when there's no logged-in account or no email on file (a legacy
+     * account that never added one — signup requires an email today, see
+     * signup() above) since the server side has nothing to key a balance
+     * on without one either way. Used by profile.html's/style.html's/
+     * result.html's/processing.html's/shop.html's/explore.html's token UI —
      * the real enforcement is generate-video.js's server-side E112 check,
      * this is never the security boundary.
      */
     getTokenStatus: function () {
       var email = currentAccountEmail();
-      // dailyGrantAmount/grantCeiling here mirror entitlements.js's real
-      // DAILY_GRANT_AMOUNT/GRANT_CEILING (20/200 as of Token Economy C,
-      // 2026-07-26 night — see tracker item
-      // recurring-bug-class-hardcoded-daily-gran-h6swgy for why this exact
-      // hand-maintained fallback keeps needing manual updates: this is a
-      // plain script with no bundler/require, so it can't import
-      // entitlements.js's live constants the way get-token-status.js now
-      // does). atCeiling is unconditionally false here — balance is always
-      // 0 on this no-email path, never anywhere near the ceiling.
-      // hasMadeFirstPurchase is unconditionally false here too — no email
-      // on file means no identity that could have ever completed a
-      // purchase, so shop.html's first-purchase-bonus callout is safe to
+      // dailyClaimAmount here mirrors entitlements.js's real
+      // DAILY_CLAIM_AMOUNT (20 as of the 2026-07-28 daily-claim switch —
+      // see tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy
+      // for why this exact hand-maintained fallback keeps needing manual
+      // updates: this is a plain script with no bundler/require, so it
+      // can't import entitlements.js's live constants the way
+      // get-token-status.js now does). claimable is unconditionally false
+      // here — there's no identity to claim anything against with no email
+      // on file. hasMadeFirstPurchase is unconditionally false here too —
+      // no email on file means no identity that could have ever completed
+      // a purchase, so shop.html's first-purchase-bonus callout is safe to
       // show (see that page's own script for how it uses this field).
-      if (!email) return Promise.resolve({ balance: 0, nextGrantAt: null, dailyGrantAmount: 20, grantCeiling: 200, atCeiling: false, hasMadeFirstPurchase: false });
+      if (!email) return Promise.resolve({ balance: 0, claimable: false, nextClaimAt: null, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: false });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          return data;
+        });
+    },
+
+    /**
+     * Attempts the daily token claim for the signed-in account — thin
+     * wrapper around POST claim-daily-tokens.js (see that file and
+     * lib/entitlements.js's claimDailyTokens for the full mechanism:
+     * rolling 20h server-clock cooldown, streak logic, single atomic
+     * write). Resolves to `{ claimed:false, nextClaimAt:0 }` with no
+     * network call when there's no logged-in account or no email on file —
+     * same "nothing to key a claim on without an identity" guard
+     * getTokenStatus above already has. Callers (js/purchase-sheet.js's
+     * claim sheet) branch on `data.claimed`, never on HTTP status — a
+     * "not yet claimable" response is a normal 200, not a rejection (see
+     * claim-daily-tokens.js's own doc comment).
+     */
+    claimDailyTokens: function () {
+      var email = currentAccountEmail();
+      if (!email) return Promise.resolve({ claimed: false, nextClaimAt: 0 });
+      return fetch('/.netlify/functions/claim-daily-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
         .then(function (res) { return res.json(); })
         .then(function (data) {
           if (data.error) throw new Error(data.error);

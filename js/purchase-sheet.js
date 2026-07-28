@@ -93,10 +93,10 @@
     return Math.max(c - b, 0);
   }
 
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — same shape as profile.html/style.html/result.html/processing.html/shop.html's own copies of this (no shared JS module for it pre-dating this file — see js/store.js's header comment on why not). */
-  function formatTokenCountdown(nextGrantAt) {
-    if (nextGrantAt == null) return '';
-    var ms = nextGrantAt - Date.now();
+  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — same shape as profile.html/style.html/result.html/processing.html/shop.html's own copies of this (no shared JS module for it pre-dating this file — see js/store.js's header comment on why not). */
+  function formatTokenCountdown(nextClaimAt) {
+    if (nextClaimAt == null) return '';
+    var ms = nextClaimAt - Date.now();
     if (ms <= 0) return 'now';
     var totalMin = Math.ceil(ms / 60000);
     var h = Math.floor(totalMin / 60);
@@ -105,22 +105,28 @@
   }
 
   /**
-   * The sheet's "escape line" — the daily-grant countdown, kept honest and
-   * visible per the founder's spec ("never hide it"). Reads atCeiling/
-   * grantCeiling live off tokenStatus (lib/entitlements.js's getTokenStatus)
-   * rather than ever inferring "at ceiling" from a stale nextGrantAt — this
-   * app just fixed a founder-reported bug about exactly that going stale
-   * (tracker item for-product-bug-founder-high-token-chip--kn1v8t), so this
-   * reuses the same fixed fields instead of re-introducing the bug here.
+   * The sheet's "escape line" — the daily-CLAIM line, kept honest and
+   * visible per the founder's spec ("never hide it"). Reads `claimable`/
+   * `nextClaimAt` live off tokenStatus (lib/entitlements.js's
+   * getTokenStatus) — 2026-07-28 daily-claim switch: this used to be a
+   * passive countdown to an automatic grant ("Or wait — N free tokens in
+   * Xh Ym" / a "paused — at the max" ceiling state); the ceiling is gone
+   * entirely (see entitlements.js's own doc block) and the daily tokens are
+   * no longer automatic at all — flipped to claim-framing so this line
+   * never promises something the app doesn't actually do. When claimable
+   * right now, this text alone doesn't grant anything — the actual claim
+   * only happens through the claim sheet/chip/inline "Claim +N" button
+   * (see showClaimSheet below), never as a side effect of this sheet being
+   * open.
    */
   function waitLineText(tokenStatus) {
     if (!tokenStatus) return '';
-    var grant = tokenStatus.dailyGrantAmount != null ? tokenStatus.dailyGrantAmount : 20;
-    if (tokenStatus.atCeiling) {
-      return 'Daily +' + grant + ' tokens paused — you’re at the max';
+    var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+    if (tokenStatus.claimable) {
+      return 'Or claim ' + amount + ' free tokens above';
     }
-    if (tokenStatus.nextGrantAt) {
-      return 'Or wait — ' + grant + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
+    if (tokenStatus.nextClaimAt) {
+      return 'Or claim ' + amount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextClaimAt);
     }
     return '';
   }
@@ -148,6 +154,12 @@
       '  <div class="sheet-handle"></div>' +
       '  <div class="purchase-sheet-title" id="ps-title"></div>' +
       '  <div class="purchase-sheet-body" id="ps-body"></div>' +
+      // Daily-claim option (tracker item for-product-build-the-daily-token-
+      // claim--fngrwd, item 5): "instantly unblocks an image" when the
+      // account has an unclaimed +20 waiting — shown ABOVE the buy CTA,
+      // hidden entirely (display:none, see renderClaimOption below) unless
+      // tokenStatus.claimable is true for THIS show() call.
+      '  <button type="button" class="claim-inline-btn" id="ps-claim-btn" style="display:none;"><span id="ps-claim-label"></span></button>' +
       '  <div class="purchase-meter"><i id="ps-meter-fill"></i></div>' +
       '  <div class="purchase-meter-label"><span id="ps-meter-have"></span><span id="ps-meter-need"></span></div>' +
       '  <button type="button" class="purchase-buy-btn" id="ps-buy-btn"><span id="ps-buy-label"></span></button>' +
@@ -167,6 +179,81 @@
       if (current) trackLocal('out_of_tokens_choice', { source: current.source || null, choice: 'see_all_packs' });
       location.href = 'shop.html?source=blocked_action';
     });
+    document.getElementById('ps-claim-btn').addEventListener('click', function () { claimInline(); });
+  }
+
+  var CLAIM_INLINE_IDLE_LABEL_PREFIX = 'Claim +';
+
+  /** Shows/hides + (re)labels the inline "Claim +N" button per the CURRENT `current.tokenStatus.claimable` — called from show() and again after a successful inline claim (which flips claimable false for the rest of this sheet's lifetime). */
+  function renderClaimOption() {
+    var btn = document.getElementById('ps-claim-btn');
+    var label = document.getElementById('ps-claim-label');
+    var status = current && current.tokenStatus;
+    if (!status || !status.claimable) {
+      btn.style.display = 'none';
+      return;
+    }
+    var amount = status.dailyClaimAmount != null ? status.dailyClaimAmount : 20;
+    label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + amount + ' free tokens';
+    btn.style.display = '';
+    btn.disabled = false;
+  }
+
+  /**
+   * The out-of-tokens sheet's inline claim affordance — same server call as
+   * the dedicated claim sheet (DreamStore.claimDailyTokens, see
+   * js/store.js), but rendered inline (no nested sheet) since this sheet is
+   * already open for a different, more urgent reason (a blocked action).
+   * On a genuine claim, updates the balance shown in THIS sheet (title/
+   * body/meter) live off the new balance so a user whose claim now covers
+   * `cost` (e.g. the 10-token image case the founder's own proposal called
+   * out) sees it reflected immediately, then hides the claim button (an
+   * account can only claim once per cooldown). `daily_claim_completed`
+   * fires ONLY here, on the real server-confirmed response — never
+   * optimistically.
+   */
+  function claimInline() {
+    if (!current) return;
+    var btn = document.getElementById('ps-claim-btn');
+    var label = document.getElementById('ps-claim-label');
+    btn.disabled = true;
+    label.textContent = 'Claiming…';
+    DreamStore.claimDailyTokens().then(function (data) {
+      if (!data || !data.claimed) {
+        // Lost a race (another tab/request claimed first) or the cooldown
+        // hadn't actually elapsed — not an error, just nothing to reflect.
+        // The button simply disappears since there's genuinely nothing left
+        // to claim right now.
+        if (current) current.tokenStatus = Object.assign({}, current.tokenStatus || {}, { claimable: false });
+        renderClaimOption();
+        return;
+      }
+      trackLocal('daily_claim_completed', { source: (current && current.source) || null, streak: data.streak, balance: data.balance, surface: 'out_of_tokens_sheet' });
+      if (!current) return;
+      current.balance = data.balance;
+      current.tokenStatus = Object.assign({}, current.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
+      renderClaimOption();
+      renderPurchaseAmounts();
+    }).catch(function () {
+      btn.disabled = false;
+      label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + ((current.tokenStatus && current.tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
+      showError('Couldn’t claim right now — try again in a moment');
+    });
+  }
+
+  /** Re-renders the title/body/meter off `current.balance`/`current.cost` — extracted out of show() so claimInline() above can refresh the same UI after a successful claim without re-running the whole show() setup (which would re-mount the buy button, re-fire out_of_tokens_shown, etc). */
+  function renderPurchaseAmounts() {
+    if (!current) return;
+    var balance = typeof current.balance === 'number' ? current.balance : 0;
+    var cost = typeof current.cost === 'number' ? current.cost : 100;
+    var need = neededTokens(balance, cost);
+    var mediaLabel = current.mediaType === 'image' ? 'image' : 'video';
+    document.getElementById('ps-title').textContent = 'Almost there — this ' + mediaLabel + ' needs ' + cost + ' tokens';
+    document.getElementById('ps-body').innerHTML = 'You have <b>' + balance + '</b>. You need <b>' + need + ' more</b>.';
+    var pct = cost > 0 ? Math.max(0, Math.min(100, Math.round((balance / cost) * 100))) : 0;
+    document.getElementById('ps-meter-fill').style.width = pct + '%';
+    document.getElementById('ps-meter-have').textContent = balance;
+    document.getElementById('ps-meter-need').textContent = cost;
   }
 
   function showError(msg) {
@@ -285,20 +372,23 @@
     var packInfo = PACK_INFO[pack];
     var mediaLabel = opts.mediaType === 'image' ? 'image' : 'video';
 
-    document.getElementById('ps-title').textContent = 'Almost there — this ' + mediaLabel + ' needs ' + cost + ' tokens';
-    document.getElementById('ps-body').innerHTML = 'You have <b>' + balance + '</b>. You need <b>' + need + ' more</b>.';
-    var pct = cost > 0 ? Math.max(0, Math.min(100, Math.round((balance / cost) * 100))) : 0;
-    document.getElementById('ps-meter-fill').style.width = pct + '%';
-    document.getElementById('ps-meter-have').textContent = balance;
-    document.getElementById('ps-meter-need').textContent = cost;
+    renderPurchaseAmounts();
     document.getElementById('ps-wait-line').textContent = waitLineText(opts.tokenStatus);
     document.getElementById('ps-error').style.display = 'none';
+    renderClaimOption();
 
     wireBuyButton(pack, packInfo, opts);
 
     document.getElementById(SHEET_ID).classList.add('open');
 
     trackLocal('out_of_tokens_shown', { source: opts.source || null, mediaType: mediaLabel, cost: cost, balance: balance, needed: need, pack: pack });
+    // The inline "Claim +N" affordance above the buy CTA (item 5 of the
+    // daily-claim spec) counts as its own claim-surface impression —
+    // separate from out_of_tokens_shown above, which fires regardless of
+    // whether a claim is even available.
+    if (opts.tokenStatus && opts.tokenStatus.claimable) {
+      trackLocal('daily_claim_shown', { source: opts.source || null, surface: 'out_of_tokens_sheet' });
+    }
   }
 
   function hide() {
@@ -329,16 +419,255 @@
       '<a class="token-chip token-chip-compact" id="topbar-token-chip" href="shop.html?source=balance_chip">' +
       '<span class="token-chip-balance" id="topbar-token-chip-balance">–</span>' +
       '<span class="token-chip-plus" aria-hidden="true">+</span></a>';
-    return document.getElementById('topbar-token-chip');
+    var chipEl = document.getElementById('topbar-token-chip');
+    // Claimable-state tap-through — item 4 of the daily-claim spec: "tapping
+    // the chip while in the claimable state opens a claim sheet" instead of
+    // its normal shop.html navigation. Reads the live data-claimable
+    // attribute at CLICK time (set by renderBalanceChip below on every
+    // render) rather than capturing tokenStatus once here, since this
+    // listener is attached exactly once at mount time but the chip's
+    // claimable state can change on a later re-render (a claim just
+    // succeeded elsewhere, a periodic re-fetch, etc).
+    chipEl.addEventListener('click', function (e) {
+      if (chipEl.getAttribute('data-claimable') !== 'true') return; // normal shop.html navigation
+      e.preventDefault();
+      showClaimSheet({ source: 'balance_chip', tokenStatus: currentChipTokenStatus(chipEl) });
+    });
+    return chipEl;
+  }
+
+  // Stashes the tokenStatus a chip was last rendered with, keyed off the
+  // chip element itself (a plain WeakMap-free approach — this codebase
+  // targets no particular minimum browser but avoids introducing a new
+  // dependency for one small cache) — read back by the click handler above
+  // so the claim sheet opens with real streak/amount data rather than
+  // guessing. Not exported; purely an implementation detail of
+  // mountBalanceChip/renderBalanceChip.
+  var lastChipTokenStatus = null;
+  function currentChipTokenStatus(chipEl) {
+    return lastChipTokenStatus;
   }
 
   function renderBalanceChip(chipEl, tokenStatus) {
     if (!chipEl || !tokenStatus) return;
+    lastChipTokenStatus = tokenStatus;
     var balEl = chipEl.querySelector('.token-chip-balance');
     var low = tokenStatus.balance < LOW_BALANCE_THRESHOLD;
     if (balEl) balEl.textContent = tokenStatus.balance + (low ? ' · Low' : '');
     chipEl.classList.toggle('low', low);
     chipEl.classList.toggle('healthy', !low);
+    // Pulsing "+N claimable" state (item 4 of the daily-claim spec) —
+    // data-claimable is the live flag the click handler above reads, the
+    // .claimable CSS class (css/styles.css) drives the actual pulse
+    // animation + "+N" badge content.
+    var claimable = !!tokenStatus.claimable;
+    chipEl.classList.toggle('claimable', claimable);
+    chipEl.setAttribute('data-claimable', claimable ? 'true' : 'false');
+    var plusEl = chipEl.querySelector('.token-chip-plus');
+    if (plusEl) {
+      var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+      plusEl.textContent = claimable ? ('+' + amount) : '+';
+    }
+  }
+
+  // ==========================================================================
+  // Claim sheet — the dedicated "your daily tokens are ready" sheet (item 4
+  // of the daily-claim spec, tracker item
+  // for-product-build-the-daily-token-claim--fngrwd). Reuses this file's
+  // existing .sheet-overlay/.sheet bottom-sheet infrastructure (same as the
+  // out-of-tokens purchase sheet above) rather than building new sheet
+  // plumbing from scratch, per the spec's own instruction. Opens either
+  // from a tap on the claimable-state balance chip (mountBalanceChip's
+  // click handler above), or automatically once per day (see
+  // maybeAutoOpenClaimSheet below) — the chip stays the fallback entry
+  // point if a user dismisses the auto-opened sheet without claiming.
+  // ==========================================================================
+  var CLAIM_SHEET_ID = 'claim-sheet-overlay';
+  var currentClaim = null; // the opts object passed to the most recent showClaimSheet() call
+
+  function ensureClaimMounted() {
+    if (document.getElementById(CLAIM_SHEET_ID)) return;
+    var host = document.getElementById('app') || document.body;
+    var wrap = document.createElement('div');
+    wrap.id = CLAIM_SHEET_ID;
+    wrap.className = 'sheet-overlay';
+    wrap.innerHTML =
+      '<div class="sheet claim-sheet">' +
+      '  <div class="sheet-handle"></div>' +
+      '  <div class="claim-sheet-badge" aria-hidden="true">🎁</div>' +
+      '  <div class="claim-sheet-title">Your daily tokens are ready</div>' +
+      '  <div class="claim-sheet-amount" id="claim-sheet-amount">+<span id="claim-sheet-amount-num">0</span></div>' +
+      '  <div class="claim-sheet-streak" id="claim-sheet-streak"></div>' +
+      '  <button type="button" class="purchase-buy-btn" id="claim-sheet-btn"><span id="claim-sheet-btn-label"></span></button>' +
+      '  <div class="purchase-error" id="claim-sheet-error" style="display:none;"></div>' +
+      '  <div class="claim-sheet-confetti-host" id="claim-sheet-confetti-host" aria-hidden="true"></div>' +
+      '</div>';
+    host.appendChild(wrap);
+    wrap.addEventListener('click', function (e) {
+      if (e.target === wrap) hideClaimSheet(false);
+    });
+    document.getElementById('claim-sheet-btn').addEventListener('click', function () { runClaim(); });
+  }
+
+  /** Animates `#claim-sheet-amount-num` counting up from 0 to `amount` over roughly `durationMs` — the "count-up animation" the spec calls for on a successful claim. Pure DOM text updates via requestAnimationFrame, no dependency. */
+  function animateCountUp(amount, durationMs) {
+    var el = document.getElementById('claim-sheet-amount-num');
+    if (!el) return;
+    var start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      var progress = Math.min(1, (ts - start) / durationMs);
+      el.textContent = Math.round(progress * amount);
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  var CONFETTI_COLORS = ['#fd1d1d', '#fcb045', '#833ab4', '#5fb88a', '#9ab0ff'];
+
+  /** Brief, self-contained confetti burst (a handful of colored dots, CSS-keyframe fall+spin+fade — see .claim-confetti-piece in css/styles.css) — no external library, matching this codebase's zero-dependency convention. Appends to `#claim-sheet-confetti-host` and removes itself once the animation finishes. */
+  function fireConfetti() {
+    var host = document.getElementById('claim-sheet-confetti-host');
+    if (!host) return;
+    host.innerHTML = '';
+    var count = 14;
+    for (var i = 0; i < count; i++) {
+      var piece = document.createElement('i');
+      piece.className = 'claim-confetti-piece';
+      piece.style.left = (Math.random() * 100) + '%';
+      piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+      piece.style.animationDelay = (Math.random() * 0.15) + 's';
+      piece.style.transform = 'rotate(' + Math.round(Math.random() * 360) + 'deg)';
+      host.appendChild(piece);
+    }
+    setTimeout(function () { host.innerHTML = ''; }, 1400);
+  }
+
+  /**
+   * opts:
+   *   source      — analytics source tag ('balance_chip' | 'auto_open')
+   *   tokenStatus — the getTokenStatus() response this open was triggered
+   *                 from (for the streak line / claim amount) — optional,
+   *                 falls back to sane defaults if omitted
+   *   onClaimed   — optional function(data), called with the server's
+   *                 { claimed:true, balance, streak, nextClaimAt } response
+   *                 once a real claim lands, so the caller can refresh its
+   *                 own balance chip/UI
+   *   onDismiss   — optional zero-arg function, called if the sheet is
+   *                 closed (tap outside) without claiming
+   */
+  function showClaimSheet(opts) {
+    opts = opts || {};
+    ensureClaimMounted();
+    currentClaim = opts;
+
+    var status = opts.tokenStatus || {};
+    var amount = status.dailyClaimAmount != null ? status.dailyClaimAmount : 20;
+    var streak = status.streak || 0;
+    // Streak line is display-only (v1 exclusion: no escalation/milestone/
+    // freeze logic tied to it, per the spec) — "Day N" is the NEXT streak
+    // number this claim would produce (current streak + 1, or Day 1 for a
+    // genuinely first-ever claim), matching how a user reads "Day 3" as
+    // "this is my 3rd day claiming," not "I've claimed 3 times before
+    // today."
+    document.getElementById('claim-sheet-streak').textContent = 'Day ' + (streak + 1);
+    document.getElementById('claim-sheet-amount-num').textContent = '0';
+    document.getElementById('claim-sheet-btn-label').textContent = 'Claim ' + amount + ' tokens';
+    var btn = document.getElementById('claim-sheet-btn');
+    btn.disabled = false;
+    var errEl = document.getElementById('claim-sheet-error');
+    errEl.style.display = 'none';
+    document.getElementById('claim-sheet-confetti-host').innerHTML = '';
+
+    document.getElementById(CLAIM_SHEET_ID).classList.add('open');
+    trackLocal('daily_claim_shown', { source: opts.source || null, surface: 'claim_sheet' });
+  }
+
+  function hideClaimSheet(claimed) {
+    var el = document.getElementById(CLAIM_SHEET_ID);
+    if (el) el.classList.remove('open');
+    if (currentClaim && !claimed) {
+      trackLocal('daily_claim_dismissed', { source: currentClaim.source || null });
+      if (typeof currentClaim.onDismiss === 'function') currentClaim.onDismiss();
+    }
+    currentClaim = null;
+  }
+
+  /**
+   * The claim sheet's own "Claim N tokens" button handler — a genuine
+   * server-confirmed claim (never optimistic): fires `daily_claim_completed`
+   * ONLY once DreamStore.claimDailyTokens() actually resolves with
+   * `claimed:true`. On success: count-up animation + brief confetti (both
+   * pure ritual, no further server round-trip), then auto-closes the sheet
+   * shortly after so the ritual has time to land before it disappears.
+   */
+  function runClaim() {
+    if (!currentClaim) return;
+    var btn = document.getElementById('claim-sheet-btn');
+    var label = document.getElementById('claim-sheet-btn-label');
+    var errEl = document.getElementById('claim-sheet-error');
+    btn.disabled = true;
+    errEl.style.display = 'none';
+    label.textContent = 'Claiming…';
+
+    DreamStore.claimDailyTokens().then(function (data) {
+      if (!data || !data.claimed) {
+        // Not an error (see claim-daily-tokens.js's own doc comment) — most
+        // likely another tab/request already claimed this cooldown window.
+        // Nothing left to claim; say so plainly and let the user dismiss.
+        label.textContent = 'Already claimed';
+        errEl.textContent = 'Looks like you already claimed today — check back later.';
+        errEl.style.display = 'block';
+        return;
+      }
+      var amount = (currentClaim.tokenStatus && currentClaim.tokenStatus.dailyClaimAmount) || 20;
+      animateCountUp(amount, 650);
+      fireConfetti();
+      document.getElementById('claim-sheet-streak').textContent = 'Day ' + data.streak;
+      label.textContent = 'Claimed!';
+      trackLocal('daily_claim_completed', { source: currentClaim.source || null, streak: data.streak, balance: data.balance, surface: 'claim_sheet' });
+      var onClaimed = currentClaim.onClaimed;
+      setTimeout(function () {
+        hideClaimSheet(true);
+        if (typeof onClaimed === 'function') onClaimed(data);
+      }, 1100);
+    }).catch(function () {
+      btn.disabled = false;
+      label.textContent = 'Claim ' + ((currentClaim.tokenStatus && currentClaim.tokenStatus.dailyClaimAmount) || 20) + ' tokens';
+      errEl.textContent = 'Couldn’t claim right now — try again in a moment';
+      errEl.style.display = 'block';
+    });
+  }
+
+  // Pure presentation throttle for the "auto-open ONCE per day" rule (item
+  // 4 of the spec) — NEVER the actual grant guard, which is entirely
+  // server-side (claimDailyTokens' own 20h rolling cooldown, see
+  // lib/entitlements.js). This is just "don't nag the same browser with an
+  // auto-popup more than once per calendar day" — a plain local calendar
+  // date (not a rolling 20h window) is fine here specifically BECAUSE it's
+  // pure presentation: the worst this can ever do wrong is show (or not
+  // show) an unprompted sheet slightly early/late relative to the real
+  // cooldown, never grant a token — the chip remains the fallback entry
+  // point regardless.
+  var CLAIM_AUTO_SHOWN_KEY = 'dreamtube_claim_sheet_shown_date';
+
+  /**
+   * Auto-opens the claim sheet if `tokenStatus.claimable` is true AND this
+   * browser hasn't already auto-shown it today. Call once per eligible page
+   * load, after fetching tokenStatus. Returns true if it opened the sheet
+   * (so a caller doesn't also need to track this itself), false otherwise —
+   * including the "already claimable but already shown today, chip is the
+   * fallback" case.
+   */
+  function maybeAutoOpenClaimSheet(tokenStatus, opts) {
+    if (!tokenStatus || !tokenStatus.claimable) return false;
+    var today = new Date().toDateString();
+    var shownDate = null;
+    try { shownDate = localStorage.getItem(CLAIM_AUTO_SHOWN_KEY); } catch (e) { /* private mode / storage disabled — fail toward not nagging every load */ return false; }
+    if (shownDate === today) return false;
+    try { localStorage.setItem(CLAIM_AUTO_SHOWN_KEY, today); } catch (e) { /* worst case this shows again next load — never worse than the chip fallback */ }
+    showClaimSheet(Object.assign({ source: 'auto_open' }, opts || {}, { tokenStatus: tokenStatus }));
+    return true;
   }
 
   // ==========================================================================
@@ -477,6 +806,9 @@
     hide: hide,
     mountBalanceChip: mountBalanceChip,
     renderBalanceChip: renderBalanceChip,
+    showClaimSheet: showClaimSheet,
+    hideClaimSheet: hideClaimSheet,
+    maybeAutoOpenClaimSheet: maybeAutoOpenClaimSheet,
     readCheckoutParam: readCheckoutParam,
     clearPendingPurchaseMarker: clearPendingPurchaseMarker,
     consumePendingPurchaseMarker: consumePendingPurchaseMarker,
