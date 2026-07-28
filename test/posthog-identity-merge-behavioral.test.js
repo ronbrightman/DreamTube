@@ -134,6 +134,15 @@ function callsNamed(calls, name) {
 var BASE_RESUME_PARAMS = 'resume=1&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos') + '&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean');
 
 var PRE_ACCOUNT_KEY = 'dreamtube_ph_pre_account_distinct_id';
+var PRE_ACCOUNT_WRITTEN_AT_KEY = 'dreamtube_ph_pre_account_distinct_id_written_at';
+var PRE_ACCOUNT_MARKER_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Backdates the pre-account marker's written-at timestamp so readLivePreAccountMarker (js/store.js) treats it as expired, without waiting out the real TTL. */
+function expirePreAccountMarker(page) {
+  return page.evaluate(function (args) {
+    localStorage.setItem(args.key, String(Date.now() - args.ttl - 60000));
+  }, { key: PRE_ACCOUNT_WRITTEN_AT_KEY, ttl: PRE_ACCOUNT_MARKER_TTL_MS });
+}
 
 test('start.html + signup: pre-signup funnel handoff identify, then a completed signup, merge into ONE PostHog person via alias() -- not two separate identify()s', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
@@ -383,6 +392,101 @@ test('linkPreSignupIdentity: a repeat funnel visit with the SAME distinct_id as 
 
     var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
     assert.equal(marker, 'ph-same-visit');
+  } finally {
+    await page.close();
+  }
+});
+
+// ===== Review round 2 finding (tracker item
+// for-product-data-bug-posthog-identity-br-vytqwy) =====
+//
+// The marker had no expiry and no cleanup path other than
+// identifyForAnalytics actually consuming it. On a SHARED device, a stale,
+// un-consumed marker left by one visitor (who never converts) could get
+// picked up and aliased into a completely UNRELATED later visitor's real
+// account -- merging a stranger's anonymous marketing-visit history into
+// their PostHog person. Fixed with a bounded TTL (readLivePreAccountMarker
+// in js/store.js) plus clearing the marker outright on logout()/
+// deleteAccount().
+
+test('identifyForAnalytics: an EXPIRED pre-account marker (older than the TTL) must NOT be aliased into a later, unrelated signup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockSignupSucceeds(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    // Visitor X hits the funnel and never converts.
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-visitor-x-abandoned'); });
+
+    // ...the marker sits there well past the TTL (the device is shared,
+    // e.g. a library/family computer, and a totally different visitor Y
+    // later signs into THEIR OWN, unrelated account on it).
+    await expirePreAccountMarker(page);
+
+    var result = await page.evaluate(function () {
+      return window.DreamStore.signup('unrelatedvisitor', 'password123', 'unrelatedvisitor@example.com');
+    });
+    assert.equal(result.ok, true);
+
+    var calls = await readPostHogCalls(page);
+    var identifies = callsNamed(calls, 'identify');
+    var aliases = callsNamed(calls, 'alias');
+
+    assert.equal(identifies.length, 2, 'both identify() calls still fire -- X\'s original pre-signup identify, then Y\'s real signup identify');
+    assert.equal(identifies[1][1], 'unrelatedvisitor');
+    assert.equal(aliases.length, 0, 'an expired marker must NEVER be aliased into an unrelated later signup -- that would merge a stranger\'s history into this account');
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    var writtenAt = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_WRITTEN_AT_KEY);
+    assert.equal(marker, null, 'the expired marker must be cleared, not left behind for yet another later visitor to potentially hit');
+    assert.equal(writtenAt, null);
+  } finally {
+    await page.close();
+  }
+});
+
+test('linkPreSignupIdentity: an EXPIRED marker from an earlier abandoned visit is treated as if no marker existed at all -- no alias(), fresh marker written', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-stale-visit'); });
+    await expirePreAccountMarker(page);
+
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-fresh-visit'); });
+
+    var calls = await readPostHogCalls(page);
+    assert.equal(callsNamed(calls, 'identify').length, 2);
+    assert.equal(callsNamed(calls, 'alias').length, 0, 'an expired marker must not be aliased into the new handoff -- treated as if it never existed');
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(marker, 'ph-fresh-visit', 'the new visit still gets its own fresh marker written');
+  } finally {
+    await page.close();
+  }
+});
+
+test('logout(): clears any pending pre-account marker so a signed-out session leaves nothing dangling for whoever uses this device next', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-pending-visit'); });
+    var markerBeforeLogout = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(markerBeforeLogout, 'ph-pending-visit');
+
+    await page.evaluate(function () { window.DreamStore.logout(); });
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    var writtenAt = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_WRITTEN_AT_KEY);
+    assert.equal(marker, null, 'logout() must clear the pre-account marker');
+    assert.equal(writtenAt, null);
   } finally {
     await page.close();
   }

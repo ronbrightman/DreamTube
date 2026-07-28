@@ -307,6 +307,17 @@
    * getSoundPref's "like a volume setting" comment), so an account
    * deletion has no more reason to touch them than logging out already
    * does.
+   *
+   * DOES clear the PostHog pre-account marker (clearPreAccountMarker,
+   * defined further down this file — a plain function declaration, so
+   * it's hoisted and callable here regardless of definition order) —
+   * mirrors logout() doing the same (see that call site's own comment,
+   * review round 2, tracker item
+   * for-product-data-bug-posthog-identity-br-vytqwy): a deleted account
+   * ends this session exactly like a sign-out does, and a dangling
+   * pre-signup marker left behind could otherwise get misread and
+   * aliased into a completely unrelated later visitor's PostHog identity
+   * on a shared device.
    */
   function wipeAllLocalState(usernameKey, myHandle) {
     delete state.accounts[usernameKey];
@@ -315,6 +326,7 @@
     if (state.pendingJob && state.pendingJob.ownerHandle === myHandle) state.pendingJob = null;
     state.user = null;
     state.draft = seed().draft;
+    clearPreAccountMarker();
     persist();
   }
 
@@ -898,8 +910,90 @@
    * reads this marker back and calls posthog.alias() to merge the two
    * identities into one PostHog person before ever calling identify() a
    * second time.
+   *
+   * Bounded by PRE_ACCOUNT_MARKER_TTL_MS (see its own comment) — a marker
+   * older than that is treated as expired/ignorable by every reader
+   * below, and cleared outright by logout()/deleteAccount(), specifically
+   * to bound how long a stale marker from one visitor can survive to be
+   * misread by someone else entirely on a shared device (review round 2,
+   * tracker item for-product-data-bug-posthog-identity-br-vytqwy — see
+   * readLivePreAccountMarker's own comment for the full writeup).
    */
   var PRE_ACCOUNT_DISTINCT_ID_KEY = 'dreamtube_ph_pre_account_distinct_id';
+  var PRE_ACCOUNT_DISTINCT_ID_WRITTEN_AT_KEY = 'dreamtube_ph_pre_account_distinct_id_written_at';
+
+  // How long a pre-account marker is trusted before it's treated as
+  // expired garbage rather than something real to alias/merge against.
+  // 6 hours — comfortably covers a real same-day "browse the funnel,
+  // convert later that day" gap (this app has no session/cookie
+  // expiry of its own to match against — everything here is plain
+  // localStorage, see js/store.js's header), while still keeping the
+  // window in which a stale marker from visitor X could get
+  // misattributed to an unrelated visitor Y on a shared device (review
+  // round 2 finding) short enough to be a non-issue in practice. Not a
+  // vendor/security decision requiring sign-off — a plain tuning
+  // parameter with no external dependency; can be adjusted later without
+  // any architectural change if real PostHog data (once the live check
+  // this tracker item is waiting on happens) suggests a different window
+  // fits DreamTube's actual funnel-to-signup timing better.
+  var PRE_ACCOUNT_MARKER_TTL_MS = 6 * 60 * 60 * 1000;
+
+  /**
+   * Reads the pre-account marker IFF it both exists and is still within
+   * PRE_ACCOUNT_MARKER_TTL_MS of when it was written — otherwise returns
+   * null, treating an expired marker exactly like no marker at all (and
+   * opportunistically clearing it, since it's stale garbage either way).
+   *
+   * Root cause this bounds (review round 2, tracker item
+   * for-product-data-bug-posthog-identity-br-vytqwy): the marker had no
+   * expiry and no cleanup path other than identifyForAnalytics actually
+   * consuming it. On a SHARED device (library, family computer), that
+   * meant: visitor X hits the marketing funnel, never converts, and
+   * abandons the device — the marker just sits in localStorage
+   * indefinitely. A completely UNRELATED later visitor Y then logs into
+   * THEIR OWN, pre-existing account on that same device; Y's login hits
+   * identifyForAnalytics, finds X's stale marker, and merges X's
+   * anonymous marketing-visit history into Y's real PostHog person —
+   * silently corrupting ad-attribution data for a person who never even
+   * touched the funnel. A TTL can't fully solve "is this the same
+   * person" from localStorage alone (nothing client-side can, on a
+   * shared device), but it bounds the exposure window to something
+   * short relative to how rare same-device-different-person handoffs
+   * inside a few hours actually are — logout()/deleteAccount() clearing
+   * the marker outright (see their own call sites) covers the far more
+   * common "device handed to someone else after a deliberate sign-out"
+   * case immediately, without waiting out the TTL at all.
+   */
+  function readLivePreAccountMarker() {
+    var distinctId = null;
+    var writtenAt = null;
+    try {
+      distinctId = localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_KEY);
+      writtenAt = parseInt(localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_WRITTEN_AT_KEY), 10);
+    } catch (e) { return null; }
+    if (!distinctId) return null;
+    if (!writtenAt || Date.now() - writtenAt > PRE_ACCOUNT_MARKER_TTL_MS) {
+      clearPreAccountMarker();
+      return null;
+    }
+    return distinctId;
+  }
+
+  /** Writes the pre-account marker (distinct_id + a fresh timestamp for readLivePreAccountMarker's TTL check) — the one place either key is ever set. Best-effort, matching every other localStorage write in this file. */
+  function writePreAccountMarker(distinctId) {
+    try {
+      localStorage.setItem(PRE_ACCOUNT_DISTINCT_ID_KEY, distinctId);
+      localStorage.setItem(PRE_ACCOUNT_DISTINCT_ID_WRITTEN_AT_KEY, String(Date.now()));
+    } catch (e) { /* best-effort — see PRE_ACCOUNT_DISTINCT_ID_KEY's own comment */ }
+  }
+
+  /** Removes the pre-account marker outright (both keys) — called once it's been consumed by identifyForAnalytics, once it's found expired by readLivePreAccountMarker, and from logout()/deleteAccount() (see their own call sites) so a signed-out/deleted session never leaves a dangling marker for whoever uses this device next. */
+  function clearPreAccountMarker() {
+    try {
+      localStorage.removeItem(PRE_ACCOUNT_DISTINCT_ID_KEY);
+      localStorage.removeItem(PRE_ACCOUNT_DISTINCT_ID_WRITTEN_AT_KEY);
+    } catch (e) { /* best-effort */ }
+  }
 
   /**
    * Records that this browser was just explicitly identify()'d as
@@ -913,15 +1007,16 @@
    * this static site — e.g. the visitor abandons start.html mid-funnel,
    * closes the tab, and signs up from wizard.html on the same browser
    * days later. identifyForAnalytics reads this back whenever that
-   * eventually happens, however far apart in time, and consumes
-   * (removes) it then.
+   * eventually happens, however far apart in time (bounded by
+   * PRE_ACCOUNT_MARKER_TTL_MS — see readLivePreAccountMarker), and
+   * consumes (removes) it then.
    *
    * No-ops safely (same guarded shape as identifyForAnalytics/
    * trackAnalytics) if PostHog was never initialized or localStorage is
    * unavailable — never lets an analytics failure break the app.
    *
-   * Two review-round findings, both fixed here (review round 1, tracker
-   * item for-product-data-bug-posthog-identity-br-vytqwy):
+   * Three review-round findings, all fixed here (tracker item
+   * for-product-data-bug-posthog-identity-br-vytqwy):
    *
    * (a) Already-signed-in browser re-triggering the funnel handoff — a
    * browser signed in as a real account has nothing meaningful to link
@@ -952,6 +1047,11 @@
    * one FIRST, so PostHog's person-merge composes transitively across
    * however many pre-signup visits happen before the eventual real
    * identifyForAnalytics call — nothing from any visit is ever lost.
+   *
+   * (c) A stale, un-consumed marker from a DIFFERENT, unrelated earlier
+   * visitor on a shared device — see readLivePreAccountMarker's own
+   * comment for the full writeup; fixed by the TTL check below plus
+   * logout()/deleteAccount() clearing the marker outright.
    */
   function linkPreSignupIdentity(distinctId) {
     if (!distinctId) return;
@@ -959,15 +1059,14 @@
     if (state.user) return;
 
     if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.identify === 'function') {
-      // (b) — see doc comment above.
-      var previousDistinctId = null;
-      try { previousDistinctId = localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+      // (b)/(c) — see doc comment above.
+      var previousDistinctId = readLivePreAccountMarker();
       if (previousDistinctId && previousDistinctId !== distinctId && typeof window.posthog.alias === 'function') {
         try { window.posthog.alias(distinctId, previousDistinctId); } catch (e) { /* analytics must never break the app */ }
       }
       try { window.posthog.identify(distinctId); } catch (e) { /* analytics must never break the app */ }
     }
-    try { localStorage.setItem(PRE_ACCOUNT_DISTINCT_ID_KEY, distinctId); } catch (e) { /* best-effort — see PRE_ACCOUNT_DISTINCT_ID_KEY's own comment */ }
+    writePreAccountMarker(distinctId);
   }
 
   /**
@@ -999,14 +1098,18 @@
    * the placeholder in js/analytics-config.js — see that file), since
    * window.posthog simply won't exist in that case. Never lets an
    * analytics failure break auth.
+   *
+   * Reads the marker via readLivePreAccountMarker (not a raw localStorage
+   * read) — an expired marker (review round 2 finding: a stale marker
+   * from an unrelated earlier visitor on a shared device — see that
+   * function's own comment) is treated as absent, never aliased against.
    */
   function identifyForAnalytics(usernameOrEmail) {
     if (typeof window === 'undefined' || !window.posthog || typeof window.posthog.identify !== 'function') return;
 
-    var previousDistinctId = null;
-    try { previousDistinctId = localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+    var previousDistinctId = readLivePreAccountMarker();
     if (previousDistinctId) {
-      try { localStorage.removeItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+      clearPreAccountMarker();
       if (previousDistinctId !== usernameOrEmail && typeof window.posthog.alias === 'function') {
         try { window.posthog.alias(usernameOrEmail, previousDistinctId); } catch (e) { /* analytics must never break auth */ }
       }
@@ -1703,7 +1806,14 @@
     // waste that spend for no reason; an earlier version of this fix
     // wholesale-cleared pendingJob on logout and broke exactly this case,
     // caught in review).
-    logout: function () { state.user = null; persist(); },
+    //
+    // clearPreAccountMarker() (review round 2, tracker item
+    // for-product-data-bug-posthog-identity-br-vytqwy): a signed-out
+    // session must not leave a dangling PostHog pre-account marker
+    // around for whoever uses this device next — see that function's own
+    // comment for the full "shared device, unrelated later visitor" bug
+    // this closes.
+    logout: function () { state.user = null; clearPreAccountMarker(); persist(); },
 
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
