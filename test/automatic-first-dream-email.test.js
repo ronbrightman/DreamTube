@@ -546,6 +546,108 @@ test('WEBHOOK-BEFORE-CLAIM ORDERING: the abandonment email firing first (webhook
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: the automatic retention email must NOT also fire once the abandonment path already sent -- exactly one email total, never two');
 });
 
+// -----------------------------------------------------------------------
+// REVIEW ROUND 2 FINDING (same tracker item): round 1's fix (gate on
+// `pendingRecord.readyAt`) assumed readyAt means "the abandonment email
+// path already committed to sending." But readyAt used to be set by TWO
+// different dream-webhook.js branches, and only ONE of them sends an
+// email:
+//   (a) transition.ok === true (pendingDreams.markReady really moved
+//       pending -> ready) -- the real send path, sendReadyEmail actually
+//       fires.
+//   (b) transition.record.status === 'claimed' -- a real signup ALREADY
+//       completed before the webhook arrived; this branch is pure
+//       bookkeeping ("record the finished video... skip the re-engagement
+//       send entirely") and never sends anything -- but it used to ALSO
+//       stamp readyAt, indistinguishable from branch (a).
+//
+// Branch (b) is the LIKELY TYPICAL ordering for a normal (non-abandoning)
+// funnel completion, not a rare edge case: claim-pending-generation.js
+// fires the instant signup succeeds, which is almost always well before
+// Veo's 1-6 minute generation actually finishes. So for most ordinary
+// completions, round 1's check would have found readyAt already set (via
+// the no-email bookkeeping branch) and incorrectly skipped the automatic
+// email -- regressing straight back toward the ORIGINAL "no email ever"
+// bug this whole tracker item exists to fix.
+//
+// Fix: dream-webhook.js's 'claimed' bookkeeping branch no longer stamps
+// readyAt at all (just videoUrl) -- readyAt now means, unambiguously,
+// "the abandonment email path actually sent (or genuinely committed to
+// sending)," exactly once, only ever set by markReady's own real send
+// transition. Confirmed via a full-repo grep that nothing else reads or
+// writes readyAt besides these two call sites and mark-generation-
+// completed.js's own check.
+// -----------------------------------------------------------------------
+
+test('CLAIM-BEFORE-WEBHOOK ORDERING (the realistic/typical case): claiming while still \'pending\' (well before Veo finishes), then the webhook arriving and hitting the bookkeeping-only \'claimed\' branch, must NOT suppress the automatic retention email', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  delete require.cache[require.resolve('../netlify/functions/start-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/claim-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/dream-webhook')];
+  delete require.cache[require.resolve('../netlify/functions/lib/pending-dreams')];
+  delete require.cache[require.resolve('../netlify/functions/lib/fal-webhook-verify')];
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
+  var dreamWebhookHandler = require('../netlify/functions/dream-webhook').handler;
+  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
+  var pendingDreams = require('../netlify/functions/lib/pending-dreams');
+  falWebhookVerify.resetJwksCacheForTests();
+
+  var funnelEmail = 'claim-before-webhook@example.com';
+  var keyPair = crypto.generateKeyPairSync('ed25519');
+  var spies = installFetchSpy(keyPair);
+
+  // 1) Funnel submission.
+  var startRes = await withPastClock(60000, function () {
+    return startHandler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: { email: funnelEmail, caption: 'a funnel-built dream', style: 'Cinematic' }
+    }));
+  });
+  var startData = JSON.parse(startRes.body);
+  assert.ok(startData.pendingId);
+
+  // 2) The user finishes signup WELL BEFORE Veo finishes -- the typical
+  //    real-world ordering (claim-pending-generation.js fires the instant
+  //    signup succeeds; a fresh record is still 'pending' at this point,
+  //    nothing to do with the webhook yet).
+  await registerAccount('claimbeforewebhook', funnelEmail);
+  var claimRes = await claimHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail }
+  }));
+  assert.equal(JSON.parse(claimRes.body).claimed, true, 'test setup: the claim must succeed from \'pending\'');
+  var afterClaim = await pendingDreams.get({}, startData.pendingId);
+  assert.equal(afterClaim.status, 'claimed');
+  assert.equal(afterClaim.readyAt, null, 'test setup: readyAt must still be unset -- no abandonment email has any reason to exist yet');
+
+  // 3) fal's webhook arrives AFTER the claim -- dream-webhook.js's
+  //     markReady fails (record is already 'claimed', not 'pending'/
+  //     'ready'), so this hits the bookkeeping-only 'claimed' branch:
+  //     records videoUrl, sends NO email.
+  var bodyObj = { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } };
+  var webhookRes = await dreamWebhookHandler(realFalWebhookEvent(startData.pendingId, bodyObj, keyPair));
+  assert.equal(webhookRes.statusCode, 200);
+  assert.equal(JSON.parse(webhookRes.body).claimed, true, 'test setup: the webhook must recognize this as the already-claimed bookkeeping branch');
+  assert.equal(spies.resendCalls.length, 0, 'test setup: the bookkeeping branch must never send the abandonment email');
+
+  var afterWebhook = await pendingDreams.get({}, startData.pendingId);
+  assert.equal(afterWebhook.videoUrl, 'https://cdn.fal/finished.mp4', 'test setup: videoUrl bookkeeping must still be recorded');
+  assert.equal(afterWebhook.readyAt, null, 'THE FIX: readyAt must stay unset -- this bookkeeping branch never actually sent an email, so it must never look like it did');
+
+  // 4) processing.html's real completion choke point -- the automatic
+  //    retention email is the ONLY email this user will ever get, and it
+  //    MUST fire here.
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var markRes = await markHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+    body: { operationName: startData.operationName }
+  }));
+  assert.equal(markRes.statusCode, 200);
+
+  assert.equal(spies.resendCalls.length, 1, 'THE FIX: the automatic retention email MUST still fire for the typical claim-before-webhook ordering -- this is the only email this user will ever get');
+  assert.deepEqual(spies.resendCalls[0].body.to, [funnelEmail]);
+});
+
 test('mark-generation-completed: a job-owners email with no matching registered account is a silent no-op (no account to email)', async function () {
   var opName = realMockOpName('no-account-1');
   await seedJobOwner(opName, 'never-registered@example.com', 'video');

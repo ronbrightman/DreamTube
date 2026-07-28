@@ -196,7 +196,20 @@ exports.handler = async function (event) {
         // plain, non-side-effect-gating patch, safe as a blind update —
         // see lib/pending-dreams.js's own doc comment on `update`) but
         // skip the re-engagement send entirely.
-        await pendingDreams.update(event, pendingId, { videoUrl: videoUrl, readyAt: Date.now() });
+        //
+        // readyAt is deliberately NOT stamped here (review-round-2 fix,
+        // tracker.html's for-product-bug-founder-affects-all-funn-0efe7t —
+        // see mark-generation-completed.js's own doc comment on why): this
+        // branch never sends an email, and readyAt's WHOLE meaning to that
+        // reader is "the abandonment email path actually sent (or
+        // genuinely committed to sending)". This is also the LIKELY
+        // TYPICAL ordering for a normal funnel completion (claim fires the
+        // instant signup succeeds, almost always well before Veo's 1-6
+        // minute generation finishes) — stamping readyAt here used to
+        // make mark-generation-completed.js's automatic retention email
+        // incorrectly skip for most ordinary completions, regressing
+        // toward the original "no email ever" bug.
+        await pendingDreams.update(event, pendingId, { videoUrl: videoUrl });
         return { statusCode: 200, body: JSON.stringify({ ok: true, claimed: true }) };
       }
       // 'notified' or 'failed' — an already-fully-processed, harmless

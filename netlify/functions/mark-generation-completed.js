@@ -344,6 +344,24 @@ exports.handler = async function (event) {
  * no `pendingId` (every normal signed-in generate-video.js/generate-
  * image.js job) or one whose pending-dreams record was never marked ready
  * skips this check entirely and behaves exactly as before.
+ *
+ * CORRECTED (review round 2, 2026-07-28, same tracker item): this check
+ * only works because `readyAt` means, EXCLUSIVELY, "the abandonment email
+ * actually sent (or genuinely committed to sending)". It used to NOT mean
+ * that -- dream-webhook.js's own 'claimed' bookkeeping branch (the
+ * already-claimed-before-the-webhook-arrived case, which the person came
+ * back on their own for) used to ALSO stamp `readyAt` on a plain
+ * bookkeeping patch that sends no email at all, indistinguishable from the
+ * real send path. That branch is the LIKELY TYPICAL ordering for a normal
+ * funnel completion (claim-pending-generation.js fires the instant signup
+ * succeeds, almost always well before Veo's 1-6 minute generation actually
+ * finishes) -- so this check, as first written, would have found readyAt
+ * already set via that bookkeeping branch for MOST ordinary completions
+ * and incorrectly skipped the automatic email, regressing toward the
+ * original "no email ever" bug. Fixed at the source in dream-webhook.js
+ * (that branch no longer stamps readyAt at all — see its own comment),
+ * not here — this function's own logic was always correct GIVEN an
+ * honest readyAt; the bug was in what set it.
  */
 async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
