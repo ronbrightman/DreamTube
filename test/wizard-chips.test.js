@@ -248,3 +248,58 @@ test('assembleCaption produces a sane, non-empty prompt caption for each of the 
     assert.ok(result.caption.length > 0);
   });
 });
+
+// ── Review finding: dangling ", in," / ", through," when the Setting/
+// place step is skipped ──
+// The Setting/place step is skippable in both wizard.html (fn-setting-skip)
+// and create.html's "Build it" retrofit (build-setting-skip), leaving
+// placeKey unset and placePhrase === ''. Every ACTION_CHIPS entry whose
+// phrase relied on a trailing preposition to connect to a place that might
+// never come produced a broken caption fragment in that case (e.g.
+// "...taking an exam back in school, in, dreamy..."). Fixed by splitting
+// each such phrase from its connecting preposition (`connector`), only
+// ever appended alongside an actual placePhrase. Covers all affected
+// chips: the pre-existing flying/running/falling/calm/magical/meeting
+// (broken the same way, not introduced by this branch) plus the 5 new
+// exam/late/trying/newroom/child chips this branch added. 'exploring' and
+// 'other' never had a trailing preposition and are intentionally excluded.
+test('assembleCaption: every trailing-preposition action chip reads as a grammatically complete sentence when the place step is skipped entirely (no placeKey at all)', function () {
+  var expectedActionClause = {
+    flying: 'flying,',
+    running: 'running, chasing and being chased,',
+    falling: 'falling,',
+    calm: 'sitting in a calm, still moment,',
+    magical: 'witnessing something magical happen,',
+    meeting: 'meeting someone,',
+    exam: 'taking an exam back in school,',
+    late: 'rushing to get somewhere but arriving too late,',
+    trying: 'trying to do the same thing again and again without success,',
+    newroom: 'discovering a hidden room that was never there before,',
+    child: 'being a child again, playing,'
+  };
+  Object.keys(expectedActionClause).forEach(function (key) {
+    var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: key, moodKey: 'dreamy', style: 'Cinematic' });
+    assert.ok(
+      result.caption.indexOf(expectedActionClause[key]) !== -1,
+      key + ': expected to find "' + expectedActionClause[key] + '" in "' + result.caption + '"'
+    );
+    // No dangling connector left stranded right before a comma (the bug:
+    // "...school, in, dreamy..." / "...flying through, dreamy...").
+    assert.doesNotMatch(result.caption, /\b(in|through)\s*,/, key + ': dangling preposition before a comma');
+    // No double-comma artifact from the join either.
+    assert.doesNotMatch(result.caption, /,\s*,/, key + ': double comma');
+  });
+});
+
+test('assembleCaption: with a place chosen, the connector still joins the action phrase to the place phrase correctly (with-place case unaffected by the no-place fix)', function () {
+  // flying+sky is the pre-existing "spec worked example" test above --
+  // this adds direct with-place coverage for a couple of the OTHER
+  // affected chips (an 'in' connector and a 'through' connector).
+  var exam = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'exam', placeKey: 'urban', moodKey: 'dreamy', style: 'Cinematic' });
+  assert.match(exam.caption, /taking an exam back in school in an urban setting,/);
+  assert.doesNotMatch(exam.caption, /,\s*,/);
+
+  var falling = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'falling', placeKey: 'sky', moodKey: 'dreamy', style: 'Cinematic' });
+  assert.match(falling.caption, /falling through an open sky,/);
+  assert.doesNotMatch(falling.caption, /,\s*,/);
+});
