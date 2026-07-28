@@ -146,7 +146,18 @@ test('mark-generation-completed: a second (and third) completed video for the SA
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: thirdOp } }));
 
   assert.equal(spies.resendCalls.length, 1, 'a 2nd/3rd completed video for the same account must never trigger a second automatic send');
-  assert.equal(spies.posthogCalls.length, 1, 'the first_dream_email_sent event must also only fire once ever for this account');
+  // Split by event name (tracker.html's for-product-bug-founder-affects-
+  // all-funn-0efe7t gap #6 added a SEPARATE 'first_dream_email_skipped'
+  // event, fired server-side for the 2nd/3rd attempt's own
+  // guard-already-claimed no-op -- see lib/first-dream-email-sender.js's
+  // reportSkip -- so posthogCalls.length alone is no longer a proxy for
+  // "the send event fired once"; both event kinds legitimately share the
+  // same /capture/ endpoint this spy watches).
+  var sentEvents = spies.posthogCalls.filter(function (c) { return c.body.event === 'first_dream_email_sent'; });
+  var skippedEvents = spies.posthogCalls.filter(function (c) { return c.body.event === 'first_dream_email_skipped'; });
+  assert.equal(sentEvents.length, 1, 'the first_dream_email_sent event must also only fire once ever for this account');
+  assert.equal(skippedEvents.length, 2, 'the 2nd and 3rd already-sent attempts must each surface a first_dream_email_skipped event instead of silently vanishing');
+  skippedEvents.forEach(function (c) { assert.equal(c.body.properties.reason, 'already_sent'); });
 });
 
 test('CONCURRENCY: two of a brand-new account\'s videos completing at nearly the same instant send exactly one automatic email, never zero, never two', async function () {
@@ -173,7 +184,12 @@ test('CONCURRENCY: two of a brand-new account\'s videos completing at nearly the
 
   results.forEach(function (r) { assert.equal(r.statusCode, 200); });
   assert.equal(spies.resendCalls.length, 1, 'exactly one of the two racing completions must win the send -- never both, never neither');
-  assert.equal(spies.posthogCalls.length, 1);
+  // See the "second (and third) completed video" test above for why this
+  // is now split by event name -- the race's LOSER now also fires a
+  // 'first_dream_email_skipped' event (gap #6), sharing the same
+  // /capture/ endpoint this spy watches.
+  var sentEvents = spies.posthogCalls.filter(function (c) { return c.body.event === 'first_dream_email_sent'; });
+  assert.equal(sentEvents.length, 1);
 });
 
 test('mark-generation-completed: image mediaType is out of scope for the automatic send, matching the client-triggered endpoint\'s own video-only scope', async function () {
@@ -201,7 +217,28 @@ test('mark-generation-completed: a job-owners record with no recorded mediaType 
   assert.equal(spies.resendCalls.length, 0, 'an unrecorded mediaType must never be treated as video');
 });
 
-test('mark-generation-completed: an operationName with no job-owners record at all (predates the store, or the write failed) is a silent no-op', async function () {
+// REWRITTEN (tracker.html's for-product-bug-founder-affects-all-funn-0efe7t,
+// gap #3): before the 2026-07-28 fix, EVERY funnel-started generation
+// (start-pending-generation.js) hit exactly this "no job-owners record at
+// all" case, 100% of the time -- start-pending-generation.js bypassed
+// generate-video.js's/generate-image.js's own recordJobOwnerBestEffort
+// entirely (see that file's own header comment for the full root-cause
+// writeup). This test's title used to frame that as a narrow, acceptable
+// edge case ("predates the store, or the write failed") without ever
+// naming the funnel path as the actual, common cause in production --
+// which in effect asserted the live bug's own broken behavior as correct,
+// with nothing in this file ever exercising the real funnel entry point to
+// notice. It's rewritten below to (a) make explicit that a genuinely
+// missing record is now ONLY the write-failure/predates-the-store case,
+// never a funnel-started generation (which gets a real record too, as of
+// the fix), and (b) pair it with a new test right after that composes the
+// REAL chain (start-pending-generation.js -> claim-pending-generation.js ->
+// mark-generation-completed.js) and proves the funnel path now DOES send.
+test('mark-generation-completed: an operationName with no job-owners record for a genuine reason OTHER than the funnel path (predates the store, or the write itself failed) is still a silent no-op', async function () {
+  // NOTE: this is deliberately NOT how a funnel-started (start-pending-
+  // generation.js) operationName behaves anymore -- see the fixed-behavior
+  // test immediately below, which starts from that real entry point and
+  // asserts the opposite outcome (the email DOES send).
   var opName = realMockOpName('no-owner-1');
   var spies = installFetchSpy();
 
@@ -210,6 +247,176 @@ test('mark-generation-completed: an operationName with no job-owners record at a
 
   assert.equal(res.statusCode, 200, 'the completion marker itself must still be recorded fine -- only the bonus email step no-ops');
   assert.equal(spies.resendCalls.length, 0);
+});
+
+// -----------------------------------------------------------------------
+// ROOT-CAUSE FIX, END-TO-END (tracker.html's
+// for-product-bug-founder-affects-all-funn-0efe7t): composes the REAL
+// chain that was actually broken -- start-pending-generation.js (the
+// funnel/wizard's pre-signup generation entry point) -> a real signup ->
+// claim-pending-generation.js (the wizard's own "I made it in" call) ->
+// mark-generation-completed.js (processing.html's completion choke point)
+// -- rather than hand-seeding a job-owners record the way every other test
+// in this file does (which proves mark-generation-completed.js's OWN logic
+// is correct in isolation, but would have kept passing even with the real
+// bug still live, since start-pending-generation.js was never exercised at
+// all). This is the QA-bar test the founder's own standing rule for this
+// fix asked for: "no test composes the REAL chain... add an end-to-end
+// behavioral test: funnel submission -> completion -> assert the email
+// send was actually attempted with the right recipient."
+// -----------------------------------------------------------------------
+
+/**
+ * Advances the embedded start-timestamp of whatever mock operationName
+ * `fn` mints into the past by `pastMs`, so mark-generation-completed.js's
+ * verifyOperationCompleted (which requires MOCK_MIN_ELAPSED_MS/5000ms of
+ * real elapsed time) treats it as already genuinely complete the instant
+ * it's minted, without this test actually waiting 5+ real seconds.
+ * Mirrors test/fal-webhook-jwks-cache.test.js's own Date.now monkeypatch
+ * precedent -- restored in a `finally` so a thrown error can never leave
+ * the process' real clock patched for any later test.
+ */
+async function withPastClock(pastMs, fn) {
+  var realNow = Date.now;
+  Date.now = function () { return realNow() - pastMs; };
+  try {
+    return await fn();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+test('END-TO-END ROOT-CAUSE FIX: a funnel-started generation (start-pending-generation.js), once claimed by a real signup and completed, automatically sends the retention email to the funnel user\'s own email', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  delete require.cache[require.resolve('../netlify/functions/start-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/claim-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/lib/pending-dreams')];
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
+
+  var funnelEmail = 'funnel-completer@example.com';
+
+  // 1) The dream-builder wizard's pre-signup "generate during signup" call
+  //    -- BEFORE this fix, this is the exact call that never wrote a
+  //    job-owners record at all.
+  var startRes = await withPastClock(60000, function () {
+    return startHandler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: { email: funnelEmail, caption: 'a funnel-built dream', style: 'Cinematic' }
+    }));
+  });
+  assert.equal(startRes.statusCode, 200);
+  var startData = JSON.parse(startRes.body);
+  assert.ok(startData.pendingId);
+  assert.match(startData.operationName, /^mock:/);
+
+  // 2) The real signup completes (same funnel user, same email) --
+  //    wizard.html's own next step.
+  await registerAccount('funnelcompleter', funnelEmail);
+
+  // 3) wizard.html's own claim-pending-generation call, telling
+  //    dream-webhook.js "this one made it in on their own" -- also
+  //    required so the pending record is 'claimed', not 'pending', by the
+  //    time this test's next assertion (the paired "exactly one email"
+  //    test below) checks that the abandonment email path stays silent.
+  var claimRes = await claimHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail }
+  }));
+  assert.equal(JSON.parse(claimRes.body).claimed, true, 'test setup: the claim itself must succeed');
+
+  // 4) processing.html's real completion choke point -- the same request
+  //    js/store.js's markGenerationJustCompleted fires once its poll of
+  //    video-status.js sees the (mock) generation done.
+  var spies = installFetchSpy();
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var markRes = await markHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+    body: { operationName: startData.operationName }
+  }));
+  assert.equal(markRes.statusCode, 200);
+
+  assert.equal(spies.resendCalls.length, 1, 'the ROOT CAUSE FIX: a funnel-started generation must now get a job-owners record and trigger the automatic retention email, exactly like a normal signed-in generation already did');
+  assert.deepEqual(spies.resendCalls[0].body.to, [funnelEmail], 'the email must go to the funnel user\'s own real email, not anything else');
+});
+
+test('EXACTLY ONE EMAIL, NOT TWO: a completed funnel user gets the automatic retention email, and the SAME pending record staying \'claimed\' means the separate abandonment-email path (dream-webhook.js) never also fires for them', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  delete require.cache[require.resolve('../netlify/functions/start-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/claim-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/lib/pending-dreams')];
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
+  var pendingDreams = require('../netlify/functions/lib/pending-dreams');
+
+  var funnelEmail = 'exactly-one-email@example.com';
+
+  var startRes = await withPastClock(60000, function () {
+    return startHandler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: { email: funnelEmail, caption: 'a funnel-built dream', style: 'Cinematic' }
+    }));
+  });
+  var startData = JSON.parse(startRes.body);
+
+  await registerAccount('exactlyoneuser', funnelEmail);
+  await claimHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail } }));
+
+  var spies = installFetchSpy();
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  await markHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+    body: { operationName: startData.operationName }
+  }));
+  assert.equal(spies.resendCalls.length, 1, 'the completer must get exactly one email from the automatic retention-email path');
+
+  // Now simulate fal's own webhook finally arriving for this SAME pending
+  // dream (dream-webhook.js) -- since claim-pending-generation.js already
+  // marked it 'claimed' above, this must be a harmless no-op that never
+  // sends the SEPARATE abandonment email too (see dream-webhook.js's own
+  // "already-claimed" branch, and test/dream-webhook.test.js's identical
+  // coverage for that branch in isolation).
+  var record = await pendingDreams.get({}, startData.pendingId);
+  assert.equal(record.status, 'claimed', 'test setup: the pending record must genuinely be claimed by this point');
+
+  var dreamWebhookHandler = require('../netlify/functions/dream-webhook').handler;
+  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
+  falWebhookVerify.resetJwksCacheForTests();
+  var crypto = require('crypto');
+  var keyPair = crypto.generateKeyPairSync('ed25519');
+  var origFetch = global.fetch;
+  global.fetch = async function (url, opts) {
+    var urlStr = String(url);
+    if (urlStr.indexOf('jwks') !== -1) {
+      var jwk = keyPair.publicKey.export({ format: 'jwk' });
+      return { ok: true, status: 200, json: async function () { return { keys: [{ kty: 'OKP', crv: 'Ed25519', x: jwk.x }] }; } };
+    }
+    return origFetch(url, opts);
+  };
+  var bodyObj = { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } };
+  var rawBody = JSON.stringify(bodyObj);
+  var timestamp = String(Math.floor(Date.now() / 1000));
+  var requestId = 'req-exactly-one';
+  var userId = 'user-exactly-one';
+  var bodyHash = crypto.createHash('sha256').update(Buffer.from(rawBody, 'utf8')).digest('hex');
+  var message = Buffer.from([requestId, userId, timestamp, bodyHash].join('\n'), 'utf8');
+  var signature = crypto.sign(null, message, keyPair.privateKey).toString('hex');
+
+  var webhookRes = await dreamWebhookHandler({
+    httpMethod: 'POST',
+    headers: {
+      host: 'dreamtube1.netlify.app',
+      'X-Fal-Webhook-Request-Id': requestId,
+      'X-Fal-Webhook-User-Id': userId,
+      'X-Fal-Webhook-Timestamp': timestamp,
+      'X-Fal-Webhook-Signature': signature
+    },
+    queryStringParameters: { pendingId: startData.pendingId },
+    body: rawBody
+  });
+  assert.equal(webhookRes.statusCode, 200);
+  assert.equal(JSON.parse(webhookRes.body).claimed, true, 'dream-webhook.js must recognize this record as already claimed');
+
+  assert.equal(spies.resendCalls.length, 1, 'the abandonment-email path must NOT also fire for a user who went on to complete -- exactly one email total, never two');
 });
 
 test('mark-generation-completed: a job-owners email with no matching registered account is a silent no-op (no account to email)', async function () {
