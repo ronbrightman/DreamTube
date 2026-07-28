@@ -875,6 +875,60 @@
   maybeRequestPersistentStorage();
 
   /**
+   * localStorage marker recording the PostHog distinct_id this browser was
+   * explicitly identify()'d as BEFORE any real account existed for it —
+   * today, only ever the marketing-funnel cross-domain handoff distinct_id
+   * (see linkPreSignupIdentity below and start.html's call site), but
+   * written generically enough to cover any future "identify once as
+   * something, later identify again as the real account" call site the
+   * same way.
+   *
+   * Root cause this exists to fix (tracker item
+   * for-product-data-bug-posthog-identity-br-vytqwy, found building
+   * founder analytics dashboards: a real signup's PostHog person history
+   * started at 'signed_up', with every pre-signup funnel event sitting on
+   * a separate, orphaned person): PostHog's identify() only auto-merges
+   * the FIRST time it's ever called on a given browser (from PostHog's
+   * default anonymous, device-generated distinct_id). A SECOND identify()
+   * call with a genuinely different distinct_id — e.g. identifyForAnalytics
+   * below, landing on a browser this app already explicitly identified
+   * once via the funnel handoff — does NOT auto-merge; PostHog just starts
+   * a brand-new, disconnected person, silently orphaning every pre-signup
+   * funnel event under the first identify's distinct_id. identifyForAnalytics
+   * reads this marker back and calls posthog.alias() to merge the two
+   * identities into one PostHog person before ever calling identify() a
+   * second time.
+   */
+  var PRE_ACCOUNT_DISTINCT_ID_KEY = 'dreamtube_ph_pre_account_distinct_id';
+
+  /**
+   * Records that this browser was just explicitly identify()'d as
+   * `distinctId` for a reason OTHER than a real signed-in account existing
+   * yet — today, only the marketing-funnel cross-domain handoff (see
+   * start.html's own "Cross-app PostHog identity linking" comment, which
+   * calls this instead of posthog.identify() directly). Persisted to
+   * localStorage, not just an in-memory flag, because the real-account
+   * identify() call this needs to merge with (identifyForAnalytics below)
+   * can happen much later and/or on a completely different page load of
+   * this static site — e.g. the visitor abandons start.html mid-funnel,
+   * closes the tab, and signs up from wizard.html on the same browser
+   * days later. identifyForAnalytics reads this back whenever that
+   * eventually happens, however far apart in time, and consumes
+   * (removes) it then.
+   *
+   * No-ops safely (same guarded shape as identifyForAnalytics/
+   * trackAnalytics) if PostHog was never initialized or localStorage is
+   * unavailable — never lets an analytics failure break the app.
+   */
+  function linkPreSignupIdentity(distinctId) {
+    if (!distinctId) return;
+    if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.identify === 'function') {
+      try { window.posthog.identify(distinctId); } catch (e) { /* analytics must never break the app */ }
+    }
+    try { localStorage.setItem(PRE_ACCOUNT_DISTINCT_ID_KEY, distinctId); } catch (e) { /* best-effort — see PRE_ACCOUNT_DISTINCT_ID_KEY's own comment */ }
+  }
+
+  /**
    * Tells PostHog "this browser is now this account" right after a real
    * signup/login succeeds, so behavior before/after auth stitches into one
    * person and cross-session identity works for whatever real accounts
@@ -882,15 +936,41 @@
    * system replaces this localStorage one, since this is called from the
    * same signup()/login() seam a real implementation would use too.
    *
+   * Before ever calling identify() itself, checks PRE_ACCOUNT_DISTINCT_ID_KEY
+   * (see its own comment for the full root-cause writeup) — if this
+   * browser was already explicitly identified once before (today, only
+   * via the funnel handoff, linkPreSignupIdentity above), calls
+   * posthog.alias(usernameOrEmail, previousDistinctId) FIRST so the two
+   * distinct_ids merge into one PostHog person, since a second identify()
+   * call alone would not auto-merge them. posthog-js's
+   * alias(alias_id, original_id) takes the NEW id first and the
+   * ALREADY-identified id second — see posthog-js's own alias() docs/
+   * typings; reversing this order would silently merge in the wrong
+   * direction. The marker is consumed (removed) the moment it's read,
+   * whether or not it actually needed an alias() call (e.g. it already
+   * happens to equal usernameOrEmail) — its job is done either way, and
+   * leaving it behind risks it getting aliased against a LATER, unrelated
+   * identify() call (e.g. a different account logging in on a shared/
+   * reused browser).
+   *
    * No-ops safely if PostHog was never initialized (POSTHOG_KEY is still
    * the placeholder in js/analytics-config.js — see that file), since
    * window.posthog simply won't exist in that case. Never lets an
    * analytics failure break auth.
    */
   function identifyForAnalytics(usernameOrEmail) {
-    if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.identify === 'function') {
-      try { window.posthog.identify(usernameOrEmail); } catch (e) { /* analytics must never break auth */ }
+    if (typeof window === 'undefined' || !window.posthog || typeof window.posthog.identify !== 'function') return;
+
+    var previousDistinctId = null;
+    try { previousDistinctId = localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+    if (previousDistinctId) {
+      try { localStorage.removeItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+      if (previousDistinctId !== usernameOrEmail && typeof window.posthog.alias === 'function') {
+        try { window.posthog.alias(usernameOrEmail, previousDistinctId); } catch (e) { /* analytics must never break auth */ }
+      }
     }
+
+    try { window.posthog.identify(usernameOrEmail); } catch (e) { /* analytics must never break auth */ }
   }
 
   /**
@@ -1268,6 +1348,17 @@
     STYLE_GRADIENTS: STYLE_GRADIENTS,
 
     getCurrentUser: function () { return state.user; },
+
+    /**
+     * Public entry point for linkPreSignupIdentity above — see that
+     * function's own doc comment for the full identity-merge story (tracker
+     * item for-product-data-bug-posthog-identity-br-vytqwy). Called by
+     * start.html's cross-app PostHog identity linking instead of it calling
+     * posthog.identify() directly, so the marker that lets a LATER real
+     * signup/login (identifyForAnalytics above) correctly alias() the two
+     * distinct_ids together actually gets recorded.
+     */
+    linkPreSignupIdentity: linkPreSignupIdentity,
 
     /**
      * Creates an account. Returns a Promise of { ok:true, user } or

@@ -433,19 +433,33 @@
   // brand-new distinct_id, so growth can't see one joined funnel from
   // welcome through signup/video. Fix: if the funnel's redirectToApp()
   // appends its own posthog.get_distinct_id() as a `distinct_id` URL
-  // param, call posthog.identify() with it here so this browser's events
-  // on THIS app merge into the SAME PostHog person the funnel side
-  // already created, instead of starting a second, disconnected one.
-  // Deliberately a no-op (nothing to identify, funnel and app sessions
-  // just stay separate as they do today) if the param is absent — the
-  // funnel doesn't need to send it for this page to keep working exactly
-  // as before; this is purely additive measurement plumbing, never a
-  // functional gate. Fires once, right after the resume guard passes, so
-  // it identifies before any of this page's own funnel_resumed_from_marketing
-  // etc. events fire below.
+  // param, identify as it here so this browser's events on THIS app merge
+  // into the SAME PostHog person the funnel side already created, instead
+  // of starting a second, disconnected one. Deliberately a no-op (nothing
+  // to identify, funnel and app sessions just stay separate as they do
+  // today) if the param is absent — the funnel doesn't need to send it
+  // for this page to keep working exactly as before; this is purely
+  // additive measurement plumbing, never a functional gate. Fires once,
+  // right after the resume guard passes, so it identifies before any of
+  // this page's own funnel_resumed_from_marketing etc. events fire below.
+  //
+  // Routed through DreamStore.linkPreSignupIdentity (js/store.js) rather
+  // than calling posthog.identify() directly — that same function also
+  // records this distinct_id as a pending pre-account marker, which
+  // identifyForAnalytics (js/store.js) reads and posthog.alias()es against
+  // the moment this visitor actually signs up or logs in for real. Without
+  // that, this identify() call and the later post-signup
+  // identifyForAnalytics(username) call would each start a SEPARATE
+  // PostHog person — PostHog only auto-merges a browser's FIRST-ever
+  // identify() call, not a second one to a different distinct_id — which
+  // is exactly the bug tracker item for-product-data-bug-posthog-identity-
+  // br-vytqwy found (a real signup's PostHog person history starting at
+  // 'signed_up', with every pre-signup funnel event orphaned on a separate
+  // person). See PRE_ACCOUNT_DISTINCT_ID_KEY's doc comment in js/store.js
+  // for the full writeup.
   var handoffDistinctId = getParam('distinct_id');
-  if(handoffDistinctId && window.posthog && typeof window.posthog.identify === 'function'){
-    try { posthog.identify(handoffDistinctId); } catch(e) { /* analytics must never break the app */ }
+  if(handoffDistinctId && window.DreamStore && typeof window.DreamStore.linkPreSignupIdentity === 'function'){
+    try { DreamStore.linkPreSignupIdentity(handoffDistinctId); } catch(e) { /* analytics must never break the app */ }
   }
 
   // Meta click-attribution cookie handoff (tracker item
