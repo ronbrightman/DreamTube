@@ -207,6 +207,49 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
   }
 });
 
+// WhatsApp toggle/field PARKED (founder decision 2026-07-28, tracker item
+// for-product-hide-the-whatsapp-field-in-w-clu9ju) -- mirrors
+// test/ui-behavioral.test.js's own parked-camera/scenery-screens tests
+// (start.html) for the equivalent verification: the parked element must
+// never render, and the submitted payload must reflect its absence.
+test('wizard.html: the Contact step never renders the parked WhatsApp toggle/field, and the pending-generation payload always sends whatsapp: null', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-nowhatsapp-1', operationName: 'fal:fake-model:req-nowhatsapp-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    assert.equal(await page.$('#contact-whatsapp-toggle'), null, 'the parked WhatsApp toggle must never render');
+    assert.equal(await page.$('#contact-whatsapp-reveal'), null, 'the parked WhatsApp reveal container must never render');
+    assert.equal(await page.$('#contact-whatsapp'), null, 'the parked WhatsApp input must never render');
+
+    await page.fill('#contact-email', 'no-whatsapp-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    assert.equal(startPendingCalls.length, 1);
+    assert.equal(startPendingCalls[0].email, 'no-whatsapp-test@example.com');
+    assert.equal(startPendingCalls[0].whatsapp, null, 'with no WhatsApp field to capture from, the payload must always send whatsapp: null');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: Back from Signup to contact-capture then Continue again does NOT re-submit start-pending-generation (no double fal.ai charge/token spend) -- see tracker item wizard-html-no-guard-against-resubmittin-n5b5k2', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

@@ -65,9 +65,11 @@
     3 Mood      ("What's the mood?")          — NEW
     4 Style     ("Pick a look")               — reuses style.html's cards
     5 Free text (optional escape hatch)       — the demoted old textarea
-    6 Contact capture (email + optional WhatsApp) — the retention pivot:
-      "we'll email/message you your dream the moment it's ready," fired
-      BEFORE the full signup gate. Kicks off generation in parallel
+    6 Contact capture (email only — the WhatsApp toggle is PARKED as of
+      2026-07-28, see renderContact's own comment; no code path can
+      deliver to it today) — the retention pivot: "we'll email you your
+      dream the moment it's ready," fired BEFORE the full signup gate.
+      Kicks off generation in parallel
       (start-pending-generation.js) the instant this step completes.
     7 Signup    (username + password; email locked to what was captured)
       -> on success, adopts the already-running generation job
