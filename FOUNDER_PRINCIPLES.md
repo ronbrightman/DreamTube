@@ -279,6 +279,24 @@ toward cheaper models (cost over speed — they run in the background).
   first-ever claim requires a genuinely new, never-initialized account.
   See `netlify/functions/lib/entitlements.js`'s `FIRST_CLAIM_BONUS_AMOUNT`
   doc comment for the full mechanism.
+- **Default video model switched to Veo 3.1 Lite (2026-07-28, founder
+  decision after a real 2-round visual eval — 12-clip + 8-clip, 6 models,
+  4 styles):** his verdict was "no big differences between the 4
+  finalists, go for the cheap one." Standard text-to-video (the
+  overwhelming majority of generations) now defaults to `fal-ai/veo3.1/lite`
+  instead of `fal-ai/veo3.1/fast` — real cost for a default silent 8s video
+  drops from $0.80 to **$0.24** (720p, audio off; $0.40 with audio on),
+  roughly an 80% cut. Deliberately scoped to standard text-to-video only —
+  the self-photo reference-to-video path and the "turn image into video"
+  upsell stay on Fast (no Lite reference-to-video variant exists in fal's
+  catalog yet; a Lite image-to-video switch is an explicit separate
+  follow-up). Token price is unchanged at 100 (founder margin decision
+  stands — this is a pure cost-side change, not a pricing change). The
+  model id is env-configurable (`FAL_MODEL_TEXT_TO_VIDEO`, see
+  `generate-video.js`), so a revert is a pure env-var flip + redeploy, no
+  code change. See tracker item
+  for-product-switch-default-video-model-t-lqxafa for the full eval
+  history.
 
 ## Cross-session working (growth ⇄ product ⇄ Manager)
 

@@ -14,11 +14,34 @@
 // cost from this synchronous submission call, so this is deliberately
 // an upper-bound estimate rather than exact accounting).
 //
-// The estimate uses the *upper* end of generate-video.js's own
-// documented cost range (fal-ai/veo3.1/fast, "$0.10-0.20/sec", 8s
-// duration => up to $1.60/generation) so the breaker trips earlier
-// rather than later — erring toward "pause generation a bit
-// conservatively" over "let the bill run past the intended cap".
+// checkAndReserve is called from generate-video.js's handler ONCE, before
+// it branches on which of the three fal model paths a request actually
+// takes (standard text-to-video, the self-photo reference-to-video path,
+// or the "turn image into video" upsell — see that file's own call site
+// just above the branch) — so this single flat estimate has to cover
+// whichever of those three ends up being the most expensive, not just the
+// default/most-common one.
+//
+// Recalculated 2026-07-28 (tracker item for-product-switch-default-video-
+// model-t-lqxafa, the veo3.1/lite default switch) — NOT simply "Lite's
+// price", because Lite is scoped to the standard text-to-video path only:
+// the other two paths (reference-to-video, image-to-video) deliberately
+// stay on veo3.1/fast in this same change (no Lite reference-to-video
+// variant exists yet). So the real worst case across all three paths,
+// at the fixed 8s duration and hardcoded 720p resolution every path here
+// requests (no path in this file ever asks for 1080p), audio-on:
+//   - standard text-to-video (now Lite): $0.05/s * 8s = $0.40
+//   - reference-to-video (still Fast):   $0.15/s * 8s = $1.20  <- worst
+//   - image-to-video (still Fast):       $0.15/s * 8s = $1.20  <- worst
+// ($0.15/s is fal's founder-verified Fast audio-on rate — see style.html's
+// audio-toggle comment — a firmer number than the old "$0.10-0.20/sec"
+// approximate range this constant's previous $1.60 came from.) The
+// binding constraint is still the two Fast-based paths, so this drops
+// from $1.60 to $1.20 — a real cut, driven by the corrected/precise Fast
+// rate replacing an approximate upper bound, not primarily by the Lite
+// switch itself, since Lite generations aren't actually this reservation's
+// worst case. This will drop further if/when reference-to-video and
+// image-to-video also move to Lite (tracked as a separate follow-up).
 //
 // Same not-truly-atomic caveat as rate-limit.js applies (Blobs has no
 // compare-and-swap), so under genuinely concurrent requests the actual
@@ -31,8 +54,10 @@ var { getStore, connectLambda } = require('@netlify/blobs');
 
 var STORE_NAME = 'dreamtube-spend-guard';
 
-// 8s * $0.20/s upper bound documented in generate-video.js's header comment.
-var ESTIMATED_COST_PER_GENERATION_USD = 1.6;
+// See the derivation above — $1.20 is the true worst case across all
+// three generation paths this reservation covers, not just the new Lite
+// default.
+var ESTIMATED_COST_PER_GENERATION_USD = 1.2;
 
 function todayKey() {
   return 'spend:' + new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD

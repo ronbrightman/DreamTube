@@ -1,12 +1,18 @@
 # Testing video generation without spending real money
 
 `netlify/functions/generate-video.js` has no cheap path by default — every
-call to it that reaches fal.ai is a real, full-price Veo 3.1 Fast generation
-(~$0.10-0.20/sec, hardcoded 8-second duration => roughly $0.80-1.60/call).
-Per `AGENT_POLICY.md`'s standing rule ("Never spend real generation cost on
-testing"), no agent may trigger a real call for testing/verification without
-explicit human confirmation first. This doc covers the two dev/test-only env
-vars that make that rule actually achievable, and how to use each.
+call to it that reaches fal.ai is a real, billed generation, hardcoded to an
+8-second duration. As of 2026-07-28 (tracker item for-product-switch-default-
+video-model-t-lqxafa) the standard text-to-video path defaults to Veo 3.1
+Lite (~$0.03-0.05/sec => roughly $0.24-0.40/call); the self-photo reference-
+to-video path and the "turn image into video" upsell are unchanged and still
+route through Veo 3.1 Fast (~$0.10-0.15/sec => roughly $0.80-1.20/call) —
+see `generate-video.js`'s own header comment for which path a given request
+takes. Per `AGENT_POLICY.md`'s standing rule ("Never spend real generation
+cost on testing"), no agent may trigger a real call for testing/verification
+without explicit human confirmation first. This doc covers the two dev/
+test-only env vars that make that rule actually achievable, and how to use
+each.
 
 `netlify/functions/generate-avatar.js` (the "Me" character's Describe ->
 real-avatar-image path, see that file's own header) shares `GENERATION_MOCK_MODE`
@@ -96,17 +102,20 @@ no `FAL_KEY`, no Stripe setup, no real credentials of any kind needed.
 
 ## `GENERATION_TEST_DURATION`
 
-Set to `"4s"`, `"6s"`, or `"8s"` (the only values fal's Veo 3.1 Fast — and
-its reference-to-video variant, same underlying model — actually accept for
-this parameter; confirmed against fal's current API docs, 2026-07) to make a
-**real** fal.ai call at that duration instead of the hardcoded 8-second
-default. Any unset or unsupported value (e.g. `"1s"`, which fal does not
-support) silently falls back to the untouched default `"8s"` rather than
-risk sending fal a value it would reject.
+Set to `"4s"`, `"6s"`, or `"8s"` (the only values fal's Veo 3.1 family — Lite,
+Fast, and Fast's reference-to-video variant all accept the same three presets;
+confirmed against fal's current API docs, 2026-07) to make a **real** fal.ai
+call at that duration instead of the hardcoded 8-second default. Any unset or
+unsupported value (e.g. `"1s"`, which fal does not support) silently falls
+back to the untouched default `"8s"` rather than risk sending fal a value it
+would reject.
 
-fal bills Veo 3.1 Fast per second, so this scales cost roughly linearly:
-`"4s"` is about **half** the cost of the default 8-second generation
-(~$0.40-0.80/call instead of ~$0.80-1.60/call).
+fal bills Veo 3.1 (both Lite and Fast) per second, so this scales cost
+roughly linearly: `"4s"` is about **half** the cost of the default 8-second
+generation — on the default standard text-to-video path (Lite), roughly
+$0.12-0.20/call instead of $0.24-0.40/call; on the reference-to-video/
+image-to-video paths (still Fast), roughly $0.40-0.60/call instead of
+$0.80-1.20/call.
 
 **This still spends real money.** It exists only for the rare case a
 genuinely real generation must be verified — e.g. confirming fal's actual

@@ -89,10 +89,14 @@
     </div>
     <!-- Audio/music toggle -- tracker item for-product-audio-on-off-choice-
          at-creat-dyyr98 (founder-approved 2026-07-28): generate-video.js's
-         generate_audio:false genuinely bills less ($0.10/s vs $0.15/s,
-         founder-verified via fal's own usage API), so defaulting this OFF
-         cuts the default 8s video's cost from $1.20 to $0.80. Token price
-         stays flat at 100 either way (founder explicit -- no split
+         generate_audio:false genuinely bills less, so defaulting this OFF
+         cuts real cost. Updated 2026-07-28 (tracker item for-product-switch-
+         default-video-model-t-lqxafa) for the fal-ai/veo3.1/lite default:
+         720p is $0.03/s audio-off vs $0.05/s audio-on (fal's own published
+         pricing), so the default 8s video drops from $0.40 to $0.24 --
+         still the same ~40% audio-on/off cost delta as the prior Fast
+         figures ($1.20 vs $0.80), just at Lite's much lower base. Token
+         price stays flat at 100 either way (founder explicit -- no split
          pricing). Reuses admin.html's existing .toggle-switch component
          (see css/styles.css) and create.html's .opt-chip-row/.opt-chip
          single-select preset pattern (Advanced camera/scenery pickers) --

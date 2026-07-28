@@ -145,7 +145,12 @@ test('an empty-string sourceImageUrl is treated as absent — routes through the
   var calls = installFetchSpy();
   var res = await handler(genEvent({ body: { sourceImageUrl: '' } }));
   assert.equal(res.statusCode, 200);
-  assert.match(calls[0].url, /veo3\.1\/fast$/, 'an empty sourceImageUrl must not route to image-to-video');
+  // Asserts against the live, env-configurable FAL_MODEL export (see
+  // generate-video.js — defaults to fal-ai/veo3.1/lite as of tracker item
+  // for-product-switch-default-video-model-t-lqxafa) rather than a
+  // hardcoded model string, so this doesn't need updating again the next
+  // time the default text-to-video model changes.
+  assert.equal(calls[0].url, 'https://queue.fal.run/' + genVideo.FAL_MODEL, 'an empty sourceImageUrl must not route to image-to-video');
 });
 
 test('callFalImageToVideo is exported and posts the expected body shape directly', async function () {

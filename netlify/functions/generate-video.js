@@ -78,16 +78,29 @@
 // subject into a scene described independently by the prompt, which is
 // what "use my photo as this character in the dream" actually means.
 //
-// ACTIVE PATH: fal.ai's Veo 3.1 Fast (fal-ai/veo3.1/fast), using FAL_KEY.
-// Switched from fal.ai's wan v2.2-5b because its output quality wasn't good
-// enough. Veo 3.1 is the same Google model originally used via direct Google
-// API calls (see callVeoDirect below) — now reached through fal.ai instead,
-// which sidesteps the Google Cloud quota wall that caused the original
-// switch away from it. "/fast" is the cost/quality middle tier (roughly
-// $0.10-0.20/sec) — plain "veo3.1" (no /fast) costs roughly double for
-// higher quality, use only if explicitly requested.
+// ACTIVE PATH: fal.ai's Veo 3.1, using FAL_KEY. Switched from fal.ai's wan
+// v2.2-5b because its output quality wasn't good enough. Veo 3.1 is the same
+// Google model originally used via direct Google API calls (see
+// callVeoDirect below) — now reached through fal.ai instead, which
+// sidesteps the Google Cloud quota wall that caused the original switch
+// away from it.
 // The wan v2.2-5b path is kept below (callFalWan), unused, in case we want
 // to switch back or use it as a cheaper fallback later.
+//
+// Standard text-to-video model is env-configurable (FAL_MODEL_TEXT_TO_VIDEO)
+// rather than hardcoded, so a revert is a pure env-var flip + redeploy —
+// tracker item for-product-switch-default-video-model-t-lqxafa, founder
+// decision 2026-07-28 after a real 2-round visual eval (12-clip + 8-clip,
+// 6 models, 4 styles): "no big differences between the 4 finalists, go for
+// the cheap one" — fal-ai/veo3.1/lite at 720p is $0.03/s audio-off /
+// $0.05/s audio-on (verified against fal's own pricing, not guessed),
+// roughly 80% cheaper per generation than /fast's $0.10-0.20/sec, same
+// duration presets/aspect ratio/API shape. Deliberately scoped to THIS path
+// only: FAL_MODEL_REFERENCE_TO_VIDEO (the Me-photo path) and
+// FAL_MODEL_IMAGE_TO_VIDEO (the "turn image into video" upsell) stay on
+// their /fast variants below — no Lite reference-to-video variant exists in
+// fal's catalog yet, and switching image-to-video (a Lite variant does
+// exist there) is an explicit separate follow-up, not folded into this.
 
 var STYLE_MODIFIERS = {
   Cartoon:   'in a colorful hand-drawn cartoon animation style',
@@ -212,7 +225,7 @@ function falErrorMessage(data) {
   return humanizeFalDetail(rawDetail) || (typeof rawDetail === 'string' ? rawDetail : null) || 'fal_request_failed';
 }
 
-var FAL_MODEL = 'fal-ai/veo3.1/fast';
+var FAL_MODEL = process.env.FAL_MODEL_TEXT_TO_VIDEO || 'fal-ai/veo3.1/lite';
 var FAL_API_BASE = 'https://queue.fal.run';
 
 // GENERATION_TEST_DURATION (see the "Mock mode & test-duration override" doc
