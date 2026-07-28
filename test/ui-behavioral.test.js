@@ -398,55 +398,22 @@ test('pricing screen omits the stat line entirely (never a fake number) when get
   }
 });
 
-test('result.html Save always triggers a real file download, never the OS share sheet', async function (t) {
+test('result.html: Save is gone entirely (founder feedback 2026-07-28 -- redundant with topbar Share) -- no #save-video-btn anywhere, and Delete has taken its slot as an ordinary quiet link', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  // acceptDownloads is required for Chromium to actually fire a 'download'
-  // event for the blob: URL + <a download> flow saveVideo() uses, instead
-  // of just navigating to it.
-  var context = await browser.newContext({ acceptDownloads: true });
+  var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-
-    // Spies on navigator.share/canShare from before any page script runs,
-    // so a regression that re-adds the share-sheet branch would show up as
-    // shareCalls > 0 even though canShare (if the browser exposes it at
-    // all) would say true. Also forces canShare to true, the exact iOS
-    // Safari condition the founder's original complaint depended on --
-    // this test should fail if that branch were still reachable even under
-    // the most share-sheet-favorable browser conditions.
-    await page.addInitScript(function () {
-      window.__shareCalls = 0;
-      navigator.share = function () { window.__shareCalls++; return Promise.resolve(); };
-      navigator.canShare = function () { return true; };
-    });
-
-    var dreamId = 'd-save-test';
+    var dreamId = 'd-no-save-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#save-video-btn:not([disabled])', { timeout: 5000 });
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Mocks the fal.ai CDN fetch saveVideo() makes -- no real network call,
-    // no dependency on an external host being reachable from this sandbox.
-    await page.route('https://example.com/fake-video.mp4', function (route) {
-      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('fake mp4 bytes') });
-    });
+    assert.equal(await page.locator('#save-video-btn').count(), 0, '#save-video-btn must not exist anywhere on the page -- Save was removed entirely');
 
-    var downloadPromise = page.waitForEvent('download', { timeout: 5000 });
-    await page.click('#save-video-btn');
-    var download = await downloadPromise;
-
-    assert.equal(download.suggestedFilename(), 'dreamtube-' + dreamId + '.mp4');
-    var shareCalls = await page.evaluate(function () { return window.__shareCalls; });
-    assert.equal(shareCalls, 0, 'navigator.share must never be called by Save, even when canShare would say yes');
-
-    // Confirms the toast reflects a plain save, and the button re-enables
-    // afterward instead of getting stuck on "Saving...".
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && t.textContent === 'Video saved';
-    }, null, { timeout: 5000 });
-    var btnDisabled = await page.$eval('#save-video-btn', function (el) { return el.disabled; });
-    assert.equal(btnDisabled, false);
+    var deleteBtn = page.locator('#delete-btn');
+    assert.ok(await deleteBtn.isVisible(), '#delete-btn should be visible as an ordinary quiet link');
+    assert.ok(await page.locator('.result-quiet-links #delete-btn').count() > 0, '#delete-btn must live inside .result-quiet-links, same row as Edit/Publish/Make another');
+    assert.ok(await deleteBtn.evaluate(function (el) { return el.classList.contains('result-quiet-link-danger'); }), '#delete-btn should carry the danger-tint modifier class on its icon, not full red/emphasized styling');
   } finally {
     await context.close();
   }
@@ -655,7 +622,7 @@ test('result.html redesign: the bottom panel is a translucent gradient, not a so
   }
 });
 
-test('result.html redesign: Edit / Publish / Make another / Save all still trigger their existing behaviors from the quiet small-link row, and Delete is genuinely NOT among them', async function (t) {
+test('result.html FINAL placement (4th iteration): Edit / Publish / Make another / Delete are the exactly-4 quiet links, Save is gone, Delete is a genuinely ordinary link (not the overflow menu, not red/emphasized) and still runs the exact same confirm-then-delete flow', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -665,25 +632,33 @@ test('result.html redesign: Edit / Publish / Make another / Save all still trigg
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Exactly these four must be present in the quiet-link row and visible --
-    // matching the approved mock (docs/design/result-redesign-variant-a.html),
-    // which shows only Edit / Publish / Make another (Save kept alongside,
-    // not called out for removal).
-    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'save-video-btn'];
+    // Exactly these four must be present in the quiet-link row and visible,
+    // per the FINAL placement (tracker.html's
+    // for-product-result-screen-quiet-row-fina-btv7nr) -- Save is gone,
+    // Delete has taken its slot.
+    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'delete-btn'];
     for (var i = 0; i < ids.length; i++) {
       var visible = await page.locator('.result-quiet-links #' + ids[i]).isVisible();
       assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
     }
     var quietLinkCount = await page.locator('.result-quiet-links button').count();
-    assert.equal(quietLinkCount, 4, 'the bottom quiet-link row should have exactly 4 buttons, no more -- Delete lives in the separate overflow trigger, not as a 5th quiet-link');
+    assert.equal(quietLinkCount, 4, 'the quiet-link row should have exactly 4 buttons, no more, no 5th overflow-trigger sibling');
 
-    // Regression check for tracker.html's
-    // for-product-result-screen-delete-is-too--6axxko / no-delete-video-2rlysi:
-    // a bare #delete-btn must not exist ANYWHERE on the page (not just
-    // hidden/moved within the bottom bar) -- it was fully relocated, first
-    // into the Edit sheet, then into the #result-more-btn overflow menu.
-    var deleteBtnCount = await page.locator('#delete-btn').count();
-    assert.equal(deleteBtnCount, 0, '#delete-btn should not exist anywhere on the page -- Delete now lives behind the overflow menu');
+    // The overflow trigger + menu from the 3rd iteration must be fully
+    // gone, not just hidden -- founder feedback that an unlabeled kebab
+    // hiding the one action that mattered was itself the bug.
+    assert.equal(await page.locator('#result-more-btn').count(), 0, '#result-more-btn (the old overflow trigger) must not exist anywhere on the page');
+    assert.equal(await page.locator('#result-more-menu').count(), 0, '#result-more-menu must not exist anywhere on the page');
+    assert.equal(await page.locator('#overflow-delete-link').count(), 0, '#overflow-delete-link must not exist anywhere on the page');
+    assert.equal(await page.locator('#edit-delete-link').count(), 0, '#edit-delete-link (the 2nd-iteration Edit-sheet placement) must not exist anywhere on the page');
+
+    // Delete reads as an ORDINARY quiet link, not emphasized/red overall --
+    // only its icon carries a danger tint, per the founder's explicit "not
+    // red, not emphasized" instruction (the whole point of this 4th fix).
+    var deleteBtn = page.locator('#delete-btn');
+    var deleteBtnColor = await deleteBtn.evaluate(function (el) { return getComputedStyle(el).color; });
+    var editBtnColor = await page.locator('#open-edit-sheet').evaluate(function (el) { return getComputedStyle(el).color; });
+    assert.equal(deleteBtnColor, editBtnColor, 'the Delete link\'s own text color must match the other quiet links exactly -- no full-red/emphasized styling');
 
     // Edit still opens the edit sheet.
     await page.click('#open-edit-sheet');
@@ -704,93 +679,10 @@ test('result.html redesign: Edit / Publish / Make another / Save all still trigg
       return t.classList.contains('show') && t.textContent === 'Published to Explore';
     }, null, { timeout: 5000 });
 
-    // Make another still clears the draft and navigates to create.html.
-    await page.click('#make-another-btn');
-    await page.waitForURL(/create\.html/, { timeout: 5000 });
-    assert.match(page.url(), /create\.html/);
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html: Delete now lives behind a small overflow (⋯) menu on the main result screen -- reachable in one tap, not a 5th quiet-link, and still runs the exact same confirm-then-delete flow', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    var dreamId = 'd-overflow-delete-test';
-    await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
-
-    // No stray reference to the old Edit-sheet entry point anywhere on the
-    // page -- it was fully relocated, not just hidden.
-    var editDeleteLinkCount = await page.locator('#edit-delete-link').count();
-    assert.equal(editDeleteLinkCount, 0, '#edit-delete-link should not exist anywhere on the page -- Delete relocated to the overflow menu');
-    assert.ok(!/edit-delete-link/.test(await page.content()), 'no leftover "edit-delete-link" id/reference anywhere in the rendered page markup');
-
-    // The trigger is a small icon-only kebab button, not a labeled
-    // quiet-link -- confirm it lives outside .result-quiet-links (so it
-    // never gets counted among the 4 quiet-link buttons) and is not itself
-    // inside the Edit sheet.
-    var moreBtnInQuietLinks = await page.locator('.result-quiet-links #result-more-btn').count();
-    assert.equal(moreBtnInQuietLinks, 0, 'the overflow trigger must not live inside .result-quiet-links -- would recreate the "too prominent" complaint');
-    var moreBtnInEditSheet = await page.locator('#sheet-edit-overlay #result-more-btn').count();
-    assert.equal(moreBtnInEditSheet, 0, 'the overflow trigger must live on the main screen, not inside the Edit sheet');
-    assert.ok(await page.locator('#result-more-btn').isVisible(), '#result-more-btn (the kebab trigger) should be visible on the main result screen');
-
-    // Menu starts closed.
-    var menuOpenInitially = await page.evaluate(function () {
-      return document.getElementById('result-more-menu').classList.contains('open');
-    });
-    assert.equal(menuOpenInitially, false, 'the overflow menu should start closed');
-    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'false');
-
-    // Tapping the kebab reveals the menu with exactly one item: Delete,
-    // styled in the app's danger/red color (same convention as
-    // char-delete-link).
-    await page.click('#result-more-btn');
-    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
-    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'true');
-    var menuItemCount = await page.locator('#result-more-menu button').count();
-    assert.equal(menuItemCount, 1, 'the overflow menu should have exactly one item');
-    var deleteLink = page.locator('#overflow-delete-link');
-    assert.ok(await deleteLink.isVisible(), '#overflow-delete-link should be visible once the menu is open');
-    assert.equal(await deleteLink.textContent(), 'Delete this dream');
-    var deleteLinkColor = await deleteLink.evaluate(function (el) { return getComputedStyle(el).color; });
-    var dangerColor = await page.evaluate(function () {
-      return getComputedStyle(document.documentElement).getPropertyValue('--danger').trim();
-    });
-    // Both should resolve to the same red -- spot-check via a temp element
-    // rather than string-comparing rgb() vs. a possible hex custom property.
-    var dangerColorRgb = await page.evaluate(function (c) {
-      var d = document.createElement('div');
-      d.style.color = c;
-      document.body.appendChild(d);
-      var rgb = getComputedStyle(d).color;
-      d.remove();
-      return rgb;
-    }, dangerColor);
-    assert.equal(deleteLinkColor, dangerColorRgb, 'the delete item should render in the app\'s danger/red color, matching the existing char-delete-link convention');
-
-    // Tapping outside the open menu dismisses it without doing anything else.
-    await page.click('#result-quote');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('result-more-menu');
-      return el && !el.classList.contains('open');
-    }, null, { timeout: 5000 });
-    assert.equal(await page.getAttribute('#result-more-btn', 'aria-expanded'), 'false');
-
-    // Reopen and tap Delete -- closes the overflow menu and opens the SAME
-    // delete confirmation modal -- same copy, same Cancel/Delete buttons --
-    // just reached from the new location.
-    await page.click('#result-more-btn');
-    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
-    await page.click('#overflow-delete-link');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('result-more-menu');
-      return el && !el.classList.contains('open');
-    }, null, { timeout: 5000 });
+    // Delete -- clicking it opens the SAME confirmation modal, same copy,
+    // same Cancel/Delete buttons, and the real deletion mechanics
+    // (DreamStore.deleteDream + navigation to profile.html) are untouched.
+    await page.click('#delete-btn');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     assert.match(await page.textContent('#delete-modal-body'), /can't be undone/);
 
@@ -806,12 +698,8 @@ test('result.html: Delete now lives behind a small overflow (⋯) menu on the ma
     }, dreamId);
     assert.ok(stillThereAfterCancel, 'cancelling should not delete the dream');
 
-    // Go through the flow again and actually confirm -- the real deletion
-    // mechanics (DreamStore.deleteDream + navigation to profile.html) must
-    // be untouched, not rebuilt, by the relocation.
-    await page.click('#result-more-btn');
-    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
-    await page.click('#overflow-delete-link');
+    // Go through the flow again and actually confirm.
+    await page.click('#delete-btn');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     await page.click('#delete-confirm');
     await page.waitForURL(/profile\.html/, { timeout: 5000 });
@@ -826,7 +714,24 @@ test('result.html: Delete now lives behind a small overflow (⋯) menu on the ma
   }
 });
 
-test('result.html: deleting a published dream from the overflow menu still shows the extended Explore-removal warning (unchanged copy)', async function (t) {
+test('result.html: Make another still clears the draft and navigates to create.html (unchanged behavior, still present as the 3rd of the 4 quiet links)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedResultPage(page, baseUrl, 'd-make-another-test');
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+
+    await page.click('#make-another-btn');
+    await page.waitForURL(/create\.html/, { timeout: 5000 });
+    assert.match(page.url(), /create\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: deleting a published dream still shows the extended Explore-removal warning (unchanged copy)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -842,9 +747,7 @@ test('result.html: deleting a published dream from the overflow menu still shows
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    await page.click('#result-more-btn');
-    await page.waitForSelector('#result-more-menu.open', { timeout: 5000 });
-    await page.click('#overflow-delete-link');
+    await page.click('#delete-btn');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     assert.match(await page.textContent('#delete-modal-body'), /removed from Explore immediately/, 'a published dream should still get the extended warning copy');
   } finally {
@@ -957,50 +860,70 @@ test('result.html topbar title stays on one line and does not overlap the back b
   }
 });
 
-test('result.html: the overflow (⋯) trigger never visually collides with the quiet-links buttons, at 375px and 320px', async function (t) {
+test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/Delete) fit on a single row at 375px and 320px, including for an image-type dream where the Turn-into-video CTA is also present', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  // Review finding: .result-quiet-links is display:flex/justify-content:center
-  // and, as a block-level flex container, its own bounding box always spans
-  // the FULL width of .result-actions-wrap regardless of where its centered
-  // children actually render -- so this test deliberately checks the actual
-  // rightmost BUTTON (#save-video-btn) rather than the row container's own
-  // box, which would show a false "overlap" against #result-more-trigger
-  // (absolutely positioned at that same container's right:0 edge) purely
-  // from container geometry, never proving anything about real content.
-  // Fixed via padding-right on .result-quiet-links (see css/styles.css)
-  // sized to the trigger's width plus a safe gap; this test proves the
-  // actual rendered buttons stay clear of the trigger at both viewport
-  // widths this file already treats as the realistic range (see the
-  // 375px/320px topbar tests above).
+  // Founder spec for this iteration explicitly calls out testing at a
+  // mobile-width viewport that 4 links fit one row, including image-type
+  // dreams (Turn-into-video present) -- tracker.html's
+  // for-product-result-screen-quiet-row-fina-btv7nr.
   for (var i = 0; i < 2; i++) {
     var width = i === 0 ? 375 : 320;
-    var context = await browser.newContext({ viewport: { width: width, height: 800 } });
-    try {
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      var dreamId = 'd-overflow-overlap-' + width;
-      await seedResultPage(page, baseUrl, dreamId);
-      await page.waitForSelector('#result-more-btn', { timeout: 5000 });
+    for (var j = 0; j < 2; j++) {
+      var isImageDream = j === 1;
+      var context = await browser.newContext({ viewport: { width: width, height: 800 } });
+      try {
+        var page = await context.newPage();
+        await blockThirdParty(page);
+        var dreamId = 'd-quiet-row-fit-' + width + '-' + (isImageDream ? 'image' : 'video');
+        if (isImageDream) {
+          await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+          await page.evaluate(function (id) {
+            var raw = localStorage.getItem('dreamtube_state_v1');
+            var state = raw ? JSON.parse(raw) : {};
+            state.user = { handle: '@tester', username: 'tester' };
+            if (!state.accounts) state.accounts = {};
+            state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+            if (!state.dreams) state.dreams = [];
+            state.dreams.push({
+              id: id, ownerHandle: '@tester', caption: 'A test dream, image only', style: 'Cinematic',
+              imageUrl: 'https://example.com/fake-image.jpg', isPublished: false, createdAt: new Date().toISOString()
+            });
+            localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+          }, dreamId);
+          await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
+        } else {
+          await seedResultPage(page, baseUrl, dreamId);
+        }
+        await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+        if (isImageDream) {
+          await page.waitForSelector('#turn-video-btn[style*="flex"]', { timeout: 5000 });
+        }
 
-      var boxes = await page.$$eval(
-        '#save-video-btn, #result-more-btn',
-        function (els) {
+        var boxes = await page.$$eval('.result-quiet-links button', function (els) {
           return els.map(function (el) {
             var r = el.getBoundingClientRect();
             return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
           });
+        });
+        assert.equal(boxes.length, 4, 'expected exactly the 4 quiet links at ' + width + 'px (image dream: ' + isImageDream + ')');
+        boxes.forEach(function (b) {
+          assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
+        });
+        // All 4 on one row: every box shares (roughly) the same vertical
+        // center -- a wrapped 2nd row would show a materially different top.
+        var tops = boxes.map(function (b) { return b.top; });
+        var maxTopDelta = Math.max.apply(null, tops) - Math.min.apply(null, tops);
+        assert.ok(maxTopDelta < 4, 'all 4 quiet links should sit on a single row at ' + width + 'px (image dream: ' + isImageDream + '), got a ' + maxTopDelta + 'px top spread');
+        // No pairwise horizontal overlap between any two links.
+        for (var a = 0; a < boxes.length; a++) {
+          for (var b2 = a + 1; b2 < boxes.length; b2++) {
+            var overlaps = boxes[a].left < boxes[b2].right && boxes[b2].left < boxes[a].right;
+            assert.ok(!overlaps, boxes[a].id + ' and ' + boxes[b2].id + ' should not overlap at ' + width + 'px');
+          }
         }
-      );
-      assert.equal(boxes.length, 2, 'expected the Save button (rightmost quiet-link) and the overflow trigger, and nothing else');
-      boxes.forEach(function (b) {
-        assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
-      });
-      var save = boxes[0], trigger = boxes[1];
-      var overlapsHorizontally = save.left < trigger.right && trigger.left < save.right;
-      var overlapsVertically = save.top < trigger.bottom && trigger.top < save.bottom;
-      assert.ok(!(overlapsHorizontally && overlapsVertically), '#save-video-btn and #result-more-btn should not visually overlap at ' + width + 'px');
-    } finally {
-      await context.close();
+      } finally {
+        await context.close();
+      }
     }
   }
 });
