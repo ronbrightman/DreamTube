@@ -93,6 +93,12 @@ function mockTokenStatus(page, status) {
   });
 }
 
+function mockClaim(page, response) {
+  return page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+  });
+}
+
 async function seedLoggedInUserAt(page, username, path) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (u) {
@@ -241,6 +247,65 @@ test('shop.html: claimable state shows a live-amount "Claim N free tokens" butto
     assert.match(capNote, new RegExp(DISTINCTIVE_CLAIM_AMOUNT + ' claimable once a day'));
     assert.doesNotMatch(capNote, /banked/, 'the retired grant-ceiling concept ("up to N banked") must not appear anywhere in this copy');
     assert.doesNotMatch(capNote, /capped/, 'the retired "tokens are capped" framing must not appear anywhere in this copy');
+
+    // daily-claim-first-claim-bonus review round 2: the top-of-page
+    // #shop-cost-banner had its own separate, hardcoded "Claim 20 free
+    // tokens once a day" text node that never varied with tokenStatus,
+    // even though the nearly-identical #shop-cap-note a few lines below
+    // was already live -- the two contradicted each other the moment the
+    // amount became genuinely variable (100 first-ever, 20 thereafter).
+    var bannerAmount = await page.textContent('#shop-cost-banner-claim-amount');
+    assert.equal(bannerAmount, String(DISTINCTIVE_CLAIM_AMOUNT), 'the cost banner\'s claim number must also read live off tokenStatus, not a hardcoded literal');
+  } finally {
+    await context.close();
+  }
+});
+
+test('shop.html: a successful claim\'s toast shows the response\'s real amountClaimed, not a stale cached dailyClaimAmount', async function (t) {
+  // daily-claim-first-claim-bonus review round 1: shop.html's own inline
+  // balance-card claim button is a SEPARATE code path from the shared
+  // claim sheet (js/purchase-sheet.js, covered by
+  // test/daily-claim-behavioral.test.js's first-claim-bonus tests) --
+  // its success toast used to read the pre-claim cached
+  // tokenStatus.dailyClaimAmount instead of the claim response's own
+  // authoritative amountClaimed. Harmless while the amount was always a
+  // flat 20; genuinely wrong now that first-ever claims are 100. This
+  // mocks a cached projection of 20 but a real credited amount of 100 to
+  // prove the toast reads the live response, not the stale cache.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await mockClaim(page, { claimed: true, balance: 320, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 });
+
+    // shop.html also auto-opens the shared claim sheet on top of its own
+    // inline button (PurchaseSheet.maybeAutoOpenClaimSheet), gated on a
+    // once-per-day localStorage marker -- pre-set it so the inline button
+    // this test targets is actually clickable, matching a real returning
+    // user's second visit that day rather than their very first.
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function (u) {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@' + u, username: u };
+      if (!state.accounts) state.accounts = {};
+      state.accounts[u] = { password: 'testpass1', email: u + '@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+      localStorage.setItem('dreamtube_claim_sheet_shown_date', new Date().toDateString());
+    }, 'shopclaimtoastamount');
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
+
+    await page.click('#shop-claim-btn');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('toast');
+      return el && el.classList.contains('show') && el.textContent.length > 0;
+    }, { timeout: 3000 });
+
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /\+100 tokens claimed!/, 'must show the response\'s real amountClaimed (100), not the stale cached dailyClaimAmount (20)');
   } finally {
     await context.close();
   }

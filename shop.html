@@ -67,13 +67,17 @@
          Numbers here (100/10 per generation, 20/day) must match
          lib/entitlements.js's real VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/
          DAILY_CLAIM_AMOUNT — see that file for the authoritative
-         constants; the daily-claim half is ALSO rendered live off
-         tokenStatus in #shop-cap-note further below, so this banner and
-         that note now say the same thing in two different spots by design
-         (leads with it here since it's the first thing a cost-scanning
-         visitor reads, repeats it there once real numbers are in) rather
-         than one hardcoded and one live going stale relative to each
-         other.
+         constants. The per-generation costs are static (they don't vary
+         per account), but the daily-claim number DOES vary now (100 on
+         an account's first-ever claim, 20 after — see the
+         daily-claim-first-claim-bonus doc block in lib/entitlements.js),
+         so #shop-cost-banner-claim-amount below is rendered live off
+         tokenStatus in renderBalance(), same as #shop-cap-note further
+         below — a review finding on the daily-claim-first-claim-bonus
+         branch: this banner's claim number was still a bare hardcoded
+         "20" text node while the nearly-identical #shop-cap-note a few
+         lines below was already live, so the two contradicted each other
+         on a real first-claim day.
 
          COPY SWEEP (2026-07-28, daily-claim switch, tracker item
          for-product-build-the-daily-token-claim--fngrwd): used to say
@@ -83,7 +87,7 @@
          drip, no more ceiling — see lib/entitlements.js's own doc block). -->
     <div class="auth-notice" id="shop-cost-banner">
       <span class="icon" id="shop-cost-icon"></span>
-      <span><b>Videos cost 100 tokens, images 10.</b> Claim 20 free tokens once a day, and top up below any time.</span>
+      <span><b>Videos cost 100 tokens, images 10.</b> Claim <span id="shop-cost-banner-claim-amount">20</span> free tokens once a day, and top up below any time.</span>
     </div>
 
     <div class="token-balance-card">
@@ -370,6 +374,7 @@
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
   var capNoteEl = document.getElementById('shop-cap-note');
+  var costBannerClaimAmountEl = document.getElementById('shop-cost-banner-claim-amount');
   var firstPurchaseCalloutEl = document.getElementById('shop-first-purchase-callout');
   var claimBtn = document.getElementById('shop-claim-btn');
   var claimLabel = document.getElementById('shop-claim-label');
@@ -413,6 +418,7 @@
     // is scoped to the image feature at all. No ceiling number anymore —
     // see the doc block on this page's #shop-cost-banner above for why.
     capNoteEl.textContent = 'Free tokens: ' + amount + ' claimable once a day. Buy a pack any time for more, right when you need it.';
+    costBannerClaimAmountEl.textContent = amount;
 
     // First-purchase bonus callout (tracker item
     // for-product-shop-first-purchase-50-bonus-bzx2d4) — only ever shown
