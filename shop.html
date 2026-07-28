@@ -346,10 +346,26 @@
 
     track('checkout_started', { source: shopEntrySource, pack: pack });
 
+    // Returning-buyer prefill (tracker item
+    // for-product-repeat-purchase-friction-dod-b6pzs6): if this browser has
+    // the currently signed-in account's password already cached locally
+    // (same source mintSessionTransferToken already relies on for
+    // create-session-transfer.js), send it along so
+    // create-checkout-session-dodo.js can verify real ownership of this
+    // email server-side and, only then, attach this buyer's stored Dodo
+    // customer id + show their saved payment methods at checkout. Entirely
+    // optional -- a signed-out visitor or an account with no cached
+    // password (getCachedPassword() returns null) just omits the field and
+    // gets today's unchanged checkout, no different from before this
+    // feature existed.
+    var cachedPassword = DreamStore.getCachedPassword();
+    var checkoutBody = { email: email, pack: pack };
+    if (cachedPassword) checkoutBody.password = cachedPassword;
+
     fetch('/.netlify/functions/create-checkout-session-dodo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, pack: pack })
+      body: JSON.stringify(checkoutBody)
     })
       .then(function(res){ return res.json(); })
       .then(function(data){
