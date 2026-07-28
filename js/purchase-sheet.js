@@ -327,6 +327,18 @@
     label.textContent = idleLabel;
     btn.disabled = false;
     btn.onclick = function () {
+      // Round-5 review finding: this was the one remaining async callback
+      // in this file with no currentGen staleness guard (every other one
+      // -- claimInline/runClaim -- was fixed in earlier rounds for the
+      // same reason). Captured here, at click-time, since the fetch only
+      // starts on click; checked before the .catch() branch below mutates
+      // btn/label, since a dismiss-then-reopen-for-a-different-item while
+      // this checkout POST is still in flight would otherwise let a
+      // failure response overwrite the CURRENTLY open sheet's button with
+      // this stale click's idleLabel/error text. The success path isn't
+      // gated -- it only navigates away (location.href), never mutates
+      // this sheet's DOM, so there's nothing stale to guard there.
+      var myGen = currentGen;
       var email = DreamStore.getAccountEmail();
       if (!email) {
         // Legacy accounts predating required email have nowhere for a Dodo
@@ -382,6 +394,7 @@
           location.href = data.url;
         })
         .catch(function () {
+          if (myGen !== currentGen) return;
           btn.disabled = false;
           label.textContent = idleLabel;
           showError('Checkout isn’t available right now — try again soon');

@@ -179,6 +179,73 @@ test('style.html: tapping the buy button POSTs the smallest sufficient pack with
   }
 });
 
+test('style.html: dismissing the sheet right after tapping Buy, then reopening and tapping Buy again, does not let the first (dismissed) request\'s late failure corrupt the reopened sheet\'s in-flight state', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Round-5 review finding: wireBuyButton's checkout-session .catch() was
+  // the one remaining async callback in purchase-sheet.js with no
+  // currentGen staleness guard (every other one -- claimInline/runClaim --
+  // was fixed in earlier rounds for the same reason). First click's
+  // request fails slowly; before it settles, the sheet is dismissed and
+  // reopened, and a SECOND Buy click starts a request that's still
+  // genuinely in flight (never resolves within this test). The first
+  // click's late failure must not revert the reopened sheet's button/label
+  // out of its own in-flight "Redirecting..." state, nor show a bogus error.
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    var pageErrors = [];
+    page.on('pageerror', function (err) { pageErrors.push(err); });
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    var checkoutCalls = 0;
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      checkoutCalls++;
+      if (checkoutCalls === 1) {
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'server_error' }) });
+            resolve();
+          }, 500);
+        });
+      }
+      // Second call: never resolves within this test -- the reopened
+      // sheet's own request stays genuinely in flight throughout.
+      return new Promise(function () {});
+    });
+
+    await seedAccount(page, { username: 'buydismissreopen', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    await page.click('#ps-buy-btn'); // kicks off the 500ms-delayed failing request
+    await page.click('#purchase-sheet-overlay', { position: { x: 5, y: 5 } }); // dismiss immediately
+    await page.waitForSelector('#purchase-sheet-overlay:not(.open)', { timeout: 3000 });
+
+    await page.click('#generate-btn'); // reopen
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.click('#ps-buy-btn'); // kicks off the never-resolving second request
+    await page.waitForSelector('#ps-buy-label:has-text("Redirecting")', { timeout: 3000 });
+
+    // Let the first (dismissed instance's) delayed failure resolve while
+    // the REOPENED sheet's own request is still genuinely in flight.
+    await page.waitForTimeout(800);
+
+    var buyLabelAfter = await page.textContent('#ps-buy-label');
+    assert.match(buyLabelAfter, /Redirecting/, 'the reopened sheet\'s own in-flight click must not be reverted by the stale dismissed instance\'s late failure');
+    var buyBtnDisabled = await page.evaluate(function () { return document.getElementById('ps-buy-btn').disabled; });
+    assert.equal(buyBtnDisabled, true, 'the reopened sheet\'s Buy button must stay disabled -- its own request is still genuinely in flight');
+    var errorVisible = await page.isVisible('#ps-error');
+    assert.equal(errorVisible, false, 'no error should show -- the failure belongs to the dismissed, stale instance, not the currently open one');
+    assert.equal(pageErrors.length, 0, 'no uncaught error -- ' + pageErrors.map(function (e) { return e.message; }).join('; '));
+  } finally {
+    await context.close();
+  }
+});
+
 // ============================================================================
 // Arithmetic + draft persistence — result.html "Generate Again" (Edit
 // sheet). Seeded as an IMAGE-type dream specifically to exercise the fix

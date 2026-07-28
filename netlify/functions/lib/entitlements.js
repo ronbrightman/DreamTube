@@ -584,6 +584,18 @@ async function claimDailyTokens(event, email) {
   });
 
   if (result.skipped) {
+    // SKIP fires whenever a fresh read already shows a cooldown in
+    // effect -- which includes the read seeing OUR OWN just-written
+    // record from an earlier attempt in this same call, once its verify
+    // (which raced the write under Blobs' eventual consistency) had
+    // already failed and looped back to a fresh read that then caught up.
+    // Without this check that self-clobber gets misreported as
+    // claimed:false even though the credit genuinely landed -- the same
+    // "was this actually my own write" hazard the exhaustion branch below
+    // already guards against, just reachable one step earlier here.
+    if (result.current && result.current.lastClaimAttemptId === attemptId) {
+      return { claimed: true, balance: result.current.tokens.balance, streak: result.current.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS };
+    }
     var currentLastClaimAt = (result.current && result.current.tokens && result.current.tokens.lastClaimAt) || 0;
     return { claimed: false, nextClaimAt: currentLastClaimAt + CLAIM_COOLDOWN_MS };
   }

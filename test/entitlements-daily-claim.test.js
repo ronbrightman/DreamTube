@@ -288,3 +288,48 @@ test('three CONCURRENT claimDailyTokens calls for the SAME email still land exac
   var record = await entitlements.getEntitlement(ev, email);
   assert.equal(record.tokens.balance, 20);
 });
+
+// Round-5 review finding: a SINGLE claimDailyTokens call's own SKIP branch
+// could misreport a genuinely successful claim as claimed:false. Sequence:
+// attempt 1 writes the credit, but its own verify-read lags behind the
+// write (real Blobs eventual consistency -- see blobs-retry.js's own
+// header comment); the loop moves to attempt 2, whose fresh `read()` now
+// DOES see attempt 1's already-committed write, so `mutate` sees
+// `now - lastClaimAt < CLAIM_COOLDOWN_MS` and returns SKIP -- indistinguishable,
+// without the attemptId check added below, from "someone else already
+// claimed". Mirrors this file's own header-comment reasoning
+// (entitlements.js lines ~533-553) and the exhaustion branch's existing
+// finalRead.lastClaimAttemptId check -- this closes the same gap one step
+// earlier, in the SKIP branch, which is actually the more likely path to
+// hit this exact self-clobber (it returns on the very next attempt, not
+// only after every attempt is exhausted).
+test('a single claim call whose OWN verify-read lags, then loops into a fresh read that sees its own just-committed write, still reports claimed:true (not a false claimed:false self-clobber)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'selflag@example.com';
+  await entitlements.setEntitlement(ev, email, { tokens: { balance: 0, lastClaimAt: Date.now() - (25 * HOUR_MS) } });
+
+  // Call #1 against this store is syncTokens' own getEntitlement (record
+  // already has tokens, so no seeding write follows). Call #2 is
+  // retryingWrite's attempt-1 read() (genuinely sees the not-yet-claimed
+  // record). Call #3 is attempt-1's own verify-read, right after its
+  // setJSON -- simulate it NOT seeing that just-committed write yet
+  // (`{value: undefined}`), forcing a loop to attempt 2. Every other call
+  // (attempt-2's read, its own verify) falls through to the real stored
+  // value, which by then genuinely contains attempt-1's committed write.
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 3) return { value: undefined };
+    return null;
+  });
+
+  try {
+    var result = await entitlements.claimDailyTokens(ev, email);
+    assert.equal(result.claimed, true, 'the claim genuinely landed on attempt 1 -- a self-clobbering SKIP on attempt 2 must not report this as claimed:false');
+    assert.equal(result.balance, 20);
+    assert.equal(result.streak, 1);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 20, 'exactly one credit must have landed, not zero and not two');
+});
