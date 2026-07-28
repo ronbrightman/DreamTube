@@ -339,6 +339,6 @@ test('retryDelayMs:0 disables the delay entirely -- exhausting 3 attempts stays 
   assert.ok(elapsed < 50, 'retryDelayMs:0 must skip the delay entirely across all attempts, got ' + elapsed + 'ms');
 });
 
-test('retryDelayMs defaults to DEFAULT_RETRY_DELAY_MS (200ms, the founder-approved value) when omitted', function () {
+test('retryDelayMs defaults to DEFAULT_RETRY_DELAY_MS (200ms) when omitted', function () {
   assert.equal(blobsRetry.DEFAULT_RETRY_DELAY_MS, 200);
 });

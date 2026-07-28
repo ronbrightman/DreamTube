@@ -116,8 +116,8 @@ var DEFAULT_MAX_ATTEMPTS = 3;
 // contract — purely additive real-world reliability, benefiting all four
 // call sites documented at the top of this file, not just the daily
 // claim (tracker-store.js/pending-dreams.js/support-store.js all share
-// the exact same underlying hazard). 200ms is the founder-approved range
-// (150-250ms, 2026-07-28): large enough to matter against real
+// the exact same underlying hazard). 200ms is a judgment call, not a
+// founder-approved figure: large enough to matter against real
 // propagation lag, trivial against any Netlify Function's execution
 // budget (worst case here is maxAttempts-1 delays — 2 x 200ms = 400ms —
 // against a multi-second function timeout), and overridable per call via
