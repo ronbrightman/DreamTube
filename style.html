@@ -87,6 +87,33 @@
       <div class="media-type-btn" data-media-type="image">Image</div>
       <div class="media-type-btn active" data-media-type="video">Video</div>
     </div>
+    <!-- Audio/music toggle -- tracker item for-product-audio-on-off-choice-
+         at-creat-dyyr98 (founder-approved 2026-07-28): generate-video.js's
+         generate_audio:false genuinely bills less ($0.10/s vs $0.15/s,
+         founder-verified via fal's own usage API), so defaulting this OFF
+         cuts the default 8s video's cost from $1.20 to $0.80. Token price
+         stays flat at 100 either way (founder explicit -- no split
+         pricing). Reuses admin.html's existing .toggle-switch component
+         (see css/styles.css) and create.html's .opt-chip-row/.opt-chip
+         single-select preset pattern (Advanced camera/scenery pickers) --
+         both already-established in this codebase, not new UI language.
+         Video-only concept -- hidden entirely (never just disabled-
+         looking) whenever Image is selected, per FOUNDER_PRINCIPLES.md's
+         "capability-detect and hide" lesson -- see updateMediaTypeUI()
+         below. -->
+    <div class="choice-card" id="audio-toggle-row" style="cursor:default;">
+      <div class="choice-text">
+        <div class="choice-title">Audio &amp; music</div>
+        <div class="admin-row-sub" id="audio-toggle-sub">Off — no music or sound effects</div>
+      </div>
+      <div class="toggle-switch" id="audio-toggle" role="switch" aria-checked="false" aria-label="Audio and music"></div>
+    </div>
+    <div class="opt-chip-row" id="music-style-row" style="display:none; margin-bottom:14px;">
+      <div class="opt-chip selected" data-music-style="dreamy">Dreamy</div>
+      <div class="opt-chip" data-music-style="cinematic">Cinematic</div>
+      <div class="opt-chip" data-music-style="upbeat">Upbeat</div>
+      <div class="opt-chip" data-music-style="none-ambient">Ambient only</div>
+    </div>
     <button class="btn btn-primary btn-block" id="generate-btn" disabled style="margin-bottom:22px;">Generate Video</button>
   </div>
 
@@ -169,11 +196,50 @@
   var selectedMediaType = 'video';
   var mediaTypeRow = document.getElementById('media-type-row');
 
+  // ===== Audio/music toggle (tracker: for-product-audio-on-off-choice-at-
+  // creat-dyyr98) — DEFAULT OFF, per founder decision. Video-only: hidden
+  // entirely whenever Image is selected (updateMediaTypeUI below), rather
+  // than shown-but-disabled — audio has no meaning for a still image.
+  var audioOn = false;
+  var musicStyle = 'dreamy'; // only sent to the server once audioOn is true
+  var audioToggleRow = document.getElementById('audio-toggle-row');
+  var audioToggle = document.getElementById('audio-toggle');
+  var audioToggleSub = document.getElementById('audio-toggle-sub');
+  var musicStyleRow = document.getElementById('music-style-row');
+
+  function updateAudioUI(){
+    audioToggle.classList.toggle('on', audioOn);
+    audioToggle.setAttribute('aria-checked', String(audioOn));
+    audioToggleSub.textContent = audioOn ? 'On — adds a music track to your video' : 'Off — no music or sound effects';
+    // Only ever visible when both the media type supports audio AND the
+    // toggle itself is on — updateMediaTypeUI (below) independently gates
+    // the media-type half of this, this function owns the audioOn half.
+    musicStyleRow.style.display = (audioOn && selectedMediaType !== 'image') ? 'flex' : 'none';
+  }
+  audioToggle.addEventListener('click', function(){
+    audioOn = !audioOn;
+    updateAudioUI();
+  });
+  musicStyleRow.addEventListener('click', function(e){
+    var chip = e.target.closest('.opt-chip');
+    if(!chip) return;
+    musicStyle = chip.dataset.musicStyle;
+    Array.prototype.forEach.call(musicStyleRow.querySelectorAll('.opt-chip'), function(c){
+      c.classList.toggle('selected', c.dataset.musicStyle === musicStyle);
+    });
+  });
+
   function updateMediaTypeUI(){
     Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){
       b.classList.toggle('active', b.dataset.mediaType === selectedMediaType);
     });
     genBtn.textContent = selectedMediaType === 'image' ? 'Generate Image' : 'Generate Video';
+    // Capability-detect and hide (FOUNDER_PRINCIPLES.md): audio doesn't
+    // apply to a still image, so the whole audio section disappears
+    // rather than sitting there disabled — matches the Image path never
+    // showing a "Composing the soundtrack" wait-screen line either.
+    audioToggleRow.style.display = selectedMediaType === 'image' ? 'none' : 'flex';
+    updateAudioUI();
   }
   mediaTypeRow.addEventListener('click', function(e){
     var btn = e.target.closest('.media-type-btn');
@@ -188,8 +254,23 @@
     return !!(tokenStatus && tokenStatus.balance < cost);
   }
 
+  // Single source of truth for the draft this screen persists — read live
+  // (selected/selectedMediaType/audioOn/musicStyle) at call time, never a
+  // captured/stale snapshot, and shared by both proceedToGenerate (the
+  // unblocked path) and the out-of-tokens sheet's persistDraft below (the
+  // blocked path) so the two can never silently drift apart. audioOn/
+  // musicStyle only ever meaningful on the video path — an image draft
+  // always carries audioOn:false/musicStyle:null.
+  function currentDraftPatch(){
+    return {
+      style: selected, mediaType: selectedMediaType, sourceImageUrl: null,
+      audioOn: selectedMediaType === 'video' ? audioOn : false,
+      musicStyle: (selectedMediaType === 'video' && audioOn) ? musicStyle : null
+    };
+  }
+
   function proceedToGenerate(){
-    DreamStore.setDraft({ style: selected, mediaType: selectedMediaType, sourceImageUrl: null });
+    DreamStore.setDraft(currentDraftPatch());
     location.href = 'processing.html';
   }
 
@@ -212,7 +293,7 @@
         tokenStatus: tokenStatus,
         source: 'blocked_action',
         persistDraft: function(){
-          DreamStore.setDraft({ style: selected, mediaType: selectedMediaType, sourceImageUrl: null });
+          DreamStore.setDraft(currentDraftPatch());
         },
         // Review finding, round 4: without this, a claim made via the
         // sheet's own inline "Claim +N" button (to unblock THIS action)

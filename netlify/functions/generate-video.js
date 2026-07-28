@@ -1,8 +1,20 @@
 // netlify/functions/generate-video.js
 //
-// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken?, ownerBypassToken? }
+// POST { caption, style, characters?, cameraView?, sceneryTime?, sceneryPlace?, email?, turnstileToken?, ownerBypassToken?, audioOn?, musicStyle? }
 // -> kicks off a video generation job and returns an operationName the
 // client can poll via video-status.js.
+//
+// audioOn (optional, default false — tracker item for-product-audio-on-
+// off-choice-at-creat-dyyr98) is style.html's client-side audio/music
+// toggle. musicStyle (optional, only meaningful when audioOn is true) is
+// one of MUSIC_STYLE_MODIFIERS' keys below — a small fixed preset list
+// fed into the prompt as a modifier for Veo's own native audio
+// generation, not a separate music-generation call. The FINAL
+// generate_audio sent to fal is never audioOn taken as-is — see
+// generateAudio's own computation in the handler below, which can
+// independently override it to false (a condensed caption, or the
+// server-side owner/IL cost-control profile — see
+// resolveGenerationProfile) but never override it to true.
 //
 // ownerBypassToken (optional) — see lib/owner-bypass.js and
 // verify-owner-bypass.js for how the founder obtains one (a real,
@@ -84,6 +96,24 @@ var STYLE_MODIFIERS = {
   Realistic: 'in a photorealistic, lifelike rendering style'
 };
 
+// Audio/music toggle (tracker item for-product-audio-on-off-choice-at-
+// creat-dyyr98, founder-approved 2026-07-28) — style.html's audio-on
+// picker (four presets only, deliberately not free text: this feeds
+// Veo's own native audio generation as a prompt modifier, there is no
+// separate music-generation model/API call here). Only ever appended
+// when the final, server-computed generateAudio is true (see the
+// handler below) — telling the model "add cinematic music" when the
+// request is actually generate_audio:false would be meaningless. An
+// unrecognized/missing key (a stale client build, or Part B's owner/IL
+// force-off making musicStyle moot) is silently skipped rather than
+// guessed at, same permissive-fallback spirit as STYLE_MODIFIERS above.
+var MUSIC_STYLE_MODIFIERS = {
+  dreamy: 'with a soft, dreamy ambient musical score',
+  cinematic: 'with a sweeping, cinematic orchestral score',
+  upbeat: 'with an upbeat, energetic musical score',
+  'none-ambient': 'with only subtle ambient background sound, no distinct music'
+};
+
 var CAMERA_MODIFIERS = {
   'Close-up': 'close-up shot',
   'Wide shot': 'wide shot',
@@ -113,8 +143,13 @@ var SCENERY_PLACE_MODIFIERS = {
  * description is appended to it rather than silently dropped. A photo-only
  * self character (no description) still gets just the plain pointer line,
  * unchanged from before.
+ *
+ * musicStyle (optional 7th arg) — see MUSIC_STYLE_MODIFIERS above; the
+ * caller (the handler below) only ever passes one when the request's
+ * final, already-resolved generateAudio is true, never based on the raw
+ * client request alone.
  */
-function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace) {
+function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace, musicStyle) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
   var parts = [caption];
 
@@ -141,6 +176,7 @@ function buildPrompt(caption, style, characters, cameraView, sceneryTime, scener
   if (sceneryBits.length) parts.push('Setting: ' + sceneryBits.join(', '));
 
   parts.push(modifier);
+  if (MUSIC_STYLE_MODIFIERS[musicStyle]) parts.push(MUSIC_STYLE_MODIFIERS[musicStyle]);
   return parts.join(', ') + '.';
 }
 
@@ -530,6 +566,48 @@ var promptCondenser = require('./lib/prompt-condenser');
 var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
+var geo = require('./lib/geo');
+
+/**
+ * Server-side "cheap generation profile" (tracker item for-product-cheap-
+ * generation-profile-for-yz2ina, founder-approved 2026-07-28 — SCOPED to
+ * the audio-off-forcing portion only; the budget-model-switch/shorter-
+ * duration portion is explicitly out of scope here, blocked on a
+ * still-running model-selection eval elsewhere in this pipeline). The
+ * founder's own generations, and IL-geo traffic generally, are ~all
+ * testing per his own tracker note — so when the request's resolved
+ * email matches OWNER_EMAIL (same normalizeEmail-against-OWNER_EMAIL
+ * pattern as admin-paywall-toggle.js/add-tracker-item.js — reused, not
+ * reinvented) OR the request's geolocation resolves to Israel (lib/geo.js),
+ * this forces generate_audio:false regardless of whatever the client's
+ * own Part-A audio toggle asked for. Deliberately SILENT to the client —
+ * no UI indication, no error — this is pure cost control on traffic
+ * that's overwhelmingly the founder's own testing, not a user-facing
+ * feature; the accepted tradeoff (founder explicit, per the tracker item)
+ * is that any genuine non-testing IL user also gets the cheaper profile,
+ * acceptable since IL is already excluded from every metric this app
+ * tracks.
+ *
+ * A malformed/unreadable geo header (lib/geo.js's own fail-open contract)
+ * resolves to "not Israel" here too — a geo-parsing hiccup can only ever
+ * cost MORE (the standard, non-forced path), never silently under-bill a
+ * non-owner/non-IL requester.
+ *
+ * Returns { forceAudioOff, profile } — profile is 'cheap_owner' /
+ * 'cheap_il' / 'standard', for cost-attribution logging only (see the
+ * call site below) — never sent to the client, and this deliberately
+ * touches NOTHING beyond generate_audio (not the model, not duration —
+ * see this branch's own scope note above).
+ */
+function resolveGenerationProfile(email, event) {
+  var ownerEmail = entitlements.normalizeEmail(process.env.OWNER_EMAIL);
+  var isOwner = !!(ownerEmail && email && email === ownerEmail);
+  var isIsrael = geo.resolveCountryCode(event) === 'IL';
+  return {
+    forceAudioOff: isOwner || isIsrael,
+    profile: isOwner ? 'cheap_owner' : (isIsrael ? 'cheap_il' : 'standard')
+  };
+}
 
 /**
  * Records that `email` submitted `operationName`, best-effort — see
@@ -590,7 +668,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken, clientAudioOn, musicStyle;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -608,6 +686,17 @@ exports.handler = async function (event) {
     // reference-to-video paths below — see the branch right before the fal
     // call itself.
     sourceImageUrl = typeof payload.sourceImageUrl === 'string' && payload.sourceImageUrl.trim() ? payload.sourceImageUrl.trim() : null;
+    // Audio/music toggle (tracker item for-product-audio-on-off-choice-at-
+    // creat-dyyr98, style.html's creation-flow toggle) — DEFAULT OFF: a
+    // missing/non-boolean-true value (every caller predating this feature,
+    // and any future caller that just forgets to send it) reads as off,
+    // matching the client's own default and keeping the cheaper cost the
+    // safe fallback rather than the more expensive one. musicStyle only
+    // ever matters when clientAudioOn is true (see the generateAudio/
+    // buildPrompt call below) — captured either way, harmlessly ignored
+    // otherwise.
+    clientAudioOn = payload.audioOn === true;
+    musicStyle = typeof payload.musicStyle === 'string' ? payload.musicStyle.trim() : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
@@ -658,6 +747,18 @@ exports.handler = async function (event) {
     var bypassCheck = await ownerBypass.verifyBypassToken(event, ownerBypassToken);
     ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
   }
+
+  // Cheap generation profile (tracker item for-product-cheap-generation-
+  // profile-for-yz2ina) — resolved once, up front, so both the mock and
+  // real paths below see the identical forceAudioOff decision. See
+  // resolveGenerationProfile's own doc comment for the full mechanism.
+  // Logged here (rather than a PostHog event — see that function's own
+  // doc comment on why no existing server-side capture call exists in
+  // this file to attach the property to) purely for operational cost-
+  // attribution visibility, same "best-effort, never blocks the request"
+  // spirit as every other console.log/warn in this file.
+  var generationProfileResult = resolveGenerationProfile(email, event);
+  console.log('generate-video: generation_profile=' + generationProfileResult.profile);
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
@@ -740,9 +841,22 @@ exports.handler = async function (event) {
   // that failed to condense and fell back to the untouched original, both
   // narrate the user's real words, so audio stays on for those exactly
   // like before this change.
-  var generateAudio = !condensed.wasCondensed;
+  //
+  // clientAudioOn (style.html's toggle, default off — see the payload-
+  // parsing block above) is the PRIMARY gate as of this feature: audio is
+  // only ever on when the user actually asked for it. condensed.wasCondensed
+  // and generationProfileResult.forceAudioOff (Part B's silent owner/IL
+  // cost-control override, see resolveGenerationProfile above) can each
+  // independently turn it back off, never on — this is a three-way AND,
+  // not a priority order, so any one of them being true is enough to keep
+  // this a text-and-visuals-only generation.
+  var generateAudio = clientAudioOn && !condensed.wasCondensed && !generationProfileResult.forceAudioOff;
+  // Only fed to the model when audio is actually going to be on — see
+  // MUSIC_STYLE_MODIFIERS' own doc comment for why appending a music
+  // instruction to a silent generation would be meaningless.
+  var promptMusicStyle = generateAudio ? musicStyle : null;
 
-  var prompt = buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace);
+  var prompt = buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace, promptMusicStyle);
   var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
   var duration = resolveDuration();
 
@@ -790,6 +904,7 @@ exports.callFalReferenceToVideo = callFalReferenceToVideo;
 exports.callFalImageToVideo = callFalImageToVideo;
 exports.resolveDuration = resolveDuration;
 exports.falErrorMessage = falErrorMessage;
+exports.resolveGenerationProfile = resolveGenerationProfile;
 exports.FAL_MODEL = FAL_MODEL;
 exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;
 exports.FAL_MODEL_IMAGE_TO_VIDEO = FAL_MODEL_IMAGE_TO_VIDEO;

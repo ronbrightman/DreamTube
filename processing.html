@@ -186,6 +186,20 @@
     return DreamStore.getDraft().mediaType === 'image' ? 'image' : 'video';
   }
 
+  // Same resolution order as currentMediaType() above (a resuming
+  // pendingJob's own stamped value takes priority since it reflects the
+  // generation actually in flight; otherwise the draft) — tracker item
+  // for-product-audio-on-off-choice-at-creat-dyyr98's requirement that
+  // every read of "is audio on for THIS generation" stays live, never a
+  // cached/hardcoded assumption. Video-only concept, same as the toggle
+  // itself — an image generation is never "audio on".
+  function currentAudioOn(){
+    if(currentMediaType() !== 'video') return false;
+    var pending = DreamStore.getPendingJob();
+    if(pending && typeof pending.audioOn !== 'undefined') return !!pending.audioOn;
+    return !!DreamStore.getDraft().audioOn;
+  }
+
   // Mirrors style.html's/result.html's own IMAGE_TOKEN_COST/VIDEO_TOKEN_COST
   // — needed here for the out-of-tokens purchase sheet's arithmetic on the
   // E112/E412 fail path below.
@@ -196,13 +210,29 @@
   }
 
   var CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Composing the soundtrack…', 'Polishing details…', 'Almost dreaming…'];
+  // Deliberately drops "Composing the soundtrack…" — this checklist item
+  // must only ever appear when audio is ACTUALLY on for this generation
+  // (tracker item for-product-audio-on-off-choice-at-creat-dyyr98, default
+  // OFF), same media-aware-copy pattern IMAGE_CAPTIONS below already
+  // established for a still image never getting "Adding motion…"/
+  // "Composing the soundtrack…" either.
+  var CAPTIONS_AUDIO_OFF = ['Painting the scene…', 'Rendering the light…', 'Adding motion…', 'Polishing details…', 'Almost dreaming…'];
   // Deliberately drops "Adding motion…" and "Composing the soundtrack…" —
   // neither applies to a still image (see docs/IMAGE_GENERATION_SPEC.md §6).
   var IMAGE_CAPTIONS = ['Painting the scene…', 'Rendering the light…', 'Adding detail…', 'Almost dreaming…'];
 
   function activeCaptions(){
-    return currentMediaType() === 'image' ? IMAGE_CAPTIONS : CAPTIONS;
+    if(currentMediaType() === 'image') return IMAGE_CAPTIONS;
+    return currentAudioOn() ? CAPTIONS : CAPTIONS_AUDIO_OFF;
   }
+  // Test-only hook (mirrors window.__TEST_POLL_OVERRIDES__'s own precedent
+  // a few hundred lines down, for js/purchase-sheet.js's pollForCredit) --
+  // lets test/audio-toggle-behavioral.test.js assert the wait-screen
+  // checklist's actual caption list directly, instead of waiting through
+  // several real 5-second progInterval ticks to observe it render. No real
+  // page load ever reads this back; it's a plain function reference with
+  // zero runtime cost otherwise.
+  window.__TEST_ACTIVE_CAPTIONS__ = activeCaptions;
 
   function applyMediaTypeCopy(){
     var isImage = currentMediaType() === 'image';
@@ -474,7 +504,17 @@
           characterIds: d.characterIds, cameraView: d.cameraView,
           sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace,
           turnstileToken: turnstileToken,
-          mediaType: mediaType, sourceImageUrl: d.sourceImageUrl || null
+          mediaType: mediaType, sourceImageUrl: d.sourceImageUrl || null,
+          // Audio/music toggle (tracker item for-product-audio-on-off-
+          // choice-at-creat-dyyr98) — read live off the draft style.html
+          // just wrote, same as every other field here. Harmless to
+          // include on the image/regenerate paths below: generateImage
+          // forwards these straight through to startGeneration, which
+          // itself never sends them to the server unless mediaType is
+          // 'video' (see js/store.js's own request-body construction), and
+          // regenerateDream's own opts destructuring simply never reads
+          // these two keys at all (see its doc comment on why).
+          audioOn: d.audioOn, musicStyle: d.musicStyle
         };
         var freshTask = d.sourceDreamId
           ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))

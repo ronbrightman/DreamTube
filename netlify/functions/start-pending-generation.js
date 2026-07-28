@@ -263,7 +263,19 @@ exports.handler = async function (event) {
 
   var condensed = await promptCondenser.condenseIfNeeded(caption, process.env.GEM_API_KEY);
   if (condensed.error) console.warn('start-pending-generation: prompt-condenser: ' + condensed.error);
-  var generateAudio = !condensed.wasCondensed;
+  // Cheap generation profile (tracker item for-product-cheap-generation-
+  // profile-for-yz2ina) — same silent owner/IL audio-off forcing as
+  // generate-video.js's own handler (see genVideo.resolveGenerationProfile
+  // for the full mechanism), reused rather than reimplemented so the two
+  // submission paths can never drift apart. Unlike generate-video.js, this
+  // endpoint has no client-facing audio toggle to combine with (wizard.html/
+  // start.html's pre-signup funnels never send one — see this file's own
+  // header comment on why this stays a separate, simpler path) — the base
+  // "audio on unless the caption was condensed" behavior is UNCHANGED, this
+  // only adds the same silent override on top of it.
+  var generationProfileResult = genVideo.resolveGenerationProfile(email, event);
+  console.log('start-pending-generation: generation_profile=' + generationProfileResult.profile);
+  var generateAudio = !condensed.wasCondensed && !generationProfileResult.forceAudioOff;
 
   var prompt = genVideo.buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace);
   var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];

@@ -135,7 +135,7 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -249,6 +249,8 @@
       if (parsed.draft.sceneryPlace === undefined) parsed.draft.sceneryPlace = null;
       if (parsed.draft.mediaType === undefined) parsed.draft.mediaType = null;
       if (parsed.draft.sourceImageUrl === undefined) parsed.draft.sourceImageUrl = null;
+      if (parsed.draft.audioOn === undefined) parsed.draft.audioOn = false;
+      if (parsed.draft.musicStyle === undefined) parsed.draft.musicStyle = null;
       if (!parsed.likedIds) parsed.likedIds = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
@@ -797,7 +799,21 @@
             // on every request (lib/owner-bypass.js's verifyBypassToken) —
             // this is never trusted as-is.
             ownerBypassToken: getOwnerBypassToken()
-          }, sourceImageUrl ? { sourceImageUrl: sourceImageUrl } : {}))
+          }, sourceImageUrl ? { sourceImageUrl: sourceImageUrl } : {},
+          // Audio/music toggle (tracker item for-product-audio-on-off-
+          // choice-at-creat-dyyr98) — video-only, same reasoning as
+          // sourceImageUrl above: only ever sent (and only ever
+          // meaningful) on the video path, so an image submission never
+          // carries these keys at all rather than sending an always-false
+          // audioOn generate-image.js has no use for. musicStyle is only
+          // included when audioOn is actually true — generate-video.js's
+          // own server-side computation ignores it otherwise anyway, but
+          // omitting it here keeps the wire payload honest about what
+          // actually matters.
+          mediaType === 'video' ? Object.assign(
+            { audioOn: !!opts.audioOn },
+            opts.audioOn ? { musicStyle: opts.musicStyle || null } : {}
+          ) : {}))
         }).then(function (res) {
           return res.json().then(function (data) {
             if (!res.ok) throw new Error(data.error || 'E399: generation_failed');
@@ -814,6 +830,16 @@
         operationName: operationName, startedAt: startedAt,
         caption: caption, style: style, sourceDreamId: sourceDreamId,
         mediaType: mediaType,
+        // Audio/music toggle (tracker item for-product-audio-on-off-
+        // choice-at-creat-dyyr98) — stamped onto the job itself (not just
+        // read off the draft) so processing.html's wait-screen checklist
+        // can read this LIVE for a RESUMED job too (e.g. after leaving and
+        // returning to Processing, or a page reload mid-generation), where
+        // the original draft may already be gone/changed — same reasoning
+        // as mediaType being stamped here rather than re-derived from the
+        // draft each time. Video-only, mirrors the request payload's own
+        // mediaType-gated audioOn above.
+        audioOn: mediaType === 'video' ? !!opts.audioOn : false,
         // Reads state.pendingJob directly rather than through
         // scopedPendingJob() / the already-scoped `job` resumePendingJob()
         // obtained — safe here specifically because a resume can only ever
@@ -2004,15 +2030,16 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
 
-    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
       opts = opts || {};
       return startGeneration(caption, style, {
         characterIds: opts.characterIds, cameraView: opts.cameraView,
         sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
-        turnstileToken: opts.turnstileToken
+        turnstileToken: opts.turnstileToken,
+        audioOn: opts.audioOn, musicStyle: opts.musicStyle
       });
     },
 
@@ -2038,6 +2065,12 @@
      * media-type picker on regenerate, per docs/IMAGE_GENERATION_SPEC.md
      * §7's explicit scope cut) — startGeneration defaults a missing/absent
      * mediaType to 'video', same backward-compat default as everywhere else.
+     * No audioOn/musicStyle forwarding here — regenerate has no audio
+     * picker UI of its own (style.html's toggle is the only entry point
+     * for tracker item for-product-audio-on-off-choice-at-creat-dyyr98),
+     * so this always resolves to the same default-off startGeneration
+     * falls back to for any caller that doesn't pass one — consistent with
+     * the founder's own "default off everywhere" cost decision, not a gap.
      */
     regenerateDream: function (id, patch) {
       return startGeneration(patch.caption, patch.style, {
@@ -2152,6 +2185,14 @@
       return startGeneration(job.caption, job.style, {
         sourceDreamId: job.sourceDreamId,
         mediaType: job.mediaType,
+        // Forwarded so startGeneration's own savePendingJob re-write (see
+        // its doc comment) re-stamps the SAME audioOn the job was
+        // originally submitted with, rather than silently resetting to
+        // false because a resume's opts never otherwise mentions it — this
+        // is a resume (no new request goes out; operationPromise below
+        // resolves straight to job.operationName), so there's no live
+        // toggle to re-read here, only this job's own already-decided value.
+        audioOn: job.audioOn,
         resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },
