@@ -263,8 +263,11 @@ could not, create the Dodo account itself).
   like `owner-topup-tokens.js`'s manual top-up, just triggered by a real
   payment instead of the owner's own request.
 - Does not touch the generation gate (`E112`) at all — tokens purchased
-  this way just add to the same balance the free daily grant already
-  fills; `generate-video.js` doesn't know or care where a token came from.
+  this way just add to the same balance the signup grant and the daily
+  CLAIM (`claim-daily-tokens.js`, see that file/`lib/entitlements.js` —
+  2026-07-28 replaced the old automatic daily drip with an active,
+  user-tapped claim) already fill; `generate-video.js` doesn't know or
+  care where a token came from.
 
 **Environment variables this introduces:**
 

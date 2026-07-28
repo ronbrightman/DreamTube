@@ -146,6 +146,17 @@
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
     PurchaseSheet.renderBalanceChip(topbarChip, status);
+    // Auto-open ONCE per day when claimable (tracker item
+    // for-product-build-the-daily-token-claim--fngrwd, item 4) — chip
+    // stays the fallback entry point if dismissed.
+    PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+      onClaimed: function(){
+        DreamStore.getTokenStatus().then(function(fresh){
+          tokenStatus = fresh;
+          PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+        }).catch(function(){});
+      }
+    });
   }).catch(function(){ tokenStatus = null; });
 
   // ===== Image-vs-video picker (Direction A — segmented toggle) =====

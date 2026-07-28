@@ -71,6 +71,7 @@
     <div class="gen-banner-text">Your dream is still generating…</div>
   </div>
   <div class="explore-filter-chip" id="filter-chip" style="display:none;"></div>
+  <div class="explore-token-chip-slot" id="explore-token-chip-slot"></div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
   <div class="bottom-nav">
@@ -93,6 +94,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   // Deliberately no login gate here, unlike every other page — Explore is
   // the real shared feed now (see js/store.js's getSharedFeed), and a
@@ -120,6 +122,29 @@
   }
   gateNavLink('nav-create', 'create.html');
   gateNavLink('nav-profile', 'profile.html');
+
+  // Token balance chip (tracker item
+  // for-product-build-the-daily-token-claim--fngrwd, item 4) — explore.html
+  // was the one page missing this. Only mounted for a signed-in visitor
+  // (explore itself has no login gate, unlike every other page that mounts
+  // this chip) — a logged-out visitor has no account balance to show, and
+  // DreamStore.getTokenStatus()'s own no-email fast path would otherwise
+  // render a confusing "0 · Low" chip for someone who was never asked to
+  // sign in at all.
+  if (DreamStore.getCurrentUser()) {
+    var exploreTokenChip = PurchaseSheet.mountBalanceChip(document.getElementById('explore-token-chip-slot'));
+    function refreshExploreTokenChip(autoOpen) {
+      DreamStore.getTokenStatus().then(function (status) {
+        PurchaseSheet.renderBalanceChip(exploreTokenChip, status);
+        if (autoOpen) {
+          PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+            onClaimed: function () { refreshExploreTokenChip(false); }
+          });
+        }
+      }).catch(function () { /* leave whatever was last rendered — never block the feed on this */ });
+    }
+    refreshExploreTokenChip(true);
+  }
   signupNudge.addEventListener('click', function(e){
     if(e.target.id === 'modal-signup-nudge') signupNudge.classList.remove('open');
   });

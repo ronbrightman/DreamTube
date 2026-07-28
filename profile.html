@@ -154,15 +154,23 @@
            the token-amount answer's numbers, which the draft wrote before
            this session's later token-economy retunes — see
            netlify/functions/lib/entitlements.js's INITIAL_GRANT (220, not
-           the draft's 200) / DAILY_GRANT_AMOUNT (20, not 100) constants,
-           and shop.html's packs, which are a live real purchase now, not
-           the "coming soon" placeholder the draft described; (3) the
-           refund-cadence answer, which the draft wrote as "once per day
-           automatically" — entitlements.js's refundTokensOnce/
-           refundTokenAmountOnce have no per-day cap at all (idempotent
-           per job id, not per day), so the answer now says "automatically,
-           every time" instead. Every other answer is the tracker's draft
-           verbatim. -->
+           the draft's 200) constant, and shop.html's packs, which are a
+           live real purchase now, not the "coming soon" placeholder the
+           draft described; (3) the refund-cadence answer, which the draft
+           wrote as "once per day automatically" — entitlements.js's
+           refundTokensOnce/refundTokenAmountOnce have no per-day cap at
+           all (idempotent per job id, not per day), so the answer now says
+           "automatically, every time" instead. Every other answer is the
+           tracker's draft verbatim.
+
+           COPY SWEEP (2026-07-28, daily-claim switch, tracker item
+           for-product-build-the-daily-token-claim--fngrwd): the token-
+           amount answer used to say "plus 20 more every day automatically"
+           — that stopped being true the moment the lazy background drip
+           was replaced with an active daily CLAIM (see
+           lib/entitlements.js's own doc block) — this answer now describes
+           the real claim mechanism instead, so the app never promises
+           tokens arrive with no action from the user. -->
       <div class="settings-section">
         <div class="section-label">FAQ</div>
         <div id="faq-list">
@@ -178,7 +186,7 @@
               <span>How do tokens work?</span>
               <span class="icon faq-chevron"></span>
             </div>
-            <div class="faq-answer">A video generation — new, edited, or regenerated — costs 100 tokens; an image generation costs 10. You start with 220 free, plus 20 more every day automatically. Need more than that? You can buy token packs anytime in the Shop.</div>
+            <div class="faq-answer">A video generation — new, edited, or regenerated — costs 100 tokens; an image generation costs 10. You start with 220 free, plus 20 more you can claim once a day (tap the token chip when it's glowing). Need more than that? You can buy token packs anytime in the Shop.</div>
           </div>
           <div class="faq-item" data-faq-index="2">
             <div class="faq-question">
@@ -447,6 +455,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
@@ -495,10 +504,10 @@
   function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextGrantAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero (the ≥200-balance-ceiling case, see entitlements.js) reads as "now": a grant is genuinely pending as soon as balance drops, not overdue. */
-  function formatTokenCountdown(nextGrantAt){
-    if(nextGrantAt == null) return '';
-    var ms = nextGrantAt - Date.now();
+  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero reads as "now": claimable right now, see the daily-claim doc block in entitlements.js. */
+  function formatTokenCountdown(nextClaimAt){
+    if(nextClaimAt == null) return '';
+    var ms = nextClaimAt - Date.now();
     if(ms <= 0) return 'now';
     var totalMin = Math.ceil(ms / 60000);
     var h = Math.floor(totalMin / 60);
@@ -885,6 +894,7 @@
   // "special" treatment) rather than a plain muted stat line — founder
   // feedback was that the old plain-text version read as inert, not as an
   // inviting entry point into the shop it's a plain <a href> to.
+  var tokenChip = document.getElementById('profile-tokens');
   var tokenBalanceEl = document.getElementById('profile-tokens-balance');
   var tokenMetaEl = document.getElementById('profile-tokens-meta');
   var tokenStatus = null;
@@ -898,53 +908,68 @@
   function renderTokenText(){
     if(!tokenStatus) return;
     tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
+    var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+    // Claimable state takes priority over the balance-level copy below —
+    // it's the actionable fix for a low/empty balance, not just a status
+    // read-out (tracker item for-product-build-the-daily-token-claim--fngrwd,
+    // item 4: pulsing "+N claimable" state).
+    if(tokenStatus.claimable) tokenMetaEl.textContent = 'Claim +' + amount + ' free';
     // Media-aware label (hardening fix, tracker item
     // for-product-store-launch-copy-sweep-purc-m6xhkx): a flat "Out of
     // tokens" below 100 was misleading a user who could still afford the
     // 10-token image path — only actually zero-balance-for-everything
     // (can't even afford an image) is "Out of tokens"; anything under a
     // video's cost but still image-affordable is "Low" instead.
-    if(tokenStatus.balance < IMAGE_TOKEN_COST) tokenMetaEl.textContent = 'Out of tokens';
+    else if(tokenStatus.balance < IMAGE_TOKEN_COST) tokenMetaEl.textContent = 'Out of tokens';
     else if(tokenStatus.balance < VIDEO_TOKEN_COST) tokenMetaEl.textContent = 'Low';
-    // atCeiling (founder bug report for-product-bug-founder-high-token-chip--kn1v8t):
-    // once balance >= GRANT_CEILING (200), entitlements.js's syncTokens
-    // deliberately holds the daily grant back and never bumps lastGrantAt
-    // — so nextGrantAt is already in the past and formatTokenCountdown
-    // would render "now" forever ("+20 in now"), which reads as "due right
-    // now" when really the drip is just paused until balance actually
-    // drops. Read the server's explicit atCeiling flag instead of ever
-    // inferring "at ceiling" from a stale nextGrantAt — see
-    // lib/entitlements.js's getTokenStatus doc comment.
-    else if(tokenStatus.atCeiling) tokenMetaEl.textContent = 'Daily +' + tokenStatus.dailyGrantAmount + ' paused — you’re at the max';
-    // Daily-grant amount read live off tokenStatus (see
-    // lib/entitlements.js's DAILY_GRANT_AMOUNT, 200 as of 2026-07-26's
-    // token-economy retune) rather than hardcoded — see shop.html's own
-    // identical fix/comment for the review finding this addresses.
-    else if(tokenStatus.nextGrantAt) tokenMetaEl.textContent = '+' + tokenStatus.dailyGrantAmount + ' in ' + formatTokenCountdown(tokenStatus.nextGrantAt);
+    else if(tokenStatus.nextClaimAt) tokenMetaEl.textContent = '+' + amount + ' in ' + formatTokenCountdown(tokenStatus.nextClaimAt);
     else tokenMetaEl.textContent = '';
+    tokenChip.classList.toggle('claimable', !!tokenStatus.claimable);
+    tokenChip.setAttribute('data-claimable', tokenStatus.claimable ? 'true' : 'false');
   }
-  function renderTokens(){
+  function renderTokens(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
       tokenStatus = status;
       renderTokenText();
+      // Auto-open ONCE per day when claimable (tracker item
+      // for-product-build-the-daily-token-claim--fngrwd, item 4) — the
+      // chip stays the fallback entry point if dismissed.
+      if(autoOpen){
+        PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+          source: 'profile_auto_open',
+          onClaimed: function(){ renderTokens(false); }
+        });
+      }
     }).catch(function(){ /* leave whatever was last rendered (or nothing) — never block the rest of the page on this */ });
   }
-  renderTokens();
+  renderTokens(true);
+  // Tapping the chip while claimable opens the claim sheet instead of
+  // navigating to shop.html (item 4 of the spec) — reads the live
+  // data-claimable attribute at click time, same pattern
+  // js/purchase-sheet.js's own mountBalanceChip uses for the compact
+  // topbar chip.
+  tokenChip.addEventListener('click', function(e){
+    if(tokenChip.getAttribute('data-claimable') !== 'true') return;
+    e.preventDefault();
+    PurchaseSheet.showClaimSheet({
+      source: 'profile_chip',
+      tokenStatus: tokenStatus,
+      onClaimed: function(){ renderTokens(false); }
+    });
+  });
   // Countdown only needs to move visibly once a minute — no reason to
   // re-fetch from the server that often in the common case, just
   // re-render from the balance already cached in tokenStatus. BUT once
-  // the countdown reaches "now" (nextGrantAt has passed), a real grant
-  // has actually landed server-side — re-render-from-cache alone would
-  // leave the balance/countdown stuck showing "now" forever, since
-  // nothing else ever refreshes tokenStatus (bug report: "+100 in now"
-  // never resetting). Re-fetch in that case so the new balance and next
-  // countdown target actually show up. EXCEPT while atCeiling: syncTokens
-  // deliberately never bumps lastGrantAt at/above GRANT_CEILING, so
-  // nextGrantAt sits in the past permanently for that account — without
-  // this check every tick would re-fetch forever for as long as the page
-  // stays open (tracker item token-countdown-60s-refetch-timer-polls).
+  // the countdown reaches "now" (nextClaimAt has passed), the account has
+  // genuinely become claimable server-side — re-render-from-cache alone
+  // would leave the countdown stuck showing "now" without ever flipping
+  // the chip into its pulsing claimable state, since nothing else
+  // refreshes tokenStatus. Re-fetch in that case so `claimable` flips to
+  // true. Once ALREADY claimable, no need to keep re-fetching every tick —
+  // that state is genuinely stable until the user actually claims (no
+  // ceiling-style edge case here, unlike the old drip mechanism).
   setInterval(function(){
-    if(tokenStatus && !tokenStatus.atCeiling && tokenStatus.nextGrantAt && tokenStatus.nextGrantAt <= Date.now()) renderTokens();
+    if(tokenStatus && !tokenStatus.claimable && tokenStatus.nextClaimAt && tokenStatus.nextClaimAt <= Date.now()) renderTokens(true);
     else renderTokenText();
   }, 60000);
 

@@ -974,6 +974,19 @@
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
     PurchaseSheet.renderBalanceChip(topbarChip, status);
+    // Auto-open ONCE per day when claimable (tracker item
+    // for-product-build-the-daily-token-claim--fngrwd, item 4) — the chip
+    // itself stays the fallback entry point if dismissed. onClaimed
+    // refreshes tokenStatus/the chip off the server's real response, never
+    // optimistically.
+    PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+      onClaimed: function(){
+        DreamStore.getTokenStatus().then(function(fresh){
+          tokenStatus = fresh;
+          PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+        }).catch(function(){});
+      }
+    });
   }).catch(function(){ tokenStatus = null; });
 
   function tokensBlockGeneration(cost){

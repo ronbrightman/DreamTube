@@ -318,6 +318,14 @@
   var topbarChip = PurchaseSheet.mountBalanceChip(document.getElementById('topbar-token-chip-slot'));
   DreamStore.getTokenStatus().then(function(status){
     PurchaseSheet.renderBalanceChip(topbarChip, status);
+    // Auto-open ONCE per day when claimable (tracker item
+    // for-product-build-the-daily-token-claim--fngrwd, item 4) — chip
+    // stays the fallback entry point if dismissed.
+    PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+      onClaimed: function(){
+        DreamStore.getTokenStatus().then(function(fresh){ PurchaseSheet.renderBalanceChip(topbarChip, fresh); }).catch(function(){});
+      }
+    });
   }).catch(function(){ /* ambient only — never block the rest of the page on this */ });
 
   document.getElementById('create-back').innerHTML = Icons.back;
