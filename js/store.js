@@ -919,10 +919,52 @@
    * No-ops safely (same guarded shape as identifyForAnalytics/
    * trackAnalytics) if PostHog was never initialized or localStorage is
    * unavailable — never lets an analytics failure break the app.
+   *
+   * Two review-round findings, both fixed here (review round 1, tracker
+   * item for-product-data-bug-posthog-identity-br-vytqwy):
+   *
+   * (a) Already-signed-in browser re-triggering the funnel handoff — a
+   * browser signed in as a real account has nothing meaningful to link
+   * pre-signup: identifyForAnalytics already gave it the correct,
+   * authoritative PostHog identity at signup/login time. Without this
+   * guard, a funnel-handoff visit on a shared/reused browser (family
+   * computer, a stale/shared marketing link) would re-identify it as the
+   * funnel's distinct_id — misattributing every event captured for the
+   * rest of THIS session to the wrong PostHog person — and write a
+   * marker that a DIFFERENT real account's later identifyForAnalytics
+   * call could then alias() against, merging one person's pre-signup
+   * funnel history into an unrelated account. Mirrors
+   * commitTransferredSession's own "already signed in" guard elsewhere in
+   * this file (`if (state.user && ...) return;`) — same root concern,
+   * same fix shape.
+   *
+   * (b) Repeat funnel visits before ever converting (ordinary retargeting
+   * behavior) — PostHog persists its OWN distinct_id across page loads on
+   * this app's origin, so by the time a SECOND linkPreSignupIdentity call
+   * lands with a genuinely different distinctId, the browser is already
+   * currently identified as the FIRST call's id, not anonymous. Calling
+   * identify() again on its own would hit this exact fix's own documented
+   * root cause (a second identify() to a different distinct_id does not
+   * auto-merge) and silently orphan the first visit's pre-signup events
+   * the moment the marker gets overwritten, with no later chance to alias
+   * them back in. Fixed the same way identifyForAnalytics merges into a
+   * real account below: alias the OLD marker's distinct_id into the NEW
+   * one FIRST, so PostHog's person-merge composes transitively across
+   * however many pre-signup visits happen before the eventual real
+   * identifyForAnalytics call — nothing from any visit is ever lost.
    */
   function linkPreSignupIdentity(distinctId) {
     if (!distinctId) return;
+    // (a) — see doc comment above.
+    if (state.user) return;
+
     if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.identify === 'function') {
+      // (b) — see doc comment above.
+      var previousDistinctId = null;
+      try { previousDistinctId = localStorage.getItem(PRE_ACCOUNT_DISTINCT_ID_KEY); } catch (e) { /* best-effort */ }
+      if (previousDistinctId && previousDistinctId !== distinctId && typeof window.posthog.alias === 'function') {
+        try { window.posthog.alias(distinctId, previousDistinctId); } catch (e) { /* analytics must never break the app */ }
+      }
       try { window.posthog.identify(distinctId); } catch (e) { /* analytics must never break the app */ }
     }
     try { localStorage.setItem(PRE_ACCOUNT_DISTINCT_ID_KEY, distinctId); } catch (e) { /* best-effort — see PRE_ACCOUNT_DISTINCT_ID_KEY's own comment */ }

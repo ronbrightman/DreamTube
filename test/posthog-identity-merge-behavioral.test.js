@@ -252,3 +252,138 @@ test('wizard.html + signup: an ordinary organic signup with NO prior identify() 
     await page.close();
   }
 });
+
+// ===== Review round 1 findings (tracker item
+// for-product-data-bug-posthog-identity-br-vytqwy) =====
+//
+// (a) linkPreSignupIdentity had no guard against an ALREADY-signed-in
+// browser re-triggering the funnel handoff -- a funnel-handoff visit on a
+// shared/reused browser would re-identify it as the funnel's distinct_id
+// (misattributing every event for the rest of the session to the wrong
+// PostHog person) and write a marker a DIFFERENT real account's later
+// signup/login could mistakenly alias() against.
+//
+// (b) linkPreSignupIdentity had no guard against a REPEAT funnel visit
+// before ever converting -- a second call with a genuinely different
+// distinct_id silently overwrote the marker, permanently orphaning the
+// first visit's pre-signup events with no later chance to alias them
+// back in.
+
+test('linkPreSignupIdentity: an ALREADY-signed-in browser re-hitting the funnel handoff is a complete no-op -- no identify(), no alias(), no marker written', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockSignupSucceeds(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    // Establish a real signed-in session first (an ordinary organic
+    // signup -- no pre-account marker involved at all).
+    var signupResult = await page.evaluate(function () {
+      return window.DreamStore.signup('alreadysignedin', 'password123', 'alreadysignedin@example.com');
+    });
+    assert.equal(signupResult.ok, true);
+
+    var beforeHandoff = await readPostHogCalls(page);
+    var identifiesBefore = callsNamed(beforeHandoff, 'identify');
+    assert.equal(identifiesBefore.length, 1, 'sanity: the signup itself already identified this browser once');
+
+    // A funnel-handoff visit now lands on this SAME, already-signed-in
+    // browser (e.g. a shared/reused device, or a stale marketing link
+    // clicked after already being logged in).
+    await page.evaluate(function () {
+      window.DreamStore.linkPreSignupIdentity('ph-unrelated-funnel-visit');
+    });
+
+    var afterHandoff = await readPostHogCalls(page);
+    assert.deepEqual(afterHandoff, beforeHandoff, 'an already-signed-in browser must see ZERO new PostHog calls of any kind from a funnel handoff');
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(marker, null, 'no pre-account marker may be written while a real account is already signed in -- it could later get aliased against an unrelated account');
+  } finally {
+    await page.close();
+  }
+});
+
+test('linkPreSignupIdentity: two repeat funnel visits before ever converting alias the OLD distinct_id into the NEW one -- neither visit\'s pre-signup events are orphaned', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockSignupSucceeds(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    await page.evaluate(function () {
+      window.DreamStore.linkPreSignupIdentity('ph-visit-1');
+    });
+    var afterFirstVisit = await readPostHogCalls(page);
+    assert.equal(callsNamed(afterFirstVisit, 'identify').length, 1);
+    assert.equal(callsNamed(afterFirstVisit, 'alias').length, 0, 'the very first pre-signup visit has nothing to alias yet');
+    var markerAfterFirstVisit = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(markerAfterFirstVisit, 'ph-visit-1');
+
+    // A second, later visit (ordinary retargeting) arrives with a
+    // genuinely different distinct_id before this visitor ever converts.
+    await page.evaluate(function () {
+      window.DreamStore.linkPreSignupIdentity('ph-visit-2');
+    });
+    var afterSecondVisit = await readPostHogCalls(page);
+    var identifies = callsNamed(afterSecondVisit, 'identify');
+    var aliases = callsNamed(afterSecondVisit, 'alias');
+
+    assert.equal(identifies.length, 2, 'both visits must each still call identify() once');
+    assert.equal(identifies[0][1], 'ph-visit-1');
+    assert.equal(identifies[1][1], 'ph-visit-2');
+    assert.equal(aliases.length, 1, 'the second visit must alias the first visit\'s distinct_id into the new one, not silently drop it');
+    assert.deepEqual(aliases[0].slice(1), ['ph-visit-2', 'ph-visit-1'], 'alias() must be new_id first, already-identified old id second');
+
+    var secondIdentifyIndex = afterSecondVisit.indexOf(identifies[1]);
+    var aliasIndex = afterSecondVisit.indexOf(aliases[0]);
+    assert.ok(aliasIndex < secondIdentifyIndex, 'the alias() merging visit 1 into visit 2 must fire before visit 2\'s own identify() call');
+
+    var markerAfterSecondVisit = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(markerAfterSecondVisit, 'ph-visit-2', 'the marker must now point at the MOST RECENT pre-signup visit');
+
+    // Finally complete a signup -- proves the full transitive chain
+    // (visit 1 -> visit 2 -> real account) survives to the real account,
+    // not just that visit 2 alone didn't lose visit 1.
+    var result = await page.evaluate(function () {
+      return window.DreamStore.signup('repeatvisitor', 'password123', 'repeatvisitor@example.com');
+    });
+    assert.equal(result.ok, true);
+
+    var afterSignup = await readPostHogCalls(page);
+    var identifiesFinal = callsNamed(afterSignup, 'identify');
+    var aliasesFinal = callsNamed(afterSignup, 'alias');
+    assert.equal(identifiesFinal.length, 3);
+    assert.equal(identifiesFinal[2][1], 'repeatvisitor');
+    assert.equal(aliasesFinal.length, 2, 'the signup itself must add exactly one more alias() on top of the one from the repeat-visit merge');
+    assert.deepEqual(aliasesFinal[1].slice(1), ['repeatvisitor', 'ph-visit-2']);
+
+    var markerAfterSignup = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(markerAfterSignup, null, 'the marker must be consumed once the real account identify happens');
+  } finally {
+    await page.close();
+  }
+});
+
+test('linkPreSignupIdentity: a repeat funnel visit with the SAME distinct_id as before is a harmless no-op alias-wise', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-same-visit'); });
+    await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-same-visit'); });
+
+    var calls = await readPostHogCalls(page);
+    assert.equal(callsNamed(calls, 'identify').length, 2, 'identify() still fires each time it is called (idempotent, harmless)');
+    assert.equal(callsNamed(calls, 'alias').length, 0, 'the same distinct_id twice must never trigger an alias() call -- nothing to merge');
+
+    var marker = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
+    assert.equal(marker, 'ph-same-visit');
+  } finally {
+    await page.close();
+  }
+});
