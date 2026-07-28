@@ -1210,22 +1210,28 @@
   // safe to hand off to the next screen, until DreamStore.signup itself
   // actually resolves ok.
   //
-  // Bumped on TWO separate triggers, not just one: (1) every Continue
+  // Bumped on THREE separate triggers, not just one: (1) every Continue
   // click on this screen (below), so a genuinely new, competing attempt
-  // always supersedes an older one still in flight; AND (2) every Back
+  // always supersedes an older one still in flight; (2) every Back
   // click (see the navigation engine's backBtn listener, further down
-  // this file), so simply navigating away from this screen -- without
-  // necessarily starting a new attempt at all -- also invalidates
-  // whatever's still in flight. Both triggers are required: an early
-  // version of this fix only bumped on (1) and a regression test caught
-  // the gap -- sit on a second, fresh screen 13 without resubmitting,
-  // and an abandoned first attempt's late settlement would still
-  // force-navigate, because nothing had bumped the token since attempt
-  // #1 fired it. Also paired with disabling both continueBtn AND
-  // backBtn (defense-in-depth -- see the click handler below) for the
-  // duration of the call, so in normal (non-test) usage there is no UI
-  // path to trigger either case while an attempt is still in flight in
-  // the first place.
+  // this file); and (3) variant B's own "Change email" link (see
+  // renderPasswordStep's own click handler above, tracker item
+  // start-html-variant-b-s-change-email-link-1kc3vs) -- simply
+  // navigating away from this screen by any of these three paths,
+  // without necessarily starting a new attempt at all, invalidates
+  // whatever's still in flight. All three triggers are required: an
+  // early version of this fix only bumped on (1) and a regression test
+  // caught the gap -- sit on a second, fresh screen 13 without
+  // resubmitting, and an abandoned first attempt's late settlement
+  // would still force-navigate, because nothing had bumped the token
+  // since attempt #1 fired it. Continue/Back are ALSO disabled for the
+  // duration of the call (defense-in-depth -- see the click handler
+  // below), so in normal usage there is no way to re-trigger either of
+  // those two while an attempt is in flight -- but the Change-email
+  // link is deliberately NOT disabled (a user must be able to correct a
+  // typo'd email mid-flight), so it's the one trigger where the token
+  // bump is the only thing standing between a stale settlement and a
+  // silently-adopted stale account.
   var signupAttemptToken = 0;
   function deriveUsernameBase(email){
     var local = (email.split('@')[0] || '').toLowerCase();
@@ -1615,10 +1621,14 @@
         // (goToStep/render) -- but unlike the topbar Back button, this
         // link is never disabled while an attempt is in flight (tracker
         // item start-html-variant-b-s-change-email-link-1kc3vs), so its
-        // click handler below still bumps signupAttemptToken (and resets
-        // backBtn, which lives outside `el` and would otherwise survive
-        // this DOM swap still disabled) exactly like the topbar Back
-        // handler does further down this file.
+        // click handler below bumps signupAttemptToken (same reasoning as
+        // the topbar Back handler further down this file) AND additionally
+        // resets backBtn itself -- something the Back handler never needs
+        // to do, since a disabled button can't fire its own click handler
+        // in the first place. backBtn lives outside `el` (the topbar, not
+        // this screen's own DOM), so it would otherwise survive this
+        // in-screen swap still stuck disabled if an abandoned attempt had
+        // already disabled it.
         '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
         '<button type="button" class="fn-small-link" id="fn-s13-change-email" style="margin:-6px 0 12px;">Change email</button>' +
         '<div class="fn-field-pw-wrap">' +
