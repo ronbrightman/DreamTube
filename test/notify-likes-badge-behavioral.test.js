@@ -225,6 +225,96 @@ test('explore.html: the nav-profile badge also appears there, driven by the cach
   }
 });
 
+test('account switch on the same browser: logging out of an account with a stale cached badge and into one with zero owned dreams must not leak the badge', async function (t) {
+  // Regression test for the review-flagged cross-account leak: account A
+  // (owns a published dream, picks up new likes) writes a nonzero
+  // LIKES_NEW_COUNT_KEY. Logging out and into account B (zero owned
+  // published dreams) on the SAME browser/page (a fresh browser.newPage()
+  // gets isolated storage and structurally can't reproduce this) used to
+  // leave that stale count untouched forever, because both of
+  // refreshNewLikesCount's 0-resolving exits skipped the write, and
+  // logout() never cleared the key outright either. Exercises the real
+  // logout (#account-logout-link + confirm dialog) and real login.html
+  // form flow, not a direct state.user reassignment, so this also covers
+  // the login-time defense-in-depth clear.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockOwnerCheck(page);
+  await mockTokenStatus(page);
+  page.on('dialog', function (dialog) { dialog.accept(); });
+  try {
+    // --- Account A: owns dream-1, gains 4 new likes on a real profile.html visit ---
+    await seedUser(page, 3);
+    await mockFeed(page, syntheticFeed(7)); // local record 3, feed says 7 -- 4 new
+    await safeGoto(page, baseUrl + '/profile.html');
+    await page.waitForSelector('#new-likes-banner[style*="flex"]');
+    assert.equal(await page.locator('#new-likes-banner-text').textContent(), 'Your dream got 4 new likes');
+
+    var cachedBeforeLogout = await page.evaluate(function () { return localStorage.getItem('dreamtube_likes_new_count_v1'); });
+    assert.equal(cachedBeforeLogout, '4', 'sanity check: the cached key really is nonzero before logout');
+
+    // --- Real logout via the UI, same page/context throughout (no fresh browser) ---
+    // #account-logout-link lives inside the Settings sheet
+    // (#sheet-account-overlay), opened by tapping the settings icon
+    // (#account-btn) -- it's in the DOM but closed/off-screen (translated
+    // out of view) until then, which is why locating it directly and
+    // clicking landed on the bottom-nav sitting at that same screen
+    // position instead.
+    await page.click('#account-btn');
+    await page.waitForSelector('#sheet-account-overlay.open');
+    await page.click('#account-logout-link');
+    // waitForURL's default waitUntil:'load' can hang on this sandbox's
+    // known intermittent third-party-host stalls (see safeGoto above) --
+    // 'commit' only needs navigation to have started, which is all this
+    // assertion cares about.
+    await page.waitForURL('**/index.html', { waitUntil: 'commit' });
+
+    // Seed account B locally so login.html's real DreamStore.login() flow
+    // can log into it for real -- account-login.js isn't served by this
+    // static-only test server (404s), so login() falls back to
+    // attemptLocalLogin, same as every other login.html test in this repo.
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      if (!state.accounts) state.accounts = {};
+      state.accounts.otherperson = { password: 'otherpass1', email: 'otherperson@example.com', createdAt: Date.now() - 86400000 };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    // --- Account B logs in for real, through the login form ---
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.fill('#login-username', 'otherperson');
+    await page.fill('#login-password', 'otherpass1');
+    await page.click('#login-submit');
+    await page.waitForFunction(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      if (!raw) return false;
+      var state = JSON.parse(raw);
+      return !!(state.user && state.user.username === 'otherperson');
+    });
+
+    // --- Account B visits profile.html (zero owned published dreams --
+    // exercises refreshNewLikesCount's early-return path) ---
+    await mockFeed(page, []);
+    await safeGoto(page, baseUrl + '/profile.html');
+    await page.waitForTimeout(300);
+    var bannerDisplay = await page.locator('#new-likes-banner').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(bannerDisplay, 'none', "account B never earned any likes -- profile.html must not show account A's stale banner");
+
+    // --- Navigate to explore.html (no fetch of its own -- reads only the cached key) ---
+    await safeGoto(page, baseUrl + '/explore.html');
+    var badgeHidden = await page.locator('#nav-profile-badge').evaluate(function (el) { return el.hidden; });
+    assert.equal(badgeHidden, true, "account B never earned any likes -- explore.html must not show account A's stale nav badge");
+
+    // --- The underlying key itself, not just the DOM, must read back as 0/absent ---
+    var cachedAfter = await page.evaluate(function () { return localStorage.getItem('dreamtube_likes_new_count_v1'); });
+    assert.ok(cachedAfter === null || cachedAfter === '0', 'expected the cached likes-count key to read back as 0/absent, got ' + JSON.stringify(cachedAfter));
+  } finally {
+    await page.close();
+  }
+});
+
 test('explore.html: shows no badge when nothing new is cached', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

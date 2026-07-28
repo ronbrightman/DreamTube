@@ -653,6 +653,26 @@
     try { localStorage.setItem(LIKES_NEW_COUNT_KEY, String(n)); } catch (e) { /* storage unavailable — badge just won't show anywhere, no crash */ }
   }
 
+  /**
+   * Wipes both likes-tracking keys outright (not "write 0" — an outright
+   * remove so a brand-new identity on this browser starts with no
+   * per-dream seen-baseline either, not just a zeroed badge count).
+   * Called from logout() (a cross-account localStorage leak flagged in
+   * review: a signed-out session must never leave ANY likes-tracking
+   * state around for whoever uses this browser next, same "shared
+   * device, unrelated later visitor"
+   * reasoning as clearPreAccountMarker() above) and, for defense in
+   * depth, from every place a NEW account identity gets written into
+   * state.user (login()'s two success paths, attemptLocalLogin,
+   * commitLocalSignup) — login.html has no guard against submitting the
+   * login/signup form while already signed in as someone else, so a
+   * logout()-only fix would miss that path.
+   */
+  function clearLikesTrackingState() {
+    try { localStorage.removeItem(LIKES_SEEN_KEY); } catch (e) { /* best-effort, see logout()'s own comment */ }
+    try { localStorage.removeItem(LIKES_NEW_COUNT_KEY); } catch (e) { /* best-effort, see logout()'s own comment */ }
+  }
+
   /** The status-polling endpoint for a given mediaType — video-status.js (returns videoUrl) or image-status.js (returns imageUrl). Default 'video' matches every other mediaType default in this file. */
   function statusEndpointFor(mediaType) {
     return mediaType === 'image' ? '/.netlify/functions/image-status' : '/.netlify/functions/video-status';
@@ -1377,6 +1397,9 @@
     // more relying on "should be unreachable" reasoning per site, see
     // pinLegacyRenameIdentity's own doc comment.
     username = pinLegacyRenameIdentity(key, username);
+    // Defense in depth — see attemptLocalLogin's identical call and
+    // clearLikesTrackingState's own doc comment.
+    clearLikesTrackingState();
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1605,6 +1628,11 @@
     if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
     var username = loggedInViaEmail ? key : usernameOrEmail;
     username = pinLegacyRenameIdentity(key, username);
+    // Defense in depth (see clearLikesTrackingState's own doc comment):
+    // login.html has no guard against submitting the login form while
+    // already signed in as a different account, so this can't rely
+    // solely on logout() having run first.
+    clearLikesTrackingState();
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1853,6 +1881,9 @@
             if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
           }
           displayUsername = pinLegacyRenameIdentity(serverUsername, displayUsername);
+          // Defense in depth — see attemptLocalLogin's identical call and
+          // clearLikesTrackingState's own doc comment.
+          clearLikesTrackingState();
           state.user = { handle: '@' + displayUsername, username: displayUsername };
           persist();
           identifyForAnalytics(displayUsername);
@@ -2036,7 +2067,17 @@
     // around for whoever uses this device next — see that function's own
     // comment for the full "shared device, unrelated later visitor" bug
     // this closes.
-    logout: function () { state.user = null; clearPreAccountMarker(); persist(); },
+    //
+    // clearLikesTrackingState() (cross-account localStorage leak flagged
+    // in review of the notify-likes-badge branch): same "shared device,
+    // unrelated later visitor" reasoning — a signed-out session must not
+    // leave a stale LIKES_NEW_COUNT_KEY/LIKES_SEEN_KEY around for whoever
+    // logs in next on this browser either. See that function's own
+    // comment for the full repro this closes (an account with zero owned
+    // published dreams could never clear a badge count it never earned,
+    // since refreshNewLikesCount's own early-return used to skip the
+    // write).
+    logout: function () { state.user = null; clearPreAccountMarker(); clearLikesTrackingState(); persist(); },
 
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
@@ -2573,14 +2614,24 @@
      * LIKES_SEEN_KEY's baseline forward to today's counts so a second
      * call with no further likes correctly resolves to 0.
      *
-     * Resolves to 0 (no state mutated) on a logged-out account, an
-     * account with no published dreams, or any fetch failure — this
-     * never throws and never blocks the rest of profile.html's render.
+     * Resolves to 0 on a logged-out account, an account with no published
+     * dreams, or any fetch failure — this never throws and never blocks
+     * the rest of profile.html's render. Every one of those 0-resolving
+     * paths, same as the real computed-total success path, ALWAYS calls
+     * writeCachedNewLikesCount (there is no early-return / catch branch
+     * left that resolves without persisting what it resolved to) — this
+     * closes a cross-account localStorage leak flagged in review: an
+     * early return here used to leave a PRIOR account's
+     * stale nonzero LIKES_NEW_COUNT_KEY untouched, so switching to an
+     * account with zero owned dreams could never clear a badge it never
+     * earned, since visiting profile.html — this app's only "clear the
+     * badge" mechanism — took this exact early-return path and skipped
+     * the write.
      */
     refreshNewLikesCount: function () {
       var myHandle = state.user ? state.user.handle : null;
       var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle && d.isPublished; });
-      if (!mine.length) return Promise.resolve(0);
+      if (!mine.length) { writeCachedNewLikesCount(0); return Promise.resolve(0); }
       return fetch('/.netlify/functions/get-feed')
         .then(function (res) { return res.json(); })
         .then(function (data) {
@@ -2615,7 +2666,7 @@
           writeCachedNewLikesCount(total);
           return total;
         })
-        .catch(function () { return 0; });
+        .catch(function () { writeCachedNewLikesCount(0); return 0; });
     },
 
     reset: function () { state = seed(); persist(); },
