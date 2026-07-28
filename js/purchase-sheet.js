@@ -608,6 +608,7 @@
       '  <div class="claim-sheet-title">Your daily tokens are ready</div>' +
       '  <div class="claim-sheet-amount" id="claim-sheet-amount">+<span id="claim-sheet-amount-num">0</span></div>' +
       '  <div class="claim-sheet-streak" id="claim-sheet-streak"></div>' +
+      '  <div class="claim-sheet-balance" id="claim-sheet-balance" style="display:none;">New balance: <span id="claim-sheet-balance-num">0</span></div>' +
       '  <button type="button" class="purchase-buy-btn" id="claim-sheet-btn"><span id="claim-sheet-btn-label"></span></button>' +
       '  <div class="purchase-error" id="claim-sheet-error" style="display:none;"></div>' +
       '  <div class="claim-sheet-confetti-host" id="claim-sheet-confetti-host" aria-hidden="true"></div>' +
@@ -620,15 +621,32 @@
     document.getElementById('claim-sheet-btn').addEventListener('click', function () { runClaim(); });
   }
 
-  /** Animates `#claim-sheet-amount-num` counting up from 0 to `amount` over roughly `durationMs` — the "count-up animation" the spec calls for on a successful claim. Pure DOM text updates via requestAnimationFrame, no dependency. */
-  function animateCountUp(amount, durationMs) {
-    var el = document.getElementById('claim-sheet-amount-num');
+  /**
+   * Animates `el`'s text counting from `from` to `to` over roughly
+   * `durationMs`, via requestAnimationFrame (no dependency). Founder
+   * directive (2026-07-28, matching the Duolingo/mobile-game daily-reward
+   * pattern): the count-up ritual belongs on the BALANCE after a
+   * successful claim, not on the reward amount a second time — the reward
+   * amount (+20) is shown up front, in full, the instant the sheet opens
+   * (see showClaimSheet below), never as a 0-to-N animation. This is now
+   * the sole caller of a count-up in this sheet; `from`/`to` are passed in
+   * explicitly (rather than always starting at 0) so it can animate the
+   * pre-claim -> post-claim balance. Falls back to just setting `to`
+   * directly (no animation) if `from` isn't a real number — e.g. the
+   * pre-claim balance wasn't available for some reason — since animating
+   * from an unknown/wrong start would be worse than not animating at all.
+   */
+  function animateCountUp(el, from, to, durationMs) {
     if (!el) return;
+    if (typeof from !== 'number' || isNaN(from)) {
+      el.textContent = to;
+      return;
+    }
     var start = null;
     function step(ts) {
       if (start === null) start = ts;
       var progress = Math.min(1, (ts - start) / durationMs);
-      el.textContent = Math.round(progress * amount);
+      el.textContent = Math.round(from + (to - from) * progress);
       if (progress < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
@@ -683,13 +701,25 @@
     // "this is my 3rd day claiming," not "I've claimed 3 times before
     // today."
     document.getElementById('claim-sheet-streak').textContent = 'Day ' + (streak + 1);
-    document.getElementById('claim-sheet-amount-num').textContent = '0';
+    // Founder directive (2026-07-28, Duolingo/mobile-game daily-reward
+    // pattern): show the REAL reward amount up front, the instant the
+    // sheet opens — never a 0 placeholder (that produced the confusing
+    // "big +0 above Day 1" both the founder and a real user screenshotted;
+    // tracker item for-product-daily-claim-bugs-founder-rea-kei2ub). The
+    // count-up ritual moves to the balance display below, on a successful
+    // claim, instead of re-animating this same number a second time.
+    document.getElementById('claim-sheet-amount-num').textContent = amount;
     document.getElementById('claim-sheet-btn-label').textContent = 'Claim ' + amount + ' tokens';
     var btn = document.getElementById('claim-sheet-btn');
     btn.disabled = false;
     var errEl = document.getElementById('claim-sheet-error');
     errEl.style.display = 'none';
     document.getElementById('claim-sheet-confetti-host').innerHTML = '';
+    // Reset the balance count-up display (hidden until a claim actually
+    // succeeds — see runClaim below) so a reopened sheet never shows a
+    // leftover balance number from a previous claim.
+    document.getElementById('claim-sheet-balance').style.display = 'none';
+    document.getElementById('claim-sheet-balance-num').textContent = '0';
 
     document.getElementById(CLAIM_SHEET_ID).classList.add('open');
     trackLocal('daily_claim_shown', { source: opts.source || null, surface: 'claim_sheet' });
@@ -771,8 +801,18 @@
       var onClaimed = claimOpts.onClaimed;
       if (typeof onClaimed === 'function') onClaimed(data);
       if (myGen !== claimGen) return;
-      var amount = (claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20;
-      animateCountUp(amount, 650);
+      // Founder directive (2026-07-28): the count-up ritual belongs on the
+      // BALANCE now, old -> new, not on the reward amount again (that's
+      // already been shown in full since the sheet opened — see
+      // showClaimSheet above). Pre-claim balance comes from the
+      // tokenStatus this sheet was opened with; if that's ever unavailable
+      // animateCountUp itself falls back to just displaying the new
+      // balance directly rather than animating from a guessed number.
+      var preClaimBalance = claimOpts.tokenStatus && typeof claimOpts.tokenStatus.balance === 'number' ? claimOpts.tokenStatus.balance : null;
+      if (typeof data.balance === 'number') {
+        document.getElementById('claim-sheet-balance').style.display = 'block';
+        animateCountUp(document.getElementById('claim-sheet-balance-num'), preClaimBalance, data.balance, 650);
+      }
       fireConfetti();
       document.getElementById('claim-sheet-streak').textContent = 'Day ' + data.streak;
       label.textContent = 'Claimed!';

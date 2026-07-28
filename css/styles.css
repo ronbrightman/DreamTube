@@ -805,6 +805,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .claim-sheet-title{ font-size:17px; font-weight:800; margin-bottom:10px;}
 .claim-sheet-amount{ font-size:40px; font-weight:900; color:var(--accent-value); margin-bottom:4px;}
 .claim-sheet-streak{ font-size:12.5px; font-weight:700; color:var(--text-muted); margin-bottom:18px;}
+/* Balance count-up display (Duolingo/mobile-game daily-reward pattern,
+   founder directive 2026-07-28) — hidden until a claim actually succeeds
+   (see js/purchase-sheet.js's runClaim), at which point it animates the
+   account's balance old -> new. This replaces the old behavior of
+   re-animating the reward amount itself a second time on success. */
+.claim-sheet-balance{ font-size:14px; font-weight:700; color:var(--text-muted); margin-bottom:18px;}
+.claim-sheet-balance #claim-sheet-balance-num{ color:var(--accent-value); font-weight:900;}
 .claim-sheet-confetti-host{ position:absolute; inset:0; pointer-events:none; overflow:hidden;}
 .claim-confetti-piece{
   position:absolute; top:-12px; width:8px; height:8px; border-radius:2px; opacity:0;
