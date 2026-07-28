@@ -97,6 +97,22 @@
 // "unknown," never "video" (see mark-generation-completed.js's own
 // comment on why it fails closed — no auto-send — on unknown mediaType,
 // not just on a missing owner record).
+//
+// `pendingId` (optional 5th arg to recordJobOwner, added 2026-07-28 for
+// tracker.html's for-product-bug-founder-affects-all-funn-0efe7t's
+// review-round-1 fix): recorded ONLY by start-pending-generation.js (the
+// dream-builder wizard's pre-signup funnel path — the only caller that
+// has a lib/pending-dreams.js record at all). Closes a real double-send:
+// once that file also writes job-owner records (the item's own root-cause
+// fix), mark-generation-completed.js's automatic retention email had no
+// way to know the SEPARATE abandonment-email path (dream-webhook.js) had
+// already fired its own "your dream is ready" email for the same dream —
+// a fully sequential (not merely racing) ordering reachable in normal
+// usage: webhook arrives and fully notifies while the user is still
+// mid-wizard, THEN they finish signup normally (markClaimed is explicitly
+// allowed to succeed from 'notified'). See mark-generation-completed.js's
+// own doc comment for how this field is used (a pending-dreams lookup,
+// gated on `readyAt` rather than the current `status`).
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -123,14 +139,29 @@ function normalizeEmail(email) {
  * Only 'video'/'image' are ever stored; anything else (including omitted)
  * leaves the field off the record entirely, which every reader must treat
  * as "unknown," not as either specific type.
+ *
+ * `pendingId` (optional, added for tracker.html's for-product-bug-founder-
+ * affects-all-funn-0efe7t review-round-1 fix): ONLY ever passed by
+ * start-pending-generation.js, which already has its own lib/pending-
+ * dreams.js record's id on hand at the exact moment it calls this (see
+ * that file's own recordJobOwnerBestEffort). Lets mark-generation-
+ * completed.js's maybeSendAutomaticFirstDreamEmail look the pending-dreams
+ * record back up and check whether the SEPARATE abandonment-email path
+ * (dream-webhook.js) already committed to sending its own email for this
+ * SAME dream, before firing the automatic retention email too — see that
+ * function's own doc comment for the full reasoning. Every non-funnel
+ * caller (generate-video.js/generate-image.js) never has a pendingId at
+ * all — a record with no `pendingId` field is exactly today's existing
+ * shape, so this is purely additive/backward compatible.
  */
-async function recordJobOwner(event, jobId, email, mediaType) {
+async function recordJobOwner(event, jobId, email, mediaType, pendingId) {
   if (!jobId) return;
   var key = normalizeEmail(email);
   if (!key) return;
   connectLambda(event);
   var record = { email: key, createdAt: Date.now() };
   if (mediaType === 'video' || mediaType === 'image') record.mediaType = mediaType;
+  if (pendingId) record.pendingId = pendingId;
   await store().setJSON(jobId, record);
 }
 

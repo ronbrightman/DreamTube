@@ -107,9 +107,19 @@ function mockOperationName() {
 // operationName independently rather than going through either handler.
 // `mediaType` is passed through (not hardcoded to one kind, unlike either
 // of those two files' own copies) since this single file handles both.
-async function recordJobOwnerBestEffort(event, operationName, email, mediaType) {
+//
+// `pendingId` (review-round-1 fix, 2026-07-28): this file is the ONLY
+// caller that ever has one (see lib/job-owners.js's own header comment on
+// the "pendingId" arg) — passed through so mark-generation-completed.js
+// can later check whether dream-webhook.js's SEPARATE abandonment-email
+// path already committed to sending for this same dream before firing the
+// automatic retention email too. Neither generate-video.js's nor
+// generate-image.js's own copies of this function take this argument at
+// all, since neither of those ever has a pending-dreams record to begin
+// with.
+async function recordJobOwnerBestEffort(event, operationName, email, mediaType, pendingId) {
   try {
-    await jobOwners.recordJobOwner(event, operationName, email, mediaType);
+    await jobOwners.recordJobOwner(event, operationName, email, mediaType, pendingId);
   } catch (e) {
     console.error('start-pending-generation: failed to record job owner (refund auth binding + automatic first-dream email binding) for ' + operationName + ' — a later refund attempt AND the automatic first-dream retention email for this job will both fail closed', e);
   }
@@ -217,7 +227,7 @@ exports.handler = async function (event) {
   if (mockMode) {
     await entitlements.spendTokens(event, email, tokenCost);
     var mockOp = mockOperationName();
-    await recordJobOwnerBestEffort(event, mockOp, email, mediaType);
+    await recordJobOwnerBestEffort(event, mockOp, email, mediaType, pending.id);
     await pendingDreams.update(event, pending.id, { operationName: mockOp });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: mockOp }) };
   }
@@ -242,7 +252,7 @@ exports.handler = async function (event) {
         return { statusCode: imageResult.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + imageResult.error }) };
       }
       await entitlements.spendTokens(event, email, tokenCost);
-      await recordJobOwnerBestEffort(event, imageResult.operationName, email, 'image');
+      await recordJobOwnerBestEffort(event, imageResult.operationName, email, 'image', pending.id);
       await pendingDreams.update(event, pending.id, { operationName: imageResult.operationName });
       return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: imageResult.operationName }) };
     } catch (e) {
@@ -268,7 +278,7 @@ exports.handler = async function (event) {
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E10: ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, tokenCost);
-    await recordJobOwnerBestEffort(event, result.operationName, email, 'video');
+    await recordJobOwnerBestEffort(event, result.operationName, email, 'video', pending.id);
     await pendingDreams.update(event, pending.id, { operationName: result.operationName });
     return { statusCode: 200, body: JSON.stringify({ pendingId: pending.id, operationName: result.operationName }) };
   } catch (e) {

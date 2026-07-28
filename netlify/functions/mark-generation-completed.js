@@ -71,13 +71,19 @@
 // any of the signed-in-generation paths -- dream-webhook.js is fal's only
 // actual webhook target in this app, and it's wired ONLY to the funnel's
 // own pre-signup ABANDONED-dream flow (see generate-video.js's own
-// withWebhook comment and dream-webhook.js's own "already-claimed skips
-// the send" handling, which is what keeps a completed funnel user from
-// getting that separate abandonment email too) -- so this
-// client-polled-then-server-re-verified endpoint IS the closest thing to
-// a real completion signal this app has for every one of these paths,
-// exactly the choke point the tracker item asked to trace and confirm
-// before wiring into.
+// withWebhook comment). Keeping a completed funnel user from getting
+// BOTH emails is a two-sided guarantee, not just dream-webhook.js's own
+// half: its "already-claimed skips the send" handling covers a claim
+// landing BEFORE the webhook; maybeSendAutomaticFirstDreamEmail's own
+// pendingId/readyAt check below (review-round-1 fix, 2026-07-28) covers
+// the OPPOSITE, fully-sequential ordering -- the webhook fully notifying
+// (abandonment email already sent) BEFORE the user's own claim -- which
+// is easily reachable in normal usage, not a rare race, since Veo takes
+// 1-6 minutes and pending-dreams.js's markClaimed is explicitly allowed
+// to succeed from 'notified'. So this client-polled-then-server-
+// re-verified endpoint IS the closest thing to a real completion signal
+// this app has for every one of these paths, exactly the choke point the
+// tracker item asked to trace and confirm before wiring into.
 //
 // Once `verified` is true below, this independently resolves WHO owns
 // `operationName` via lib/job-owners.js's getJobOwnerRecord (recorded at
@@ -124,6 +130,7 @@ var accountStore = require('./lib/account-store');
 var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 var rateLimit = require('./lib/rate-limit');
 var posthogCapture = require('./lib/posthog-capture');
+var pendingDreams = require('./lib/pending-dreams');
 
 /**
  * Best-effort 'first_dream_email_skipped' fire for maybeSendAutomaticFirst
@@ -306,6 +313,37 @@ exports.handler = async function (event) {
  * watching in production. Still never a distinguishable HTTP response —
  * see this file's own top-level header comment on why that stays true —
  * this is observability, not a behavior/contract change.
+ *
+ * DOUBLE-SEND FIX (review round 1, 2026-07-28, same tracker item): the
+ * root-cause fix that made this function ever resolve an owner for a
+ * funnel-started job at all (start-pending-generation.js now recording
+ * one, see lib/job-owners.js's own header comment) opened a NEW gap for
+ * the funnel path specifically -- dream-webhook.js's SEPARATE abandonment
+ * "your dream is ready" email can have already sent for this exact dream
+ * BEFORE the user ever finishes signup (fully sequential, not just a
+ * race: Veo takes 1-6 minutes, plenty of time for the webhook to reach
+ * 'ready'/'notified' while the user is still mid-wizard; pending-dreams.js's
+ * own markClaimed is explicitly allowed to succeed from 'notified' --
+ * "claiming after the re-engagement email already fully went out is still
+ * meaningful bookkeeping"). If the automatic retention email fired
+ * unconditionally after that, the same address gets two emails for one
+ * dream, violating the founder's "exactly one, never two" decision.
+ *
+ * Closed via `ownerRecord.pendingId` (only ever present for a funnel-
+ * started job -- see lib/job-owners.js's own header comment): looks the
+ * pending-dreams record back up and skips the automatic send if its
+ * `readyAt` is set. `readyAt` (not `status`) is the right field to check
+ * here: it's written atomically the INSTANT dream-webhook.js's markReady
+ * succeeds, before the abandonment email's own Resend network round trip
+ * even starts (so this also closes the narrower window where the webhook
+ * has committed to sending but hasn't finished sending yet), and --
+ * unlike `status` -- it is NEVER cleared by a later markClaimed
+ * transition (pending-dreams.js's tryTransition only overwrites the
+ * fields its own patch supplies, so `readyAt` survives the record's
+ * status moving on from 'ready'/'notified' to 'claimed'). A record with
+ * no `pendingId` (every normal signed-in generate-video.js/generate-
+ * image.js job) or one whose pending-dreams record was never marked ready
+ * skips this check entirely and behaves exactly as before.
  */
 async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
@@ -327,6 +365,18 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   if (ownerRecord.mediaType !== 'video') {
     await reportAutoSkip(ownerRecord.email, 'non_video_media_type');
     return;
+  }
+
+  // See "DOUBLE-SEND FIX" above -- only ever populated for a funnel-
+  // started job (start-pending-generation.js), so this is a pure no-op
+  // (the pending-dreams lookup is skipped entirely) for the primary
+  // signed-in generation path.
+  if (ownerRecord.pendingId) {
+    var pendingRecord = await pendingDreams.get(event, ownerRecord.pendingId);
+    if (pendingRecord && pendingRecord.readyAt) {
+      await reportAutoSkip(ownerRecord.email, 'abandonment_email_already_sent');
+      return;
+    }
   }
 
   var account = await accountStore.getByEmail(event, ownerRecord.email);

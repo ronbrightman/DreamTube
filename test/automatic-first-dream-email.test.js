@@ -31,6 +31,7 @@
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
+var crypto = require('crypto');
 
 var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
@@ -51,17 +52,30 @@ function realMockOpName(suffix) {
 }
 
 /**
- * Spies on global.fetch for BOTH outbound calls this feature makes --
+ * Spies on global.fetch for the outbound calls this feature makes --
  * Resend (the actual email) and PostHog's capture endpoint (the
- * 'first_dream_email_sent' event) -- same split-by-URL convention
- * test/dodo-webhook.test.js's installAnalyticsFetchSpy already
- * establishes for its own two-vendor (PostHog + Meta CAPI) fire.
+ * 'first_dream_email_sent'/'first_dream_email_skipped' events) -- same
+ * split-by-URL convention test/dodo-webhook.test.js's
+ * installAnalyticsFetchSpy already establishes for its own two-vendor
+ * (PostHog + Meta CAPI) fire.
+ *
+ * `jwksKeyPair` (optional): when a test also needs to fire a real,
+ * signature-verified dream-webhook.js call in the SAME scenario (the
+ * webhook-vs-automatic-email ordering tests below), pass the Ed25519
+ * keypair standing in for fal's own JWKS (same precedent as
+ * test/dream-webhook.test.js's own keyPair) and this spy also serves
+ * fetchJwks()'s lookup, so callers don't need to layer a second
+ * global.fetch override on top of this one.
  */
-function installFetchSpy() {
+function installFetchSpy(jwksKeyPair) {
   var resendCalls = [];
   var posthogCalls = [];
   global.fetch = async function (url, opts) {
     var urlStr = String(url);
+    if (jwksKeyPair && urlStr.indexOf('jwks') !== -1) {
+      var jwk = jwksKeyPair.publicKey.export({ format: 'jwk' });
+      return { ok: true, status: 200, json: async function () { return { keys: [{ kty: 'OKP', crv: 'Ed25519', x: jwk.x }] }; } };
+    }
     var body = opts && opts.body ? JSON.parse(opts.body) : null;
     if (urlStr.indexOf('api.resend.com') !== -1) {
       resendCalls.push({ url: urlStr, body: body });
@@ -74,6 +88,36 @@ function installFetchSpy() {
     throw new Error('unexpected fetch to ' + urlStr);
   };
   return { resendCalls: resendCalls, posthogCalls: posthogCalls };
+}
+
+/**
+ * Builds a real, ED25519-signed fal.ai webhook event for dream-webhook.js
+ * -- same signing scheme as test/dream-webhook.test.js's own
+ * signRequest/webhookEvent helpers, duplicated here rather than shared
+ * (this codebase's own "each test/lib file stays self-contained" -- see
+ * e.g. lib/job-owners.js's header comment on duplicating normalizeEmail
+ * rather than risk a require cycle -- applied to tests too).
+ */
+function realFalWebhookEvent(pendingId, bodyObj, keyPair) {
+  var rawBody = JSON.stringify(bodyObj);
+  var timestamp = String(Math.floor(Date.now() / 1000));
+  var requestId = 'req-' + pendingId;
+  var userId = 'user-' + pendingId;
+  var bodyHash = crypto.createHash('sha256').update(Buffer.from(rawBody, 'utf8')).digest('hex');
+  var message = Buffer.from([requestId, userId, timestamp, bodyHash].join('\n'), 'utf8');
+  var signature = crypto.sign(null, message, keyPair.privateKey).toString('hex');
+  return {
+    httpMethod: 'POST',
+    headers: {
+      host: 'dreamtube1.netlify.app',
+      'X-Fal-Webhook-Request-Id': requestId,
+      'X-Fal-Webhook-User-Id': userId,
+      'X-Fal-Webhook-Timestamp': timestamp,
+      'X-Fal-Webhook-Signature': signature
+    },
+    queryStringParameters: { pendingId: pendingId },
+    body: rawBody
+  };
 }
 
 test.beforeEach(function () {
@@ -361,7 +405,11 @@ test('EXACTLY ONE EMAIL, NOT TWO: a completed funnel user gets the automatic ret
   await registerAccount('exactlyoneuser', funnelEmail);
   await claimHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail } }));
 
-  var spies = installFetchSpy();
+  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
+  falWebhookVerify.resetJwksCacheForTests();
+  var keyPair = crypto.generateKeyPairSync('ed25519');
+  var spies = installFetchSpy(keyPair);
+
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
   await markHandler(fakeEvent({
     method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
@@ -379,44 +427,123 @@ test('EXACTLY ONE EMAIL, NOT TWO: a completed funnel user gets the automatic ret
   assert.equal(record.status, 'claimed', 'test setup: the pending record must genuinely be claimed by this point');
 
   var dreamWebhookHandler = require('../netlify/functions/dream-webhook').handler;
-  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
-  falWebhookVerify.resetJwksCacheForTests();
-  var crypto = require('crypto');
-  var keyPair = crypto.generateKeyPairSync('ed25519');
-  var origFetch = global.fetch;
-  global.fetch = async function (url, opts) {
-    var urlStr = String(url);
-    if (urlStr.indexOf('jwks') !== -1) {
-      var jwk = keyPair.publicKey.export({ format: 'jwk' });
-      return { ok: true, status: 200, json: async function () { return { keys: [{ kty: 'OKP', crv: 'Ed25519', x: jwk.x }] }; } };
-    }
-    return origFetch(url, opts);
-  };
   var bodyObj = { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } };
-  var rawBody = JSON.stringify(bodyObj);
-  var timestamp = String(Math.floor(Date.now() / 1000));
-  var requestId = 'req-exactly-one';
-  var userId = 'user-exactly-one';
-  var bodyHash = crypto.createHash('sha256').update(Buffer.from(rawBody, 'utf8')).digest('hex');
-  var message = Buffer.from([requestId, userId, timestamp, bodyHash].join('\n'), 'utf8');
-  var signature = crypto.sign(null, message, keyPair.privateKey).toString('hex');
-
-  var webhookRes = await dreamWebhookHandler({
-    httpMethod: 'POST',
-    headers: {
-      host: 'dreamtube1.netlify.app',
-      'X-Fal-Webhook-Request-Id': requestId,
-      'X-Fal-Webhook-User-Id': userId,
-      'X-Fal-Webhook-Timestamp': timestamp,
-      'X-Fal-Webhook-Signature': signature
-    },
-    queryStringParameters: { pendingId: startData.pendingId },
-    body: rawBody
-  });
+  var webhookRes = await dreamWebhookHandler(realFalWebhookEvent(startData.pendingId, bodyObj, keyPair));
   assert.equal(webhookRes.statusCode, 200);
   assert.equal(JSON.parse(webhookRes.body).claimed, true, 'dream-webhook.js must recognize this record as already claimed');
 
   assert.equal(spies.resendCalls.length, 1, 'the abandonment-email path must NOT also fire for a user who went on to complete -- exactly one email total, never two');
+});
+
+// -----------------------------------------------------------------------
+// REVIEW ROUND 1 FINDING (tracker.html's for-product-bug-founder-affects-
+// all-funn-0efe7t): the root-cause fix above (start-pending-generation.js
+// now recording a job-owners entry for every funnel job) closes the
+// original bug but opens a new one for the OPPOSITE ordering from the test
+// above. Concrete sequence, fully reachable in normal usage (not a race):
+//   1. Wizard always generates video; Veo takes 1-6 minutes
+//      (dream-webhook.js's own doc comment).
+//   2. The user is still working through style/characters/signup when
+//      fal's webhook arrives FIRST -- dream-webhook.js's markReady
+//      succeeds (pending -> ready), the abandonment "your dream is ready"
+//      email actually sends, then markNotified (ready -> notified).
+//   3. The user THEN finishes signup normally in the same wizard tab.
+//      claim-pending-generation.js's markClaimed is explicitly allowed to
+//      succeed from 'notified' (pending-dreams.js's own doc comment:
+//      "claiming after the re-engagement email already fully went out is
+//      still meaningful bookkeeping") -- status becomes 'claimed'.
+//   4. wizard.html redirects to processing.html, which calls
+//      mark-generation-completed.js once its poll sees the job done.
+//   5. maybeSendAutomaticFirstDreamEmail had ZERO awareness of
+//      pending-dreams.js's state -- it only ever consulted
+//      job-owners.getJobOwnerRecord. Since the root-cause fix now gives
+//      every funnel job a job-owners record, this resolves a real account
+//      and fires the automatic email too -- a SECOND email to the same
+//      address, violating the founder's "exactly one, never two" decision.
+//
+// Fix: lib/job-owners.js's recordJobOwner gained an optional pendingId
+// (recorded by start-pending-generation.js, which already has it on hand
+// at the exact moment it writes the job-owner record). mark-generation-
+// completed.js's maybeSendAutomaticFirstDreamEmail now looks up that
+// pending-dreams record (when a pendingId is present) and skips the
+// automatic send if `readyAt` is set -- readyAt is written atomically the
+// INSTANT dream-webhook.js's markReady succeeds, before the abandonment
+// email's own network round trip even starts, and (unlike `status`) it is
+// NEVER cleared by a later markClaimed transition (tryTransition's patch
+// only sets the fields it's given -- see pending-dreams.js's own
+// Object.assign order -- so readyAt survives ready/notified -> claimed
+// exactly as a durable "the abandonment path already owns this send"
+// flag, even once `status` itself has moved on to 'claimed'). A record
+// with no pendingId at all (every NON-funnel generate-video.js/
+// generate-image.js job) or one that was never marked ready skips this
+// check entirely -- zero behavior change for the primary path.
+// -----------------------------------------------------------------------
+
+test('WEBHOOK-BEFORE-CLAIM ORDERING: the abandonment email firing first (webhook reaches \'notified\' before the user claims) must suppress the automatic retention email -- exactly one email total, never two', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  delete require.cache[require.resolve('../netlify/functions/start-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/claim-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/dream-webhook')];
+  delete require.cache[require.resolve('../netlify/functions/lib/pending-dreams')];
+  delete require.cache[require.resolve('../netlify/functions/lib/fal-webhook-verify')];
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
+  var dreamWebhookHandler = require('../netlify/functions/dream-webhook').handler;
+  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
+  var pendingDreams = require('../netlify/functions/lib/pending-dreams');
+  falWebhookVerify.resetJwksCacheForTests();
+
+  var funnelEmail = 'webhook-before-claim@example.com';
+  var keyPair = crypto.generateKeyPairSync('ed25519');
+  var spies = installFetchSpy(keyPair);
+
+  // 1) Funnel submission -- same real entry point as the other end-to-end
+  //    tests above.
+  var startRes = await withPastClock(60000, function () {
+    return startHandler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: { email: funnelEmail, caption: 'a funnel-built dream', style: 'Cinematic' }
+    }));
+  });
+  var startData = JSON.parse(startRes.body);
+  assert.ok(startData.pendingId);
+
+  // 2) fal's webhook arrives FIRST, while the record is still 'pending' --
+  //    the user hasn't finished signup yet. This is dream-webhook.js's own
+  //    real success path: markReady (pending -> ready) -> send the
+  //    abandonment email -> markNotified (ready -> notified).
+  var bodyObj = { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } };
+  var webhookRes = await dreamWebhookHandler(realFalWebhookEvent(startData.pendingId, bodyObj, keyPair));
+  assert.equal(webhookRes.statusCode, 200);
+  assert.equal(spies.resendCalls.length, 1, 'test setup: the abandonment email must have actually sent at this point');
+
+  var afterWebhook = await pendingDreams.get({}, startData.pendingId);
+  assert.equal(afterWebhook.status, 'notified', 'test setup: the record must genuinely be notified before the claim below');
+  assert.ok(afterWebhook.readyAt, 'test setup: readyAt must be set -- this is the durable signal the fix relies on');
+
+  // 3) The user THEN finishes signup in the same wizard tab -- markClaimed
+  //    is explicitly allowed to succeed from 'notified' (see pending-
+  //    dreams.js's own doc comment).
+  await registerAccount('webhookbeforeclaim', funnelEmail);
+  var claimRes = await claimHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail }
+  }));
+  assert.equal(JSON.parse(claimRes.body).claimed, true, 'test setup: the claim itself must succeed from \'notified\'');
+  var afterClaim = await pendingDreams.get({}, startData.pendingId);
+  assert.equal(afterClaim.status, 'claimed', 'test setup: status has moved on to claimed, same as the normal case');
+  assert.ok(afterClaim.readyAt, 'test setup: readyAt must still be set even after the status moved past \'notified\' to \'claimed\'');
+
+  // 4) processing.html's real completion choke point -- must NOT fire a
+  //    second email, even though a real job-owners record (with a real
+  //    matching account) now resolves for this operationName.
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var markRes = await markHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+    body: { operationName: startData.operationName }
+  }));
+  assert.equal(markRes.statusCode, 200);
+
+  assert.equal(spies.resendCalls.length, 1, 'THE FIX: the automatic retention email must NOT also fire once the abandonment path already sent -- exactly one email total, never two');
 });
 
 test('mark-generation-completed: a job-owners email with no matching registered account is a silent no-op (no account to email)', async function () {
