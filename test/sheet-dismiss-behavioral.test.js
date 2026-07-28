@@ -158,6 +158,15 @@ async function seedLoggedInProfilePage(page) {
 // examples), not to mask a real dismiss failure.
 var DISMISS_WAIT_TIMEOUT_MS = 8000;
 
+// Mirrors js/sheet-dismiss.js's own DISMISS_RATIO (0.3) -- used only by
+// the isolated-branch tests below to sanity-check that a test's chosen
+// "short" drag distance genuinely stays under the real distance
+// threshold for whichever sheet it's run against (sheet height varies
+// per page/content), so a slow-vs-fast comparison actually isolates the
+// velocity branch rather than accidentally also crossing the distance
+// one.
+var DISMISS_RATIO_FOR_TEST_SANITY = 0.3;
+
 // The sheet's own open transition (.sheet's transform, css/styles.css) is
 // a fixed 0.3s CSS transition. page.waitForSelector('.open') resolves the
 // instant the class is added -- SYNCHRONOUSLY, well before that
@@ -727,24 +736,33 @@ test('out-of-tokens purchase sheet (js/purchase-sheet.js): tap-outside closes, d
 // 11. js/purchase-sheet.js — daily-claim sheet
 // ============================================================================
 
-test('daily-claim sheet (js/purchase-sheet.js): tap-outside closes, drag-dismiss/snap-back both work', async function (t) {
+test('daily-claim sheet (js/purchase-sheet.js): tap-outside closes, drag-dismiss/snap-back both work, on shop.html -- its real, everyday call site', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await seedAccountForPurchaseSheet(page, 'claimdrag');
-    // profile.html (a real showClaimSheet call site — see its own
-    // account-btn-adjacent PurchaseSheet.showClaimSheet call) uses the
-    // #app.scroll-shell layout (height:100dvh) — unlike shop.html/
-    // style.html/create.html's unclassed #app (min-height:100dvh only,
-    // free to grow taller than one viewport with real page content),
-    // which would put .sheet-overlay's position:absolute;inset:0 (and
-    // thus the sheet's bottom-anchoring) relative to a box taller than
-    // the actual visible viewport — a separate, pre-existing
-    // #app-sizing gap on those pages, not something in this fix's scope.
-    await safeGoto(page, baseUrl + '/profile.html');
+    // shop.html's real (un-mocked) content is ALREADY taller than one
+    // mobile viewport (packs + FAQ + daily-claim banner) -- this exercises
+    // the #app-height fix below against genuinely long content, not a
+    // short fixture that happens to fit. Round-1 review finding on this
+    // exact test file (this comment used to document routing this test
+    // to profile.html specifically to DODGE shop.html's then-broken
+    // #app sizing, rather than fixing it): shop.html's #app had no
+    // height cap at all (min-height:100dvh only -- a floor, not a
+    // ceiling), so .sheet-overlay's position:absolute;inset:0 (and the
+    // sheet's own bottom:0 anchor) sized against that oversized box
+    // instead of the real viewport. Fixed by giving shop.html's #app the
+    // same class="scroll-shell" (height:100dvh) result.html/profile.html
+    // already use, plus overflow-y:auto;min-height:0 on its own content
+    // wrapper so the now-capped #app doesn't just clip the overflow with
+    // nothing to scroll it into view.
+    await safeGoto(page, baseUrl + '/shop.html');
     await page.waitForSelector('body');
+
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app must be capped at (not taller than) the real viewport height even on shop.html\'s genuinely long real content, got ' + appHeight);
 
     async function openClaimSheet() {
       await page.evaluate(function () {
@@ -755,6 +773,292 @@ test('daily-claim sheet (js/purchase-sheet.js): tap-outside closes, drag-dismiss
     await assertTapOutsideCloses(page, '#claim-sheet-overlay', openClaimSheet);
     await assertDragPastThresholdDismisses(page, '#claim-sheet-overlay', openClaimSheet);
     await assertDragUnderThresholdSnapsBack(page, '#claim-sheet-overlay', openClaimSheet);
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Review round-1 finding: js/sheet-dismiss.js's dismiss decision is
+// `offset > sheetHeight * DISMISS_RATIO || velocity > VELOCITY_THRESHOLD`
+// -- every "past-threshold dismiss" test above (e.g.
+// assertDragPastThresholdDismisses) drags far AND fast enough to cross
+// BOTH conditions at once, so neither branch is independently proven.
+// The two tests below isolate each: a slow drag that crosses only the
+// distance threshold, and a fast flick that crosses only the velocity
+// threshold with the sheet barely having moved. Calibrated against a
+// real run: the identical short (40px) distance dragged SLOWLY snaps
+// back (confirms distance alone is insufficient), while dragged FAST
+// dismisses (confirms velocity alone is sufficient) -- both against
+// profile.html's Settings sheet (742px tall on this viewport, so a 30%
+// distance threshold of ~223px).
+// ============================================================================
+
+test('drag-dismiss distance branch in isolation: a SLOW drag past ~30% of the sheet\'s height dismisses even though it never reaches the velocity threshold', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInProfilePage(page);
+    await page.click('#account-btn');
+    await waitForSheetSettled(page, '#sheet-account-overlay');
+    var box = await page.locator('#sheet-account-overlay .sheet').boundingBox();
+
+    // 40 slow steps over 30ms each (~1.2s total) for a distance well past
+    // the 30% ratio threshold -- a per-step velocity around 0.2px/ms,
+    // comfortably under VELOCITY_THRESHOLD (0.6px/ms), so only the
+    // distance branch can be responsible for the dismiss below.
+    await dragSheet(page, '#sheet-account-overlay .sheet', { startY: box.y + 20, deltaY: box.height * 0.45, steps: 40, stepDelayMs: 30 });
+    await page.waitForSelector('#sheet-account-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+test('drag-dismiss velocity branch in isolation: a FAST flick dismisses even though its total distance stays well short of the ~30% threshold', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInProfilePage(page);
+
+    // Control: the SAME short distance, dragged slowly, must NOT dismiss
+    // on its own -- proves the short distance below is genuinely under
+    // the distance threshold, so the fast version's dismissal can only
+    // be the velocity branch.
+    await page.click('#account-btn');
+    await waitForSheetSettled(page, '#sheet-account-overlay');
+    var controlBox = await page.locator('#sheet-account-overlay .sheet').boundingBox();
+    await dragSheet(page, '#sheet-account-overlay .sheet', { startY: controlBox.y + 20, deltaY: 80, steps: 20, stepDelayMs: 40 });
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#sheet-account-overlay.open').count(), 1, 'control: the same short 80px distance dragged SLOWLY must snap back, not dismiss -- otherwise the fast version below would prove nothing about the velocity branch specifically');
+    // Reset via tap-outside (a raw mouse.click at a computed viewport
+    // coordinate), NOT page.click('#account-cancel') -- that link sits
+    // deep in this long Settings sheet (below the FAQ/Legal/Support/
+    // Danger-zone content), so Playwright's own actionability check
+    // auto-scrolls the sheet's internal overflow-y:auto content to bring
+    // it into view before clicking. profile.html's sheet DOM is static
+    // (reused across opens, never rebuilt -- see openAccountSheet's own
+    // lack of a scrollTop reset), so that leftover scrollTop silently
+    // carried into the very next reopen below, permanently blocking the
+    // fast drag's engagement gate (scrollTop must be 0 to engage --
+    // correct, intended behavior, just tripped by this test's own
+    // methodology rather than anything real). Root-caused via a direct
+    // repro: #account-cancel's own rect was hundreds of pixels below the
+    // viewport, and scrollTop measured ~1000 immediately after that
+    // click, persisting through the next #account-btn open.
+    var resetBox = await page.locator('#sheet-account-overlay .sheet').boundingBox();
+    await page.mouse.click(resetBox.x + resetBox.width / 2, Math.max(1, resetBox.y - 10));
+    await page.waitForSelector('#sheet-account-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+
+    // Fast steps (8ms apart) covering a short 80px -- js/sheet-dismiss.js
+    // measures velocity off the ACTUAL wall-clock gap between dispatched
+    // touchmove events (Date.now()), not the requested delay, so what
+    // matters is real elapsed time staying reasonably close to what's
+    // requested. Sized with generous headroom against CI/heavy-parallel-
+    // load timer jitter (this codebase's own documented flaky-test-file
+    // shape): even if the real per-step gap balloons to 5x the requested
+    // 8ms, velocity still comes out around 1.5px/ms, well clear of
+    // VELOCITY_THRESHOLD (0.6px/ms) -- an earlier, tighter version of
+    // this test (2ms steps, 40px total) flaked under the full file's
+    // load for exactly this reason. The 80px total distance still stays
+    // far short of the ~223px (30% of this sheet's height) distance
+    // threshold, so the isolation holds regardless.
+    await page.click('#account-btn');
+    await waitForSheetSettled(page, '#sheet-account-overlay');
+    var box = await page.locator('#sheet-account-overlay .sheet').boundingBox();
+    assert.ok(80 < box.height * DISMISS_RATIO_FOR_TEST_SANITY, 'sanity: the 80px flick distance must genuinely stay under this sheet\'s own 30% distance threshold for this test to isolate the velocity branch');
+    await dragSheet(page, '#sheet-account-overlay .sheet', { startY: box.y + 20, deltaY: 80, steps: 4, stepDelayMs: 8 });
+    await page.waitForSelector('#sheet-account-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// 12. Review round-1 finding: #app must stay viewport-bounded even when a
+// page's own content is DELIBERATELY made taller than one viewport, on
+// EVERY page that was previously unbounded (create.html/style.html/
+// processing.html/shop.html had no class on #app at all; wizard.html/
+// start.html's #app.funnel-app set colors only, no height) -- not just
+// the short-content case that happened to pass before this was caught.
+// wizard.html/start.html additionally needed their character sheet moved
+// OUT of #fnScreen (the funnel's own internal scrolling region) and
+// mounted as a direct #app child instead -- #fnScreen is itself a
+// scrolling, position:relative container, so a sheet nested inside it
+// (as both of these pages used to build it, embedded directly in their
+// per-screen render functions' own innerHTML) is positioned against
+// THAT scrollable box, not #app or the real viewport, independent of
+// #app's own height fix; a real repro (inflate #fnScreen's content, open
+// the sheet) left it rendered entirely off-screen before this fix.
+// ============================================================================
+
+/** Appends a real, non-shrinkable 1400px spacer as the FIRST child of `containerSelector` -- flex-shrink:0 is required (a plain empty div is otherwise exactly what flexbox will happily compress to fit, proving nothing about genuine overflow -- discovered the hard way in this same investigation). */
+function inflateContentTallerThanViewport(page, containerSelector) {
+  return page.evaluate(function (sel) {
+    var container = document.querySelector(sel);
+    var spacer = document.createElement('div');
+    spacer.style.height = '1400px';
+    spacer.style.flexShrink = '0';
+    spacer.id = 'artificial-tall-spacer';
+    container.insertBefore(spacer, container.firstChild);
+  }, containerSelector);
+}
+
+test('style.html: #app stays capped at the real viewport height, and the out-of-tokens purchase sheet still has a genuinely tappable backdrop / correct on-screen position, even when this page\'s own content is deliberately made much taller than one viewport', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+    await seedAccountForPurchaseSheet(page, 'styletallcontent');
+    await safeGoto(page, baseUrl + '/style.html');
+    await page.waitForTimeout(200);
+
+    await inflateContentTallerThanViewport(page, '#app > .px');
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app must stay capped at the real viewport even once its own content is deliberately inflated well past one viewport, got ' + appHeight);
+
+    async function openPurchaseSheet() {
+      await page.click('.style-card[data-style="Realistic"]');
+      await page.click('#generate-btn');
+    }
+
+    await assertTapOutsideCloses(page, '#purchase-sheet-overlay', openPurchaseSheet);
+    await assertDragPastThresholdDismisses(page, '#purchase-sheet-overlay', openPurchaseSheet);
+    await assertDragUnderThresholdSnapsBack(page, '#purchase-sheet-overlay', openPurchaseSheet);
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html character sheet: #app stays capped and the sheet still has a correct on-screen position/tappable backdrop even when the "Write it" panel\'s own content is deliberately made much taller than one viewport', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@tester', username: 'tester' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-write');
+    await page.waitForSelector('#adv-toggle');
+    await page.click('#adv-toggle');
+    await page.waitForSelector('#char-add-other');
+
+    await inflateContentTallerThanViewport(page, '#create-write');
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app must stay capped at the real viewport even once #create-write\'s content is deliberately inflated well past one viewport, got ' + appHeight);
+
+    // A real Playwright click on #char-add-other gets legitimately
+    // confused by this test's own artificial 1400px spacer overlapping
+    // create.html's fixed bottom Continue bar (an artifact of the
+    // synthetic spacer, not a real-world layout) -- dispatch the click
+    // directly, same as every other "does the SHEET behave correctly
+    // once open" assertion here, which is what this test actually cares
+    // about.
+    await page.evaluate(function () { document.getElementById('char-add-other').click(); });
+    await waitForSheetSettled(page, '#sheet-character-overlay');
+    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
+    assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y);
+    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+test('wizard.html character sheet: #app stays capped and the sheet still has a correct on-screen position/tappable backdrop even when #fnScreen\'s own content is deliberately made much taller than one viewport (round-1 review finding: this sheet used to be mounted INSIDE #fnScreen, the funnel\'s own scrolling region, not #app)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subject-chip-row');
+
+    await inflateContentTallerThanViewport(page, '#fnScreen');
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app.funnel-app must stay capped at the real viewport even once #fnScreen\'s content is deliberately inflated, got ' + appHeight);
+
+    await page.click('#subj-add-other');
+    await waitForSheetSettled(page, '#sheet-character-overlay');
+    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
+    assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
+    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+test('start.html character sheet: #app stays capped and the sheet still has a correct on-screen position/tappable backdrop even when #fnScreen\'s own content is deliberately made much taller than one viewport (same round-1 review finding as wizard.html)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, startResumeUrlWithPeople('I was walking through a forest with my mother.'));
+    await page.waitForSelector('#char-chip-row');
+
+    await inflateContentTallerThanViewport(page, '#fnScreen');
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app.funnel-app must stay capped at the real viewport even once #fnScreen\'s content is deliberately inflated, got ' + appHeight);
+
+    await page.click('#char-add-other');
+    await waitForSheetSettled(page, '#sheet-character-overlay');
+    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
+    assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
+    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+test('processing.html: #app stays capped and the out-of-tokens purchase sheet has a correct on-screen position even when this page\'s own content is deliberately made much taller than one viewport', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@proctall', username: 'proctall' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.proctall = { password: 'testpass1', email: 'proctall@example.com' };
+      if (!state.draft) state.draft = {};
+      state.draft.caption = 'Flying over mountains';
+      state.draft.style = 'Cinematic';
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await safeGoto(page, baseUrl + '/processing.html');
+    await page.waitForTimeout(200);
+
+    await inflateContentTallerThanViewport(page, '.proc-wrap');
+    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
+    assert.ok(appHeight <= 844, '#app must stay capped at the real viewport even once .proc-wrap\'s content is deliberately inflated, got ' + appHeight);
+
+    async function openPurchaseSheet() {
+      await page.evaluate(function () {
+        PurchaseSheet.show({ mediaType: 'video', cost: 100, balance: 40, tokenStatus: { balance: 40, claimable: false }, source: 'blocked_action' });
+      });
+    }
+
+    await assertTapOutsideCloses(page, '#purchase-sheet-overlay', openPurchaseSheet);
+    await assertDragPastThresholdDismisses(page, '#purchase-sheet-overlay', openPurchaseSheet);
   } finally {
     await context.close();
   }
