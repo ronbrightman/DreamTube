@@ -19,6 +19,10 @@
 //   5. The wait-screen checklist's caption list includes "Composing the
 //      soundtrack…" only when audio is actually on for this generation,
 //      never for Image regardless of audio state.
+//   6. "Generate Again" (Edit Dream) and the "Turn this into a video"
+//      upsell — pre-existing features with no audio picker of their own —
+//      keep their old always-audio-on behavior, not the new default-off
+//      (review finding, this branch's own regenerateDream fix).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -326,6 +330,64 @@ test('processing.html: Image generation never shows "Composing the soundtrack…
     var captionsImage = await page.evaluate(function () { return window.__TEST_ACTIVE_CAPTIONS__(); });
     assert.ok(!captionsImage.some(function (c) { return /Composing the soundtrack/.test(c); }));
     assert.ok(!captionsImage.some(function (c) { return /Adding motion/.test(c); }));
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html "Generate Again" (Edit Dream) preserves the pre-existing always-audio-on behavior — not silently regressed to the new default-off', async function (t) {
+  // Review finding on this branch: js/store.js's regenerateDream (Edit
+  // Dream/Try Again, and the "Turn this into a video" upsell) has no audio
+  // picker UI of its own and, before this toggle existed, always generated
+  // WITH audio (gated only by the pre-existing condensing rule). The two
+  // tracker items behind this branch scope the new default-off behavior to
+  // style.html's own NEW creation-flow toggle, not to these two already-
+  // shipped, unrelated features -- silently flipping them to audio-off too
+  // would be an unrequested regression. This drives the real "Generate
+  // Again" click on a freshly-seeded dream (draft state never touched the
+  // new audio toggle at all) and asserts the resulting generate-video POST
+  // still carries audioOn:true.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20 });
+    var capturedBody = null;
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      capturedBody = route.request().postDataJSON();
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:test-op-regenerate' }) });
+    });
+    // done:true (not false, like the checklist tests above) — waiting for
+    // the redirect to result.html?id=* below is what guarantees the
+    // generate-video.js POST has actually fired by the time this test
+    // reads capturedBody, since processing.html's own submit call happens
+    // asynchronously (after getTurnstileToken() resolves) rather than
+    // synchronously on navigation — reaching processing.html alone proves
+    // nothing about whether the POST has gone out yet.
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });
+    });
+
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@regenaudiokeep', username: 'regenaudiokeep' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.regenaudiokeep = { password: 'testpass1', email: 'regenaudiokeep@example.com' };
+      if (!state.dreams) state.dreams = [];
+      state.dreams.push({ id: 'dream-regen-audio', ownerHandle: '@regenaudiokeep', caption: 'A dream about the sea', style: 'Cinematic', mediaType: 'video', videoUrl: 'https://example.com/fake-video.mp4', dur: '0:08', isPublished: false, likes: 0, likedByMe: false });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=dream-regen-audio', { waitUntil: 'domcontentloaded' });
+
+    await page.click('#open-edit-sheet');
+    await page.click('#edit-generate-again');
+    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+
+    assert.ok(capturedBody, 'generate-video.js must have been called');
+    assert.equal(capturedBody.audioOn, true, 'regenerateDream must preserve the pre-existing always-audio-on behavior, not silently adopt the new default-off');
   } finally {
     await context.close();
   }

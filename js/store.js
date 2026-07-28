@@ -2065,19 +2065,28 @@
      * media-type picker on regenerate, per docs/IMAGE_GENERATION_SPEC.md
      * §7's explicit scope cut) — startGeneration defaults a missing/absent
      * mediaType to 'video', same backward-compat default as everywhere else.
-     * No audioOn/musicStyle forwarding here — regenerate has no audio
-     * picker UI of its own (style.html's toggle is the only entry point
-     * for tracker item for-product-audio-on-off-choice-at-creat-dyyr98),
-     * so this always resolves to the same default-off startGeneration
-     * falls back to for any caller that doesn't pass one — consistent with
-     * the founder's own "default off everywhere" cost decision, not a gap.
+     * audioOn is passed as true, NOT left to startGeneration's own
+     * default-off fallback (review finding, tracker items
+     * for-product-audio-on-off-choice-at-creat-dyyr98/
+     * for-product-cheap-generation-profile-for-yz2ina): those two items
+     * scope the new default-off behavior to style.html's own creation-flow
+     * toggle, a genuinely NEW generation. Regenerate has no audio picker
+     * UI of its own and, before this toggle existed at all, always
+     * generated WITH audio (gated only by the pre-existing condensing
+     * rule) — silently flipping that to off here for two already-shipped,
+     * unrelated features (Edit Dream/Try Again and the "Turn this into a
+     * video" upsell) would be a real, unrequested behavior regression, not
+     * a considered scope decision. Preserving the old always-on-unless-
+     * condensed behavior here needs no founder sign-off, since it changes
+     * nothing about what these two flows already did.
      */
     regenerateDream: function (id, patch) {
       return startGeneration(patch.caption, patch.style, {
         sourceDreamId: id, characterIds: patch.characterIds,
         cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace,
         turnstileToken: patch.turnstileToken,
-        mediaType: patch.mediaType, sourceImageUrl: patch.sourceImageUrl
+        mediaType: patch.mediaType, sourceImageUrl: patch.sourceImageUrl,
+        audioOn: true
       });
     },
 
