@@ -912,27 +912,37 @@
       '<div class="fn-headline">Where should we send your dream?</div>' +
       '<div class="fn-microcopy">We’ll email you your dream the moment it’s ready — even if you don’t finish signing up.</div>' +
       '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
-      '<span class="fn-small-link" id="contact-whatsapp-toggle" style="cursor:pointer; text-align:left; padding:0 0 10px;">+ Also send on WhatsApp</span>' +
-      '<div id="contact-whatsapp-reveal" style="display:none;">' +
-        '<input class="fn-field" id="contact-whatsapp" type="tel" placeholder="WhatsApp number (with country code)" autocomplete="tel" dir="auto">' +
-      '</div>' +
+      // PARKED (founder decision 2026-07-28, tracker item
+      // for-product-hide-the-whatsapp-field-in-w-clu9ju): the WhatsApp
+      // toggle+field are hidden -- no code path can deliver to WhatsApp
+      // today (stub client, no creds, no approved Meta template -- see
+      // for-product-bug-founder-affects-all-funn-0efe7t). Kept commented,
+      // not deleted, per this codebase's parking convention (see
+      // start.html's PARKED camera/scenery screens) -- the channel is
+      // planned, re-enable tracked by
+      // for-ron-reminder-complete-the-whatsapp-c-9mz857.
+      // '<span class="fn-small-link" id="contact-whatsapp-toggle" style="cursor:pointer; text-align:left; padding:0 0 10px;">+ Also send on WhatsApp</span>' +
+      // '<div id="contact-whatsapp-reveal" style="display:none;">' +
+      //   '<input class="fn-field" id="contact-whatsapp" type="tel" placeholder="WhatsApp number (with country code)" autocomplete="tel" dir="auto">' +
+      // '</div>' +
       '<div class="fn-err-text" id="contact-error"></div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Continue</button>';
 
     document.getElementById('contact-email').value = contactEmail;
-    document.getElementById('contact-whatsapp').value = contactWhatsapp;
-    document.getElementById('contact-whatsapp-toggle').addEventListener('click', function(){
-      var reveal = document.getElementById('contact-whatsapp-reveal');
-      reveal.style.display = reveal.style.display === 'none' ? 'block' : 'none';
-      if(reveal.style.display === 'block') document.getElementById('contact-whatsapp').focus();
-    });
+    // PARKED alongside the WhatsApp toggle/field above -- see comment there.
+    // document.getElementById('contact-whatsapp').value = contactWhatsapp;
+    // document.getElementById('contact-whatsapp-toggle').addEventListener('click', function(){
+    //   var reveal = document.getElementById('contact-whatsapp-reveal');
+    //   reveal.style.display = reveal.style.display === 'none' ? 'block' : 'none';
+    //   if(reveal.style.display === 'block') document.getElementById('contact-whatsapp').focus();
+    // });
 
     var continueBtn = document.getElementById('fn-contact-continue');
     var errEl = document.getElementById('contact-error');
     continueBtn.addEventListener('click', function(){
       contactEmail = document.getElementById('contact-email').value.trim();
-      contactWhatsapp = document.getElementById('contact-whatsapp').value.trim();
+      // contactWhatsapp = document.getElementById('contact-whatsapp').value.trim(); -- PARKED, see comment above; contactWhatsapp stays '' so payload.whatsapp below is always null
       errEl.textContent = '';
       if(!contactEmail || contactEmail.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
 
