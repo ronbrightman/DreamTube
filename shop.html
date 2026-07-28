@@ -470,7 +470,7 @@
       track('daily_claim_completed', { source: 'shop', streak: data.streak, balance: data.balance, surface: 'shop_balance_card' });
       tokenStatus = Object.assign({}, tokenStatus, { balance: data.balance, claimable: false, streak: data.streak });
       renderBalance();
-      showToast('+' + (tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20) + ' tokens claimed!');
+      showToast('+' + (data.amountClaimed != null ? data.amountClaimed : 20) + ' tokens claimed!');
     }).catch(function(){
       claimBtn.disabled = false;
       claimLabel.textContent = 'Claim ' + ((tokenStatus && tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
