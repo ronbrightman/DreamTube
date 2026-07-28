@@ -181,11 +181,13 @@
       '</div>';
     host.appendChild(wrap);
 
-    // Tap-outside-to-dismiss — same behavior as every other .sheet-overlay
-    // in this app (result.html's edit/character/interp sheets).
-    wrap.addEventListener('click', function (e) {
-      if (e.target === wrap) hide();
-    });
+    // Tap-outside-to-dismiss AND touch drag-to-dismiss — shared behavior
+    // for every .sheet-overlay in this app (see js/sheet-dismiss.js's own
+    // header comment; tracker item
+    // for-product-sheet-dismissal-app-wide-fix-rlay70). hide() below does
+    // its own currentGen bump/onDismiss firing, same as every other
+    // dismissal path (Close/Cancel button) already does.
+    SheetDismiss.wire(wrap, hide);
     document.getElementById('ps-see-all').addEventListener('click', function () {
       if (current) trackLocal('out_of_tokens_choice', { source: current.source || null, choice: 'see_all_packs' });
       location.href = 'shop.html?source=blocked_action';
@@ -611,9 +613,10 @@
       '  <div class="claim-sheet-confetti-host" id="claim-sheet-confetti-host" aria-hidden="true"></div>' +
       '</div>';
     host.appendChild(wrap);
-    wrap.addEventListener('click', function (e) {
-      if (e.target === wrap) hideClaimSheet(false);
-    });
+    // Same shared tap-outside + drag-to-dismiss wiring as the purchase
+    // sheet above (js/sheet-dismiss.js) — hideClaimSheet(false) is the
+    // same dismissal path the Cancel/tap-outside case already used.
+    SheetDismiss.wire(wrap, function () { hideClaimSheet(false); });
     document.getElementById('claim-sheet-btn').addEventListener('click', function () { runClaim(); });
   }
 

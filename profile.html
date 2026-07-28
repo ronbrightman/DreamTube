@@ -455,6 +455,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
@@ -721,9 +722,7 @@
   document.getElementById('profile-avatar-edit').addEventListener('click', openIdentitySheet);
   document.getElementById('profile-handle').addEventListener('click', openIdentitySheet);
   document.getElementById('identity-cancel').addEventListener('click', closeIdentitySheet);
-  identityOverlay.addEventListener('click', function(e){
-    if(e.target.id === 'sheet-identity-overlay') closeIdentitySheet();
-  });
+  SheetDismiss.wire(identityOverlay, closeIdentitySheet);
 
   /**
    * Calls netlify/functions/generate-avatar.js to turn a typed description
@@ -1000,9 +999,7 @@
 
   document.getElementById('account-btn').addEventListener('click', openAccountSheet);
   document.getElementById('account-cancel').addEventListener('click', closeAccountSheet);
-  accountOverlay.addEventListener('click', function(e){
-    if(e.target.id === 'sheet-account-overlay') closeAccountSheet();
-  });
+  SheetDismiss.wire(accountOverlay, closeAccountSheet);
 
   document.getElementById('account-save-btn').addEventListener('click', function(){
     var email = document.getElementById('account-email-input').value;

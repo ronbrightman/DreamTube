@@ -304,6 +304,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
@@ -569,9 +570,7 @@
     document.getElementById('sheet-character-overlay').classList.remove('open');
   }
   document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
-  document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
-    if(e.target.id === 'sheet-character-overlay') closeCharSheet();
-  });
+  SheetDismiss.wire(document.getElementById('sheet-character-overlay'), closeCharSheet);
   /**
    * Calls netlify/functions/generate-avatar.js to turn a typed description
    * into a real avatar image — a separate, tokenless endpoint from
@@ -1182,9 +1181,7 @@
     renderBuildCharPhotoPreview();
   });
   document.getElementById('build-char-cancel').addEventListener('click', closeBuildCharSheet);
-  document.getElementById('build-sheet-character-overlay').addEventListener('click', function(e){
-    if(e.target.id === 'build-sheet-character-overlay') closeBuildCharSheet();
-  });
+  SheetDismiss.wire(document.getElementById('build-sheet-character-overlay'), closeBuildCharSheet);
   document.getElementById('build-char-save-btn').addEventListener('click', function(){
     var mode = document.getElementById('build-char-desc-input').dataset.mode;
     var isSelf = mode === 'self';

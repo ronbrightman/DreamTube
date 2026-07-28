@@ -293,6 +293,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
@@ -548,9 +549,7 @@
     document.getElementById('sheet-character-overlay').classList.remove('open');
   }
   document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
-  document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
-    if(e.target.id === 'sheet-character-overlay') closeCharSheet();
-  });
+  SheetDismiss.wire(document.getElementById('sheet-character-overlay'), closeCharSheet);
   document.getElementById('char-save-btn').addEventListener('click', function(){
     var mode = document.getElementById('char-desc-input').dataset.mode;
     var usingPhoto = mode === 'self' && charSubMode === 'photo';
@@ -918,7 +917,7 @@
   document.getElementById('interp-retry-btn').addEventListener('click', requestInterpretation);
   document.getElementById('interp-regenerate-btn').addEventListener('click', requestInterpretation);
   document.getElementById('interp-close-btn').addEventListener('click', function(){ closeSheet('interp'); });
-  document.getElementById('sheet-interp-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-interp-overlay') closeSheet('interp'); });
+  SheetDismiss.wire(document.getElementById('sheet-interp-overlay'), function(){ closeSheet('interp'); });
 
   // Whenever the dream text refers to the dreamer in first person, make sure
   // the saved "Me" character (if one exists) is actually included, rather
@@ -949,7 +948,7 @@
     autoSelectSelfIfMentioned(this.value);
   });
   document.getElementById('edit-cancel').addEventListener('click', function(){ closeSheet('edit'); });
-  document.getElementById('sheet-edit-overlay').addEventListener('click', function(e){ if(e.target.id==='sheet-edit-overlay') closeSheet('edit'); });
+  SheetDismiss.wire(document.getElementById('sheet-edit-overlay'), function(){ closeSheet('edit'); });
 
   document.getElementById('sheet-style-grid').addEventListener('click', function(e){
     var card = e.target.closest('.style-card');

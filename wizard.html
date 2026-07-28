@@ -206,6 +206,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
 <script>
 (function(){
@@ -509,9 +510,7 @@
       renderCharPhotoPreview();
     });
     document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
-    document.getElementById('sheet-character-overlay').addEventListener('click', function(e){
-      if(e.target.id === 'sheet-character-overlay') closeCharSheet();
-    });
+    SheetDismiss.wire(document.getElementById('sheet-character-overlay'), closeCharSheet);
     document.getElementById('char-save-btn').addEventListener('click', function(){
       var mode = document.getElementById('char-desc-input').dataset.mode;
       var usingPhoto = mode === 'self' && charSubMode === 'photo';
