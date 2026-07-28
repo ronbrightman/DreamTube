@@ -42,6 +42,19 @@ var { connectLambda, getStore } = require('@netlify/blobs');
 var FALLBACK_IMAGE_PATH = '/assets/logo-v2.png';
 var GENERIC_DESCRIPTION = 'Create your own AI dream video on DreamTube';
 
+// Used only when x-forwarded-host/host fails HOSTNAME_RE below -- this
+// function's own real production host, so a rejected/malformed header still
+// produces a working redirect/preview rather than an empty-host URL.
+var FALLBACK_HOST = 'dreamtube1.netlify.app';
+
+// Allow-list, not a block-list: a legitimate Host/X-Forwarded-Host header is
+// just a hostname (letters/digits/dots/hyphens) with an optional :port --
+// nothing else ever needs to appear there. Rejecting via this whitelist,
+// rather than trying to blocklist "\r\n and other bad stuff", is what keeps
+// this safe against CR/LF (header/response-splitting) or any other
+// control/special character without having to enumerate every dangerous one.
+var HOSTNAME_RE = /^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$/;
+
 function escapeHtml(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;')
@@ -51,9 +64,24 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-/** Same `x-forwarded-host || host` pattern every other emailed/shared-link function in this codebase uses (lib/dream-share-token.js, request-password-reset.js, create-checkout-session-dodo.js). */
+/**
+ * Same `x-forwarded-host || host` pattern every other emailed/shared-link
+ * function in this codebase uses (lib/dream-share-token.js,
+ * request-password-reset.js, create-checkout-session-dodo.js) -- but this is
+ * the first place in the app that also feeds the result RAW into a raw HTTP
+ * response header (the `Location` header built by redirectTo(), below), not
+ * just into escaped HTML/JSON/email-body content like those other call
+ * sites. A host header containing `\r`/`\n` fed straight into a `Location`
+ * header is a header/response-splitting (CRLF injection) surface, so unlike
+ * those other call sites this one validates the header against HOSTNAME_RE
+ * before trusting it, falling back to FALLBACK_HOST when it doesn't look
+ * like a real hostname.
+ */
 function siteOrigin(event) {
   var host = event.headers['x-forwarded-host'] || event.headers.host;
+  if (typeof host !== 'string' || !HOSTNAME_RE.test(host)) {
+    host = FALLBACK_HOST;
+  }
   return 'https://' + host;
 }
 

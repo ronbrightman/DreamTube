@@ -129,6 +129,40 @@ test('a crafted x-forwarded-host header cannot break out of the inline <script> 
   assert.doesNotMatch(res.body, /<\/script><script>alert\(1\)<\/script>/, 'a crafted Host header must never produce an unescaped </script><script> sequence in the response body');
 });
 
+test('a well-formed x-forwarded-host with a port still works exactly as before (HOSTNAME_RE allows hostname:port)', async function () {
+  await seedFeed([{ id: 'd-port-1', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: null, imageUrl: 'https://x/i.png', mediaType: 'image', likes: 0 }]);
+  var event = fakeEvent({ method: 'GET', query: { id: 'd-port-1' }, headers: { host: 'wrong.example', 'x-forwarded-host': 'preview-123.netlify.app:8888' } });
+  var res = await handler(event);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<meta property="og:url" content="https:\/\/preview-123\.netlify\.app:8888\/explore\.html\?id=d-port-1">/);
+});
+
+test('a CRLF-laden x-forwarded-host does not survive verbatim into the Location header of a redirect -- missing id case', async function () {
+  var event = fakeEvent({ method: 'GET', query: null, headers: { host: 'dreamtube1.netlify.app', 'x-forwarded-host': 'evil.example\r\nSet-Cookie: pwned=1' } });
+  var res = await handler(event);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.Location, 'https://dreamtube1.netlify.app/explore.html?notice=dream_gone');
+  assert.doesNotMatch(res.headers.Location, /[\r\n]/);
+});
+
+test('a CRLF-laden x-forwarded-host does not survive verbatim into the Location header of a redirect -- dream-not-found case', async function () {
+  await seedFeed([{ id: 'd-other', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: null, imageUrl: 'https://x/i.png', mediaType: 'image', likes: 0 }]);
+  var event = fakeEvent({ method: 'GET', query: { id: 'd-does-not-exist' }, headers: { host: 'dreamtube1.netlify.app', 'x-forwarded-host': 'evil.example\r\nSet-Cookie: pwned=1' } });
+  var res = await handler(event);
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.Location, 'https://dreamtube1.netlify.app/explore.html?notice=dream_gone');
+  assert.doesNotMatch(res.headers.Location, /[\r\n]/);
+});
+
+test('a CRLF-laden x-forwarded-host falls back to the safe default host for the OG-preview-page path too, not just redirects', async function () {
+  await seedFeed([{ id: 'd-crlf-og-1', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: null, imageUrl: 'https://x/i.png', mediaType: 'image', likes: 0 }]);
+  var event = fakeEvent({ method: 'GET', query: { id: 'd-crlf-og-1' }, headers: { host: 'dreamtube1.netlify.app', 'x-forwarded-host': 'evil.example\r\nX-Injected: 1' } });
+  var res = await handler(event);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube1\.netlify\.app\/explore\.html\?id=d-crlf-og-1">/);
+  assert.doesNotMatch(res.body, /[\r\n]X-Injected/);
+});
+
 test('a Blobs read failure is treated the same as "not found" -- a gentle redirect, never a raw 500', async function () {
   mockBlobs.setReadOverride('dreamtube-feed', function () { throw new Error('boom'); });
   var res = await handler(getEvent({ id: 'd-whatever' }));
