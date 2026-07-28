@@ -384,17 +384,17 @@ test('processing.html: an invalid ?bt= token is also a silent no-op there, with 
 
 // ===== leak prevention: the token must never end up on a share link =====
 
-test('result.html: the session-transfer token minted for the address bar never leaks onto the Share button\'s explore.html link', async function (t) {
+test('result.html: the session-transfer token minted for the address bar never leaks onto the Share button\'s shared link (share mini-sheet\'s "Share link" option)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA, permissions: ['clipboard-read', 'clipboard-write'] });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockCreateSessionTransfer(page, 'share-leak-check-token');
-    // navigator.share is stripped so doShare() falls back to the same
-    // clipboard-copy path result.html already uses on a browser without
-    // the native share sheet -- lets this test read the exact URL that
-    // would have been shared.
+    // navigator.share is stripped so ShareSheet's chooseLink() falls back
+    // to the same clipboard-copy path result.html's old doShare() already
+    // used on a browser without the native share sheet -- lets this test
+    // read the exact URL that would have been shared.
     await context.addInitScript(function () { delete navigator.__proto__.share; Object.defineProperty(navigator, 'share', { value: undefined }); });
 
     await seedAccountWithDream(page, { username: 'shareleaktest', dreamId: 'd-share-1', isPublished: true });
@@ -407,10 +407,12 @@ test('result.html: the session-transfer token minted for the address bar never l
     assert.match(page.url(), /bt=share-leak-check-token/);
 
     await page.click('#share-btn');
+    await page.waitForSelector('#share-sheet-overlay.open');
+    await page.click('#share-opt-link');
     await page.waitForSelector('.toast.show', { timeout: 3000 });
     var sharedUrl = await page.evaluate(function () { return navigator.clipboard.readText(); });
 
-    assert.match(sharedUrl, /\/explore\.html\?id=d-share-1$/, 'the shared link must be the plain explore.html dream link');
+    assert.match(sharedUrl, /\/\.netlify\/functions\/share-dream\?id=d-share-1$/, 'the shared link must be the share-dream.js preview-card link (which itself redirects to the plain explore.html dream link) -- not the raw explore.html URL directly');
     assert.equal(sharedUrl.indexOf('bt='), -1, 'the session-transfer token living on THIS page\'s own address bar must never appear on a link handed out to someone else');
   } finally {
     await context.close();

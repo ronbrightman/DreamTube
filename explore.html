@@ -95,6 +95,7 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sheet-dismiss.js"></script>
+<script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   // Deliberately no login gate here, unlike every other page — Explore is
@@ -603,6 +604,21 @@
   }
   render();
 
+  // A share-dream.js link (netlify/functions/share-dream.js) for a
+  // deleted/never-existed dream id redirects here with ?notice=
+  // dream_gone rather than erroring — surfaced as a one-time gentle
+  // toast, then stripped from the URL (history.replaceState, same
+  // consume-once shape as js/purchase-sheet.js's readCheckoutParam) so a
+  // manual refresh doesn't show it again.
+  (function(){
+    var params = new URLSearchParams(location.search);
+    if(params.get('notice') !== 'dream_gone') return;
+    params.delete('notice');
+    var rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
+    showToast("That dream isn't available anymore");
+  })();
+
   function loadFeed(){
     DreamStore.getSharedFeed().then(function(dreams){
       allDreams = dreams;
@@ -813,18 +829,19 @@
     if(shareEl){
       var dream = findLoadedDream(shareEl.dataset.share);
       if(!dream) return;
-      var shareUrl = location.origin + '/explore.html?id=' + dream.id;
-      if(navigator.share){
-        navigator.share({ title: 'DreamTube', text: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
-      } else if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(shareUrl).then(function(){
-          showToast('Link copied to clipboard');
-        }).catch(function(){
-          showToast("Couldn't copy link");
-        });
-      } else {
-        showToast("Sharing isn't supported in this browser");
-      }
+      // Opens the share mini-sheet (js/share-sheet.js) — tracker item
+      // for-product-build-share-mini-sheet-share-r42tc4. No publish-gate
+      // needed here (unlike result.html's own share-btn): every dream in
+      // this feed is, by definition, already published. shareText
+      // preserves this page's own pre-existing "this dream" wording (a
+      // feed visitor sharing someone ELSE's dream, not necessarily their
+      // own) — result.html's doShare() keeps its distinct "my dream"
+      // wording for the owner's own perspective.
+      ShareSheet.show({
+        dream: dream,
+        shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
+        onToast: showToast
+      });
     }
   });
 </script>

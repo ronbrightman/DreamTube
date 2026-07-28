@@ -294,6 +294,7 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sheet-dismiss.js"></script>
+<script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
@@ -1091,28 +1092,30 @@
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
-  // Sharing produces an explore.html?id= link, and Explore only ever shows
-  // published dreams — sharing a private one would hand out a dead link.
-  // So Share on an unpublished dream routes through the same publish
-  // warning modal as the Publish button, and only actually shares once
-  // the user has confirmed making it public. shareAfterPublish tracks
-  // which trigger opened the modal so publish-confirm knows whether to
-  // just publish (Publish button) or publish-then-share (Share button).
+  // Sharing produces a link, and Explore only ever shows published
+  // dreams — sharing a private one would hand out a dead link. So Share
+  // on an unpublished dream routes through the same publish warning modal
+  // as the Publish button, and only actually shares once the user has
+  // confirmed making it public. shareAfterPublish tracks which trigger
+  // opened the modal so publish-confirm knows whether to just publish
+  // (Publish button) or publish-then-share (Share button).
   var shareAfterPublish = false;
 
+  // Opens the share mini-sheet (js/share-sheet.js) — tracker item
+  // for-product-build-share-mini-sheet-share-r42tc4. Its "Share link"
+  // option is EXACTLY this page's old single-tap doShare() behavior
+  // (navigator.share/clipboard-copy/unsupported-toast), just centralized
+  // there and pointed at the new share-dream.js preview-card endpoint
+  // instead of a bare explore.html?id= URL. shareText preserves this
+  // page's own "my dream" wording (the owner's own perspective — the
+  // explore.html feed card's copy says "this dream" instead, since
+  // there the viewer isn't necessarily the dream's owner).
   function doShare(){
-    var shareUrl = location.origin + '/explore.html?id=' + dream.id;
-    if(navigator.share){
-      navigator.share({ title: 'DreamTube', text: 'Check out my dream: "' + dream.caption + '" — create your own on DreamTube!', url: shareUrl }).catch(function(){ /* user cancelled the share sheet */ });
-    } else if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(shareUrl).then(function(){
-        showToast('Link copied to clipboard');
-      }).catch(function(){
-        showToast("Couldn't copy link");
-      });
-    } else {
-      showToast("Sharing isn't supported in this browser");
-    }
+    ShareSheet.show({
+      dream: dream,
+      shareText: 'Check out my dream: "' + dream.caption + '" — create your own on DreamTube!',
+      onToast: showToast
+    });
   }
 
   document.getElementById('publish-btn').addEventListener('click', function(){
@@ -1183,10 +1186,12 @@
   // founder feedback 2026-07-28: redundant with Share (topbar, covers
   // sending/downloading) and every dream self-saves to the profile anyway.
   // See tracker.html's for-product-result-screen-quiet-row-fina-btv7nr.
-  // The whole download mechanism (fetch->Blob, <a download>, filename
-  // sanitizing) is gone with it per the no-dead-code rule -- doShare()/
-  // share-btn above is untouched and still covers sharing an explore.html
-  // link.
+  // The old per-page download mechanism (fetch->Blob, <a download>,
+  // filename sanitizing) stayed gone per the no-dead-code rule -- it did
+  // NOT come back as a duplicate copy here. A real "Save to device" file
+  // download is back, but centralized in js/share-sheet.js's mini-sheet
+  // (tracker item for-product-build-share-mini-sheet-share-r42tc4), which
+  // doShare()/share-btn above now opens instead of sharing a link directly.
 </script>
 </body>
 </html>

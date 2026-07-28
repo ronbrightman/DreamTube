@@ -815,6 +815,19 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   100%{ opacity:0; transform:translateY(220px) rotate(340deg);}
 }
 
+/* ===== Share mini-sheet (js/share-sheet.js) =====
+   tracker item for-product-build-share-mini-sheet-share-r42tc4. Two
+   stacked option rows (Share link / Save to device) rather than the
+   purchase sheet's single centered CTA — reuses the same
+   .sheet-overlay/.sheet/.sheet-handle/.sheet-title base this whole app's
+   bottom sheets share. */
+.share-sheet-option{ width:100%; display:flex; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 16px; margin-bottom:10px; cursor:pointer; font-family:var(--font-body); text-align:left;}
+.share-sheet-option:last-of-type{ margin-bottom:0;}
+.share-sheet-option:disabled{ opacity:.5; cursor:not-allowed;}
+.share-sheet-option .icon{ width:22px; height:22px; flex:none; color:var(--text-primary); display:flex;}
+.share-sheet-option-label{ font-size:15px; font-weight:700; color:var(--text-primary);}
+.share-sheet-error{ text-align:center; font-size:12px; color:var(--danger); margin-top:10px;}
+
 /* ===== "Payment received" resume state (processing.html) =====
    Shown after a successful checkout return, while polling for the
    webhook's token credit (js/purchase-sheet.js's pollForCredit) — the
