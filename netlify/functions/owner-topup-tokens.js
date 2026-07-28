@@ -82,6 +82,20 @@
 // key) — a manual, one-off owner-initiated top-up (self or gifted) has
 // neither property, so no new protection is warranted here.
 //
+// One thing THIS parameter does change about that same tradeoff (review
+// finding, worth flagging explicitly rather than leaving implicit): the
+// original "residual, undefended race" reasoning was written when the
+// unretried write could only ever race the OWNER's own concurrent
+// activity (their own testing). A gifted `targetUsername` credit can now
+// race a REAL end user's own concurrent activity instead — a live
+// generation spend or a due daily-grant sync on their own session,
+// clobbering via last-write-wins. Still accepted as-is: this remains a
+// manual, low-frequency admin action, not automated/looped, so the
+// exposure window per gift is tiny — but if that frequency or blast
+// radius ever grows, route this specific credit through
+// lib/blobs-retry.js the way creditTokenPackAmountOnce already does,
+// rather than assuming the original reasoning still fully covers it.
+//
 // Error codes (local to this function, same small-number-scheme reasoning
 // as admin-paywall-toggle.js — a new, standalone function, not part of
 // generate-video.js's E1xx/E2xx generation-flow chain):
