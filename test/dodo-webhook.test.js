@@ -169,7 +169,7 @@ test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CA
 
   // Credit still landed independent of any of this.
   var record = await entitlements.getEntitlement({}, 'purchaseanalytics@example.com');
-  assert.equal(record.tokens.balance, 100);
+  assert.equal(record.tokens.balance, 200);
 
   assert.equal(spies.posthogCalls.length, 1, 'expected exactly one PostHog capture call');
   var phBody = spies.posthogCalls[0].body;
@@ -260,7 +260,7 @@ test('a PostHog capture failure never blocks the token credit or the webhook\'s 
   })));
   assert.equal(res.statusCode, 200, 'a PostHog failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'posthogdown@example.com');
-  assert.equal(record.tokens.balance, 100, 'the token credit must still have landed');
+  assert.equal(record.tokens.balance, 200, 'the token credit must still have landed');
   assert.equal(spies.metaCalls.length, 1, 'the Meta CAPI call must still have been attempted independent of the PostHog failure');
 });
 
@@ -275,7 +275,7 @@ test('a Meta CAPI failure never blocks the token credit or the webhook\'s 200 re
   })));
   assert.equal(res.statusCode, 200, 'a Meta CAPI failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'metadown@example.com');
-  assert.equal(record.tokens.balance, 100, 'the token credit must still have landed');
+  assert.equal(record.tokens.balance, 200, 'the token credit must still have landed');
   assert.equal(spies.posthogCalls.length, 1, 'the PostHog call must still have been attempted independent of the Meta failure');
 });
 
@@ -291,7 +291,7 @@ test('missing META_CAPI_ACCESS_TOKEN: PostHog still fires, Meta CAPI is skipped 
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'nometatoken@example.com');
-  assert.equal(record.tokens.balance, 100);
+  assert.equal(record.tokens.balance, 200);
   assert.equal(spies.posthogCalls.length, 1, 'PostHog should still fire even without a Meta token configured');
   assert.equal(spies.metaCalls.length, 0, 'no Meta CAPI call should be attempted without an access token (lib/meta-capi.js returns ok:false before ever calling fetch)');
 });
@@ -339,7 +339,7 @@ test('a redelivered payment.succeeded event (same payment_id, already fully cred
   assert.equal(spies2.metaCalls.length, 0, 'a redelivered, already-fully-processed payment must NOT re-fire the Meta CAPI Purchase event');
 
   var record = await entitlements.getEntitlement({}, 'noreanalytics@example.com');
-  assert.equal(record.tokens.balance, 100, 'balance must still only reflect a single credit');
+  assert.equal(record.tokens.balance, 200, 'balance must still only reflect a single credit');
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -377,7 +377,7 @@ test('signature signed with the wrong secret -> 400 E4', async function () {
 
 // ----- payment.succeeded -> token credit -----
 
-test('payment.succeeded for pack100 credits 100 tokens onto the buyer\'s balance', async function () {
+test('payment.succeeded for pack100 credits 200 tokens onto the buyer\'s balance (pack enrichment, 2026-07-28)', async function () {
   await seedZeroBalance('buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_abc',
@@ -387,14 +387,14 @@ test('payment.succeeded for pack100 credits 100 tokens onto the buyer\'s balance
   assert.equal(res.statusCode, 200);
 
   var record = await entitlements.getEntitlement({}, 'buyer@example.com');
-  assert.equal(record.tokens.balance, 100);
+  assert.equal(record.tokens.balance, 200);
   // A token-pack purchase is a pure balance credit — it must not touch the
   // subscription-era active/plan fields at all (they don't apply here).
   assert.equal(record.active, undefined);
   assert.equal(record.plan, undefined);
 });
 
-test('payment.succeeded for pack300 credits 300 tokens', async function () {
+test('payment.succeeded for pack300 credits 600 tokens (pack enrichment, 2026-07-28)', async function () {
   await seedZeroBalance('300buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_300',
@@ -403,10 +403,10 @@ test('payment.succeeded for pack300 credits 300 tokens', async function () {
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '300buyer@example.com');
-  assert.equal(record.tokens.balance, 300);
+  assert.equal(record.tokens.balance, 600);
 });
 
-test('payment.succeeded for pack700 credits 700 tokens', async function () {
+test('payment.succeeded for pack700 credits 1400 tokens (pack enrichment, 2026-07-28)', async function () {
   await seedZeroBalance('700buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_700',
@@ -415,7 +415,7 @@ test('payment.succeeded for pack700 credits 700 tokens', async function () {
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '700buyer@example.com');
-  assert.equal(record.tokens.balance, 700);
+  assert.equal(record.tokens.balance, 1400);
 });
 
 test('tokens stack onto an existing balance rather than replacing it', async function () {
@@ -427,7 +427,7 @@ test('tokens stack onto an existing balance rather than replacing it', async fun
     customer: { customer_id: 'cus_stack', email: 'stacker@example.com' }
   })));
   var record = await entitlements.getEntitlement({}, 'stacker@example.com');
-  assert.equal(record.tokens.balance, 150);
+  assert.equal(record.tokens.balance, 250);
 });
 
 test('a redelivered payment.succeeded event (same payment_id) does not double-credit', async function () {
@@ -441,7 +441,7 @@ test('a redelivered payment.succeeded event (same payment_id) does not double-cr
   var res1 = await handler(signedEvent(payload, { id: 'msg_first' }));
   assert.equal(res1.statusCode, 200);
   var afterFirst = await entitlements.getEntitlement({}, 'redelivered@example.com');
-  assert.equal(afterFirst.tokens.balance, 100);
+  assert.equal(afterFirst.tokens.balance, 200);
 
   // Dodo redelivers the identical event (same payment_id) under a
   // different webhook message id/timestamp — the payload's payment_id is
@@ -449,20 +449,20 @@ test('a redelivered payment.succeeded event (same payment_id) does not double-cr
   var res2 = await handler(signedEvent(payload, { id: 'msg_second' }));
   assert.equal(res2.statusCode, 200);
   var afterSecond = await entitlements.getEntitlement({}, 'redelivered@example.com');
-  assert.equal(afterSecond.tokens.balance, 100, 'balance must not double-credit on a redelivered event');
+  assert.equal(afterSecond.tokens.balance, 200, 'balance must not double-credit on a redelivered event');
 });
 
 test('email falls back to metadata.dreamtube_email when the customer block is missing', async function () {
   await seedZeroBalance('fallback@example.com');
   var payload = paymentPayload({
     payment_id: 'pay_fallback',
-    metadata: { dreamtube_email: 'fallback@example.com', dreamtube_pack: 'pack100', dreamtube_tokens: 100 }
+    metadata: { dreamtube_email: 'fallback@example.com', dreamtube_pack: 'pack100', dreamtube_tokens: 200 }
   });
   delete payload.data.customer;
   var res = await handler(signedEvent(payload));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'fallback@example.com');
-  assert.equal(record.tokens.balance, 100);
+  assert.equal(record.tokens.balance, 200);
 });
 
 test('token amount falls back to metadata.dreamtube_tokens when product_cart matches no configured pack', async function () {
@@ -590,7 +590,7 @@ test('non-payment.succeeded event types (payment.failed, subscription.*, refund.
 // above (which deliberately seeds firstPackPurchaseAt in the past via
 // seedZeroBalance, to isolate THEIR assertions from this bonus).
 
-test('a brand-new account\'s first pack100 purchase ever credits 150 tokens (100 base x 1.5), not 100', async function () {
+test('a brand-new account\'s first pack100 purchase ever credits 300 tokens (200 base x 1.5, pack enrichment 2026-07-28), not 200', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_first_bonus',
@@ -599,7 +599,7 @@ test('a brand-new account\'s first pack100 purchase ever credits 150 tokens (100
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'firstbonus@example.com');
-  assert.equal(record.tokens.balance, 150, 'first-ever pack purchase must credit 1.5x the base 100 tokens');
+  assert.equal(record.tokens.balance, 300, 'first-ever pack purchase must credit 1.5x the base 200 tokens');
   assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must be stamped after the first purchase completes');
 });
 
@@ -612,7 +612,7 @@ test('a SECOND purchase from the same account does not get the bonus again — p
   })));
   assert.equal(first.statusCode, 200);
   var afterFirst = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
-  assert.equal(afterFirst.tokens.balance, 150, 'first purchase still gets the bonus: 100 x 1.5');
+  assert.equal(afterFirst.tokens.balance, 300, 'first purchase still gets the bonus: 200 x 1.5');
 
   var second = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_second_purchase_second',
@@ -621,7 +621,7 @@ test('a SECOND purchase from the same account does not get the bonus again — p
   })));
   assert.equal(second.statusCode, 200);
   var afterSecond = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
-  assert.equal(afterSecond.tokens.balance, 450, '150 (after first, bonused) + 300 (second purchase, base only, no bonus) = 450');
+  assert.equal(afterSecond.tokens.balance, 900, '300 (after first, bonused) + 600 (second purchase, base only, no bonus) = 900');
 });
 
 test('a redelivered FIRST-purchase event (same payment_id) does not re-apply the bonus a second time', async function () {
@@ -634,14 +634,14 @@ test('a redelivered FIRST-purchase event (same payment_id) does not re-apply the
 
   await handler(signedEvent(payload, { id: 'msg_bonus_first' }));
   var afterFirst = await entitlements.getEntitlement({}, 'redeliveredbonus@example.com');
-  assert.equal(afterFirst.tokens.balance, 150);
+  assert.equal(afterFirst.tokens.balance, 300);
 
   await handler(signedEvent(payload, { id: 'msg_bonus_second' }));
   var afterSecond = await entitlements.getEntitlement({}, 'redeliveredbonus@example.com');
-  assert.equal(afterSecond.tokens.balance, 150, 'a redelivered event for the SAME payment_id must not double-apply the bonus or the credit');
+  assert.equal(afterSecond.tokens.balance, 300, 'a redelivered event for the SAME payment_id must not double-apply the bonus or the credit');
 });
 
-test('pack700\'s first purchase credits 1050 tokens (700 base x 1.5)', async function () {
+test('pack700\'s first purchase credits 2100 tokens (1400 base x 1.5, pack enrichment 2026-07-28)', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus700@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_first_bonus_700',
@@ -650,5 +650,5 @@ test('pack700\'s first purchase credits 1050 tokens (700 base x 1.5)', async fun
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'firstbonus700@example.com');
-  assert.equal(record.tokens.balance, 1050, '700 base x 1.5 = 1050');
+  assert.equal(record.tokens.balance, 2100, '1400 base x 1.5 = 2100');
 });

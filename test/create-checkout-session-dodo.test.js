@@ -128,7 +128,7 @@ test('valid request -> 200 with checkout url + session id, sends the right produ
   assert.equal(sentBody.customer.email, 'buyer@example.com');
   assert.equal(sentBody.metadata.dreamtube_email, 'buyer@example.com');
   assert.equal(sentBody.metadata.dreamtube_pack, 'pack100');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 100);
+  assert.equal(sentBody.metadata.dreamtube_tokens, 200);
   // Phase 1 reporting instrumentation's shared Purchase-dedup id (review
   // finding: this exact link previously existed in code but was never
   // actually wired -- the endpoint's response has to genuinely carry the
@@ -149,20 +149,20 @@ test('valid request -> 200 with checkout url + session id, sends the right produ
   assert.equal(sentBody.allow_tax_id, undefined, 'allow_tax_id must NOT be sent as a top-level field -- Dodo\'s API silently ignores it there, leaving the real default (true) in effect');
 });
 
-test('pack300 maps to DODO_PRODUCT_PACK_300 and carries 300 tokens in metadata', async function () {
+test('pack300 maps to DODO_PRODUCT_PACK_300 and carries 600 tokens in metadata (pack enrichment, 2026-07-28)', async function () {
   var captured = stubFetchCapture();
   await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack300' } }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
   assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack300_test');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 300);
+  assert.equal(sentBody.metadata.dreamtube_tokens, 600);
 });
 
-test('pack700 maps to DODO_PRODUCT_PACK_700 and carries 700 tokens in metadata', async function () {
+test('pack700 maps to DODO_PRODUCT_PACK_700 and carries 1400 tokens in metadata (pack enrichment, 2026-07-28)', async function () {
   var captured = stubFetchCapture();
   await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack700' } }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
   assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack700_test');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 700);
+  assert.equal(sentBody.metadata.dreamtube_tokens, 1400);
 });
 
 test('default return/cancel URLs point back to shop.html, derived from the request host', async function () {

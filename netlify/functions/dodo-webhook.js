@@ -116,7 +116,19 @@ function getHeader(event, name) {
 // first-purchase bonus (see resolvePackTokens' caller below) is applied
 // separately, per-account, by lib/entitlements.js's
 // creditTokenPackAmountOnce, never baked into this table.
-var PACK_TOKENS = { pack100: 100, pack300: 300, pack700: 700 };
+//
+// Pack enrichment (founder-approved 2026-07-28, "go for A"): every pack's
+// token contents doubled at the same prices, a repricing sweep after the
+// veo3.1/lite cost cut. THIS IS THE ACTUAL CREDITING TABLE — the value
+// here (via resolvePackTokens below) is what a real webhook-confirmed
+// purchase credits onto the buyer's balance, so getting these three
+// numbers right matters more than anywhere else this amount is mirrored.
+// The internal names pack100/pack300/pack700 (and DODO_PRODUCT_PACK_100/
+// _300/_700, and the actual Dodo dashboard product ids) deliberately keep
+// their original "100/300/700" naming — only the token amount changed, not
+// the identifiers — so pack100 no longer literally means "100 tokens";
+// read it as "the first/cheapest pack" instead.
+var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
 
 // USD price per pack — same mirrored-copy reasoning as PACK_TOKENS above,
 // and same fallback role: create-checkout-session-dodo.js's own

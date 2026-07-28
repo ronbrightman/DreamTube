@@ -174,8 +174,9 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     // server-side Purchase fire, for PostHog/Meta dedup -- see that
     // file's own header comment). A production purchasePack() call always
     // has one; this seed matches that reality rather than the pre-Phase-1
-    // shape. pack700/$14.99 matches Token Economy C's 3-pack lineup.
-    await markPendingPurchase(page, { pack: 'pack700', tokens: 700, price: 14.99, eventId: 'evt-fixed-test-id' });
+    // shape. pack700/$14.99 matches the pack-enrichment lineup (2026-07-28:
+    // 1400 tokens, same $14.99 price as the original Token Economy C).
+    await markPendingPurchase(page, { pack: 'pack700', tokens: 1400, price: 14.99, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget -- give it a moment
@@ -195,7 +196,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var phCalls = await readPostHogCalls(page);
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
-    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack700', tokens: 700, value: 14.99, currency: 'USD', $insert_id: 'evt-fixed-test-id' });
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack700', tokens: 1400, value: 14.99, currency: 'USD', $insert_id: 'evt-fixed-test-id' });
 
     var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
     assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
@@ -252,7 +253,7 @@ test('a cancelled checkout clears the marker, so a LATER bare/bookmarked ?checko
     // Same marker purchasePack() would have set right before redirecting to
     // Dodo -- but this attempt gets cancelled, not completed.
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack700', tokens: 700, price: 14.99 });
+    await markPendingPurchase(page, { pack: 'pack700', tokens: 1400, price: 14.99 });
 
     await page.goto(baseUrl + '/shop.html?checkout=cancelled', { waitUntil: 'domcontentloaded' });
     var markerAfterCancel = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
@@ -286,7 +287,7 @@ test('a reload after a successful first fire does not re-fire (marker already co
 
     await seedAccount(page);
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack100', tokens: 100, price: 2.99 });
+    await markPendingPurchase(page, { pack: 'pack100', tokens: 200, price: 2.99 });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
