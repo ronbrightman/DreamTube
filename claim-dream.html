@@ -11,6 +11,25 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+
+<!-- Analytics: PostHog only (product analytics + funnels). Founder-explicit
+     2026-07-28 override of this page's earlier "no analytics at all" default
+     (see the doc comment further down, near fireMetaConversionIfAvailable) --
+     the founder specifically asked for a claim_page_viewed baseline event
+     plus a click event on the "maybe later" escape link, so PostHog is now
+     genuinely loaded here. Meta Pixel is deliberately NOT added alongside it
+     -- that part of the original reasoning (this is an unauthenticated,
+     publicly-linked page, not part of the tracked ad-conversion funnel)
+     still holds; only the product-analytics half of the old blanket
+     decision was overridden. Same safe-no-op-until-a-real-key-exists pattern
+     as every other page -- see js/analytics-config.js's own header. -->
+<script src="js/analytics-config.js"></script>
+<script>
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, { api_host: POSTHOG_HOST, defaults: '2026-05-30', session_recording: { maskAllInputs: true } });
+  }
+</script>
 </head>
 <body>
 
@@ -81,6 +100,20 @@
         <button type="button" class="field-pw-toggle" id="claim-pw-toggle" tabindex="-1" aria-label="Show password"></button>
       </div>
       <div class="err-text" id="claim-error"></div>
+
+      <!-- Persuasion, not pressure (founder 2026-07-28, tracker item
+           for-product-claim-dream-html-retention-e-b27l7l): two short,
+           concrete reasons to finish signup, placed right next to the CTA
+           itself -- NOT a barrier in front of the "maybe later" escape link
+           below, which stays exactly where and as reachable as before.
+           Reuses .proc-checklist/.proc-check-item's existing "done" check-
+           mark row styling (processing.html) rather than inventing a new
+           bullet-list component. -->
+      <div class="proc-checklist" id="claim-benefits" style="margin:4px 0 14px;">
+        <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-1"></span><span class="proc-check-label">Get your dream's interpretation — private, just for you</span></div>
+        <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-2"></span><span class="proc-check-label">See what others are dreaming on Explore</span></div>
+      </div>
+
       <button class="btn btn-primary btn-block" id="claim-signup-btn" style="margin-top:2px;">Create account &amp; save</button>
     </div>
 
@@ -99,6 +132,31 @@
     var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
     return m ? decodeURIComponent(m[1]) : null;
   }
+
+  // Same "safe no-op if PostHog isn't available" convention every other
+  // page's track() follows (wizard.html, shop.html, start.html) -- analytics
+  // must never throw or break this page, same spirit as
+  // fireMetaConversionIfAvailable below.
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the page */ }
+    }
+  }
+
+  // claim_page_viewed -- baseline event, fires exactly once per page load
+  // regardless of which outcome this visit lands on (bad/missing link
+  // params, not-ready-yet, expired/invalid token, network failure, or a
+  // genuinely ready dream), carrying whatever cheap context is available at
+  // that point: whether the pending dream was found/ready, mirroring the
+  // shape other _viewed events already carry (e.g. shop.html's store_viewed
+  // { source: ... }).
+  var viewedFired = false;
+  function fireClaimPageViewed(status){
+    if(viewedFired) return;
+    viewedFired = true;
+    track('claim_page_viewed', { status: status, hasParams: !!(pendingId && token) });
+  }
+
   function showView(id){
     ['loading-view', 'error-view', 'ready-view'].forEach(function(v){
       document.getElementById(v).style.display = v === id ? 'flex' : 'none';
@@ -115,6 +173,7 @@
   var token = getParam('token');
   if(!pendingId || !token){
     showError("This link isn't working", 'The link is missing some information — try opening it again from the original email.');
+    fireClaimPageViewed('missing_params');
   } else {
     fetch('/.netlify/functions/verify-pending-claim', {
       method: 'POST',
@@ -124,8 +183,10 @@
       if(!data.ok){
         if(data.error && data.error.indexOf('E5') === 0){
           showError('Almost ready', "Your dream hasn't quite finished generating yet — check back in a few minutes.");
+          fireClaimPageViewed('not_ready');
         } else {
           showError("This link has expired", "Links like this stay valid a while, but this one didn't check out. If you still have the original email, try it again, or just sign up fresh.");
+          fireClaimPageViewed('invalid_or_expired');
         }
         return;
       }
@@ -133,6 +194,7 @@
       document.getElementById('ready-video').src = data.videoUrl;
       document.getElementById('ready-caption').textContent = data.caption || '';
       showView('ready-view');
+      fireClaimPageViewed('ready');
 
       // Ownership check (review finding, fixed): the one-tap "already
       // logged in" save path must never fire for an account whose email
@@ -183,6 +245,8 @@
       }
       if(!loggedIn){
         document.getElementById('claim-email').value = data.email || '';
+        document.getElementById('claim-benefit-icon-1').innerHTML = Icons.check;
+        document.getElementById('claim-benefit-icon-2').innerHTML = Icons.check;
         var pwToggle = document.getElementById('claim-pw-toggle');
         var pwInput = document.getElementById('claim-password');
         pwToggle.innerHTML = Icons.eye;
@@ -216,6 +280,7 @@
       }
 
       document.getElementById('just-watch-link').addEventListener('click', function(){
+        track('claim_page_maybe_later_clicked', {});
         document.getElementById('already-in-view').style.display = 'none';
         document.getElementById('mismatch-view').style.display = 'none';
         document.getElementById('signup-view').style.display = 'none';
@@ -223,14 +288,18 @@
       });
     }).catch(function(){
       showError("Couldn't load your dream", 'Check your connection and try opening the link again.');
+      fireClaimPageViewed('fetch_failed');
     });
   }
 
-  // Meta Pixel/analytics are deliberately NOT loaded on this page (it's an
+  // Meta Pixel is deliberately NOT loaded on this page (it's an
   // unauthenticated, publicly-linked page reachable from an email/WhatsApp
-  // message, not part of the tracked funnel) -- this is a harmless no-op
-  // guard for the one CompleteRegistration-style call site above, matching
-  // every other page's "safe even if analytics isn't loaded" convention.
+  // message, not part of the tracked ad-conversion funnel) -- PostHog IS now
+  // loaded here (see the <head> comment), a founder-explicit override of
+  // this page's earlier "no analytics at all" default, scoped to product
+  // analytics only. This stays a harmless no-op guard for the one
+  // CompleteRegistration-style call site above, matching every other page's
+  // "safe even if Meta Pixel isn't loaded" convention.
   function fireMetaConversionIfAvailable(){
     if(typeof fireMetaConversion === 'function'){
       try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value }); }
