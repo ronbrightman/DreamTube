@@ -362,6 +362,25 @@ exports.handler = async function (event) {
  * (that branch no longer stamps readyAt at all — see its own comment),
  * not here — this function's own logic was always correct GIVEN an
  * honest readyAt; the bug was in what set it.
+ *
+ * RESIDUAL-RACE HARDENING (tracker.html's
+ * narrow-residual-race-mark-generation-com-wenb3g item): the pending-
+ * dreams lookup below uses lib/pending-dreams.js's getWithReadyRetry, not
+ * a plain get(). dream-webhook.js's markReady is a GUARDED write
+ * (verify-after-write, per tryTransition), but that guarantee only covers
+ * markReady's OWN verify-read on the SAME request -- a genuinely separate
+ * read from THIS function, landing in the window after that write is
+ * issued but before it's durably visible to every other reader (Blobs is
+ * only eventually consistent), could still see a stale `readyAt:
+ * undefined` and incorrectly send the automatic email too, while
+ * dream-webhook.js's own send decision (independent of anything this
+ * function reads) already went ahead. getWithReadyRetry mirrors
+ * lib/blobs-retry.js's own DEFAULT_RETRY_DELAY_MS precedent (a bounded,
+ * real-delay re-read rather than a zero-delay retry that gives Blobs'
+ * propagation no time to catch up) -- see that function's own doc comment
+ * for the full reasoning and its accepted-residual honesty (narrows this
+ * window substantially, does not claim to eliminate it down to zero, same
+ * posture as every other eventually-consistent read in this codebase).
  */
 async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
@@ -390,7 +409,7 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   // (the pending-dreams lookup is skipped entirely) for the primary
   // signed-in generation path.
   if (ownerRecord.pendingId) {
-    var pendingRecord = await pendingDreams.get(event, ownerRecord.pendingId);
+    var pendingRecord = await pendingDreams.getWithReadyRetry(event, ownerRecord.pendingId);
     if (pendingRecord && pendingRecord.readyAt) {
       await reportAutoSkip(ownerRecord.email, 'abandonment_email_already_sent');
       return;

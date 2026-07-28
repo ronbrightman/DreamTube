@@ -150,6 +150,80 @@ async function update(event, id, patch) {
   return record;
 }
 
+// Bounded re-read budget for getWithReadyRetry below — deliberately
+// smaller than tryTransition's own MAX_TRANSITION_ATTEMPTS/blobs-retry.js's
+// DEFAULT_MAX_ATTEMPTS (3): this runs on every funnel-path completion
+// call, not just a genuine race (see getWithReadyRetry's own doc comment),
+// so the attempt budget stays intentionally light — one extra re-read
+// after one real delay, not a full three-attempt loop.
+var READY_CHECK_MAX_ATTEMPTS = 2;
+var READY_CHECK_RETRY_DELAY_MS = blobsRetry.DEFAULT_RETRY_DELAY_MS;
+
+function delay(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+/**
+ * Bounded-retry variant of get() — used ONLY by mark-generation-
+ * completed.js's maybeSendAutomaticFirstDreamEmail to check whether
+ * dream-webhook.js's markReady has already stamped `readyAt` on a
+ * funnel-started record (see that file's own "DOUBLE-SEND FIX" doc
+ * comment for the full mechanism this guards).
+ *
+ * WHY THIS EXISTS (tracker.html's
+ * narrow-residual-race-mark-generation-com-wenb3g item): a plain get()
+ * here reads under Blobs' default eventual consistency, same as
+ * everywhere else in this codebase (see this file's own CONCURRENT-WRITE
+ * RACE comment above). dream-webhook.js's markReady is a GUARDED write
+ * (tryTransition, itself verify-after-write) — but that guarantee only
+ * covers markReady's OWN verify-read landing on the SAME instance/
+ * request that just wrote it. A completely separate, independent read
+ * from THIS function, arriving in the narrow window after markReady's
+ * write is issued but before it's durably visible to every other reader,
+ * can still observe a stale `readyAt: undefined` — incorrectly concluding
+ * "the abandonment email hasn't sent yet" while dream-webhook.js's own
+ * send decision (which never depends on any read from this function)
+ * proceeds regardless. Both emails would fire for one dream.
+ *
+ * This mirrors lib/blobs-retry.js's own DEFAULT_RETRY_DELAY_MS fix for
+ * the identical shape of gap (a zero-delay retry loop gives Blobs'
+ * propagation no real time to catch up before the next read) — see that
+ * constant's own doc comment for the precedent this adapts. It is
+ * deliberately a bounded RE-READ, not a guarded WRITE: there is nothing
+ * to mutate here (this function never writes a pending-dreams record,
+ * only decides whether an email should fire), so blobs-retry.js's own
+ * retryingWrite doesn't apply directly — the shape (a real delay between
+ * attempts, a small bounded attempt count) is deliberately the same
+ * regardless.
+ *
+ * Narrows the window substantially — dream-webhook.js's own write is
+ * already fully committed and verified (markReady's own `ok: true`
+ * guarantee) well before its email send even starts, so any genuine
+ * propagation lag is almost always well under this function's total wait
+ * budget — but, like every other eventually-consistent read in this
+ * codebase, does not claim to eliminate it down to zero: an attempt
+ * exhausting the full retry budget still concludes "not ready" and
+ * returns whatever it last saw, same accepted-residual posture as
+ * tryTransition's own MAX_TRANSITION_ATTEMPTS exhaustion above. See
+ * test/pending-dreams.test.js's own getWithReadyRetry coverage and
+ * test/automatic-first-dream-email.test.js's simulated-stale-read
+ * regression test for the actual proof.
+ */
+async function getWithReadyRetry(event, id, options) {
+  var maxAttempts = (options && options.maxAttempts) || READY_CHECK_MAX_ATTEMPTS;
+  var retryDelayMs = options && typeof options.retryDelayMs === 'number' ? options.retryDelayMs : READY_CHECK_RETRY_DELAY_MS;
+
+  var record = null;
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0 && retryDelayMs > 0) {
+      await delay(retryDelayMs);
+    }
+    record = await get(event, id);
+    if (record && record.readyAt) return record;
+  }
+  return record;
+}
+
 var MAX_TRANSITION_ATTEMPTS = 3;
 
 /**
@@ -310,4 +384,4 @@ async function markFailed(event, id, reason) {
   return tryTransition(event, id, ['pending', 'ready'], 'failed', { failedReason: reason || 'unknown' });
 }
 
-module.exports = { STORE_NAME, create, get, update, tryTransition, markReady, markNotified, markClaimed, markFailed };
+module.exports = { STORE_NAME, create, get, getWithReadyRetry, update, tryTransition, markReady, markNotified, markClaimed, markFailed };

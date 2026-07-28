@@ -648,6 +648,91 @@ test('CLAIM-BEFORE-WEBHOOK ORDERING (the realistic/typical case): claiming while
   assert.deepEqual(spies.resendCalls[0].body.to, [funnelEmail]);
 });
 
+// -----------------------------------------------------------------------
+// NARROW RESIDUAL RACE, HARDENED (tracker.html's
+// narrow-residual-race-mark-generation-com-wenb3g item): the
+// WEBHOOK-BEFORE-CLAIM ORDERING test above proves the *typical* case
+// (readyAt already fully visible by the time mark-generation-completed.js
+// reads it) stays correct. This test proves the narrower case that same
+// test could never reach with a synchronous in-memory mock: dream-
+// webhook.js's markReady has ALREADY genuinely committed readyAt to the
+// store, but mark-generation-completed.js's own INDEPENDENT read of that
+// same key initially lands on a stale, pre-write snapshot (Blobs' eventual
+// consistency) -- exactly the window lib/pending-dreams.js's
+// getWithReadyRetry exists to narrow. Uses mock-blobs' setReadOverride
+// (the same mechanism test/blobs-retry.test.js/test/pending-dreams.test.js
+// use for this class of hazard) to simulate the lagging read deterministically,
+// since a plain synchronous Map can never reproduce genuine propagation lag.
+// -----------------------------------------------------------------------
+
+test('RESIDUAL RACE HARDENING: a readyAt write that has genuinely landed but has not yet propagated to mark-generation-completed.js\'s own independent read must still suppress the automatic email, not double-send', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  delete require.cache[require.resolve('../netlify/functions/start-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/claim-pending-generation')];
+  delete require.cache[require.resolve('../netlify/functions/dream-webhook')];
+  delete require.cache[require.resolve('../netlify/functions/lib/pending-dreams')];
+  delete require.cache[require.resolve('../netlify/functions/lib/fal-webhook-verify')];
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
+  var dreamWebhookHandler = require('../netlify/functions/dream-webhook').handler;
+  var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
+  var pendingDreams = require('../netlify/functions/lib/pending-dreams');
+  falWebhookVerify.resetJwksCacheForTests();
+
+  var funnelEmail = 'residual-race@example.com';
+  var keyPair = crypto.generateKeyPairSync('ed25519');
+  var spies = installFetchSpy(keyPair);
+
+  // 1) Funnel submission, then the webhook arrives FIRST (same real
+  //    ordering as the WEBHOOK-BEFORE-CLAIM test above) -- readyAt is now
+  //    genuinely, durably committed on the underlying store.
+  var startRes = await withPastClock(60000, function () {
+    return startHandler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: { email: funnelEmail, caption: 'a funnel-built dream', style: 'Cinematic' }
+    }));
+  });
+  var startData = JSON.parse(startRes.body);
+  assert.ok(startData.pendingId);
+
+  var bodyObj = { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } };
+  var webhookRes = await dreamWebhookHandler(realFalWebhookEvent(startData.pendingId, bodyObj, keyPair));
+  assert.equal(webhookRes.statusCode, 200);
+  assert.equal(spies.resendCalls.length, 1, 'test setup: the abandonment email must have actually sent');
+
+  var trueRecord = await pendingDreams.get({}, startData.pendingId);
+  assert.ok(trueRecord.readyAt, 'test setup: readyAt is genuinely, durably set on the real store at this point');
+
+  await registerAccount('residualrace', funnelEmail);
+  var claimRes = await claimHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), body: { pendingId: startData.pendingId, email: funnelEmail }
+  }));
+  assert.equal(JSON.parse(claimRes.body).claimed, true, 'test setup: the claim must succeed from \'notified\'');
+
+  // 2) Simulate mark-generation-completed.js's OWN read of this exact
+  //    record lagging behind the write above -- the first get() against
+  //    this store returns a snapshot with readyAt still null, even though
+  //    the real store (asserted above) already has it durably set. Every
+  //    later read falls through to the real, already-committed value --
+  //    modeling propagation catching up within getWithReadyRetry's own
+  //    bounded retry window, not a hazard that never resolves.
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function (key, callCount) {
+    if (callCount === 1) return { value: Object.assign({}, trueRecord, { readyAt: null }) };
+    return false;
+  });
+
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var markRes = await markHandler(fakeEvent({
+    method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+    body: { operationName: startData.operationName }
+  }));
+  assert.equal(markRes.statusCode, 200);
+
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+
+  assert.equal(spies.resendCalls.length, 1, 'THE FIX: even with mark-generation-completed.js\'s own first read of readyAt landing stale, the bounded retry must recover the true value and skip the automatic send -- exactly one email total, never two');
+});
+
 test('mark-generation-completed: a job-owners email with no matching registered account is a silent no-op (no account to email)', async function () {
   var opName = realMockOpName('no-account-1');
   await seedJobOwner(opName, 'never-registered@example.com', 'video');

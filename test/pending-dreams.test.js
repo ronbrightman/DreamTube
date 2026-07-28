@@ -294,3 +294,97 @@ test('CONCURRENCY: two concurrent markClaimed calls for the same record credit e
   var final = await pendingDreams.get({}, record.id);
   assert.equal(final.status, 'claimed');
 });
+
+// ============================================================================
+// getWithReadyRetry (tracker.html's
+// narrow-residual-race-mark-generation-com-wenb3g item) — the bounded
+// re-read used by mark-generation-completed.js's maybeSendAutomaticFirst
+// DreamEmail to check dream-webhook.js's readyAt without trusting a single,
+// possibly-stale independent read. Uses mock-blobs' setReadOverride to
+// simulate the actual hazard a synchronous in-memory Map otherwise can't
+// reproduce: a read that lands behind a write that already really happened
+// on the underlying store.
+// ============================================================================
+
+test('getWithReadyRetry: a plain get() sees a stale (pre-write) snapshot when a read is simulated as lagging behind a real write -- proves the hazard this function exists to correct for', async function () {
+  var record = await pendingDreams.create({}, { email: 'stale@example.com', caption: 'x', style: 'Cinematic' });
+  await pendingDreams.markReady({}, record.id, 'https://cdn.fal/v.mp4'); // real write: readyAt is now genuinely set on the store
+
+  // Simulate ONE lagging read: the very next get() still sees the
+  // pre-markReady snapshot (readyAt: null), even though the real store
+  // already has it -- exactly the "issued but not yet durably visible"
+  // window this whole fix exists for.
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function (key, callCount) {
+    if (callCount === 1) return { value: Object.assign({}, record, { readyAt: null, status: 'pending' }) };
+    return false; // fall through to the real (already-updated) value on every later call
+  });
+
+  var staleRead = await pendingDreams.get({}, record.id);
+  assert.equal(staleRead.readyAt, null, 'a plain get() has no way to detect or recover from a single lagging read');
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+});
+
+test('getWithReadyRetry: recovers from exactly one lagging read within its bounded retry budget, returning the real readyAt', async function () {
+  var record = await pendingDreams.create({}, { email: 'recover@example.com', caption: 'x', style: 'Cinematic' });
+  await pendingDreams.markReady({}, record.id, 'https://cdn.fal/v.mp4');
+
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function (key, callCount) {
+    if (callCount === 1) return { value: Object.assign({}, record, { readyAt: null, status: 'pending' }) };
+    return false;
+  });
+
+  var result = await pendingDreams.getWithReadyRetry({}, record.id, { retryDelayMs: 5 });
+  assert.ok(result && result.readyAt, 'the retry must recover the real readyAt once the second read sees the already-committed write');
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+});
+
+test('getWithReadyRetry: a genuinely unset readyAt (no race at all -- the common funnel-completion ordering) is returned as-is, no false positive', async function () {
+  var record = await pendingDreams.create({}, { email: 'noready@example.com', caption: 'x', style: 'Cinematic' });
+  // No markReady call at all -- this is the ordinary "claimed well before
+  // Veo finishes" case (see mark-generation-completed.js's own header
+  // comment) -- readyAt genuinely never gets set.
+  var result = await pendingDreams.getWithReadyRetry({}, record.id, { retryDelayMs: 0 });
+  assert.equal(result.readyAt, null, 'must never fabricate a readyAt that was never actually set');
+});
+
+test('getWithReadyRetry: exhausting the retry budget on a read that never converges still returns the last-seen (stale) snapshot rather than throwing -- accepted residual, same posture as tryTransition', async function () {
+  var record = await pendingDreams.create({}, { email: 'neverconverge@example.com', caption: 'x', style: 'Cinematic' });
+  await pendingDreams.markReady({}, record.id, 'https://cdn.fal/v.mp4');
+
+  // Every read (not just the first) sees the stale pre-write snapshot --
+  // simulates propagation lag pathological enough to outlast the entire
+  // bounded retry budget.
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function () {
+    return { value: Object.assign({}, record, { readyAt: null, status: 'pending' }) };
+  });
+
+  var result = await pendingDreams.getWithReadyRetry({}, record.id, { maxAttempts: 3, retryDelayMs: 5 });
+  assert.equal(result.readyAt, null, 'an honest degrade, not a thrown error -- this is the accepted residual this fix narrows but does not claim to eliminate');
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+});
+
+test('getWithReadyRetry: a real delay is inserted between attempts, mirroring blobs-retry.js\'s own DEFAULT_RETRY_DELAY_MS precedent', async function () {
+  var record = await pendingDreams.create({}, { email: 'timing@example.com', caption: 'x', style: 'Cinematic' });
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function () {
+    return { value: Object.assign({}, record, { readyAt: null }) }; // never converges
+  });
+
+  var start = Date.now();
+  await pendingDreams.getWithReadyRetry({}, record.id, { maxAttempts: 2, retryDelayMs: 60 });
+  var elapsed = Date.now() - start;
+  assert.ok(elapsed >= 55, 'one 60ms delay between the two attempts should add up to close to 60ms of real elapsed time, got ' + elapsed + 'ms');
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+});
+
+test('getWithReadyRetry: defaults to a 2-attempt budget with blobs-retry.js\'s own DEFAULT_RETRY_DELAY_MS (200ms) when options are omitted -- deliberately lighter than tryTransition\'s 3, since this runs on every funnel completion, not just a genuine race', async function () {
+  var record = await pendingDreams.create({}, { email: 'defaults@example.com', caption: 'x', style: 'Cinematic' });
+  var callCount = 0;
+  mockBlobs.setReadOverride(pendingDreams.STORE_NAME, function (key, count) {
+    callCount = count;
+    return false; // fall through to the real stored value every time (readyAt genuinely null)
+  });
+
+  await pendingDreams.getWithReadyRetry({}, record.id);
+  assert.equal(callCount, 2, 'must attempt exactly 2 reads by default when readyAt never appears');
+  mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
+});
