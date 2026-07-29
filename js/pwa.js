@@ -20,9 +20,38 @@
 //      ever delivered once per page load and must be captured immediately
 //      (and preventDefault()'d, to suppress the browser's own default mini-
 //      infobar) or it's lost for that load.
+//
+// A third job, added for tracker item for-product-a2hs-install-nudge-3-
+// founder-vcofk7 (the A2HS nudge's "one-shot disappearance" fix):
+// verifying real install completion for home.html's persistent journey
+// card. Two independent signals both call DreamStore.markInstallVerified()
+// (see that function's own doc comment in js/store.js): this exact page
+// loading in `display-mode: standalone` for a signed-in account, and
+// Android's `appinstalled` event actually firing.
 window.PwaInstall = (function () {
   var deferredPrompt = null;
   var installedFlag = false;
+
+  /**
+   * Fires DreamStore.markInstallVerified() for the CURRENTLY signed-in
+   * account — the real, verified completion signal for the homepage A2HS
+   * journey card (tracker item for-product-a2hs-install-nudge-3-founder-
+   * vcofk7's "one-shot disappearance" fix, home.html's persistent
+   * next-step card). Guarded defensively (no-op, never throws) same as
+   * every other PWA-adjacent call in this file — store.js loads before
+   * this script on every real page (see CLAUDE.md's script-order
+   * convention) and reads its persisted state synchronously at parse
+   * time, so DreamStore.getCurrentUser() already reflects a real signed-in
+   * session here if one exists, but this stays defensive anyway since
+   * markInstallVerified is safe to call speculatively either way.
+   */
+  function markInstallVerifiedIfSignedIn() {
+    try {
+      if (!window.DreamStore || typeof DreamStore.markInstallVerified !== 'function') return;
+      if (!DreamStore.getCurrentUser || !DreamStore.getCurrentUser()) return;
+      DreamStore.markInstallVerified();
+    } catch (e) { /* must never break the page */ }
+  }
 
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeinstallprompt', function (e) {
@@ -32,6 +61,12 @@ window.PwaInstall = (function () {
     window.addEventListener('appinstalled', function () {
       deferredPrompt = null;
       installedFlag = true;
+      // Android's appinstalled is itself a real, non-guessable completion
+      // signal (Chrome only ever fires it once the install has actually
+      // finished) — worth marking right away rather than waiting for this
+      // same account's next standalone-mode page load to catch it via the
+      // isStandalone() check below.
+      markInstallVerifiedIfSignedIn();
     });
   }
 
@@ -94,6 +129,14 @@ window.PwaInstall = (function () {
   }
 
   registerServiceWorker();
+
+  // Real, verified "opened from the home screen" signal — fires at most
+  // once per account (markInstallVerified is itself idempotent) on
+  // whichever page happens to load first in standalone mode, not just
+  // home.html, per this item's own spec ("the first time home.html — or
+  // any page — loads in standalone mode for a signed-in user"). Cheap
+  // no-op on every ordinary browser-tab load, the overwhelming majority.
+  if (isStandalone()) markInstallVerifiedIfSignedIn();
 
   return {
     canPromptInstall: canPromptInstall,

@@ -28,6 +28,31 @@
 // reliably. Reuses the exact same DreamStore.detectInAppWebviewHost
 // shared source of truth every other in-app-browser-aware feature in
 // this codebase already uses.
+//
+// ===== 2026-07-29 addition: iOS-browser-tab push fallback chaining
+// (tracker item for-product-a2hs-install-nudge-3-founder-vcofk7's later
+// comment) =====
+// isSupported() correctly returns false on an iOS browser TAB (Apple only
+// exposes PushManager to an installed home-screen web app), so
+// maybeShowAsk() used to silently no-op there — technically correct, but
+// reads as "notifications are just broken" to a visitor who never sees
+// anything. Fixed: when push is unsupported SPECIFICALLY because of "iOS +
+// real browser tab, not standalone" (isIOSBrowserTabUnsupported below —
+// NOT desktop-unsupported or any other reason, which stay silent exactly
+// as before), maybeShowAsk renders a chained fallback message instead of
+// nothing: "notifications need the installed app... add DreamTube to your
+// home screen," which expands in place to the SAME iOS guidance
+// js/install-nudge.js's small card shows (InstallNudge.buildIOSGuidanceHtml
+// — one shared visual language, not a second copy). Push becomes available
+// naturally once they're running installed — no separate mechanism.
+//
+// Both real call paths into maybeShowAsk were checked and confirmed to hit
+// the SAME single slot: processing.html's #push-ask-slot is the only
+// caller in this codebase (confirmed by grep), and processing.html is
+// itself the one shared generation-wait page for both the wizard/
+// pre-signup flow (wizard.html -> processing.html) and the logged-in
+// Record-it flow (create.html -> style.html -> processing.html) — so a
+// fix at this one call site reaches both, no second wiring needed.
 window.PushSubscribe = (function () {
   /** Fire-and-forget PostHog capture, same guarded shape every other page-local track() helper in this codebase uses. */
   function track(name, props) {
@@ -102,14 +127,39 @@ window.PushSubscribe = (function () {
   }
 
   /**
-   * Renders the ask card into `containerEl` (an existing, empty element
-   * on the page — processing.html provides #push-ask-slot) for
-   * `username` (the currently signed-in account). No-ops entirely if
-   * shouldShowAsk() is false — see that function for every gate.
+   * True specifically when push is unsupported BECAUSE this is an iOS/
+   * iPadOS Safari-family browser TAB (not installed to the home screen) —
+   * Apple only ever exposes PushManager to an installed home-screen web
+   * app, never to an ordinary tab, on any iOS browser (Safari, Chrome-iOS,
+   * Firefox-iOS all share the same WebKit-enforced restriction — matches
+   * PwaInstall.isIOS's own doc comment on checking the OS, not the
+   * specific browser chrome). Deliberately narrow: this is false for a
+   * desktop browser that simply lacks Push API support, or any other
+   * unsupported reason — only THIS one case gets the fallback message
+   * below (see this file's 2026-07-29 header note); every other
+   * unsupported case stays exactly as silent as before.
    */
-  function maybeShowAsk(containerEl, username) {
-    if (!containerEl || !shouldShowAsk()) return;
+  function isIOSBrowserTabUnsupported() {
+    if (!window.PwaInstall || typeof PwaInstall.isIOS !== 'function') return false;
+    if (!PwaInstall.isIOS()) return false;
+    return !PwaInstall.isStandalone();
+  }
 
+  function shouldShowIOSFallback() {
+    if (isSupported()) return false; // push genuinely works here -- always prefer the real ask over the fallback
+    if (!window.DreamStore) return false;
+    if (DreamStore.detectInAppWebviewHost()) return false; // same standing rule as the real ask
+    if (!isIOSBrowserTabUnsupported()) return false; // only this one unsupported reason gets a fallback
+    if (DreamStore.getPushAskDismissed()) return false; // same one-ever marker -- dismissing either version means never ask again in this browser
+    return true;
+  }
+
+  /**
+   * Renders the real "Notify me" ask card into `containerEl` for
+   * `username` (the currently signed-in account). Assumes shouldShowAsk()
+   * has already been checked by the caller (maybeShowAsk below).
+   */
+  function renderRealAsk(containerEl, username) {
     var card = document.createElement('div');
     card.className = 'push-ask-card';
     card.id = 'push-ask-card';
@@ -144,5 +194,64 @@ window.PushSubscribe = (function () {
     });
   }
 
-  return { isSupported: isSupported, subscribe: subscribe, maybeShowAsk: maybeShowAsk };
+  /**
+   * Renders the iOS-browser-tab fallback chain into `containerEl` — see
+   * this file's 2026-07-29 header note. "See how" expands the SAME iOS
+   * guidance js/install-nudge.js's own small card renders
+   * (InstallNudge.buildIOSGuidanceHtml), directly in place, rather than
+   * navigating away or duplicating that markup a second time. Assumes
+   * shouldShowIOSFallback() has already been checked by the caller.
+   */
+  function renderIOSFallback(containerEl) {
+    var card = document.createElement('div');
+    card.className = 'push-ask-card';
+    card.id = 'push-ask-card';
+    card.innerHTML =
+      '<button type="button" class="push-ask-x" id="push-ask-dismiss" aria-label="Dismiss">&times;</button>' +
+      '<div class="push-ask-head"><span class="push-ask-dot">' + (window.Icons ? Icons.bell : '') + '</span><span>Get notified when it\'s ready</span></div>' +
+      '<div class="push-ask-body">Notifications need the installed app on iOS — want to be told the instant your dream is ready? Add DreamTube to your home screen.</div>' +
+      '<button type="button" class="push-ask-btn" id="push-ask-install-cta">See how <span class="icon">' + (window.Icons ? Icons.shareIos : '') + '</span></button>' +
+      '<div id="push-ask-install-guidance" style="display:none; margin-top:10px;"></div>';
+    containerEl.innerHTML = '';
+    containerEl.appendChild(card);
+
+    track('push_fallback_shown', {});
+
+    document.getElementById('push-ask-dismiss').addEventListener('click', function () {
+      DreamStore.dismissPushAsk();
+      card.remove();
+    });
+
+    document.getElementById('push-ask-install-cta').addEventListener('click', function () {
+      track('push_fallback_install_cta_tapped', {});
+      var guidance = document.getElementById('push-ask-install-guidance');
+      guidance.innerHTML = (window.InstallNudge && typeof InstallNudge.buildIOSGuidanceHtml === 'function')
+        ? InstallNudge.buildIOSGuidanceHtml()
+        : '<div class="push-ask-body">Tap the Share icon, then scroll down and look for "Add to Home Screen."</div>';
+      guidance.style.display = '';
+      this.style.display = 'none';
+    });
+  }
+
+  /**
+   * Renders whichever ask is actually appropriate into `containerEl` (an
+   * existing, empty element on the page — processing.html provides
+   * #push-ask-slot) for `username` (the currently signed-in account): the
+   * real "Notify me" ask when push genuinely works here (shouldShowAsk),
+   * the iOS-browser-tab fallback chain when it specifically can't for
+   * that one reason (shouldShowIOSFallback), or a silent no-op for every
+   * other case — unchanged from this function's original behavior.
+   */
+  function maybeShowAsk(containerEl, username) {
+    if (!containerEl) return;
+    if (shouldShowAsk()) { renderRealAsk(containerEl, username); return; }
+    if (shouldShowIOSFallback()) { renderIOSFallback(containerEl); return; }
+  }
+
+  return {
+    isSupported: isSupported,
+    subscribe: subscribe,
+    maybeShowAsk: maybeShowAsk,
+    isIOSBrowserTabUnsupported: isIOSBrowserTabUnsupported
+  };
 })();

@@ -203,6 +203,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .thumb img,.thumb video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .thumbs-empty{ font-size:11.5px; color:var(--home-soft); margin-top:10px; }
 
+/* "Add to home screen" journey card — tracker item for-product-a2hs-
+   install-nudge-3-founder-vcofk7's fix for the small nudge's "one-shot
+   disappearance": a PERSISTENT next-step card that stays until
+   DreamStore.getInstallVerified() is genuinely true (a real standalone-
+   launch/appinstalled signal, see js/pwa.js), never on a mere dismiss —
+   deliberately has no dismiss (X) button at all, unlike every other
+   nudge in this app, since there is nothing to permanently dismiss here
+   by design (see renderInstallCard below). */
+.install-hcard-row{ display:flex; align-items:center; gap:11px; margin-top:2px; }
+.install-hcard-icon{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:rgba(157,144,255,.16); border:1px solid var(--home-line); display:flex; align-items:center; justify-content:center; color:var(--home-acc); }
+.install-hcard-icon svg{ width:18px; height:18px; }
+.install-hcard-txt{ flex:1; min-width:0; }
+.install-hcard-btn{ margin-top:11px; width:100%; }
+
 /* Chamber / Vault — glowing night-object cards, CSS gradients only (no jpg art payload) */
 .hcard-art{ display:flex; flex-direction:column; justify-content:flex-end; min-height:86px; text-decoration:none; }
 .card-chamber{ background:linear-gradient(160deg, rgba(107,79,181,.5), transparent 65%), linear-gradient(180deg,var(--home-raise),var(--home-raise2)); }
@@ -258,6 +272,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           <div class="nextstrip" id="next-strip"></div>
         </div>
 
+        <!-- "Add to home screen" journey card (tracker item for-product-
+             a2hs-install-nudge-3-founder-vcofk7) -- hidden by default,
+             shown by renderInstallCard() below only while genuinely
+             possible (InstallNudge.canOfferInstall()) AND not yet
+             verified installed (DreamStore.getInstallVerified()). Stays
+             visible across reloads until that real verification fires --
+             tapping "See how" only opens the guidance sheet, it never
+             dismisses this card. -->
+        <div class="hcard span2" id="card-install" data-card="install" style="display:none;">
+          <div class="hcard-dt">Next step</div>
+          <div class="install-hcard-row">
+            <div class="install-hcard-icon" id="install-hcard-icon"></div>
+            <div class="install-hcard-txt">
+              <span class="hcard-title">Add DreamTube to your home screen</span>
+              <span class="hcard-sub">Open your dreams like an app — no browser tabs</span>
+            </div>
+          </div>
+          <button type="button" class="ebtn p install-hcard-btn" id="install-hcard-btn">See how</button>
+        </div>
+
         <div class="hcard span2" id="card-week" data-card="week">
           <div class="hcard-dt">This week</div>
           <div id="week-body"></div>
@@ -295,12 +329,28 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     </div>
   </div>
 
+  <!-- "Add to home screen" guidance sheet — opened by the #card-install
+       journey card above. Standard .sheet-overlay/.sheet/.sheet-handle
+       pattern (js/sheet-dismiss.js wires tap-outside/drag-to-dismiss),
+       same as every other bottom sheet in this app (see profile.html's
+       settings sheet). Closing this sheet never dismisses #card-install
+       itself -- only DreamStore.getInstallVerified() becoming true does. -->
+  <div class="sheet-overlay" id="install-sheet-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Add DreamTube to your home screen</div>
+      <div id="install-sheet-body"></div>
+      <button type="button" class="btn btn-ghost btn-block" id="install-sheet-close" style="margin-top:16px;">Close</button>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
@@ -549,6 +599,74 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       chamber.href = 'create.html';
       document.getElementById('chamber-sub').textContent = 'make your first dream to begin';
     }
+  })();
+
+  // ===== "Add to home screen" journey card (tracker item for-product-
+  // a2hs-install-nudge-3-founder-vcofk7) — PERSISTENT until genuinely
+  // verified installed, never hidden by a mere dismiss (there is no
+  // dismiss action on this card at all, deliberately — see the markup's
+  // own comment). Reuses js/install-nudge.js's canOfferInstall() (the
+  // exact same capability-detect gates as the small nudge card, MINUS
+  // that card's own device-level dismiss flag, which must never hide
+  // THIS persistent card — see install-nudge.js's own doc comment on
+  // why the two are factored apart) plus DreamStore.getInstallVerified()
+  // (js/pwa.js's real standalone-launch/appinstalled signal) as the one
+  // and only thing that makes this card go away. =====
+  (function installJourneyCard(){
+    var card = document.getElementById('card-install');
+    var overlay = document.getElementById('install-sheet-overlay');
+
+    function shouldShow(){
+      return !!(window.InstallNudge && window.PwaInstall && window.DreamStore &&
+        InstallNudge.canOfferInstall() && !DreamStore.getInstallVerified());
+    }
+
+    function refresh(){
+      card.style.display = shouldShow() ? '' : 'none';
+    }
+    refresh();
+    if(card.style.display === 'none') return; // nothing else to wire if it can never show on this load
+
+    document.getElementById('install-hcard-icon').innerHTML = window.Icons ? Icons.download : '';
+
+    function closeSheet(){ overlay.classList.remove('open'); }
+
+    function openSheet(){
+      var body = document.getElementById('install-sheet-body');
+      var onIOS = PwaInstall.isIOS();
+      if(onIOS){
+        body.innerHTML = InstallNudge.buildIOSGuidanceHtml();
+      } else {
+        body.innerHTML =
+          '<div class="push-ask-body">One tap and you\'re set — open your dreams like any other app, no browser tabs.</div>' +
+          '<button type="button" class="btn btn-primary btn-block" id="install-sheet-android-btn" style="margin-top:14px;">Install <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>';
+        document.getElementById('install-sheet-android-btn').addEventListener('click', function(){
+          PwaInstall.promptInstall().then(function(outcome){
+            track('home_install_sheet_outcome', { outcome: outcome || 'unavailable' });
+            // Real acceptance fires the browser's own `appinstalled` event
+            // shortly after (js/pwa.js marks getInstallVerified() true off
+            // that, not off this outcome string directly) — refresh right
+            // away too so the card doesn't linger a beat behind reality.
+            if(outcome === 'accepted'){ closeSheet(); refresh(); }
+          });
+        });
+      }
+      overlay.classList.add('open');
+    }
+
+    document.getElementById('install-hcard-btn').addEventListener('click', function(){
+      track('home_install_card_tapped', {});
+      openSheet();
+    });
+    document.getElementById('install-sheet-close').addEventListener('click', closeSheet);
+    SheetDismiss.wire(overlay, closeSheet);
+
+    // Android's real appinstalled event can fire while this exact page is
+    // still open (accept the sheet's own install button above, or the
+    // browser's native mini-infobar) — re-check right away rather than
+    // only on a later reload, so the card completes in the SAME session
+    // it was actually installed in.
+    window.addEventListener('appinstalled', refresh);
   })();
 
   // ===== Vault card =====

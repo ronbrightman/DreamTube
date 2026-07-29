@@ -32,6 +32,38 @@
 // `InstallNudge.init({ trigger: 'repeat-visit', pageKey: 'result' })` on
 // a page that should nudge REPEAT (not first-time) real-browser visitors
 // (result.html/profile.html, per the analysis above).
+//
+// ===== 2026-07-29 revision (tracker item for-product-a2hs-install-nudge-
+// 3-founder-vcofk7) =====
+// Three founder-found problems with a real Safari test, fixed here:
+//   1. UNCLEAR GUIDANCE — "tap the Share icon" text alone wasn't enough,
+//      even on real Safari. Fixed with a real visual aid (buildIOSGuidance-
+//      Html below: the app's existing Icons.shareIos glyph rendered inside
+//      a small toolbar mock, CSS/SVG-only, no image asset) plus explicit
+//      "scroll down" guidance — the founder's own screenshot suggested the
+//      missing option was most likely below the fold in the real share
+//      sheet, not actually absent.
+//   2. MISSING OPTION — there's no JS-observable API into Safari's actual
+//      share-sheet contents, so the fix is (a) keep hasSomethingToOffer/
+//      shouldConsiderShowing below as tight as they can practically be
+//      (confirmed correct already — see their own doc comments), and (b)
+//      never claim the option WILL be there — buildIOSGuidanceHtml's copy
+//      says "usually looks like" and "can vary by browser," never a flat
+//      promise. Private-browsing detection was explicitly considered and
+//      rejected: there is no reliable, version-stable JS signal for Safari
+//      private-browsing mode today (the old FileSystem-API-quota trick was
+//      deliberately closed off by Apple years ago to stop exactly this
+//      kind of fingerprinting, and no public replacement exists) — a
+//      heuristic here would produce false positives that wrongly hide the
+//      nudge for many ordinary, non-private visitors, which is worse than
+//      the honest "can vary" copy already handles.
+//   3. ONE-SHOT DISAPPEARANCE — the homepage journey card (home.html,
+//      #card-install) is now the PERSISTENT step that stays until
+//      DreamStore.getInstallVerified() is genuinely true (a real
+//      standalone-launch/appinstalled signal — see js/pwa.js), never on a
+//      mere dismiss. THIS card (the small one below) keeps its original
+//      one-shot-permanent dismiss semantics — it's the lighter-weight nudge
+//      now, not the only chance to install.
 window.InstallNudge = (function () {
   /** Fire-and-forget PostHog capture, same guarded shape as every other page's own local track() helper (see result.html/shop.html) — this module is shared across pages, so it gets its own copy rather than depending on one page's local function existing. */
   function track(name, props) {
@@ -54,7 +86,16 @@ window.InstallNudge = (function () {
     return !!(window.PwaInstall && window.PwaInstall.canPromptInstall());
   }
 
-  function shouldConsiderShowing() {
+  /**
+   * Every capability-detect gate EXCEPT the small nudge card's own
+   * device-level dismiss flag — factored out so home.html's persistent
+   * journey card can reuse the exact same "is this genuinely possible
+   * right now" logic without also inheriting a dismiss state that belongs
+   * only to the small card (see this file's 2026-07-29 revision note
+   * above on why the two cards' dismiss semantics are deliberately
+   * different).
+   */
+  function canOfferInstall() {
     if (!window.DreamStore || !window.PwaInstall) return false;
     // Standing rule (this feature's own "What NOT to do" instruction):
     // never show an impossible-to-complete A2HS instruction inside FB/IG's
@@ -62,9 +103,52 @@ window.InstallNudge = (function () {
     // reinvented copy.
     if (DreamStore.detectInAppWebviewHost()) return false;
     if (PwaInstall.isStandalone()) return false;
-    if (DreamStore.getInstallNudgeDismissed()) return false;
     if (!hasSomethingToOffer()) return false;
     return true;
+  }
+
+  function shouldConsiderShowing() {
+    if (!canOfferInstall()) return false;
+    if (DreamStore.getInstallNudgeDismissed()) return false;
+    return true;
+  }
+
+  /**
+   * The shared iOS visual-aid + copy block — a real rendering of the
+   * app's existing Icons.shareIos glyph (the same iOS-style share icon
+   * already used by result.html's topbar Share button, not a new
+   * invention) inside a small mock toolbar bar, so it reads as "here's
+   * roughly where this lives" rather than a bare icon floating with no
+   * context. CSS/SVG only, no image/canvas payload, matching this app's
+   * "keep it light for webview" principle. Reused by THREE callers: this
+   * module's own render() below, home.html's persistent journey-card
+   * sheet, and js/push-subscribe.js's iOS-browser-tab push fallback (see
+   * that file's own header comment) — one visual language for "how to add
+   * to your home screen" everywhere it's explained, not three copies.
+   * Deliberately never promises the "Add to Home Screen" row will be
+   * exactly there (problem 2 above) — "usually looks like," "can vary."
+   */
+  function buildIOSGuidanceHtml() {
+    var shareIcon = window.Icons ? Icons.shareIos : '';
+    var plusIcon = window.Icons ? Icons.plus : '+';
+    return (
+      '<div class="install-nudge-visual" aria-hidden="true">' +
+        '<div class="install-nudge-toolbar">' +
+          '<span class="install-nudge-toolbar-dot"></span>' +
+          '<span class="install-nudge-toolbar-dot"></span>' +
+          '<span class="install-nudge-toolbar-share">' + shareIcon + '</span>' +
+          '<span class="install-nudge-toolbar-dot"></span>' +
+          '<span class="install-nudge-toolbar-dot"></span>' +
+        '</div>' +
+        '<div class="install-nudge-toolbar-arrow">▲ Share icon</div>' +
+      '</div>' +
+      '<div class="install-nudge-body">Tap the Share icon — usually at the <b>bottom-center</b> of your screen in Safari (shown above; other browsers put it in their own menu). Then <b>scroll down</b> the list that opens — “Add to Home Screen” is often further down than it looks. It usually looks like this:</div>' +
+      '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
+        '<span class="menu-row-replica-icon">' + plusIcon + '</span>' +
+        '<span class="menu-row-replica-label">Add to Home Screen</span>' +
+      '</div>' +
+      '<div class="install-nudge-note">Exact wording and position can vary by browser.</div>'
+    );
   }
 
   function render() {
@@ -80,10 +164,10 @@ window.InstallNudge = (function () {
     card.innerHTML =
       '<button type="button" class="install-nudge-x" id="install-nudge-dismiss" aria-label="Dismiss">&times;</button>' +
       '<div class="install-nudge-head"><span class="install-nudge-dot">' + iconMarkup + '</span><span>Add DreamTube to your home screen</span></div>' +
-      '<div class="install-nudge-body">' + (onIOS
-        ? 'Tap the Share icon, then "Add to Home Screen" — open your dreams like any other app.'
-        : 'One tap and you\'re set — open your dreams like any other app, no browser tabs.') + '</div>' +
-      (onIOS ? '' : '<button type="button" class="install-nudge-btn" id="install-nudge-action">Install <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>');
+      (onIOS
+        ? buildIOSGuidanceHtml()
+        : ('<div class="install-nudge-body">One tap and you\'re set — open your dreams like any other app, no browser tabs.</div>' +
+           '<button type="button" class="install-nudge-btn" id="install-nudge-action">Install <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>'));
 
     document.body.appendChild(card);
     track('install_nudge_shown', { platform: onIOS ? 'ios' : 'android' });
@@ -129,5 +213,9 @@ window.InstallNudge = (function () {
     render();
   }
 
-  return { init: init };
+  return {
+    init: init,
+    canOfferInstall: canOfferInstall,
+    buildIOSGuidanceHtml: buildIOSGuidanceHtml
+  };
 })();

@@ -3394,6 +3394,51 @@
     },
 
     /**
+     * Per-account "has this account ever been genuinely VERIFIED as
+     * installed to a home screen" flag — tracker item for-product-a2hs-
+     * install-nudge-3-founder-vcofk7's fix for the nudge's "one-shot
+     * disappearance" problem. This is deliberately a SEPARATE concept from
+     * getInstallNudgeDismissed above: that one is a device-level "did the
+     * visitor dismiss/ignore the small nudge card" marker (no proof
+     * anything was actually installed), while this one only ever becomes
+     * true off a REAL completion signal — never a user "I did it" self-
+     * report. Two independent triggers set it, both wired in js/pwa.js:
+     * (1) this exact page loading in `display-mode: standalone`
+     * (PwaInstall.isStandalone()) for a signed-in account — proof the
+     * visitor genuinely opened the app from a home-screen icon at least
+     * once; (2) Android's `appinstalled` event firing — proof Chrome
+     * actually completed a real install, worth marking immediately rather
+     * than waiting for that same session's next standalone launch.
+     *
+     * Per-account (not device-level) because the homepage journey card
+     * (home.html) needs "did THIS signed-in account's owner ever
+     * install" — the same reasoning markFirstVideoCreatedIfEligible below
+     * already uses for living on state.accounts[key] rather than a bare
+     * localStorage key: an account can move devices/browsers over its
+     * lifetime, and a fresh browser on the SAME account shouldn't have to
+     * re-earn a completion that already genuinely happened.
+     *
+     * markInstallVerified is intentionally idempotent and returns false
+     * (no-op) both when there's no signed-in account to persist against
+     * and when the flag was already set — callers never need to guard
+     * against double-marking themselves.
+     */
+    getInstallVerified: function () {
+      if (!state.user) return false;
+      var account = state.accounts[state.user.username.toLowerCase()];
+      return !!(account && account.installVerified);
+    },
+    markInstallVerified: function () {
+      if (!state.user) return false;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account || account.installVerified) return false;
+      account.installVerified = true;
+      persist();
+      return true;
+    },
+
+    /**
      * Device-level, per-page-key visit counter — used by
      * js/install-nudge.js to gate the install nudge's "repeat visitor on
      * result.html/profile.html" trigger (tracker.html's home-screen-
