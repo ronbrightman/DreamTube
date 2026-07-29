@@ -392,6 +392,16 @@ review surface (the tracker doesn't push notifications; it's a mailbox you check
    input then you must always summarize at the end." "Always" — durable,
    not a one-off. Applies to both sessions on any item they hand back to
    him for a real decision.
+5. **Announce every go-live with a direct test link (founder rule,
+   "Always", 2026-07-29):** whenever a new feature actually goes LIVE, or
+   is fully built and just awaiting his go-ahead to flip live, tell him
+   proactively rather than letting it sit as one more tracker comment —
+   and give a direct link to test it: a deep link straight to the actual
+   screen/flow (e.g. `https://dreamtube1.netlify.app/home.html`,
+   `.../result.html?id=<real-dream-id>`), never just the homepage he'd
+   then have to navigate from himself. Applies to every session reporting
+   to Ron, on every go-live, not just the first one after this rule was
+   set.
 
 ## Improvement cycle (cadence)
 
