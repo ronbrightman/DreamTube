@@ -13,7 +13,22 @@
 //   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
 //     tokens: { balance, lastClaimAt, streak },
 //     appliedTokenPackPaymentIds, refundedJobIds,
-//     firstPackPurchaseAt }
+//     firstPackPurchaseAt,
+//     achievements: { [achievementId]: { grantedAt, type, amount|capability/count } },
+//     capabilities: { [capabilityName]: count } }
+//
+// achievements / capabilities (tracker item
+// for-product-build-server-side-achievemen-begfnb — infrastructure for the
+// homepage's upcoming milestone rewards, e.g. streaks): see the big
+// "ACHIEVEMENT / MILESTONE GRANT LEDGER" doc block further down (near
+// applyAchievementGrant) for the full mechanism. Short version: `achievements`
+// is a once-per-account-per-id ledger (mirrors `firstClaimAt`'s "grant this
+// exactly once, ever" shape, generalized to an arbitrary id instead of one
+// fixed field), and `capabilities` is the running redeemable balance of
+// non-currency rewards (free re-edits, free interpretation lenses, free
+// images) that capability-type achievement grants add to. Deliberately no
+// ACTUAL achievement ids or grant sizes are wired to any real user-facing
+// trigger yet — see that doc block's own "SHIPS NO GRANTS" note.
 //
 // tokens.lastClaimAt / tokens.streak (added 2026-07-28, "daily token
 // claim" — replaces the old lazy background +20/24h drip entirely, see
@@ -1723,6 +1738,361 @@ async function forgetRefundedJobId(event, email, jobId) {
   });
 }
 
+// ============================================================================
+// ACHIEVEMENT / MILESTONE GRANT LEDGER — idempotent, once-per-account-per-id
+// (tracker item for-product-build-server-side-achievemen-begfnb, mechanism
+// only — see "SHIPS NO GRANTS" below)
+// ----------------------------------------------------------------------------
+// Infrastructure for the upcoming homepage feature's milestone rewards
+// (streaks, "first repeated theme", etc.). Client-side-only achievement
+// grants would be trivially farmable — a user can always replay/fake
+// whatever client-side condition supposedly unlocked a reward — so, same
+// reasoning as everything else in this file, a real grant has to be decided
+// and recorded server-side, exactly once per account, ever.
+//
+// This generalizes the SAME anti-farming shape `firstClaimAt` already uses
+// above (a once-only marker on the entitlement record, checked before
+// crediting anything) from one hardcoded field to an arbitrary, open-ended
+// set of achievement ids — `firstClaimAt` answers exactly one question
+// ("has this account EVER completed a claim"); `achievements` answers the
+// same shape of question for however many distinct achievement ids the
+// homepage feature ends up defining, without this file needing to grow a
+// new hardcoded boolean field per achievement. Deliberately NOT a fixed
+// enum anywhere in this mechanism — the actual set of ids (e.g.
+// "streak_7day", "first_repeat_theme") is homepage-feature-owned and
+// defined later; this file only needs a string key and a grant shape.
+//
+// REWARD TYPES: a grant is one of two shapes (open to more later, but only
+// these two exist today, per the founder-brain reward-design rules relayed
+// on the tracker item):
+//   { type: 'tokens', amount: N }              — a straight balance credit,
+//     reserved for only the biggest milestones (a 7-day streak, a first
+//     repeated theme) per the founder's own stated principle: garnish, never
+//     replace the existing daily-claim economy. This mechanism can express
+//     amounts smaller than DAILY_CLAIM_AMOUNT (e.g. +10/+20) just as easily
+//     as a bigger one-off — it does not itself enforce any ceiling on
+//     `amount` (that judgment call belongs to whoever picks real sizes at
+//     the homepage design review, not to this generic mechanism).
+//   { type: 'capability', capability: <name>, count: N } — a non-currency
+//     unlock (e.g. 'free_reedit', 'free_lens', 'free_image'), preferred by
+//     the founder's own reward-design principle over a token grant for
+//     everything BELOW the biggest milestones: near-zero cost-of-goods, and
+//     can't cannibalize shop.html's token-pack economics the way handing out
+//     free tokens at scale would. Adds `count` onto a running per-capability
+//     balance (`capabilities[capability]`) this record carries, which some
+//     future spend path (not built here — out of scope, see "SHIPS NO
+//     GRANTS" below) would decrement when a free re-edit/lens/image is
+//     actually redeemed.
+//
+// SHIPS NO GRANTS: per the tracker item's own explicit instruction ("Actual
+// grant SIZES are a founder sign-off at the homepage design review — build
+// the mechanism, ship no grants until sizes approved"), NOTHING in this
+// codebase calls applyAchievementGrant from any real user-facing code path
+// as of this writing — it is exercised only by this file's own test suite
+// (test/entitlements-achievements.test.js). The homepage feature wiring real
+// achievement ids/amounts to real triggers is separate, later work, gated on
+// the founder actually approving sizes.
+//
+// PER-IP RATE LIMITING IS THE FUTURE CALLER'S JOB, NOT THIS FUNCTION'S: same
+// division of responsibility this file already uses everywhere else — this
+// is a plain library function with no concept of an HTTP request/IP, exactly
+// like syncTokens/claimDailyTokens/spendTokens. claim-daily-tokens.js applies
+// its own 'claim-ip'/'claim-email' rate-limit buckets (rate-limit.js's
+// checkAndIncrement) BEFORE ever calling claimDailyTokens; generate-video.js
+// does the same (E109/E110) before spendTokens. Whenever a real Netlify
+// Function eventually calls applyAchievementGrant from a genuine user
+// trigger, it MUST apply an equivalent per-IP (and/or per-email) rate-limit
+// bucket first, the same way every other sensitive write endpoint in this
+// codebase already does (see admin-consolidate-accounts.js/
+// admin-rename-account.js for the same discipline on the admin side) — this
+// mechanism's own idempotency (below) prevents a DUPLICATE grant, but it
+// does nothing to stop a scripted client from hammering the endpoint with
+// many DIFFERENT achievement ids/accounts, which only an IP cap defends
+// against.
+//
+// TWO-PHASE MARKER, SAME REASONING AS creditTokenPackOnce/refundTokensOnce:
+// a plain "read the ledger, if the id is absent write it" is the exact
+// documented TOCTOU this file's own header comment (and
+// creditTokenPackAmountOnce's/refundTokenAmountOnce's doc comments) already
+// warns is NOT safe under genuine concurrency — two concurrent grant calls
+// for the SAME (email, achievementId) could each read "not yet granted"
+// before either writes, and a plain map-membership `verify()` would then
+// report success for BOTH, double-applying the reward (double-crediting
+// tokens, or double-incrementing a capability count). Fixed the identical
+// way: an OUTER claimId-based write-then-verify marker
+// (ACHIEVEMENT_GRANTS_STORE_NAME, keyed by `email::achievementId` — a
+// composite key, since a grant is scoped to one account's one achievement,
+// not to achievementId alone) serializes concurrent callers before any of
+// them touch the entitlement record's balance/capabilities, a
+// `status: 'pending' -> 'committed'` marker makes an interrupted attempt
+// (a crash between winning the marker race and finishing the grant) safely
+// RESUMABLE rather than stuck, and applyAchievementGrantOnce below (mirrors
+// creditTokenPackAmountOnce/refundTokenAmountOnce) makes the actual
+// entitlement-record write idempotent per achievementId too, so a resume
+// can never double-apply it. See creditTokenPackOnce's own doc comment for
+// the full step-by-step reasoning this mirrors almost line for line.
+//
+// Returns `{ ok: true, granted: boolean, ... }`: `granted: false` means this
+// (email, achievementId) pair was already recorded — a safe no-op, not an
+// error (mirrors `credited`/`refunded` false on the purchase/refund paths).
+// Throws on genuine exhaustion at any phase (bounded retry attempts never
+// confirm a winner), matching this file's own "EXHAUSTION MUST THROW, NOT
+// SILENTLY SWALLOW" posture (see creditTokenPackOnce's doc comment) — a
+// caller that can't confirm a grant landed must not silently report success
+// OR silently report failure for what might actually be a transient Blobs
+// hiccup; it propagates up so its own caller can decide (retry, log, 500).
+//
+// A missing/empty email or a missing/non-string achievementId is a safe
+// no-op (`{ ok: false, granted: false }`), matching this file's existing
+// "an unidentifiable caller never creates a phantom record" discipline. An
+// invalid `grantSpec` (missing/unrecognized `type`) throws immediately,
+// before any Blobs I/O — this is a caller-programming-error class of bug
+// (a hardcoded typo in a homepage-feature call site), not a runtime
+// condition worth an "already granted"-shaped false; it should fail loud
+// and immediately in whatever test/staging exercised it first.
+// ============================================================================
+
+var ACHIEVEMENT_GRANTS_STORE_NAME = 'dreamtube-achievement-grants';
+
+function achievementGrantsStore() {
+  return getStore({ name: ACHIEVEMENT_GRANTS_STORE_NAME });
+}
+
+/** Composite key for the OUTER per-(email, achievementId) marker — see the doc block above for why this needs to be scoped to both, not achievementId alone. */
+function achievementGrantMarkerKey(email, achievementId) {
+  return normalizeEmail(email) + '::' + achievementId;
+}
+
+function validateGrantSpec(grantSpec) {
+  if (!grantSpec || typeof grantSpec !== 'object') {
+    throw new Error('applyAchievementGrant: grantSpec is required');
+  }
+  if (grantSpec.type === 'tokens') {
+    if (typeof grantSpec.amount !== 'number' || !(grantSpec.amount > 0)) {
+      throw new Error('applyAchievementGrant: a "tokens" grantSpec requires a positive numeric amount');
+    }
+    return;
+  }
+  if (grantSpec.type === 'capability') {
+    if (typeof grantSpec.capability !== 'string' || !grantSpec.capability) {
+      throw new Error('applyAchievementGrant: a "capability" grantSpec requires a non-empty capability name');
+    }
+    if (typeof grantSpec.count !== 'number' || !(grantSpec.count > 0)) {
+      throw new Error('applyAchievementGrant: a "capability" grantSpec requires a positive numeric count');
+    }
+    return;
+  }
+  throw new Error('applyAchievementGrant: grantSpec.type must be "tokens" or "capability", got ' + (grantSpec && grantSpec.type));
+}
+
+/**
+ * The OUTER entry point — see the big doc block above this section for the
+ * full mechanism. Idempotent per (email, achievementId): calling this twice
+ * (sequentially or concurrently) for the same pair only ever applies the
+ * reward once.
+ */
+async function applyAchievementGrant(event, email, achievementId, grantSpec) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false, granted: false };
+  if (typeof achievementId !== 'string' || !achievementId) return { ok: false, granted: false };
+  validateGrantSpec(grantSpec); // throws on a caller-programming-error grantSpec, before any I/O
+
+  var markerKey = achievementGrantMarkerKey(key, achievementId);
+  var claimId; // set fresh inside mutate() on whichever attempt actually writes
+
+  var result = await blobsRetry.retryingWrite(event, ACHIEVEMENT_GRANTS_STORE_NAME, markerKey, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return achievementGrantsStore().get(markerKey, { type: 'json' });
+    },
+    mutate: function (existing) {
+      // A marker already exists — either our own earlier attempt within
+      // this loop (verify lagged, so we looped back and now see our own
+      // write) or a genuinely separate concurrent caller. Nothing new to
+      // write: SKIP and let the caller decide what the existing marker's
+      // `status` means.
+      if (existing) return blobsRetry.SKIP;
+      claimId = crypto.randomUUID();
+      return { email: key, achievementId: achievementId, grantSpec: grantSpec, status: 'pending', claimId: claimId, createdAt: Date.now() };
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.claimId === claimId);
+    }
+  });
+
+  var marker;
+  if (result.ok) {
+    marker = result.value; // our freshly-written 'pending' marker just won the race
+  } else if (result.skipped) {
+    marker = result.current; // a pre-existing marker (pending or committed) -- some other caller/attempt already owns this pair
+  } else {
+    // Genuine exhaustion — see creditTokenPackOnce's identical doc comment
+    // for why this must throw rather than silently return granted:false.
+    throw new Error('applyAchievementGrant: exhausted attempts writing the pending marker for ' + markerKey + ' without confirming a winner');
+  }
+
+  if (!marker || marker.status === 'committed') {
+    // Already fully processed — a genuine repeat call/concurrent-loser,
+    // nothing to do.
+    return { ok: true, granted: false };
+  }
+
+  // marker.status === 'pending': either freshly created above, or a resume
+  // of an interrupted earlier attempt. applyAchievementGrantOnce is
+  // idempotent per (email, achievementId) (folds the dedup check into the
+  // same write as the balance/capability update), so it's safe to call
+  // again here even if an earlier, interrupted attempt already applied this
+  // exact grant. Uses the marker's OWN recorded grantSpec (not whatever this
+  // call happened to pass) so a resume always applies the grant that was
+  // actually decided when the marker was first created, even if this call's
+  // own `grantSpec` argument somehow differs.
+  await applyAchievementGrantOnce(event, marker.email || key, achievementId, marker.grantSpec || grantSpec);
+
+  // Flip to 'committed' — ALSO raced (a second claimId-based
+  // write-then-verify), not a blind overwrite, since a 'pending' marker can
+  // legitimately be resumed by more than one near-simultaneous caller —
+  // exactly one resumer should report granted:true, the rest see it already
+  // finished. Mirrors creditTokenPackOnce's/refundTokensOnce's own
+  // finish-flip exactly.
+  var finishClaimId;
+  var finishResult = await blobsRetry.retryingWrite(event, ACHIEVEMENT_GRANTS_STORE_NAME, markerKey, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return achievementGrantsStore().get(markerKey, { type: 'json' });
+    },
+    mutate: function (existing) {
+      if (existing && existing.status === 'committed') return blobsRetry.SKIP; // someone else already finished this resume
+      finishClaimId = crypto.randomUUID();
+      return Object.assign({}, existing || marker, { status: 'committed', creditedAt: Date.now(), finishClaimId: finishClaimId });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.finishClaimId === finishClaimId);
+    }
+  });
+
+  if (finishResult.skipped) {
+    // Someone else's concurrent resume already flipped this marker — a
+    // safe, expected no-op. The grant itself is guaranteed correct
+    // regardless (applyAchievementGrantOnce's own guarantee, above); this
+    // call just isn't the one that gets to report granted:true.
+    return { ok: true, granted: false };
+  }
+  if (!finishResult.ok) {
+    // The grant itself is NOT at risk here (applyAchievementGrantOnce
+    // already guaranteed it landed, or would have thrown) — only the
+    // bookkeeping flip-to-'committed' failed to confirm. Still throw rather
+    // than silently succeed — see creditTokenPackOnce's identical reasoning.
+    throw new Error('applyAchievementGrant: exhausted attempts flipping the marker to committed for ' + markerKey);
+  }
+
+  var record = await getEntitlement(event, key);
+  return {
+    ok: true,
+    granted: true,
+    achievementId: achievementId,
+    grantSpec: marker.grantSpec || grantSpec,
+    balance: record && record.tokens && record.tokens.balance,
+    capabilities: record && record.capabilities
+  };
+}
+
+/**
+ * Applies `grantSpec` onto `email`'s entitlement record's `achievements`
+ * ledger and, in the SAME write, its dependent effect (`tokens.balance` for
+ * a 'tokens' grant, `capabilities[capability]` for a 'capability' grant) —
+ * idempotently per (email, achievementId): calling this twice (or
+ * concurrently) for the same pair only ever applies the effect once. Same
+ * read -> mutate -> write -> verify shape as creditTokenPackAmountOnce/
+ * refundTokenAmountOnce — see either's own doc comment for the full
+ * race-closing reasoning. Used by applyAchievementGrant above to make its
+ * 'pending'-marker resume path safe — NOT safe to call directly with the
+ * same (email, achievementId) from genuinely concurrent callers with no
+ * outer serialization (see the big doc block above this section for exactly
+ * why that alone isn't enough); always go through applyAchievementGrant in
+ * production code.
+ *
+ * Folding both facts (the ledger entry and its balance/capability effect)
+ * into ONE write is what makes a resume safe without guessing: whichever
+ * attempt's write is the one that ends up persisted, the ledger entry and
+ * its effect always agree with each other — never "ledger says granted but
+ * balance/capability wasn't actually bumped" or vice versa. Same reasoning
+ * creditTokenPackAmountOnce's own doc comment gives for
+ * appliedTokenPackPaymentIds + tokens.balance living in the same write.
+ */
+async function applyAchievementGrantOnce(event, email, achievementId, grantSpec) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false };
+
+  // Same "use syncTokens' own returned value as the balance base, never a
+  // later independent re-read" discipline as creditTokenPackAmountOnce/
+  // refundTokenAmountOnce — see either's own doc comment for the
+  // read-your-own-write hazard this avoids (a just-landed signup/claim
+  // grant getting silently clobbered by a stale re-read). Needed for BOTH
+  // grant types, not just 'tokens': a 'capability' grant still rewrites the
+  // whole `tokens` sub-object unchanged (to preserve it against a stale
+  // read the same way spendTokens/addTokens already do), so it needs this
+  // same freshest-known balance too.
+  var syncedTokens = await syncTokens(event, key);
+
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    read: function (evt) {
+      connectLambda(evt);
+      return store().get(key, { type: 'json' });
+    },
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var achievements = rec.achievements || {};
+      if (achievements[achievementId]) return blobsRetry.SKIP; // already applied by an earlier attempt
+
+      var now = Date.now();
+      var ledgerEntry = { grantedAt: now, type: grantSpec.type };
+      var nextAchievements = Object.assign({}, achievements);
+      // `tokens` is carried through unchanged by default (same
+      // "purely additive, never resets claim state" discipline
+      // spendTokens/addTokens already apply) -- the 'tokens' branch below
+      // overrides only `balance`.
+      var nextTokens = { balance: syncedTokens.balance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak };
+      var nextCapabilities = Object.assign({}, rec.capabilities);
+
+      if (grantSpec.type === 'tokens') {
+        ledgerEntry.amount = grantSpec.amount;
+        nextTokens.balance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + grantSpec.amount);
+      } else { // 'capability' -- validateGrantSpec already rejected anything else
+        ledgerEntry.capability = grantSpec.capability;
+        ledgerEntry.count = grantSpec.count;
+        nextCapabilities[grantSpec.capability] = (nextCapabilities[grantSpec.capability] || 0) + grantSpec.count;
+      }
+
+      nextAchievements[achievementId] = ledgerEntry;
+
+      return Object.assign({}, rec, {
+        email: key,
+        tokens: nextTokens,
+        achievements: nextAchievements,
+        capabilities: nextCapabilities,
+        updatedAt: now
+      });
+    },
+    verify: function (verifyRead) {
+      return !!(verifyRead && verifyRead.achievements && verifyRead.achievements[achievementId]);
+    }
+  });
+
+  if (result.ok || result.skipped) return { ok: true }; // applied just now, or already applied by an earlier attempt
+
+  // Bonus confirmatory read, same reasoning as creditTokenPackAmountOnce's/
+  // refundTokenAmountOnce's own -- resolves the common "our write actually
+  // landed, only the verify-read lagged" case without ever reporting
+  // success when nothing was actually confirmed.
+  var finalRead = await getEntitlement(event, key);
+  if (finalRead && finalRead.achievements && finalRead.achievements[achievementId]) return { ok: true };
+
+  throw new Error('applyAchievementGrantOnce: exhausted attempts granting achievement ' + achievementId + ' for ' + key + ' without ever confirming the grant landed');
+}
+
 /**
  * Permanently deletes an email's entire entitlement record — the token
  * ledger half of delete-account.js's account-deletion flow. Removes the
@@ -1745,6 +2115,14 @@ async function forgetRefundedJobId(event, email, jobId) {
  * a token count, and a status, no card data or name/address (that PII
  * lives entirely on Dodo's own side, see create-checkout-session-dodo.js).
  *
+ * Also does NOT touch ACHIEVEMENT_GRANTS_STORE_NAME (the per-
+ * email::achievementId dedup markers) — same reasoning as
+ * TOKEN_PURCHASES_STORE_NAME/REFUNDED_JOBS_STORE_NAME above: no cheap way to
+ * enumerate "every achievementId this email was ever granted" to delete them
+ * individually, and a lingering marker for a deleted account is harmless
+ * (it carries no more than an achievement id, a grant spec, and a status —
+ * nothing an already-deleted account's marker could leak to anyone).
+ *
  * Always succeeds (returns { ok:true }) even if no record existed yet for
  * this email — same "deleting something already gone is a safe no-op"
  * semantics as account-store.js's deleteAccount and
@@ -1762,6 +2140,7 @@ module.exports = {
   STORE_NAME,
   TOKEN_PURCHASES_STORE_NAME,
   REFUNDED_JOBS_STORE_NAME,
+  ACHIEVEMENT_GRANTS_STORE_NAME,
   normalizeEmail,
   getEntitlement,
   isEntitled,
@@ -1776,6 +2155,8 @@ module.exports = {
   refundTokensOnce,
   refundTokenAmountOnce,
   forgetRefundedJobId,
+  applyAchievementGrant,
+  applyAchievementGrantOnce,
   deleteEntitlement,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see
