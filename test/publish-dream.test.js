@@ -108,3 +108,49 @@ test('a dream with BOTH videoUrl and imageUrl (post "Turn this into a video") pu
   assert.equal(body.dream.videoUrl, 'https://x/v.mp4');
   assert.equal(body.dream.imageUrl, 'https://x/i.png');
 });
+
+// ===== Republish-license consent fields (tracker item for-product-terms-
+// republish-license-per--fhpcxk) — carried into the shared feed-index
+// record so a real cross-device auto-posting engine (not built here)
+// could ever actually read curation eligibility. See js/store.js's
+// syncPublishedDreamToFeed / publishDream for the client-side half. =====
+
+test('channelLicenseGrantedAt omitted -> stored as null, NOT defaulted to "now" (a dream published before the clause shipped must never look licensed)', async function () {
+  var res = await handler(postEvent({ id: 'd-no-license', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4' }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.channelLicenseGrantedAt, null);
+});
+
+test('channelLicenseGrantedAt passed through verbatim when a real publish supplies it', async function () {
+  var stamp = 1780000000000;
+  var res = await handler(postEvent({ id: 'd-licensed', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', channelLicenseGrantedAt: stamp }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.channelLicenseGrantedAt, stamp);
+});
+
+test('okToFeatureOnChannels omitted -> defaults true (zero-click default-on opt-out)', async function () {
+  var res = await handler(postEvent({ id: 'd-default-opt', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4' }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.okToFeatureOnChannels, true);
+});
+
+test('okToFeatureOnChannels:false is honored and stored', async function () {
+  var res = await handler(postEvent({ id: 'd-opted-out', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', okToFeatureOnChannels: false }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.okToFeatureOnChannels, false);
+
+  var feed = await feedIndex();
+  assert.equal(feed[0].okToFeatureOnChannels, false);
+});
+
+test('an upsert can flip okToFeatureOnChannels on an already-published dream (the settings-sheet opt-out re-syncing immediately)', async function () {
+  var first = await handler(postEvent({ id: 'd-flip', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4' }));
+  assert.equal(JSON.parse(first.body).dream.okToFeatureOnChannels, true);
+
+  var second = await handler(postEvent({ id: 'd-flip', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', okToFeatureOnChannels: false }));
+  assert.equal(JSON.parse(second.body).dream.okToFeatureOnChannels, false);
+
+  var feed = await feedIndex();
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0].okToFeatureOnChannels, false);
+});

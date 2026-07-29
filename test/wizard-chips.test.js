@@ -291,6 +291,41 @@ test('assembleCaption: every trailing-preposition action chip reads as a grammat
   });
 });
 
+// ── Step 3 default-visible chip curation — tracker item
+// for-product-wizard-step-3-has-too-many-c-lrg1ct (founder live test:
+// "Too many options to choose from" against all 13 ACTION_CHIPS + POV).
+// wizard.html/create.html now render only ACTION_DEFAULT_VISIBLE_KEYS by
+// default, with the rest reachable behind a "+N more" expander -- these
+// are UI-visibility-only tests; see test/wizard-action-chip-curation-
+// behavioral.test.js for the actual browser-driven expand/select coverage.
+
+test('ACTION_DEFAULT_VISIBLE_KEYS is a real subset of ACTION_CHIPS, curated down to roughly 6, and always includes "other" (the free-entry escape hatch must never be hidden)', function () {
+  var allKeys = WizardChips.ACTION_CHIPS.map(function (c) { return c.key; });
+  var defaultKeys = WizardChips.ACTION_DEFAULT_VISIBLE_KEYS;
+  assert.ok(Array.isArray(defaultKeys) && defaultKeys.length > 0);
+  assert.ok(defaultKeys.length <= 7 && defaultKeys.length >= 5, 'expected "roughly 6" default-visible chips, got ' + defaultKeys.length);
+  defaultKeys.forEach(function (key) {
+    assert.ok(allKeys.indexOf(key) !== -1, 'default-visible key "' + key + '" must be a real ACTION_CHIPS key');
+  });
+  // No duplicates.
+  assert.equal(new Set(defaultKeys).size, defaultKeys.length);
+  assert.ok(defaultKeys.indexOf('other') !== -1, '"+ Something else" must always stay default-visible, never behind the expander');
+});
+
+test('ACTION_DEFAULT_VISIBLE_KEYS still leaves every other chip in ACTION_CHIPS reachable (nothing was deleted, only hidden by default) -- curation changes VISIBILITY only, never the chip list, key/label/phrase/connector, or assembleCaption\'s output for any key', function () {
+  var defaultKeys = WizardChips.ACTION_DEFAULT_VISIBLE_KEYS;
+  var hiddenChips = WizardChips.ACTION_CHIPS.filter(function (c) { return defaultKeys.indexOf(c.key) === -1; });
+  assert.ok(hiddenChips.length > 0, 'expected at least one chip curated behind the expander');
+  assert.equal(defaultKeys.length + hiddenChips.length, WizardChips.ACTION_CHIPS.length, 'every ACTION_CHIPS entry must be either default-visible or in the "more" set -- none can vanish');
+  // A hidden chip's assembleCaption behavior must be completely
+  // unaffected by being curated out of the default view.
+  hiddenChips.forEach(function (c) {
+    var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: c.key, moodKey: 'dreamy', style: 'Cinematic' });
+    assert.ok(result.caption.length > 0, c.key + ': hidden chip must still produce a real caption');
+    assert.match(result.caption, /style, dreamlike\.$/);
+  });
+});
+
 test('assembleCaption: with a place chosen, the connector still joins the action phrase to the place phrase correctly (with-place case unaffected by the no-place fix)', function () {
   // flying+sky is the pre-existing "spec worked example" test above --
   // this adds direct with-place coverage for a couple of the OTHER

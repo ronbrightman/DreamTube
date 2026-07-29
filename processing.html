@@ -368,9 +368,14 @@
   // so its own background paints normally and is instantly covered by
   // the real frame once one is available. Never grey, from the very
   // first render, no wrapper element or extra asset needed.
+  // Tracker: for-product-regression-founder-live-test-t911te -- no
+  // `autoplay`/preload here anymore (see wirePreviewErrorFallback below for
+  // why). The <video> still carries its gradient background inline so it's
+  // never a blank/grey square before playback starts, same as the previous
+  // fix left it.
   function previewThumbHTML(d){
     var media = d.videoUrl
-      ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline autoplay preload="metadata" style="background:'+DreamStore.gradientFor(d)+'"></video>'
+      ? '<video class="ppt-bg" src="'+d.videoUrl+'" muted loop playsinline preload="none" style="background:'+DreamStore.gradientFor(d)+'"></video>'
       : '<div class="ppt-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
     return '<div class="proc-preview-thumb">'+media+'</div>';
   }
@@ -383,43 +388,102 @@
     el.replaceWith(bg);
   }
 
-  // How long a preview video gets to prove it's actually going to play
-  // before we give up and self-heal to the gradient fallback. This only
-  // catches the "silently never started" case (autoplay blocked, slow/
-  // stalled network) that no `error` event would ever fire for -- a
-  // genuine decode/network error is still handled immediately below,
-  // this is just the backstop for videos that neither error out nor
-  // ever actually start.
-  var PREVIEW_LOAD_TIMEOUT_MS = 2500;
+  // How long a preview video gets to prove it's actually going to play,
+  // once it actually starts trying to (see the windowing comment below --
+  // this no longer starts counting at render time), before we give up and
+  // self-heal to the gradient fallback. This only catches the "silently
+  // never started" case (autoplay blocked, slow/stalled network) that no
+  // `error` event would ever fire for -- a genuine decode/network error is
+  // still handled immediately below, this is just the backstop for videos
+  // that neither error out nor ever actually start.
+  //
+  // Was 2500ms (tuned only against a single stalled video). Bumped to
+  // 6000ms alongside the windowing fix below: even after windowing bounds
+  // concurrency to whatever's actually visible (typically 4-6 tiles, not
+  // all 10), a real investigation repro here showed multiple concurrent
+  // multi-megabyte video *decodes* (not just network transfer -- this
+  // reproduced even serving the video instantly from localhost) can still
+  // outlast a 2.5s window under real contention. There's no visual cost to
+  // waiting longer -- the tile already shows its gradient background
+  // underneath the <video> the whole time either way (see
+  // previewThumbHTML) -- so a more generous window only gives genuinely-
+  // loading videos more of a chance to actually show, never makes a
+  // stalled one look any more broken.
+  var PREVIEW_LOAD_TIMEOUT_MS = 6000;
 
-  // These are decorative background loops (no play/pause control makes
-  // sense on a 64px thumbnail) -- so instead of a control to recover a
-  // stalled video, a load/decode error just swaps it for the same gradient
-  // fallback already used when there's no videoUrl at all, rather than
-  // leaving a frozen/broken video sitting there while waiting. A video
-  // that neither errors out NOR ever actually starts playing (blocked
-  // autoplay, a stalled/slow connection) gets the same treatment once
-  // PREVIEW_LOAD_TIMEOUT_MS elapses -- otherwise it would just sit on its
-  // own gradient background forever, which is fine visually but never
-  // self-heals to confirm the tile is alive.
+  // Tracker: for-product-regression-founder-live-test-t911te -- REGRESSION
+  // in the previous blank-grey-tile fix (for-product-blank-grey-tile-in-
+  // the-wait--9p1xwu). That fix gave every tile a real `autoplay` <video>
+  // and a load-timeout self-heal, but never accounted for concurrency: this
+  // row renders up to 10 tiles at once, so all 10 videos started
+  // autoplaying (and preload="metadata" fetching) SIMULTANEOUSLY. Real
+  // dream videos are multi-megabyte 8-second clips (verified against live
+  // fal.media URLs from get-feed -- one recent dream's video alone was
+  // ~10.8MB) -- ten of those competing for bandwidth at once means NONE of
+  // them reliably buffers enough to fire loadeddata/playing within any
+  // short timeout, so every tile hit PREVIEW_LOAD_TIMEOUT_MS and fell back
+  // to gradient -- universally, not occasionally, on real networks (a
+  // Playwright repro against real fal.media URLs confirmed this: 6+
+  // seconds in with zero loadeddata/playing events fired, all still
+  // loading). explore.html's own cards don't have this problem because
+  // they were never eager in the first place -- only the current
+  // scroll-snap-winning card ever autoplays there (see its own
+  // videoObserver), one at a time.
+  //
+  // Fix: same windowing principle, applied here for the first time --
+  // only the tile(s) actually scrolled into view within this horizontal
+  // strip get a real playback attempt (preload flipped to metadata + a
+  // real .play() call). Off-screen tiles stay untouched (no network
+  // activity at all) on their gradient background until scrolled into
+  // view, so at most a handful compete for bandwidth rather than all ten.
+  // Holds the IntersectionObserver from the most recent wirePreviewErrorFallback
+  // call, so a re-render (retry, resumed job, credited-tokens path -- renderPreview
+  // can run multiple times per page view) disconnects the previous one instead of
+  // leaking it forever, same disconnect-before-reobserve pattern explore.html's own
+  // videoObserver already uses.
+  var currentPreviewObserver = null;
+
   function wirePreviewErrorFallback(row, dreams){
+    if(currentPreviewObserver){ currentPreviewObserver.disconnect(); currentPreviewObserver = null; }
+    var canObserve = ('IntersectionObserver' in window);
+    var observer = canObserve ? new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(!entry.isIntersecting) return;
+        observer.unobserve(entry.target);
+        entry.target.__pptBegin();
+      });
+    }, { root: row, threshold: 0.1 }) : null;
+
     Array.prototype.forEach.call(row.querySelectorAll('.ppt-bg'), function(el, i){
       if(el.tagName !== 'VIDEO') return;
+      var dream = dreams[i];
       var settled = false;
       function settle(){ settled = true; }
       el.addEventListener('error', function(){
         if(settled) return;
         settle();
-        swapPreviewToGradient(el, dreams[i]);
+        swapPreviewToGradient(el, dream);
       });
       el.addEventListener('loadeddata', settle);
       el.addEventListener('playing', settle);
-      setTimeout(function(){
-        if(settled) return;
-        settle();
-        swapPreviewToGradient(el, dreams[i]);
-      }, PREVIEW_LOAD_TIMEOUT_MS);
+      // Only actually starts loading/playing once this tile is scrolled
+      // into view (or immediately, if IntersectionObserver isn't
+      // available at all -- falls back to the old eager behavior rather
+      // than a permanently-unplayed video).
+      el.__pptBegin = function(){
+        el.preload = 'metadata';
+        var p = el.play();
+        if(p && p.catch) p.catch(function(){ /* autoplay blocked -- the load-timeout below still self-heals to the gradient */ });
+        setTimeout(function(){
+          if(settled) return;
+          settle();
+          swapPreviewToGradient(el, dream);
+        }, PREVIEW_LOAD_TIMEOUT_MS);
+      };
+      if(observer){ observer.observe(el); }
+      else { el.__pptBegin(); }
     });
+    currentPreviewObserver = observer;
   }
 
   // A brand-new user has no dreams of their own yet, so this section used

@@ -230,3 +230,84 @@ test('result.html: an insufficient balance opens the out-of-tokens purchase shee
     await context.close();
   }
 });
+
+// ===== Ownership guard (review finding, tracker item for-product-terms-
+// republish-license-per--fhpcxk, SECOND review round) =====
+//
+// Second round found DreamStore.turnImageIntoVideo had no ownership check
+// at all: result.html?id=<id> is legitimately reachable for another
+// account's published dream (viewing another user's public dream is a
+// real, intended use case), and a second account sharing the same browser
+// could spend its own tokens to turn someone ELSE's image-only dream into
+// a video, silently overwriting that dream's own record via
+// finalizeDream's sourceDreamId branch. Same two-account-sharing-one-
+// browser pattern as channel-republish-license-behavioral.test.js's own
+// ownership-guard tests.
+test('DreamStore.turnImageIntoVideo refuses to act on another account\'s image-only dream shared in the same browser\'s state.dreams, and the CTA is hidden for it -- both work normally for the real owner', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
+
+    var ORIGINAL_IMAGE_URL = 'https://fal.media/files/sample/not-mine-image.png';
+    // Account A: an image-only dream (nothing to turn into a video yet).
+    await seedAccountWithDream(page, {
+      username: 'turnOwnerA',
+      dream: { id: 'not-mine-image-dream', mediaType: 'image', imageUrl: ORIGINAL_IMAGE_URL, videoUrl: null }
+    });
+
+    // Account B (same browser) signs in and opens the same dream via a
+    // direct link -- state.dreams (shared across every account that's
+    // used this browser, per CLAUDE.md) still has account A's dream sitting
+    // there.
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@turnViewerB', username: 'turnViewerB' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.turnViewerB = { password: 'testpass1', email: 'turnViewerB@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=not-mine-image-dream', { waitUntil: 'domcontentloaded' });
+
+    // The CTA must never even appear for a dream that isn't this account's own.
+    assert.equal(await page.locator('#turn-video-btn').isVisible(), false, 'the CTA must be hidden for a dream that is not the viewer\'s own');
+
+    // Defense in depth: even if the hidden button were invoked directly,
+    // js/store.js's own ownership guard must refuse it and leave the
+    // dream's own record untouched.
+    var blockedResult = await page.evaluate(function () {
+      var returned = window.DreamStore.turnImageIntoVideo('not-mine-image-dream');
+      var draft = window.DreamStore.getDraft();
+      var dream = window.DreamStore.getDream('not-mine-image-dream');
+      return { returned: returned, draftSourceDreamId: draft.sourceDreamId, dreamVideoUrl: dream.videoUrl, dreamImageUrl: dream.imageUrl };
+    });
+    assert.equal(blockedResult.returned, false, 'turnImageIntoVideo must return false for another account\'s dream');
+    assert.notEqual(blockedResult.draftSourceDreamId, 'not-mine-image-dream', 'no draft must be staged against another account\'s dream');
+    assert.equal(blockedResult.dreamVideoUrl, null, 'the dream must stay untouched -- no videoUrl granted by a non-owner');
+    assert.equal(blockedResult.dreamImageUrl, ORIGINAL_IMAGE_URL, 'the dream\'s own imageUrl must be unchanged');
+
+    // Now sign back in as the real owner -- both the CTA and the store
+    // function must work normally again, proving this is a real ownership
+    // comparison and not just "always blocked".
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@turnOwnerA', username: 'turnOwnerA' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=not-mine-image-dream', { waitUntil: 'domcontentloaded' });
+    assert.equal(await page.locator('#turn-video-btn').isVisible(), true, 'the CTA must be visible again for the actual owner');
+
+    var allowedResult = await page.evaluate(function () {
+      return { returned: window.DreamStore.turnImageIntoVideo('not-mine-image-dream'), draft: window.DreamStore.getDraft() };
+    });
+    assert.equal(allowedResult.returned, true, 'the real owner must still be able to turn their own image into a video');
+    assert.equal(allowedResult.draft.sourceDreamId, 'not-mine-image-dream');
+    assert.equal(allowedResult.draft.mediaType, 'video');
+  } finally {
+    await context.close();
+  }
+});

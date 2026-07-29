@@ -150,6 +150,14 @@
   .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
   .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
 
+  /* "+N more" / "Show less" expander chip (Action step curation — tracker
+     item for-product-wizard-step-3-has-too-many-c-lrg1ct). Dashed/
+     transparent so it reads as a disclosure affordance, not a selectable
+     option — same visual language as css/styles.css's .char-chip-add
+     "+ Add character" tile elsewhere in this app, not an invented look. */
+  .fn-chip-more{ padding:9px 15px; border-radius:100px; background:transparent; border:1px dashed var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-chip-more:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
+
   /* Character chips (Subject step) reuse create.html/start.html's exact
      .char-chip/.char-chip-add classes, light-themed to match this shell —
      see start.html's own identical override block for the same reasoning. */
@@ -671,15 +679,34 @@
   var actionKey = WizardChips.DEFAULT_ACTION;
   var actionOtherText = '';
   var povOn = false;
+  // Persists across re-renders of this step (back/forward through the
+  // wizard) once the visitor has tapped "+N more" -- see tracker item
+  // for-product-wizard-step-3-has-too-many-c-lrg1ct. Starts collapsed.
+  var actionExpanded = false;
 
   function renderAction(el){
-    var chips = WizardChips.ACTION_CHIPS.map(function(c){
+    var defaultKeys = WizardChips.ACTION_DEFAULT_VISIBLE_KEYS;
+    var defaultChips = WizardChips.ACTION_CHIPS.filter(function(c){ return defaultKeys.indexOf(c.key) !== -1; });
+    var moreChips = WizardChips.ACTION_CHIPS.filter(function(c){ return defaultKeys.indexOf(c.key) === -1; });
+    // If the currently-selected chip lives behind the expander (can only
+    // happen via back-navigation after picking one pre-expand), force it
+    // open so the active selection is never hidden from view.
+    var expanded = actionExpanded || moreChips.some(function(c){ return c.key === actionKey; });
+
+    function chipHtml(c){
       return '<span class="fn-chip" data-action="' + c.key + '">' + esc(c.label) + '</span>';
-    }).join('');
+    }
+    var chipsHtml = defaultChips.map(chipHtml).join('');
+    if(moreChips.length){
+      chipsHtml += expanded
+        ? moreChips.map(chipHtml).join('') +
+          '<span class="fn-chip-more" id="action-more-toggle" role="button" tabindex="0" aria-expanded="true">Show less</span>'
+        : '<span class="fn-chip-more" id="action-more-toggle" role="button" tabindex="0" aria-expanded="false">+' + moreChips.length + ' more</span>';
+    }
     el.innerHTML =
       '<div class="fn-eyebrow">Step 3 of 5 &middot; Required</div>' +
       '<div class="fn-headline">What’s happening?</div>' +
-      '<div class="fn-chip-row" id="action-row">' + chips + '</div>' +
+      '<div class="fn-chip-row" id="action-row">' + chipsHtml + '</div>' +
       '<div class="fn-other-reveal" id="action-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="action-other-input" placeholder="What happens?" dir="auto">' +
       '</div>' +
@@ -705,6 +732,17 @@
     });
     document.getElementById('action-other-input').addEventListener('input', function(e){ actionOtherText = e.target.value; });
     if(actionOtherText) document.getElementById('action-other-input').value = actionOtherText;
+
+    var moreToggle = document.getElementById('action-more-toggle');
+    if(moreToggle){
+      moreToggle.addEventListener('click', function(){
+        actionExpanded = !expanded;
+        renderAction(el);
+      });
+      moreToggle.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); moreToggle.click(); }
+      });
+    }
 
     var povInput = document.getElementById('pov-toggle');
     povInput.checked = povOn;

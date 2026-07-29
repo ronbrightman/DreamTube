@@ -222,6 +222,25 @@
         </div>
       </div>
 
+      <!-- Per-dream "OK to feature on DreamTube's channels" opt-out
+           (tracker item for-product-terms-republish-license-per--fhpcxk) --
+           default ON, this is the one discoverable place to turn it back
+           off for a specific dream (see terms.html's "Your content"
+           republish-license clause). Only shown once the dream is actually
+           published -- the toggle is meaningless for a private dream, and
+           showing it unconditionally would just be confusing clutter.
+           Deliberately NOT part of the Generate Again draft above -- this
+           saves immediately on tap (DreamStore.setOkToFeatureOnChannels),
+           same as the Publish quiet-link's own state does, not staged
+           until "Generate Again" is clicked. -->
+      <div class="choice-card" id="feature-toggle-row" style="cursor:default; display:none; margin-top:14px;">
+        <div class="choice-text">
+          <div class="choice-title">Feature on DreamTube's channels</div>
+          <div class="admin-row-sub" id="feature-toggle-sub">On — may appear on our official social/promotional channels</div>
+        </div>
+        <div class="toggle-switch on" id="feature-toggle" role="switch" aria-checked="true" aria-label="OK to feature on DreamTube's channels"></div>
+      </div>
+
       <div style="height:14px;"></div>
       <button class="btn btn-primary btn-block" id="edit-generate-again">Generate Again</button>
       <div style="height:10px;"></div>
@@ -274,6 +293,17 @@
         <button class="btn btn-ghost" style="flex:1;" id="publish-cancel">Cancel</button>
         <button class="btn btn-warm" style="flex:1;" id="publish-confirm">Publish</button>
       </div>
+      <!-- Passive, non-interactive line directly under the Publish button --
+           this IS where the actual publish action lives (the quiet-link
+           row's own "Publish" only opens this modal; publishing itself
+           happens on #publish-confirm above). Deliberately zero-click: no
+           checkbox/toggle here, per the founder's explicit "the toggle at
+           publish is a big issue -- minimize it" pushback on an earlier
+           per-publish opt-in design (tracker item for-product-terms-
+           republish-license-per--fhpcxk). The real, discoverable opt-OUT
+           lives in the Edit sheet's "Feature on DreamTube's channels"
+           toggle instead -- see #feature-toggle-row below. -->
+      <div class="modal-fine" id="modal-publish-fine">Publishing makes your dream public and may feature it on DreamTube's channels.</div>
     </div>
   </div>
 
@@ -641,6 +671,64 @@
   var dream = dreamId ? DreamStore.getDream(dreamId) : null;
   if(!dream){ location.href = 'explore.html'; }
 
+  // ===== Ownership gate (review finding on tracker item for-product-terms-
+  // republish-license-per--fhpcxk) =====
+  // This page has always resolved `dream` purely from the `?id=` URL param,
+  // with no check that it belongs to whoever is signed in — viewing stays
+  // that way deliberately (this page has no separate "someone else's dream"
+  // view, and locking it down is a separate, pre-existing concern outside
+  // this fix's scope). But the owner-only controls below — Publish, Edit,
+  // the "Feature on DreamTube's channels" opt-out, Delete, "Turn this into
+  // a video", and the "What might this dream mean?" interpretation pill
+  // (added in this fix's second review round — the first round's audit of
+  // this page missed these two) — must never even appear to work for a
+  // dream that isn't this account's own — js/store.js's publishDream/
+  // unpublishDream/setOkToFeatureOnChannels/deleteDream/turnImageIntoVideo/
+  // generateInterpretation all already refuse to mutate (or, for
+  // generateInterpretation, generate/overwrite) a dream whose ownerHandle
+  // doesn't match, so leaving these controls visible would just mean
+  // silent no-ops (or a rejected promise) behind a button that looks like
+  // it worked. Same `ownerHandle === handle` check js/store.js's own
+  // getMyDreams/getDreamInsight/getDreamMilestone use. This comment is the
+  // one place enumerating every owner-only control on this page —
+  // deliberately kept in sync each time one is added, since a previous
+  // version of this same comment understated the list and a reviewer
+  // caught it.
+  var currentUser = DreamStore.getCurrentUser();
+  var isMyDream = !!(dream && currentUser && dream.ownerHandle === currentUser.handle);
+
+  // ===== "Feature on DreamTube's channels" per-dream opt-out (tracker item
+  // for-product-terms-republish-license-per--fhpcxk) =====
+  // Default ON (undefined reads as true) so publishing itself stays
+  // genuinely zero-click -- this toggle is the one discoverable way to opt
+  // a specific dream back OUT. Only shown once published; saves
+  // immediately via DreamStore.setOkToFeatureOnChannels, independent of
+  // the Generate Again draft the rest of this sheet stages. Defined here,
+  // above render()'s own first call below, since render() invokes
+  // updateFeatureToggleUI() on every render including the initial one.
+  var featureToggleRow = document.getElementById('feature-toggle-row');
+  var featureToggle = document.getElementById('feature-toggle');
+  var featureToggleSub = document.getElementById('feature-toggle-sub');
+  function updateFeatureToggleUI(){
+    // isMyDream: see the ownership-gate comment above -- the republish-
+    // license opt-out only ever makes sense (and is only ever allowed to
+    // actually save, per js/store.js's setOkToFeatureOnChannels) for the
+    // signed-in account's own dream.
+    featureToggleRow.style.display = (dream.isPublished && isMyDream) ? 'flex' : 'none';
+    var on = dream.okToFeatureOnChannels !== false;
+    featureToggle.classList.toggle('on', on);
+    featureToggle.setAttribute('aria-checked', String(on));
+    featureToggleSub.textContent = on
+      ? 'On — may appear on our official social/promotional channels'
+      : 'Off — this dream will never be featured on our channels';
+  }
+  featureToggle.addEventListener('click', function(){
+    var newValue = !(dream.okToFeatureOnChannels !== false);
+    DreamStore.setOkToFeatureOnChannels(dream.id, newValue);
+    updateFeatureToggleUI();
+    showToast(newValue ? 'OK to feature on our channels' : 'Won\'t feature this on our channels');
+  });
+
   // A long dream caption used to grow this panel unbounded (it's an
   // absolutely-positioned overlay anchored to the bottom, so nothing
   // capped its height) -- long enough text could push it up over the
@@ -702,7 +790,21 @@
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
-    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl) ? 'flex' : 'none';
+    // isMyDream: see the ownership-gate comment above -- "Turn this into a
+    // video" spends tokens and calls DreamStore.turnImageIntoVideo, which
+    // now refuses to act on a dream that isn't this account's own (review
+    // finding, second round), so the button must never even appear to
+    // offer this for someone else's image-only dream.
+    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl && isMyDream) ? 'flex' : 'none';
+    // isMyDream: same reasoning -- the interpretation pill's own generate/
+    // regenerate path (DreamStore.generateInterpretation) is a private,
+    // per-account write that now refuses a dream that isn't this
+    // account's own (review finding, second round). Reading an already-
+    // saved interpretation (DreamStore.getInterpretation) is harmless, but
+    // there's never a legitimate saved interpretation to show for a dream
+    // that isn't this account's own in the first place, so the whole pill
+    // is owner-only.
+    document.getElementById('interp-cta-btn').style.display = isMyDream ? '' : 'none';
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
@@ -724,6 +826,16 @@
     var pubBtn = document.getElementById('publish-btn');
     if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = false; pubBtn.title = 'Click to make private'; }
     else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
+    // Owner-only actions (see the isMyDream ownership-gate comment above) --
+    // hidden rather than disabled, since a dream that isn't this account's
+    // own has no legitimate reason to show controls that only ever no-op.
+    // "Make another" is deliberately excluded -- it doesn't touch this
+    // dream at all, just starts a brand-new one, so it stays visible for
+    // everyone.
+    document.getElementById('open-edit-sheet').style.display = isMyDream ? '' : 'none';
+    pubBtn.style.display = isMyDream ? '' : 'none';
+    document.getElementById('delete-btn').style.display = isMyDream ? '' : 'none';
+    updateFeatureToggleUI();
   }
   render();
 

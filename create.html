@@ -1085,6 +1085,11 @@
   var buildActionKey = WizardChips.DEFAULT_ACTION;
   var buildActionOtherText = '';
   var buildPovOn = false;
+  // Persists across re-renders of this step -- tracker item
+  // for-product-wizard-step-3-has-too-many-c-lrg1ct, see wizard.html's
+  // matching renderAction for the full rationale (shared curation list
+  // lives in js/wizard-chips.js's ACTION_DEFAULT_VISIBLE_KEYS).
+  var buildActionExpanded = false;
   var buildMoodKey = WizardChips.DEFAULT_MOOD;
   var buildMoodOtherText = '';
   var buildFreeText = '';
@@ -1341,9 +1346,24 @@
   }
 
   function renderBuildAction(el){
-    var chips = WizardChips.ACTION_CHIPS.map(function(c){
+    var defaultKeys = WizardChips.ACTION_DEFAULT_VISIBLE_KEYS;
+    var defaultChips = WizardChips.ACTION_CHIPS.filter(function(c){ return defaultKeys.indexOf(c.key) !== -1; });
+    var moreChips = WizardChips.ACTION_CHIPS.filter(function(c){ return defaultKeys.indexOf(c.key) === -1; });
+    // If the currently-selected chip lives behind the expander (can only
+    // happen via back-navigation after picking one pre-expand), force it
+    // open so the active selection is never hidden from view.
+    var expanded = buildActionExpanded || moreChips.some(function(c){ return c.key === buildActionKey; });
+
+    function chipHtml(c){
       return '<div class="opt-chip" data-build-action="'+c.key+'">'+esc(c.label)+'</div>';
-    }).join('');
+    }
+    var chips = defaultChips.map(chipHtml).join('');
+    if(moreChips.length){
+      chips += expanded
+        ? moreChips.map(chipHtml).join('') +
+          '<div class="opt-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="true">Show less</div>'
+        : '<div class="opt-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="false">+' + moreChips.length + ' more</div>';
+    }
     el.innerHTML =
       '<div class="section-label" style="margin-top:0;">What’s happening? &middot; Step 3 of 5 &middot; Required</div>' +
       '<div class="opt-chip-row" id="build-action-row">' + chips + '</div>' +
@@ -1372,6 +1392,18 @@
     });
     document.getElementById('build-action-other-input').addEventListener('input', function(e){ buildActionOtherText = e.target.value; });
     if(buildActionOtherText) document.getElementById('build-action-other-input').value = buildActionOtherText;
+
+    var moreToggle = document.getElementById('build-action-more-toggle');
+    if(moreToggle){
+      moreToggle.addEventListener('click', function(){
+        buildActionExpanded = !expanded;
+        renderBuildAction(el);
+      });
+      moreToggle.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); moreToggle.click(); }
+      });
+    }
+
     var povInput = document.getElementById('build-pov-toggle');
     povInput.checked = buildPovOn;
     povInput.addEventListener('change', function(){ buildPovOn = povInput.checked; });

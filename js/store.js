@@ -71,8 +71,33 @@
 //       video" upsell on an image-type dream — see result.html's CTA
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
+//       — a fresh publish (isPublished false->true) also stamps
+//       `channelLicenseGrantedAt` (epoch ms), the moment terms.html's
+//       "Your content" republish license (tracker item for-product-terms-
+//       republish-license-per--fhpcxk) actually attaches to THIS dream —
+//       deliberately a timestamp set only going forward, never backfilled
+//       onto dreams already published before this shipped, per the
+//       founder's explicit no-backfill requirement. Clears any earlier
+//       `channelLicenseRevokedAt` — republishing after an unpublish is a
+//       fresh publish action and re-grants the license same as any other.
 //   unpublishDream(id)              -> POST /api/dreams/:id/unpublish
+//       — stamps `channelLicenseRevokedAt` (epoch ms), ending the license
+//       for any FUTURE use as of that moment — see publishDream above.
+//       This is the concrete state a later "remove existing social posts
+//       on request" pass reads; this task doesn't build that removal
+//       mechanism itself, just the flag it will read.
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
+//       — a published dream is also unpublished as part of deleting it
+//       (see removePublishedDreamFromFeed below), same channel-license
+//       revocation as unpublishDream.
+//   setOkToFeatureOnChannels(id,enabled) -> POST /api/dreams/:id (per-dream
+//       opt-out toggle, default true/on when unset — tracker item
+//       for-product-terms-republish-license-per--fhpcxk's zero-click
+//       design: publishing itself grants the license with no extra tap,
+//       and this is the one discoverable place to turn it back off for a
+//       specific dream. Re-syncs the shared feed record immediately when
+//       the dream is currently published, same as any other already-
+//       published-dream edit.
 //   getCharacters()                   -> GET  /api/users/me/characters
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
@@ -619,7 +644,24 @@
       body: JSON.stringify({
         id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
         style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
-        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video'
+        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video',
+        // Republish-license consent state (tracker item for-product-terms-
+        // republish-license-per--fhpcxk) — carried into the SHARED feed-
+        // index record (not just this browser's local copy) since that's
+        // the one place a real, cross-device auto-posting engine could
+        // ever actually read curation eligibility from. `undefined` here
+        // (a dream published before this shipped) intentionally comes
+        // through as `null` below — see publish-dream.js's own comment for
+        // why that's the correct "not licensed, needs fresh consent" state,
+        // not a bug to default away.
+        channelLicenseGrantedAt: dream.channelLicenseGrantedAt || null,
+        // Carried alongside channelLicenseGrantedAt for the same reason —
+        // unpublishDream/deleteDream's revocation stamp is only useful to a
+        // future "remove existing social posts on request" pass if it
+        // actually reaches the shared record those posts would be sourced
+        // from, not just this browser's local copy.
+        channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
+        okToFeatureOnChannels: dream.okToFeatureOnChannels !== false
       })
     }).catch(function () { /* best-effort — see comment above */ });
   }
@@ -877,7 +919,18 @@
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
-      if (!dream) throw new Error('not_found');
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, second round) — defense-in-depth at
+      // the actual mutation point, not just at regenerateDream/
+      // turnImageIntoVideo's own call sites: both funnel through
+      // startGeneration's sourceDreamId option to land here, and neither
+      // caller re-checks ownership at this point in time (a job can take
+      // a while; the signed-in account could have changed by the time this
+      // resolves). A sourceDreamId that doesn't belong to the current
+      // account is treated exactly like one that doesn't resolve to any
+      // dream at all — same not_found failure, no silent partial mutation.
+      var myHandle = state.user ? state.user.handle : null;
+      if (!dream || !myHandle || dream.ownerHandle !== myHandle) throw new Error('not_found');
       // Regenerating (Edit Dream -> Generate Again, or Try Again after a
       // failure) changes the dream's actual content, so any previously
       // generated interpretation was reflecting on content that no longer
@@ -2552,14 +2605,21 @@
      *
      * Returns true if the draft was set (a real image-type dream was
      * found), false otherwise (nothing to turn into a video — e.g. the
-     * dream doesn't exist, or has no imageUrl) — the caller (result.html)
-     * only navigates to processing.html on true. Matches this file's
-     * existing layering: store.js is model/logic only, every navigation in
-     * this app happens in the HTML file that calls it, never here.
+     * dream doesn't exist, has no imageUrl, or (review finding, tracker
+     * item for-product-terms-republish-license-per--fhpcxk, second round)
+     * doesn't belong to the currently signed-in account — same
+     * `ownerHandle === myHandle` guard deleteDream/publishDream/
+     * unpublishDream/setOkToFeatureOnChannels already use, needed here too
+     * since result.html?id=<id> is legitimately reachable for another
+     * account's published dream) — the caller (result.html) only navigates
+     * to processing.html on true. Matches this file's existing layering:
+     * store.js is model/logic only, every navigation in this app happens
+     * in the HTML file that calls it, never here.
      */
     turnImageIntoVideo: function (dreamId) {
       var dream = findDream(dreamId);
-      if (!dream || !dream.imageUrl) return false;
+      var myHandle = state.user ? state.user.handle : null;
+      if (!dream || !dream.imageUrl || !myHandle || dream.ownerHandle !== myHandle) return false;
       Object.assign(state.draft, {
         // promptText (falling back to caption for a pre-split dream) is
         // the full engineered prompt — reused as-is so the resulting
@@ -2670,6 +2730,8 @@
 
     publishDream: function (id) {
       var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       if (d) {
         // 'video_published' fires only on the actual transition into
         // published (not already true) -- this is the real "publish
@@ -2684,6 +2746,23 @@
         // for-product-phase-1-reporting-instrument-kjlh46.
         var isNewPublish = !d.isPublished;
         d.isPublished = true;
+        // Republish license (tracker item for-product-terms-republish-
+        // license-per--fhpcxk, terms.html "Your content"): a fresh publish
+        // is itself the zero-click moment DreamTube is granted the
+        // non-exclusive license to host/reproduce/display this dream,
+        // expressly including DreamTube's own official social/promotional
+        // channels — no separate checkbox, per the founder's explicit
+        // "minimize it" direction. Stamped (not a plain boolean) so a
+        // dream published before this code shipped — no stamp at all —
+        // stays cleanly distinguishable from one published under the new
+        // clause, satisfying the "no backfill" requirement without any
+        // migration step. Re-publishing after an unpublish clears any
+        // earlier revocation and re-grants fresh, same as any other
+        // publish action.
+        if (isNewPublish) {
+          d.channelLicenseGrantedAt = Date.now();
+          d.channelLicenseRevokedAt = null;
+        }
         persist();
         syncPublishedDreamToFeed(d);
         if (isNewPublish) trackAnalytics('video_published', { style: d.style, mediaType: d.mediaType });
@@ -2694,8 +2773,16 @@
     /** Takes one of the current user's own dreams back out of Explore. */
     unpublishDream: function (id) {
       var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       if (d) {
         d.isPublished = false;
+        // Ends the republish license for any FUTURE use as of right now —
+        // see publishDream's channelLicenseGrantedAt comment above. This
+        // timestamp is the concrete state a later "remove existing social
+        // posts on request" pass would read; building that removal
+        // mechanism itself is explicitly out of scope here.
+        if (d.channelLicenseGrantedAt) d.channelLicenseRevokedAt = Date.now();
         persist();
         removePublishedDreamFromFeed(id);
       }
@@ -2708,10 +2795,38 @@
       var myHandle = state.user ? state.user.handle : null;
       if (!d || !myHandle || d.ownerHandle !== myHandle) return false;
       var wasPublished = d.isPublished;
+      // Same channel-license revocation as unpublishDream above, applied
+      // before the record is dropped from local state entirely — deleting
+      // a published dream stops future use under the license exactly like
+      // explicitly unpublishing it first would.
+      if (wasPublished && d.channelLicenseGrantedAt) d.channelLicenseRevokedAt = Date.now();
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();
       if (wasPublished) removePublishedDreamFromFeed(id);
       return true;
+    },
+
+    /**
+     * Per-dream "OK to feature on DreamTube's channels" opt-out (tracker
+     * item for-product-terms-republish-license-per--fhpcxk) — defaults ON
+     * (true) whenever unset, so publishing stays genuinely zero-click; this
+     * is the one discoverable place to turn it back off for a specific
+     * dream. Independent of isPublished/the license-grant timestamps above
+     * — this only ever narrows an already-licensed dream's eligibility,
+     * it can't grant a license unpublishing itself doesn't. Re-syncs the
+     * shared feed record immediately if the dream is currently published,
+     * same as any other already-published-dream edit.
+     */
+    setOkToFeatureOnChannels: function (id, enabled) {
+      var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
+      if (d) {
+        d.okToFeatureOnChannels = !!enabled;
+        persist();
+        if (d.isPublished) syncPublishedDreamToFeed(d);
+      }
+      return d;
     },
 
     /**
@@ -2723,7 +2838,17 @@
      */
     getInterpretation: function (id) {
       var d = findDream(id);
-      if (!d) return null;
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, third round): this is generateInterpretation's
+      // own read-only sibling, and was missed when that write path got its
+      // ownerHandle guard in round 2 -- reading is just as much an exposure
+      // here, since interpretationText is a private, per-account reflection
+      // (see this function's own doc comment) that can genuinely be sitting
+      // on a dream record from a DIFFERENT account that previously used this
+      // browser (state.dreams is never cleared on logout/login). Same guard,
+      // same null-for-non-owner contract as an id that doesn't resolve at all.
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       return { interpretationText: d.interpretationText || null, interpretationAt: d.interpretationAt || null };
     },
 
@@ -2748,7 +2873,17 @@
      */
     generateInterpretation: function (id) {
       var d = findDream(id);
-      if (!d) return Promise.reject(new Error('not_found'));
+      var myHandle = state.user ? state.user.handle : null;
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, second round): same `ownerHandle ===
+      // myHandle` check deleteDream/publishDream/turnImageIntoVideo use --
+      // this is a private, per-account write (see this function's own doc
+      // comment above) onto whatever dream id is passed in, and
+      // result.html?id=<id> is legitimately reachable for another
+      // account's published dream. Rejects the same way an id that
+      // doesn't resolve to any dream at all already does, since a dream
+      // that isn't this account's own is equally not a valid target here.
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

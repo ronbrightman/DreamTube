@@ -400,6 +400,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .opt-chip.selected{ background:#fff; color:#000; border-color:#fff;}
 
+/* "+N more" / "Show less" expander chip (Action step curation — tracker
+   item for-product-wizard-step-3-has-too-many-c-lrg1ct). Dashed/
+   transparent so it reads as a disclosure affordance, not a selectable
+   option — same visual language as .char-chip-add's "+ Add character"
+   tile above, not an invented look. */
+.opt-chip-more{
+  padding:8px 14px; border-radius:100px; background:transparent; border:1px dashed var(--border-strong);
+  color:var(--text-muted); cursor:pointer; font-size:13px; font-weight:600;
+}
+.opt-chip-more:hover{ border-color:var(--text-faint); color:var(--text-primary);}
+
 /* Character sheet: self-only Describe/Upload photo picker. */
 .char-mode-row{ display:flex; gap:8px; margin-bottom:12px;}
 .char-mode-btn{
@@ -687,6 +698,10 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .modal-title{ font-size:17px; font-weight:700; margin-bottom:8px;}
 .modal-body{ font-size:13px; color:var(--text-muted); line-height:1.5; margin-bottom:18px;}
 .modal-row{ display:flex; gap:10px;}
+/* Passive, non-interactive fine print under a modal's action row -- e.g.
+   result.html's #modal-publish-fine (tracker item for-product-terms-
+   republish-license-per--fhpcxk). Never a button/toggle target itself. */
+.modal-fine{ font-size:11px; color:var(--text-faint); line-height:1.4; margin-top:12px; text-align:center;}
 .toast{ position:absolute; left:50%; bottom:calc(26px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,20px); background:#fff; color:#000; font-weight:700; font-size:13px; padding:12px 20px; border-radius:100px; opacity:0; transition:all .3s; z-index:30; pointer-events:none; white-space:nowrap;}
 .toast.show{ opacity:1; transform:translate(-50%,0);}
 
