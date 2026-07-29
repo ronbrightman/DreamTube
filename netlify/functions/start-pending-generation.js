@@ -153,12 +153,14 @@ async function recordJobOwnerBestEffort(event, operationName, email, mediaType, 
     // function logs — only the catch branch below ever logged anything, so
     // there was no way to confirm from production logs alone whether a
     // given funnel job's write actually happened, and if so under exactly
-    // which operationName/pendingId/email. Logging the raw email matches
-    // this codebase's own existing convention for diagnostic logs (see
-    // lib/entitlements.js's creditTokenPackOnce/refundTokensOnce and
-    // send-daily-claim-pushes.js, which already log raw emails directly —
-    // no masking convention exists anywhere else in this codebase).
-    console.log('start-pending-generation: recorded job owner — operationName=' + operationName + ' pendingId=' + pendingId + ' email=' + email + ' mediaType=' + mediaType);
+    // which operationName/pendingId. Deliberately omits the raw email —
+    // operationName+pendingId is already enough to correlate this write
+    // against a later mark-generation-completed.js miss (that's the actual
+    // debugging need this line exists for), and this is a genuinely new
+    // log line, not a pre-existing one, so it doesn't need to inherit this
+    // codebase's existing (separately flagged, unrelated-scope) practice of
+    // logging raw emails elsewhere just because that practice exists.
+    console.log('start-pending-generation: recorded job owner — operationName=' + operationName + ' pendingId=' + pendingId + ' mediaType=' + mediaType);
   } catch (e) {
     console.error('start-pending-generation: failed to record job owner (refund auth binding + automatic first-dream email binding) for ' + operationName + ' — a later refund attempt AND the automatic first-dream retention email for this job will both fail closed', e);
   }
