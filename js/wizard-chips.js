@@ -138,6 +138,37 @@
     mysterious: 'mysterious', tense: 'tense', epic: 'epic awe-inspiring'
   };
 
+  // ── Step 3 (Action) default-visible curation ──────────────────────────
+  // Tracker item for-product-wizard-step-3-has-too-many-c-lrg1ct: founder
+  // live-tested the 13 ACTION_CHIPS above + the POV toggle and called it
+  // straight out -- "Too many options to choose from." His flow doctrine
+  // (FOUNDER_PRINCIPLES.md): fast to value, choice overload slows down a
+  // required step (this one has no skip).
+  //
+  // Curated to ~6 default-visible chips, the tracker item's own suggested
+  // split: the archetypes it names by name -- chased (running, 81.5% in
+  // the Nielsen/Zadra ranking documented above), falling (73.8%),
+  // school/test (exam, 67.1%) -- plus flying, which isn't part of that
+  // published ranking but IS this app's own DEFAULT_ACTION and the
+  // archetype the tracker item itself names alongside the research three,
+  // so it stays default-visible too. Rounded out with exactly one
+  // open-ended chip ('magical' -- "Something magical", the tracker's own
+  // named example of what an open-ended default chip should look like)
+  // and the ever-present '+ Something else' free-entry. That's 6 chips,
+  // matching "roughly 6" -- not 4 archetypes + 2 open-ended, since a
+  // single strong open-ended option plus the free-text escape hatch
+  // already covers "none of these archetypes fit" without a second
+  // half-redundant open-ended chip crowding the row back up.
+  //
+  // Every OTHER chip (late/trying/newroom/child/exploring/calm/meeting)
+  // remains fully selectable, just behind wizard.html's/create.html's
+  // "+N more" expander -- this list only curates default VISIBILITY, it
+  // changes no chip's key/label/phrase/connector and touches no part of
+  // assembleCaption/buildDeterministicStory above. Order here matches
+  // ACTION_CHIPS' own order (not re-ranked) so the default row renders in
+  // the same relative order chips have always appeared in.
+  var ACTION_DEFAULT_VISIBLE_KEYS = ['flying', 'running', 'falling', 'exam', 'magical', 'other'];
+
   var STYLE_CHIPS = ['Cinematic', 'Realistic', 'Cartoon', 'Anime'];
 
   var DEFAULT_MOOD = 'dreamy';
@@ -405,6 +436,7 @@
     SUBJECT_CHIPS: SUBJECT_CHIPS,
     SETTING_PLACE_CHIPS: SETTING_PLACE_CHIPS,
     ACTION_CHIPS: ACTION_CHIPS,
+    ACTION_DEFAULT_VISIBLE_KEYS: ACTION_DEFAULT_VISIBLE_KEYS,
     MOOD_CHIPS: MOOD_CHIPS,
     STYLE_CHIPS: STYLE_CHIPS,
     DEFAULT_MOOD: DEFAULT_MOOD,

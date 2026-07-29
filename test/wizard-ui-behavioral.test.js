@@ -1156,6 +1156,10 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
 
     await page.waitForSelector('#build-action-row');
     assert.equal(await page.locator('#build-action-continue').count(), 1);
+    // "exploring" is curated behind the "+N more" expander by default now
+    // (tracker item for-product-wizard-step-3-has-too-many-c-lrg1ct) --
+    // expand before selecting it, same as a real visitor would have to.
+    await page.click('#build-action-more-toggle');
     await page.click('[data-build-action="exploring"]');
     await page.click('#build-action-continue');
 

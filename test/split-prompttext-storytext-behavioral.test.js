@@ -123,6 +123,10 @@ async function reachStyleScreenViaChips(page, freeText) {
   await page.click('#build-setting-continue');
 
   await page.waitForSelector('#build-action-continue');
+  // "exploring" lives behind the "+N more" expander (tracker item
+  // for-product-wizard-step-3-has-too-many-c-lrg1ct curated the default-
+  // visible action chips down to a shorter list) -- expand it first.
+  await page.click('#build-action-more-toggle');
   await page.click('[data-build-action="exploring"]');
   await page.click('#build-action-continue');
 
