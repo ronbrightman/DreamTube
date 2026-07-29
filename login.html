@@ -197,9 +197,12 @@
   var isSignup = /(?:^|[?&])mode=signup(?:&|$)/.test(location.search);
   // Wherever the user was actually trying to go before getting bounced
   // here (e.g. Explore's "sign up to create" nudge carries ?next=create.html)
-  // — falls back to Explore, same as before this existed.
+  // — falls back to home.html, the logged-in landing page (tracker item
+  // for-product-build-homepage-wave-1-the-ri-xr8mir; previously fell back
+  // to explore.html, which remains one tap away from home.html's own
+  // bottom nav so nothing reachable from here is lost).
   var nextParam = (new RegExp('[?&]next=([^&]*)').exec(location.search) || [])[1];
-  var nextUrl = nextParam ? decodeURIComponent(nextParam) : 'explore.html';
+  var nextUrl = nextParam ? decodeURIComponent(nextParam) : 'home.html';
   var heading = document.getElementById('auth-heading');
   var sub = document.getElementById('auth-sub');
   var toggle = document.getElementById('auth-toggle');

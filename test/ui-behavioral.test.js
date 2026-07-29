@@ -253,8 +253,11 @@ test('signup with an exactly-3-character password succeeds (friction-reduction: 
     await page.fill('#login-email', 'threecharpw@example.com');
     await page.fill('#login-password', 'abc'); // exactly 3 chars -- previously would have failed at the old 8-char minimum
     await page.click('#login-submit');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
-    assert.match(page.url(), /explore\.html/);
+    // login.html's default post-login landing page is now home.html, not
+    // explore.html (tracker item for-product-build-homepage-wave-1-the-ri-
+    // xr8mir) -- explore.html itself is unaffected, still one tap away.
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
+    assert.match(page.url(), /home\.html/);
   } finally {
     await context.close();
   }
@@ -284,8 +287,10 @@ test('a pre-existing account with a sub-3-character password still logs in (no r
     await page.fill('#login-username', 'legacyuser');
     await page.fill('#login-password', 'ab');
     await page.click('#login-submit');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
-    assert.match(page.url(), /explore\.html/);
+    // login.html's default post-login landing page is now home.html (see
+    // the sibling test above's identical-purpose comment).
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
+    assert.match(page.url(), /home\.html/);
   } finally {
     await context.close();
   }
@@ -1273,7 +1278,11 @@ test('create.html: Advanced accordion chips render with the new lighter --surfac
     await page.fill('#login-email', 'chiptester@example.com');
     await page.fill('#login-password', 'longenoughpassword1');
     await page.click('#login-submit');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+    // Just reaching an authenticated state here -- the destination itself
+    // (now home.html, not explore.html, see the login-redirect tests above)
+    // doesn't matter since the very next line navigates straight to
+    // create.html regardless.
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
 
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
     await page.click('#choice-write');
@@ -1327,7 +1336,11 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
     await page.fill('#login-email', 'gibberishtester@example.com');
     await page.fill('#login-password', 'longenoughpassword1');
     await page.click('#login-submit');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+    // Just reaching an authenticated state here -- the destination itself
+    // (now home.html, not explore.html, see the login-redirect tests above)
+    // doesn't matter since the very next line navigates straight to
+    // create.html regardless.
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
 
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
     await page.click('#choice-write');

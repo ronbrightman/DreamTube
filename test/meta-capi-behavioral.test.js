@@ -269,8 +269,13 @@ test('login.html without ?mode=signup: logging in fires zero conversion events (
     await page.fill('#login-username', 'behavioralloginuser');
     await page.fill('#login-password', 'longenoughpassword1');
     await page.click('#login-submit');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
-    assert.match(page.url(), /explore\.html/);
+    // login.html's default post-login landing page changed from
+    // explore.html to home.html (tracker item
+    // for-product-build-homepage-wave-1-the-ri-xr8mir) -- explore.html
+    // itself is unchanged and still reachable one tap away from home.html's
+    // own bottom nav, this test just needed to follow the new default.
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
+    assert.match(page.url(), /home\.html/);
 
     var TRACKED_EVENT_NAMES = ['CompleteRegistration', 'InitiateCheckout', 'Purchase', 'Subscribe'];
     var fbqConversionCalls = fbqCalls.filter(function (args) {

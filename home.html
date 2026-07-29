@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Home — DreamTube</title>
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0c0a1a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="assets/logo-v2.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,131 +63,560 @@
     fbq('track', 'PageView');
   }
 </script>
+
+<!--
+  Homepage Wave 1 (tracker item for-product-build-homepage-wave-1-the-ri-xr8mir,
+  founder-approved 2026-07-29). Visual spec = home-mock2-x7q4.html (repo
+  root, commit 8458a35) — this page ports that mock's "magical night" look
+  (star layers, aurora, glowing cards) into a real, wired page, deliberately
+  keeping every effect CSS-only (radial-gradient star fields + two cheap
+  transform/opacity keyframe animations, no canvas/video/JS animation loop,
+  no image assets for the sky) per FOUNDER_PRINCIPLES.md's "light media
+  over heavy on mobile" principle and this item's own explicit "keep it
+  LIGHT for webview" instruction. This <style> block is page-scoped (same
+  pattern as index.html's --dawn-* override) — it only ever applies here,
+  never touching css/styles.css's shared dark theme other pages use.
+-->
+<style>
+:root{
+  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app/.bottom-nav both read this variable already */
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+}
+body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+#app{ overflow:hidden; }
+
+/* ===== the living night sky — CSS-only, no image/video/canvas payload ===== */
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.ebtn.p,.claimchip.pulsing{ animation:none !important; }
+}
+
+.home-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.home-topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0; flex:none; }
+.home-logo{ font-weight:800; font-size:16px; color:var(--home-ink); letter-spacing:-.01em; }
+/* Same PurchaseSheet.mountBalanceChip markup every other page uses — just a
+   translucent tint over the night sky instead of the default opaque
+   --surface-alt box, matching this page's own theme (same idea as
+   .explore-token-chip-slot's override, not reused directly since that
+   class also carries explore.html's fullscreen absolute positioning,
+   which this topbar-embedded slot doesn't want). */
+#home-token-chip-slot .token-chip-compact{ background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4); backdrop-filter:blur(4px); }
+#home-token-chip-slot .token-chip-balance{ color:var(--home-ink); }
+.home-greet{ padding:8px 18px 12px; flex:none; }
+.home-greet-line{ font-size:15px; font-weight:800; color:var(--home-ink); }
+.home-greet-sub{ font-size:11.5px; color:var(--home-soft); margin-top:2px; }
+
+.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 14px calc(20px + env(safe-area-inset-bottom,0px)); }
+.home-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+.hcard{ position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2)); border:1px solid var(--home-line); border-radius:18px; padding:14px 15px; overflow:hidden; color:var(--home-ink); }
+.hcard.span2{ grid-column:span 2; }
+.hcard-dt{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--home-acc); font-weight:800; margin-bottom:5px; }
+.hcard.hero{ border-color:rgba(157,144,255,.55); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 18px -4px rgba(157,144,255,.28); }
+.hcard-title{ font-size:15px; font-weight:800; display:block; margin:0 0 3px; }
+.hcard-sub{ color:var(--home-soft); font-size:12px; display:block; }
+
+.entrybtns{ display:flex; gap:8px; margin-top:13px; }
+.ebtn{ flex:1; text-align:center; border-radius:99px; padding:10px 6px; font-size:11.5px; font-weight:700; border:none; cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
+.ebtn.p{ background:var(--home-acc); color:#0c0a1a; animation:homePulse 2.6s ease-in-out infinite; }
+.ebtn.g{ background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft); }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 14px rgba(157,144,255,.85); } }
+
+.today-logged-row{ margin-top:12px; padding:10px 12px; background:rgba(75,211,155,.1); border:1px solid rgba(75,211,155,.4); border-radius:12px; font-size:12.5px; color:#bdf0d8; }
+.today-logged-row b{ color:var(--home-ink); }
+
+.ringrow{ display:flex; align-items:center; gap:10px; margin-top:13px; }
+.ring{ width:44px; height:44px; border-radius:50%; background:conic-gradient(var(--home-acc) 0 70%, rgba(255,255,255,.12) 70% 100%); display:flex; align-items:center; justify-content:center; flex:0 0 44px; }
+.ring i{ width:34px; height:34px; border-radius:50%; background:#1d1834; display:flex; align-items:center; justify-content:center; font-style:normal; font-weight:800; font-size:12.5px; color:var(--home-ink); }
+.ringtxt{ flex:1; min-width:0; line-height:1.3; }
+.ringtxt b{ font-size:12.5px; display:block; }
+.ringtxt span{ font-size:10.5px; color:var(--home-soft); }
+.claimchip{ margin-left:auto; background:rgba(157,144,255,.16); border:1px solid rgba(157,144,255,.5); color:#cfc8ff; border-radius:99px; padding:8px 13px; font-size:11px; font-weight:800; white-space:nowrap; cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
+.claimchip.pulsing{ animation:homePulse 2.6s ease-in-out infinite; }
+.claimchip.done{ background:transparent; border-color:rgba(75,211,155,.55); color:var(--home-ok); cursor:default; }
+
+.nextstrip{ margin-top:11px; background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4); border-radius:12px; padding:9px 11px; font-size:11.5px; color:#cfc8ff; }
+.nextstrip b{ color:var(--home-ink); }
+
+/* This Week — constellation that fills in, transforms IN PLACE (founder amendment: cards never change position between states — see the render function, not this stylesheet, for how the same #card-week slot is simply re-rendered). */
+.weekrow{ display:flex; align-items:center; gap:10px; }
+.weekrow .wtxt{ flex:1; min-width:0; }
+.weekrow b{ font-size:13px; display:block; }
+.weekrow span{ font-size:11px; color:var(--home-soft); }
+.constel{ flex:0 0 74px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; }
+.hcard.week-earned{ border-color:var(--home-warn); box-shadow:0 4px 18px -6px rgba(0,0,0,.5), 0 0 16px rgba(224,170,90,.25); }
+.hcard.week-earned .hcard-dt{ color:var(--home-warn); }
+
+/* My Dreams gallery */
+.dreamshdr{ display:flex; align-items:baseline; }
+.dreamshdr .hcard-dt{ margin-bottom:0; }
+.alllink{ margin-left:auto; font-size:11px; font-weight:700; color:#cfc8ff; text-decoration:none; }
+.thumbs{ display:flex; gap:8px; margin-top:11px; }
+.thumb{ flex:1; height:56px; border-radius:10px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,.14); text-decoration:none; background:var(--home-raise2); display:block; }
+.thumb img,.thumb video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.thumbs-empty{ font-size:11.5px; color:var(--home-soft); margin-top:10px; }
+
+/* Chamber / Vault — glowing night-object cards, CSS gradients only (no jpg art payload) */
+.hcard-art{ display:flex; flex-direction:column; justify-content:flex-end; min-height:86px; text-decoration:none; }
+.card-chamber{ background:linear-gradient(160deg, rgba(107,79,181,.5), transparent 65%), linear-gradient(180deg,var(--home-raise),var(--home-raise2)); }
+.card-vault{ border-color:rgba(224,170,90,.45); box-shadow:0 4px 18px -6px rgba(0,0,0,.5), 0 0 12px -3px rgba(224,170,90,.28); background:linear-gradient(160deg, rgba(224,170,90,.32), transparent 65%), linear-gradient(180deg,var(--home-raise),var(--home-raise2)); }
+.card-vault .hcard-dt{ color:var(--home-warn); }
+
+.toast{ position:fixed; left:50%; bottom:calc(90px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+</style>
 </head>
 <body>
 
 <div id="app" class="scroll-shell">
-  <div class="topbar">
-    <div class="topbar-logo" id="home-title">DreamTube</div>
-    <input type="text" id="search-input" class="search-input" placeholder="Search dreams…" dir="auto" style="display:none;">
-    <div class="icon-btn" id="search-toggle"></div>
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <div class="home-fg">
+    <div class="home-topbar">
+      <div class="home-logo">DreamTube</div>
+      <div id="home-token-chip-slot"></div>
+    </div>
+    <div class="home-greet">
+      <div class="home-greet-line" id="home-greet-line">Good morning</div>
+      <div class="home-greet-sub" id="home-greet-sub"></div>
+    </div>
+
+    <div class="home-scroll">
+      <div class="home-grid" id="home-grid">
+
+        <div class="hcard hero span2" id="card-today" data-card="today">
+          <div class="hcard-dt">Today</div>
+          <span class="hcard-title" id="today-title">What did you dream?</span>
+          <span class="hcard-sub" id="today-sub">No recall is an entry too</span>
+
+          <div class="entrybtns" id="today-entrybtns">
+            <button type="button" class="ebtn p" id="btn-write">Write it</button>
+            <button type="button" class="ebtn g" id="btn-speak">Speak it</button>
+            <button type="button" class="ebtn g" id="btn-norecall">No recall</button>
+          </div>
+          <div class="today-logged-row" id="today-logged-row" style="display:none;"></div>
+
+          <div class="ringrow">
+            <div class="ring"><i id="streak-num">🔥0</i></div>
+            <div class="ringtxt">
+              <b id="streak-label">Start your dream capture streak</b>
+              <span>A quiet freeze protects a missed night</span>
+            </div>
+            <button type="button" class="claimchip" id="claim-chip" style="display:none;"></button>
+          </div>
+
+          <div class="nextstrip" id="next-strip"></div>
+        </div>
+
+        <div class="hcard span2" id="card-week" data-card="week">
+          <div class="hcard-dt">This week</div>
+          <div id="week-body"></div>
+        </div>
+
+        <div class="hcard span2" id="card-mydreams" data-card="mydreams">
+          <div class="dreamshdr">
+            <div class="hcard-dt">My dreams</div>
+            <a class="alllink" href="profile.html">All my dreams →</a>
+          </div>
+          <div class="thumbs" id="mydreams-thumbs"></div>
+          <div class="thumbs-empty" id="mydreams-empty" style="display:none;">Your dreams will appear here once you make one.</div>
+        </div>
+
+        <a class="hcard hcard-art card-chamber" id="card-chamber" data-card="chamber" href="create.html">
+          <div class="hcard-dt">Chamber</div>
+          <span class="hcard-title" id="chamber-title" style="font-size:13px;">The Depth Analyst</span>
+          <span class="hcard-sub" id="chamber-sub" style="font-size:11px;">awaits · your reading</span>
+        </a>
+
+        <a class="hcard hcard-art card-vault" id="card-vault" data-card="vault" href="shop.html?source=home_vault_card">
+          <div class="hcard-dt">Vault</div>
+          <span class="hcard-title" id="vault-balance" style="font-size:13px;">–</span>
+          <span class="hcard-sub" style="font-size:11px;">claim history · packs</span>
+        </a>
+
+      </div>
+    </div>
+
+    <div class="bottom-nav">
+      <a class="nav-item active" href="home.html"><div class="nav-icon icon" id="nav-icon-home"></div>Home</a>
+      <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
+      <a class="nav-item" href="explore.html"><div class="nav-icon icon" id="nav-icon-explore"></div>Explore</a>
+      <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon" id="nav-icon-profile"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
+    </div>
   </div>
-  <div class="scroll-area">
-    <div class="section-label" style="padding:0 18px; margin-top:2px;">For you</div>
-    <div class="home-feed" id="home-grid"></div>
-  </div>
-  <div class="bottom-nav">
-    <a class="nav-item active" href="home.html"><div class="nav-icon icon"></div>Home</a>
-    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
-  </div>
+
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/sheet-dismiss.js"></script>
+<script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
-  document.getElementById('search-toggle').innerHTML = Icons.search;
-  var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.home;
-  navIcons[1].innerHTML = Icons.person;
-  // New-likes badge dot (tracker item idea-notify-likes) — a synchronous,
-  // no-network read of whatever profile.html's own page-load fetch last
-  // computed; see DreamStore.getCachedNewLikesCount's doc block in
-  // js/store.js for why this page never fetches the feed itself.
+  document.getElementById('nav-icon-home').innerHTML = Icons.home;
+  document.getElementById('nav-icon-explore').innerHTML = Icons.compass;
+  document.getElementById('nav-icon-profile').innerHTML = Icons.person;
+  // New-likes badge dot (tracker item idea-notify-likes) — same synchronous,
+  // no-network read every other bottom-nav page already does.
   document.getElementById('nav-profile-badge').hidden = !(DreamStore.getCachedNewLikesCount() > 0);
 
-  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
+  // every other page's inline script defines locally (see explore.html/
+  // result.html). Deliberately neutral, home_*-prefixed event names — never
+  // sleep/health-adjacent phrasing (this app's ad-pixel domain is scanned
+  // by Meta's health classifier, a standing firewall — see
+  // test/home-behavioral.test.js's neutral-naming assertion, matching
+  // test/interp-analytics-behavioral.test.js's own). =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
-  function cardHTML(d){
-    // Three-way: video -> image -> gradient fallback (was two-way) — see
-    // docs/IMAGE_GENERATION_SPEC.md §4. .home-card-video's layout rules
-    // (position/inset/object-fit) are generic enough to reuse verbatim for
-    // the <img> case too, same as the existing video/gradient reuse below.
-    var media = d.videoUrl
-      ? '<video class="home-card-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
-      : d.imageUrl
-        ? '<img class="home-card-video" src="'+esc(d.imageUrl)+'" alt="">'
-        : '<div class="home-card-video" style="background:'+DreamStore.gradientFor(d)+'"></div>';
-    return '<a class="home-card" href="explore.html?id='+d.id+'">' +
-      '<div class="home-card-art">'+media+'</div>' +
-      '<div class="home-card-scrim"></div>' +
-      '<div class="home-card-body">' +
-        '<div><div class="home-card-user">'+esc(d.ownerHandle)+'</div><div class="home-card-cap" dir="auto">'+esc(d.caption)+'</div></div>' +
-        '<div class="home-card-like"><span class="icon">'+Icons.heartFilled+'</span>'+formatCount(d.likes)+'</div>' +
-      '</div>' +
-    '</a>';
-  }
+  var user = DreamStore.getCurrentUser();
+  var myDreams = DreamStore.getMyDreams(); // most-recent-first, see js/store.js's own ordering comment
 
-  var searchToggle = document.getElementById('search-toggle');
-  var searchInput = document.getElementById('search-input');
-  var homeTitle = document.getElementById('home-title');
-  var searchActive = false;
+  // ===== Greeting =====
+  (function renderGreeting(){
+    var hour = new Date().getHours();
+    var part = hour < 12 ? 'morning' : (hour < 18 ? 'afternoon' : 'evening');
+    var name = (user && user.handle ? user.handle : '@you').replace(/^@/, '');
+    document.getElementById('home-greet-line').textContent = 'Good ' + part + ', ' + name;
+    var dateStr = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    document.getElementById('home-greet-sub').textContent = dateStr;
+  })();
 
-  // Fetched once from the real shared feed (see js/store.js's
-  // getSharedFeed) and filtered client-side on every keystroke, rather than
-  // re-fetching per keystroke.
-  var allDreams = [];
-  var feedLoaded = false;
+  // ===== Today card =====
+  var logStatus = DreamStore.getDreamLogStatus();
 
-  function renderGrid(){
-    var grid = document.getElementById('home-grid');
-    if(!feedLoaded){ grid.innerHTML = '<div class="grid-empty">Loading dreams…</div>'; return; }
-    var q = searchInput.value.trim().toLowerCase();
-    var dreams = allDreams;
-    if(q){
-      dreams = dreams.filter(function(d){
-        return d.caption.toLowerCase().indexOf(q) !== -1 || d.ownerHandle.toLowerCase().indexOf(q) !== -1;
-      });
-    }
-    grid.innerHTML = dreams.length
-      ? dreams.map(cardHTML).join('')
-      : q
-        ? '<div class="grid-empty">No dreams match "'+esc(searchInput.value.trim())+'".</div>'
-        : '<div class="grid-empty">No dreams here yet. Be the first to publish one.</div>';
-  }
-  renderGrid();
-
-  function loadFeed(){
-    DreamStore.getSharedFeed().then(function(dreams){
-      allDreams = dreams;
-      feedLoaded = true;
-      renderGrid();
-    }).catch(function(){
-      feedLoaded = true;
-      document.getElementById('home-grid').innerHTML = '<div class="grid-empty">Couldn\'t load the feed — check your connection and try again.</div>';
-    });
-  }
-  loadFeed();
-
-  searchToggle.addEventListener('click', function(){
-    searchActive = !searchActive;
-    homeTitle.style.display = searchActive ? 'none' : 'block';
-    searchInput.style.display = searchActive ? 'block' : 'none';
-    searchToggle.innerHTML = searchActive ? Icons.close : Icons.search;
-    if(searchActive){
-      searchInput.focus();
+  function renderTodayEntry(){
+    var title = document.getElementById('today-title');
+    var sub = document.getElementById('today-sub');
+    var entryBtns = document.getElementById('today-entrybtns');
+    var loggedRow = document.getElementById('today-logged-row');
+    if(logStatus.loggedToday){
+      entryBtns.style.display = 'none';
+      loggedRow.style.display = 'block';
+      title.textContent = 'What did you dream?';
+      sub.textContent = 'No recall is an entry too';
+      loggedRow.innerHTML = logStatus.todayEntryType === 'dream'
+        ? '<b>Logged today ✓</b> — "' + esc((logStatus.todayDreamCaption || '').slice(0, 80)) + (logStatus.todayDreamCaption && logStatus.todayDreamCaption.length > 80 ? '…' : '') + '"'
+        : '<b>Logged today ✓</b> — no recall, and that counts too.';
     } else {
-      searchInput.value = '';
-      renderGrid();
+      entryBtns.style.display = 'flex';
+      loggedRow.style.display = 'none';
+      title.textContent = 'What did you dream?';
+      sub.textContent = 'No recall is an entry too';
     }
-  });
-  searchInput.addEventListener('input', renderGrid);
+  }
+  renderTodayEntry();
 
-  // home.html is retired (see README.md — "unreferenced, kept on disk,
-  // not linked from anywhere live") and no longer the surface a resumed
-  // generation completes on; that responsibility moved to explore.html
-  // (see its own getPendingJob/resumePendingJob handling + the
-  // FirstVideoCreated conversion firing there). This page used to have
-  // its own independent copy of that same resume-completion handling,
-  // but it never fired any analytics and, being unreachable from
-  // anywhere live, had no way to ever run for a real user anyway — dead
-  // code kept here would just be a third latent, never-firing
-  // FirstVideoCreated path sitting around for no reason. Removed rather
-  // than left in place, per CLAUDE.md's "no dead code left behind" rule.
+  function renderNextStrip(){
+    var strip = document.getElementById('next-strip');
+    if(!logStatus.hasEverLogged){
+      // D1 next-step strip (tracker item for-product-build-homepage-wave-1-the-ri-xr8mir)
+      // — a first-day-specific guidance strip pointing a brand-new account
+      // at its very next action.
+      strip.innerHTML = '<b>New here?</b> Log tonight’s dream above to start your dream capture streak — writing, speaking, or "No recall" all count.';
+    } else if(logStatus.weekCount < logStatus.weekTarget){
+      var toGo = logStatus.weekTarget - logStatus.weekCount;
+      strip.innerHTML = '<b>' + toGo + ' more this week</b> → unlocks your weekly summary below.';
+    } else {
+      strip.innerHTML = 'Your weekly summary is ready below. <b>Nice work this week.</b>';
+    }
+  }
+  renderNextStrip();
+
+  function renderStreakRing(tokenStatus){
+    var streak = (tokenStatus && typeof tokenStatus.streak === 'number') ? tokenStatus.streak : 0;
+    document.getElementById('streak-num').textContent = '🔥' + streak;
+    document.getElementById('streak-label').textContent = streak > 0
+      ? (streak + '-day dream capture streak')
+      : 'Start your dream capture streak';
+  }
+
+  function renderClaimChip(tokenStatus){
+    var chip = document.getElementById('claim-chip');
+    if(!tokenStatus){ chip.style.display = 'none'; return; }
+    chip.style.display = 'inline-block';
+    if(tokenStatus.claimable){
+      var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+      chip.textContent = '+' + amount + ' today';
+      chip.className = 'claimchip pulsing';
+      chip.disabled = false;
+    } else {
+      chip.textContent = 'Claimed ✓';
+      chip.className = 'claimchip done';
+      chip.disabled = true;
+    }
+  }
+
+  var lastTokenStatus = null;
+  document.getElementById('claim-chip').addEventListener('click', function(){
+    if(!lastTokenStatus || !lastTokenStatus.claimable) return;
+    track('home_claim_chip_tapped', { source: 'today_card' });
+    PurchaseSheet.showClaimSheet({
+      source: 'home_today_card',
+      tokenStatus: lastTokenStatus,
+      onClaimed: function(){
+        refreshTokenStatus();
+      }
+    });
+  });
+
+  // ===== This Week card — transforms IN PLACE (founder amendment): same
+  // #card-week slot, same position in the grid, in every state — only the
+  // markup INSIDE #week-body changes between "locked" and "earned". =====
+  function renderConstellation(lit){
+    lit = Math.max(0, Math.min(3, lit));
+    var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
+    var line1 = lit >= 2 ? ' lit' : '', line2 = lit >= 3 ? ' lit' : '';
+    return '<svg class="constel" viewBox="0 0 84 46" aria-hidden="true">' +
+      '<line class="' + line1.trim() + '" x1="12" y1="34" x2="42" y2="12"/>' +
+      '<line class="' + line2.trim() + '" x1="42" y1="12" x2="72" y2="28"/>' +
+      '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
+      '<path class="st' + l2 + '" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>' +
+      '<path class="st' + l3 + '" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>' +
+    '</svg>';
+  }
+
+  // Mirrors js/store.js's own private startOfWeekMs (Monday 00:00 local
+  // time) -- duplicated rather than exported, since this is the only page
+  // that needs it client-side and getDreamLogStatus already does the
+  // account-scoped version of this same math for weekCount itself.
+  function startOfThisWeekMs(){
+    var d = new Date();
+    var day = d.getDay();
+    var diffToMonday = day === 0 ? 6 : day - 1;
+    var monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    return monday.getTime();
+  }
+
+  var WEEK_SUMMARY_SHOWN_PREFIX = 'dreamtube_home_week_summary_shown_';
+
+  function renderWeekCard(){
+    var card = document.getElementById('card-week');
+    var body = document.getElementById('week-body');
+    var n = logStatus.weekCount;
+    var target = logStatus.weekTarget;
+    if(n < target){
+      card.classList.remove('week-earned');
+      body.innerHTML =
+        '<div class="weekrow"><div class="wtxt"><b>Your week is forming</b><span>' + n + ' of ' + target + ' dreams · ' + (target - n) + ' to go</span></div>' +
+        renderConstellation(n) + '</div>';
+    } else {
+      card.classList.add('week-earned');
+      // A real, locally-computed summary — never fabricated: this week's
+      // actual dream count plus its most common style, both straight from
+      // getMyDreams(). No AI-generated recap in this wave (that's the
+      // separate, not-yet-built "earned weekly summary" content feature) —
+      // just an honest aggregate of what's already there.
+      var weekStart = startOfThisWeekMs();
+      var weekDreams = myDreams.filter(function(d){ return typeof d.createdAt === 'number' && d.createdAt >= weekStart; });
+      var styleCounts = {};
+      weekDreams.forEach(function(d){ if(d.style){ styleCounts[d.style] = (styleCounts[d.style] || 0) + 1; } });
+      var topStyle = null, topCount = 0;
+      Object.keys(styleCounts).forEach(function(s){ if(styleCounts[s] > topCount){ topStyle = s; topCount = styleCounts[s]; } });
+      var subText = topStyle ? ('Mostly ' + topStyle + ' scenes') : 'Recall is up this week';
+      body.innerHTML =
+        '<div class="weekrow"><div class="wtxt"><b>' + n + ' dreams this week</b><span>' + esc(subText) + '</span></div>' +
+        renderConstellation(3) + '</div>';
+
+      var key = WEEK_SUMMARY_SHOWN_PREFIX + new Date(startOfThisWeekMs()).toDateString();
+      try {
+        if(!localStorage.getItem(key)){
+          localStorage.setItem(key, '1');
+          track('home_weekly_summary_earned', { week_count: n });
+        }
+      } catch(e){ /* private mode / storage disabled — never worth breaking the page for */ }
+    }
+  }
+  renderWeekCard();
+
+  // ===== Silent streak freeze — never a punitive message, just a
+  // background, honest analytics signal that a missed night's streak was
+  // quietly protected (tracker item for-product-build-homepage-wave-1-the-
+  // ri-xr8mir: "a missed day doesn't visibly break the streak/reset it to
+  // zero without warning"). Computed from this account's own dreams + no-
+  // recall check-ins — never fabricated. =====
+  function maybeTrackStreakFreeze(tokenStatus){
+    if(!tokenStatus || !tokenStatus.streak || tokenStatus.streak < 2) return;
+    if(logStatus.loggedYesterday) return; // yesterday was covered normally -- no freeze happened
+    var flagKey = 'dreamtube_home_streak_freeze_shown_' + new Date().toDateString();
+    try {
+      if(!localStorage.getItem(flagKey)){
+        localStorage.setItem(flagKey, '1');
+        track('home_streak_freeze_shown', { streak: tokenStatus.streak });
+      }
+    } catch(e){ /* private mode / storage disabled */ }
+  }
+
+  // ===== My Dreams gallery card =====
+  (function renderMyDreamsCard(){
+    var thumbsEl = document.getElementById('mydreams-thumbs');
+    var emptyEl = document.getElementById('mydreams-empty');
+    var recent = myDreams.slice(0, 3);
+    if(!recent.length){
+      thumbsEl.style.display = 'none';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    thumbsEl.style.display = 'flex';
+    emptyEl.style.display = 'none';
+    thumbsEl.innerHTML = recent.map(function(d){
+      var media = d.videoUrl
+        ? '<video src="' + esc(d.videoUrl) + '" muted loop playsinline preload="none"></video>'
+        : d.imageUrl
+          ? '<img src="' + esc(d.imageUrl) + '" alt="">'
+          : '<div style="position:absolute; inset:0; background:' + DreamStore.gradientFor(d) + '"></div>';
+      return '<a class="thumb" href="result.html?id=' + esc(d.id) + '" data-card="mydreams">' + media + '</a>';
+    }).join('');
+  })();
+
+  // ===== Chamber card — routes to the EXISTING interpretation entry point
+  // (result.html's "What might this dream mean?" pill) per this wave's
+  // explicit scope cut: no new InterpretExperience component yet. =====
+  (function renderChamberCard(){
+    var chamber = document.getElementById('card-chamber');
+    var completed = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
+    if(completed){
+      chamber.href = 'result.html?id=' + encodeURIComponent(completed.id) + '&openInterp=1';
+      document.getElementById('chamber-sub').textContent = 'awaits · your reading';
+    } else {
+      chamber.href = 'create.html';
+      document.getElementById('chamber-sub').textContent = 'make your first dream to begin';
+    }
+  })();
+
+  // ===== Vault card =====
+  function renderVaultCard(tokenStatus){
+    document.getElementById('vault-balance').textContent = tokenStatus ? String(tokenStatus.balance) : '–';
+  }
+
+  // ===== Token status — reused, existing daily-claim mechanism (no new
+  // claim logic here at all: js/store.js's getTokenStatus/claimDailyTokens
+  // + js/purchase-sheet.js's claim sheet, exactly as explore.html/
+  // profile.html/shop.html already use). =====
+  var tokenChipSlot = document.getElementById('home-token-chip-slot');
+  var tokenChip = PurchaseSheet.mountBalanceChip(tokenChipSlot);
+  function refreshTokenStatus(autoOpen){
+    DreamStore.getTokenStatus().then(function(status){
+      lastTokenStatus = status;
+      PurchaseSheet.renderBalanceChip(tokenChip, status);
+      renderStreakRing(status);
+      renderClaimChip(status);
+      renderVaultCard(status);
+      maybeTrackStreakFreeze(status);
+      if(autoOpen){
+        PurchaseSheet.maybeAutoOpenClaimSheet(status, {
+          onClaimed: function(){ refreshTokenStatus(false); }
+        });
+      }
+    }).catch(function(){ /* leave whatever was last rendered — never block the page on this */ });
+  }
+  refreshTokenStatus(true);
+
+  // ===== Today card entry points — reuse create.html's own Write/Speak
+  // affordances (no reinvention); "No recall" is the one genuinely new
+  // entry point this wave adds, a content-less check-in (see
+  // js/store.js's logNoRecallToday doc comment for why it never creates a
+  // fake dream record). =====
+  document.getElementById('btn-write').addEventListener('click', function(){
+    track('home_today_entry_tapped', { method: 'write' });
+    location.href = 'create.html?write=1';
+  });
+  document.getElementById('btn-speak').addEventListener('click', function(){
+    track('home_today_entry_tapped', { method: 'speak' });
+    location.href = 'create.html?record=1';
+  });
+  document.getElementById('btn-norecall').addEventListener('click', function(){
+    track('home_today_entry_tapped', { method: 'no_recall' });
+    var result = DreamStore.logNoRecallToday();
+    if(!result.ok) return;
+    logStatus = DreamStore.getDreamLogStatus();
+    renderTodayEntry();
+    renderNextStrip();
+    renderWeekCard();
+    showToast('Logged — no recall counts too.');
+  });
+
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ===== Card-tap analytics — delegated so re-renders never need to
+  // re-wire per-card listeners. Fires alongside (not instead of) each
+  // card's own real navigation/action above. =====
+  document.getElementById('home-grid').addEventListener('click', function(e){
+    var cardEl = e.target.closest('[data-card]');
+    if(!cardEl) return;
+    track('home_card_tapped', { card: cardEl.dataset.card });
+  });
+
+  track('home_viewed', {
+    logged_today: logStatus.loggedToday,
+    week_count: logStatus.weekCount,
+    has_ever_logged: logStatus.hasEverLogged
+  });
 </script>
 </body>
 </html>

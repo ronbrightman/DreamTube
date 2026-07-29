@@ -23,14 +23,15 @@ No build command, no environment variables, no server required.
 |---|---|
 | `index.html` | Welcome |
 | `login.html` | Login / Sign up |
-| `explore.html?id=…` | Explore (vertical scroll-snap feed) — the main landing/browsing tab |
+| `home.html` | Home — the logged-in landing page (Today/This Week/My Dreams/Chamber/Vault cards; see tracker item for-product-build-homepage-wave-1-the-ri-xr8mir) |
+| `explore.html?id=…` | Explore (vertical scroll-snap feed) — one tap away from Home's bottom nav |
 | `profile.html` | Profile (your own dreams + Create) |
 | `create.html` | Create (Write / Record / Review sub-states) |
 | `style.html` | Choose a style |
 | `processing.html` | Generating… (real async call, shows a failure state on genuine generation errors) |
 | `result.html?id=…` | Result (Edit/Change Style sheets, Publish) |
 
-`home.html` (the old YouTube-style feed) has been retired — nothing in the live app links to it anymore, but the file is still present on disk. Bottom nav is now just Explore / + Create / Profile.
+`home.html` was retired for a while (an old YouTube-style feed, unlinked from the live app) and has since been REVIVED as the new logged-in landing page — see the tracker item above for the full rebuild. Bottom nav is now Home / + Create / Explore / Profile on home.html itself; every other page keeps its existing Explore / + Create / Profile nav unchanged.
 
 Navigation between pages is real browser navigation — back/forward buttons work, every URL is shareable/bookmarkable, and each page can be understood and debugged on its own.
 
@@ -67,7 +68,8 @@ There's no in-memory JavaScript state that would get wiped by a page load anymor
 ```
 index.html         Welcome
 login.html          Login / Sign up
-explore.html         Vertical feed — main landing/browsing tab
+home.html            Home — the logged-in landing page (Today/This Week/My Dreams/Chamber/Vault)
+explore.html         Vertical feed — one tap away from Home's bottom nav
 profile.html          Profile
 create.html            Create (write/record/review)
 style.html               Choose a style
@@ -76,8 +78,6 @@ result.html                  Result (edit/style sheets, publish)
 css/styles.css                 all styling
 js/store.js                      localStorage-backed data layer (the backend seam)
 manifest.json                      basic PWA manifest
-
-home.html (retired, unreferenced — kept on disk, not linked from anywhere live)
 ```
 
 ## Known gaps (by design, not bugs)
