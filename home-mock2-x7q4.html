@@ -40,7 +40,7 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .aurora{position:absolute;left:-30%;right:-30%;top:-12%;height:46%;background:linear-gradient(115deg,rgba(75,211,155,.14),rgba(157,144,255,.2) 45%,rgba(224,120,190,.12));filter:blur(22px);border-radius:50%;animation:aur 13s ease-in-out infinite alternate;pointer-events:none}
 @keyframes aur{from{transform:translateX(-14px) skewX(-6deg);opacity:.7}to{transform:translateX(18px) skewX(5deg);opacity:1}}
 /* sky header band — crop of the observatory art (moon + telescope dome) */
-.sky{position:relative;height:66px;margin:-12px -11px 8px;background:url(home-mock-art-house1.jpg) 50% 13%/cover;overflow:hidden}
+.sky{position:relative;height:60px;margin:-12px -11px 8px;background:url(home-mock-art-house1.jpg) 50% 13%/cover;overflow:hidden}
 .sky:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(12,10,26,.25),rgba(16,13,32,.06) 45%,#100d20 96%)}
 .sky .topbar{position:absolute;top:10px;left:11px;right:11px;z-index:2;margin:0}
 .greet{position:absolute;left:11px;bottom:5px;z-index:2}
@@ -54,7 +54,7 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .bnav b{color:var(--ink)}
 .bnav .plus{width:26px;height:26px;border-radius:50%;background:var(--acc);color:#0c0a1a;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(157,144,255,.55)}
 /* ============ glowing night-object cards ============ */
-.dgrid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:7px;z-index:2}
+.dgrid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:6px;z-index:2}
 .dcard{position:relative;background:linear-gradient(180deg,rgba(36,29,71,.88),rgba(24,19,46,.92));border:1px solid rgba(157,144,255,.32);border-radius:14px;padding:8px 9px;box-shadow:0 4px 18px -6px rgba(0,0,0,.55),0 0 12px -4px rgba(157,144,255,.25);overflow:hidden}
 .dcard.span{grid-column:span 2}
 .dcard .dt{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--acc);font-weight:800;margin-bottom:4px}
@@ -69,8 +69,8 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .ebtn.g{border:1px solid rgba(255,255,255,.22);color:var(--soft)}
 @keyframes pulseGlow{0%,100%{box-shadow:0 0 5px rgba(157,144,255,.45)}50%{box-shadow:0 0 15px rgba(157,144,255,.9)}}
 .ringrow{display:flex;align-items:center;gap:8px;margin-top:7px;position:relative;z-index:2}
-.ring{width:34px;height:34px;border-radius:50%;background:conic-gradient(var(--acc) 0 71%,rgba(255,255,255,.12) 71% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 34px;box-shadow:0 0 10px rgba(157,144,255,.4)}
-.ring i{width:25px;height:25px;border-radius:50%;background:#1d1834;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:9px}
+.ring{width:30px;height:30px;border-radius:50%;background:conic-gradient(var(--acc) 0 71%,rgba(255,255,255,.12) 71% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 30px;box-shadow:0 0 10px rgba(157,144,255,.4)}
+.ring i{width:22px;height:22px;border-radius:50%;background:#1d1834;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:9px}
 .ringtxt{flex:1;min-width:0;line-height:1.3}
 .ringtxt b{font-size:9.5px}
 .ringtxt span{font-size:8px}
@@ -82,7 +82,7 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 /* This Week — constellation that fills in */
 .weekrow{display:flex;align-items:center;gap:9px}
 .weekrow .wtxt{flex:1}
-.constel{flex:0 0 84px}
+.constel{flex:0 0 64px}
 .constel line{stroke:rgba(207,200,255,.28);stroke-width:1;stroke-dasharray:2 3}
 .constel line.lit{stroke:rgba(255,224,170,.75);stroke-dasharray:none;filter:drop-shadow(0 0 2px rgba(224,170,90,.8))}
 .constel .st{fill:rgba(207,200,255,.28)}
@@ -93,7 +93,7 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .dcard.earned:before{content:"";position:absolute;inset:0;background:radial-gradient(90% 80% at 20% 0%,rgba(224,170,90,.14),transparent 60%);pointer-events:none}
 .dcard.earned .dt{color:var(--warn)}
 /* art cards (Chamber / Vault) — glowing night-objects */
-.artcard{min-height:88px;padding:0;display:flex;flex-direction:column;justify-content:flex-end}
+.artcard{min-height:74px;padding:0;display:flex;flex-direction:column;justify-content:flex-end}
 .artcard .art{position:absolute;inset:0;background-size:cover}
 .artcard .art:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,13,32,.12) 30%,rgba(13,10,30,.88) 82%,rgba(13,10,30,.96))}
 .artcard .atxt{position:relative;z-index:2;padding:7px 8px}
@@ -107,12 +107,17 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .weekpin{border-color:var(--warn);box-shadow:0 4px 22px -6px rgba(0,0,0,.6),0 0 18px rgba(224,170,90,.3)}
 .weekpin .wtag{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--warn);font-weight:800;position:relative;z-index:2}
 .weekpin:before{content:"";position:absolute;inset:0;background:radial-gradient(90% 80% at 80% 0%,rgba(224,170,90,.16),transparent 60%);pointer-events:none}
-.thumbs{display:flex;gap:5px;margin-top:7px;position:relative;z-index:2}
-.thumb{flex:1;height:36px;border-radius:8px;position:relative;border:1px solid rgba(255,255,255,.16);overflow:hidden}
+.thumbs{display:flex;gap:5px;margin-top:6px;position:relative;z-index:2}
+.thumb{flex:1;height:26px;border-radius:8px;position:relative;border:1px solid rgba(255,255,255,.16);overflow:hidden}
 .thumb:after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-left:7px solid rgba(255,255,255,.92);border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
 .t1{background:radial-gradient(90% 90% at 30% 25%,#7b5ea7,#2b1d50)}
 .t2{background:radial-gradient(90% 90% at 70% 30%,#4e9a8e,#16324a)}
 .t3{background:radial-gradient(90% 90% at 40% 70%,#a0526d,#3a1d3f)}
+.t4{background:radial-gradient(90% 90% at 60% 40%,#4f74c9,#1a2247)}
+/* My Dreams — the user's own watchable videos / journal-timeline entry */
+.dreamshdr{display:flex;align-items:baseline}
+.dreamshdr .dt{margin-bottom:0}
+.alllink{margin-left:auto;font-size:8.5px;font-weight:700;color:#cfc8ff}
 /* milestone celebration overlay */
 .dimmed{filter:brightness(.42) saturate(.8)}
 .mcelebrate{position:absolute;left:16px;right:16px;top:17%;background:linear-gradient(180deg,#241d47,#171130);border:1px solid var(--warn);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.75),0 0 26px rgba(224,170,90,.3);z-index:4}
@@ -143,11 +148,12 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
 <h1>One home — D5, with the best of the rest inside it</h1>
 <p class="lede">Your pick, assembled: <b>the Rituals Dashboard is the chassis</b>, and the other directions live inside it as parts, not competitors. Same machinery as before underneath — journal, claim, streak, Chamber, milestones.</p>
 <ul class="mixmap">
- <li><b>From D5</b> — the card grid itself: Today · This Week · Chamber · Vault.</li>
+ <li><b>From D5</b> — the card grid itself: Today · This Week · My Dreams · Chamber · Vault. <b>Positions never change</b> — every card keeps its slot in every state, so the home always reads the same.</li>
  <li><b>From D1</b> — the next-step strip <i>inside</i> the Today card: tonight's step and the next milestone, always visible, never the whole page.</li>
- <li><b>From D2c</b> — Monday morning: the earned weekly-summary card pins itself on top for the day.</li>
+ <li><b>From D2c</b> — Monday morning: the This Week card transforms into the earned weekly summary — in its own slot, glowing gold to draw the eye, no reshuffling.</li>
  <li><b>From D3</b> — the feeling: a living night sky (drifting stars, aurora), the observatory on the horizon, and every card a glowing night-object instead of a gray box. This Week is a constellation that lights up star by star as the week's dreams land.</li>
  <li><b>From D4</b> — the interpreter is a room you visit, not the greeter: the Chamber card carries their portrait and waits.</li>
+ <li><b>Nothing existing is lost</b> — Explore, + Create and Profile keep their spots in the bottom nav (Home is just the new landing tab), and your own videos are one tap away in the My Dreams card, which is also the journal timeline's entry point.</li>
 </ul>
 
 <h2>The four moments of the same home</h2>
@@ -171,6 +177,9 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
      <svg class="constel" viewBox="0 0 84 46"><line x1="12" y1="34" x2="42" y2="12"/><line x1="42" y1="12" x2="72" y2="28"/><path class="st lit" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/><circle class="st" cx="42" cy="12" r="2.6"/><circle class="st" cx="72" cy="28" r="2.6"/></svg>
     </div>
    </div>
+   <div class="dcard span"><div class="dreamshdr"><div class="dt">My dreams</div><span class="alllink">All my dreams →</span></div>
+    <div class="thumbs"><div class="thumb t1"></div><div class="thumb t3"></div><div class="thumb t4"></div></div>
+   </div>
    <div class="dcard artcard chamber"><div class="art"></div><div class="atxt"><div class="dt">Chamber</div><b>The Depth Analyst</b><span>awaits · your reading</span></div></div>
    <div class="dcard artcard vault"><div class="art"></div><div class="atxt"><div class="dt" style="color:var(--warn)">Vault</div><b>◈ 140</b><span>claim history · packs</span></div></div>
   </div>
@@ -193,6 +202,9 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
      <svg class="constel" viewBox="0 0 84 46"><line class="lit" x1="12" y1="34" x2="42" y2="12"/><line x1="42" y1="12" x2="72" y2="28"/><path class="st lit" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/><path class="st lit" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/><circle class="st" cx="72" cy="28" r="2.6"/></svg>
     </div>
    </div>
+   <div class="dcard span"><div class="dreamshdr"><div class="dt">My dreams</div><span class="alllink">All my dreams →</span></div>
+    <div class="thumbs"><div class="thumb t2"></div><div class="thumb t1"></div><div class="thumb t3"></div></div>
+   </div>
    <div class="dcard artcard chamber"><div class="art"></div><div class="atxt"><div class="dt">Chamber</div><b>Ask about the water</b><span>the Analyst noticed it</span></div></div>
    <div class="dcard artcard vault"><div class="art"></div><div class="atxt"><div class="dt" style="color:var(--warn)">Vault</div><b>◈ 160</b><span>+20 banked today</span></div></div>
   </div>
@@ -206,19 +218,22 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
    <div class="greet"><b>Good morning, Ron</b><span>Mon, Aug 2 · a new week begins</span></div>
   </div>
   <div class="dgrid">
-   <div class="dcard weekpin earned span"><span class="wtag">Monday · your week in dreams</span><b>4 dreams · water returned twice</b><span>Recall is up vs last week — read the full summary →</span>
-    <div class="weekrow" style="margin-top:6px"><div class="thumbs" style="flex:1;margin-top:0"><div class="thumb t2"></div><div class="thumb t1"></div><div class="thumb t3"></div></div>
-     <svg class="constel" viewBox="0 0 84 46" style="flex:0 0 66px"><line class="lit" x1="12" y1="34" x2="42" y2="12"/><line class="lit" x1="42" y1="12" x2="72" y2="28"/><path class="st lit" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/><path class="st lit" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/><path class="st lit" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/></svg>
-    </div>
-   </div>
    <div class="dcard hero span"><div class="dt">Today</div><b>What did you dream?</b><span>start the new week · +20 with today's entry</span>
     <div class="entrybtns"><div class="ebtn p">Write it</div><div class="ebtn g">Speak it</div><div class="ebtn g">No recall</div></div>
+   </div>
+   <div class="dcard weekpin earned span"><span class="wtag">Monday · your week in dreams</span>
+    <div class="weekrow"><div class="wtxt"><b>4 dreams · water returned twice</b><span>Recall is up — read the summary →</span></div>
+     <svg class="constel" viewBox="0 0 84 46"><line class="lit" x1="12" y1="34" x2="42" y2="12"/><line class="lit" x1="42" y1="12" x2="72" y2="28"/><path class="st lit" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/><path class="st lit" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/><path class="st lit" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/></svg>
+    </div>
+   </div>
+   <div class="dcard span"><div class="dreamshdr"><div class="dt">My dreams</div><span class="alllink">All my dreams →</span></div>
+    <div class="thumbs"><div class="thumb t2"></div><div class="thumb t1"></div><div class="thumb t3"></div></div>
    </div>
    <div class="dcard artcard chamber"><div class="art"></div><div class="atxt"><div class="dt">Chamber</div><b>A water reading?</b><span>from the summary</span></div></div>
    <div class="dcard artcard vault"><div class="art"></div><div class="atxt"><div class="dt" style="color:var(--warn)">Vault</div><b>◈ 180</b><span>claim history · packs</span></div></div>
   </div>
   <div class="bnav"><span><b>Home</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
- </div></div><p class="cap"><b>3 · Monday morning</b> — D2c's moment: the earned weekly summary pins itself on top for the day, constellation complete, the week watchable inside it.</p></div>
+ </div></div><p class="cap"><b>3 · Monday morning</b> — D2c's moment, positions untouched: the This Week card itself turns gold and becomes the earned summary, right where it always sits. Today stays on top.</p></div>
 
  <!-- STATE 4 · milestone celebration overlay -->
  <div class="col"><div class="phone"><div class="appbg"></div><div class="starsA"></div><div class="starsB"></div><div class="scr dimmed">
@@ -229,6 +244,7 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
   <div class="dgrid">
    <div class="dcard hero span"><div class="dt">Today</div><b>Logged — streak night 7 ✓</b><span>+20 claimed</span></div>
    <div class="dcard lockc span"><div class="dt">This week</div><b>Three stars lit</b><span>summary unlocked</span></div>
+   <div class="dcard span"><div class="dreamshdr"><div class="dt">My dreams</div><span class="alllink">All my dreams →</span></div></div>
    <div class="dcard artcard chamber"><div class="art"></div><div class="atxt"><div class="dt">Chamber</div><b>The Depth Analyst</b></div></div>
    <div class="dcard artcard vault"><div class="art"></div><div class="atxt"><div class="dt" style="color:var(--warn)">Vault</div><b>◈ 160</b></div></div>
   </div>
