@@ -147,6 +147,18 @@ function mockOperationName() {
 async function recordJobOwnerBestEffort(event, operationName, email, mediaType, pendingId) {
   try {
     await jobOwners.recordJobOwner(event, operationName, email, mediaType, pendingId);
+    // SUCCESS-PATH LOGGING (tracker.html's for-product-bug-founder-affects-
+    // all-funn-0efe7t, reopened round-3 diagnostics): before this line, a
+    // successful write here was completely invisible in Netlify's own
+    // function logs — only the catch branch below ever logged anything, so
+    // there was no way to confirm from production logs alone whether a
+    // given funnel job's write actually happened, and if so under exactly
+    // which operationName/pendingId/email. Logging the raw email matches
+    // this codebase's own existing convention for diagnostic logs (see
+    // lib/entitlements.js's creditTokenPackOnce/refundTokensOnce and
+    // send-daily-claim-pushes.js, which already log raw emails directly —
+    // no masking convention exists anywhere else in this codebase).
+    console.log('start-pending-generation: recorded job owner — operationName=' + operationName + ' pendingId=' + pendingId + ' email=' + email + ' mediaType=' + mediaType);
   } catch (e) {
     console.error('start-pending-generation: failed to record job owner (refund auth binding + automatic first-dream email binding) for ' + operationName + ' — a later refund attempt AND the automatic first-dream retention email for this job will both fail closed', e);
   }

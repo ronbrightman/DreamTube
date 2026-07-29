@@ -115,6 +115,7 @@
 // gated on `readyAt` rather than the current `status`).
 
 var { getStore, connectLambda } = require('@netlify/blobs');
+var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-job-owners';
 
@@ -191,4 +192,66 @@ async function getJobOwnerEmail(event, jobId) {
   return (record && record.email) || null;
 }
 
-module.exports = { STORE_NAME, recordJobOwner, getJobOwnerRecord, getJobOwnerEmail };
+// Bounded re-read budget for getJobOwnerRecordWithRetry below — same
+// values as pending-dreams.js's own READY_CHECK_MAX_ATTEMPTS/
+// READY_CHECK_RETRY_DELAY_MS (2 attempts total, one real delay between
+// them), not a coincidence: this is the identical class of hazard (an
+// independent read possibly landing just ahead of another function
+// invocation's write becoming durably visible), so the same light,
+// bounded budget applies for the same reason — this runs on every
+// completion call, not just a genuine race, so the attempt budget stays
+// intentionally small.
+var JOB_OWNER_RETRY_MAX_ATTEMPTS = 2;
+var JOB_OWNER_RETRY_DELAY_MS = blobsRetry.DEFAULT_RETRY_DELAY_MS;
+
+function delay(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+/**
+ * Bounded-retry variant of getJobOwnerRecord — added (tracker.html's
+ * for-product-bug-founder-affects-all-funn-0efe7t, reopened round-3
+ * hardening) as the job-owners-store counterpart to lib/pending-dreams.js's
+ * getWithReadyRetry, used by mark-generation-completed.js's
+ * maybeSendAutomaticFirstDreamEmail for THIS store's read specifically.
+ *
+ * WHY THIS EXISTS: a plain getJobOwnerRecord() reads under Blobs' default
+ * eventual consistency, same as every other read in this codebase (see
+ * this file's own header comment). recordJobOwner is AWAITED before
+ * start-pending-generation.js/generate-video.js/generate-image.js return
+ * their response to the client, but that only guarantees the WRITE has
+ * been acknowledged by the instance that issued it — it does not
+ * guarantee the write is already durably visible to a completely
+ * independent read, from a different function invocation, arriving
+ * moments (or, for a fast/mock-mode completion, mere seconds) later. Before
+ * this fix, mark-generation-completed.js already carried the identical
+ * hardening for its OWN pending-dreams read (getWithReadyRetry, added for
+ * tracker.html's narrow-residual-race-mark-generation-com-wenb3g item) but
+ * this store's read had no equivalent — a real, confirmed inconsistency
+ * within the SAME function, closed here by mirroring that exact shape.
+ *
+ * Narrows the window substantially — it does not claim to eliminate it
+ * down to zero, same accepted-residual posture as getWithReadyRetry's own
+ * doc comment and every other eventually-consistent read in this
+ * codebase: an attempt exhausting the full retry budget still returns
+ * whatever it last saw (including null, for a job that was never
+ * submitted through a caller of recordJobOwner at all, or whose write
+ * itself genuinely failed — see this file's own FAIL-CLOSED header
+ * comment) rather than fabricating a record that doesn't exist.
+ */
+async function getJobOwnerRecordWithRetry(event, jobId, options) {
+  var maxAttempts = (options && options.maxAttempts) || JOB_OWNER_RETRY_MAX_ATTEMPTS;
+  var retryDelayMs = options && typeof options.retryDelayMs === 'number' ? options.retryDelayMs : JOB_OWNER_RETRY_DELAY_MS;
+
+  var record = null;
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0 && retryDelayMs > 0) {
+      await delay(retryDelayMs);
+    }
+    record = await getJobOwnerRecord(event, jobId);
+    if (record && record.email) return record;
+  }
+  return record;
+}
+
+module.exports = { STORE_NAME, recordJobOwner, getJobOwnerRecord, getJobOwnerRecordWithRetry, getJobOwnerEmail };
