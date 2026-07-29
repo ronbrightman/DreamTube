@@ -163,10 +163,12 @@ test('processing.html: REGRESSION -- a video that never fires loadeddata/playing
     var stillVideo = await page.locator('#proc-preview-row .proc-preview-thumb *').first().evaluate(function (el) { return el.tagName; });
     assert.equal(stillVideo, 'VIDEO', 'must not swap to the fallback before the load-timeout window has actually elapsed');
 
-    // Advance well past the ~2.5s load-timeout window -- the stalled
-    // request still hasn't produced loadeddata/playing/error by now, so the
-    // self-heal swap must have fired.
-    await page.clock.fastForward(4000);
+    // Advance well past the load-timeout window (PREVIEW_LOAD_TIMEOUT_MS,
+    // currently 6000ms -- see processing.html's own comment on that
+    // constant for why it was bumped from the original 2500ms) -- the
+    // stalled request still hasn't produced loadeddata/playing/error by
+    // now, so the self-heal swap must have fired.
+    await page.clock.fastForward(8000);
 
     await page.waitForFunction(function () {
       var thumb = document.querySelector('#proc-preview-row .proc-preview-thumb');
