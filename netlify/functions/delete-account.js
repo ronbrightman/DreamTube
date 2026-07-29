@@ -77,6 +77,27 @@
 //      unrelated account's blocklist. See that lib's own
 //      invalidateTokensForUsername doc comment for the full mechanism.
 //
+//   6. This account's entire server-side private-dream record (tracker
+//      item for-product-build-p0-server-side-dream-p-zl3rb2, server-side
+//      private dream persistence) — dreamStore.deleteAllPrivateDreams.
+//      Without this, a deleted account's un-published dreams would linger
+//      forever in lib/dream-store.js's per-username Blobs record —
+//      harmless (nothing reads it once the account itself is gone, and
+//      dream-sync.js's own auth-token verification means the freed
+//      username can't be used to read it back without a brand-new account
+//      re-registering that exact name and going through a fresh
+//      login/signup of its own — see step 5's own invalidation above,
+//      which independently blocks the old holder's stale token from ever
+//      reaching it), but this matches the completeness bar already
+//      applied to the token ledger and shared feed above. Placed LAST,
+//      unlike step 5's authToken invalidation (which deliberately runs
+//      right after step 1, per that step's own ordering rationale) —
+//      dreamStore.deleteAllPrivateDreams never throws (it catches its own
+//      Blobs errors internally, same plain-delete shape as
+//      entitlements.js's deleteEntitlement), so there is no equivalent
+//      "a later step's failure could skip this" risk to guard against by
+//      moving it earlier.
+//
 //   NOT touched, and why (see this repo's own tracker/AGENT_POLICY.md
 //   escalation policy for the reasoning behind leaving these as a
 //   judgment call rather than guessing):
@@ -155,6 +176,7 @@ var accountStore = require('./lib/account-store');
 var entitlements = require('./lib/entitlements');
 var rateLimit = require('./lib/rate-limit');
 var accountAuthToken = require('./lib/account-auth-token');
+var dreamStore = require('./lib/dream-store');
 var { connectLambda, getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
@@ -238,6 +260,10 @@ exports.handler = async function (event) {
     if (filtered.length !== feed.length) {
       await feedStore.setJSON('feed-index', filtered);
     }
+
+    // 6. This account's server-side private-dream record — see header
+    // comment above.
+    await dreamStore.deleteAllPrivateDreams(event, account.username);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {
