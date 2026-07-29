@@ -110,6 +110,56 @@ function mockTokenStatus(page, status) {
   });
 }
 
+/**
+ * Records every call to window.posthog.capture into a Node-side array that
+ * survives page navigation -- needed as of the screen-15-into-14 merge
+ * (tracker item for-product-funnel-handoff-screens-theme-5ttymn): screen
+ * 14's Continue now completes the funnel and navigates straight to
+ * processing.html/create.html in the same click, instead of staying on an
+ * in-page confirmation screen (the old screen 15) the way a plain
+ * page.evaluate() in-page monkeypatch could survive. Same
+ * exposeBinding+addInitScript pattern test/meta-capi-behavioral.test.js's
+ * installFbqRecorder uses for window.fbq, one level deeper: start.html's
+ * PostHog snippet assigns `window.posthog = e` once (an array-turned-
+ * object, not a plain function like fbq), and only later, inside
+ * posthog.init(), does that same object get its own `capture` property
+ * assigned (a locally-queuing stub, since blockThirdParty() aborts the
+ * real array.js load -- see start.html's snippet comment). This wraps
+ * BOTH assignments: an accessor on window.posthog captures the object the
+ * moment it's created, then defines its own accessor for that object's
+ * `capture` property so the later assignment inside init() is transparently
+ * wrapped too. Must be installed on the context before any page.goto().
+ */
+async function installPosthogCaptureRecorder(context) {
+  var calls = [];
+  await context.exposeBinding('__recordPosthogCapture', function (source, args) {
+    calls.push({ name: args[0], props: args[1] });
+  });
+  await context.addInitScript(function () {
+    var realPosthog = null;
+    Object.defineProperty(window, 'posthog', {
+      configurable: true,
+      get: function () { return realPosthog; },
+      set: function (obj) {
+        realPosthog = obj;
+        if (obj && typeof obj === 'object') {
+          var realCapture = null;
+          var wrapper = function () {
+            try { window.__recordPosthogCapture(Array.prototype.slice.call(arguments)); } catch (e) { /* recording must never break the real capture call below */ }
+            if (typeof realCapture === 'function') return realCapture.apply(obj, arguments);
+          };
+          Object.defineProperty(obj, 'capture', {
+            configurable: true,
+            get: function () { return wrapper; },
+            set: function (fn) { realCapture = fn; }
+          });
+        }
+      }
+    });
+  });
+  return calls;
+}
+
 /** Seeds js/store.js's localStorage state with a logged-in user (and account), then navigates to `path` -- the shortest way to reach an authenticated page (shop.html, style.html, ...) without driving signup for real. Mirrors seedResultPage's own seeding step below, minus the dream record that's specific to result.html. */
 async function seedLoggedInUserAt(page, baseUrl, username, path) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
@@ -979,7 +1029,7 @@ test('Advanced screen (characters): renders the light "dawn" phase -- light back
   }
 });
 
-test('Advanced screen (characters) + transition: 5-dot progress bar, and Continue on the characters screen advances straight into the transition screen -- camera/scenery are parked (2026-07-24 founder decision) and no longer sit in between', async function (t) {
+test('Advanced screen (characters) + transition: 4-dot progress bar, and Continue on the characters screen advances straight into the transition screen -- camera/scenery are parked (2026-07-24 founder decision) and no longer sit in between', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -989,7 +1039,7 @@ test('Advanced screen (characters) + transition: 5-dot progress bar, and Continu
     await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
 
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 5, 'expected 5 progress dots -- characters + transition + email + pricing + confirmation (camera/scenery parked)');
+    assert.equal(dotCount, 4, 'expected 4 progress dots -- characters + transition + email + pricing/confirmation (camera/scenery parked, and the former standalone confirmation screen 15 is folded into the pricing screen -- tracker item for-product-funnel-handoff-screens-theme-5ttymn)');
 
     await page.click('#fn-adv-chars-continue');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
@@ -1122,7 +1172,7 @@ test('parked camera/scenery screens: the funnel tail never renders "Pick a camer
 // (d) the pencil edit tap target.
 // ===========================================================================
 
-test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on the transition screen with 4 (not 5) progress dots (camera/scenery are parked as of the 2026-07-24 founder decision, so there is no longer a camera screen to land on)', async function (t) {
+test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on the transition screen with 3 (not 4) progress dots (camera/scenery are parked as of the 2026-07-24 founder decision, so there is no longer a camera screen to land on)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -1133,13 +1183,13 @@ test('character screen (fix 1a): a caption with no people-indicating language sk
     var charScreenEverRendered = await page.$('#fn-adv-chars-continue');
     assert.equal(charScreenEverRendered, null, 'the characters screen must not have rendered when the caption has no people-indicating language');
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 4, 'expected 4 progress dots -- transition + email + pricing + confirmation, characters/camera/scenery all skipped');
+    assert.equal(dotCount, 3, 'expected 3 progress dots -- transition + email + pricing/confirmation, characters/camera/scenery all skipped and the former standalone confirmation screen 15 folded into the pricing screen (tracker item for-product-funnel-handoff-screens-theme-5ttymn)');
   } finally {
     await context.close();
   }
 });
 
-test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 5 progress dots, and Skip from it still lands on the correct transition screen when the characters screen was NOT skipped (regression test for the dynamic PREPARING_STEP lookup, now that camera/scenery are permanently absent from SCREEN_RENDERERS)', async function (t) {
+test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 4 progress dots, and Skip from it still lands on the correct transition screen when the characters screen was NOT skipped (regression test for the dynamic PREPARING_STEP lookup, now that camera/scenery are permanently absent from SCREEN_RENDERERS)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var contextA = await browser.newContext();
   try {
@@ -1148,7 +1198,7 @@ test('character screen (fix 1a): a caption WITH people-indicating language still
     await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
     await pageA.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
     var dotCount = await pageA.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 5, 'expected all 5 progress dots when the characters screen is shown ("we" is people-indicating)');
+    assert.equal(dotCount, 4, 'expected all 4 progress dots when the characters screen is shown ("we" is people-indicating)');
 
     // PREPARING_STEP must resolve to index 1 here (characters screen is
     // index 0) -- Skip must land on the transition screen, not accidentally
@@ -1455,41 +1505,34 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
   }
 });
 
-test('pricing screen (14, now the token intro): Continue advances to the confirmation screen and fires the renamed acknowledgment tracking event (no plan involved anymore)', async function (t) {
+test('pricing screen (14, now the token intro + confirmation): Continue completes the funnel directly (the former screen 15 was folded in -- tracker item for-product-funnel-handoff-screens-theme-5ttymn) and fires the renamed acknowledgment tracking event (no plan involved anymore)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     await pinSignupControlVariant(context);
+    // Must be installed before goToPricingScreen's own page.goto() below --
+    // see installPosthogCaptureRecorder's own comment for why a plain
+    // in-page monkeypatch (this test's old approach) no longer survives
+    // now that Continue navigates away in the same click.
+    var phCalls = await installPosthogCaptureRecorder(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
     await goToPricingScreen(page, 'token-intro@example.com');
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 
-    // Spy on posthog.capture the same way start.html's own track() calls it
-    // -- this funnel is a single in-page SPA (no real navigation between
-    // screens 9-15), so a plain in-page monkeypatch survives for the rest
-    // of this test without needing meta-capi-behavioral.test.js's
-    // addInitScript/exposeBinding recorder (that one exists specifically to
-    // survive a real page navigation, which doesn't happen here).
-    await page.evaluate(function () {
-      window.__phCalls = [];
-      var orig = window.posthog.capture.bind(window.posthog);
-      window.posthog.capture = function (name, props) {
-        window.__phCalls.push({ name: name, props: props });
-        return orig(name, props);
-      };
-    });
-
     await page.click('#fn-s14-continue');
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
+    // Continue now fires completeFunnel() directly (no separate screen 15
+    // to land on first) -- confirms the funnel actually completed.
+    await page.waitForURL(/processing\.html/, { timeout: 8000 });
 
-    var phCalls = await page.evaluate(function () { return window.__phCalls; });
     var continuedCalls = phCalls.filter(function (c) { return c.name === 'funnel_token_intro_continued'; });
+    var completedCalls = phCalls.filter(function (c) { return c.name === 'funnel_completed'; });
     var oldBypassedCalls = phCalls.filter(function (c) { return c.name === 'funnel_pricing_bypassed'; });
     var oldPlanSelectedCalls = phCalls.filter(function (c) { return c.name === 'funnel_plan_selected'; });
     assert.equal(continuedCalls.length, 1, 'expected exactly one funnel_token_intro_continued call, from Continue');
     assert.equal(continuedCalls[0].props.step, 14);
+    assert.equal(completedCalls.length, 1, 'expected exactly one funnel_completed call, from the same Continue click now that screen 15 is folded in');
     assert.equal(oldBypassedCalls.length, 0, 'the old funnel_pricing_bypassed event name must not still fire');
     assert.equal(oldPlanSelectedCalls.length, 0, 'there is no plan to select anymore, so this old event must never fire');
   } finally {
@@ -1612,9 +1655,11 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
 
     // Click through pricing + confirmation to processing.html, and confirm
     // it resumes the ALREADY-adopted job rather than submitting a fresh one.
+    // Screen 14's Continue now completes the funnel directly (the former
+    // standalone screen 15 confirmation was folded into it -- tracker item
+    // for-product-funnel-handoff-screens-theme-5ttymn), so there's no
+    // separate screen to click through anymore.
     await page.click('#fn-s14-continue');
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
-    await page.click('#fn-s15-continue');
     await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
     assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');

@@ -12,8 +12,10 @@
 //      Continue (there's no real caption to submit a billed generation
 //      for), and
 //   2. redirects to create.html?record=1 instead of processing.html once
-//      the funnel's confirmation screen (15) completes (there's no
-//      generation in flight to show/poll for).
+//      the funnel's final screen (14 -- the former standalone confirmation
+//      screen 15 was folded into it, tracker item
+//      for-product-funnel-handoff-screens-theme-5ttymn) completes (there's
+//      no generation in flight to show/poll for).
 // create.html, in turn, auto-invokes its existing startRecordingUI() (the
 // same function the #choice-record card's own click handler calls) when
 // ?record=1 is present, landing the visitor directly in the mic-recording
@@ -119,9 +121,11 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
     assert.equal(pendingGenerationCalls.length, 0, 'mode=record must never call start-pending-generation -- there is no real caption to submit a billed generation for');
 
+    // Screen 14's Continue now completes the funnel directly -- the former
+    // standalone confirmation screen 15 was folded into it (tracker item
+    // for-product-funnel-handoff-screens-theme-5ttymn), so there's no
+    // separate screen to click through anymore.
     await page.click('#fn-s14-continue');
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
-    await page.click('#fn-s15-continue');
 
     await page.waitForURL('**/create.html?record=1', { timeout: 8000, waitUntil: 'domcontentloaded' });
     assert.match(page.url(), /create\.html\?record=1$/, 'mode=record must redirect into create.html\'s Record UI, not processing.html');
@@ -162,9 +166,9 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
     assert.equal(pendingGenerationCalls.length, 1, 'a normal Build/Write signup must still fire exactly one start-pending-generation call');
 
+    // Screen 14's Continue now completes the funnel directly -- see the
+    // matching comment in the mode=record test above.
     await page.click('#fn-s14-continue');
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
-    await page.click('#fn-s15-continue');
 
     await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
     assert.match(page.url(), /processing\.html/, 'a normal Build/Write funnel completion must still redirect to processing.html, unchanged');
@@ -268,12 +272,14 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
 // 2026-07-26 night): "click Record it in the growth funnel -> recording
 // appears skipped entirely." All the handoff wiring above already worked
 // (mode=record -> isRecordMode -> create.html?record=1 -> startRecordingUI);
-// the actual bug was start.html's record-mode screens (11, 13, 15) showing
-// unchanged copy that lied about a dream already being in progress ("Your
-// dream is coming together", "we'll email you your dream the moment it's
-// ready", "Building your first dream now") when, in record mode, nothing
-// has been recorded yet at that point — recording only happens after this,
-// app-side on create.html. Fixed by making that copy record-mode-aware.
+// the actual bug was start.html's record-mode screens (11, 13, and the
+// former standalone 15, now folded into 14 -- tracker item
+// for-product-funnel-handoff-screens-theme-5ttymn) showing unchanged copy
+// that lied about a dream already being in progress ("Your dream is coming
+// together", "we'll email you your dream the moment it's ready", "Building
+// your first dream now") when, in record mode, nothing has been recorded
+// yet at that point — recording only happens after this, app-side on
+// create.html. Fixed by making that copy record-mode-aware.
 //
 // This covers the FULL chain end to end in one test (funnel handoff ->
 // start.html signup in record mode -> create.html?record=1 -> the record
@@ -325,15 +331,16 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
     assert.equal(pendingGenerationCalls.length, 0, 'record mode must never call start-pending-generation -- there is no real caption to submit a billed generation for');
-    await page.click('#fn-s14-continue');
 
-    // Screen 15 (confirmation) must not claim a dream is already being
-    // built -- recording (the actual first step) hasn't happened yet.
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
-    var screen15Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
-    assert.doesNotMatch(screen15Text, /building your first dream now/i, 'record mode must not claim a dream is already being built -- recording (the real first step) has not happened yet');
-    assert.match(screen15Text, /record your dream/i, 'record mode\'s screen 15 must point the visitor at recording next, not a dream already in progress');
-    await page.click('#fn-s15-continue');
+    // Screen 14 (now also carrying the former standalone screen 15's
+    // confirmation beat -- tracker item
+    // for-product-funnel-handoff-screens-theme-5ttymn) must not claim a
+    // dream is already being built -- recording (the actual first step)
+    // hasn't happened yet.
+    var screen14Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.doesNotMatch(screen14Text, /building your first dream now/i, 'record mode must not claim a dream is already being built -- recording (the real first step) has not happened yet');
+    assert.match(screen14Text, /record your dream/i, 'record mode\'s screen 14 must point the visitor at recording next, not a dream already in progress');
+    await page.click('#fn-s14-continue');
 
     // Full handoff into create.html's Record UI, with the mic flow actually
     // reachable (real startRecordingUI() call, mocked media only).
@@ -352,7 +359,7 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
   }
 });
 
-test('start.html: a normal (no mode=record) visitor still sees the original screen 11/13/15 copy unchanged, on the same mobile webview viewport', async function (t) {
+test('start.html: a normal (no mode=record) visitor still sees the original screen 11/13/14 copy unchanged, on the same mobile webview viewport', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
   try {
@@ -378,11 +385,13 @@ test('start.html: a normal (no mode=record) visitor still sees the original scre
     await page.click('#fn-s13-continue');
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    // The former standalone screen 15's confirmation copy now renders as
+    // part of screen 14 itself (tracker item
+    // for-product-funnel-handoff-screens-theme-5ttymn), so it's checked
+    // here, before Continue navigates away.
+    var screen14Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
+    assert.match(screen14Text, /building your first dream now/i, 'a normal (non-record) visitor must still see the original screen 15 confirmation copy, now folded into screen 14, unchanged');
     await page.click('#fn-s14-continue');
-
-    await page.waitForSelector('#fn-s15-continue', { timeout: 5000 });
-    var screen15Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
-    assert.match(screen15Text, /building your first dream now/i, 'a normal (non-record) visitor must still see the original screen 15 copy, unchanged');
   } finally {
     await context.close();
   }
