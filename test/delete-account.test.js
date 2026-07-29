@@ -24,11 +24,17 @@ var publishHandler = require('../netlify/functions/publish-dream').handler;
 var deleteAccountHandler = require('../netlify/functions/delete-account').handler;
 var accountStore = require('../netlify/functions/lib/account-store');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var accountAuthToken = require('../netlify/functions/lib/account-auth-token');
 
 var ipCounter = 0;
 function nextIp() {
   ipCounter += 1;
   return '10.5.0.' + ipCounter;
+}
+
+/** publish-dream.js now requires a verified authToken matching ownerHandle (tracker item publish-dream-js-trusts-client-supplied--lkppcu) -- mints one the same way account-login.js/register-account.js do, so this file's direct publishHandler calls still actually reach the shared feed. */
+function mintToken(username) {
+  return accountAuthToken.mintToken(fakeEvent({ method: 'POST' }), username);
 }
 
 test.beforeEach(function () {
@@ -59,9 +65,11 @@ test('delete-account: full happy path — deletes the account, its published dre
 
   // Two published dreams in the shared feed, plus one belonging to a
   // DIFFERENT account — the other account's dream must survive.
-  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-1', ownerHandle: '@nora', caption: 'a dream', style: 'Cartoon', videoUrl: 'https://x/v1.mp4' } }));
-  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-2', ownerHandle: '@nora', caption: 'another dream', style: 'Anime', videoUrl: 'https://x/v2.mp4' } }));
-  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-other', ownerHandle: '@someoneelse', caption: 'not mine', style: 'Cartoon', videoUrl: 'https://x/v3.mp4' } }));
+  var noraToken = await mintToken('nora');
+  var otherToken = await mintToken('someoneelse');
+  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-1', ownerHandle: '@nora', caption: 'a dream', style: 'Cartoon', videoUrl: 'https://x/v1.mp4', authToken: noraToken } }));
+  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-2', ownerHandle: '@nora', caption: 'another dream', style: 'Anime', videoUrl: 'https://x/v2.mp4', authToken: noraToken } }));
+  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'dream-other', ownerHandle: '@someoneelse', caption: 'not mine', style: 'Cartoon', videoUrl: 'https://x/v3.mp4', authToken: otherToken } }));
 
   var feedBefore = await feedIndex();
   assert.equal(feedBefore.length, 3);
@@ -111,7 +119,8 @@ test('delete-account: an account with no published dreams and no token balance y
 test('delete-account: rejects a WRONG password with E5 incorrect_password, and performs NO deletion at all (account, dreams, and tokens all untouched)', async function () {
   await registerAndLogin('oscar', 'realpassword1', 'oscar@example.com');
   await entitlements.getTokenStatus(fakeEvent({ method: 'GET' }), 'oscar@example.com');
-  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'oscar-dream', ownerHandle: '@oscar', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4' } }));
+  var oscarToken = await mintToken('oscar');
+  await publishHandler(fakeEvent({ method: 'POST', body: { id: 'oscar-dream', ownerHandle: '@oscar', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', authToken: oscarToken } }));
 
   var res = await deleteAccountHandler(fakeEvent({ method: 'POST', body: { username: 'oscar', password: 'totally-wrong-password' } }));
   assert.equal(res.statusCode, 200);
