@@ -77,7 +77,7 @@
   <div class="bottom-nav">
     <a class="nav-item active" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
     <a class="nav-create" href="create.html" id="nav-create" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon icon"></div>Profile</a>
+    <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
   </div>
 
   <div class="modal-overlay" id="modal-signup-nudge">
@@ -109,6 +109,14 @@
   var navIcons = document.querySelectorAll('.nav-icon');
   navIcons[0].innerHTML = Icons.compass;
   navIcons[1].innerHTML = Icons.person;
+  // New-likes badge dot (tracker item idea-notify-likes) — a synchronous,
+  // no-network read of whatever profile.html's own page-load fetch last
+  // computed; see DreamStore.getCachedNewLikesCount's doc block in
+  // js/store.js for why this page never fetches the feed itself. Safe to
+  // call logged-out too — it's just a plain localStorage read, and a
+  // logged-out visitor never had anything written there in the first
+  // place (only profile.html, which requires login, ever writes it).
+  document.getElementById('nav-profile-badge').hidden = !(DreamStore.getCachedNewLikesCount() > 0);
 
   var signupNudge = document.getElementById('modal-signup-nudge');
   var signupCta = document.getElementById('signup-nudge-cta');
@@ -218,6 +226,18 @@
     // every visitor). Only shown in the unfiltered feed — a filtered view
     // (one style/user) is an intentional subset, not "the first thing
     // anyone sees."
+    // tracker item for-product-split-prompttext-storytext-f-yt5kc7: `d`
+    // comes from the shared feed (DreamStore.getSharedFeed, above) — a
+    // dream only ever reaches this feed via syncPublishedDreamToFeed
+    // (js/store.js), whose own payload sends `caption: dream.caption`,
+    // and js/store.js's finalizeDream guarantees dream.caption already
+    // EQUALS dream.storyText (the human-readable description) for every
+    // dream saved after this feature shipped — see that function's own
+    // doc comment. So d.caption here is already storyText's value; there
+    // is no separate d.storyText on the feed's own wire shape to prefer
+    // (publish-dream.js/get-feed.js's request/response schema is
+    // deliberately untouched by this feature — no reason to grow it when
+    // the existing field already carries the right value).
     var dowBadge = isDreamOfDay
       ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
       : '';

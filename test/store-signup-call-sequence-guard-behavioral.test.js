@@ -179,3 +179,99 @@ test('js/store.js: two concurrent DreamStore.signup() calls -- the LATER-STARTED
     await page.close();
   }
 });
+
+// ===========================================================================
+// Navigation-away invalidation (tracker item
+// js-store-js-signupcallseq-only-invalidat-ijwpht): signupCallSeq only ever
+// bumped when a NEWER signup() call actually started -- never when the
+// visitor simply navigates away (Back, Change email) without resubmitting.
+// wizard.html's/start.html's own UI-level signupAttemptToken guard correctly
+// keeps the visible screen from reacting to the abandoned attempt's late
+// response, but has no way to reach into the store and stop
+// commitLocalSignupIfCurrent from committing anyway -- since that write
+// happens INSIDE signup(), before any caller callback (or its token check)
+// ever runs. Fix: DreamStore.invalidatePendingSignup(), a new store-level
+// method that bumps signupCallSeq WITHOUT starting a new signup() call --
+// callable the moment a caller bumps its own navigation-away token. These
+// two tests exercise it directly against DreamStore (no wizard.html/
+// start.html funnel UI involved), the same way the race test above proves
+// the underlying guard at the store layer, not just behind either funnel's
+// UI-level token.
+// ===========================================================================
+
+test('js/store.js: DreamStore.invalidatePendingSignup() called after Back (no second signup() call ever started) must stop the abandoned attempt\'s late response from committing state.user/state.accounts', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // Held back well past the point the visitor has "navigated away" --
+    // the exact repro: reach the password step, click Continue, then
+    // immediately click Back (which bumps signupAttemptToken AND now
+    // calls DreamStore.invalidatePendingSignup()) before this response
+    // lands, then abandon the funnel entirely -- no second signup() call
+    // is ever started.
+    await page.route('**/.netlify/functions/register-account', async function (route) {
+      await new Promise(function (r) { setTimeout(r, 400); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await safeGoto(page, baseUrl + '/login.html');
+
+    var result = await page.evaluate(function () {
+      var p = window.DreamStore.signup('abandonuser', 'abandon-password1', 'abandon@example.com');
+      // Simulates the user clicking Back immediately, well before
+      // register-account's 400ms-delayed response lands -- same call
+      // wizard.html's/start.html's backBtn handlers now make alongside
+      // their own signupAttemptToken bump. No second signup() call is
+      // ever fired -- the funnel is simply abandoned from here on, which
+      // is exactly the case the pre-fix signupCallSeq guard alone could
+      // not handle (nothing ever bumps it again).
+      window.DreamStore.invalidatePendingSignup();
+      return p.then(function (r) {
+        return {
+          result: r,
+          currentUser: window.DreamStore.getCurrentUser(),
+          accounts: JSON.parse(localStorage.getItem('dreamtube_state_v1') || '{}').accounts
+        };
+      });
+    });
+
+    assert.equal(result.result.ok, false, 'the abandoned attempt must NOT report ok:true once its late response lands');
+    assert.equal(result.result.superseded, true, 'the abandoned attempt must be flagged superseded, discarded the same way a genuinely newer signup() call would discard it');
+    assert.equal(result.currentUser, null, 'no one must be silently signed in after the abandoned attempt\'s late response lands -- this is the core regression: pre-fix, state.user would silently be set here even though the visitor navigated away and never resubmitted');
+    assert.equal(result.accounts && result.accounts.abandonuser, undefined, 'the abandoned attempt must not write ANY local state, including state.accounts');
+  } finally {
+    await page.close();
+  }
+});
+
+test('js/store.js: control case -- a NORMAL, non-abandoned signup (invalidatePendingSignup never called) still commits state.user/state.accounts correctly', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await safeGoto(page, baseUrl + '/login.html');
+
+    var result = await page.evaluate(function () {
+      return window.DreamStore.signup('normaluser', 'normal-password1', 'normal@example.com').then(function (r) {
+        return {
+          result: r,
+          currentUser: window.DreamStore.getCurrentUser(),
+          accounts: JSON.parse(localStorage.getItem('dreamtube_state_v1') || '{}').accounts
+        };
+      });
+    });
+
+    assert.equal(result.result.ok, true, 'a normal signup that is never abandoned must still succeed');
+    assert.equal(result.result.user.username, 'normaluser');
+    assert.ok(result.currentUser, 'a normal, non-abandoned signup must sign the user in');
+    assert.equal(result.currentUser.username, 'normaluser');
+    assert.ok(result.accounts && result.accounts.normaluser, 'a normal, non-abandoned signup must still write its state.accounts entry -- the fix must not be so aggressive it breaks the happy path');
+  } finally {
+    await page.close();
+  }
+});

@@ -81,14 +81,46 @@
     { key: 'other', label: '+ Something else' }
   ];
 
+  // Each entry's `phrase` is the action clause ALONE, with no trailing
+  // preposition baked in. Most actions need a preposition ('in'/'through')
+  // to connect naturally to whatever place phrase follows -- that's the
+  // `connector` field below, appended by assembleCaption ONLY when there
+  // actually is a place phrase to connect to (the Setting/place step is
+  // skippable in both wizard.html and create.html's "Build it" retrofit,
+  // so placePhrase is often '' -- see assembleCaption's own comment).
+  // Baking the preposition into `phrase` itself (the original design) left
+  // a dangling ", in," / ", through," fragment in the assembled prompt
+  // whenever the place step was skipped -- review finding, fixed here for
+  // every affected chip, not just the newest ones. 'exploring' and 'other'
+  // never needed a connector (already read fine standalone) and are
+  // untouched.
   var ACTION_CHIPS = [
-    { key: 'flying', label: 'Flying/floating', phrase: 'flying through' },
-    { key: 'running', label: 'Running/chasing/chased', phrase: 'running, chasing and being chased through' },
-    { key: 'falling', label: 'Falling', phrase: 'falling through' },
+    { key: 'flying', label: 'Flying/floating', phrase: 'flying', connector: 'through' },
+    { key: 'running', label: 'Running/chasing/chased', phrase: 'running, chasing and being chased', connector: 'through' },
+    { key: 'falling', label: 'Falling', phrase: 'falling', connector: 'through' },
+    // Nielsen/Zadra 2003 ("Typical Dreams of Canadian University Students,"
+    // Dreaming 13(4), N=1181, replicated by Schredl 2004) found these to be
+    // the most common dream archetypes/themes after chasing (81.5%, already
+    // 'running' above) and falling (73.8%, already 'falling' above) --
+    // 'exam'/'late'/'trying' are added here in that same published
+    // prevalence order (67.1% and descending, straight from the paper's
+    // top ten). 'newroom' and 'child' are also well-documented dream
+    // archetypes (secondary sourcing puts "being a child again" at
+    // ~36.7%, ahead of "discovering a new room" at ~32.3%) but fall
+    // outside the paper's strict top-ten ranking, so their relative order
+    // here is not itself a prevalence claim the way the three above are.
+    // Teeth-falling-out is the most famous dream trope in pop culture but
+    // scores under 24% in this same study (outside their top 30) and is
+    // deliberately left out.
+    { key: 'exam', label: 'Back in school, taking a test', phrase: 'taking an exam back in school', connector: 'in' },
+    { key: 'late', label: 'Arriving too late', phrase: 'rushing to get somewhere but arriving too late', connector: 'in' },
+    { key: 'trying', label: 'Trying again and again', phrase: 'trying to do the same thing again and again without success', connector: 'in' },
+    { key: 'newroom', label: 'Discovering a new room', phrase: 'discovering a hidden room that was never there before', connector: 'in' },
+    { key: 'child', label: 'Being a child again', phrase: 'being a child again, playing', connector: 'in' },
     { key: 'exploring', label: 'Exploring somewhere new', phrase: 'exploring' },
-    { key: 'calm', label: 'A calm still moment', phrase: 'sitting in a calm, still moment in' },
-    { key: 'magical', label: 'Something magical happens', phrase: 'witnessing something magical happen in' },
-    { key: 'meeting', label: 'Meeting someone', phrase: 'meeting someone in' },
+    { key: 'calm', label: 'A calm still moment', phrase: 'sitting in a calm, still moment', connector: 'in' },
+    { key: 'magical', label: 'Something magical happens', phrase: 'witnessing something magical happen', connector: 'in' },
+    { key: 'meeting', label: 'Meeting someone', phrase: 'meeting someone', connector: 'in' },
     { key: 'other', label: '+ Something else' }
   ];
 
@@ -212,9 +244,17 @@
     var subjectResult = subjectPhraseAndCharacterId(input.subjectKey, input.character, input.subjectOtherText);
 
     var actionChip = ACTION_CHIPS.filter(function (a) { return a.key === actionKey; })[0];
+    var defaultActionChip = ACTION_CHIPS.filter(function (a) { return a.key === DEFAULT_ACTION; })[0];
     var actionPhrase = actionKey === 'other'
       ? (input.actionOtherText || '').trim()
-      : (actionChip ? actionChip.phrase : ACTION_CHIPS.filter(function (a) { return a.key === DEFAULT_ACTION; })[0].phrase);
+      : (actionChip ? actionChip.phrase : defaultActionChip.phrase);
+    // The connecting preposition ('in'/'through') a chip's phrase needs
+    // before a place phrase -- only ever used below when there IS a place
+    // phrase to connect to. A free-typed "+ Something else" action has no
+    // connector of its own (matches its pre-existing behavior).
+    var actionConnector = actionKey === 'other'
+      ? ''
+      : ((actionChip ? actionChip.connector : defaultActionChip.connector) || '');
 
     var placeChip = SETTING_PLACE_CHIPS.filter(function (p) { return p.key === input.placeKey; })[0];
     var placePhrase = input.placeKey === 'other'
@@ -225,9 +265,17 @@
       ? (input.moodOtherText || '').trim()
       : (MOOD_LABEL_FOR_PROMPT[moodKey] || MOOD_LABEL_FOR_PROMPT[DEFAULT_MOOD]);
 
+    // Only append the connector + place phrase when there actually IS a
+    // place phrase (the Setting/place step is skippable) -- otherwise the
+    // action clause ends cleanly on its own, no dangling preposition.
+    var actionAndPlace = actionPhrase;
+    if (placePhrase) {
+      actionAndPlace += (actionConnector ? ' ' + actionConnector : '') + ' ' + placePhrase;
+    }
+
     var parts = [];
     parts.push(camera + ' of ' + (subjectResult.phrase || 'the dream') + ',');
-    parts.push(actionPhrase + (placePhrase ? ' ' + placePhrase : '') + ',');
+    parts.push(actionAndPlace + ',');
     if (moodForPrompt) parts.push(moodForPrompt + ' mood,');
     parts.push(lighting + ',');
     // A real style choice hasn't happened yet (styleOmitted) -- omit the
@@ -249,6 +297,110 @@
     };
   }
 
+  // ── Deterministic (non-LLM) first-person story fallback ──────────────
+  // tracker item for-product-split-prompttext-storytext-f-yt5kc7: the
+  // chip flow's assembled caption above is written to read as camera-
+  // direction/style-modifier prompt engineering (see this file's own
+  // header), never fit to show a real person as "their dream" — that's
+  // promptText, generation-only from here on. This builds the OTHER half,
+  // storyText, for the "chips selected, no free text typed" path: a
+  // short, natural, first-person sentence, no camera/lighting/style
+  // language at all. Used two ways: (1) the IMMEDIATE, zero-cost, always-
+  // available value shown the instant the user reaches the preview step
+  // (style.html / wizard.html's Contact step), while an LLM rewrite
+  // (netlify/functions/rewrite-dream-story.js) is opportunistically fired
+  // in the background to try to upgrade it to something more natural
+  // before Generate is tapped; (2) the fallback if that call fails or
+  // never resolves in time — this function alone must always produce a
+  // presentable sentence, since generation must never be blocked or
+  // slowed waiting on the LLM path.
+  //
+  // Deliberately SEPARATE word tables from ACTION_CHIPS/SETTING_PLACE_CHIPS
+  // above, rather than reusing their `.phrase` values — those are written
+  // to concatenate with camera/lighting language (e.g. the 'calm' action's
+  // "sitting in a calm, still moment in" + the 'house' place's "inside a
+  // house" doubles up "in ... in" — harmless filler for a Veo prompt,
+  // wrong for a sentence a real person reads back as their own dream).
+  // These tables are written to read naturally as a plain sentence on
+  // their own instead.
+  var STORY_ACTION_PHRASES = {
+    flying: 'flying', running: 'running, chasing and being chased', falling: 'falling',
+    exam: 'taking an exam I never studied for, back in school',
+    late: 'rushing to get somewhere, but arriving too late',
+    trying: 'trying to do the same thing again and again without success',
+    newroom: 'discovering a hidden room that was never there before',
+    child: 'a child again',
+    exploring: 'exploring somewhere new', calm: 'sitting in a calm, still moment',
+    magical: 'watching something magical happen', meeting: 'meeting someone new'
+  };
+  var STORY_PLACE_PHRASES = {
+    urban: 'in a city', nature: 'in a natural outdoor landscape', house: 'inside a house',
+    water: 'in and around water', sky: 'in an open sky', unreal: 'somewhere surreal and otherworldly'
+  };
+  var STORY_MOOD_WORDS = {
+    peaceful: 'peaceful', joyful: 'joyful', dreamy: 'dreamy and surreal',
+    mysterious: 'mysterious', tense: 'tense', epic: 'awestruck'
+  };
+
+  /**
+   * Builds a short, natural, first-person dream sentence directly from the
+   * SAME chip-selection fields assembleCaption takes (a subset — camera/
+   * POV/character-description/style are meaningless here, a human "what
+   * happened in the dream" sentence has no camera or rendering style).
+   * Pure and synchronous — no network call, never fails.
+   */
+  function buildDeterministicStory(input) {
+    input = input || {};
+    var actionKey = input.actionKey || DEFAULT_ACTION;
+    var moodKey = input.moodKey || DEFAULT_MOOD;
+
+    // 'me'/'none' (and an empty 'other') carry no separate descriptor —
+    // "I" alone is the whole subject, same as assembleCaption's own
+    // subjectPhraseAndCharacterId treating those as the plain/no-op case.
+    var subjectDescriptor = null;
+    if (input.subjectKey === 'someone') {
+      var name = (input.character && (input.character.name || '').trim()) || 'someone I know';
+      subjectDescriptor = 'with ' + name;
+    } else if (input.subjectKey === 'stranger') {
+      subjectDescriptor = 'a stranger';
+    } else if (input.subjectKey === 'animal') {
+      subjectDescriptor = 'an animal or creature';
+    } else if (input.subjectKey === 'other' && input.subjectOtherText && input.subjectOtherText.trim()) {
+      subjectDescriptor = input.subjectOtherText.trim();
+    }
+
+    var actionPhrase = actionKey === 'other'
+      ? ((input.actionOtherText || '').trim() || 'in the middle of something happening')
+      : (STORY_ACTION_PHRASES[actionKey] || STORY_ACTION_PHRASES[DEFAULT_ACTION]);
+
+    // Review finding: every STORY_PLACE_PHRASES table entry already
+    // carries its own preposition ("in a city", "inside a house", ...) so
+    // `actionPhrase + ' ' + placePhrase` reads naturally -- but a custom
+    // "+ Something else" place has none of its own, producing a broken
+    // "exploring a floating library" (missing "in"). Prepend a generic
+    // preposition here, same role the table entries' own leading word
+    // already plays.
+    var placePhrase = input.placeKey === 'other'
+      ? ((input.placeOtherText || '').trim() ? 'in ' + input.placeOtherText.trim() : '')
+      : (STORY_PLACE_PHRASES[input.placeKey] || '');
+
+    var timeClause = input.sceneryTime === 'Day' ? ' during the day' : (input.sceneryTime === 'Night' ? ' at night' : '');
+
+    var moodWord = moodKey === 'other'
+      ? (input.moodOtherText || '').trim()
+      : (STORY_MOOD_WORDS[moodKey] || STORY_MOOD_WORDS[DEFAULT_MOOD]);
+
+    var sentence = 'I was ' +
+      (subjectDescriptor ? subjectDescriptor + ', ' : '') +
+      actionPhrase +
+      (placePhrase ? ' ' + placePhrase : '') +
+      timeClause +
+      (moodWord ? ', feeling ' + moodWord : '') +
+      '.';
+
+    return sentence.replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1').trim();
+  }
+
   var WizardChips = {
     SUBJECT_CHIPS: SUBJECT_CHIPS,
     SETTING_PLACE_CHIPS: SETTING_PLACE_CHIPS,
@@ -261,7 +413,8 @@
     chipLabel: chipLabel,
     inferCamera: inferCamera,
     inferLighting: inferLighting,
-    assembleCaption: assembleCaption
+    assembleCaption: assembleCaption,
+    buildDeterministicStory: buildDeterministicStory
   };
 
   // Browser: attach to window, same as every other js/*.js file in this

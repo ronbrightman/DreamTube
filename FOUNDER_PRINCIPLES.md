@@ -30,6 +30,22 @@ tight (curate, don't dump).
   for later to consider"). Prefer changes that are one step to undo.
 - **"always" = a durable standing rule** across sessions until he says
   otherwise. Encode those immediately.
+- **Assumptions have expiry dates** (graduated 2026-07-28): every default —
+  vendor, model, price, cap, channel, architecture — is a decision made
+  under conditions that change, and a stale one leaks silently instead of
+  failing loudly. Real cost: the Veo Fast model choice was never written
+  down as a decision at all, and quietly cost ~5x per video until one
+  casual founder question caught it. (1) State assumptions when deciding —
+  the rationale, and what would invalidate them. (2) Re-evaluate on a
+  schedule, not on pain — don't wait for something to hurt before
+  rechecking it. (3) Actively hunt UNSTATED assumptions — the ones nobody
+  ever wrote down are the most dangerous, because there's no prompt to
+  revisit them at all. Audit question: "knowing what's true today, would
+  we choose this again?" — answered with fresh, at-source facts, never
+  memory. Manager keeps the portfolio-wide registry (`ASSUMPTIONS.md` in
+  `ronbrightman/manager`) and runs a nightly audit lane across both repos;
+  this file's job is just making sure this session's own agents apply the
+  principle when making choices, not maintaining the registry itself.
 - **Vocabulary:** when Ron writes **"final" he almost always means "funnel."**
 
 ## Marketing & campaign management

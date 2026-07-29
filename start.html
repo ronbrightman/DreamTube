@@ -1664,6 +1664,16 @@
         // untouched; if the abandoned attempt had already disabled it,
         // it would otherwise stay stuck disabled on the email step.
         signupAttemptToken++;
+        // Also invalidates any in-flight DreamStore.signup() call at the
+        // STORE layer -- signupAttemptToken alone only stops THIS page's
+        // callback from reacting to a stale response; it can't stop
+        // js/store.js's commitLocalSignupIfCurrent from silently writing
+        // state.user/state.accounts in the background, since that write
+        // happens INSIDE signup(), before this callback (or its token
+        // check) ever runs. See DreamStore.invalidatePendingSignup's own
+        // doc comment (js/store.js) and tracker item
+        // js-store-js-signupcallseq-only-invalidat-ijwpht.
+        DreamStore.invalidatePendingSignup();
         backBtn.disabled = false;
         renderEmailStep(email);
       });
@@ -1913,6 +1923,13 @@
     // on every Back click, including ones that have nothing to do with
     // Signup -- there's simply nothing in flight for it to invalidate.
     signupAttemptToken++;
+    // Also invalidates any in-flight DreamStore.signup() call at the
+    // STORE layer, not just this file's own UI-level token above -- see
+    // the Change-email handler's own copy of this comment further up
+    // this file, DreamStore.invalidatePendingSignup's own doc comment
+    // (js/store.js), and tracker item
+    // js-store-js-signupcallseq-only-invalidat-ijwpht.
+    DreamStore.invalidatePendingSignup();
     prev();
   });
 

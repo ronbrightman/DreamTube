@@ -445,6 +445,21 @@ async function syncTokens(event, email, opts) {
       ? { balance: INITIAL_GRANT }
       : { balance: 0 }; // capped for today — see doc block above, not a permanent block
 
+    // ACCEPTED LAZY-SEED RACE (tracker item decide-blobs-lazy-seed-race):
+    // this write is plain/unguarded, and the installed @netlify/blobs SDK
+    // has no atomic/conditional-write primitive to make "materialize a
+    // default on first read" race-proof. Two genuinely concurrent
+    // first-ever reads for the SAME email (two tabs, a signup racing an
+    // immediate generation) could each see `!record.tokens`, each compute
+    // an IDENTICAL `fresh` value, and each write — a redundant write, not
+    // a corrupting one, since both writes agree on the value. The one real
+    // side effect is `checkAndIncrement('token-init', ...)` above
+    // potentially being counted twice for what's effectively one grant.
+    // Same class of one-time, low-frequency bootstrap race as
+    // tracker-store.js's own getItems() seed branch — documented rather
+    // than fixed with a separate "seeded" marker key, per that tracker
+    // item's own cheaper option, given the low real-world likelihood
+    // (single email, narrow window) and non-corrupting outcome here.
     await setEntitlement(event, key, { tokens: fresh });
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
   }
@@ -714,6 +729,29 @@ async function claimDailyTokens(event, email) {
   }
   throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' without ever confirming the claim landed');
 }
+
+// ── STANDING CHECKLIST for adding a new low-frequency field to this
+//    record (recurring-pattern-new-entitlements-js-wr-m5mo9g) ──
+// spendTokens/addTokens below are this record's only remaining PLAIN
+// (unguarded, no retry/verify) writers — an already-accepted tradeoff
+// since spendTokens is by far the highest-frequency writer to this store
+// (fires on every generation) and a full retryingWrite there would be
+// needless overhead for a fire-and-forget balance decrement. Every OTHER
+// field on this record (dodoCustomerId, appliedTokenPackPaymentIds,
+// firstPackPurchaseAt, lastClaimAttemptId, refundedJobIds, ...) is written
+// through blobsRetry.retryingWrite instead, specifically because a plain
+// write racing spendTokens/addTokens can silently clobber whichever one
+// lands second (see dodoCustomerId's own doc comment above for a full
+// worked example of exactly this class of bug, caught in review before it
+// shipped). So: when adding a NEW low-frequency field to this record, fold
+// it into an EXISTING hardened retryingWrite call (creditTokenPackAmountOnce,
+// claimDailyTokens, refundTokenAmountOnce — whichever already fires at a
+// point in the field's own natural lifecycle) rather than adding a
+// standalone plain setEntitlement call beside it. Only spendTokens/
+// addTokens themselves get to stay plain, and only because their own
+// tradeoff (frequency vs. race-safety) has already been explicitly
+// accepted — a new field does not inherit that exemption just by being
+// written near them.
 
 /**
  * Deducts `amount` tokens from this email's balance, called only from

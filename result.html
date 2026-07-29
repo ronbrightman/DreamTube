@@ -691,14 +691,21 @@
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
     document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl) ? 'flex' : 'none';
-    document.getElementById('result-quote').textContent = '"' + dream.caption + '"';
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7): the human-readable dream description, never the chip
+    // flow's own camera-direction/style-modifier promptText. Falls back
+    // to dream.caption for a dream saved before this field existed —
+    // that field already carries the same value for those (see
+    // js/store.js's finalizeDream doc comment), so this is a no-op
+    // behavior change for every pre-existing dream.
+    document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
     quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
     setupExpandableQuote();
     document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
     var privacyTag = document.getElementById('result-privacy-tag');
     privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
     privacyTag.classList.toggle('pub', !!dream.isPublished);
-    document.getElementById('edit-text').value = dream.caption;
+    document.getElementById('edit-text').value = dream.storyText || dream.caption;
     Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
@@ -1011,10 +1018,40 @@
     var text = document.getElementById('edit-text').value.trim();
     var selectedCard = document.querySelector('#sheet-style-grid .style-card.selected');
     var style = selectedCard ? selectedCard.dataset.style : dream.style;
+    // storyText/promptText (tracker item for-product-split-prompttext-
+    // storytext-f-yt5kc7, review round 1 fix): edit-text is pre-filled
+    // from dream.storyText||dream.caption (see render() above) — the
+    // PLAIN human sentence, never the chip flow's engineered prompt. A
+    // chip-created dream's real generation prompt (promptText) carries
+    // camera/lighting language (js/wizard-chips.js's inferCamera/
+    // inferLighting — e.g. "aerial wide shot", "hazy ethereal light")
+    // baked directly into its prose with NO separate structured field
+    // preserving it (cameraView is a distinct, independent Advanced-panel
+    // concept the chip flow never populates — see create.html's own
+    // camera-chip section). If this box's current value were always sent
+    // straight to generation, an UNEDITED "Generate Again" would silently
+    // rebuild the prompt from the plain story text alone, permanently
+    // losing that camera/lighting/style language even though the user
+    // changed nothing — a real, unintended change to what a paying user's
+    // regenerate actually produces, not a cosmetic issue.
+    //
+    // Fix: only treat this as a fresh, user-authored description (new
+    // storyText AND new promptText, matching Write-it/Record-it's own
+    // "typed text is both" semantics) when the box's value has ACTUALLY
+    // changed from what it was pre-filled with. An unedited box instead
+    // keeps sending the dream's own existing promptText (its full
+    // engineered prompt, camera/lighting/style intact) to generation —
+    // exactly what an unedited "Generate Again" always produced before
+    // this feature existed — while storyText/the displayed caption still
+    // stay the correct human sentence either way.
+    var originalStoryText = dream.storyText || dream.caption;
+    var textUnchanged = text === originalStoryText;
+    var newPromptText = textUnchanged ? (dream.promptText || dream.caption) : text;
+    var newStoryText = textUnchanged ? originalStoryText : text;
     // sourceImageUrl is explicitly cleared so a stale value from an earlier
     // "Turn this into a video" attempt on a DIFFERENT dream this session
     // can never leak into an unrelated regenerate.
-    DreamStore.setDraft({ caption: text, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
+    DreamStore.setDraft({ caption: newPromptText, storyText: newStoryText, style: style, sourceDreamId: dream.id, restore: false, mediaType: dream.mediaType || 'video', sourceImageUrl: null });
   }
 
   function proceedWithGenerateAgain(){
@@ -1113,7 +1150,7 @@
   function doShare(){
     ShareSheet.show({
       dream: dream,
-      shareText: 'Check out my dream: "' + dream.caption + '" — create your own on DreamTube!',
+      shareText: 'Check out my dream: "' + (dream.storyText || dream.caption) + '" — create your own on DreamTube!',
       onToast: showToast
     });
   }

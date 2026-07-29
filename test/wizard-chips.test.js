@@ -145,3 +145,161 @@ test('style omitted entirely (not explicitly null) still defaults to Cinematic, 
   var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'flying', moodKey: 'dreamy' });
   assert.match(result.caption, /Cinematic style, dreamlike\.$/);
 });
+
+// ── buildDeterministicStory — tracker item split-prompttext-storytext ──
+// The zero-cost, always-available, non-LLM storyText fallback for "chips
+// selected, no free text typed". Must never contain camera/lighting/
+// style language (that's promptText's job, tested above via
+// assembleCaption) and must always read as a plain first-person sentence.
+
+test('deterministic story: subject "none" + defaults reads as a plain first-person sentence with no camera/lighting/style words', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'flying', placeKey: 'sky', moodKey: 'dreamy' });
+  assert.match(story, /^I was flying in an open sky, feeling dreamy and surreal\.$/);
+  assert.doesNotMatch(story, /shot|light|style|dreamlike/i);
+});
+
+test('deterministic story: "a stranger" subject reads "I was a stranger, ..." (spec\'s own worked example shape)', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'stranger', actionKey: 'exploring', placeKey: 'nature', sceneryTime: 'Night', moodKey: 'mysterious'
+  });
+  assert.equal(story, 'I was a stranger, exploring somewhere new in a natural outdoor landscape at night, feeling mysterious.');
+});
+
+test('deterministic story: "someone I know" subject uses the character\'s name', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'someone', character: { name: 'Alex' }, actionKey: 'meeting', placeKey: 'house', moodKey: 'joyful'
+  });
+  assert.equal(story, 'I was with Alex, meeting someone new inside a house, feeling joyful.');
+});
+
+test('deterministic story: "+ Something else" free-text escape hatches are honored for subject/place/action/mood, with a grammatical preposition prepended to a custom place (review finding: was missing "in", producing "...book a floating library")', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjectKey: 'other', subjectOtherText: 'my grandmother',
+    placeKey: 'other', placeOtherText: 'a floating library',
+    actionKey: 'other', actionOtherText: 'reading an impossible book',
+    moodKey: 'other', moodOtherText: 'bittersweet'
+  });
+  assert.equal(story, 'I was my grandmother, reading an impossible book in a floating library, feeling bittersweet.');
+});
+
+test('deterministic story: unset action/mood fall back to the same documented defaults as assembleCaption (Flying, Dreamy/surreal)', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none' });
+  assert.match(story, /^I was flying/);
+  assert.match(story, /dreamy and surreal\.$/);
+});
+
+test('deterministic story: Day/Night scenery adds a plain time clause, no lighting jargon', function () {
+  var day = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'running', placeKey: 'urban', sceneryTime: 'Day', moodKey: 'joyful' });
+  assert.match(day.toLowerCase(), /during the day/);
+  var night = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'running', placeKey: 'urban', sceneryTime: 'Night', moodKey: 'joyful' });
+  assert.match(night.toLowerCase(), /at night/);
+});
+
+test('deterministic story: never throws and always returns a non-empty sentence, even with no input at all', function () {
+  var story = WizardChips.buildDeterministicStory();
+  assert.ok(story.length > 0);
+  assert.match(story, /^I was/);
+});
+
+// ── Research-backed archetype chips — tracker item
+// for-product-quiz-wizard-add-the-scientif-ffgf8l, citing Nielsen/Zadra
+// 2003 (Dreaming 13(4), N=1181, replicated by Schredl 2004). 'chased' and
+// 'falling' were already covered by the pre-existing 'running'/'falling'
+// ACTION_CHIPS entries -- only the remaining five needed new chips.
+
+test('deterministic story: "Back in school, taking a test" (exam) reads as a plain grammatical sentence', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'exam', moodKey: 'tense' });
+  assert.equal(story, 'I was taking an exam I never studied for, back in school, feeling tense.');
+});
+
+test('deterministic story: "Arriving too late" reads as a plain grammatical sentence, with a place appended', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'late', placeKey: 'urban', moodKey: 'tense' });
+  assert.equal(story, 'I was rushing to get somewhere, but arriving too late in a city, feeling tense.');
+});
+
+test('deterministic story: "Trying again and again" reads as a plain grammatical sentence', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'trying', moodKey: 'tense' });
+  assert.equal(story, 'I was trying to do the same thing again and again without success, feeling tense.');
+});
+
+test('deterministic story: "Discovering a new room" reads as a plain grammatical sentence, with a place appended', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'newroom', placeKey: 'house', moodKey: 'mysterious' });
+  assert.equal(story, 'I was discovering a hidden room that was never there before inside a house, feeling mysterious.');
+});
+
+test('deterministic story: "Being a child again" reads as a plain grammatical sentence ("I was a child again," not "I was being")', function () {
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'child', moodKey: 'joyful' });
+  assert.equal(story, 'I was a child again, feeling joyful.');
+});
+
+test('all five new research-backed action chips exist in ACTION_CHIPS with a label and prompt phrase', function () {
+  ['exam', 'late', 'trying', 'newroom', 'child'].forEach(function (key) {
+    var chip = WizardChips.ACTION_CHIPS.filter(function (c) { return c.key === key; })[0];
+    assert.ok(chip, 'expected an ACTION_CHIPS entry for key ' + key);
+    assert.ok(chip.label && chip.label.length > 0);
+    assert.ok(chip.phrase && chip.phrase.length > 0);
+  });
+});
+
+test('assembleCaption produces a sane, non-empty prompt caption for each of the five new action chips', function () {
+  ['exam', 'late', 'trying', 'newroom', 'child'].forEach(function (key) {
+    var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: key, moodKey: 'dreamy', style: 'Cinematic' });
+    assert.match(result.caption, /style, dreamlike\.$/);
+    assert.ok(result.caption.length > 0);
+  });
+});
+
+// ── Review finding: dangling ", in," / ", through," when the Setting/
+// place step is skipped ──
+// The Setting/place step is skippable in both wizard.html (fn-setting-skip)
+// and create.html's "Build it" retrofit (build-setting-skip), leaving
+// placeKey unset and placePhrase === ''. Every ACTION_CHIPS entry whose
+// phrase relied on a trailing preposition to connect to a place that might
+// never come produced a broken caption fragment in that case (e.g.
+// "...taking an exam back in school, in, dreamy..."). Fixed by splitting
+// each such phrase from its connecting preposition (`connector`), only
+// ever appended alongside an actual placePhrase. Covers all affected
+// chips: the pre-existing flying/running/falling/calm/magical/meeting
+// (broken the same way, not introduced by this branch) plus the 5 new
+// exam/late/trying/newroom/child chips this branch added. 'exploring' and
+// 'other' never had a trailing preposition and are intentionally excluded.
+test('assembleCaption: every trailing-preposition action chip reads as a grammatically complete sentence when the place step is skipped entirely (no placeKey at all)', function () {
+  var expectedActionClause = {
+    flying: 'flying,',
+    running: 'running, chasing and being chased,',
+    falling: 'falling,',
+    calm: 'sitting in a calm, still moment,',
+    magical: 'witnessing something magical happen,',
+    meeting: 'meeting someone,',
+    exam: 'taking an exam back in school,',
+    late: 'rushing to get somewhere but arriving too late,',
+    trying: 'trying to do the same thing again and again without success,',
+    newroom: 'discovering a hidden room that was never there before,',
+    child: 'being a child again, playing,'
+  };
+  Object.keys(expectedActionClause).forEach(function (key) {
+    var result = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: key, moodKey: 'dreamy', style: 'Cinematic' });
+    assert.ok(
+      result.caption.indexOf(expectedActionClause[key]) !== -1,
+      key + ': expected to find "' + expectedActionClause[key] + '" in "' + result.caption + '"'
+    );
+    // No dangling connector left stranded right before a comma (the bug:
+    // "...school, in, dreamy..." / "...flying through, dreamy...").
+    assert.doesNotMatch(result.caption, /\b(in|through)\s*,/, key + ': dangling preposition before a comma');
+    // No double-comma artifact from the join either.
+    assert.doesNotMatch(result.caption, /,\s*,/, key + ': double comma');
+  });
+});
+
+test('assembleCaption: with a place chosen, the connector still joins the action phrase to the place phrase correctly (with-place case unaffected by the no-place fix)', function () {
+  // flying+sky is the pre-existing "spec worked example" test above --
+  // this adds direct with-place coverage for a couple of the OTHER
+  // affected chips (an 'in' connector and a 'through' connector).
+  var exam = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'exam', placeKey: 'urban', moodKey: 'dreamy', style: 'Cinematic' });
+  assert.match(exam.caption, /taking an exam back in school in an urban setting,/);
+  assert.doesNotMatch(exam.caption, /,\s*,/);
+
+  var falling = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'falling', placeKey: 'sky', moodKey: 'dreamy', style: 'Cinematic' });
+  assert.match(falling.caption, /falling through an open sky,/);
+  assert.doesNotMatch(falling.caption, /,\s*,/);
+});

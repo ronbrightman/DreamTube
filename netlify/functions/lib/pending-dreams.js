@@ -16,12 +16,22 @@
 //
 // Record shape:
 //   {
-//     id, email, whatsapp (optional), caption, style,
+//     id, email, whatsapp (optional), caption, storyText, style,
 //     characterIdsForGeneration, cameraView, sceneryTime, sceneryPlace,
 //     mediaType: 'video'|'image' (default 'video' — see below),
 //     operationName, status: 'pending'|'ready'|'notified'|'claimed'|'failed',
 //     videoUrl, imageUrl, createdAt, readyAt, notifiedAt, claimedAt, failedReason
 //   }
+//
+// storyText (tracker item for-product-split-prompttext-storytext-
+// f-yt5kc7, additive): the human-readable, first-person dream description
+// wizard.html's own chip flow computes — `caption` keeps its existing
+// meaning unchanged (the full engineered generation prompt). Defaults ''
+// so a record created before this field existed (there are none possible
+// after this ships, but defensively) reads back as an empty string, never
+// undefined — verify-pending-claim.js/claim-dream.html both fall back to
+// `caption` when this is empty, same forward-only-migration shape as
+// js/store.js's dream records.
 //
 // mediaType/imageUrl were added for style.html's image-vs-video picker (see
 // start-pending-generation.js and docs/IMAGE_GENERATION_SPEC.md) — default
@@ -103,6 +113,7 @@ async function create(event, data) {
     email: (data.email || '').trim().toLowerCase(),
     whatsapp: data.whatsapp || null,
     caption: data.caption || '',
+    storyText: data.storyText || '',
     style: data.style || '',
     characterIdsForGeneration: Array.isArray(data.characterIdsForGeneration) ? data.characterIdsForGeneration : [],
     cameraView: data.cameraView || null,

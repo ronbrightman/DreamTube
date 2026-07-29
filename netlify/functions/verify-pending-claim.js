@@ -4,7 +4,11 @@
 // abandoned-dream re-engagement email's link (see
 // lib/pending-dream-token.js, dream-webhook.js's sendReadyEmail) and, if
 // valid, returns the pending dream's public-safe fields for claim-dream.html
-// to render: { caption, style, videoUrl, email, status }. Read-only from
+// to render: { caption, storyText, style, videoUrl, email, status }.
+// storyText (tracker item for-product-split-prompttext-storytext-f-yt5kc7)
+// is the human-readable dream description — claim-dream.html shows this
+// (falling back to caption for a record predating this field), never the
+// engineered promptText/caption. Read-only from
 // the caller's perspective — this does NOT mark anything claimed (see
 // claim-pending-generation.js for that, called separately once the
 // visitor actually finishes signing up on claim-dream.html) and does not
@@ -63,6 +67,7 @@ exports.handler = async function (event) {
         pendingId: record.id,
         email: record.email,
         caption: record.caption,
+        storyText: record.storyText || '',
         style: record.style,
         videoUrl: record.videoUrl,
         status: record.status

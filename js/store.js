@@ -43,6 +43,19 @@
 //   generateVideo(caption,style,opts) -> POST /api/dreams/generate
 //   generateImage(caption,style,opts) -> POST /.netlify/functions/generate-image (cheap
 //       still-image alternative, 10 tokens flat — see docs/IMAGE_GENERATION_SPEC.md)
+//       — `caption` above (both generateVideo/generateImage, and every one of
+//       finalizeDream/startGeneration/regenerateDream/adoptPendingGeneration/
+//       saveClaimedDream below) is, and always was, the full ENGINEERED
+//       generation prompt (promptText) — never altered by this feature.
+//       `opts.storyText`/`patch.storyText` (tracker item for-product-split-
+//       prompttext-storytext-f-yt5kc7) is the NEW, separate human-readable,
+//       first-person dream description shown everywhere a human looks
+//       (result.html/explore.html/share text) and fed to
+//       interpret-dream.js — see finalizeDream's own doc comment for
+//       exactly how the two combine onto a saved dream record, and for the
+//       forward-only fallback (a dream saved before this field existed has
+//       no distinct storyText/promptText at all — its one `caption` keeps
+//       serving both roles, unchanged).
 //   turnImageIntoVideo(dreamId)  -> local write (sets a draft), the "Turn this into a
 //       video" upsell on an image-type dream — see result.html's CTA
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
@@ -135,7 +148,25 @@
       accounts: {}, // lowercased username -> password. Plaintext/local-only: there's no
                      // real backend yet, so this is a placeholder auth model, not
                      // meant to reflect how credentials would be handled for real.
-      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
+      // storyText (tracker item for-product-split-prompttext-storytext-
+      // f-yt5kc7): the human-readable, first-person dream description —
+      // shown on result.html/explore.html/share text and fed to
+      // interpret-dream.js. `caption` keeps its existing meaning
+      // unchanged (the full engineered string sent to generation,
+      // a.k.a. promptText) — see js/store.js's finalizeDream for how the
+      // two combine onto a saved dream record. Defaults '' so every
+      // existing draft-reader that predates this field (there are none
+      // left after this branch, but a browser's already-persisted
+      // localStorage draft from before this shipped effectively gets one
+      // via this seed shape on next load) behaves exactly like an empty
+      // string, never undefined.
+      // needsStoryRewrite: set true only by create.html's/wizard.html's
+      // "chips, no free text typed" path — tells style.html's/wizard.html's
+      // own preview step there's a pending opportunistic LLM story-rewrite
+      // fetch worth attempting (see js/wizard-chips.js's
+      // buildDeterministicStory/netlify/functions/rewrite-dream-story.js's
+      // own header comments) rather than nothing to do.
+      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -558,6 +589,90 @@
     try { localStorage.setItem(FEED_BACKFILL_KEY, '1'); } catch (e) { /* storage unavailable — will just retry next load */ }
   }
 
+  // ---------------------------------------------------------------------
+  // New-likes notification hook (tracker item idea-notify-likes, v1 —
+  // Manager-approved 2026-07-28): aggregate-count-only, no per-liker
+  // identity, no email — see this item's own tracker detail for full scope.
+  //
+  // Likes on a dream are stored server-side on the shared feed record
+  // (netlify/functions/like-dream.js's feed[idx].likes, fetched via
+  // get-feed.js). This account's own published dreams are tracked locally
+  // via getMyDreams()/isPublished, but the LOCAL .likes field only updates
+  // when THIS browser toggles a like itself (toggleSharedLike above) — it
+  // goes stale the moment anyone else likes one of this account's
+  // published dreams. There is no push/poll here (explicitly out of
+  // scope) — refreshNewLikesCount() below is a plain one-shot fetch,
+  // called only from profile.html on page load.
+  //
+  // Two localStorage keys, both plain per-browser state (no server
+  // storage — same posture as dreamtube_claim_sheet_shown_date and every
+  // other soft per-browser UI preference in this file):
+  //   - LIKES_SEEN_KEY: JSON map of { dreamId: lastSeenLikeCount }, this
+  //     account's own "have I already counted these likes" baseline per
+  //     dream. Missing an id (first time it's ever checked) seeds the
+  //     baseline from this browser's own last-known LOCAL like count
+  //     (the dream's .likes field, stale as it may be) rather than 0 or
+  //     the just-fetched current count — 0 would flag every pre-existing
+  //     like as "new" in one big burst, and the current count would make
+  //     delta always compute to 0 on literally every account's first-ever
+  //     check (seeding a baseline from the same fetch it's about to be
+  //     diffed against always yields zero), silently swallowing every
+  //     like accumulated by someone else since this browser last synced —
+  //     including this feature's own rollout day.
+  //   - LIKES_NEW_COUNT_KEY: the single cached integer every bottom-nav
+  //     page (home.html/explore.html/profile.html) reads synchronously,
+  //     with no fetch of its own, to decide whether to show the Profile
+  //     tab's badge dot. It holds whatever refreshNewLikesCount() last
+  //     computed. Visiting profile.html is what "clears" it for next
+  //     time: that visit both shows the current total (this call's
+  //     return value) AND immediately rolls LIKES_SEEN_KEY's baseline
+  //     forward to the current counts, so the NEXT refreshNewLikesCount()
+  //     call (the next profile.html load) naturally computes 0 and
+  //     overwrites LIKES_NEW_COUNT_KEY with it — which is what makes the
+  //     badge disappear on every page from that point on. Between those
+  //     two profile.html visits, the badge stays visible everywhere
+  //     (including a fresh explore.html/home.html load) since the cached
+  //     count hasn't been cleared yet — that's the intended "there's
+  //     something new to see on your profile" signal.
+  var LIKES_SEEN_KEY = 'dreamtube_likes_seen_v1';
+  var LIKES_NEW_COUNT_KEY = 'dreamtube_likes_new_count_v1';
+
+  function readLikesSeenMap() {
+    try {
+      var raw = localStorage.getItem(LIKES_SEEN_KEY);
+      var parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) { return {}; }
+  }
+
+  function writeLikesSeenMap(map) {
+    try { localStorage.setItem(LIKES_SEEN_KEY, JSON.stringify(map)); } catch (e) { /* storage unavailable — best-effort, see doc block above */ }
+  }
+
+  function writeCachedNewLikesCount(n) {
+    try { localStorage.setItem(LIKES_NEW_COUNT_KEY, String(n)); } catch (e) { /* storage unavailable — badge just won't show anywhere, no crash */ }
+  }
+
+  /**
+   * Wipes both likes-tracking keys outright (not "write 0" — an outright
+   * remove so a brand-new identity on this browser starts with no
+   * per-dream seen-baseline either, not just a zeroed badge count).
+   * Called from logout() (a cross-account localStorage leak flagged in
+   * review: a signed-out session must never leave ANY likes-tracking
+   * state around for whoever uses this browser next, same "shared
+   * device, unrelated later visitor"
+   * reasoning as clearPreAccountMarker() above) and, for defense in
+   * depth, from every place a NEW account identity gets written into
+   * state.user (login()'s two success paths, attemptLocalLogin,
+   * commitLocalSignup) — login.html has no guard against submitting the
+   * login/signup form while already signed in as someone else, so a
+   * logout()-only fix would miss that path.
+   */
+  function clearLikesTrackingState() {
+    try { localStorage.removeItem(LIKES_SEEN_KEY); } catch (e) { /* best-effort, see logout()'s own comment */ }
+    try { localStorage.removeItem(LIKES_NEW_COUNT_KEY); } catch (e) { /* best-effort, see logout()'s own comment */ }
+  }
+
   /** The status-polling endpoint for a given mediaType — video-status.js (returns videoUrl) or image-status.js (returns imageUrl). Default 'video' matches every other mediaType default in this file. */
   function statusEndpointFor(mediaType) {
     return mediaType === 'image' ? '/.netlify/functions/image-status' : '/.netlify/functions/video-status';
@@ -671,9 +786,34 @@
    * server-side before a marker is ever honored (see mark-generation-
    * completed.js) — not something an outside caller can target a specific
    * victim account/dream with.
+   *
+   * storyText (tracker item for-product-split-prompttext-storytext-
+   * f-yt5kc7): the human-readable, first-person dream description —
+   * distinct from `caption`, which is (and always was) the full
+   * engineered generation prompt. Falls back to `caption` itself when the
+   * caller doesn't have a distinct one (any caller not yet updated for
+   * this feature, or a resumed pre-existing pendingJob that predates it)
+   * — exactly matching this app's behavior before this field existed,
+   * where the one caption string served both roles. Every field this
+   * function stamps onto the dream reads from THIS resolved value, never
+   * the raw `storyText` argument directly, so a dream saved here is
+   * always internally consistent: `dream.storyText` (the deliberate new
+   * field for anything display/interpretation reads) and `dream.caption`
+   * (kept, unchanged in shape, as the backward-compatible alias every
+   * pre-existing reader in this app already uses — result.html/
+   * explore.html/share text/interpret-dream.js's caller are updated to
+   * prefer storyText explicitly, but nothing else in the app breaks if it
+   * doesn't get updated, since caption already carries the same value)
+   * both equal the same human text; `dream.promptText` carries the full
+   * engineered string that was actually sent to the model. Old dreams
+   * saved before this field existed simply never gained a `promptText`/
+   * distinct `storyText` at all (forward-only migration, per this
+   * tracker item's own explicit instruction) — every reader that falls
+   * back to `dream.caption` already handles that case for free.
    */
-  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName) {
+  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName, storyText) {
     mediaType = mediaType === 'image' ? 'image' : 'video';
+    var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -686,14 +826,18 @@
       // back in the "never generated" state, so result.html shows the
       // plain CTA again and a fresh opt-in tap is required, per the design
       // spec's privacy/data-model section.
-      var patch = { caption: caption, style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null };
+      var patch = {
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
+        style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null
+      };
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
     } else {
       dream = {
         id: newId(),
         ownerHandle: state.user ? state.user.handle : '@you',
-        caption: caption, style: style, mediaType: mediaType,
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
+        style: style, mediaType: mediaType,
         likes: 0, likedByMe: false, isPublished: false,
         videoUrl: mediaType === 'video' ? mediaUrl : null,
         imageUrl: mediaType === 'image' ? mediaUrl : null,
@@ -752,6 +896,18 @@
     // generation never takes a sourceImageUrl (there is no "image-to-image"
     // concept here).
     var sourceImageUrl = (mediaType === 'video' && opts.sourceImageUrl) ? opts.sourceImageUrl : null;
+    // storyText (tracker item for-product-split-prompttext-storytext-
+    // f-yt5kc7) — the human-readable dream description, distinct from
+    // `caption` (the full engineered generation prompt this function's
+    // `caption` argument always was). Never sent to generate-video.js/
+    // generate-image.js (they only ever want the engineered prompt) —
+    // only carried through savePendingJob (so a resumed job keeps it —
+    // see resumePendingJob below) and finalizeDream (so the completed
+    // dream record gets it). A caller that doesn't pass one (any
+    // not-yet-updated call site, or a legacy resumed job) simply gets
+    // finalizeDream's own caption fallback — see that function's doc
+    // comment.
+    var storyText = opts.storyText || null;
     var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
     // Captured once, up front, so the SAME value is used both on the
     // submission request below and later on every status poll (see
@@ -828,7 +984,7 @@
       var startedAt = resume ? resume.startedAt : Date.now();
       savePendingJob({
         operationName: operationName, startedAt: startedAt,
-        caption: caption, style: style, sourceDreamId: sourceDreamId,
+        caption: caption, storyText: storyText, style: style, sourceDreamId: sourceDreamId,
         mediaType: mediaType,
         // Audio/music toggle (tracker item for-product-audio-on-off-
         // choice-at-creat-dyyr98) — stamped onto the job itself (not just
@@ -856,7 +1012,7 @@
       });
       return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
-      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName);
+      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText);
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
       // probing needs a real network round trip to the video itself and
@@ -1241,6 +1397,9 @@
     // more relying on "should be unreachable" reasoning per site, see
     // pinLegacyRenameIdentity's own doc comment.
     username = pinLegacyRenameIdentity(key, username);
+    // Defense in depth — see attemptLocalLogin's identical call and
+    // clearLikesTrackingState's own doc comment.
+    clearLikesTrackingState();
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1319,6 +1478,39 @@
       return { ok: false, superseded: true, error: 'Superseded by a newer signup attempt.' };
     }
     return commitLocalSignup(username, password, email);
+  }
+
+  /**
+   * Bumps signupCallSeq WITHOUT starting a signup() call of its own — the
+   * store-level half of tracker item
+   * js-store-js-signupcallseq-only-invalidat-ijwpht. signupCallSeq (see
+   * its own doc comment above) only ever bumped when a NEW signup() call
+   * actually reached the network, which correctly invalidates an
+   * abandoned attempt's late settlement against a genuinely newer
+   * competing signup() call, but does nothing for the far more common
+   * case: the visitor just navigates away (Back, Change email) and never
+   * resubmits at all. In that case signupCallSeq never bumps again, so
+   * commitLocalSignupIfCurrent's mySeq === signupCallSeq check still
+   * passes once the original call's response lands late, and it silently
+   * commits state.user/state.accounts anyway — even though
+   * wizard.html's/start.html's own UI-level signupAttemptToken guard
+   * correctly kept the visible screen from reacting to it. That UI-level
+   * token only gates what the CALLER does with a stale response (skip
+   * navigating, skip re-rendering); it has no way to reach into the
+   * store and stop the write itself, since commitLocalSignupIfCurrent
+   * runs inside signup(), before any caller callback (or its token
+   * check) ever executes.
+   *
+   * Callable from any UI page the same moment it bumps its own
+   * navigation-away token (wizard.html's/start.html's backBtn handlers,
+   * start.html's Change-email link) — see each call site's own comment.
+   * Synchronous, side-effect-free beyond the counter bump: matches
+   * signupCallSeq's own stated design goal of making signup()'s
+   * commit-guard safe for ANY caller, not just ones that happen to fire
+   * a second signup() call.
+   */
+  function invalidatePendingSignup() {
+    signupCallSeq++;
   }
 
   /** Maps register-account.js's error codes to the exact same human-readable strings signup() has always returned locally, so callers (e.g. start.html's attemptSignup, which string-matches 'That username is already taken.' to retry with a new suffix) don't need to know or care whether the rejection came from the server or a local check. */
@@ -1469,6 +1661,11 @@
     if (account.password !== password) return { ok: false, error: 'Incorrect password.' };
     var username = loggedInViaEmail ? key : usernameOrEmail;
     username = pinLegacyRenameIdentity(key, username);
+    // Defense in depth (see clearLikesTrackingState's own doc comment):
+    // login.html has no guard against submitting the login form while
+    // already signed in as a different account, so this can't rely
+    // solely on logout() having run first.
+    clearLikesTrackingState();
     state.user = { handle: '@' + username, username: username };
     persist();
     identifyForAnalytics(username);
@@ -1663,6 +1860,20 @@
     },
 
     /**
+     * Invalidates any in-flight signup() call without starting a new one
+     * — see invalidatePendingSignup's own doc comment above for the full
+     * "why" (tracker item js-store-js-signupcallseq-only-invalidat-ijwpht).
+     * Call this the same moment a caller bumps its own UI-level
+     * navigation-away token (e.g. wizard.html's/start.html's backBtn
+     * handlers, start.html's Change-email link), so an abandoned signup
+     * attempt's late server response can never silently commit
+     * state.user/state.accounts in the background after the visitor has
+     * already navigated away, even though the visible screen correctly
+     * never reacted to it.
+     */
+    invalidatePendingSignup: invalidatePendingSignup,
+
+    /**
      * Logs in with an existing account, identified by username OR email.
      * Returns a Promise of { ok:true, user } or { ok:false, error }.
      * Checks the real server-side account store first (account-login.js)
@@ -1717,6 +1928,9 @@
             if (data.email) state.accounts[serverUsername].email = data.email.toLowerCase();
           }
           displayUsername = pinLegacyRenameIdentity(serverUsername, displayUsername);
+          // Defense in depth — see attemptLocalLogin's identical call and
+          // clearLikesTrackingState's own doc comment.
+          clearLikesTrackingState();
           state.user = { handle: '@' + displayUsername, username: displayUsername };
           persist();
           identifyForAnalytics(displayUsername);
@@ -1900,7 +2114,17 @@
     // around for whoever uses this device next — see that function's own
     // comment for the full "shared device, unrelated later visitor" bug
     // this closes.
-    logout: function () { state.user = null; clearPreAccountMarker(); persist(); },
+    //
+    // clearLikesTrackingState() (cross-account localStorage leak flagged
+    // in review of the notify-likes-badge branch): same "shared device,
+    // unrelated later visitor" reasoning — a signed-out session must not
+    // leave a stale LIKES_NEW_COUNT_KEY/LIKES_SEEN_KEY around for whoever
+    // logs in next on this browser either. See that function's own
+    // comment for the full repro this closes (an account with zero owned
+    // published dreams could never clear a badge count it never earned,
+    // since refreshNewLikesCount's own early-return used to skip the
+    // write).
+    logout: function () { state.user = null; clearPreAccountMarker(); clearLikesTrackingState(); persist(); },
 
     // state.dreams isn't cleared on logout/login — it's the same array for
     // every account that's ever used this browser — so "mine" has to be
@@ -2030,7 +2254,7 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
@@ -2039,7 +2263,8 @@
         characterIds: opts.characterIds, cameraView: opts.cameraView,
         sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
         turnstileToken: opts.turnstileToken,
-        audioOn: opts.audioOn, musicStyle: opts.musicStyle
+        audioOn: opts.audioOn, musicStyle: opts.musicStyle,
+        storyText: opts.storyText
       });
     },
 
@@ -2086,7 +2311,17 @@
         cameraView: patch.cameraView, sceneryTime: patch.sceneryTime, sceneryPlace: patch.sceneryPlace,
         turnstileToken: patch.turnstileToken,
         mediaType: patch.mediaType, sourceImageUrl: patch.sourceImageUrl,
-        audioOn: true
+        audioOn: true,
+        // See finalizeDream's own doc comment — result.html's Edit Dream
+        // sheet edits the dream's DISPLAYED text (storyText, post-split),
+        // so patch.storyText (set by persistGenerateAgainDraft below)
+        // carries that edited human text through as-is. patch.caption
+        // (the SAME edited text — see persistGenerateAgainDraft) becomes
+        // the new promptText: an edit here has no separate chip-derived
+        // enrichment to re-apply, same "the user's own typed text is both
+        // the story and the prompt" semantics Write-it/Record-it already
+        // have.
+        storyText: patch.storyText
       });
     },
 
@@ -2119,7 +2354,13 @@
       var dream = findDream(dreamId);
       if (!dream || !dream.imageUrl) return false;
       Object.assign(state.draft, {
-        caption: dream.caption, style: dream.style, sourceDreamId: dream.id,
+        // promptText (falling back to caption for a pre-split dream) is
+        // the full engineered prompt — reused as-is so the resulting
+        // video keeps the same content the image was generated from.
+        // storyText (or its own caption fallback) is unchanged by
+        // becoming a video — same dream, same human description.
+        caption: dream.promptText || dream.caption, storyText: dream.storyText || dream.caption,
+        style: dream.style, sourceDreamId: dream.id,
         sourceImageUrl: dream.imageUrl, mediaType: 'video', restore: false
       });
       persist();
@@ -2150,9 +2391,17 @@
      * unchanged and always adopts a video — this parameter exists purely so
      * this method stays consistent with the rest of this file's mediaType
      * plumbing for any future caller of the pending-generation seam.
+     *
+     * storyText (optional 6th arg, tracker item for-product-split-
+     * prompttext-storytext-f-yt5kc7) — wizard.html's own chip-based
+     * pre-signup flow needs the same promptText/storyText split as
+     * create.html's (see that file's own header comment on why it gets
+     * "the same treatment"). Falls back to `caption` when omitted (a
+     * not-yet-updated caller, or a legacy pending job), same fallback
+     * finalizeDream itself applies.
      */
-    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType) {
-      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
+    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType, storyText) {
+      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, storyText: storyText || null, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
     },
 
     /**
@@ -2164,12 +2413,13 @@
      * generateVideo() completion produces, so result.html works unchanged
      * for it.
      */
-    saveClaimedDream: function (caption, style, videoUrl) {
+    saveClaimedDream: function (caption, style, videoUrl, storyText) {
       if (!state.user) return null;
+      var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
       var dream = {
         id: newId(),
         ownerHandle: state.user.handle,
-        caption: caption, style: style, mediaType: 'video',
+        caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText, style: style, mediaType: 'video',
         likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
         videoUrl: videoUrl
       };
@@ -2202,6 +2452,11 @@
         // resolves straight to job.operationName), so there's no live
         // toggle to re-read here, only this job's own already-decided value.
         audioOn: job.audioOn,
+        // Same reasoning as audioOn above — job.storyText is whatever this
+        // job was originally submitted/adopted with (see savePendingJob's
+        // own call sites), re-stamped here rather than left to finalizeDream's
+        // caption fallback just because this is a resume.
+        storyText: job.storyText,
         resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },
@@ -2290,7 +2545,14 @@
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: d.caption, style: d.style })
+        // storyText (tracker item for-product-split-prompttext-storytext-
+        // f-yt5kc7): the interpretation LLM must read the human dream
+        // description, never the chip flow's camera-direction/style-
+        // modifier promptText. d.storyText falls back to d.caption for a
+        // dream saved before this field existed (see finalizeDream's own
+        // doc comment) — behaviorally identical to today for every
+        // existing dream, and correctly storyText-only for every new one.
+        body: JSON.stringify({ caption: d.storyText || d.caption, style: d.style })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
@@ -2367,6 +2629,91 @@
         persist();
         return { likes: data.likes, likedByMe: !currentlyLiked };
       });
+    },
+
+    /**
+     * Synchronous, no-network read of the last total this account's
+     * refreshNewLikesCount() computed — see that function's own doc
+     * block, and the LIKES_NEW_COUNT_KEY comment above it, for the full
+     * "when does this go back to 0" story. This is what every bottom-nav
+     * page (home.html/explore.html/profile.html) calls on load to decide
+     * whether to show the Profile tab's badge dot — cheap enough to call
+     * on every page load, unlike refreshNewLikesCount which hits the
+     * network and is profile.html's job alone.
+     */
+    getCachedNewLikesCount: function () {
+      var raw;
+      try { raw = localStorage.getItem(LIKES_NEW_COUNT_KEY); } catch (e) { return 0; }
+      var n = parseInt(raw, 10);
+      return (isFinite(n) && n > 0) ? n : 0;
+    },
+
+    /**
+     * profile.html's own page-load hook — the ONLY place in the app that
+     * fetches the shared feed to check for new likes on this account's
+     * own published dreams (see the doc block above LIKES_SEEN_KEY for
+     * why: no polling, no push, a plain fetch on profile page load is
+     * enough per this feature's own scope). Resolves to the total new
+     * likes discovered THIS call (summed across every owned published
+     * dream, each floored at 0 so an unlike bringing a count down never
+     * produces a negative contribution) — also persists that total to
+     * LIKES_NEW_COUNT_KEY for every page's badge, and rolls
+     * LIKES_SEEN_KEY's baseline forward to today's counts so a second
+     * call with no further likes correctly resolves to 0.
+     *
+     * Resolves to 0 on a logged-out account, an account with no published
+     * dreams, or any fetch failure — this never throws and never blocks
+     * the rest of profile.html's render. Every one of those 0-resolving
+     * paths, same as the real computed-total success path, ALWAYS calls
+     * writeCachedNewLikesCount (there is no early-return / catch branch
+     * left that resolves without persisting what it resolved to) — this
+     * closes a cross-account localStorage leak flagged in review: an
+     * early return here used to leave a PRIOR account's
+     * stale nonzero LIKES_NEW_COUNT_KEY untouched, so switching to an
+     * account with zero owned dreams could never clear a badge it never
+     * earned, since visiting profile.html — this app's only "clear the
+     * badge" mechanism — took this exact early-return path and skipped
+     * the write.
+     */
+    refreshNewLikesCount: function () {
+      var myHandle = state.user ? state.user.handle : null;
+      var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle && d.isPublished; });
+      if (!mine.length) { writeCachedNewLikesCount(0); return Promise.resolve(0); }
+      return fetch('/.netlify/functions/get-feed')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var feed = (data && data.feed) || [];
+          var feedLikesById = {};
+          feed.forEach(function (f) { feedLikesById[f.id] = f.likes || 0; });
+
+          var seen = readLikesSeenMap();
+          var total = 0;
+          mine.forEach(function (d) {
+            // Fallback to the local (possibly stale) count for a dream
+            // that hasn't synced to the shared feed yet at all — never
+            // treat "not in the feed response" as zero likes.
+            var current = feedLikesById.hasOwnProperty(d.id) ? feedLikesById[d.id] : (d.likes || 0);
+            // No seenMap entry yet (first time this dream is ever checked)?
+            // Seed the baseline from this browser's own last-known LOCAL
+            // like count (d.likes) — the last count this account actually
+            // observed before this feature existed — NOT the current feed
+            // value. Seeding from "current" would make delta always 0 on
+            // literally every account's first-ever check, silently
+            // swallowing every like already accumulated (including this
+            // feature's own rollout day). Seeding from the stale local
+            // count means a dream that picked up likes from other people
+            // while this browser's local record sat stale correctly shows
+            // up as new the first time it's checked, exactly once.
+            var baseline = seen.hasOwnProperty(d.id) ? seen[d.id] : (d.likes || 0);
+            total += Math.max(0, current - baseline);
+            seen[d.id] = current;
+          });
+
+          writeLikesSeenMap(seen);
+          writeCachedNewLikesCount(total);
+          return total;
+        })
+        .catch(function () { writeCachedNewLikesCount(0); return 0; });
     },
 
     reset: function () { state = seed(); persist(); },
