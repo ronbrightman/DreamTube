@@ -370,3 +370,38 @@ test('wizard.html Step 3 on a real mobile viewport: chips and the expander are g
     await context.close();
   }
 });
+
+test('wizard.html + create.html: the "+N more" expander is keyboard-accessible -- Enter and Space each toggle it, matching this codebase\'s existing keydown-synthesizes-click pattern (e.g. start.html)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await reachActionStep(page);
+    await page.locator('#action-more-toggle').focus();
+    await page.keyboard.press('Enter');
+    assert.deepEqual(
+      await page.$$eval('#action-row [data-action]', function (els) { return els.map(function (e) { return e.dataset.action; }); }),
+      EXPANDED_KEYS_ORDER,
+      'Enter on wizard.html\'s #action-more-toggle must expand it, same as a click'
+    );
+    await page.locator('#action-more-toggle').focus();
+    await page.keyboard.press(' ');
+    assert.deepEqual(
+      await page.$$eval('#action-row [data-action]', function (els) { return els.map(function (e) { return e.dataset.action; }); }),
+      DEFAULT_KEYS,
+      'Space on wizard.html\'s #action-more-toggle must collapse it back, same as a click'
+    );
+
+    await safeGoto(page, baseUrl + '/login.html');
+    await reachBuildActionStep(page);
+    await page.locator('#build-action-more-toggle').focus();
+    await page.keyboard.press('Enter');
+    assert.deepEqual(
+      await page.$$eval('#build-action-row [data-build-action]', function (els) { return els.map(function (e) { return e.dataset.buildAction; }); }),
+      EXPANDED_KEYS_ORDER,
+      'Enter on create.html\'s #build-action-more-toggle must expand it too'
+    );
+  } finally {
+    await page.close();
+  }
+});
