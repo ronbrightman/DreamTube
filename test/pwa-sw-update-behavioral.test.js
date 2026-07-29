@@ -14,6 +14,11 @@
 //      contenteditable), and fires once that stops.
 //   3. A registration `controllerchange` (a genuinely new service worker
 //      taking control) also triggers exactly one reload, same typing guard.
+//   4. Review round 1 finding, fixed: create.html's Record mode (a plain
+//      button, not a focused text input, so the typing guard alone never
+//      saw it) is now covered too, via js/pwa.js's registerBusyCheck()
+//      hook — a backgrounded tab mid-recording must not get force-reloaded
+//      through it, silently losing the in-progress audio.
 //
 // Testing note, two real gotchas hit and confirmed via throwaway debug
 // scripts before landing on this approach (not theoretical):
@@ -294,6 +299,74 @@ test('a controllerchange event (a new service worker taking control) triggers ex
     await page.waitForTimeout(300); // let a wrongly-firing second reload request show up if it exists
 
     assert.equal(reloadCounter.count, 1, 'expected exactly one reload total across two back-to-back controllerchange events (one-shot guard)');
+  } finally {
+    await context.close();
+  }
+});
+
+/** Installs a minimal fake navigator.mediaDevices.getUserMedia + window.MediaRecorder before any page script runs, so create.html's real startRecordingUI() can run end to end without touching a real microphone. Identical to test/create-record-inapp-webview-guard-behavioral.test.js's own helper of the same name/shape (mirrors test/record-mode-behavioral.test.js's original) -- duplicated per this repo's own established convention of each behavioral test file owning its own copy of small fixtures like this rather than sharing one across files. */
+async function installMediaRecorderMock(context) {
+  await context.addInitScript(function () {
+    var fakeStream = { getTracks: function () { return []; } };
+    if (!navigator.mediaDevices) navigator.mediaDevices = {};
+    navigator.mediaDevices.getUserMedia = function () { return Promise.resolve(fakeStream); };
+    function FakeMediaRecorder(stream, opts) {
+      this.stream = stream;
+      this.state = 'inactive';
+      this.mimeType = (opts && opts.mimeType) || 'audio/webm';
+      this._listeners = {};
+    }
+    FakeMediaRecorder.prototype.addEventListener = function (evt, cb) {
+      this._listeners[evt] = this._listeners[evt] || [];
+      this._listeners[evt].push(cb);
+    };
+    FakeMediaRecorder.prototype.start = function () { this.state = 'recording'; };
+    FakeMediaRecorder.prototype.stop = function () {
+      this.state = 'inactive';
+      (this._listeners.stop || []).forEach(function (cb) { cb(); });
+    };
+    FakeMediaRecorder.isTypeSupported = function () { return true; };
+    window.MediaRecorder = FakeMediaRecorder;
+  });
+}
+
+test('review round 1 fix: a tab hidden past the stale threshold mid-recording on create.html defers the reload until the recording stops, never losing it silently', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await shrinkStaleThreshold(page, 50);
+    var username = 'swrecording' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username);
+
+    // ?record=1 auto-triggers startRecordingUI() on load (same deep-link
+    // convention test/create-record-inapp-webview-guard-behavioral.test.js
+    // exercises) -- a normal browser UA (this context's default) calls the
+    // mocked getUserMedia/MediaRecorder for real, no manual click needed.
+    await safeGoto(page, baseUrl + '/create.html?record=1');
+    await waitForSwWired(page);
+    var reloadCounter = trackReloadAttempts(page, baseUrl + '/create.html?record=1');
+
+    // startRecordingUI() only flips #create-record to display:flex AFTER
+    // mediaRecorder.start() has already run, so waiting for this is a
+    // reliable proxy for "recording has genuinely started."
+    await page.waitForFunction(function () {
+      var el = document.getElementById('create-record');
+      return !!(el && getComputedStyle(el).display === 'flex');
+    }, null, { timeout: 5000 });
+
+    await simulateHiddenThenVisible(page, 150); // past the 50ms threshold
+
+    await page.waitForTimeout(300);
+    assert.equal(reloadCounter.count, 0, 'must not reload out from under an in-progress recording, even though nothing is focused as a text input');
+
+    // Stop the recording (real #stop-record click, same as a real user) --
+    // the deferred reload should fire once the busy check goes false.
+    await page.click('#stop-record');
+    var calls = await waitForCount(reloadCounter, 3000);
+    assert.equal(calls, 1, 'expected the deferred reload to fire once the recording stopped');
   } finally {
     await context.close();
   }

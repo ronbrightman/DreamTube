@@ -747,6 +747,23 @@
   var playbackAudio = new Audio();
   var playbackObjectUrl = null;
 
+  // Tracker item for-product-urgent-founder-gets-stale-pa-6dn54z, review
+  // round 1 finding: js/pwa.js's stale-tab reload guard only knew about
+  // focused text inputs, not an in-progress Record-mode recording (audio
+  // held only in the in-memory recordedChunks array above until stopped +
+  // transcribed) -- a backgrounded tab mid-recording would have been
+  // silently force-reloaded through it. registerBusyCheck() is js/pwa.js's
+  // own generic hook for exactly this ("is this page doing something a
+  // reload would destroy right now") -- see that file's header comment
+  // above registerServiceWorker(). js/pwa.js always loads before this
+  // page's own inline script (see CLAUDE.md's script-order convention),
+  // so PwaInstall already exists here.
+  if(window.PwaInstall && typeof PwaInstall.registerBusyCheck === 'function'){
+    PwaInstall.registerBusyCheck(function(){
+      return !!(mediaRecorder && mediaRecorder.state === 'recording');
+    });
+  }
+
   var selectEl = document.getElementById('create-select');
   var writeEl = document.getElementById('create-write');
   var recordEl = document.getElementById('create-record');

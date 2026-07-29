@@ -166,7 +166,51 @@ window.PwaInstall = (function () {
   // tab becomes visible again after sitting hidden for a while — the one
   // moment guaranteed to fire (visibilitychange) even when no navigation
   // ever happens on its own.
+  //
+  // Review round 1 finding, fixed: the typing guard below originally only
+  // checked document.activeElement, missing create.html's Record mode
+  // entirely -- a plain button starts navigator.mediaDevices.getUserMedia
+  // + MediaRecorder there, with the in-progress audio held ONLY in an
+  // in-memory recordedChunks array (never persisted to state.draft/
+  // localStorage until the user stops and it's transcribed), and nothing
+  // on that page paused/stopped the recorder on visibilitychange. A tab
+  // backgrounded mid-recording would have force-reloaded straight through
+  // it, silently losing the recording -- the exact same class of data
+  // loss the typing guard already existed to prevent, just for a third
+  // input modality (write/build/record) on the same page this file had no
+  // visibility into. Fixed via registerBusyCheck() below: a small
+  // registry any page can push an "am I busy right now" predicate into,
+  // rather than hardcoding create.html-specific knowledge into this file
+  // (no existing cross-file "is something busy" convention was found
+  // elsewhere in this codebase to reuse instead — checked first).
+  //
+  // Review round 1 non-blocking note, acknowledged rather than fixed:
+  // result.html/explore.html each have their own visibilitychange
+  // listener that smoothly resumes paused video/audio playback on
+  // foreground; this file's own visibilitychange listener (registered
+  // first, per this app's store.js-then-pwa.js-then-page-script load
+  // order) can force a reload before that resume logic runs, abruptly
+  // restarting playback rather than resuming it. Accepted tradeoff, not
+  // fixed here: clips are short (4-8s) and this only happens at all once
+  // a tab has already sat hidden past the 30-minute threshold, at which
+  // point getting the tab onto the current deploy outweighs a few
+  // seconds of restarted-instead-of-resumed playback.
   // ==========================================================================
+
+  /**
+   * A small registry any page can push an "am I busy right now" check
+   * into, so reloadWhenSafe() below can defer for a page-specific reason
+   * this file has no built-in knowledge of (e.g. create.html's Record
+   * mode — see header comment) without hardcoding that page's internals
+   * here. Each registered function is called defensively (never allowed
+   * to throw out into the caller) and OR'd together — busy if ANY of them
+   * say so. Deliberately not gated behind anything test-only: any real
+   * page is free to call this today, not just tests.
+   */
+  var busyChecks = [];
+  function registerBusyCheck(fn) {
+    if (typeof fn === 'function') busyChecks.push(fn);
+  }
 
   /** How long a tab must have been hidden before becoming visible again is treated as "possibly stale, worth a real reload" — short backgrounding (switching apps for a few seconds, an incoming call) shouldn't force a reload of a page someone is actively using; the founder's reported gap was measured in hours, not seconds. Overridable by test/pwa-sw-update-behavioral.test.js via window.__TEST_PWA_OVERRIDES__.hiddenStaleThresholdMs, same override-object convention js/purchase-sheet.js's pollForCredit already uses for its own real-but-slow timing. */
   var HIDDEN_STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
@@ -176,7 +220,7 @@ window.PwaInstall = (function () {
     return typeof overrides.hiddenStaleThresholdMs === 'number' ? overrides.hiddenStaleThresholdMs : HIDDEN_STALE_THRESHOLD_MS;
   }
 
-  /** True while the user looks to be actively entering text right now — the one case worth deferring an otherwise-safe reload for for-product-urgent-founder-gets-stale-pa-6dn54z's fix (a hard reload mid-typing on create.html/wizard.html would silently drop unsaved draft text). Deliberately generic (checks the focused element, not any one page's specific state) so this file doesn't need per-page knowledge of every form. */
+  /** True while the user looks to be actively entering text right now — one of two things worth deferring an otherwise-safe reload for (see isPageBusy() below). Deliberately generic (checks the focused element, not any one page's specific state) so this file doesn't need per-page knowledge of every form. */
   function isEditingSomething() {
     try {
       var el = document.activeElement;
@@ -188,25 +232,39 @@ window.PwaInstall = (function () {
     }
   }
 
+  /** True if this page is busy in ANY way worth deferring an otherwise-safe reload for right now — actively being typed into (isEditingSomething), or busy per any page-registered registerBusyCheck() predicate (e.g. create.html's Record mode). Each registered check is called defensively; one throwing must never block the others or crash the caller. */
+  function isPageBusy() {
+    if (isEditingSomething()) return true;
+    for (var i = 0; i < busyChecks.length; i++) {
+      try {
+        if (busyChecks[i]()) return true;
+      } catch (e) { /* a broken registered check must never block a real reload */ }
+    }
+    return false;
+  }
+
   var reloadOnceGuard = false;
+  var reloadRetryListenersAttached = false; // dedupes the visibilitychange/focusout pair below across repeated deferred attempts -- see reloadWhenSafe()
 
   /**
    * Reloads the page exactly once (module-level guard — both callers below
    * share it, since controllerchange can in principle fire more than once
    * across a page's lifetime and both triggers ultimately want the same
-   * "get this tab onto the current deploy" outcome). Never interrupts
-   * someone actively typing: if isEditingSomething() is true right now,
-   * defers and re-checks on the next visibilitychange or focusout, rather
-   * than force-reloading straight through a draft in create.html/wizard.html.
-   * Every other page (including processing.html's generation wait) is safe
-   * to reload outright — generation state is already persisted server-side
-   * / in state.pendingJob (see js/store.js), not held only in memory.
+   * "get this tab onto the current deploy" outcome). Never interrupts a
+   * busy page (isPageBusy() above — actively typing, or a registered
+   * page-specific busy check): defers and re-checks on the next
+   * visibilitychange or focusout, rather than force-reloading straight
+   * through a draft in create.html/wizard.html or an in-progress Record
+   * mode recording. Every other page (including processing.html's
+   * generation wait) is safe to reload outright — generation state is
+   * already persisted server-side / in state.pendingJob (see js/store.js),
+   * not held only in memory.
    */
   function reloadWhenSafe() {
     if (reloadOnceGuard) return;
     function attempt() {
       if (reloadOnceGuard) return;
-      if (isEditingSomething()) return; // still typing -- wait for the next signal
+      if (isPageBusy()) return; // still busy -- wait for the next signal, listeners below already cover the retry
       reloadOnceGuard = true;
       document.removeEventListener('visibilitychange', attempt);
       document.removeEventListener('focusout', attempt);
@@ -214,8 +272,17 @@ window.PwaInstall = (function () {
         location.reload();
       } catch (e) { /* must never throw out of an event handler */ }
     }
-    document.addEventListener('visibilitychange', attempt);
-    document.addEventListener('focusout', attempt);
+    // Attached at most once per page load, even across multiple deferred
+    // attempts (e.g. two separate hidden->visible cycles while the same
+    // draft/recording is still in progress) -- a second reloadWhenSafe()
+    // call while one is already pending would otherwise stack a redundant,
+    // never-cleaned-up listener pair each time (harmless in practice since
+    // reloadOnceGuard still caps it to one real reload, but needless).
+    if (!reloadRetryListenersAttached) {
+      reloadRetryListenersAttached = true;
+      document.addEventListener('visibilitychange', attempt);
+      document.addEventListener('focusout', attempt);
+    }
     attempt();
   }
 
@@ -332,6 +399,7 @@ window.PwaInstall = (function () {
     promptInstall: promptInstall,
     isStandalone: isStandalone,
     isIOS: isIOS,
+    registerBusyCheck: registerBusyCheck,
     __swListenersReady: swListenersReady
   };
 })();
