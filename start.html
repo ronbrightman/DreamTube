@@ -84,8 +84,11 @@
   what structurally has to run in DreamTube's own origin: Advanced
   (characters/camera/scenery — formerly one screen 9, now split into three
   separate funnel screens, one per section — see below), the "coming
-  together" transition (screen 11), signup, pricing, and confirmation
-  (screens 13-15). Two reasons those couldn't move:
+  together" transition (screen 11), signup, and pricing+confirmation
+  (screens 13-14 — the former standalone confirmation screen 15 was folded
+  into 14, see renderScreen14's own comment, tracker item
+  for-product-funnel-handoff-screens-theme-5ttymn). Two reasons those
+  couldn't move:
    1. Signup DOES make a network call now — DreamStore.signup() checks/
       creates the account server-side first (register-account.js, the
       authoritative cross-device uniqueness check), then mirrors it into
@@ -216,6 +219,12 @@
        this outer half until now. */
     height:100dvh;
   }
+  /* Flat white CTA instead of the default pastel --fn-accent-grad button --
+     reads as intentional/high-contrast against the near-black 'night'
+     background. Used to apply only to the old standalone confirmation
+     screen; now also covers screen 13 (signup) and the merged screen 14,
+     since PHASE_BY_STEP points both at 'night' as of the theme-whiplash
+     fix (tracker item for-product-funnel-handoff-screens-theme-5ttymn). */
   #app.funnel-app.fn-phase-night .fn-btn-primary{ background:#fff; color:#221d2c; box-shadow:none;}
 
   .fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
@@ -271,14 +280,24 @@
   #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
   #app.funnel-app .btn-secondary:hover{ background:#F3F1FA; border-color:var(--fn-ink-faint);}
 
-  textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
+  /* color/placeholder/toggle-icon below are phase-aware (var(--phase-ink/
+     faint, ...), not the hardcoded light-theme --fn-ink/-faint tokens) —
+     required as of the theme-whiplash fix (tracker item
+     for-product-funnel-handoff-screens-theme-5ttymn): screen 13's real
+     email/password inputs now render on the 'night' phase (dark,
+     near-transparent --phase-card), so text hardcoded to the light-phase
+     dark ink color would be unreadable against it. Every phase this file
+     defines still resolves correctly: dawn/transition (dark ink) render
+     dark text on a solid-white card exactly as before; night (white ink)
+     now renders white text on its dark translucent card. */
+  textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--phase-ink, var(--fn-ink)); font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
-  textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
+  textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--phase-faint, var(--fn-ink-faint));}
   textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
 
   .fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
   .fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
-  .fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--fn-ink-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--phase-faint, var(--fn-ink-faint)); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .fn-field-pw-toggle svg, .fn-field-pw-toggle .icon{ width:18px; height:18px;}
 
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
@@ -559,11 +578,20 @@
   // fix corrected a real contrast bug, but by giving the app-dark path its
   // own background rather than removing it) — so 'dawn' now runs through
   // the exact same explicit phase-application path as every other screen.
+  //
+  // 'dusk'/'dusk-deep' (the two intermediate, progressively-lighter-purple
+  // phases that used to sit between 'transition' and 'night') were removed
+  // here (tracker item for-product-funnel-handoff-screens-theme-5ttymn) —
+  // they were the founder-reported "theme whiplash" bug: solid-white/
+  // near-white cards over a light lavender gradient, on the two most
+  // important conversion screens (signup, value/pricing), sandwiched
+  // between the dark marketing funnel before and this app's own dark theme
+  // after. PHASE_BY_STEP below now points those screens straight at
+  // 'night' instead — see its own comment for why reassigning was the
+  // safer fix over recoloring these two keys in place.
   var PHASES = {
     'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#E9EAF5 55%,#E3E9F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
     'transition':{ grad:'linear-gradient(160deg,#DCDCF0,#D0D5EE 55%,#C2D3EC)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
-    'dusk':      { grad:'linear-gradient(160deg,#9B95CE,#7B8CC0 55%,#6478AE)', ink:'#191735', soft:'#EDEBF7', faint:'#C6C2E3', card:'#FFFFFF', line:'rgba(255,255,255,0.22)' },
-    'dusk-deep': { grad:'linear-gradient(160deg,#6E67AE,#4F5F96 55%,#3D4E82)', ink:'#FFFFFF', soft:'#E2E0F2', faint:'#B4B2D6', card:'rgba(255,255,255,0.95)', line:'rgba(255,255,255,0.2)' },
     'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
   // TAGS and PHASE_BY_STEP are built alongside SCREEN_RENDERERS, further
@@ -1729,9 +1757,28 @@
     'Watch dreams of other people': "Yours — and everyone else's — waiting to be seen.",
     'Share with friends': 'Dreams worth sharing.'
   };
+  // Folded in from the former standalone screen 15 (tracker item
+  // for-product-funnel-handoff-screens-theme-5ttymn): founder walked the
+  // live funnel in the FB webview and called that separate confirmation
+  // screen redundant, verbatim: "the dark one at the end which is
+  // redundant so if anything needed there then merge it with the
+  // previous one." The "you're in" confirmation beat (record-mode-aware,
+  // bug fix tracker item for-product-bug-founder-high-record-it-f-8ng0nf
+  // — Build/Write visitors already have a real generation in flight, see
+  // getOrStartPendingGeneration above, but Record-it visitors haven't
+  // recorded anything yet, so their copy points at recording instead of
+  // claiming a dream already exists) now closes THIS screen instead of
+  // being its own step, and this is now the funnel's LAST screen — its
+  // button fires completeFunnel() directly (see below), same as the old
+  // screen 15's button did. One less step in the funnel; see
+  // SCREEN_RENDERERS/TAGS/PHASE_BY_STEP below for the matching array
+  // update (all three shrank by one entry, in lock step).
   function renderScreen14(el){
     var primaryMotivation = quiz.motivations[0] || null;
     var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
+    var confirmHeadline = isRecordMode ? "You're in. Let’s record your dream." : "You're in. Building your first dream now.";
+    var confirmBody = isRecordMode ? 'Next: tap record and tell us about it — DreamTube will bring it to life.' : 'This is DreamTube — quiet and dark, like the room you just woke up in.';
+    var btnLabel = isRecordMode ? 'Start recording' : 'Watch it happen';
 
     el.innerHTML =
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
@@ -1743,8 +1790,12 @@
         '<div class="title">Free to start</div>' +
         '<div class="body">220 tokens on signup, no card needed — enough for a couple of free videos.</div>' +
       '</div>' +
+      '<div style="height:22px;"></div>' +
+      '<div class="fn-check-badge">&#10003;</div>' +
+      '<div class="fn-headline" style="text-align:center; font-size:19px;">' + confirmHeadline + '</div>' +
+      '<div class="fn-body-copy" style="text-align:center;">' + confirmBody + '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s14-continue" type="button">Continue</button>';
+      '<button class="fn-btn-primary" id="fn-s14-continue" type="button">' + btnLabel + '</button>';
 
     document.getElementById('fn-s14-continue').addEventListener('click', proceedPastPricing);
   }
@@ -1755,41 +1806,20 @@
   // free-earned (see the doc block above renderScreen14), so this is just
   // the screen's "acknowledge and continue" action, kept as its own named
   // function (rather than inlined into the click listener) purely so the
-  // tracking call below has one obvious home.
+  // tracking call below has one obvious home. Now that the former screen
+  // 15 has been folded into screen 14 (see that function's own comment),
+  // this is the funnel's final action — it fires completeFunnel() directly
+  // instead of next()'ing into a since-removed screen 15.
   function proceedPastPricing(){
     // Renamed from the old funnel_pricing_bypassed (there's no plan to
     // record anymore, and "bypassed" implied skipping a real paywall,
-    // which this screen no longer is).
+    // which this screen no longer is). Kept as its own event (rather than
+    // folded into funnel_completed below) so existing PostHog funnels/
+    // dashboards built on this event name keep working unchanged.
     track('funnel_token_intro_continued', { step: 14 });
-    next();
+    completeFunnel();
   }
 
-  // ===================================================================
-  // Screen 15 — Confirmation, then real handoff to processing.html
-  // (or, in Record mode, to create.html's Record UI -- see
-  // completeFunnel below). Record-mode-aware (bug fix, tracker item
-  // for-product-bug-founder-high-record-it-f-8ng0nf): the default copy
-  // ("Building your first dream now") is honest for Build/Write
-  // visitors, whose real generation is already in flight (see
-  // getOrStartPendingGeneration above) -- but false for Record-it
-  // visitors, for whom nothing has been recorded or built yet at this
-  // point; that's the very next step, on create.html. Record mode's
-  // copy points at recording instead of claiming a dream is already
-  // being made.
-  // ===================================================================
-  function renderScreen15(el){
-    var headline = isRecordMode ? "You're in. Let’s record your dream." : "You're in. Building your first dream now.";
-    var body = isRecordMode ? 'Next: tap record and tell us about it — DreamTube will bring it to life.' : 'This is DreamTube — quiet and dark, like the room you just woke up in.';
-    var btnLabel = isRecordMode ? 'Start recording' : 'Watch it happen';
-    el.innerHTML =
-      '<div class="fn-spacer"></div>' +
-      '<div class="fn-check-badge">&#10003;</div>' +
-      '<div class="fn-headline" style="text-align:center; color:#fff; font-size:23px;">' + headline + '</div>' +
-      '<div class="fn-body-copy" style="text-align:center; color:rgba(255,255,255,.7);">' + body + '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s15-continue" type="button">' + btnLabel + '</button>';
-    document.getElementById('fn-s15-continue').addEventListener('click', completeFunnel);
-  }
   function completeFunnel(){
     track('funnel_completed', {
       style: chosenStyle,
@@ -1842,16 +1872,36 @@
   // wiring are left fully intact below (see the "PARKED" comments on
   // each) for when they get folded into the wizard proper later — just
   // omitted from the arrays that actually drive navigation.
+  //
+  // The former screen 15 (standalone confirmation) is gone — folded into
+  // renderScreen14 (tracker item
+  // for-product-funnel-handoff-screens-theme-5ttymn, see that function's
+  // own comment) — so every array below is one entry shorter than it used
+  // to be. The 'pricing' tag is renamed 'pricing_confirmation' since that
+  // screen's content is no longer just the token-intro pitch. PHASE_BY_STEP
+  // now points screen 13 (signup) and the merged screen 14 straight at
+  // 'night' instead of the old 'dusk'/'dusk-deep' entries: those two were
+  // a real, founder-reported "theme whiplash" bug — solid-white/near-white
+  // cards over a light lavender gradient, sandwiched between the dark
+  // marketing funnel before and this app's own dark theme after (compare
+  // home.html's body gradient, #171233→#100d20→#0d0a1e, near-identical to
+  // 'night' below). Reassigning to the existing, already-correct 'night'
+  // phase — rather than recoloring the 'dusk'/'dusk-deep' PHASES entries
+  // in place — was the safer fix: confirmed via grep that those two keys
+  // were referenced nowhere else in this file, so repointing here cannot
+  // affect any other caller, and it reuses colors already proven correct
+  // instead of inventing new ones. The now-fully-unused 'dusk'/'dusk-deep'
+  // entries have been removed from the PHASES map itself, below.
   var showCharsScreen = captionSuggestsPeople(captionText);
   var SCREEN_RENDERERS = showCharsScreen
-    ? [renderScreenAdvChars, renderScreen11, renderScreen13, renderScreen14, renderScreen15]
-    : [renderScreen11, renderScreen13, renderScreen14, renderScreen15];
+    ? [renderScreenAdvChars, renderScreen11, renderScreen13, renderScreen14]
+    : [renderScreen11, renderScreen13, renderScreen14];
   var TAGS = showCharsScreen
-    ? ['advanced_characters', 'preparing', 'email_capture', 'pricing', 'confirmation']
-    : ['preparing', 'email_capture', 'pricing', 'confirmation'];
+    ? ['advanced_characters', 'preparing', 'email_capture', 'pricing_confirmation']
+    : ['preparing', 'email_capture', 'pricing_confirmation'];
   var PHASE_BY_STEP = showCharsScreen
-    ? ['dawn', 'transition', 'dusk', 'dusk-deep', 'night']
-    : ['transition', 'dusk', 'dusk-deep', 'night'];
+    ? ['dawn', 'transition', 'night', 'night']
+    : ['transition', 'night', 'night'];
   // Skip handler on the (now sole, when shown) Advanced screen jumps
   // straight to the "preparing" transition screen (renderScreen11) —
   // looked up dynamically here instead of a hardcoded index, since that
