@@ -151,7 +151,7 @@ function readPostHogCalls(page) {
 // 1. Visual aid — problem 1 (unclear guidance)
 // ===================================================================
 
-test('install nudge (iOS Safari): real visual aid (the app\'s share icon in a toolbar mock) + explicit scroll-down guidance + a softened, non-promising note', async function (t) {
+test('install nudge (iOS Safari): real visual aid matching Safari\'s actual toolbar (back / address bar / ••• More button, not a direct Share icon) + a Share menu-row + explicit scroll-down guidance + a softened, non-promising note', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -164,16 +164,34 @@ test('install nudge (iOS Safari): real visual aid (the app\'s share icon in a to
     await safeGoto(page, baseUrl + '/profile.html'); // 2nd visit -- the repeat-visit trigger
     await page.waitForSelector('#install-nudge-card', { state: 'visible', timeout: 5000 });
 
-    // A real SVG icon (the app's existing shareIos glyph), not just emoji/text.
-    var svgCount = await page.locator('.install-nudge-toolbar-share svg').count();
-    assert.equal(svgCount, 1, 'expected a real inline SVG share icon inside the toolbar mock');
+    // A real SVG "•••" (More) icon inside the toolbar mock -- Safari's
+    // actual bottom toolbar (per the founder's own screenshot correction)
+    // has no direct Share icon at all, only this More button at the
+    // bottom-right, which opens a menu with Share as its first item.
+    var moreSvgCount = await page.locator('.install-nudge-toolbar-more svg').count();
+    assert.equal(moreSvgCount, 1, 'expected a real inline SVG ••• (More) icon inside the toolbar mock, matching the actual Safari toolbar');
 
-    var bodyText = await page.textContent('#install-nudge-card .install-nudge-body');
+    // The toolbar mock itself must also show a back chevron and an
+    // address-bar pill, matching the real screenshot's layout.
+    assert.equal(await page.locator('.install-nudge-toolbar-back').count(), 1);
+    assert.equal(await page.locator('.install-nudge-toolbar-url').count(), 1);
+
+    // A second visual -- the small "Share" menu row that appears once the
+    // More button is tapped -- must also be present, with the app's real
+    // shareIos SVG icon (not just text).
+    var menuRows = page.locator('#install-nudge-card .install-nudge-menurow');
+    assert.equal(await menuRows.count(), 2, 'expected two menu-row visuals: the intermediate Share row, then Add to Home Screen');
+    var shareRowText = await menuRows.nth(0).textContent();
+    assert.match(shareRowText, /^Share$/i, 'the first menu-row visual must be the Share step, not skip straight to Add to Home Screen');
+    var shareRowSvgCount = await menuRows.nth(0).locator('svg').count();
+    assert.equal(shareRowSvgCount, 1, 'the Share row must carry a real inline SVG icon');
+
+    var bodyText = await page.textContent('#install-nudge-card');
     assert.match(bodyText, /scroll down/i, 'must explicitly say to scroll down in the share sheet');
-    assert.match(bodyText, /bottom-center/i, 'must describe roughly where the icon lives');
+    assert.match(bodyText, /bottom-right/i, 'must describe roughly where the More button lives (bottom-right, per the founder\'s screenshot -- not the previous, incorrect bottom-center claim)');
 
-    var menuRowText = await page.textContent('#install-nudge-card .install-nudge-menurow');
-    assert.match(menuRowText, /Add to Home Screen/i);
+    var addToHomeRowText = await menuRows.nth(1).textContent();
+    assert.match(addToHomeRowText, /Add to Home Screen/i);
 
     var noteText = await page.textContent('#install-nudge-card .install-nudge-note');
     assert.match(noteText, /can vary/i, 'must never flatly promise the option will be there -- problem 2\'s softened-copy requirement');
@@ -442,8 +460,8 @@ test('push wait-screen: iOS real-browser-tab (PushManager absent, not standalone
 
     await page.click('#push-ask-install-cta');
     await page.waitForSelector('#push-ask-install-guidance', { state: 'visible', timeout: 5000 });
-    var guidanceSvgCount = await page.locator('#push-ask-install-guidance .install-nudge-toolbar-share svg').count();
-    assert.equal(guidanceSvgCount, 1, 'expected the SAME shared iOS guidance (share icon + copy) to expand in place');
+    var guidanceSvgCount = await page.locator('#push-ask-install-guidance .install-nudge-toolbar-more svg').count();
+    assert.equal(guidanceSvgCount, 1, 'expected the SAME shared iOS guidance (the toolbar mock\'s ••• More icon + copy) to expand in place');
 
     var tappedNames = capturedEventNames(await readPostHogCalls(page));
     assert.ok(tappedNames.indexOf('push_fallback_install_cta_tapped') !== -1, 'expected push_fallback_install_cta_tapped to fire on tap');

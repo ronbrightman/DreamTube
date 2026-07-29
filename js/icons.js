@@ -116,6 +116,16 @@
     // currentColor/stroke-only convention as every other entry here.
     shareIos: svg('<path d="M12 15V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
 
+    // Added for the A2HS install-guidance rewrite (tracker item
+    // for-product-a2hs-install-nudge-3-founder-vcofk7, founder screenshot
+    // correction 2026-07-29): current Safari on iOS puts a "•••" (More)
+    // button at the bottom-right of its toolbar rather than a direct
+    // Share glyph — tapping it opens a small menu with Share as the top
+    // item. No existing icon in this file matched this "more/overflow"
+    // convention, confirmed by grep, so this is a new addition — same
+    // 24x24/currentColor/stroke-only convention as every other entry here.
+    moreHoriz: svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>'),
+
     // Added for the in-app-browser nudge card's non-Android "Copy link for
     // your browser" button (processing.html) — on iOS there is no
     // programmatic way to escape a webview, so the button's action became

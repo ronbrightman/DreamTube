@@ -37,12 +37,21 @@
 // 3-founder-vcofk7) =====
 // Three founder-found problems with a real Safari test, fixed here:
 //   1. UNCLEAR GUIDANCE — "tap the Share icon" text alone wasn't enough,
-//      even on real Safari. Fixed with a real visual aid (buildIOSGuidance-
-//      Html below: the app's existing Icons.shareIos glyph rendered inside
-//      a small toolbar mock, CSS/SVG-only, no image asset) plus explicit
-//      "scroll down" guidance — the founder's own screenshot suggested the
-//      missing option was most likely below the fold in the real share
-//      sheet, not actually absent.
+//      even on real Safari. FOLLOW-UP CORRECTION (same day, real founder
+//      screenshots of his actual device): current Safari on iOS does NOT
+//      show a direct Share icon in its bottom toolbar at all — the real
+//      toolbar is back-chevron / address-bar-pill / a "•••" (More) button
+//      at the bottom-RIGHT, and tapping that opens a small menu with
+//      Share as its own first item, which THEN opens the real share
+//      sheet. The first version of buildIOSGuidanceHtml below (a share
+//      icon centered in the toolbar, "usually bottom-center") matched
+//      neither of those screenshots — rebuilt directly from them: the
+//      toolbar mock now shows the real back/url/••• layout with the •••
+//      button highlighted, followed by a small "Share" menu-row visual
+//      (the actual popup menu's first item) BEFORE the existing "Add to
+//      Home Screen" row visual, plus explicit "scroll down" guidance —
+//      the founder's own screenshot confirmed the missing option was
+//      below the fold in the real share sheet, not actually absent.
 //   2. MISSING OPTION — there's no JS-observable API into Safari's actual
 //      share-sheet contents, so the fix is (a) keep hasSomethingToOffer/
 //      shouldConsiderShowing below as tight as they can practically be
@@ -114,40 +123,51 @@ window.InstallNudge = (function () {
   }
 
   /**
-   * The shared iOS visual-aid + copy block — a real rendering of the
-   * app's existing Icons.shareIos glyph (the same iOS-style share icon
-   * already used by result.html's topbar Share button, not a new
-   * invention) inside a small mock toolbar bar, so it reads as "here's
-   * roughly where this lives" rather than a bare icon floating with no
-   * context. CSS/SVG only, no image/canvas payload, matching this app's
-   * "keep it light for webview" principle. Reused by THREE callers: this
-   * module's own render() below, home.html's persistent journey-card
-   * sheet, and js/push-subscribe.js's iOS-browser-tab push fallback (see
-   * that file's own header comment) — one visual language for "how to add
-   * to your home screen" everywhere it's explained, not three copies.
-   * Deliberately never promises the "Add to Home Screen" row will be
-   * exactly there (problem 2 above) — "usually looks like," "can vary."
+   * The shared iOS visual-aid + copy block — rebuilt directly from the
+   * founder's own real-device screenshots (see this file's 2026-07-29
+   * revision note above): a mock of Safari's ACTUAL bottom toolbar (back
+   * chevron / address-bar pill / a highlighted "•••" More button at the
+   * bottom-right — Icons.moreHoriz, not a direct share icon), then a
+   * small "Share" menu-row visual (Icons.shareIos, the same glyph already
+   * used by result.html's topbar Share button — reused, not reinvented)
+   * depicting the popup menu's own first item, THEN the existing "Add to
+   * Home Screen" row visual. Three real visuals in sequence, matching the
+   * three real screens a visitor actually walks through, not one bare
+   * icon floating with no context. CSS/SVG only, no image/canvas payload,
+   * matching this app's "keep it light for webview" principle. Reused by
+   * THREE callers: this module's own render() below, home.html's
+   * persistent journey-card sheet, and js/push-subscribe.js's
+   * iOS-browser-tab push fallback (see that file's own header comment) —
+   * one visual language for "how to add to your home screen" everywhere
+   * it's explained, not three copies. Deliberately never promises the
+   * "Add to Home Screen" row will be exactly there (problem 2 above) —
+   * "usually looks like," "can vary."
    */
   function buildIOSGuidanceHtml() {
+    var backIcon = window.Icons ? Icons.back : '‹';
+    var moreIcon = window.Icons ? Icons.moreHoriz : '•••';
     var shareIcon = window.Icons ? Icons.shareIos : '';
     var plusIcon = window.Icons ? Icons.plus : '+';
     return (
       '<div class="install-nudge-visual" aria-hidden="true">' +
         '<div class="install-nudge-toolbar">' +
-          '<span class="install-nudge-toolbar-dot"></span>' +
-          '<span class="install-nudge-toolbar-dot"></span>' +
-          '<span class="install-nudge-toolbar-share">' + shareIcon + '</span>' +
-          '<span class="install-nudge-toolbar-dot"></span>' +
-          '<span class="install-nudge-toolbar-dot"></span>' +
+          '<span class="install-nudge-toolbar-back">' + backIcon + '</span>' +
+          '<span class="install-nudge-toolbar-url">dreamtube1.netlify.app</span>' +
+          '<span class="install-nudge-toolbar-more">' + moreIcon + '</span>' +
         '</div>' +
-        '<div class="install-nudge-toolbar-arrow">▲ Share icon</div>' +
+        '<div class="install-nudge-toolbar-arrow">▲ Tap here (bottom-right)</div>' +
       '</div>' +
-      '<div class="install-nudge-body">Tap the Share icon — usually at the <b>bottom-center</b> of your screen in Safari (shown above; other browsers put it in their own menu). Then <b>scroll down</b> the list that opens — “Add to Home Screen” is often further down than it looks. It usually looks like this:</div>' +
+      '<div class="install-nudge-body">Tap the <b>••• (More)</b> button — usually at the <b>bottom-right</b> of your screen in Safari (shown above; some browsers show a direct Share icon instead of this menu).</div>' +
+      '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
+        '<span class="menu-row-replica-icon">' + shareIcon + '</span>' +
+        '<span class="menu-row-replica-label">Share</span>' +
+      '</div>' +
+      '<div class="install-nudge-body">Tap <b>Share</b>, then <b>scroll down</b> the list that opens — “Add to Home Screen” is often further down than it looks. It usually looks like this:</div>' +
       '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
         '<span class="menu-row-replica-icon">' + plusIcon + '</span>' +
         '<span class="menu-row-replica-label">Add to Home Screen</span>' +
       '</div>' +
-      '<div class="install-nudge-note">Exact wording and position can vary by browser.</div>'
+      '<div class="install-nudge-note">Exact wording, icon, and position can vary by browser.</div>'
     );
   }
 
