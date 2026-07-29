@@ -19,6 +19,26 @@
 //      saw it) is now covered too, via js/pwa.js's registerBusyCheck()
 //      hook — a backgrounded tab mid-recording must not get force-reloaded
 //      through it, silently losing the in-progress audio.
+//   5. Review round 2 finding, fixed: a deferred reload used to only ever
+//      get re-checked on visibilitychange/focusout — but WebKit (Safari,
+//      the exact platform this whole bug is about) deliberately does not
+//      focus a <button> on click the way Chromium does, so create.html's
+//      #stop-record handler (which never focuses/blurs anything itself)
+//      produced no focusout at all there, and a reload deferred during
+//      recording could sit deferred indefinitely after it safely stopped.
+//      PwaInstall.recheckBusy() lets create.html force a recheck directly
+//      off the real mediaRecorder.state transition instead. IMPORTANT
+//      HONESTY NOTE: this test suite has no WebKit target configured
+//      anywhere (confirmed via grep — Chromium only), so nothing here can
+//      literally reproduce Safari's click-doesn't-focus behavior. The test
+//      below instead uses a synthetic dispatchEvent('click') (verified,
+//      inline, NOT to focus the button even in Chromium — confirmed via a
+//      throwaway debug script before writing this) to structurally
+//      reproduce "the button's click handler ran, with nothing ever
+//      focused/blurred," and asserts recheckBusy() alone — not any
+//      incidental focus event — is what unblocks the deferred reload.
+//      This proves the fix's actual mechanism, not the real Safari
+//      scenario itself; said explicitly rather than overclaiming.
 //
 // Testing note, two real gotchas hit and confirmed via throwaway debug
 // scripts before landing on this approach (not theoretical):
@@ -362,11 +382,69 @@ test('review round 1 fix: a tab hidden past the stale threshold mid-recording on
     await page.waitForTimeout(300);
     assert.equal(reloadCounter.count, 0, 'must not reload out from under an in-progress recording, even though nothing is focused as a text input');
 
-    // Stop the recording (real #stop-record click, same as a real user) --
-    // the deferred reload should fire once the busy check goes false.
+    // Stop the recording via a real Playwright pointer click on
+    // #stop-record, same as a real user tap. NOTE: in Chromium (this
+    // suite's only engine) a real pointer click like this ALSO focuses the
+    // button, which produces a focusout once #create-record is hidden --
+    // so on its own this test doesn't distinguish "recheckBusy() unblocked
+    // it" from "the incidental focusout did." See the next test below,
+    // which isolates recheckBusy() specifically (review round 2 finding).
     await page.click('#stop-record');
     var calls = await waitForCount(reloadCounter, 3000);
     assert.equal(calls, 1, 'expected the deferred reload to fire once the recording stopped');
+  } finally {
+    await context.close();
+  }
+});
+
+test('review round 2 fix: the deferred reload still fires after a recording stops via PwaInstall.recheckBusy() alone, with NO focus/blur event involved at all (the WebKit/Safari gap — button click never focuses there)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await shrinkStaleThreshold(page, 50);
+    var username = 'swrecheck' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username);
+
+    await safeGoto(page, baseUrl + '/create.html?record=1');
+    await waitForSwWired(page);
+    var reloadCounter = trackReloadAttempts(page, baseUrl + '/create.html?record=1');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('create-record');
+      return !!(el && getComputedStyle(el).display === 'flex');
+    }, null, { timeout: 5000 });
+    // Start from a clean "nothing focused" state, matching what Safari's
+    // never-focuses-on-click behavior would leave in place.
+    await page.evaluate(function () { document.activeElement && document.activeElement.blur(); });
+
+    await simulateHiddenThenVisible(page, 150); // past the 50ms threshold
+    await page.waitForTimeout(300);
+    assert.equal(reloadCounter.count, 0, 'must not reload out from under an in-progress recording');
+
+    // Trigger #stop-record's click handler via a SYNTHETIC dispatchEvent,
+    // not a real Playwright pointer click -- verified directly (throwaway
+    // debug script, prior to writing this test) that this does NOT focus
+    // the element in Chromium, unlike page.click()/el.click(). This is
+    // what lets a Chromium-only suite structurally exercise "the button's
+    // own click handler ran, with no focus/blur ever produced" -- the
+    // real shape of the WebKit/Safari gap this fix closes -- without
+    // being able to run against actual WebKit. The focus check happens in
+    // the SAME evaluate() call as the dispatch itself -- recheckBusy()
+    // reloads synchronously inside that same click handler once the busy
+    // check clears, so a separate later evaluate() call would race the
+    // navigation that destroys this execution context (confirmed: it did,
+    // on the first version of this test).
+    var focusedId = await page.evaluate(function () {
+      document.getElementById('stop-record').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return document.activeElement && document.activeElement.id;
+    });
+    assert.notEqual(focusedId, 'stop-record', 'sanity check: this dispatch must NOT have focused the button, or this test would not actually isolate recheckBusy()');
+
+    var calls = await waitForCount(reloadCounter, 3000);
+    assert.equal(calls, 1, 'expected the deferred reload to fire via recheckBusy() alone, with no focus/blur event involved');
   } finally {
     await context.close();
   }

@@ -1591,6 +1591,23 @@
       reviewContinue.textContent = 'Continue';
       reviewEl.style.display = 'flex';
       heading.textContent = 'Review your recording';
+
+      // Tracker item for-product-urgent-founder-gets-stale-pa-6dn54z,
+      // review round 2 finding: js/pwa.js's stale-tab reload guard used to
+      // rely ONLY on a visibilitychange/focusout firing to re-check after
+      // a deferred reload -- but this handler never focuses/blurs
+      // anything, and WebKit (Safari, the exact platform this whole bug
+      // is about) deliberately does not give a <button> focus on click
+      // the way Chromium does, so hiding #create-record just above
+      // produces no focusout at all on Safari. mediaRecorder.state has
+      // already genuinely flipped to 'inactive' by this point (the actual
+      // state transition PwaInstall's registered busy check cares about --
+      // see the registerBusyCheck() call above), so tell it to recheck
+      // right now instead of depending on that incidental focus side
+      // effect Safari doesn't reliably produce.
+      if(window.PwaInstall && typeof PwaInstall.recheckBusy === 'function'){
+        PwaInstall.recheckBusy();
+      }
     }, { once: true });
     mediaRecorder.stop();
   });

@@ -195,6 +195,26 @@ window.PwaInstall = (function () {
   // a tab has already sat hidden past the 30-minute threshold, at which
   // point getting the tab onto the current deploy outweighs a few
   // seconds of restarted-instead-of-resumed playback.
+  //
+  // Review round 2 finding, fixed: round 1's fix deferred a reload while
+  // Record mode was busy, but the ONLY recheck triggers were
+  // visibilitychange/focusout — and create.html's #stop-record handler
+  // never focuses/blurs anything itself. WebKit (Safari, the exact
+  // platform this whole bug is about) deliberately does not give a
+  // <button> focus on click the way Chromium does, so hiding
+  // #create-record after a recording stops produces no focusout at all on
+  // Safari — a reload deferred during recording could sit deferred
+  // indefinitely after it safely stopped. Fixed via recheckBusy() below:
+  // create.html now calls it directly the moment mediaRecorder.state
+  // genuinely flips to 'inactive', driven by the real state transition
+  // that matters rather than an incidental focus side effect Safari
+  // doesn't reliably produce. NOTE ON TEST COVERAGE: this file's test
+  // suite only runs against Chromium (no WebKit engine is configured
+  // anywhere in test/ — checked), and Chromium DOES focus a <button> on
+  // click, so no test here can actually reproduce the Safari-specific gap
+  // itself; the regression test added for this fix instead exercises
+  // recheckBusy() directly (simulating "recording stopped, nothing
+  // focused/blurred") rather than claiming to prove the real Safari case.
   // ==========================================================================
 
   /**
@@ -244,7 +264,27 @@ window.PwaInstall = (function () {
   }
 
   var reloadOnceGuard = false;
-  var reloadRetryListenersAttached = false; // dedupes the visibilitychange/focusout pair below across repeated deferred attempts -- see reloadWhenSafe()
+  var reloadDeferredPending = false; // true once reloadWhenSafe() has been called at least once and is still waiting on a busy page -- see attempt()/recheckBusy() below
+
+  /**
+   * Shared by reloadWhenSafe() and recheckBusy() below — re-checks
+   * isPageBusy() and reloads if it's now false, no-ops otherwise. Guarded
+   * by reloadDeferredPending so a recheckBusy() call is a safe no-op
+   * unless reloadWhenSafe() has actually been called at least once (a page
+   * that never had a reload requested shouldn't have one forced into
+   * existence just because something called "recheck now").
+   */
+  function attempt() {
+    if (reloadOnceGuard) return;
+    if (!reloadDeferredPending) return;
+    if (isPageBusy()) return; // still busy -- wait for the next signal (visibilitychange/focusout, or an explicit recheckBusy() call)
+    reloadOnceGuard = true;
+    document.removeEventListener('visibilitychange', attempt);
+    document.removeEventListener('focusout', attempt);
+    try {
+      location.reload();
+    } catch (e) { /* must never throw out of an event handler */ }
+  }
 
   /**
    * Reloads the page exactly once (module-level guard — both callers below
@@ -253,36 +293,53 @@ window.PwaInstall = (function () {
    * "get this tab onto the current deploy" outcome). Never interrupts a
    * busy page (isPageBusy() above — actively typing, or a registered
    * page-specific busy check): defers and re-checks on the next
-   * visibilitychange or focusout, rather than force-reloading straight
-   * through a draft in create.html/wizard.html or an in-progress Record
-   * mode recording. Every other page (including processing.html's
-   * generation wait) is safe to reload outright — generation state is
-   * already persisted server-side / in state.pendingJob (see js/store.js),
-   * not held only in memory.
+   * visibilitychange, focusout, or explicit recheckBusy() call, rather
+   * than force-reloading straight through a draft in create.html/
+   * wizard.html or an in-progress Record mode recording. Every other page
+   * (including processing.html's generation wait) is safe to reload
+   * outright — generation state is already persisted server-side / in
+   * state.pendingJob (see js/store.js), not held only in memory.
+   *
+   * Review round 2 finding, fixed: this used to rely ONLY on
+   * visibilitychange/focusout to re-check after a deferred reload — but
+   * create.html's #stop-record click handler never focuses/blurs anything
+   * itself, and WebKit (Safari, the exact platform this whole bug is
+   * about) deliberately does NOT give a <button> focus on click/tap the
+   * way Chromium does, so hiding #create-record after a recording stops
+   * produced no focusout on Safari at all. A reload deferred during
+   * recording could sit deferred indefinitely after it safely stopped,
+   * until some unrelated later event happened to trigger a recheck.
+   * create.html now calls PwaInstall.recheckBusy() directly from the
+   * moment mediaRecorder.state genuinely flips to 'inactive' (the actual
+   * state transition that matters), rather than depending on an
+   * incidental focus-event side effect Safari doesn't reliably produce.
    */
   function reloadWhenSafe() {
     if (reloadOnceGuard) return;
-    function attempt() {
-      if (reloadOnceGuard) return;
-      if (isPageBusy()) return; // still busy -- wait for the next signal, listeners below already cover the retry
-      reloadOnceGuard = true;
-      document.removeEventListener('visibilitychange', attempt);
-      document.removeEventListener('focusout', attempt);
-      try {
-        location.reload();
-      } catch (e) { /* must never throw out of an event handler */ }
-    }
     // Attached at most once per page load, even across multiple deferred
     // attempts (e.g. two separate hidden->visible cycles while the same
     // draft/recording is still in progress) -- a second reloadWhenSafe()
     // call while one is already pending would otherwise stack a redundant,
     // never-cleaned-up listener pair each time (harmless in practice since
     // reloadOnceGuard still caps it to one real reload, but needless).
-    if (!reloadRetryListenersAttached) {
-      reloadRetryListenersAttached = true;
+    if (!reloadDeferredPending) {
+      reloadDeferredPending = true;
       document.addEventListener('visibilitychange', attempt);
       document.addEventListener('focusout', attempt);
     }
+    attempt();
+  }
+
+  /**
+   * Lets a page tell js/pwa.js "something that might have been blocking a
+   * deferred reload just changed, recheck now" — the fix for the
+   * WebKit/Safari focus gap documented on reloadWhenSafe() above. A safe
+   * no-op if no reload was ever actually deferred (reloadDeferredPending
+   * false) or one already happened (reloadOnceGuard true), so any page is
+   * free to call this defensively/speculatively without risk of forcing a
+   * reload into existence that was never otherwise requested.
+   */
+  function recheckBusy() {
     attempt();
   }
 
@@ -400,6 +457,7 @@ window.PwaInstall = (function () {
     isStandalone: isStandalone,
     isIOS: isIOS,
     registerBusyCheck: registerBusyCheck,
+    recheckBusy: recheckBusy,
     __swListenersReady: swListenersReady
   };
 })();
