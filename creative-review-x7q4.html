@@ -1,27 +1,31 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Review — UGC/POV round 2</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Review — model face-off + round 3</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <!--
   TEMPORARY founder-only review page (unlinked, obscure URL — same
-  security model as tracker.html). Hosted here because the dedicated
-  creative-review Netlify site can only be redeployed with the founder's
-  Netlify token, which lives in the growth session, not the Manager
-  session that ran this round. Round 1's four base clips were reviewed
-  2026-07-29 (decisions captured on the tracker) — this is the v2
-  iteration built on those remarks. UGC-1's captioned final is hosted
-  same-origin (creative-review-x7q4-ugc1.mp4); the raw clips stream from
-  fal's CDN and expire ~7 days after generation (~2026-08-04/05).
-  DELETE THIS FILE + the mp4 once the round is decided — tracked on the
-  "creative awaiting your review" tracker item.
+  security model as tracker.html). Round 1 (2026-07-28 bases) and
+  round 2 (v2 iteration) were reviewed and failed on execution;
+  decisions are on the tracker. This is round 3: the Kling-vs-Seedance
+  model face-off the founder asked for ("maybe switch a video model"),
+  plus the round regenerated on the adherence winner (Seedance 2.0).
+  All clips stream from fal's CDN and expire ~7 days after generation
+  (~2026-08-05). DELETE THIS FILE once the round closes — tracked on
+  the "creative awaiting your review" tracker item.
 -->
 <style>
 :root{--bg:#0c0a1a;--raise:#151228;--ink:#eae7fb;--soft:#a49dc4;--line:#272144;--acc:#9d90ff;--accs:#201c3d;--ok:#4bd39b;--warn:#e0aa5a;--err:#ef6a6a}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5}
 .wrap{max-width:1180px;margin:0 auto;padding:clamp(18px,4vw,44px)}
 .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);font-weight:600;margin:0 0 10px}
-h1{font-size:clamp(24px,5vw,38px);margin:0 0 10px;letter-spacing:-.02em}.lede{color:var(--soft);margin:0 0 24px;max-width:64ch}
+h1{font-size:clamp(24px,5vw,38px);margin:0 0 10px;letter-spacing:-.02em}.lede{color:var(--soft);margin:0 0 8px;max-width:64ch}
+h2{font-size:17px;color:var(--warn);margin:30px 0 6px;letter-spacing:.01em}
+.secnote{color:var(--soft);font-size:13px;margin:0 0 14px;max-width:72ch}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
 .card{background:var(--raise);border:2px solid var(--warn);box-shadow:0 0 0 3px rgba(224,170,90,.16);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;margin:0}
+.card.dual{grid-column:span 2}
+@media (max-width:620px){.card.dual{grid-column:span 1}}
 .feedback-pill{background:var(--warn);color:#2a1c04;font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;padding:8px 10px;text-align:center}
+.videos.dual{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.vwrap{background:#000;display:flex;flex-direction:column}
 .soundlabel{font-size:11px;font-weight:700;color:var(--acc);background:var(--accs);padding:5px 9px;text-align:center}
 .card video{width:100%;aspect-ratio:9/16;max-height:380px;background:#000;object-fit:contain;display:block}
 figcaption{padding:13px 15px 15px;display:flex;flex-direction:column;gap:8px}
@@ -38,71 +42,98 @@ textarea.remark:focus{outline:2px solid var(--acc);border-color:var(--acc)}
 .save-status{font-size:12.5px;color:var(--soft)}
 .save-status.ok{color:var(--ok);font-weight:600}
 .save-status.err{color:var(--err);font-weight:600}
-.pendingbox{background:var(--raise);border:1px dashed var(--line);border-radius:14px;padding:13px 15px;font-size:13px;color:var(--soft);margin-top:18px;max-width:64ch}
+.decision{background:#1a1712;border:2px solid var(--warn);border-radius:14px;padding:15px;margin-top:20px}
+.decision h2{margin:0 0 6px}
 footer{margin-top:38px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--soft);max-width:78ch}
 </style></head><body>
-<div class="wrap"><p class="eyebrow">DreamTube · Growth · Creative Review — round 2 (your remarks applied)</p>
-<h1>UGC + POV, v2 <span style="font-size:.55em;color:var(--soft);font-weight:500">2026-07-29</span></h1>
-<p class="lede">Built from your 4 remarks. UGC-1 is now the <b>full-length captioned candidate</b> (~29s, what would actually run). POV-2 (underwater) was dropped per your call — the two new POV clips are built on the <b>scientifically most common dream archetypes</b> (being chased #1 at 81.5%, falling #3 at 73.8% — Nielsen/Zadra 2003, N=1181; your instinct was right, underwater isn't in the list). Write remarks and hit <b>Save</b> — posts straight to the tracker.</p>
+<div class="wrap"><p class="eyebrow">DreamTube · Growth · Creative Review — model face-off + round 3</p>
+<h1>Pick the model, then judge the clips <span style="font-size:.55em;color:var(--soft);font-weight:500">2026-07-29, overnight</span></h1>
+<p class="lede">You said "maybe switch a video model" — here's the evidence. Two challengers ran the two most execution-sensitive briefs against a numbered beat checklist (a clip passes only if every action visibly happens, in order). <b>Seedance 2.0 won on strict adherence, 11.5/12 vs Kling's 10.5/12 — but Kling is ~2.2× cheaper, 1080p, and brighter.</b> The rest of the round was regenerated on Seedance. Sound up for the UGC clips.</p>
+
+<h2>1 · The face-off — same brief, two models, side by side</h2>
+<p class="secnote">Left = Kling v3 Pro, right = Seedance 2.0 on each pair. Both fixed the "walks into the door" failure completely (7/7 beats each on the door sequence). The fall brief split them: Kling drifted into third-person ("nothing is falling" territory again), Seedance holds a true first-person fall but starts in the sky instead of an ordinary bedroom.</p>
 <div class="grid">
 
-<figure class="card" data-creative="UGC-1 v2">
- <div class="feedback-pill">⚠ Full-length final — needs your OK</div>
- <div class="soundlabel">🔊 Sound ON · ~29s · captions burned in</div>
- <video controls preload="metadata" playsinline src="creative-review-x7q4-ugc1.mp4"></video>
- <figcaption><span class="id">UGC-1 v2 · morning reveal — captioned final</span>
- <p class="hook">“I typed in last night’s dream…” → CTA “Turn your dreams into real videos.”</p>
- <p class="concept">Full arc: reveal → the phone fills the frame → we dive inside the dream → ends on scenery. Lead re-staged in hard shadow/flare so the face reads no specific ethnicity.</p>
- <p class="note"><b>Two honest caveats:</b> (1) the face is heavily obscured but not a 100% featureless silhouette — you judge if it passes the rule; (2) Veo insists on rendering a phone status bar (time text) despite prompting — say if it bothers you.</p>
+<figure class="card dual" data-creative="FACEOFF-POV1">
+ <div class="feedback-pill">⚠ Door sequence — Kling 7/7 · Seedance 7/7</div>
+ <div class="videos dual">
+  <div class="vwrap"><div class="soundlabel">Kling v3 Pro · 15s single take · $1.68 · 1080p</div><video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42068/jNzhziADdxYWfP1WK42Kx_output.mp4"></video></div>
+  <div class="vwrap"><div class="soundlabel">Seedance 2.0 · 15s single take · ~$4.55 · 720p</div><video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42086/kFJEUUYrDigitH5ZG_ciB_video.mp4"></video></div>
+ </div>
+ <figcaption><span class="id">POV-1 · wake → hand opens the door → dream world through the doorway</span>
+ <p class="concept">Both: duvet-view wake, feet to floor, walk to a CLOSED ordinary door, hand grips the handle, door visibly swings open, the dream appears only beyond the doorway, and we step through. One continuous generation — no seams.</p>
+ <p class="note">Kling is brighter with a cleaner grade; Seedance moodier. Both fixed your complaint fully.</p>
  <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for UGC-1 v2 here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-1 v2 — full-length captioned final (morning reveal)">Save</button><span class="save-status"></span></div>
+ <textarea class="remark" placeholder="Compare the two POV-1s here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="FACE-OFF POV-1 (Kling vs Seedance)">Save</button><span class="save-status"></span></div>
  </figcaption></figure>
 
-<figure class="card" data-creative="POV-1 v2">
- <div class="feedback-pill">⚠ Needs your feedback</div>
- <div class="soundlabel">🔇 Silent base · ~15s — music added after keep</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa41c25/X9dnh0EYShkuUfmxitcEp_6f3d5667dde14c129e87dbd60f8d7225.mp4"></video>
- <figcaption><span class="id">POV-1 v2 · wake → door into the dream</span>
- <p class="hook">“POV: you’re back inside last night’s dream”</p>
- <p class="concept">Exactly your sequence: waking in bed (duvet/feet visible) → sitting up → feet to the floor → walking to an ordinary bedroom door → it opens into a moonlit impossible dream world.</p>
- <p class="note">Veo Fast. The bedroom anchor is now unmistakable.</p>
+<figure class="card dual" data-creative="FACEOFF-FALL">
+ <div class="feedback-pill">⚠ Falling — Kling 3.5/5 · Seedance 4.5/5</div>
+ <div class="videos dual">
+  <div class="vwrap"><div class="soundlabel">Kling v3 Pro · 8s · $0.90 — went THIRD-person</div><video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa4209b/kczMAMpbNbEMt9U_68oMP_output.mp4"></video></div>
+  <div class="vwrap"><div class="soundlabel">Seedance 2.0 · 8s · ~$2.43 — true POV fall</div><video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa420c2/kbkEwixSq1ZM4MHbcwfS2_video.mp4"></video></div>
+ </div>
+ <figcaption><span class="id">POV-FALL · “that dream where you’re falling” (#3 archetype, 73.8%)</span>
+ <p class="concept">Kling: falling clearly happens (bed dissolves, drop toward city lights) but it shows the sleeper — third person, not through your eyes. Seedance: verified first-person fall — clouds stream upward past the camera, city lights close in, then a soft floating deceleration.</p>
+ <p class="note"><b>Seedance's one miss:</b> the bed starts already floating in the sky — no ordinary-bedroom starting anchor.</p>
  <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-1 v2 here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-1 v2 — wake-to-door POV sequence">Save</button><span class="save-status"></span></div>
+ <textarea class="remark" placeholder="Compare the two falls here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="FACE-OFF POV-FALL (Kling vs Seedance)">Save</button><span class="save-status"></span></div>
  </figcaption></figure>
-
-<figure class="card" data-creative="POV-CHASE">
- <div class="feedback-pill">⚠ Needs your feedback</div>
- <div class="soundlabel">🔇 Silent base · LITE model — #1 archetype (81.5%)</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa41c40/ieybLvNetiU0EB-GxDP5__4581078596074eb481165231df617ab8.mp4"></video>
- <figcaption><span class="id">POV-CHASE · “that dream where you’re being chased”</span>
- <p class="hook">“That dream where you’re being chased”</p>
- <p class="concept">The single most common dream (81.5% of people). Ordinary hallway stretches, heavy dream-run, a distant figure — then bursting out into radiant light. Also matches a quiz chip 1:1.</p>
- <p class="note"><b>Tone caveat:</b> the figure rendered darker/more ominous than briefed — judge whether the tension works or reads too scary for an ad.</p>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-CHASE here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-CHASE — being chased archetype (#1, 81.5%)">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-
-<figure class="card" data-creative="POV-FALL">
- <div class="feedback-pill">⚠ Needs your feedback</div>
- <div class="soundlabel">🔇 Silent base · LITE model — #3 archetype (73.8%)</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa41c2b/2grn7yFFV4Uyq6V_hJakI_e6a901ae9d344bb7a6592fdd9e240895.mp4"></video>
- <figcaption><span class="id">POV-FALL · “that dream where you’re falling”</span>
- <p class="hook">“That dream where you’re falling”</p>
- <p class="concept">Falling — the #3 most common dream (73.8%). Moonlit bed anchor → the mattress dissolves → a safe, weightless fall through night clouds over city lights.</p>
- <p class="note">Judge whether the fall reads clearly in motion.</p>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-FALL here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-FALL — falling archetype (#3, 73.8%)">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-
 </div>
 
-<div class="pendingbox">⏳ <b>UGC-2 v2 (friend reaction) is NOT here yet.</b> The over-the-shoulder regen still produced the impossible screen geometry (plus identifiable leads), so it failed verification and wasn't brought to you. It's queued for tomorrow's cap with the stronger fix: reaction-only shot, then a hard cut to a full-frame insert of the dream video — the screen never appears inside the character shot at all.</div>
+<div class="decision">
+<h2 style="color:#f0d9a8">⭐ The model decision (yours)</h2>
+<p class="secnote" style="margin-bottom:8px"><b>Seedance</b>: best instruction-following (11.5/12), ~$2.43 per 8s clip. <b>Kling</b>: very close (10.5/12, its only real miss was the third-person fall), ~$0.90–1.34 per 8s, 1080p, brighter look, and an ordered-shots API mode we haven't even used yet. Both speak dialogue. Both max 15s per clip — neither can extend to ~29s like Veo, so long cuts would be stitched in editing. Or: keep Veo and accept more retries. Write your pick (or "show me more first"):</p>
+ <textarea class="remark" placeholder="e.g. 'Go Seedance', 'Go Kling', 'Kling for silent POVs, Seedance for UGC', 'stay on Veo'…"></textarea>
+ <div class="saverow" style="margin-top:8px"><button type="button" class="savebtn" data-comment-label="MODEL DECISION">Save</button><span class="save-status"></span></div>
+</div>
 
-<footer>Nothing here has been uploaded to Meta — that stays founder-gated, plus a compliance pass. The fal-hosted clips expire around <b>2026-08-04</b>; keepers get re-hosted in the caption/music pass. Full archetype research (top 22, cited) is in the brief file on the branch and will also feed the product quiz. This page is temporary and will be removed once the round is decided.</footer></div>
+<h2>2 · The round, regenerated on Seedance (the adherence winner)</h2>
+<p class="secnote">All three verified against their beat checklists frame-by-frame before being shown. Honest caveats on each card.</p>
+<div class="grid">
+
+<figure class="card" data-creative="POV-CHASE-S">
+ <div class="feedback-pill">⚠ Needs your feedback · 5.5/6 beats</div>
+ <div class="soundlabel">🔇 Silent base · Seedance · ~$2.43</div>
+ <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa420dd/vcb6DDZor_eRwZYPIRNAq_video.mp4"></video>
+ <figcaption><span class="id">POV-CHASE v2 · “that dream where you’re being chased” (#1, 81.5%)</span>
+ <p class="concept">Your tone complaint fixed: bright/warm throughout, the pursuer is a radiant golden light-figure (zero horror), running POV, blazing door, burst into sunrise over clouds.</p>
+ <p class="note"><b>One partial:</b> mid-clip the glowing figure can read as being ahead of you rather than strictly behind — judge whether the tension still works.</p>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="Write feedback for POV-CHASE v2 here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-CHASE v2 (Seedance)">Save</button><span class="save-status"></span></div>
+ </figcaption></figure>
+
+<figure class="card" data-creative="UGC-2-S">
+ <div class="feedback-pill">⚠ Needs your feedback · geometry fixed</div>
+ <div class="soundlabel">🔊 Sound ON · Seedance · ~$2.43</div>
+ <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42103/Z1Mbpsd5i-0AvwB1gcsWF_video.mp4"></video>
+ <figcaption><span class="id">UGC-2 v3 · friend reaction — reaction shot only</span>
+ <p class="hook">“Wait — this is your dream?!”</p>
+ <p class="concept">Your impossible-geometry problem eliminated: the phone is edge-on, its screen NEVER faces camera — we only see its glow on their faces. Lean-in → jaw-drop → laughter. The dream video itself comes as a full-frame cut in editing (reusing approved footage — no extra generation).</p>
+ <p class="note"><b>Judge two things:</b> the spoken line by ear (speech confirmed, words not machine-verifiable) and whether the dim silhouettes pass your no-ethnicity rule — faint features catch the phone glow.</p>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="Write feedback for UGC-2 v3 here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-2 v3 (Seedance, reaction-only)">Save</button><span class="save-status"></span></div>
+ </figcaption></figure>
+
+<figure class="card" data-creative="UGC-1-S">
+ <div class="feedback-pill">⚠ Needs your feedback · all 6 fixes verified</div>
+ <div class="soundlabel">🔊 Sound ON · Seedance · ~$2.43</div>
+ <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42113/5HRnPKBGXUHzPqaTBK1U__video.mp4"></video>
+ <figcaption><span class="id">UGC-1 v3 · morning reveal — base clip</span>
+ <p class="hook">“I typed in last night’s dream…”</p>
+ <p class="concept">Every specific from your last review addressed: even dim room light (no sun-contrast face), she speaks the line, clean flip to camera, and the phone plays a verified-MOVING starlit-ocean dream video — never a still, never a homescreen, no abrupt cut, holds to the last frame.</p>
+ <p class="note"><b>Caveats:</b> silhouette borderline (same judgment call as UGC-2 — yours); audio mix is soft — say if she should speak louder. Long ~29s cut waits for your model pick (Seedance/Kling max 15s per clip; longer = editing stitch, or Veo extends).</p>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="Write feedback for UGC-1 v3 here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-1 v3 (Seedance, base)">Save</button><span class="save-status"></span></div>
+ </figcaption></figure>
+</div>
+
+<footer>Nothing here has been uploaded to Meta — that stays founder-gated, plus a compliance pass. Overnight generation spend: ~$16.85 (face-off + regens, itemized on the tracker). Clips expire from fal’s CDN around <b>2026-08-05</b>; keepers get re-hosted in the caption/music/insert pass. This page is temporary and will be removed once the round closes.</footer></div>
 <script>
 // Same delegated-click pattern as the dedicated review site (labels in
 // data-attributes, immune to quotes/apostrophes). Posts the remark as a
@@ -111,9 +142,9 @@ footer{margin-top:38px;padding-top:18px;border-top:1px solid var(--line);font-si
 document.addEventListener('click', async function (ev) {
   var btn = ev.target.closest('.savebtn');
   if (!btn) return;
-  var card = btn.closest('.card');
-  var ta = card.querySelector('textarea.remark');
-  var status = card.querySelector('.save-status');
+  var box = btn.closest('.card') || btn.closest('.decision');
+  var ta = box.querySelector('textarea.remark');
+  var status = box.querySelector('.save-status');
   var remark = ta.value.trim();
   if (!remark) { status.textContent = 'Write something first.'; status.className = 'save-status err'; return; }
   btn.disabled = true;
