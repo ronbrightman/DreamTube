@@ -1,6 +1,7 @@
 // netlify/functions/publish-dream.js
 //
-// POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType }
+// POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType,
+//        channelLicenseGrantedAt, okToFeatureOnChannels }
 // -> upserts a dream into the shared feed-index blob (see get-feed.js).
 // Called both when a dream is first published, and again if an
 // already-published dream is later edited/regenerated (store.js's
@@ -17,6 +18,17 @@
 // profile.html) render off videoUrl/imageUrl presence directly, the same
 // three-way fallback pattern used everywhere else in this codebase, not
 // off this field.
+//
+// channelLicenseGrantedAt/okToFeatureOnChannels (tracker item for-product-
+// terms-republish-license-per--fhpcxk): the republish-license consent
+// state for terms.html's "Your content" clause, carried into this SHARED
+// record — not just js/store.js's local copy — since a real, cross-device
+// future auto-posting engine (NOT built here) could only ever read
+// curation eligibility from here. `channelLicenseGrantedAt` null/absent
+// means this dream was published before the clause shipped and has no
+// license at all yet (deliberately never backfilled — see js/store.js's
+// publishDream comment); `okToFeatureOnChannels` defaults true (on) when
+// omitted, matching the zero-click default-on opt-out toggle.
 //
 // No ownership check: this app has no real server-side auth (client-side
 // localStorage only, same as every other write in this codebase), so this
@@ -45,6 +57,11 @@ exports.handler = async function (event) {
   var videoUrl = payload.videoUrl || null;
   var imageUrl = payload.imageUrl || null;
   var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
+  // See this file's header comment — null/absent means "not licensed,
+  // published before the clause shipped," not a value to paper over with
+  // a default. okToFeatureOnChannels DOES default true/on (unset === on).
+  var channelLicenseGrantedAt = payload.channelLicenseGrantedAt || null;
+  var okToFeatureOnChannels = payload.okToFeatureOnChannels !== false;
   if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'missing_fields' }) };
   }
@@ -59,7 +76,9 @@ exports.handler = async function (event) {
       id: id, ownerHandle: ownerHandle, caption: caption, style: style, dur: dur,
       videoUrl: videoUrl, imageUrl: imageUrl, mediaType: mediaType,
       likes: idx === -1 ? 0 : (feed[idx].likes || 0),
-      publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt
+      publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
+      channelLicenseGrantedAt: channelLicenseGrantedAt,
+      okToFeatureOnChannels: okToFeatureOnChannels
     };
 
     if (idx === -1) feed.unshift(record); else feed[idx] = record;

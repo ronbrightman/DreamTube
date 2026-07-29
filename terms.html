@@ -73,6 +73,10 @@
   </div>
   <div class="scroll-area">
     <div class="px legal-content">
+      <!-- NOT bumped yet for the new "Your content" republish-license clause below --
+           its wording is pending the founder's explicit sign-off (real approval gate,
+           tracker item for-product-terms-republish-license-per--fhpcxk), still on a
+           branch, not live. Bump this date when that clause actually ships to main. -->
       <div class="legal-updated">Last updated: July 27, 2026</div>
 
       <p>These are the basic rules for using DreamTube. They're written in plain language, not dense legalese — if you have a question this page doesn't answer, use the Contact support form in Settings.</p>
@@ -94,6 +98,16 @@
 
       <h2>Your content</h2>
       <p>You own what you create. By publishing a dream to the shared Explore feed, you're choosing to make it visible to other users of the app; you can unpublish or delete it at any time.</p>
+      <!-- Republish license clause -- tracker item for-product-terms-
+           republish-license-per--fhpcxk, blocks the separately-approved
+           curated auto-posting engine (not built here). Founder wording
+           review before ship (this is a real approval gate, see the
+           tracker item's own note) -- exact text pending sign-off, not
+           final. No backfill: only covers dreams published from here
+           forward, enforced in js/store.js's publishDream via a stamped
+           channelLicenseGrantedAt, never retroactively applied to a dream
+           already public before this clause shipped. -->
+      <p>Publishing a dream also grants DreamTube a non-exclusive, worldwide, royalty-free license to host, reproduce, and display that dream — including on DreamTube's own official social media and promotional channels (e.g. Instagram, Facebook, TikTok), not just inside the app. You can turn this off for any individual dream at any time in its settings (on by default), and unpublishing or deleting it ends the license for any future use. This license applies only to dreams published on or after the date this clause took effect — it's never applied retroactively to anything already public before then.</p>
 
       <h2>Reporting &amp; blocking</h2>
       <p>If you see something in the Explore feed that shouldn't be there, tap the <b>More</b> action on that dream to report it — our team reviews every report. You can also block an account from that same menu; once blocked, that account's dreams stop showing up in your Explore feed. To reach us directly about a safety concern, use Settings → Support &amp; feedback → Contact support — we read every message.</p>

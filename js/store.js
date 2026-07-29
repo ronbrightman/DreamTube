@@ -71,8 +71,33 @@
 //       video" upsell on an image-type dream — see result.html's CTA
 //   regenerateDream(id, patch)   -> POST /api/dreams/:id/regenerate
 //   publishDream(id)              -> POST /api/dreams/:id/publish
+//       — a fresh publish (isPublished false->true) also stamps
+//       `channelLicenseGrantedAt` (epoch ms), the moment terms.html's
+//       "Your content" republish license (tracker item for-product-terms-
+//       republish-license-per--fhpcxk) actually attaches to THIS dream —
+//       deliberately a timestamp set only going forward, never backfilled
+//       onto dreams already published before this shipped, per the
+//       founder's explicit no-backfill requirement. Clears any earlier
+//       `channelLicenseRevokedAt` — republishing after an unpublish is a
+//       fresh publish action and re-grants the license same as any other.
 //   unpublishDream(id)              -> POST /api/dreams/:id/unpublish
+//       — stamps `channelLicenseRevokedAt` (epoch ms), ending the license
+//       for any FUTURE use as of that moment — see publishDream above.
+//       This is the concrete state a later "remove existing social posts
+//       on request" pass reads; this task doesn't build that removal
+//       mechanism itself, just the flag it will read.
 //   deleteDream(id)                 -> DELETE /api/dreams/:id
+//       — a published dream is also unpublished as part of deleting it
+//       (see removePublishedDreamFromFeed below), same channel-license
+//       revocation as unpublishDream.
+//   setOkToFeatureOnChannels(id,enabled) -> POST /api/dreams/:id (per-dream
+//       opt-out toggle, default true/on when unset — tracker item
+//       for-product-terms-republish-license-per--fhpcxk's zero-click
+//       design: publishing itself grants the license with no extra tap,
+//       and this is the one discoverable place to turn it back off for a
+//       specific dream. Re-syncs the shared feed record immediately when
+//       the dream is currently published, same as any other already-
+//       published-dream edit.
 //   getCharacters()                   -> GET  /api/users/me/characters
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
@@ -619,7 +644,18 @@
       body: JSON.stringify({
         id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
         style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
-        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video'
+        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video',
+        // Republish-license consent state (tracker item for-product-terms-
+        // republish-license-per--fhpcxk) — carried into the SHARED feed-
+        // index record (not just this browser's local copy) since that's
+        // the one place a real, cross-device auto-posting engine could
+        // ever actually read curation eligibility from. `undefined` here
+        // (a dream published before this shipped) intentionally comes
+        // through as `null` below — see publish-dream.js's own comment for
+        // why that's the correct "not licensed, needs fresh consent" state,
+        // not a bug to default away.
+        channelLicenseGrantedAt: dream.channelLicenseGrantedAt || null,
+        okToFeatureOnChannels: dream.okToFeatureOnChannels !== false
       })
     }).catch(function () { /* best-effort — see comment above */ });
   }
@@ -2684,6 +2720,23 @@
         // for-product-phase-1-reporting-instrument-kjlh46.
         var isNewPublish = !d.isPublished;
         d.isPublished = true;
+        // Republish license (tracker item for-product-terms-republish-
+        // license-per--fhpcxk, terms.html "Your content"): a fresh publish
+        // is itself the zero-click moment DreamTube is granted the
+        // non-exclusive license to host/reproduce/display this dream,
+        // expressly including DreamTube's own official social/promotional
+        // channels — no separate checkbox, per the founder's explicit
+        // "minimize it" direction. Stamped (not a plain boolean) so a
+        // dream published before this code shipped — no stamp at all —
+        // stays cleanly distinguishable from one published under the new
+        // clause, satisfying the "no backfill" requirement without any
+        // migration step. Re-publishing after an unpublish clears any
+        // earlier revocation and re-grants fresh, same as any other
+        // publish action.
+        if (isNewPublish) {
+          d.channelLicenseGrantedAt = Date.now();
+          d.channelLicenseRevokedAt = null;
+        }
         persist();
         syncPublishedDreamToFeed(d);
         if (isNewPublish) trackAnalytics('video_published', { style: d.style, mediaType: d.mediaType });
@@ -2696,6 +2749,12 @@
       var d = findDream(id);
       if (d) {
         d.isPublished = false;
+        // Ends the republish license for any FUTURE use as of right now —
+        // see publishDream's channelLicenseGrantedAt comment above. This
+        // timestamp is the concrete state a later "remove existing social
+        // posts on request" pass would read; building that removal
+        // mechanism itself is explicitly out of scope here.
+        if (d.channelLicenseGrantedAt) d.channelLicenseRevokedAt = Date.now();
         persist();
         removePublishedDreamFromFeed(id);
       }
@@ -2708,10 +2767,36 @@
       var myHandle = state.user ? state.user.handle : null;
       if (!d || !myHandle || d.ownerHandle !== myHandle) return false;
       var wasPublished = d.isPublished;
+      // Same channel-license revocation as unpublishDream above, applied
+      // before the record is dropped from local state entirely — deleting
+      // a published dream stops future use under the license exactly like
+      // explicitly unpublishing it first would.
+      if (wasPublished && d.channelLicenseGrantedAt) d.channelLicenseRevokedAt = Date.now();
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();
       if (wasPublished) removePublishedDreamFromFeed(id);
       return true;
+    },
+
+    /**
+     * Per-dream "OK to feature on DreamTube's channels" opt-out (tracker
+     * item for-product-terms-republish-license-per--fhpcxk) — defaults ON
+     * (true) whenever unset, so publishing stays genuinely zero-click; this
+     * is the one discoverable place to turn it back off for a specific
+     * dream. Independent of isPublished/the license-grant timestamps above
+     * — this only ever narrows an already-licensed dream's eligibility,
+     * it can't grant a license unpublishing itself doesn't. Re-syncs the
+     * shared feed record immediately if the dream is currently published,
+     * same as any other already-published-dream edit.
+     */
+    setOkToFeatureOnChannels: function (id, enabled) {
+      var d = findDream(id);
+      if (d) {
+        d.okToFeatureOnChannels = !!enabled;
+        persist();
+        if (d.isPublished) syncPublishedDreamToFeed(d);
+      }
+      return d;
     },
 
     /**
