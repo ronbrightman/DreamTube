@@ -35,6 +35,14 @@
 // what's needed for the client to also refresh its own local mirror (see
 // that function's own comment for why it still keeps one).
 //
+// A successful password reset also invalidates every previously-minted
+// lib/account-auth-token.js token for this username (tracker item
+// for-product-public-feed-safety-in-app-re-ppuw77, round-2 security review
+// finding) — someone who leaked/stole a token before the user reset their
+// password (specifically because they suspected compromise) must not keep
+// using it for the remainder of its 90-day TTL. See that lib's own
+// invalidateTokensForUsername doc comment for the full reasoning.
+//
 // Error codes:
 //   E1 method_not_allowed
 //   E2 invalid_json
@@ -49,6 +57,7 @@
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var accountStore = require('./lib/account-store');
+var accountAuthToken = require('./lib/account-auth-token');
 
 var RESET_STORE = 'dreamtube-password-resets';
 
@@ -91,6 +100,8 @@ exports.handler = async function (event) {
         email: record.email,
         password: newPassword
       });
+      // Round-2 security review finding, fixed -- see header comment.
+      await accountAuthToken.invalidateTokensForUsername(event, record.username);
     }
 
     if (payload.consume) await store.delete(token);

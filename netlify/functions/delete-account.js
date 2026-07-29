@@ -64,6 +64,19 @@
 //      — js/store.js's deleteAccount wiping local state is the ENTIRE
 //      story for characters, not a gap.
 //
+//   5. Every lib/account-auth-token.js token previously minted for this
+//      username (tracker item for-product-public-feed-safety-in-app-re-
+//      ppuw77, round-2 security review finding, fixed) —
+//      accountAuthToken.invalidateTokensForUsername. Without this, a
+//      genuinely exploitable identity-reuse gap existed: register a
+//      desirable username, keep the token, delete the account, wait for a
+//      DIFFERENT real person to register the SAME now-freed username (this
+//      codebase's account-store.js has no cooldown on reusing a freed
+//      username), and the old token would still verify — silently
+//      granting the original holder read/write access to the NEW,
+//      unrelated account's blocklist. See that lib's own
+//      invalidateTokensForUsername doc comment for the full mechanism.
+//
 //   NOT touched, and why (see this repo's own tracker/AGENT_POLICY.md
 //   escalation policy for the reasoning behind leaving these as a
 //   judgment call rather than guessing):
@@ -141,6 +154,7 @@
 var accountStore = require('./lib/account-store');
 var entitlements = require('./lib/entitlements');
 var rateLimit = require('./lib/rate-limit');
+var accountAuthToken = require('./lib/account-auth-token');
 var { connectLambda, getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
@@ -215,6 +229,10 @@ exports.handler = async function (event) {
     if (filtered.length !== feed.length) {
       await feedStore.setJSON('feed-index', filtered);
     }
+
+    // 5. Invalidate every previously-minted authToken for this username —
+    // see header comment (round-2 security review finding, fixed).
+    await accountAuthToken.invalidateTokensForUsername(event, account.username);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {
