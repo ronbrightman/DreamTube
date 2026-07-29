@@ -515,3 +515,66 @@ test('result.html: Publish/Edit/Delete are hidden (and the feature toggle stays 
     await page.close();
   }
 });
+
+// ===== SECOND review round: DreamStore.generateInterpretation had no
+// ownership check, and result.html never gated the interpretation pill by
+// ownership either (both missed by the first round's audit of this same
+// page) =====
+
+/** Mocks interpret-dream.js with a fixed response, matching js/store.js's generateInterpretation's expected {interpretation} shape. */
+function mockInterpretDream(page, text) {
+  return page.route('**/.netlify/functions/interpret-dream', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: text || 'A reflection.' }) });
+  });
+}
+
+test('DreamStore.generateInterpretation refuses to act on another account\'s dream shared in the same browser\'s state.dreams, and the interpretation pill is hidden for it -- both work normally for the real owner', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockInterpretDream(page, 'Should never be reached by a non-owner.');
+  try {
+    // Account A: a dream with no saved interpretation yet.
+    await seedAccount(page, {
+      username: 'interpOwnerA',
+      dreams: [{ id: 'not-mine-interp-dream', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: false }]
+    });
+
+    // Account B (same browser) signs in and opens the same dream via a
+    // direct link -- state.dreams still has account A's dream sitting there.
+    await switchToAccount(page, 'interpViewerB');
+    await safeGoto(page, baseUrl + '/result.html?id=not-mine-interp-dream');
+
+    // The pill must never even appear for a dream that isn't this account's own.
+    assert.equal(await page.locator('#interp-cta-btn').isVisible(), false, 'the interpretation pill must be hidden for a dream that is not the viewer\'s own');
+
+    // Defense in depth: even if invoked directly, js/store.js's own
+    // ownership guard must reject the promise and leave the dream untouched.
+    var blockedResult = await page.evaluate(function () {
+      return window.DreamStore.generateInterpretation('not-mine-interp-dream').then(
+        function (resolved) { return { rejected: false, resolved: resolved }; },
+        function (err) { return { rejected: true, message: err.message }; }
+      );
+    });
+    assert.equal(blockedResult.rejected, true, 'generateInterpretation must reject for another account\'s dream');
+    var stillUntouched = await page.evaluate(function () { return window.DreamStore.getDream('not-mine-interp-dream'); });
+    assert.equal(stillUntouched.interpretationText, undefined, 'no interpretation must be written by a non-owner\'s attempt');
+
+    // Now sign back in as the real owner -- both the pill and the store
+    // function must work normally again, proving this is a real ownership
+    // comparison and not just "always blocked".
+    await switchToAccount(page, 'interpOwnerA');
+    await safeGoto(page, baseUrl + '/result.html?id=not-mine-interp-dream');
+    assert.equal(await page.locator('#interp-cta-btn').isVisible(), true, 'the interpretation pill must be visible again for the actual owner');
+
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#interp-ready', { state: 'visible', timeout: 5000 });
+    var bodyText = await page.locator('#interp-text-body').textContent();
+    assert.equal(bodyText, 'Should never be reached by a non-owner.');
+
+    var allowedResult = await page.evaluate(function () { return window.DreamStore.getDream('not-mine-interp-dream'); });
+    assert.equal(allowedResult.interpretationText, 'Should never be reached by a non-owner.', 'the real owner must still be able to generate an interpretation for their own dream');
+  } finally {
+    await page.close();
+  }
+});

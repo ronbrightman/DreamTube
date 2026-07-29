@@ -919,7 +919,18 @@
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
-      if (!dream) throw new Error('not_found');
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, second round) — defense-in-depth at
+      // the actual mutation point, not just at regenerateDream/
+      // turnImageIntoVideo's own call sites: both funnel through
+      // startGeneration's sourceDreamId option to land here, and neither
+      // caller re-checks ownership at this point in time (a job can take
+      // a while; the signed-in account could have changed by the time this
+      // resolves). A sourceDreamId that doesn't belong to the current
+      // account is treated exactly like one that doesn't resolve to any
+      // dream at all — same not_found failure, no silent partial mutation.
+      var myHandle = state.user ? state.user.handle : null;
+      if (!dream || !myHandle || dream.ownerHandle !== myHandle) throw new Error('not_found');
       // Regenerating (Edit Dream -> Generate Again, or Try Again after a
       // failure) changes the dream's actual content, so any previously
       // generated interpretation was reflecting on content that no longer
@@ -2594,14 +2605,21 @@
      *
      * Returns true if the draft was set (a real image-type dream was
      * found), false otherwise (nothing to turn into a video — e.g. the
-     * dream doesn't exist, or has no imageUrl) — the caller (result.html)
-     * only navigates to processing.html on true. Matches this file's
-     * existing layering: store.js is model/logic only, every navigation in
-     * this app happens in the HTML file that calls it, never here.
+     * dream doesn't exist, has no imageUrl, or (review finding, tracker
+     * item for-product-terms-republish-license-per--fhpcxk, second round)
+     * doesn't belong to the currently signed-in account — same
+     * `ownerHandle === myHandle` guard deleteDream/publishDream/
+     * unpublishDream/setOkToFeatureOnChannels already use, needed here too
+     * since result.html?id=<id> is legitimately reachable for another
+     * account's published dream) — the caller (result.html) only navigates
+     * to processing.html on true. Matches this file's existing layering:
+     * store.js is model/logic only, every navigation in this app happens
+     * in the HTML file that calls it, never here.
      */
     turnImageIntoVideo: function (dreamId) {
       var dream = findDream(dreamId);
-      if (!dream || !dream.imageUrl) return false;
+      var myHandle = state.user ? state.user.handle : null;
+      if (!dream || !dream.imageUrl || !myHandle || dream.ownerHandle !== myHandle) return false;
       Object.assign(state.draft, {
         // promptText (falling back to caption for a pre-split dream) is
         // the full engineered prompt — reused as-is so the resulting
@@ -2845,7 +2863,17 @@
      */
     generateInterpretation: function (id) {
       var d = findDream(id);
-      if (!d) return Promise.reject(new Error('not_found'));
+      var myHandle = state.user ? state.user.handle : null;
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, second round): same `ownerHandle ===
+      // myHandle` check deleteDream/publishDream/turnImageIntoVideo use --
+      // this is a private, per-account write (see this function's own doc
+      // comment above) onto whatever dream id is passed in, and
+      // result.html?id=<id> is legitimately reachable for another
+      // account's published dream. Rejects the same way an id that
+      // doesn't resolve to any dream at all already does, since a dream
+      // that isn't this account's own is equally not a valid target here.
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

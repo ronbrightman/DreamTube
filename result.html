@@ -677,14 +677,23 @@
   // with no check that it belongs to whoever is signed in — viewing stays
   // that way deliberately (this page has no separate "someone else's dream"
   // view, and locking it down is a separate, pre-existing concern outside
-  // this fix's scope). But the owner-only actions below (Publish, Edit, the
-  // "Feature on DreamTube's channels" opt-out, Delete) must never even
-  // appear to work for a dream that isn't this account's own — js/store.js's
-  // publishDream/unpublishDream/setOkToFeatureOnChannels/deleteDream all
-  // already refuse to mutate a dream whose ownerHandle doesn't match, so
-  // leaving these controls visible would just mean silent no-ops behind a
-  // button that looks like it worked. Same `ownerHandle === handle` check
-  // js/store.js's own getMyDreams/getDreamInsight/getDreamMilestone use.
+  // this fix's scope). But the owner-only controls below — Publish, Edit,
+  // the "Feature on DreamTube's channels" opt-out, Delete, "Turn this into
+  // a video", and the "What might this dream mean?" interpretation pill
+  // (added in this fix's second review round — the first round's audit of
+  // this page missed these two) — must never even appear to work for a
+  // dream that isn't this account's own — js/store.js's publishDream/
+  // unpublishDream/setOkToFeatureOnChannels/deleteDream/turnImageIntoVideo/
+  // generateInterpretation all already refuse to mutate (or, for
+  // generateInterpretation, generate/overwrite) a dream whose ownerHandle
+  // doesn't match, so leaving these controls visible would just mean
+  // silent no-ops (or a rejected promise) behind a button that looks like
+  // it worked. Same `ownerHandle === handle` check js/store.js's own
+  // getMyDreams/getDreamInsight/getDreamMilestone use. This comment is the
+  // one place enumerating every owner-only control on this page —
+  // deliberately kept in sync each time one is added, since a previous
+  // version of this same comment understated the list and a reviewer
+  // caught it.
   var currentUser = DreamStore.getCurrentUser();
   var isMyDream = !!(dream && currentUser && dream.ownerHandle === currentUser.handle);
 
@@ -781,7 +790,21 @@
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
-    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl) ? 'flex' : 'none';
+    // isMyDream: see the ownership-gate comment above -- "Turn this into a
+    // video" spends tokens and calls DreamStore.turnImageIntoVideo, which
+    // now refuses to act on a dream that isn't this account's own (review
+    // finding, second round), so the button must never even appear to
+    // offer this for someone else's image-only dream.
+    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl && isMyDream) ? 'flex' : 'none';
+    // isMyDream: same reasoning -- the interpretation pill's own generate/
+    // regenerate path (DreamStore.generateInterpretation) is a private,
+    // per-account write that now refuses a dream that isn't this
+    // account's own (review finding, second round). Reading an already-
+    // saved interpretation (DreamStore.getInterpretation) is harmless, but
+    // there's never a legitimate saved interpretation to show for a dream
+    // that isn't this account's own in the first place, so the whole pill
+    // is owner-only.
+    document.getElementById('interp-cta-btn').style.display = isMyDream ? '' : 'none';
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
