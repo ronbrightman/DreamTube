@@ -636,6 +636,31 @@
    * always the source of truth for the owner's own view (Profile) — if this
    * fails, the dream still shows as published locally, it just might not
    * (yet) appear in others' Explore until the next successful sync.
+   *
+   * authToken (tracker item publish-dream-js-trusts-client-supplied--lkppcu):
+   * publish-dream.js now requires a verified authToken and rejects any
+   * request whose ownerHandle doesn't match it (see that file's own header
+   * comment) — sourced from state.user.authToken exactly like
+   * blockUser/unblockUser already do (see this file's own authToken-gated-
+   * feature comments there). Every real call site here (finalizeDream,
+   * publishDream, setOkToFeatureOnChannels) only ever calls this for a
+   * dream whose ownerHandle already matches whoever is CURRENTLY signed in
+   * (each guards `d.ownerHandle === myHandle` first), so state.user.authToken
+   * is always the right token to send. The one exception is
+   * backfillSharedFeed's one-time catch-up sweep, which loops over every
+   * dream in the shared, cross-account state.dreams array regardless of
+   * current owner — for a dream belonging to a DIFFERENT account that
+   * previously used this browser, this now honestly fails server-side
+   * (E6 owner_mismatch) instead of the old behavior of syncing it under
+   * whatever ownerHandle the record itself carried; that's an accepted,
+   * safe degrade (that dream was already synced once under its real
+   * owner's own session at actual-publish time) rather than a regression
+   * worth special-casing here. If state.user has no authToken on file at
+   * all (a legacy/offline-fallback account, or one signed in before this
+   * token mechanism existed) this simply sends `null`, which
+   * publish-dream.js rejects (E4) — same "best-effort, never breaks the
+   * app" fire-and-forget posture as every other failure mode here, it just
+   * means the shared feed doesn't get this particular update.
    */
   function syncPublishedDreamToFeed(dream) {
     fetch('/.netlify/functions/publish-dream', {
@@ -661,17 +686,25 @@
         // actually reaches the shared record those posts would be sourced
         // from, not just this browser's local copy.
         channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
-        okToFeatureOnChannels: dream.okToFeatureOnChannels !== false
+        okToFeatureOnChannels: dream.okToFeatureOnChannels !== false,
+        authToken: (state.user && state.user.authToken) || null
       })
     }).catch(function () { /* best-effort — see comment above */ });
   }
 
-  /** Fire-and-forget removal from the shared feed-index blob — same best-effort contract as above. */
+  /**
+   * Fire-and-forget removal from the shared feed-index blob — same
+   * best-effort contract as syncPublishedDreamToFeed above, including the
+   * same authToken sourcing/degrade reasoning (see that function's own
+   * doc comment) — unpublish-dream.js requires a verified authToken whose
+   * username matches the target record's OWN stored ownerHandle (see that
+   * file's header comment), not just any signed-in account's token.
+   */
   function removePublishedDreamFromFeed(id) {
     fetch('/.netlify/functions/unpublish-dream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id })
+      body: JSON.stringify({ id: id, authToken: (state.user && state.user.authToken) || null })
     }).catch(function () { /* best-effort — see comment above */ });
   }
 
