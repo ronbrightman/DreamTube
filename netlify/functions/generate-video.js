@@ -795,7 +795,7 @@ exports.handler = async function (event) {
   console.log('generate-video: generation_profile=' + generationProfileResult.profile);
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
-  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 40; // default doubled 20->40, founder directive 2026-07-29
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 80; // raised 20->40->80, founder directives 2026-07-29
 
   if (!ownerBypassActive) {
     var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
