@@ -465,7 +465,11 @@
       return;
     }
     DreamStore.getSharedFeed().then(function(dreams){
-      var pick = dreams.slice(0, 10);
+      // Blocked authors (tracker item for-product-public-feed-safety-in-app-re-ppuw77)
+      // must not surface here either — this preview strip is another
+      // rendering of the shared feed, same as explore.html's own render(),
+      // which already excludes them.
+      var pick = dreams.filter(function(d){ return !d.blockedByMe; }).slice(0, 10);
       section.style.display = 'block';
       if(!pick.length){
         label.textContent = 'While you wait';

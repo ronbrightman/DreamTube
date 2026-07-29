@@ -17,7 +17,22 @@
 // or different one.
 //
 // Response shapes:
-//   200 { ok:true, username, email }               — account created
+//   200 { ok:true, username, email, authToken }    — account created.
+//                                                      authToken (lib/
+//                                                      account-auth-
+//                                                      token.js) is a fresh,
+//                                                      durable proof-of-
+//                                                      identity for this
+//                                                      brand-new account,
+//                                                      minted because
+//                                                      account creation
+//                                                      just genuinely
+//                                                      succeeded server-side
+//                                                      -- see that lib's own
+//                                                      header comment for
+//                                                      what it's for
+//                                                      (currently:
+//                                                      block-user.js).
 //   200 { ok:false, error: 'E7: username_taken' }   — collision, not a
 //   200 { ok:false, error: 'E8: email_taken' }         client/shape error
 //   429 { ok:false, error: 'E9: rate_limited: ...' } — see the rate-
@@ -80,6 +95,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
+var accountAuthToken = require('./lib/account-auth-token');
 
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -130,5 +146,8 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
   }
 
-  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email }) };
+  // authToken -- see this function's own response-shape doc comment above
+  // and lib/account-auth-token.js's header comment for the full "why".
+  var authToken = await accountAuthToken.mintToken(event, result.record.username);
+  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email, authToken: authToken }) };
 };

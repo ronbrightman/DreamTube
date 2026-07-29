@@ -104,16 +104,27 @@ async function routeFeed(page, feed) {
   });
 }
 
+// FAKE_AUTH_TOKEN stands in for a real lib/account-auth-token.js token
+// (minted server-side by account-login.js/register-account.js on a real
+// success -- see test/account-auth-token.test.js for that wiring). These
+// behavioral tests always intercept block-user.js via page.route rather
+// than hitting a real backend, so the exact token value doesn't need to
+// verify against anything -- it only needs to be a non-empty string so
+// js/store.js's blockUser/unblockUser/syncBlockedHandlesFromServer's own
+// `if (!state.user.authToken) return` gate passes and the mocked network
+// call actually fires, mirroring what a real signed-in browser would send.
+var FAKE_AUTH_TOKEN = 'test-auth-token-abc123';
+
 async function loginAs(page, handle, username) {
   await safeGoto(page, baseUrl + '/login.html');
   await page.evaluate(function (o) {
     var raw = localStorage.getItem('dreamtube_state_v1');
     var state = raw ? JSON.parse(raw) : {};
-    state.user = { handle: o.handle, username: o.username };
+    state.user = { handle: o.handle, username: o.username, authToken: o.authToken };
     if (!state.accounts) state.accounts = {};
     state.accounts[o.username] = { password: 'testpass1', email: o.username + '@example.com' };
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-  }, { handle: handle, username: username });
+  }, { handle: handle, username: username, authToken: FAKE_AUTH_TOKEN });
 }
 
 var OPEN_TRANSITION_SETTLE_MS = 350;
@@ -289,7 +300,7 @@ test('block (logged in): tapping Block immediately hides every dream by that aut
         capturedBody = JSON.parse(route.request().postData());
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, blockedHandles: ['@other'] }) });
       } else {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ blockedHandles: [] }) });
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, blockedHandles: [] }) });
       }
     });
 
@@ -313,7 +324,8 @@ test('block (logged in): tapping Block immediately hides every dream by that aut
     assert.equal(await page.locator('[data-id="d-mine-1"]').count(), 1, 'an unrelated dream must remain visible');
 
     assert.ok(capturedBody, 'block-user.js must have been POSTed to');
-    assert.equal(capturedBody.username, 'tester');
+    assert.equal(capturedBody.authToken, FAKE_AUTH_TOKEN, 'the acting account must be proven via a verified authToken, never a bare username');
+    assert.equal(Object.prototype.hasOwnProperty.call(capturedBody, 'username'), false, 'block-user.js no longer accepts (or needs) a bare client-supplied username at all');
     assert.equal(capturedBody.blockedHandle, '@other');
     assert.equal(capturedBody.action, 'block');
 
@@ -404,15 +416,19 @@ test('profile.html Settings: a blocked handle appears in "Blocked accounts", and
     });
 
     await safeGoto(page, baseUrl + '/login.html');
-    await page.evaluate(function () {
+    await page.evaluate(function (token) {
       var raw = localStorage.getItem('dreamtube_state_v1');
       var state = raw ? JSON.parse(raw) : {};
-      state.user = { handle: '@tester', username: 'tester' };
+      state.user = { handle: '@tester', username: 'tester', authToken: token };
       if (!state.accounts) state.accounts = {};
       state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
-      state.blockedHandles = { '@other': true };
+      // Per-account keying (review finding, fixed) -- see js/store.js's
+      // state.blockedByUser doc comment: this is NOT a flat device-level
+      // map anymore, it's keyed by the (lowercased) signed-in username,
+      // same scheme as charactersByUser.
+      state.blockedByUser = { tester: { '@other': true } };
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-    });
+    }, FAKE_AUTH_TOKEN);
 
     await safeGoto(page, baseUrl + '/profile.html');
     await page.click('#account-btn');
@@ -428,9 +444,62 @@ test('profile.html Settings: a blocked handle appears in "Blocked accounts", and
 
     var stillBlocked = await page.evaluate(function () {
       var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
-      return !!(state.blockedHandles && state.blockedHandles['@other']);
+      return !!(state.blockedByUser && state.blockedByUser.tester && state.blockedByUser.tester['@other']);
     });
     assert.equal(stillBlocked, false, 'the underlying local flag must actually be cleared, not just hidden visually');
+  } finally {
+    await context.close();
+  }
+});
+
+test('profile.html Settings: a SECOND account signed into the same browser does not see the first account\'s block, and cannot unblock it (review finding, fixed)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/block-user*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, blockedHandles: [] }) });
+    });
+    await page.route('**/.netlify/functions/get-feed*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: [], dreamOfDayId: null }) });
+    });
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 200, claimable: false, nextClaimAt: null }) });
+    });
+
+    // Account A (nora) has blocked @other. Then account B (priya) signs in
+    // on this SAME browser -- same shared/family-device scenario the
+    // review finding described.
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@priya', username: 'priya', authToken: 'priya-token' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.nora = { password: 'testpass1', email: 'nora@example.com' };
+      state.accounts.priya = { password: 'testpass1', email: 'priya@example.com' };
+      // nora's own block, priya's own (empty) entry -- exactly what two
+      // real accounts sharing a browser would look like locally.
+      state.blockedByUser = { nora: { '@other': true }, priya: {} };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    await safeGoto(page, baseUrl + '/profile.html');
+    await page.click('#account-btn');
+    await page.waitForSelector('#sheet-account-overlay.open', { timeout: 5000 });
+
+    // priya (the CURRENTLY signed-in account) must not see nora's block at all.
+    assert.equal(await page.locator('#blocked-accounts-section').isVisible(), false, "priya must not see nora's block in her own Settings");
+
+    var isolationCheck = await page.evaluate(function () {
+      return {
+        noraStillBlocked: !!(JSON.parse(localStorage.getItem('dreamtube_state_v1')).blockedByUser.nora['@other']),
+        priyaSeesIt: window.DreamStore.getBlockedHandles().indexOf('@other') !== -1
+      };
+    });
+    assert.equal(isolationCheck.priyaSeesIt, false, "DreamStore.getBlockedHandles() must be scoped to the CURRENTLY signed-in account (priya), not the whole device");
+    assert.equal(isolationCheck.noraStillBlocked, true, "nora's own block must remain completely intact and untouched by priya's session");
   } finally {
     await context.close();
   }

@@ -9,7 +9,20 @@
 // accounts-dont-sync-across-devices item).
 //
 // Response shapes:
-//   200 { ok:true, username, email }                — real match
+//   200 { ok:true, username, email, authToken }     — real match. authToken
+//                                                       (lib/account-auth-
+//                                                       token.js) is a fresh,
+//                                                       durable proof-of-
+//                                                       identity for this
+//                                                       account, minted
+//                                                       because a real
+//                                                       password check just
+//                                                       succeeded -- see
+//                                                       that lib's own
+//                                                       header comment for
+//                                                       what it's for
+//                                                       (currently:
+//                                                       block-user.js).
 //   200 { ok:false, error: 'E4: not_found' }          — no account under
 //   200 { ok:false, error: 'E5: incorrect_password' }    that identifier
 //                                                         server-side, or
@@ -90,6 +103,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
+var accountAuthToken = require('./lib/account-auth-token');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -141,5 +155,13 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
   }
 
-  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email }) };
+  // authToken (lib/account-auth-token.js, tracker item
+  // for-product-public-feed-safety-in-app-re-ppuw77): minted fresh on
+  // every real successful login -- this is the first of the two moments
+  // (alongside register-account.js's own creation success) a genuine
+  // server-side password/identity check has just happened, so it's the
+  // right place to hand back a durable proof-of-identity for block-user.js
+  // to later verify, instead of that endpoint trusting a bare username.
+  var authToken = await accountAuthToken.mintToken(event, result.record.username);
+  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email, authToken: authToken }) };
 };

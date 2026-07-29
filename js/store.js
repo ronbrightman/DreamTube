@@ -187,15 +187,23 @@
                     // Blobs (see getSharedFeed/toggleSharedLike), this just decides +1 vs -1
                     // and which browsers see a filled heart. Not deduped across devices/users;
                     // there's no real account system to dedupe against, same as everywhere else.
-      blockedHandles: {} // ownerHandle (e.g. "@alice") -> true. Purely local "have I blocked
-                    // this author" state for the shared feed (tracker item
-                    // for-product-public-feed-safety-in-app-re-ppuw77) — deliberately mirrors
-                    // likedIds immediately above: a plain device-level map, NOT deduped/scoped
-                    // per signed-in account (same "no real account system to dedupe against"
-                    // tradeoff already accepted for likes). This is what actually filters a
-                    // blocked author's dreams out of getSharedFeed() below. A signed-in
-                    // account's blocks are ALSO durably synced server-side (see blockUser/
-                    // unblockUser/syncBlockedHandlesFromServer and
+      blockedByUser: {} // lowercased username -> { ownerHandle (e.g. "@alice"): true, ... }.
+                    // Local "who has THIS signed-in account blocked" state for the shared
+                    // feed (tracker item for-product-public-feed-safety-in-app-re-ppuw77) —
+                    // keyed per account, same scheme as charactersByUser immediately above
+                    // (private per-user, reusable across sessions), deliberately NOT a plain
+                    // device-level map the way likedIds is (review finding: unlike a like,
+                    // which is cosmetic, a block is the actual safety mechanism this feature
+                    // exists to ship — a shared/family device where Account A blocks an
+                    // abusive user, logs out, and Account B logs in must never show A's
+                    // block as B's own, or let B tap Unblock and silently undo A's
+                    // protection). Only ever read/written for whichever account is CURRENTLY
+                    // signed in (see currentBlockedMap below) — blocking requires being
+                    // signed in at all (see js/report-sheet.js's isLoggedIn gate), so there's
+                    // no logged-out/anonymous case to reconcile here. This is what actually
+                    // filters a blocked author's dreams out of getSharedFeed() below. The
+                    // CURRENT account's blocks are ALSO durably synced server-side (see
+                    // blockUser/unblockUser/syncBlockedHandlesFromServer and
                     // netlify/functions/lib/block-store.js) so they survive a cleared browser
                     // or a different device — this local map is the fast, always-available
                     // copy that actually drives rendering, seeded/merged from that server copy
@@ -302,7 +310,7 @@
       if (parsed.draft.audioOn === undefined) parsed.draft.audioOn = false;
       if (parsed.draft.musicStyle === undefined) parsed.draft.musicStyle = null;
       if (!parsed.likedIds) parsed.likedIds = {};
-      if (!parsed.blockedHandles) parsed.blockedHandles = {};
+      if (!parsed.blockedByUser) parsed.blockedByUser = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -340,7 +348,9 @@
    * (a bare `localStorage.removeItem(KEY)`) — this is the fix.
    *
    * Removes: this account's `accounts[key]` entry, its
-   * `charactersByUser[key]` array, every dream in `state.dreams` whose
+   * `charactersByUser[key]` array, its `blockedByUser[key]` map (per-
+   * account block list, same key scheme as charactersByUser — see that
+   * field's own doc comment), every dream in `state.dreams` whose
    * `ownerHandle` matches (private and previously-published alike — the
    * server call already removed the published copies from the shared
    * feed; this removes this browser's own copy), and `state.pendingJob`
@@ -349,9 +359,8 @@
    * no reason to let a deleted account's job data linger). Then resets
    * `state.user`/`state.draft` — the current session's own transient
    * state, not account data — the same way logout() resets `state.user`.
-   * `state.likedIds`/`state.blockedHandles` are both left alone: already
-   * documented (see their own comments) as not deduped per-account at
-   * all, same as logout().
+   * `state.likedIds` is left alone: already documented (see its own
+   * comment) as not deduped per-account at all, same as logout().
    *
    * Deliberately does NOT touch the feed-backfill/persistent-storage
    * "have I already done this" flags or the genuinely device-level prefs
@@ -376,6 +385,7 @@
   function wipeAllLocalState(usernameKey, myHandle) {
     delete state.accounts[usernameKey];
     delete state.charactersByUser[usernameKey];
+    delete state.blockedByUser[usernameKey];
     state.dreams = state.dreams.filter(function (d) { return d.ownerHandle !== myHandle; });
     if (state.pendingJob && state.pendingJob.ownerHandle === myHandle) state.pendingJob = null;
     state.user = null;
@@ -391,6 +401,13 @@
     if (!state.user) return null;
     var key = state.user.username.toLowerCase();
     return state.accounts[key] ? state.accounts[key].email : null;
+  }
+
+  /** The CURRENTLY signed-in account's own blockedByUser map ({ handle: true, ... }), or null if logged out — see state.blockedByUser's own doc comment for why this is per-account, not device-level. Shared by isBlocked/getBlockedHandles/blockUser/unblockUser/getSharedFeed's blockedByMe below. */
+  function currentBlockedMap() {
+    if (!state.user) return null;
+    var key = state.user.username.toLowerCase();
+    return state.blockedByUser[key] || null;
   }
 
   // ===== Owner generation-rate-limit bypass (tracker.html's
@@ -1421,8 +1438,8 @@
   // tracker.html's sync-private-dreams-videos-later item for that, explicitly
   // deferred and out of scope here.
 
-  /** Writes a brand-new local account entry + signs in, exactly as signup() always has — used both when the server confirms the account was created, and as the offline/unreachable-server fallback below. `createdAt` (epoch ms) is new — this is the ONLY moment a brand-new account is ever created, so it's the one place that can stamp a real signup time; see getAccountCreatedAt's own doc comment for why a pre-existing account (created before this field existed) simply has none rather than a fabricated one. */
-  function commitLocalSignup(username, password, email) {
+  /** Writes a brand-new local account entry + signs in, exactly as signup() always has — used both when the server confirms the account was created, and as the offline/unreachable-server fallback below. `createdAt` (epoch ms) is new — this is the ONLY moment a brand-new account is ever created, so it's the one place that can stamp a real signup time; see getAccountCreatedAt's own doc comment for why a pre-existing account (created before this field existed) simply has none rather than a fabricated one. `authToken` (tracker item for-product-public-feed-safety-in-app-re-ppuw77) is register-account.js's own minted lib/account-auth-token.js token when this is the REAL server-confirmed branch, or `null` for the offline/unreachable-server fallback (see signup()'s own call sites) — there's no real server-verified identity to hand a token for in that fallback case, and that's fine: state.user.authToken simply stays null/absent, which every authToken-gated feature (currently just blockUser/unblockUser/syncBlockedHandlesFromServer) already treats as "skip the server-side sync, the local effect still fully applies" (see those functions' own doc comments). */
+  function commitLocalSignup(username, password, email, authToken) {
     var key = username.toLowerCase();
     state.accounts[key] = { password: password, email: email.toLowerCase(), createdAt: Date.now() };
     // Realistically unreachable for the renamed account specifically (the
@@ -1436,7 +1453,7 @@
     // Defense in depth — see attemptLocalLogin's identical call and
     // clearLikesTrackingState's own doc comment.
     clearLikesTrackingState();
-    state.user = { handle: '@' + username, username: username };
+    state.user = { handle: '@' + username, username: username, authToken: authToken || null };
     persist();
     identifyForAnalytics(username);
     // 'signed_up' — a dedicated PostHog event distinct from the identify()
@@ -1509,11 +1526,11 @@
    * materializes the local `accounts` entry then, same as any other
    * account created on a different device — see login()'s own comment.
    */
-  function commitLocalSignupIfCurrent(mySeq, username, password, email) {
+  function commitLocalSignupIfCurrent(mySeq, username, password, email, authToken) {
     if (mySeq !== signupCallSeq) {
       return { ok: false, superseded: true, error: 'Superseded by a newer signup attempt.' };
     }
-    return commitLocalSignup(username, password, email);
+    return commitLocalSignup(username, password, email, authToken);
   }
 
   /**
@@ -1702,7 +1719,13 @@
     // already signed in as a different account, so this can't rely
     // solely on logout() having run first.
     clearLikesTrackingState();
-    state.user = { handle: '@' + username, username: username };
+    // authToken: null -- this is the pre-fix, fully-LOCAL login check (no
+    // real server-side password verification happens on THIS call itself;
+    // backfillAccountServerSide below is fire-and-forget and its response
+    // is never awaited before state.user is set) -- see commitLocalSignup's
+    // identical-reasoning doc comment for what a null authToken means for
+    // authToken-gated features.
+    state.user = { handle: '@' + username, username: username, authToken: null };
     persist();
     identifyForAnalytics(username);
     backfillAccountServerSide(key, account);
@@ -1882,7 +1905,11 @@
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
-        if (data && data.ok) return commitLocalSignupIfCurrent(mySignupSeq, username, password, email);
+        // authToken is only ever real on THIS branch (a genuine server-
+        // confirmed account creation) — see commitLocalSignup's own doc
+        // comment for why the two fallback branches below intentionally
+        // pass none.
+        if (data && data.ok) return commitLocalSignupIfCurrent(mySignupSeq, username, password, email, data.authToken);
         if (data && data.ok === false && data.error) return { ok: false, error: mapRegisterError(data.error) };
         // Unexpected/malformed response shape — treat the same as
         // unreachable below rather than surface a confusing error.
@@ -1968,7 +1995,13 @@
           // Defense in depth — see attemptLocalLogin's identical call and
           // clearLikesTrackingState's own doc comment.
           clearLikesTrackingState();
-          state.user = { handle: '@' + displayUsername, username: displayUsername };
+          // authToken: a real server-side password check just succeeded on
+          // THIS branch, so data.authToken (account-login.js's freshly
+          // minted lib/account-auth-token.js token) is a genuine proof of
+          // identity -- see commitLocalSignup's doc comment for what this
+          // enables/degrades-gracefully-without for authToken-gated
+          // features.
+          state.user = { handle: '@' + displayUsername, username: displayUsername, authToken: data.authToken || null };
           persist();
           identifyForAnalytics(displayUsername);
           return { ok: true, user: state.user };
@@ -2271,7 +2304,11 @@
       // backup's own identity to a different account would be a stranger
       // kind of surprise than leaving it alone.
       var username = pinLegacyRenameIdentity(key, backup.username);
-      state.user = { handle: '@' + username, username: username };
+      // authToken: null -- a backup restore has no real-time server
+      // verification of its own (see commitLocalSignup's identical-
+      // reasoning doc comment for what this means for authToken-gated
+      // features).
+      state.user = { handle: '@' + username, username: username, authToken: null };
       persist();
       identifyForAnalytics(username);
       return { ok: true, user: state.user };
@@ -2612,13 +2649,17 @@
      * mine/likedByMe/blockedByMe per-viewer, computed locally since the
      * shared record itself carries none of them (no real accounts to know
      * who's asking). `blockedByMe` (tracker item
-     * for-product-public-feed-safety-in-app-re-ppuw77) is purely a local
-     * state.blockedHandles lookup, same mechanism as likedByMe — callers
-     * that want blocked authors actually excluded (not just flagged) must
-     * filter on it themselves (see explore.html's own render(), which
-     * drops any d.blockedByMe dream before rendering) — this function
-     * itself never drops entries, same "return everything, let the page
-     * decide what to do with the flag" posture likedByMe/mine already have.
+     * for-product-public-feed-safety-in-app-re-ppuw77) is a lookup against
+     * the CURRENTLY signed-in account's own blockedByUser map (see
+     * currentBlockedMap/state.blockedByUser's own doc comment — this is
+     * per-account, not a shared device-level map, so a different account
+     * signed into this same browser never sees another account's blocks),
+     * same mechanism as likedByMe otherwise — callers that want blocked
+     * authors actually excluded (not just flagged) must filter on it
+     * themselves (see explore.html's own render(), which drops any
+     * d.blockedByMe dream before rendering) — this function itself never
+     * drops entries, same "return everything, let the page decide what to
+     * do with the flag" posture likedByMe/mine already have.
      */
     getSharedFeed: function () {
       return fetch('/.netlify/functions/get-feed').then(function (res) {
@@ -2627,7 +2668,7 @@
         if (data.error) throw new Error(data.error);
         lastDreamOfDayId = data.dreamOfDayId || null;
         var likedIds = state.likedIds || {};
-        var blockedHandles = state.blockedHandles || {};
+        var blockedHandles = currentBlockedMap() || {};
         var myHandle = state.user ? state.user.handle : null;
         return (data.feed || []).map(function (d) {
           return Object.assign({}, d, {
@@ -2680,94 +2721,132 @@
 
     // ===== Block user (tracker item for-product-public-feed-safety-in-app-re-ppuw77) =====
     //
-    // Blocking hides a published author's dreams from THIS device's own
-    // Explore feed going forward (see getSharedFeed's blockedByMe flag +
-    // explore.html's own filtering) — same "device-level, not deduped per
-    // signed-in account" tradeoff already accepted for state.likedIds (see
-    // that field's own comment), not a new bug class: this app has no real
-    // server-side session/account boundary anywhere else either, so a
-    // heavier per-account-scoped local model would be inconsistent with
-    // every other piece of local state in this file, not more correct.
+    // Blocking hides a published author's dreams from THIS signed-in
+    // account's own Explore feed going forward (see getSharedFeed's
+    // blockedByMe flag + explore.html's own filtering). Requires being
+    // signed in (see js/report-sheet.js's isLoggedIn gate — a logged-out
+    // tap routes to the signup nudge instead of calling any of these) —
+    // every function below is a no-op without state.user.
+    //
+    // PER-ACCOUNT, not device-level (review finding, fixed — an earlier
+    // version of this mirrored state.likedIds' "purely local, not deduped
+    // per-account" tradeoff, which the reviewer correctly flagged as wrong
+    // for THIS feature specifically): a like is cosmetic, but a block is
+    // the actual safety mechanism this feature exists to ship. Concrete
+    // failure the per-account keying (state.blockedByUser, same scheme as
+    // charactersByUser — see that field's own doc comment) fixes: on a
+    // shared/family device, Account A blocks an abusive user and logs out;
+    // Account B (a different real person) logs in and must NOT see A's
+    // block as B's own, and must NOT be able to tap Unblock and silently
+    // undo A's protection. See currentBlockedMap() above for the lookup
+    // this all routes through.
     //
     // A signed-in account's blocks are ALSO written through to a durable
-    // server-side store (netlify/functions/block-user.js/lib/block-store.js,
-    // keyed by username) — best-effort and fire-and-forget: the LOCAL write
-    // (isBlocked/getSharedFeed's blockedByMe) already fully applies on this
-    // device regardless of whether the network call below ever succeeds,
-    // so a Blobs write failure or offline network never blocks the feature
-    // from working right now, only from being synced to another device
-    // later. Skipped entirely when logged out (no username to key the
-    // server record on) — the local block still applies on this device
-    // either way.
+    // server-side store (netlify/functions/block-user.js/lib/block-store.js)
+    // — best-effort and fire-and-forget: the LOCAL write (isBlocked/
+    // getSharedFeed's blockedByMe) already fully applies on this device
+    // regardless of whether the network call below ever succeeds, so a
+    // Blobs write failure or offline network never blocks the feature from
+    // working right now, only from being synced to another device later.
+    //
+    // SECURITY (review finding, fixed): block-user.js used to accept a bare
+    // `username` string to identify the acting account — a real problem
+    // specific to this action (unlike, say, save-push-subscription.js's own
+    // bare-username trust, whose worst case is only a misdirected push
+    // notification): this app's handles are PUBLIC, shown on every Explore
+    // card, so anyone could have enumerated any account's blocklist (GET)
+    // or silently stripped a block someone else set (POST unblock) just by
+    // knowing their handle — defeating the entire point of the feature.
+    // Fixed by requiring `state.user.authToken` (see login()/signup()'s own
+    // doc comments for exactly when this is real vs. null) instead of a
+    // bare username: block-user.js now derives the acting account from a
+    // verified, unforgeable token minted only at a genuine server-side
+    // login/signup success. The server sync below is skipped entirely when
+    // signed in with no authToken on file (a legacy/fallback/offline
+    // sign-in path — see those doc comments for which ones this is) — the
+    // LOCAL block (already correctly scoped to this account, per above)
+    // still fully applies on this device either way; only the durable
+    // cross-device sync is unavailable until this browser's next real
+    // login/signup mints one.
 
-    /** True if this device has locally blocked `handle` (e.g. "@alice"). Synchronous, no network. */
+    /** True if the CURRENTLY signed-in account has locally blocked `handle` (e.g. "@alice"). False when logged out. Synchronous, no network. */
     isBlocked: function (handle) {
-      return !!(handle && state.blockedHandles && state.blockedHandles[handle]);
+      var map = currentBlockedMap();
+      return !!(handle && map && map[handle]);
     },
 
-    /** Every handle this device has locally blocked, as a plain array — feeds Settings' "Blocked accounts" list (see profile.html). */
+    /** Every handle the CURRENTLY signed-in account has locally blocked, as a plain array (empty when logged out) — feeds Settings' "Blocked accounts" list (see profile.html). */
     getBlockedHandles: function () {
-      return Object.keys(state.blockedHandles || {});
+      var map = currentBlockedMap();
+      return map ? Object.keys(map) : [];
     },
 
     /**
-     * Blocks `handle`: applies the local flag immediately (synchronous,
-     * persisted before this function's Promise ever settles — a caller
-     * that only cares about the immediate on-device effect doesn't need to
-     * wait on the returned Promise at all), then best-effort syncs it to
-     * the durable server-side store if signed in. The returned Promise
-     * always resolves (never rejects) once the local write is done — a
-     * server sync failure is swallowed, matching this feature's "local
-     * effect must never depend on network" design above.
+     * Blocks `handle` for the CURRENTLY signed-in account: applies the
+     * local flag immediately (synchronous, persisted before this
+     * function's Promise ever settles — a caller that only cares about the
+     * immediate on-device effect doesn't need to wait on the returned
+     * Promise at all), then best-effort syncs it to the durable
+     * server-side store if a real authToken is on file. The returned
+     * Promise always resolves (never rejects) once the local write is done
+     * — a server sync failure is swallowed, matching this feature's "local
+     * effect must never depend on network" design above. No-ops entirely
+     * when logged out (callers must gate this the same way
+     * js/report-sheet.js already does).
      */
     blockUser: function (handle) {
-      if (!handle) return Promise.resolve();
-      if (!state.blockedHandles) state.blockedHandles = {};
-      state.blockedHandles[handle] = true;
+      if (!handle || !state.user) return Promise.resolve();
+      var key = state.user.username.toLowerCase();
+      if (!state.blockedByUser[key]) state.blockedByUser[key] = {};
+      state.blockedByUser[key][handle] = true;
       persist();
-      if (!state.user) return Promise.resolve();
+      if (!state.user.authToken) return Promise.resolve();
       return fetch('/.netlify/functions/block-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: state.user.username, blockedHandle: handle, action: 'block' })
+        body: JSON.stringify({ authToken: state.user.authToken, blockedHandle: handle, action: 'block' })
       }).catch(function () { /* local block already applied -- server sync is best-effort, see header comment */ });
     },
 
-    /** Unblocks `handle` — mirrors blockUser's local-first, best-effort-server-sync shape exactly. */
+    /** Unblocks `handle` for the CURRENTLY signed-in account — mirrors blockUser's local-first, best-effort-server-sync shape exactly. */
     unblockUser: function (handle) {
-      if (!handle) return Promise.resolve();
-      if (state.blockedHandles) delete state.blockedHandles[handle];
+      if (!handle || !state.user) return Promise.resolve();
+      var key = state.user.username.toLowerCase();
+      if (state.blockedByUser[key]) delete state.blockedByUser[key][handle];
       persist();
-      if (!state.user) return Promise.resolve();
+      if (!state.user.authToken) return Promise.resolve();
       return fetch('/.netlify/functions/block-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: state.user.username, blockedHandle: handle, action: 'unblock' })
+        body: JSON.stringify({ authToken: state.user.authToken, blockedHandle: handle, action: 'unblock' })
       }).catch(function () { /* local unblock already applied -- server sync is best-effort, see header comment */ });
     },
 
     /**
-     * Hydrates this device's local blockedHandles from the signed-in
-     * account's durable server-side list (netlify/functions/block-user.js
+     * Hydrates the CURRENTLY signed-in account's local blockedByUser entry
+     * from its durable server-side list (netlify/functions/block-user.js
      * GET) — a UNION merge (never removes a local block the server copy
      * doesn't have; a block made on THIS device moments ago and not yet
      * synced must not be reverted by this call), so this is always safe to
      * call speculatively on page load. No-ops (resolves immediately) when
-     * logged out — there's no account to fetch a server list for. Never
-     * rejects: a fetch failure just leaves the local list as-is, same
-     * honest-degrade posture as every other best-effort network call in
-     * this file. Called by explore.html on load so a different device (or
-     * a cleared browser) picks up an already-signed-in account's existing
-     * blocks before the feed renders.
+     * logged out, or signed in with no authToken on file (see this
+     * feature's own header comment for which sign-in paths that is) —
+     * there's no verified identity to fetch a server list for. Never
+     * rejects: a fetch failure (or a since-expired/invalid token) just
+     * leaves the local list as-is, same honest-degrade posture as every
+     * other best-effort network call in this file. Called by explore.html
+     * on load so a different device (or a cleared browser) picks up an
+     * already-signed-in account's existing blocks before the feed renders.
      */
     syncBlockedHandlesFromServer: function () {
-      if (!state.user) return Promise.resolve();
-      return fetch('/.netlify/functions/block-user?username=' + encodeURIComponent(state.user.username))
+      if (!state.user || !state.user.authToken) return Promise.resolve();
+      var key = state.user.username.toLowerCase();
+      return fetch('/.netlify/functions/block-user?authToken=' + encodeURIComponent(state.user.authToken))
         .then(function (res) { return res.json(); })
         .then(function (data) {
-          var serverHandles = (data && Array.isArray(data.blockedHandles)) ? data.blockedHandles : [];
-          if (!state.blockedHandles) state.blockedHandles = {};
-          serverHandles.forEach(function (h) { state.blockedHandles[h] = true; });
+          var serverHandles = (data && data.ok && Array.isArray(data.blockedHandles)) ? data.blockedHandles : [];
+          if (!state.blockedByUser[key]) state.blockedByUser[key] = {};
+          serverHandles.forEach(function (h) { state.blockedByUser[key][h] = true; });
           persist();
         }).catch(function () { /* leave the local list as-is -- see header comment */ });
     },
