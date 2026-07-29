@@ -324,6 +324,104 @@ test('concurrent grants on DIFFERENT achievement ids for the same email both go 
   assert.equal(record.capabilities.free_reedit, 1);
 });
 
+// ----- Cross-function concurrency: a genuinely concurrent claimDailyTokens
+// write on the SAME email must survive applyAchievementGrantOnce's own
+// retry loop, not get reverted (tracker item
+// entitlements-js-retryingwrite-balance-mu-qxm1ih) -----
+//
+// The tests above this section all prove applyAchievementGrant's OWN
+// idempotency (double-grant prevention). This section proves something
+// different and was the actual review finding that shipped alongside the
+// achievement-ledger PR (see applyAchievementGrantOnce's own doc comment):
+// applyAchievementGrantOnce used to capture `syncedTokens` ONCE, before its
+// retryingWrite loop, then reuse that single snapshot's
+// balance/lastClaimAt/streak verbatim on EVERY retry attempt inside
+// `mutate` -- instead of re-deriving those fields from THAT attempt's own
+// fresh `rec.tokens`, the way `nextCapabilities` already correctly did. A
+// SEQUENTIAL test (`await` one call, then the other) can never catch this
+// class of bug: by the time the second call's own outer `syncTokens` runs,
+// the first call is long finished and already visible, so both the old,
+// buggy code and the fixed code compute the identical (correct) result --
+// there is nothing to distinguish them. The bug only surfaces when a
+// genuinely concurrent write from a DIFFERENT function lands on this SAME
+// email's record sometime between applyAchievementGrantOnce's own outer
+// syncTokens snapshot and one of its own LATER retry attempts actually
+// succeeding -- exactly the "second/third attempt is a NORMAL, expected
+// occurrence" scenario blobs-retry.js's own header comment describes, not
+// a contrived edge case.
+//
+// The test below uses Promise.all to fire a REAL, genuinely concurrent
+// claimDailyTokens call racing applyAchievementGrant on the SAME email,
+// with a mockBlobs read override that intercepts applyAchievementGrantOnce's
+// own OUTER `syncTokens()` read specifically (identified by inspecting the
+// call stack for `applyAchievementGrantOnce`, so it never interferes with
+// claimDailyTokens' own, completely separate reads/writes against the same
+// store) and forces it to see the PRE-claim state -- exactly mimicking what
+// a real Blobs propagation lag would produce if the concurrent claim's
+// write hadn't reached that read yet, deterministically instead of leaving
+// it to chance timing. Everything AFTER that one forced read (the
+// retryingWrite loop's own read/write/verify) sees REAL data, including
+// whatever the genuinely concurrent claim has by then actually written.
+// This exercises precisely the bug this fix closes: the pre-fix code always
+// built its new `tokens` off that one forced-stale `syncedTokens` snapshot,
+// no matter how fresh the retryingWrite loop's own read was; the fix
+// prefers that attempt's own fresh read instead (see
+// baseTokensForAttempt's own doc comment for the exact rule). This test
+// FAILS against the pre-fix code (the concurrent claim's lastClaimAt/
+// streak get silently reverted, and its +20 balance is lost) and PASSES
+// against the fix -- verified by hand against a git HEAD copy of
+// lib/entitlements.js (the pre-fix version) during development of this fix.
+
+test("a genuinely concurrent claimDailyTokens write is NOT reverted by applyAchievementGrantOnce's own retry loop (real concurrency, not sequential awaits)", async function () {
+  var email = 'achraceclaim@example.com';
+  var pastCooldown = Date.now() - (entitlements.CLAIM_COOLDOWN_MS + 60000);
+  // A pre-existing, already-claimed-before account (NOT seedZeroBalance's
+  // usual just-created shape) -- this test specifically wants a normal
+  // (non-first-ever, non-bonus) +20 claim to compose with the achievement
+  // grant, isolating the assertion to the exact race this fix closes.
+  await entitlements.setEntitlement({}, email, { tokens: { balance: 100, lastClaimAt: pastCooldown, streak: 3 }, firstClaimAt: pastCooldown - 1000 });
+
+  var forcedOnce = false;
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key) {
+    if (forcedOnce) return null;
+    // The FIRST STORE_NAME read whose call stack passes through
+    // applyAchievementGrantOnce is its own outer `syncTokens()` call (that
+    // function's first thing it does) -- this deliberately targets THAT
+    // read, not the retryingWrite loop's own read/verify further down,
+    // which are left untouched (return null falls through to real data).
+    if (new Error().stack.indexOf('applyAchievementGrantOnce') !== -1) {
+      forcedOnce = true;
+      // A snapshot matching the PRE-claim state -- simulates syncTokens'
+      // own read landing before the concurrent claim's write has
+      // propagated to it, exactly the real Blobs propagation-lag hazard
+      // this file's own header comment (on lib/entitlements.js) documents.
+      return { value: { email: key, tokens: { balance: 100, lastClaimAt: pastCooldown, streak: 3 } } };
+    }
+    return null;
+  });
+
+  var results;
+  try {
+    // Promise.all, not two sequential awaits -- see this section's own
+    // header comment for why sequential awaits can never exercise this bug
+    // class.
+    results = await Promise.all([
+      entitlements.applyAchievementGrant({}, email, 'race_ach', { type: 'tokens', amount: 50 }),
+      entitlements.claimDailyTokens({}, email)
+    ]);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+
+  assert.equal(results[0].granted, true, 'the achievement grant must still succeed despite needing a real retry');
+  assert.equal(results[1].claimed, true, 'the concurrent claim must still succeed too');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100 + entitlements.DAILY_CLAIM_AMOUNT + 50, 'both the claim (+20) and the achievement grant (+50) must land -- the bug this fix closes would silently discard the claim, leaving only 100 + 50 = 150');
+  assert.notEqual(record.tokens.lastClaimAt, pastCooldown, "the concurrent claim's fresh lastClaimAt must survive -- the bug this fix closes would silently revert it back to the pre-claim value");
+  assert.equal(record.tokens.streak, 4, 'the concurrent claim\'s bumped streak (3 -> 4) must survive, not get reverted back to 3');
+});
+
 // ----- Interrupted-grant resume -----
 
 test('a marker left "pending" with the effect NOT yet applied (applyAchievementGrantOnce never ran) resumes and completes the grant exactly once', async function () {
