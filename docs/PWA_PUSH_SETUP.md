@@ -8,27 +8,31 @@ interim asset decision on the maskable icon.
 
 ## 1. Set the VAPID private key as a real Netlify env var
 
-Web Push (RFC 8292) needs a real VAPID keypair. This was generated with
-the standard `web-push` npm library's own `generateVAPIDKeys()` — the
+Web Push (RFC 8292) needs a real VAPID keypair, generated with the
+standard `web-push` npm library's own `generateVAPIDKeys()` — the
 reference implementation for this, not a placeholder:
 
 - **Public key** — already committed in `js/push-config.js`
   (`VAPID_PUBLIC_KEY`). Not a secret — see that file's own header comment
   for why it's safe to ship client-side.
-- **Private key** — deliberately NOT committed anywhere in this repo,
+- **Private key** — deliberately NEVER committed anywhere in this repo,
   same pattern as `FAL_KEY`/`TURNSTILE_SECRET_KEY`/`OWNER_EMAIL` (see
   `docs/TURNSTILE_SETUP.md`). Set it as a Netlify environment variable
-  named **`VAPID_PRIVATE_KEY`**:
+  named **`VAPID_PRIVATE_KEY`** — Ron: the actual value is in this
+  tracker item's own `[auto]` comment (a build-time mistake briefly
+  committed an earlier keypair's private half directly into this file;
+  it was caught and rotated before anything used it, see that comment for
+  the full incident note — this doc intentionally never holds a real
+  private key value again, so there's nothing to accidentally leak from
+  this file itself going forward).
 
-  ```
-  RvsRX6sJLD_lcCFD53xF84KnpzLu3m5U2Bdj7fk1igk
-  ```
-
-  (This exact value was generated once, alongside the public key above —
-  they're a matched pair. If you ever need to rotate them, generate a
-  fresh pair with `npx web-push generate-vapid-keys` and update BOTH the
-  public key in `js/push-config.js` and this env var together — a
-  mismatched pair makes every subscription silently fail to verify.)
+  If you ever need to rotate the pair again, generate a fresh one with
+  `npx web-push generate-vapid-keys` and update BOTH the public key in
+  `js/push-config.js` and the `VAPID_PRIVATE_KEY` env var together — a
+  mismatched pair makes every subscription silently fail to verify. Never
+  paste the private half into this file or any other committed file —
+  hand it to Ron out-of-band (a tracker comment, same as this rotation)
+  instead.
 
 `netlify/functions/lib/push-sender.js` reads this from
 `process.env.VAPID_PRIVATE_KEY` only. **Until it's set, every push send

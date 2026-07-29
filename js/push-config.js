@@ -27,7 +27,7 @@
 // settings — see docs/PWA_PUSH_SETUP.md for the exact value and setup
 // steps. netlify/functions/lib/push-sender.js reads it from
 // `process.env.VAPID_PRIVATE_KEY` only, never from a checked-in file.
-var VAPID_PUBLIC_KEY = 'BFZpeJsvF2BZVcMLYn4ZrKoVNYvkkM1qnbwUFSJ5dVkBkTbzEoqL7L8lTelqQQT-5-WbyLTrg09-_g9sIP1qMvY';
+var VAPID_PUBLIC_KEY = 'BDS5Fm8PraYq-w6J5K7HLu793f4zeGkwo25d528tadlCO815DYMYsOnz0ftvygeJ4Oj82CWiC6146vYZARkE8oo';
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { VAPID_PUBLIC_KEY: VAPID_PUBLIC_KEY };
