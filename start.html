@@ -153,13 +153,14 @@
      wizard.html's renderContact/renderSignup steps use, ported here since
      start.html has no separate contact-only step to hang the kickoff off
      of. See startPendingGeneration()'s own comment for the full flow.
-   - Screen 14 (pricing) has a deliberate, clearly-marked payment bypass —
-     see the big comment above proceedPastPricing() below. There is no
-     payment provider integrated yet; do not "finish" this without a human
-     vendor decision (see AGENT_POLICY.md escalation policy).
-   - Screen 15 hands off to the real, unmodified processing.html. Most of
-     the time by this point generation is already RUNNING, not starting —
-     screen 13 already adopted it as this browser's pendingJob (see
+   - Screen 14 (pricing+confirmation) has a deliberate, clearly-marked
+     payment bypass — see the big comment above proceedPastPricing()
+     below. There is no payment provider integrated yet; do not "finish"
+     this without a human vendor decision (see AGENT_POLICY.md escalation
+     policy). Its Continue button hands off directly to the real,
+     unmodified processing.html (see completeFunnel()). Most of the time
+     by this point generation is already RUNNING, not starting — screen 13
+     already adopted it as this browser's pendingJob (see
      DreamStore.adoptPendingGeneration), and processing.html already knows
      how to resume a pendingJob on load with zero changes needed there. If
      the pre-signup kickoff failed or never got a head start, this falls
@@ -1047,7 +1048,7 @@
   // sequentially one after the other. Whichever finishes first, we wait
   // for both to settle before advancing past screen 13, so pendingId/
   // pendingOperationName are always known (one way or the other) before
-  // the visitor can reach screen 15. Purely a resilient head start: if the
+  // the visitor can reach screen 14. Purely a resilient head start: if the
   // pending-generation call fails for any reason, pendingStartFailed stays
   // true and processing.html's normal fresh-generation path (unchanged)
   // just runs as it always did — nothing about this can block or break
