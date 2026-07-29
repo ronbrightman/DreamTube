@@ -578,3 +578,59 @@ test('DreamStore.generateInterpretation refuses to act on another account\'s dre
     await page.close();
   }
 });
+
+// ===== THIRD review round: DreamStore.getInterpretation (the read-only
+// sibling of generateInterpretation) had no ownership check at all --
+// generateInterpretation's own round-2 guard only protects the WRITE path.
+// A dream with an ALREADY-SAVED interpretation from a previous owner sitting
+// in the shared browser's state.dreams could leak that private reflection
+// text to a different account reading it, via result.html's own
+// ?openInterp=1 deep link (home.html's Chamber card) synthesizing a .click()
+// on the interpretation pill even while it's display:none for a non-owner --
+// CSS visibility does not block a JS .click() call from firing its handler. =====
+test('DreamStore.getInterpretation refuses to return another account\'s already-saved interpretation, closing the ?openInterp=1 deep-link leak -- still returns it correctly for the real owner', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // Account A: a dream that ALREADY has a saved, private interpretation --
+    // the exact shape a real previous owner-only generateInterpretation call
+    // would have left behind.
+    await seedAccount(page, {
+      username: 'interpReadOwnerA',
+      dreams: [{
+        id: 'already-interpreted-dream', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: false,
+        interpretationText: 'Account A\'s private reflection -- must never leak to account B.',
+        interpretationAt: Date.now()
+      }]
+    });
+
+    // Account B (same browser, same shared state.dreams) reads it directly.
+    // A safeGoto is required after switchToAccount -- js/store.js reads
+    // localStorage into its in-memory state once at page load, so an
+    // evaluate() immediately after a localStorage write would still see the
+    // PREVIOUS account's in-memory state (same reload requirement this
+    // file's own round-2 test discovered).
+    await switchToAccount(page, 'interpReadViewerB');
+    await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream');
+    var leaked = await page.evaluate(function () { return window.DreamStore.getInterpretation('already-interpreted-dream'); });
+    assert.equal(leaked, null, 'getInterpretation must return null for a dream that is not the current account\'s own, even when a saved interpretation exists');
+
+    // Confirms the actual reported exploit path is closed too: the
+    // ?openInterp=1 deep link's synthetic .click() on the (hidden-for-
+    // account-B) pill must not surface account A's saved text anywhere in
+    // the DOM.
+    await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream&openInterp=1');
+    assert.equal(await page.locator('#interp-cta-btn').isVisible(), false, 'the pill stays hidden for a non-owned dream');
+    var pageText = await page.locator('#app').textContent();
+    assert.doesNotMatch(pageText, /must never leak to account B/, 'account A\'s saved interpretation text must not appear anywhere on the page for account B');
+
+    // Sign back in as the real owner -- the exact same read must succeed normally.
+    await switchToAccount(page, 'interpReadOwnerA');
+    await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream');
+    var ownResult = await page.evaluate(function () { return window.DreamStore.getInterpretation('already-interpreted-dream'); });
+    assert.equal(ownResult.interpretationText, 'Account A\'s private reflection -- must never leak to account B.', 'the real owner must still read their own saved interpretation normally');
+  } finally {
+    await page.close();
+  }
+});

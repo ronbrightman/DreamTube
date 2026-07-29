@@ -2838,7 +2838,17 @@
      */
     getInterpretation: function (id) {
       var d = findDream(id);
-      if (!d) return null;
+      // Ownership guard (review finding, tracker item for-product-terms-
+      // republish-license-per--fhpcxk, third round): this is generateInterpretation's
+      // own read-only sibling, and was missed when that write path got its
+      // ownerHandle guard in round 2 -- reading is just as much an exposure
+      // here, since interpretationText is a private, per-account reflection
+      // (see this function's own doc comment) that can genuinely be sitting
+      // on a dream record from a DIFFERENT account that previously used this
+      // browser (state.dreams is never cleared on logout/login). Same guard,
+      // same null-for-non-owner contract as an id that doesn't resolve at all.
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       return { interpretationText: d.interpretationText || null, interpretationAt: d.interpretationAt || null };
     },
 
