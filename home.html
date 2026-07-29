@@ -599,6 +599,28 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       chamber.href = 'create.html';
       document.getElementById('chamber-sub').textContent = 'make your first dream to begin';
     }
+    // Diagnostic-only (tracker item for-product-bug-founder-new-home-
+    // tapping-yuspxa: founder tapped Chamber and landed in the store
+    // instead). Every hypothesis traced statically (openInterp -> a
+    // PurchaseSheet call, myDreams account-scoping, a CSS hit-area bleed
+    // into #card-vault) came back unsupported by the code as written, and
+    // a computed-geometry probe across several real mobile viewports found
+    // no overlap between #card-chamber and #card-vault either -- so
+    // nothing here was reproducible from a static/computed read alone.
+    // Fired at HREF-COMPUTE time, deliberately not gated on the click
+    // itself: the bug is about where a real tap actually LANDS, not
+    // whether a navigation happened at all (a click-time event on this
+    // same card would just double up with the existing home_card_tapped
+    // delegate below and normal page-view analytics, without adding any
+    // new signal). If this recurs, comparing this event's resolved href
+    // against whatever page load / home_card_tapped follows it next is
+    // the concrete thing that would tell a real story from PostHog
+    // instead of another guess.
+    track('home_chamber_href_computed', {
+      branch: completed ? 'completed_dream' : 'no_completed_dream',
+      href: chamber.getAttribute('href'),
+      dream_id: completed ? completed.id : null
+    });
   })();
 
   // ===== "Add to home screen" journey card (tracker item for-product-
