@@ -131,6 +131,8 @@ var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 var rateLimit = require('./lib/rate-limit');
 var posthogCapture = require('./lib/posthog-capture');
 var pendingDreams = require('./lib/pending-dreams');
+var pushDedupStore = require('./lib/push-dedup-store');
+var pushSender = require('./lib/push-sender');
 
 /**
  * Best-effort 'first_dream_email_skipped' fire for maybeSendAutomaticFirst
@@ -267,6 +269,19 @@ exports.handler = async function (event) {
         await maybeSendAutomaticFirstDreamEmail(event, operationName);
       } catch (emailErr) {
         console.error('mark-generation-completed: automatic first-dream email step failed (non-fatal)', emailErr);
+      }
+      // video-ready push (tracker item for-product-build-stage-0-pwa-web-
+      // push-f-jbutt5, part 4) -- its own try/catch, same reasoning as the
+      // email step above: a push failure must never affect the completion
+      // marker, and the two channels are DELIBERATELY independent (see
+      // maybeSendVideoReadyPush's own doc comment on why this can fire
+      // for the SAME completion the email above just fired for, or
+      // skipped, and that's the intended "second, independent channel"
+      // behavior, not a bug).
+      try {
+        await maybeSendVideoReadyPush(event, operationName);
+      } catch (pushErr) {
+        console.error('mark-generation-completed: video-ready push step failed (non-fatal)', pushErr);
       }
     }
     // An operationName that doesn't verify is a silent no-op -- see header
@@ -432,7 +447,75 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   });
 }
 
+/**
+ * video-ready web push (tracker item for-product-build-stage-0-pwa-web-
+ * push-f-jbutt5, part 4) -- fires from the exact same server-verified
+ * "a generation just completed" choke point as
+ * maybeSendAutomaticFirstDreamEmail above, resolving the job's owner the
+ * identical way (lib/job-owners.js's submission-time binding), but is
+ * DELIBERATELY its own independent function with its OWN dedup marker
+ * (lib/push-dedup-store.js, keyed by THIS operationName -- see that
+ * file's header comment for exactly why it can't reuse
+ * lib/first-dream-email-store.js's once-EVER-per-account marker): this
+ * push is meant to fire for the specific dream someone is actively
+ * waiting on right now ("get notified when your dream is ready" -- every
+ * dream, not just an account's first), so it must NOT be scoped to "has
+ * this account ever gotten a completion notification of any kind" the
+ * way the retention email is.
+ *
+ * COORDINATION WITH THE EMAIL CHANNEL (this feature's own explicit ask --
+ * "be deliberate about... how do these two channels coordinate", not just
+ * fire both blindly): the two channels are independent BY DESIGN, not
+ * accidentally uncoordinated -- someone who already has the retention
+ * email AND has subscribed to push both got voluntarily opted into both
+ * channels (the email fires automatically for every real account per its
+ * own long-standing behavior; push only ever fires for an account that
+ * separately, explicitly granted Notification permission -- see
+ * js/push-subscribe.js), so both landing for the same completion is the
+ * intended "second, independent channel" outcome the tracker item asks
+ * for, not a double-ping to suppress. What WOULD be a genuine double-ping
+ * this still guards against: firing the SAME push twice for the SAME
+ * completion (a retried mark-generation-completed call, or two browser
+ * tabs racing) -- that's exactly what push-dedup-store's per-operationName
+ * marker exists to prevent, independent of anything the email side does.
+ *
+ * Every branch below is a silent no-op (never an error, never a
+ * distinguishable HTTP response) -- same "this is best-effort bookkeeping,
+ * not a user-facing contract" posture as maybeSendAutomaticFirstDreamEmail
+ * above: no owner record, non-video media type, no registered account, no
+ * push subscription on file, or an already-claimed dedup marker for this
+ * exact operationName all mean simply "no push this time."
+ */
+async function maybeSendVideoReadyPush(event, operationName) {
+  var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
+  if (!ownerRecord || !ownerRecord.email) return;
+
+  // Same video-only scope as the retention email (see that function's own
+  // doc comment on why an unrecorded/unrecognized mediaType fails CLOSED,
+  // never assumed to be 'video') -- matches this feature's own "video-
+  // ready" naming; an image generation's completion isn't covered by this
+  // push type.
+  if (ownerRecord.mediaType !== 'video') return;
+
+  var account = await accountStore.getByEmail(event, ownerRecord.email);
+  if (!account || !account.username) return;
+
+  var dedupKey = 'video-ready:' + operationName;
+  var claim = await pushDedupStore.markSentOnce(event, dedupKey);
+  if (!claim.ok) return; // already sent for this exact completion, or the dedup store failed closed -- either way, don't send
+
+  await pushSender.sendToUser(event, account.username, {
+    title: 'Your dream is ready',
+    body: 'Tap to watch what you just created.',
+    url: './profile.html',
+    type: pushSender.PUSH_TYPES.VIDEO_READY
+  });
+}
+
 // Exposed for direct unit testing of the verification logic in isolation
 // (test/generation-completion-marker.test.js) -- not used by any other
 // production caller.
 exports.verifyOperationCompleted = verifyOperationCompleted;
+// Exposed for direct unit testing (test/video-ready-push.test.js) -- not
+// used by any other production caller.
+exports.maybeSendVideoReadyPush = maybeSendVideoReadyPush;

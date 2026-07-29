@@ -93,6 +93,16 @@
           </div>
         </div>
       </div>
+      <!-- Push-subscribe ask (tracker item for-product-build-stage-0-pwa-
+           web-push-f-jbutt5, part 3) -- empty by default, populated by
+           js/push-subscribe.js's maybeShowAsk() only right after a
+           generation actually starts, and only when every gate in that
+           function's own doc comment passes (real browser, permission
+           still 'default', never asked before in this browser). Mutually
+           exclusive with #proc-nudge-card above in practice -- that one
+           only ever shows INSIDE a detected FB/IG webview, this one only
+           ever shows OUTSIDE one. -->
+      <div id="push-ask-slot"></div>
       <div class="proc-preview" id="proc-preview" style="display:none;">
         <div class="proc-preview-label" id="proc-preview-label">While you wait, revisit your dreams</div>
         <div class="proc-preview-row" id="proc-preview-row"></div>
@@ -143,6 +153,10 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script src="js/install-nudge.js"></script>
+<script src="js/push-config.js"></script>
+<script src="js/push-subscribe.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <!-- Cloudflare Turnstile: baseline bot-abuse layer in front of the real
@@ -168,6 +182,13 @@
   // further down call again on their own -- a second call here would
   // start a second refresh interval).
   DreamStore.maintainSessionTransferUrl();
+  // Install-to-home-screen nudge (tracker item for-product-build-stage-0-
+  // pwa-web-push-f-jbutt5, absorbing home-screen-shortcut-a2hs-nudge-
+  // founder--yylzoq) -- only ever shows if THIS load just consumed a real
+  // session-transfer token above (see js/install-nudge.js's own doc
+  // comment on why that's the best moment: the visitor just escaped an
+  // FB/IG in-app webview into a real browser). No-ops instantly otherwise.
+  InstallNudge.init({ trigger: 'session-transfer' });
   document.querySelector('.proc-fail-icon').innerHTML = Icons.warning;
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
@@ -482,6 +503,18 @@
     applyMediaTypeCopy();
     startFakeProgress();
     renderPreview();
+    // Push-subscribe ask (tracker item for-product-build-stage-0-pwa-web-
+    // push-f-jbutt5, part 3: "ask at a genuinely high-intent moment, e.g.
+    // after first video starts generating") -- right here, the moment the
+    // wait screen actually starts showing a generation in progress
+    // (covers both a fresh submission below and a resumed in-flight job).
+    // No-ops entirely unless every gate in maybeShowAsk's own doc comment
+    // passes (real browser, permission still 'default', never asked
+    // before in this browser).
+    var currentUser = DreamStore.getCurrentUser();
+    if (window.PushSubscribe && currentUser) {
+      PushSubscribe.maybeShowAsk(document.getElementById('push-ask-slot'), currentUser.username);
+    }
 
     var pending = DreamStore.getPendingJob();
     if(pending){

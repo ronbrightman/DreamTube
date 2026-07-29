@@ -1,3 +1,18 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+
+# Scheduled Functions (Netlify's own cron mechanism) -- tracker item
+# for-product-build-stage-0-pwa-web-push-f-jbutt5, part 4
+# (daily-claim-available push). Declared here per Netlify's own documented
+# "specify the cron expression in netlify.toml" convention
+# (https://docs.netlify.com/build/functions/scheduled-functions/), in
+# ADDITION to send-daily-claim-pushes.js's own inline `schedule()` wrapper
+# from @netlify/functions -- belt-and-suspenders, since this repo has no
+# way to actually invoke Netlify's real scheduler from this sandbox to
+# confirm which mechanism a given deploy honors first. Hourly: comfortably
+# inside CLAIM_COOLDOWN_MS's 20h window (lib/entitlements.js) with room to
+# spare, so a newly-claimable account is never more than about an hour
+# from getting its push.
+[functions."send-daily-claim-pushes"]
+  schedule = "@hourly"

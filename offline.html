@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>You're offline — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v2.png">
+<!-- Deliberately no Google Fonts / external stylesheet here (unlike every
+     other page) and no js/store.js — sw.js's fetch handler serves THIS
+     exact file whenever a navigation fails offline (see that file's
+     header comment), so it must render something sensible with zero
+     network access, not depend on anything sw.js's own precache might not
+     have finished caching yet either. Inline styles only. -->
+<style>
+  :root{ color-scheme: dark; }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:#000; color:#fff;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    padding:32px 24px;
+  }
+  .wrap{ max-width:360px; }
+  .icon{ width:64px; height:64px; margin:0 auto 20px; opacity:.85; }
+  h1{ font-size:20px; font-weight:700; margin:0 0 8px; }
+  p{ font-size:14px; line-height:1.5; color:#9a9a9a; margin:0 0 24px; }
+  button{
+    appearance:none; border:none; border-radius:100px; padding:13px 28px;
+    background:#fff; color:#000; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  button:active{ background:#e2e2e2; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 9a16 16 0 0 1 22 0"></path>
+      <path d="M5 12.5a11 11 0 0 1 14 0"></path>
+      <path d="M8.5 16a6 6 0 0 1 7 0"></path>
+      <line x1="12" y1="20" x2="12.01" y2="20"></line>
+      <line x1="2" y1="2" x2="22" y2="22"></line>
+    </svg>
+    <h1>You're offline</h1>
+    <p>DreamTube needs a connection to load this page. Check your connection and try again — anything you already had open stays right where you left it.</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>

@@ -293,6 +293,8 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
@@ -316,6 +318,16 @@
   // location.search, so a shared explore.html link can never pick this
   // token up).
   DreamStore.maintainSessionTransferUrl();
+  // Install-to-home-screen nudge (tracker item for-product-build-stage-0-
+  // pwa-web-push-f-jbutt5, absorbing home-screen-shortcut-a2hs-nudge-
+  // founder--yylzoq) -- 'session-transfer' only fires if THIS load just
+  // consumed a real transfer token above; 'repeat-visit' fires instead
+  // for a real-browser visitor's 2nd+ time on THIS page (see
+  // js/install-nudge.js's own doc comment). Whichever is eligible first
+  // renders the card; the other call is then a harmless no-op (the module
+  // never renders twice in one load).
+  InstallNudge.init({ trigger: 'session-transfer' });
+  InstallNudge.init({ trigger: 'repeat-visit', pageKey: 'result' });
 
   // A purchase sheet opened from THIS page always sends the checkout's
   // successUrl to processing.html (the one page that knows how to

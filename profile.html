@@ -465,10 +465,20 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // Install-to-home-screen nudge for a real-browser visitor's 2nd+ time on
+  // Profile (tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5,
+  // absorbing home-screen-shortcut-a2hs-nudge-founder--yylzoq's "repeat
+  // visitors on result/profile in a real browser" placement) -- see
+  // js/install-nudge.js's own doc comment for every other gate this
+  // still has to clear (not in a webview, not already installed, not
+  // already dismissed, something real to offer on this platform).
+  InstallNudge.init({ trigger: 'repeat-visit', pageKey: 'profile' });
 
   // Same local posthog.capture wrapper every other page defines (result.html/
   // shop.html/start.html/wizard.html/explore.html) -- analytics must never

@@ -13,6 +13,12 @@
       "sizes": "1254x1254",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "assets/logo-v2-maskable.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -536,6 +536,44 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .menu-row-replica-icon{ flex:0 0 auto; width:18px; height:18px; display:flex; align-items:center; justify-content:center; color:#48484f;}
 .menu-row-replica-icon svg{ width:16px; height:16px;}
 .menu-row-replica-label{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:13px; font-weight:500; color:#1c1c1e;}
+/* ===== Install (A2HS) nudge — tracker item for-product-build-stage-0-pwa-
+   web-push-f-jbutt5, absorbing home-screen-shortcut-a2hs-nudge-founder--
+   yylzoq. Rendered by js/install-nudge.js as a fixed bottom sheet-style
+   card (unlike .proc-nudge-card above, which is inline in processing.html's
+   own markup) since this nudge is shared across processing.html/
+   result.html/profile.html, none of which have a purpose-built slot for
+   it — same fixed-bottom-with-safe-area positioning as .toast, just a
+   card instead of a pill. Reuses the exact same design language as
+   .proc-nudge-card (surface background, --gradient-ig icon dot,
+   --accent-trust CTA) intentionally, so this reads as "the same family of
+   nudge" as the in-app-webview-escape card, not a visually distinct
+   one-off. */
+.install-nudge-card{ position:fixed; left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px)); z-index:60; text-align:left; padding:14px 34px 14px 14px; border-radius:16px; background:var(--surface); border:1px solid rgba(108,140,255,.35); box-shadow:0 10px 30px -8px rgba(0,0,0,.6); max-width:420px; margin:0 auto;}
+.install-nudge-x{ position:absolute; top:10px; right:11px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); background:none; border:none; font-size:16px; line-height:1; cursor:pointer; padding:0;}
+.install-nudge-head{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:800; color:var(--text-primary); margin-bottom:5px;}
+.install-nudge-dot{ flex:0 0 auto; width:22px; height:22px; border-radius:7px; background:var(--gradient-ig); display:flex; align-items:center; justify-content:center; color:#fff;}
+.install-nudge-dot svg{ width:13px; height:13px;}
+.install-nudge-body{ font-size:12px; color:var(--text-muted); line-height:1.5;}
+.install-nudge-btn{ margin-top:10px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:13px; border-radius:100px; padding:10px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer;}
+.install-nudge-btn .icon{ width:14px; height:14px;}
+
+/* ===== Push-subscribe ask — tracker item for-product-build-stage-0-pwa-
+   web-push-f-jbutt5 part 3. Shown inline on processing.html, right after a
+   first video starts generating (a genuinely high-intent moment — see
+   js/push-subscribe.js), not as a fixed overlay — this one has an actual
+   slot in processing.html's own wait-screen markup, unlike the install
+   nudge above. Same visual family again (surface + --gradient-ig icon +
+   --accent-trust CTA) for the same "one consistent nudge language"
+   reason. */
+.push-ask-card{ width:100%; text-align:left; position:relative; margin-top:6px; padding:13px 30px 13px 14px; border-radius:16px; background:var(--surface); border:1px solid rgba(108,140,255,.35);}
+.push-ask-x{ position:absolute; top:9px; right:10px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); background:none; border:none; font-size:16px; line-height:1; cursor:pointer; padding:0;}
+.push-ask-head{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:800; color:var(--text-primary); margin-bottom:5px;}
+.push-ask-dot{ flex:0 0 auto; width:22px; height:22px; border-radius:7px; background:var(--gradient-ig); display:flex; align-items:center; justify-content:center; color:#fff;}
+.push-ask-dot svg{ width:13px; height:13px;}
+.push-ask-body{ font-size:11.5px; color:var(--text-muted); line-height:1.5;}
+.push-ask-btn{ margin-top:9px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:12.5px; border-radius:100px; padding:9px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer;}
+.push-ask-btn .icon{ width:14px; height:14px;}
+
 .proc-fail{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px;}
 .proc-fail-icon{ width:42px; height:42px; color:var(--danger);}
 .proc-fail-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; max-width:260px;}
