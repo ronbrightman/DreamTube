@@ -218,6 +218,21 @@ var entitlements = require('./lib/entitlements');
 var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
+var effectiveConfig = require('./lib/effective-config');
+
+// Logs this function's resolved rate-limit/cost-control config once per
+// cold start (tracker item for-product-damage-assessment-env-var-ca-
+// rmgaqh — see lib/effective-config.js's own doc block for the full
+// "why"). Module-level, NOT inside exports.handler below, so this runs
+// exactly once when Node first requires this file (a cold start), never
+// once per request. Values/defaults mirrored from this file's own
+// maxPerDay/dailyCapUsd lines further down — see that file's doc comment
+// on why this is a deliberate, independent duplication rather than a
+// shared resolver.
+effectiveConfig.logEffectiveConfigOnce('generate-image', [
+  { envVar: 'MAX_GENERATIONS_PER_IP_PER_DAY', default: 40, type: 'int' },
+  { envVar: 'DAILY_SPEND_CAP_USD', default: 50, type: 'float' }
+]);
 
 /** Mirrors generate-video.js's own recordJobOwnerBestEffort exactly — see that function's doc comment and lib/job-owners.js's header comment for the full mechanism. Records mediaType:'image' (this file's only kind) so mark-generation-completed.js can keep the first-dream retention email video-only when it fires automatically. */
 async function recordJobOwnerBestEffort(event, operationName, email) {

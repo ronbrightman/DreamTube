@@ -205,6 +205,7 @@ var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 var blobsRetry = require('./blobs-retry');
 var jobOwners = require('./job-owners');
+var effectiveConfig = require('./effective-config');
 
 var STORE_NAME = 'dreamtube-entitlements';
 
@@ -379,6 +380,24 @@ var FIRST_CLAIM_BONUS_AMOUNT = 100;
 // been set), so a legitimate user is never repeatedly rate-limited just
 // for reading their own already-initialized balance.
 var MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT = 5;
+
+// Logs this lib's resolved MAX_TOKEN_GRANTS_PER_IP_PER_DAY effective value
+// once per cold start (tracker item for-product-damage-assessment-env-
+// var-ca-rmgaqh — see lib/effective-config.js's own doc block for the
+// full "why"; this is the same env-var-with-a-code-default shape as
+// generate-video.js's/generate-image.js's/start-pending-generation.js's
+// MAX_GENERATIONS_PER_IP_PER_DAY, just gating first-ever token-balance
+// reads instead of a generation submission). Module-level, not inside
+// getTokenStatus below, so this runs exactly once per cold Lambda
+// instance regardless of which function (generate-video.js,
+// get-token-status.js, claim-daily-tokens.js, etc.) happens to require
+// this shared lib first and trigger that cold start — labeled
+// fn=entitlements (this module's own name) rather than any one caller's,
+// since a shared lib genuinely has no single "the function" to attribute
+// it to.
+effectiveConfig.logEffectiveConfigOnce('entitlements', [
+  { envVar: 'MAX_TOKEN_GRANTS_PER_IP_PER_DAY', default: MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT, type: 'int' }
+]);
 
 /**
  * The read-side engine, shared by getTokenStatus (read) and spendTokens

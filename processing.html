@@ -193,6 +193,15 @@
   var draft = DreamStore.getDraft();
   if(!DreamStore.getPendingJob() && (!draft.caption || !draft.style)){ location.href = 'create.html'; }
 
+  // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
+  // every other page's inline script already defines locally (see
+  // result.html/shop.html/start.html) — this page didn't have one yet. =====
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
   // ===== Media-type-aware copy/checklist =====
   // Resolves from whichever source actually has it: a resuming pendingJob
   // (its own mediaType, stamped by js/store.js's savePendingJob) takes
@@ -669,6 +678,19 @@
       // monospace chip.
       var raw = (err && err.message) || 'E399: unknown_error';
       var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      // Neutral, always-on failure signal (tracker item for-product-
+      // damage-assessment-env-var-ca-rmgaqh) -- fires from this single
+      // top-level catch for EVERY generation failure this file handles
+      // (submission failure, polling failure, timeout, content-policy
+      // rejection, rate-limit, spend-cap, insufficient-tokens, etc.), not
+      // just the E109/E409/E110/E410 branch below that hides the retry
+      // button. reason is the parsed error code (e.g. 'E109') when raw
+      // matches the "ENNN: reason" convention, or the raw message
+      // otherwise -- this is what makes a silent env-var override like the
+      // one that caused this incident (MAX_GENERATIONS_PER_IP_PER_DAY
+      // capped at 2 in the live environment, invisible in code review)
+      // show up in product analytics going forward, filterable by reason.
+      track('generation_blocked', { reason: match ? match[1] : raw });
       var reasonEl = document.getElementById('proc-fail-reason');
       // Only shown when the server actually credited a refund for THIS
       // specific failure (see js/store.js's pollUntilDone, which attaches
