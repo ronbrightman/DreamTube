@@ -567,6 +567,24 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .install-nudge-body{ font-size:12px; color:var(--text-muted); line-height:1.5;}
 .install-nudge-btn{ margin-top:10px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:13px; border-radius:100px; padding:10px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer;}
 .install-nudge-btn .icon{ width:14px; height:14px;}
+/* iOS visual aid — tracker item for-product-a2hs-install-nudge-3-founder-
+   vcofk7 (founder live test: "tap the Share icon" text alone wasn't
+   enough, even on real Safari). A small mock of a browser's bottom
+   toolbar with the app's existing Icons.shareIos glyph highlighted in the
+   middle, matching this app's own established precedent for "show a real
+   OS-chrome mockup, don't just describe it in words" (see .menu-row-
+   replica above, the in-app-webview nudge's own equivalent). Light
+   system-chrome coloring (not this app's dark surfaces) so it reads as
+   "a picture of your browser," same reasoning .menu-row-replica already
+   documents. CSS/SVG only, no image asset. */
+.install-nudge-visual{ margin:2px 0 10px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+.install-nudge-toolbar{ display:flex; align-items:center; justify-content:center; gap:13px; width:100%; background:#f2f2f4; border:1px solid rgba(0,0,0,.08); border-radius:14px; padding:9px 14px; box-shadow:0 1px 3px rgba(0,0,0,.16); }
+.install-nudge-toolbar-dot{ width:6px; height:6px; border-radius:50%; background:#c7c7cc; flex:0 0 auto; }
+.install-nudge-toolbar-share{ flex:0 0 auto; width:28px; height:28px; border-radius:8px; background:#fff; border:2px solid var(--accent-trust); color:#0a63d6; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 4px rgba(20,120,230,.16); }
+.install-nudge-toolbar-share svg{ width:15px; height:15px; }
+.install-nudge-toolbar-arrow{ font-size:10.5px; font-weight:800; letter-spacing:.03em; color:var(--accent-trust); text-align:center; }
+.install-nudge-menurow{ margin:8px auto 0; }
+.install-nudge-note{ font-size:10.5px; color:var(--text-faint); margin-top:7px; line-height:1.4; }
 
 /* ===== Push-subscribe ask — tracker item for-product-build-stage-0-pwa-
    web-push-f-jbutt5 part 3. Shown inline on processing.html, right after a
