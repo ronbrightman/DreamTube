@@ -1,7 +1,7 @@
 // netlify/functions/publish-dream.js
 //
 // POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType,
-//        channelLicenseGrantedAt, okToFeatureOnChannels }
+//        channelLicenseGrantedAt, channelLicenseRevokedAt, okToFeatureOnChannels }
 // -> upserts a dream into the shared feed-index blob (see get-feed.js).
 // Called both when a dream is first published, and again if an
 // already-published dream is later edited/regenerated (store.js's
@@ -19,16 +19,19 @@
 // three-way fallback pattern used everywhere else in this codebase, not
 // off this field.
 //
-// channelLicenseGrantedAt/okToFeatureOnChannels (tracker item for-product-
-// terms-republish-license-per--fhpcxk): the republish-license consent
-// state for terms.html's "Your content" clause, carried into this SHARED
-// record — not just js/store.js's local copy — since a real, cross-device
-// future auto-posting engine (NOT built here) could only ever read
-// curation eligibility from here. `channelLicenseGrantedAt` null/absent
-// means this dream was published before the clause shipped and has no
-// license at all yet (deliberately never backfilled — see js/store.js's
-// publishDream comment); `okToFeatureOnChannels` defaults true (on) when
-// omitted, matching the zero-click default-on opt-out toggle.
+// channelLicenseGrantedAt/channelLicenseRevokedAt/okToFeatureOnChannels
+// (tracker item for-product-terms-republish-license-per--fhpcxk): the
+// republish-license consent state for terms.html's "Your content" clause,
+// carried into this SHARED record — not just js/store.js's local copy —
+// since a real, cross-device future auto-posting engine (NOT built here)
+// could only ever read curation eligibility from here. `channelLicenseGrantedAt`
+// null/absent means this dream was published before the clause shipped and
+// has no license at all yet (deliberately never backfilled — see
+// js/store.js's publishDream comment); `channelLicenseRevokedAt` is the
+// same "concrete state a later 'remove existing social posts on request'
+// pass would read" js/store.js's unpublishDream/deleteDream comments
+// describe; `okToFeatureOnChannels` defaults true (on) when omitted,
+// matching the zero-click default-on opt-out toggle.
 //
 // No ownership check: this app has no real server-side auth (client-side
 // localStorage only, same as every other write in this codebase), so this
@@ -61,6 +64,7 @@ exports.handler = async function (event) {
   // published before the clause shipped," not a value to paper over with
   // a default. okToFeatureOnChannels DOES default true/on (unset === on).
   var channelLicenseGrantedAt = payload.channelLicenseGrantedAt || null;
+  var channelLicenseRevokedAt = payload.channelLicenseRevokedAt || null;
   var okToFeatureOnChannels = payload.okToFeatureOnChannels !== false;
   if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'missing_fields' }) };
@@ -78,6 +82,7 @@ exports.handler = async function (event) {
       likes: idx === -1 ? 0 : (feed[idx].likes || 0),
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
       channelLicenseGrantedAt: channelLicenseGrantedAt,
+      channelLicenseRevokedAt: channelLicenseRevokedAt,
       okToFeatureOnChannels: okToFeatureOnChannels
     };
 

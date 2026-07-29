@@ -671,6 +671,23 @@
   var dream = dreamId ? DreamStore.getDream(dreamId) : null;
   if(!dream){ location.href = 'explore.html'; }
 
+  // ===== Ownership gate (review finding on tracker item for-product-terms-
+  // republish-license-per--fhpcxk) =====
+  // This page has always resolved `dream` purely from the `?id=` URL param,
+  // with no check that it belongs to whoever is signed in — viewing stays
+  // that way deliberately (this page has no separate "someone else's dream"
+  // view, and locking it down is a separate, pre-existing concern outside
+  // this fix's scope). But the owner-only actions below (Publish, Edit, the
+  // "Feature on DreamTube's channels" opt-out, Delete) must never even
+  // appear to work for a dream that isn't this account's own — js/store.js's
+  // publishDream/unpublishDream/setOkToFeatureOnChannels/deleteDream all
+  // already refuse to mutate a dream whose ownerHandle doesn't match, so
+  // leaving these controls visible would just mean silent no-ops behind a
+  // button that looks like it worked. Same `ownerHandle === handle` check
+  // js/store.js's own getMyDreams/getDreamInsight/getDreamMilestone use.
+  var currentUser = DreamStore.getCurrentUser();
+  var isMyDream = !!(dream && currentUser && dream.ownerHandle === currentUser.handle);
+
   // ===== "Feature on DreamTube's channels" per-dream opt-out (tracker item
   // for-product-terms-republish-license-per--fhpcxk) =====
   // Default ON (undefined reads as true) so publishing itself stays
@@ -684,7 +701,11 @@
   var featureToggle = document.getElementById('feature-toggle');
   var featureToggleSub = document.getElementById('feature-toggle-sub');
   function updateFeatureToggleUI(){
-    featureToggleRow.style.display = dream.isPublished ? 'flex' : 'none';
+    // isMyDream: see the ownership-gate comment above -- the republish-
+    // license opt-out only ever makes sense (and is only ever allowed to
+    // actually save, per js/store.js's setOkToFeatureOnChannels) for the
+    // signed-in account's own dream.
+    featureToggleRow.style.display = (dream.isPublished && isMyDream) ? 'flex' : 'none';
     var on = dream.okToFeatureOnChannels !== false;
     featureToggle.classList.toggle('on', on);
     featureToggle.setAttribute('aria-checked', String(on));
@@ -782,6 +803,15 @@
     var pubBtn = document.getElementById('publish-btn');
     if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = false; pubBtn.title = 'Click to make private'; }
     else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
+    // Owner-only actions (see the isMyDream ownership-gate comment above) --
+    // hidden rather than disabled, since a dream that isn't this account's
+    // own has no legitimate reason to show controls that only ever no-op.
+    // "Make another" is deliberately excluded -- it doesn't touch this
+    // dream at all, just starts a brand-new one, so it stays visible for
+    // everyone.
+    document.getElementById('open-edit-sheet').style.display = isMyDream ? '' : 'none';
+    pubBtn.style.display = isMyDream ? '' : 'none';
+    document.getElementById('delete-btn').style.display = isMyDream ? '' : 'none';
     updateFeatureToggleUI();
   }
   render();

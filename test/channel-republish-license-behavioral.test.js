@@ -108,6 +108,26 @@ async function seedAccount(page, opts) {
   }, opts);
 }
 
+/**
+ * Signs a SECOND account into the SAME browser without touching
+ * state.dreams -- mirrors test/report-block-behavioral.test.js's loginAs.
+ * Deliberately does NOT clear/reset dreams: state.dreams is one array
+ * shared across every account that's ever used this browser (see
+ * CLAUDE.md), so whatever the first account's seedAccount call already
+ * pushed stays sitting there exactly like the real account-scoping gotcha
+ * this file's ownership-guard tests below exercise.
+ */
+async function switchToAccount(page, username) {
+  await page.evaluate(function (o) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + o.username, username: o.username };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[o.username] = { password: 'testpass1', email: o.username + '@example.com' };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, { username: username });
+}
+
 // ===== terms.html clause =====
 
 test('terms.html "Your content" names the republish license, the official channels, the opt-out, and no-backfill', async function (t) {
@@ -342,6 +362,155 @@ test('okToFeatureOnChannels reads as true (on) by default for a dream that never
     await safeGoto(page, baseUrl + '/login.html');
     var d = await page.evaluate(function () { return window.DreamStore.getDream('d-no-field'); });
     assert.notEqual(d.okToFeatureOnChannels, false, 'undefined must read as ON, not off');
+  } finally {
+    await page.close();
+  }
+});
+
+// ===== Review finding 1: ownership guard on publishDream/unpublishDream/
+// setOkToFeatureOnChannels (two accounts sharing one browser) =====
+
+test('DreamStore.publishDream/unpublishDream/setOkToFeatureOnChannels all refuse to act on another account\'s dream shared in the same browser\'s state.dreams', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockPublishSync(page);
+  await mockUnpublishSync(page);
+  try {
+    // Account A: a never-published dream (for the publishDream attempt --
+    // kept untouched by anything else so a leftover grant timestamp can
+    // never be mistaken for one B's blocked attempt produced), a
+    // sanity-only dream (to prove account A itself can still publish, kept
+    // entirely separate so the reset doesn't leave a stale grant on the
+    // dream B's attempt is checked against), and an already-published-and-
+    // licensed dream with the opt-out explicitly OFF (a value distinct
+    // from the true-by-default reading, so a no-op is unambiguous to
+    // detect) for the unpublishDream/setOkToFeatureOnChannels attempts.
+    await seedAccount(page, {
+      username: 'ownerA',
+      dreams: [
+        { id: 'sanity-dream', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: false },
+        { id: 'shared-unpublished', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: false },
+        {
+          id: 'shared-published', videoUrl: 'https://example.com/v.mp4', dur: '0:08',
+          isPublished: true, channelLicenseGrantedAt: 1700000000000, okToFeatureOnChannels: false
+        }
+      ]
+    });
+    // seedAccount only writes localStorage -- js/store.js reads it into its
+    // own in-memory `state` once, at page-load time, so a fresh navigation
+    // is required before any DreamStore.* call actually sees the seeded
+    // data (same reason every other test in this file that seeds then
+    // immediately calls DreamStore.* re-navigates first).
+    await safeGoto(page, baseUrl + '/login.html');
+
+    // Sanity check: account A really can act on its own dreams (proves any
+    // failure below is the ownership guard, not a broken publishDream) --
+    // uses its own dedicated dream so this doesn't leave a stray grant
+    // timestamp on 'shared-unpublished', which B's blocked attempt below
+    // asserts has NO grant at all.
+    var sanity = await page.evaluate(function () {
+      return window.DreamStore.publishDream('sanity-dream');
+    });
+    assert.ok(sanity && sanity.isPublished, 'sanity: the owning account must still be able to publish its own dream');
+
+    // Same browser, second account signs in -- state.dreams (all of
+    // account A's dreams above) is still sitting there in localStorage,
+    // untouched by switchToAccount itself. Another fresh navigation is
+    // needed again here, for the same reason as above, before evaluating
+    // as account B.
+    await switchToAccount(page, 'ownerB');
+    await safeGoto(page, baseUrl + '/login.html');
+
+    var result = await page.evaluate(function () {
+      var publishReturn = window.DreamStore.publishDream('shared-unpublished');
+      var afterPublish = window.DreamStore.getDream('shared-unpublished');
+
+      var unpublishReturn = window.DreamStore.unpublishDream('shared-published');
+      var afterUnpublish = window.DreamStore.getDream('shared-published');
+
+      var toggleReturn = window.DreamStore.setOkToFeatureOnChannels('shared-published', true);
+      var afterToggle = window.DreamStore.getDream('shared-published');
+
+      return {
+        publishReturn: publishReturn, afterPublishIsPublished: afterPublish.isPublished, afterPublishGrantedAt: afterPublish.channelLicenseGrantedAt,
+        unpublishReturn: unpublishReturn, afterUnpublishIsPublished: afterUnpublish.isPublished, afterUnpublishRevokedAt: afterUnpublish.channelLicenseRevokedAt,
+        toggleReturn: toggleReturn, afterToggleOkToFeature: afterToggle.okToFeatureOnChannels
+      };
+    });
+
+    // publishDream: a non-owner must not be able to publish account A's dream.
+    assert.ok(!result.publishReturn, 'publishDream must return falsy for another account\'s dream');
+    assert.equal(result.afterPublishIsPublished, false, 'the dream must stay unpublished');
+    assert.ok(!result.afterPublishGrantedAt, 'no license must be granted by a non-owner\'s publish attempt');
+
+    // unpublishDream: a non-owner must not be able to unpublish account A's dream.
+    assert.ok(!result.unpublishReturn, 'unpublishDream must return falsy for another account\'s dream');
+    assert.equal(result.afterUnpublishIsPublished, true, 'the dream must stay published');
+    assert.ok(!result.afterUnpublishRevokedAt, 'no revocation must be stamped by a non-owner\'s unpublish attempt');
+
+    // setOkToFeatureOnChannels: a non-owner must not be able to flip account A's opt-out.
+    assert.ok(!result.toggleReturn, 'setOkToFeatureOnChannels must return falsy for another account\'s dream');
+    assert.equal(result.afterToggleOkToFeature, false, 'the opt-out must stay exactly as account A left it');
+  } finally {
+    await page.close();
+  }
+});
+
+// ===== Review finding 2: result.html hides owner-only actions on a dream
+// that isn't the signed-in account's own =====
+
+test('result.html: Publish/Edit/Delete are hidden (and the feature toggle stays hidden) when the loaded dream belongs to a different account, while viewing itself still works', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  await mockPublishSync(page);
+  await mockUnpublishSync(page);
+  try {
+    // Account A publishes a dream (so it's the "someone else's published
+    // dream, viewed via a direct link" case this finding is about).
+    await seedAccount(page, {
+      username: 'resultOwnerA',
+      dreams: [{
+        id: 'not-mine-dream', videoUrl: 'https://example.com/v.mp4', dur: '0:08',
+        caption: 'A dream that is not the viewer\'s own', isPublished: true,
+        channelLicenseGrantedAt: 1700000000000, okToFeatureOnChannels: true
+      }]
+    });
+
+    // Account B (same browser) is signed in when it opens the link.
+    await switchToAccount(page, 'resultViewerB');
+    await safeGoto(page, baseUrl + '/result.html?id=not-mine-dream');
+
+    // Viewing stays open: the page must load this dream's own content, not
+    // redirect away or blank out.
+    assert.match(await page.locator('#result-quote').innerText(), /A dream that is not the viewer's own/);
+
+    // Owner-only actions must be hidden.
+    assert.equal(await page.locator('#publish-btn').isVisible(), false, 'Publish must be hidden for a dream that is not the viewer\'s own');
+    assert.equal(await page.locator('#open-edit-sheet').isVisible(), false, 'Edit must be hidden for a dream that is not the viewer\'s own');
+    assert.equal(await page.locator('#delete-btn').isVisible(), false, 'Delete must be hidden for a dream that is not the viewer\'s own');
+    assert.equal(await page.locator('#feature-toggle-row').isVisible(), false, 'the feature-on-channels toggle must be hidden for a dream that is not the viewer\'s own');
+
+    // "Make another" doesn't touch this dream at all -- must stay visible.
+    assert.equal(await page.locator('#make-another-btn').isVisible(), true, 'Make another is unrelated to this dream\'s ownership and must stay visible');
+
+    // Defense in depth: even if a hidden control were clicked directly,
+    // js/store.js's own ownership guard (finding 1) must still refuse it.
+    var stillNotMine = await page.evaluate(function () {
+      window.DreamStore.publishDream('not-mine-dream'); // already published -- this call is a no-op either way, but must not throw or grant a fresh license under account B
+      return window.DreamStore.getDream('not-mine-dream').okToFeatureOnChannels;
+    });
+    assert.equal(stillNotMine, true, 'account A\'s own opt-out choice must be untouched');
+
+    // Now load the SAME dream signed in as its real owner -- the actions
+    // must be visible again, proving this is a real ownership comparison,
+    // not just "always hidden".
+    await switchToAccount(page, 'resultOwnerA');
+    await safeGoto(page, baseUrl + '/result.html?id=not-mine-dream');
+    assert.equal(await page.locator('#publish-btn').isVisible(), true, 'Publish must be visible again for the actual owner');
+    assert.equal(await page.locator('#open-edit-sheet').isVisible(), true, 'Edit must be visible again for the actual owner');
+    assert.equal(await page.locator('#delete-btn').isVisible(), true, 'Delete must be visible again for the actual owner');
   } finally {
     await page.close();
   }

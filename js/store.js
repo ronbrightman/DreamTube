@@ -655,6 +655,12 @@
         // why that's the correct "not licensed, needs fresh consent" state,
         // not a bug to default away.
         channelLicenseGrantedAt: dream.channelLicenseGrantedAt || null,
+        // Carried alongside channelLicenseGrantedAt for the same reason —
+        // unpublishDream/deleteDream's revocation stamp is only useful to a
+        // future "remove existing social posts on request" pass if it
+        // actually reaches the shared record those posts would be sourced
+        // from, not just this browser's local copy.
+        channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
         okToFeatureOnChannels: dream.okToFeatureOnChannels !== false
       })
     }).catch(function () { /* best-effort — see comment above */ });
@@ -2706,6 +2712,8 @@
 
     publishDream: function (id) {
       var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       if (d) {
         // 'video_published' fires only on the actual transition into
         // published (not already true) -- this is the real "publish
@@ -2747,6 +2755,8 @@
     /** Takes one of the current user's own dreams back out of Explore. */
     unpublishDream: function (id) {
       var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       if (d) {
         d.isPublished = false;
         // Ends the republish license for any FUTURE use as of right now —
@@ -2791,6 +2801,8 @@
      */
     setOkToFeatureOnChannels: function (id, enabled) {
       var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
       if (d) {
         d.okToFeatureOnChannels = !!enabled;
         persist();
