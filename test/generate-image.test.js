@@ -16,7 +16,8 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
-var handler = require('../netlify/functions/generate-image').handler;
+var genImageModule = require('../netlify/functions/generate-image');
+var handler = genImageModule.handler;
 
 var realFetch = global.fetch;
 var ipCounter = 0;
@@ -48,11 +49,11 @@ function stubFetchRejected() {
   };
 }
 
-/** Spies on global.fetch so tests can assert whether the real fal.ai call ever actually fired a request, and inspect its body. */
+/** Spies on global.fetch so tests can assert whether the real fal.ai call ever actually fired a request, and inspect its body + headers. */
 function installFetchSpy() {
   var calls = [];
   global.fetch = async function (url, opts) {
-    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null, headers: opts && opts.headers });
     return { ok: true, status: 200, json: async function () { return { request_id: 'fake-image-request-id' }; } };
   };
   return calls;
@@ -117,6 +118,25 @@ test('a real submission posts to fal-ai/flux/dev with prompt + image_size: portr
   assert.ok(calls[0].body.prompt.indexOf('a dream about flying') !== -1);
   var body = JSON.parse(res.body);
   assert.equal(body.operationName.indexOf('fal:fal-ai/flux/dev:'), 0);
+});
+
+// tracker item for-product-bug-build-re-host-image-drea-0hpbm0 — fal's
+// media-expiration docs say generated media (images included) is
+// retained "for at least 7 days by default," and this is the only fal
+// call site in generate-image.js — so its submission must disable that
+// expiry, or every published image dream 404s roughly a week after
+// creation (this handler hands back fal's own image URL directly, no
+// re-host step).
+test('the fal submission sends the X-Fal-Object-Lifecycle-Preference header disabling expiry', async function () {
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].headers['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
+});
+
+test('FAL_NO_EXPIRY_HEADER is exported and shaped exactly as fal\'s docs specify', function () {
+  assert.deepEqual(JSON.parse(genImageModule.FAL_NO_EXPIRY_HEADER['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
 });
 
 test('a fal submission rejection -> E405, no tokens spent', async function () {

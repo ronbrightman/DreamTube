@@ -25,7 +25,8 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
-var handler = require('../netlify/functions/generate-video').handler;
+var genVideo = require('../netlify/functions/generate-video');
+var handler = genVideo.handler;
 
 var realFetch = global.fetch;
 var ipCounter = 0;
@@ -49,11 +50,11 @@ function genEvent(overrides) {
   });
 }
 
-/** Spies on global.fetch so tests can assert whether the real fal.ai call functions ever actually fired a request. Records every call's URL + parsed JSON body. */
+/** Spies on global.fetch so tests can assert whether the real fal.ai call functions ever actually fired a request. Records every call's URL + parsed JSON body + headers (see the X-Fal-Object-Lifecycle-Preference tests below, tracker item for-product-bug-build-re-host-image-drea-0hpbm0). */
 function installFetchSpy() {
   var calls = [];
   global.fetch = async function (url, opts) {
-    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null, headers: opts && opts.headers });
     return { ok: true, status: 200, json: async function () { return { request_id: 'fake-request-id' }; } };
   };
   return calls;
@@ -181,6 +182,39 @@ test('GENERATION_MOCK_MODE unset + FAL_KEY set: real fal.ai call fires with the 
   assert.equal(body.operationName.indexOf('fal:'), 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].body.duration, '8s');
+});
+
+// ----- X-Fal-Object-Lifecycle-Preference (tracker item for-product-bug-
+// build-re-host-image-drea-0hpbm0) — fal's media-expiration docs
+// (docs.fal.ai/model-apis/media-expiration) confirm generated media is
+// retained "for at least 7 days by default" with no video exemption, so
+// every ACTIVE fal submission call must send this header disabling
+// expiry, or a published dream's video eventually 404s. -----
+
+test('callFal (text-to-video, the default path with no self-photo/sourceImageUrl) sends the no-expiry header', async function () {
+  process.env.FAL_KEY = 'test-fal-key';
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({}));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].headers['X-Fal-Object-Lifecycle-Preference'], genVideo.FAL_NO_EXPIRY_HEADER['X-Fal-Object-Lifecycle-Preference']);
+  assert.deepEqual(JSON.parse(calls[0].headers['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
+});
+
+test('callFalReferenceToVideo (self-photo path) also sends the no-expiry header', async function () {
+  process.env.FAL_KEY = 'test-fal-key';
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({
+    body: { characters: [{ name: 'Me', isSelf: true, photoDataUrl: 'data:image/png;base64,AAAA' }] }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /reference-to-video/);
+  assert.deepEqual(JSON.parse(calls[0].headers['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
+});
+
+test('FAL_NO_EXPIRY_HEADER is exported and shaped exactly as fal\'s docs specify', function () {
+  assert.deepEqual(JSON.parse(genVideo.FAL_NO_EXPIRY_HEADER['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
 });
 
 // ----- GENERATION_TEST_DURATION -----

@@ -38,7 +38,7 @@ function genEvent(overrides) {
 function installFetchSpy() {
   var calls = [];
   global.fetch = async function (url, opts) {
-    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    calls.push({ url: url, body: opts && opts.body ? JSON.parse(opts.body) : null, headers: opts && opts.headers });
     return { ok: true, status: 200, json: async function () { return { request_id: 'fake-i2v-request-id' }; } };
   };
   return calls;
@@ -88,6 +88,13 @@ test('a sourceImageUrl request submits to fal-ai/veo3.1/fast/image-to-video with
   assert.equal(calls[0].body.aspect_ratio, '9:16');
   assert.equal(calls[0].body.duration, '8s');
   assert.equal(calls[0].body.generate_audio, false);
+  // tracker item for-product-bug-build-re-host-image-drea-0hpbm0 — fal's
+  // media-expiration docs say generated media (this animated video
+  // included) is retained "for at least 7 days by default," so this
+  // submission must disable that expiry or the published dream 404s
+  // roughly a week after creation. See generate-video-mock.test.js's own
+  // dedicated header tests for the other two active video call sites.
+  assert.deepEqual(JSON.parse(calls[0].headers['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
   var body = JSON.parse(res.body);
   assert.equal(body.operationName.indexOf('fal:fal-ai/veo3.1/fast/image-to-video:'), 0);
 });

@@ -143,6 +143,21 @@ var FAL_MODEL_IMAGE_GEN = 'fal-ai/flux/dev';
 var FAL_API_BASE = 'https://queue.fal.run';
 var IMAGE_SIZE = 'portrait_16_9';
 
+// Disables fal's default media-expiration window on this generation's
+// resulting image — tracker item for-product-bug-build-re-host-image-
+// drea-0hpbm0: fal's own docs (docs.fal.ai/model-apis/media-expiration)
+// confirm generated media is retained "for at least 7 days by default,"
+// so without this header every published image dream 404s once fal's own
+// CDN copy expires (this handler hands back fal's own image URL directly,
+// no re-host step). `expiration_duration_seconds: null` disables expiry
+// entirely for the media this specific submission produces. Duplicated
+// from generate-video.js's own identical constant rather than shared —
+// matches this codebase's existing "each Netlify function is self-
+// contained" convention (see this file's own header comment on
+// buildImagePrompt/humanizeFalDetail being duplicated for the same
+// reason).
+var FAL_NO_EXPIRY_HEADER = { 'X-Fal-Object-Lifecycle-Preference': JSON.stringify({ expiration_duration_seconds: null }) };
+
 /**
  * Active path. Submits a fal.ai queue job and returns "fal:<model>:<request_id>",
  * the exact same operationName shape generate-video.js's callFal uses (just
@@ -151,10 +166,10 @@ var IMAGE_SIZE = 'portrait_16_9';
 async function callFalImage(prompt, falKey) {
   var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_GEN, {
     method: 'POST',
-    headers: {
+    headers: Object.assign({
       'Content-Type': 'application/json',
       'Authorization': 'Key ' + falKey
-    },
+    }, FAL_NO_EXPIRY_HEADER),
     body: JSON.stringify({
       prompt: prompt,
       image_size: IMAGE_SIZE
@@ -354,3 +369,4 @@ exports.callFalImage = callFalImage;
 exports.falErrorMessage = falErrorMessage;
 exports.FAL_MODEL_IMAGE_GEN = FAL_MODEL_IMAGE_GEN;
 exports.IMAGE_TOKEN_COST = IMAGE_TOKEN_COST;
+exports.FAL_NO_EXPIRY_HEADER = FAL_NO_EXPIRY_HEADER;

@@ -228,6 +228,22 @@ function falErrorMessage(data) {
 var FAL_MODEL = process.env.FAL_MODEL_TEXT_TO_VIDEO || 'fal-ai/veo3.1/lite';
 var FAL_API_BASE = 'https://queue.fal.run';
 
+// Disables fal's default media-expiration window on this generation's
+// resulting file(s) — tracker item for-product-bug-build-re-host-image-
+// drea-0hpbm0: fal's own docs (docs.fal.ai/model-apis/media-expiration)
+// confirm generated media (images/video/audio alike, no video exemption)
+// is retained "for at least 7 days by default," so without this header
+// every published dream's video eventually 404s once fal's own CDN copy
+// expires — there is no re-hosting step anywhere in the active generation
+// path (video-status.js just hands back fal's own URL; see that file's
+// own header comment). `expiration_duration_seconds: null` disables
+// expiry entirely for the media this specific submission produces.
+// Applied to every ACTIVE fal submission call below (callFal,
+// callFalReferenceToVideo, callFalImageToVideo) — deliberately NOT added
+// to callFalWan/callVeoDirect further down, both already-dormant/unused
+// paths out of scope for this fix.
+var FAL_NO_EXPIRY_HEADER = { 'X-Fal-Object-Lifecycle-Preference': JSON.stringify({ expiration_duration_seconds: null }) };
+
 // GENERATION_TEST_DURATION (see the "Mock mode & test-duration override" doc
 // block below and docs/TESTING.md): lets a human deliberately trade video
 // length for cost on a genuinely *real* fal.ai call. fal's Veo 3.1 Fast
@@ -274,10 +290,10 @@ function withWebhook(url, webhookUrl) {
 async function callFal(prompt, falKey, duration, generateAudio, webhookUrl) {
   var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL, webhookUrl), {
     method: 'POST',
-    headers: {
+    headers: Object.assign({
       'Content-Type': 'application/json',
       'Authorization': 'Key ' + falKey
-    },
+    }, FAL_NO_EXPIRY_HEADER),
     body: JSON.stringify({
       prompt: prompt,
       aspect_ratio: '9:16',
@@ -318,10 +334,10 @@ var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
 async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl) {
   var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, webhookUrl), {
     method: 'POST',
-    headers: {
+    headers: Object.assign({
       'Content-Type': 'application/json',
       'Authorization': 'Key ' + falKey
-    },
+    }, FAL_NO_EXPIRY_HEADER),
     body: JSON.stringify({
       prompt: prompt,
       image_urls: [imageDataUrl],
@@ -364,10 +380,10 @@ var FAL_MODEL_IMAGE_TO_VIDEO = 'fal-ai/veo3.1/fast/image-to-video';
 async function callFalImageToVideo(prompt, imageUrl, falKey, duration, generateAudio, webhookUrl) {
   var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_IMAGE_TO_VIDEO, webhookUrl), {
     method: 'POST',
-    headers: {
+    headers: Object.assign({
       'Content-Type': 'application/json',
       'Authorization': 'Key ' + falKey
-    },
+    }, FAL_NO_EXPIRY_HEADER),
     body: JSON.stringify({
       prompt: prompt,
       image_url: imageUrl,
@@ -921,3 +937,4 @@ exports.resolveGenerationProfile = resolveGenerationProfile;
 exports.FAL_MODEL = FAL_MODEL;
 exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;
 exports.FAL_MODEL_IMAGE_TO_VIDEO = FAL_MODEL_IMAGE_TO_VIDEO;
+exports.FAL_NO_EXPIRY_HEADER = FAL_NO_EXPIRY_HEADER;
