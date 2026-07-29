@@ -398,12 +398,34 @@ exports.handler = async function (event) {
  * posture as every other eventually-consistent read in this codebase).
  */
 async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
-  var ownerRecord = await jobOwners.getJobOwnerRecord(event, operationName);
+  // Bounded-retry read (round-3 diagnostics/hardening, tracker.html's
+  // for-product-bug-founder-affects-all-funn-0efe7t, reopened): mirrors
+  // pending-dreams.js's own getWithReadyRetry, added to THIS SAME function
+  // for the identical class of hazard (round-1/round-2 review already
+  // hardened the pendingRecord read below this way; the job-owners read
+  // above it never got the same treatment, a real, confirmed inconsistency
+  // within one function). A plain get() here reads under Blobs' default
+  // eventual consistency same as everywhere else in this codebase — a
+  // completely separate function invocation's write (start-pending-
+  // generation.js, moments to minutes earlier) is not GUARANTEED durably
+  // visible to this independent read the instant it happens. See
+  // lib/job-owners.js's own getJobOwnerRecordWithRetry doc comment for the
+  // full mechanism and its accepted-residual honesty (this narrows the
+  // window, it does not claim to eliminate it down to zero, same posture
+  // as every other eventually-consistent read in this codebase).
+  var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
   if (!ownerRecord || !ownerRecord.email) {
     // No recorded owner -- nothing to do (see header comment). No
     // resolvable identity at all here, so distinct_id falls back to
     // 'unknown' (see reportAutoSkip below) -- same as the automatic path's
     // shared reportSkip in lib/first-dream-email-sender.js.
+    //
+    // Logs the actual operationName being looked up (round-3 diagnostics —
+    // this was previously completely invisible: only the PostHog event
+    // fired, with no operationName in its properties and distinct_id
+    // always 'unknown', so a real production miss like this one could
+    // never be traced back to which job/submission it actually was).
+    console.log('mark-generation-completed: no_job_owner_record for operationName=' + operationName + ' -- automatic first-dream email skipped');
     await reportAutoSkip(null, 'no_job_owner_record');
     return;
   }

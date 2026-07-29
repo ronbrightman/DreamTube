@@ -733,6 +733,48 @@ test('RESIDUAL RACE HARDENING: a readyAt write that has genuinely landed but has
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: even with mark-generation-completed.js\'s own first read of readyAt landing stale, the bounded retry must recover the true value and skip the automatic send -- exactly one email total, never two');
 });
 
+// -----------------------------------------------------------------------
+// ROUND-3 HARDENING (tracker.html's for-product-bug-founder-affects-all-
+// funn-0efe7t, REOPENED after failing founder QA and burning a real
+// production user's 203 no_job_owner_record retries over 7 hours): the
+// RESIDUAL RACE HARDENING test above proves mark-generation-completed.js's
+// OWN pending-dreams (readyAt) read already recovers from exactly this
+// class of lagging-read hazard via getWithReadyRetry. Its job-owners read
+// (getJobOwnerRecord) had NO equivalent at all -- a genuine, confirmed
+// inconsistency within the SAME function -- closed by
+// lib/job-owners.js's new getJobOwnerRecordWithRetry. This test proves
+// that fix using the identical proof technique (mock-blobs'
+// setReadOverride simulating a write that already genuinely landed on the
+// real store but hasn't yet propagated to this independent read).
+// -----------------------------------------------------------------------
+
+test('ROUND-3 HARDENING: a job-owners write that has genuinely landed but has not yet propagated to mark-generation-completed.js\'s own independent read must still resolve and send, not silently skip as no_job_owner_record', async function () {
+  await registerAccount('lagginguser', 'lagginguser@example.com');
+  var opName = realMockOpName('lagging-1');
+  await seedJobOwner(opName, 'lagginguser@example.com', 'video');
+  var spies = installFetchSpy();
+
+  var jobOwners = require('../netlify/functions/lib/job-owners');
+  // Simulate ONE lagging read against the job-owners store specifically:
+  // the very next get() sees nothing yet, even though the real store
+  // (seedJobOwner above) already has the record durably written -- exactly
+  // the "issued but not yet visible to an independent reader" window this
+  // fix exists for.
+  mockBlobs.setReadOverride(jobOwners.STORE_NAME, function (key, callCount) {
+    if (callCount === 1) return { value: undefined };
+    return false; // fall through to the real (already-written) value on every later call
+  });
+
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var res = await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
+  mockBlobs.clearReadOverride(jobOwners.STORE_NAME);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(spies.resendCalls.length, 1, 'THE FIX: a single lagging read of the job-owners store must not surface as no_job_owner_record -- the bounded retry must recover the real record and send');
+  var skippedEvents = spies.posthogCalls.filter(function (c) { return c.body.event === 'first_dream_email_skipped' && c.body.properties.reason === 'no_job_owner_record'; });
+  assert.equal(skippedEvents.length, 0, 'must not fire the no_job_owner_record skip event when the record genuinely exists, just lagged on the first read');
+});
+
 test('mark-generation-completed: a job-owners email with no matching registered account is a silent no-op (no account to email)', async function () {
   var opName = realMockOpName('no-account-1');
   await seedJobOwner(opName, 'never-registered@example.com', 'video');
