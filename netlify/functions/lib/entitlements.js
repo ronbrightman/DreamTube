@@ -1858,9 +1858,32 @@ function achievementGrantsStore() {
   return getStore({ name: ACHIEVEMENT_GRANTS_STORE_NAME });
 }
 
-/** Composite key for the OUTER per-(email, achievementId) marker — see the doc block above for why this needs to be scoped to both, not achievementId alone. */
+/**
+ * Composite key for the OUTER per-(email, achievementId) marker — see the
+ * doc block above for why this needs to be scoped to both, not
+ * achievementId alone. Uses JSON.stringify (not string concatenation with a
+ * separator) specifically so a crafted email/achievementId containing that
+ * separator can never collide two different pairs onto the same key —
+ * review finding: a plain `email + '::' + achievementId` scheme let
+ * email="x::y", achievementId="z" collide with email="x", achievementId="y::z".
+ * ACHIEVEMENT_ID_PATTERN (checked in validateAchievementId below, before
+ * this is ever called) additionally rules out `::`/quote characters in
+ * achievementId at the source, so this is defense in depth, not the only
+ * guard.
+ */
 function achievementGrantMarkerKey(email, achievementId) {
-  return normalizeEmail(email) + '::' + achievementId;
+  return JSON.stringify([normalizeEmail(email), achievementId]);
+}
+
+// Achievement ids are homepage-feature-owned string constants (e.g.
+// "streak_7day"), never user input — this pattern exists purely to rule out
+// a caller-programming-error id containing characters that could ever be
+// mistaken for a key-composition separator (see achievementGrantMarkerKey's
+// own doc comment), not to validate any real-world naming convention.
+var ACHIEVEMENT_ID_PATTERN = /^[a-zA-Z0-9_]+$/;
+
+function validateAchievementId(achievementId) {
+  return typeof achievementId === 'string' && ACHIEVEMENT_ID_PATTERN.test(achievementId);
 }
 
 function validateGrantSpec(grantSpec) {
@@ -1894,7 +1917,7 @@ function validateGrantSpec(grantSpec) {
 async function applyAchievementGrant(event, email, achievementId, grantSpec) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false, granted: false };
-  if (typeof achievementId !== 'string' || !achievementId) return { ok: false, granted: false };
+  if (!validateAchievementId(achievementId)) return { ok: false, granted: false };
   validateGrantSpec(grantSpec); // throws on a caller-programming-error grantSpec, before any I/O
 
   var markerKey = achievementGrantMarkerKey(key, achievementId);
@@ -2034,6 +2057,27 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
   // whole `tokens` sub-object unchanged (to preserve it against a stale
   // read the same way spendTokens/addTokens already do), so it needs this
   // same freshest-known balance too.
+  //
+  // Residual, undefended race (review finding, disclosed rather than fixed
+  // here — same INHERITED shape creditTokenPackAmountOnce/
+  // refundTokenAmountOnce already carry, not something newly introduced by
+  // this function): `syncedTokens` is captured ONCE before the retry loop
+  // below, then reused verbatim on every retry attempt for
+  // `lastClaimAt`/`streak`/the pre-grant `balance` base — unlike
+  // `nextCapabilities`, which correctly re-derives from each attempt's own
+  // fresh `rec.capabilities` read. blobs-retry.js's own header comment
+  // documents a second/third attempt as a NORMAL occurrence (propagation
+  // lag), not a rare edge case, so a real `claimDailyTokens`/`spendTokens`/
+  // `addTokens`/pack-credit/refund write landing on this SAME email's
+  // record in that window can have its fresher `lastClaimAt`/`streak`/
+  // `balance` silently reverted by this function's stale snapshot plus its
+  // own delta on top. Tracked for a real fix (re-deriving from the fresh
+  // per-attempt read, the way capabilities already does) across all three
+  // functions that share this shape — see tracker item (added at review
+  // time) for the cross-function follow-up; not fixed here to avoid
+  // touching two already-shipped, already-in-production write paths
+  // (token-pack credit, refund) inside this mechanism-only, no-live-trigger
+  // PR's scope.
   var syncedTokens = await syncTokens(event, key);
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
@@ -2115,13 +2159,24 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
  * a token count, and a status, no card data or name/address (that PII
  * lives entirely on Dodo's own side, see create-checkout-session-dodo.js).
  *
- * Also does NOT touch ACHIEVEMENT_GRANTS_STORE_NAME (the per-
- * email::achievementId dedup markers) — same reasoning as
- * TOKEN_PURCHASES_STORE_NAME/REFUNDED_JOBS_STORE_NAME above: no cheap way to
- * enumerate "every achievementId this email was ever granted" to delete them
- * individually, and a lingering marker for a deleted account is harmless
- * (it carries no more than an achievement id, a grant spec, and a status —
- * nothing an already-deleted account's marker could leak to anyone).
+ * DOES clean up ACHIEVEMENT_GRANTS_STORE_NAME (the per-email::achievementId
+ * dedup markers) for every achievement this record's own `achievements`
+ * field lists — review finding: the borrowed "no cheap way to enumerate"
+ * reasoning from TOKEN_PURCHASES_STORE_NAME/REFUNDED_JOBS_STORE_NAME (whose
+ * markers are keyed by an opaque payment_id/job_id with no email index)
+ * doesn't actually apply here, since the entitlement record IS the
+ * enumeration — `rec.achievements`'s own keys are exactly "every
+ * achievementId this email was ever granted." Left uncleaned, a re-created
+ * account under the same (deleted, then reused) email would find specific
+ * achievements permanently, silently un-grantable — the same "stale
+ * artifact tied to a freed identifier still affects the next holder" bug
+ * class this codebase already had to fix once for
+ * lib/account-auth-token.js's username reuse (see that file's own header
+ * comment). Best-effort, not itself retried/verified — if one of these
+ * deletes fails, the account record is still gone (the thing that actually
+ * matters for privacy/PII), and a lingering marker in that failure case is
+ * back to being merely a rare, narrow annoyance rather than an expected
+ * outcome of every deletion.
  *
  * Always succeeds (returns { ok:true }) even if no record existed yet for
  * this email — same "deleting something already gone is a safe no-op"
@@ -2132,6 +2187,20 @@ async function deleteEntitlement(event, email) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false, error: 'email_required' };
   connectLambda(event);
+
+  var existing = await store().get(key, { type: 'json' });
+  if (existing && existing.achievements) {
+    var achievementIds = Object.keys(existing.achievements);
+    for (var i = 0; i < achievementIds.length; i++) {
+      try {
+        await achievementGrantsStore().delete(achievementGrantMarkerKey(key, achievementIds[i]));
+      } catch (e) {
+        // Best-effort — see this function's own doc comment for why a
+        // failure here doesn't block the actual account-data deletion.
+      }
+    }
+  }
+
   await store().delete(key);
   return { ok: true };
 }
@@ -2141,6 +2210,14 @@ module.exports = {
   TOKEN_PURCHASES_STORE_NAME,
   REFUNDED_JOBS_STORE_NAME,
   ACHIEVEMENT_GRANTS_STORE_NAME,
+  // Exported so tests seed/read the achievement-grant marker store under
+  // the SAME key this file's own code computes, rather than a test-local
+  // copy of the key format that could silently drift out of sync with a
+  // future change here (review finding: the marker-key scheme changed once
+  // already, from string concatenation to JSON.stringify, specifically to
+  // close a collision gap — a hardcoded test-side format would have masked
+  // that exact kind of change).
+  achievementGrantMarkerKey,
   normalizeEmail,
   getEntitlement,
   isEntitled,

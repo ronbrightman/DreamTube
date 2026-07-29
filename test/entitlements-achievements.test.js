@@ -69,7 +69,7 @@ test('grants tokens onto a fresh email and reports granted:true', async function
   assert.equal(record.achievements.streak_7day.amount, 20);
   assert.ok(record.achievements.streak_7day.grantedAt > 0);
 
-  var marker = await mockBlobsRead(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, 'ach1@example.com::streak_7day');
+  var marker = await mockBlobsRead(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey('ach1@example.com', 'streak_7day'));
   assert.equal(marker.status, 'committed');
 });
 
@@ -330,7 +330,7 @@ test('a marker left "pending" with the effect NOT yet applied (applyAchievementG
   var email = 'achinterrupted1@example.com';
   await seedZeroBalance(email);
 
-  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, email + '::streak_7day', {
+  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey(email, 'streak_7day'), {
     email: email,
     achievementId: 'streak_7day',
     grantSpec: { type: 'tokens', amount: 20 },
@@ -356,7 +356,7 @@ test('a marker left "pending" where the effect was ALREADY applied (only the fli
     tokens: { balance: 20, lastClaimAt: Date.now() },
     achievements: { streak_7day: { grantedAt: Date.now() - 5000, type: 'tokens', amount: 20 } }
   });
-  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, email + '::streak_7day', {
+  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey(email, 'streak_7day'), {
     email: email,
     achievementId: 'streak_7day',
     grantSpec: { type: 'tokens', amount: 20 },
@@ -378,7 +378,7 @@ test('a marker already "committed" is a genuine repeat trigger and is never resu
     tokens: { balance: 20, lastClaimAt: Date.now() },
     achievements: { streak_7day: { grantedAt: Date.now() - 60000, type: 'tokens', amount: 20 } }
   });
-  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, email + '::streak_7day', {
+  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey(email, 'streak_7day'), {
     email: email,
     achievementId: 'streak_7day',
     grantSpec: { type: 'tokens', amount: 20 },
@@ -432,7 +432,7 @@ test('genuine exhaustion writing the initial pending marker (verify never confir
 test("genuine exhaustion applying the grant effect (applyAchievementGrantOnce's own retry loop) throws too", async function () {
   var email = 'achexhaustion2@example.com';
   await seedZeroBalance(email);
-  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, email + '::streak_7day', {
+  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey(email, 'streak_7day'), {
     email: email, achievementId: 'streak_7day', grantSpec: { type: 'tokens', amount: 20 }, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
 
@@ -454,7 +454,7 @@ test("genuine exhaustion applying the grant effect (applyAchievementGrantOnce's 
 test('genuine exhaustion flipping the marker to committed (bookkeeping-only failure, effect already landed) also throws', async function () {
   var email = 'achexhaustion3@example.com';
   await seedZeroBalance(email);
-  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, email + '::streak_7day', {
+  mockBlobs.seed(entitlements.ACHIEVEMENT_GRANTS_STORE_NAME, entitlements.achievementGrantMarkerKey(email, 'streak_7day'), {
     email: email, achievementId: 'streak_7day', grantSpec: { type: 'tokens', amount: 20 }, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
 
