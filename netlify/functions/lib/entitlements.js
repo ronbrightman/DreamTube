@@ -412,6 +412,22 @@ var MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT = 5;
  * check itself, which callers apply completely independently of this — a
  * bypassed IP still gets exactly INITIAL_GRANT (220) tokens, no more, same
  * as any other brand-new email that simply wasn't IP-capped.
+ *
+ * Return value also carries `justSeeded` (2026-07-29, tracker item
+ * entitlements-js-retryingwrite-balance-mu-qxm1ih): true only on the
+ * branch below that just materialized this email's FIRST-EVER tokens
+ * sub-object via a write in THIS SAME call, false whenever `record.tokens`
+ * already existed before this call started (nothing was written here).
+ * Purely an internal signal — never exported, never persisted onto the
+ * entitlement record itself — consumed only by creditTokenPackAmountOnce/
+ * refundTokenAmountOnce/applyAchievementGrantOnce's shared
+ * baseTokensForAttempt helper (see its own doc comment) to know whether
+ * attempt 0 of their OWN following retryingWrite loop is allowed to trust
+ * its own fresh read yet: right after THIS write, Netlify Blobs' lack of a
+ * read-your-own-write guarantee means that attempt's read can still
+ * legitimately show the pre-seed state (or nothing at all) for a brief
+ * window, so only in that specific justSeeded-and-first-attempt case must
+ * the caller fall back to this return value instead.
  */
 async function syncTokens(event, email, opts) {
   var key = normalizeEmail(email);
@@ -476,10 +492,10 @@ async function syncTokens(event, email, opts) {
     // item's own cheaper option, given the low real-world likelihood
     // (single email, narrow window) and non-corrupting outcome here.
     await setEntitlement(event, key, { tokens: fresh });
-    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
   }
 
-  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: false });
 }
 
 /**
@@ -1222,7 +1238,17 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * itself is safe either way, since addTokens' patch never touches it).
  * Same class of narrow last-write-wins drift this file's own header
  * comment already accepts for concurrent balance mutations in general;
- * not something this fix introduces or specifically defends against.
+ * not something this fix introduces or specifically defends against. This
+ * is a genuinely DIFFERENT, narrower race than the one fixed 2026-07-29
+ * (tracker item entitlements-js-retryingwrite-balance-mu-qxm1ih, see the
+ * `syncedTokens`/`baseTokensForAttempt` doc comments below): that fix
+ * closes the "our OWN retry loop reuses a stale pre-loop snapshot instead
+ * of a later attempt's fresh read" gap; THIS disclosure is about a
+ * completely unguarded plain writer (no retryingWrite, no verify at all)
+ * landing inside the single-attempt window between our own read and our
+ * own write — inherent to Blobs having no compare-and-swap, and not
+ * closable by re-deriving from a fresher read, since there IS no fresher
+ * read available at that exact instant.
  *
  * ----------------------------------------------------------------------
  * FIRST-PURCHASE BONUS (+50%, Token Economy C, founder-approved 2026-07-26)
@@ -1261,26 +1287,82 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  */
 var FIRST_PURCHASE_BONUS_MULTIPLIER = 1.5;
 
+/**
+ * Chooses the base `{balance, lastClaimAt, streak}` a single retryingWrite
+ * ATTEMPT should build its new `tokens` sub-object from — shared by
+ * creditTokenPackAmountOnce, refundTokenAmountOnce, and
+ * applyAchievementGrantOnce, the three functions that share the exact same
+ * "syncTokens once, then a bounded read -> mutate -> write -> verify loop"
+ * shape (see any one's own doc comment for the full mechanism this is
+ * part of). Exists purely so this one piece of logic can't drift three
+ * separate ways.
+ *
+ * `attemptIndex` is 0 for the FIRST attempt of the caller's own
+ * retryingWrite loop, incrementing on every subsequent attempt — callers
+ * track this themselves (a closure counter bumped once per `mutate` call,
+ * since `mutate` runs exactly once per attempt in lockstep with `read`).
+ *
+ * Rule (2026-07-29 fix, tracker item
+ * entitlements-js-retryingwrite-balance-mu-qxm1ih — the bug this closes,
+ * and the read-your-own-write hazard it must NOT reopen, are both
+ * explained in full on each of the three callers' own doc comments):
+ *   - `attemptIndex === 0 && syncedTokens.justSeeded`: this call's own
+ *     outer `syncTokens` JUST materialized this email's first-ever tokens
+ *     sub-object with a write, moments ago, in this exact same call.
+ *     Netlify Blobs has no read-your-own-write guarantee, so attempt 0's
+ *     own fresh read can still legitimately show the pre-seed record (or
+ *     nothing at all) — `rec.tokens` is NOT trustworthy yet here, so
+ *     `syncedTokens` (this call's own in-memory copy of the value it just
+ *     wrote) is the only safe base. This is a narrow, single-attempt
+ *     window: by the time a SECOND attempt runs (blobs-retry.js's own
+ *     real ~200ms inter-attempt delay), that one seed write has almost
+ *     always propagated.
+ *   - Every other case (a record whose tokens already existed before this
+ *     call even started — `syncTokens` never wrote anything, so there is
+ *     no read-your-own-write hazard from THIS call to guard against — or
+ *     any attempt after the first): trust THIS attempt's own fresh
+ *     `rec.tokens`, falling back to `syncedTokens` only if `rec.tokens`
+ *     itself is entirely absent (mirrors this file's existing
+ *     `rec.someArrayField || []` fallback discipline for other per-record
+ *     fields). This is what lets a real concurrent claimDailyTokens/
+ *     spendTokens/addTokens write that has landed on this SAME email's
+ *     record since `syncTokens` was called get picked up and preserved,
+ *     instead of being silently reverted by a stale pre-loop snapshot plus
+ *     this function's own delta on top.
+ */
+function baseTokensForAttempt(attemptIndex, rec, syncedTokens) {
+  if (attemptIndex === 0 && syncedTokens.justSeeded) return syncedTokens;
+  return rec.tokens || syncedTokens;
+}
+
 async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
 
-  // Apply any due lazy grant first, same sequencing as addTokens — AND,
-  // critically, use ITS RETURNED VALUE directly as the balance base
-  // below, never a later independent re-read. Netlify Blobs has no
-  // read-your-own-write guarantee (this file's own header comment
+  // Ensures a brand-new email's tokens sub-object exists (materializing
+  // INITIAL_GRANT via syncTokens' own lazy-seed branch) before this record
+  // is touched via blobsRetry directly below, AND gives `mutate` a
+  // fallback base for the narrow window where attempt 0's own fresh read
+  // might not show that just-written tokens field yet (Netlify Blobs has
+  // no read-your-own-write guarantee — this file's own header comment
   // documents the exact incident that forced this codebase off strong
-  // consistency): a `store().get()` issued right after syncTokens' own
-  // setEntitlement write can legitimately still return the pre-grant
-  // record. addTokens already avoids this exact hazard by computing
-  // `tokens.balance + amount` from syncTokens' in-memory return value
-  // and letting that patch fully replace `tokens` on write (setEntitlement
-  // merges via Object.assign, so the patch's `tokens` key wins outright
-  // over whatever its own internal read saw) — this function follows the
-  // same pattern for the same reason. Getting this wrong would silently
-  // overwrite a real grant that just landed (up to 220 tokens for a
-  // brand-new email's first-ever read).
+  // consistency). See baseTokensForAttempt's own doc comment for the full
+  // per-attempt rule this feeds — as of 2026-07-29 (tracker item
+  // entitlements-js-retryingwrite-balance-mu-qxm1ih) this snapshot is
+  // deliberately NOT reused verbatim on every retry attempt the way it
+  // used to be: each attempt now re-derives balance/lastClaimAt/streak
+  // from THAT attempt's own fresh `rec.tokens` whenever it's safe to trust
+  // (falling back to this snapshot only in the one narrow case
+  // baseTokensForAttempt documents), the same "trust the fresh per-attempt
+  // read, don't reuse a stale pre-loop snapshot" discipline this
+  // function's own appliedTokenPackPaymentIds/firstPackPurchaseAt fields
+  // already followed. The old version reused this snapshot verbatim on
+  // every attempt, which could silently revert a concurrent
+  // claimDailyTokens/spendTokens/addTokens write that landed on this SAME
+  // email's record between this call's outer syncTokens read and a later
+  // retry attempt's successful write.
   var syncedTokens = await syncTokens(event, key);
+  var attemptIndex = 0;
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
@@ -1289,22 +1371,26 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
       return store().get(key, { type: 'json' });
     },
     mutate: function (existing) {
-      // This fresh-per-attempt read is used ONLY to check
+      var currentAttempt = attemptIndex;
+      attemptIndex++;
+      // This fresh-per-attempt read is used to check
       // appliedTokenPackPaymentIds (the idempotency guard against a
-      // concurrent resume) and firstPackPurchaseAt (the first-purchase-
-      // bonus check, same reasoning — see this function's own doc
-      // comment) — and to preserve any other fields already on the
-      // record — NEVER to derive the new balance. See the doc comment
-      // above `syncedTokens` for why.
+      // concurrent resume), firstPackPurchaseAt (the first-purchase-bonus
+      // check, same reasoning — see this function's own doc comment), AND
+      // (as of the 2026-07-29 fix) the base balance/lastClaimAt/streak via
+      // baseTokensForAttempt — see that helper's own doc comment for
+      // exactly when it trusts this fresh read vs. falls back to
+      // `syncedTokens`.
       var rec = existing || { email: key };
       var appliedList = rec.appliedTokenPackPaymentIds || [];
       if (appliedList.indexOf(paymentId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
       var isFirstPurchase = !rec.firstPackPurchaseAt;
       var creditAmount = isFirstPurchase ? Math.round(amount * FIRST_PURCHASE_BONUS_MULTIPLIER) : amount;
-      var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + creditAmount);
+      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + creditAmount);
       return Object.assign({}, rec, {
         email: key,
-        tokens: { balance: newBalance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak },
+        tokens: { balance: newBalance, lastClaimAt: baseTokens.lastClaimAt, streak: baseTokens.streak },
         appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
         firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
@@ -1664,6 +1750,24 @@ async function refundTokensOnce(event, email, jobId, amount) {
  * function's own fail-open behavior is lower-stakes and was intentionally
  * left as-is by that same pass, see this function's own doc comment
  * above for why).
+ *
+ * Base balance/lastClaimAt/streak (2026-07-29 fix, tracker item
+ * entitlements-js-retryingwrite-balance-mu-qxm1ih): same
+ * `syncTokens`-then-`baseTokensForAttempt` discipline as
+ * creditTokenPackAmountOnce — see either that function's own doc comment
+ * or baseTokensForAttempt's for the full reasoning. In short: `syncedTokens`
+ * (captured once, before the loop) still exists to (a) materialize a
+ * brand-new email's INITIAL_GRANT before this record is ever touched here,
+ * and (b) serve as attempt 0's ONLY trustworthy base in the narrow window
+ * right after that same-call seed write, before it's had a chance to
+ * propagate — but it is no longer reused verbatim on every later retry
+ * attempt the way it used to be. Each attempt now re-derives its base from
+ * THAT attempt's own fresh `rec.tokens` whenever `baseTokensForAttempt`
+ * says it's safe to trust, so a real concurrent claimDailyTokens/
+ * spendTokens/addTokens write landing on this SAME email's record between
+ * this call's outer syncTokens read and a later retry attempt's
+ * successful write is picked up and preserved, instead of being silently
+ * reverted by a stale snapshot plus this function's own delta on top.
  */
 async function refundTokenAmountOnce(event, email, jobId, amount) {
   var key = normalizeEmail(email);
@@ -1674,12 +1778,8 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
     return { ok: true };
   }
 
-  // Same "use syncTokens' own returned value as the balance base, never a
-  // later independent re-read" discipline as creditTokenPackAmountOnce —
-  // see that function's own doc comment for the read-your-own-write hazard
-  // this avoids (a just-landed signup grant getting silently clobbered by
-  // a stale re-read).
   var syncedTokens = await syncTokens(event, key);
+  var attemptIndex = 0;
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
@@ -1688,13 +1788,16 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
       return store().get(key, { type: 'json' });
     },
     mutate: function (existing) {
+      var currentAttempt = attemptIndex;
+      attemptIndex++;
       var rec = existing || { email: key };
       var refundedList = rec.refundedJobIds || [];
       if (refundedList.indexOf(jobId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
-      var newBalance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + amount);
+      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + amount);
       return Object.assign({}, rec, {
         email: key,
-        tokens: { balance: newBalance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak },
+        tokens: { balance: newBalance, lastClaimAt: baseTokens.lastClaimAt, streak: baseTokens.streak },
         refundedJobIds: refundedList.concat([jobId]),
         updatedAt: Date.now()
       });
@@ -2048,37 +2151,38 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
 
-  // Same "use syncTokens' own returned value as the balance base, never a
-  // later independent re-read" discipline as creditTokenPackAmountOnce/
-  // refundTokenAmountOnce — see either's own doc comment for the
-  // read-your-own-write hazard this avoids (a just-landed signup/claim
-  // grant getting silently clobbered by a stale re-read). Needed for BOTH
-  // grant types, not just 'tokens': a 'capability' grant still rewrites the
+  // syncTokens-then-baseTokensForAttempt discipline shared with
+  // creditTokenPackAmountOnce/refundTokenAmountOnce — see
+  // baseTokensForAttempt's own doc comment for the full per-attempt rule.
+  // `syncedTokens` still exists to (a) materialize a brand-new email's
+  // INITIAL_GRANT before this record is ever touched here, and (b) serve
+  // as attempt 0's only trustworthy base in the narrow read-your-own-write
+  // window right after that same-call seed write. Needed for BOTH grant
+  // types, not just 'tokens': a 'capability' grant still rewrites the
   // whole `tokens` sub-object unchanged (to preserve it against a stale
   // read the same way spendTokens/addTokens already do), so it needs this
-  // same freshest-known balance too.
+  // same base too.
   //
-  // Residual, undefended race (review finding, disclosed rather than fixed
-  // here — same INHERITED shape creditTokenPackAmountOnce/
-  // refundTokenAmountOnce already carry, not something newly introduced by
-  // this function): `syncedTokens` is captured ONCE before the retry loop
-  // below, then reused verbatim on every retry attempt for
+  // FIXED 2026-07-29 (tracker item entitlements-js-retryingwrite-balance-
+  // mu-qxm1ih): this used to capture `syncedTokens` ONCE before the retry
+  // loop below, then reuse it verbatim on EVERY retry attempt for
   // `lastClaimAt`/`streak`/the pre-grant `balance` base — unlike
-  // `nextCapabilities`, which correctly re-derives from each attempt's own
-  // fresh `rec.capabilities` read. blobs-retry.js's own header comment
-  // documents a second/third attempt as a NORMAL occurrence (propagation
-  // lag), not a rare edge case, so a real `claimDailyTokens`/`spendTokens`/
-  // `addTokens`/pack-credit/refund write landing on this SAME email's
-  // record in that window can have its fresher `lastClaimAt`/`streak`/
-  // `balance` silently reverted by this function's stale snapshot plus its
-  // own delta on top. Tracked for a real fix (re-deriving from the fresh
-  // per-attempt read, the way capabilities already does) across all three
-  // functions that share this shape — see tracker item (added at review
-  // time) for the cross-function follow-up; not fixed here to avoid
-  // touching two already-shipped, already-in-production write paths
-  // (token-pack credit, refund) inside this mechanism-only, no-live-trigger
-  // PR's scope.
+  // `nextCapabilities`, which already correctly re-derived from each
+  // attempt's own fresh `rec.capabilities` read. blobs-retry.js's own
+  // header comment documents a second/third attempt as a NORMAL occurrence
+  // (propagation lag), not a rare edge case, so a real `claimDailyTokens`/
+  // `spendTokens`/`addTokens`/pack-credit/refund write landing on this
+  // SAME email's record in that window could have its fresher
+  // `lastClaimAt`/`streak`/`balance` silently reverted by this function's
+  // stale snapshot plus its own delta on top. Now each attempt re-derives
+  // its base from THAT attempt's own fresh `rec.tokens` via
+  // baseTokensForAttempt whenever it's safe to trust one, matching
+  // `nextCapabilities`'s existing discipline — see that helper's own doc
+  // comment for the exact rule, and creditTokenPackAmountOnce's/
+  // refundTokenAmountOnce's doc comments for the identical fix applied to
+  // those two functions.
   var syncedTokens = await syncTokens(event, key);
+  var attemptIndex = 0;
 
   var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
@@ -2087,6 +2191,8 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
       return store().get(key, { type: 'json' });
     },
     mutate: function (existing) {
+      var currentAttempt = attemptIndex;
+      attemptIndex++;
       var rec = existing || { email: key };
       var achievements = rec.achievements || {};
       if (achievements[achievementId]) return blobsRetry.SKIP; // already applied by an earlier attempt
@@ -2094,16 +2200,17 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
       var now = Date.now();
       var ledgerEntry = { grantedAt: now, type: grantSpec.type };
       var nextAchievements = Object.assign({}, achievements);
+      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
       // `tokens` is carried through unchanged by default (same
       // "purely additive, never resets claim state" discipline
       // spendTokens/addTokens already apply) -- the 'tokens' branch below
       // overrides only `balance`.
-      var nextTokens = { balance: syncedTokens.balance, lastClaimAt: syncedTokens.lastClaimAt, streak: syncedTokens.streak };
+      var nextTokens = { balance: baseTokens.balance, lastClaimAt: baseTokens.lastClaimAt, streak: baseTokens.streak };
       var nextCapabilities = Object.assign({}, rec.capabilities);
 
       if (grantSpec.type === 'tokens') {
         ledgerEntry.amount = grantSpec.amount;
-        nextTokens.balance = Math.min(MAX_TOKEN_BALANCE, syncedTokens.balance + grantSpec.amount);
+        nextTokens.balance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + grantSpec.amount);
       } else { // 'capability' -- validateGrantSpec already rejected anything else
         ledgerEntry.capability = grantSpec.capability;
         ledgerEntry.count = grantSpec.count;

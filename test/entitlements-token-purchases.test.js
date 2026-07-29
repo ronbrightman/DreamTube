@@ -538,3 +538,90 @@ test('getTokenStatus keeps returning hasMadeFirstPurchase: true across a later d
   var status = await entitlements.getTokenStatus({}, 'grantedafterpurchase@example.com');
   assert.equal(status.hasMadeFirstPurchase, true, 'firstPackPurchaseAt must survive a daily claim, which writes a fresh `tokens` sub-object of its own');
 });
+
+// ----- Cross-function concurrency: a genuinely concurrent claimDailyTokens
+// write on the SAME email must survive creditTokenPackAmountOnce's own
+// retry loop, not get reverted (tracker item
+// entitlements-js-retryingwrite-balance-mu-qxm1ih) -----
+//
+// This is a DIFFERENT bug class than the double-credit concurrency test
+// above (two calls racing for the SAME paymentId). This one is about a
+// SINGLE token-pack credit racing a COMPLETELY UNRELATED write to the same
+// email's record (a daily claim) — creditTokenPackAmountOnce used to
+// capture `syncedTokens` ONCE, before its own retryingWrite loop, then
+// reuse that one snapshot's balance/lastClaimAt/streak verbatim on EVERY
+// retry attempt, instead of re-deriving from that attempt's own fresh
+// read the way its appliedTokenPackPaymentIds/firstPackPurchaseAt fields
+// already correctly did. blobs-retry.js's own header comment documents a
+// second/third attempt as a NORMAL, expected occurrence (propagation lag),
+// not a rare edge case — so a real claimDailyTokens write landing on this
+// SAME email's record between this call's outer syncTokens read and a
+// later retry attempt's successful write could have its fresher
+// lastClaimAt/streak/balance silently reverted by the stale snapshot plus
+// this function's own delta on top. A SEQUENTIAL test (await one call,
+// then the other) can never catch this: by the time the second call's own
+// syncTokens runs, the first is long done and already visible, so old and
+// fixed code compute the identical result either way.
+//
+// Same technique as entitlements-achievements.test.js's own equivalent
+// test: Promise.all fires a REAL, genuinely concurrent claimDailyTokens
+// call racing creditTokenPackOnce on the SAME email, with a mockBlobs read
+// override that intercepts creditTokenPackAmountOnce's own OUTER
+// `syncTokens()` read specifically (identified via the call stack, so
+// claimDailyTokens' own reads/writes against the same store are never
+// touched) and forces it to see the PRE-claim, PRE-credit state — exactly
+// mimicking real Blobs propagation lag deterministically instead of
+// leaving it to chance timing. Everything after that one forced read (the
+// retryingWrite loop's own read/write/verify) sees REAL data, including
+// whatever the genuinely concurrent claim has by then actually written.
+// FAILS against the pre-fix code, which always built its new `tokens` off
+// that one forced-stale `syncedTokens` snapshot regardless of how fresh
+// the retryingWrite loop's own read was (the concurrent claim's
+// lastClaimAt/streak get silently reverted, and its +20 balance is lost);
+// PASSES against the fix, which prefers that attempt's own fresh read
+// instead (see baseTokensForAttempt's own doc comment for the exact rule).
+
+test("a genuinely concurrent claimDailyTokens write is NOT reverted by creditTokenPackAmountOnce's own retry loop (real concurrency, not sequential awaits)", async function () {
+  var email = 'purchaseraceclaim@example.com';
+  var pastCooldown = Date.now() - (entitlements.CLAIM_COOLDOWN_MS + 60000);
+  // firstPackPurchaseAt already set so the +50% first-purchase bonus
+  // doesn't complicate this race-focused test's arithmetic.
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 100, lastClaimAt: pastCooldown, streak: 3 },
+    firstClaimAt: pastCooldown - 1000,
+    firstPackPurchaseAt: pastCooldown - 2000
+  });
+
+  var forcedOnce = false;
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key) {
+    if (forcedOnce) return null;
+    // The FIRST STORE_NAME read whose call stack passes through
+    // creditTokenPackAmountOnce is its own outer `syncTokens()` call --
+    // this deliberately targets THAT read, leaving the retryingWrite
+    // loop's own read/verify further down untouched (return null falls
+    // through to real data).
+    if (new Error().stack.indexOf('creditTokenPackAmountOnce') !== -1) {
+      forcedOnce = true;
+      return { value: { email: key, tokens: { balance: 100, lastClaimAt: pastCooldown, streak: 3 }, firstPackPurchaseAt: pastCooldown - 2000 } };
+    }
+    return null;
+  });
+
+  var results;
+  try {
+    results = await Promise.all([
+      entitlements.creditTokenPackOnce({}, email, 'pay_race_claim', 50),
+      entitlements.claimDailyTokens({}, email)
+    ]);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+
+  assert.equal(results[0].credited, true, 'the token-pack credit must still succeed despite needing a real retry');
+  assert.equal(results[1].claimed, true, 'the concurrent claim must still succeed too');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 100 + entitlements.DAILY_CLAIM_AMOUNT + 50, 'both the claim (+20) and the pack credit (+50, no first-purchase bonus since firstPackPurchaseAt was already set) must land -- the bug this fix closes would silently discard the claim, leaving only 100 + 50 = 150');
+  assert.notEqual(record.tokens.lastClaimAt, pastCooldown, "the concurrent claim's fresh lastClaimAt must survive -- the bug this fix closes would silently revert it back to the pre-claim value");
+  assert.equal(record.tokens.streak, 4, "the concurrent claim's bumped streak (3 -> 4) must survive, not get reverted back to 3");
+});
