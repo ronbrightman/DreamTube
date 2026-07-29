@@ -1,0 +1,380 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Homepage — five directions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<!--
+  TEMPORARY founder-only design mock (unlinked, obscure URL — same
+  security model as tracker.html / interp-mock-x7q4.html). Five competing
+  homepage-as-journey directions (D1-D5 from the homepage research; D6
+  excluded per founder) — founder picks. Static mock, no live logic;
+  remarks post to the homepage tracker item. Art assets
+  home-mock-art-*.jpg belong to this page. DELETE page + art after the
+  pick (tracked on the homepage tracker item).
+-->
+<style>
+:root{--bg:#0c0a1a;--raise:#151228;--ink:#eae7fb;--soft:#a49dc4;--line:#272144;--acc:#9d90ff;--accs:#201c3d;--warn:#e0aa5a;--ok:#4bd39b;--err:#ef6a6a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding:clamp(18px,4vw,44px)}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);font-weight:600;margin:0 0 10px}
+h1{font-size:clamp(24px,5vw,36px);margin:0 0 8px;letter-spacing:-.02em}
+.lede{color:var(--soft);margin:0 0 26px;max-width:70ch}
+h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
+.secnote{color:var(--soft);font-size:13px;margin:0 0 16px;max-width:76ch}
+.secnote b{color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:22px}
+.col{display:flex;flex-direction:column;align-items:center;gap:8px}
+.cap{font-size:12px;color:var(--soft);max-width:250px;text-align:center}
+.phone{width:250px;height:530px;background:#000;border-radius:30px;border:1px solid rgba(255,255,255,.14);box-shadow:0 26px 60px -18px rgba(0,0,0,.8);overflow:hidden;position:relative;font-size:11.5px}
+.appbg{position:absolute;inset:0;background:radial-gradient(120% 80% at 25% 15%,rgba(131,58,180,.4),transparent 60%),radial-gradient(110% 80% at 80% 75%,rgba(90,60,190,.28),transparent 55%),#100d20}
+.scr{position:absolute;inset:0;padding:12px 11px;overflow:hidden}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.logo{font-weight:800;font-size:12px;letter-spacing:.02em}
+.tokchip{background:rgba(157,144,255,.16);border:1px solid rgba(157,144,255,.4);color:#cfc8ff;border-radius:99px;padding:3px 8px;font-size:9.5px;font-weight:700}
+.bnav{position:absolute;left:0;right:0;bottom:0;background:rgba(12,10,26,.92);border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-around;align-items:center;padding:7px 0 9px;font-size:8.5px;color:var(--soft)}
+.bnav b{color:var(--ink)}
+.bnav .plus{width:26px;height:26px;border-radius:50%;background:var(--acc);color:#0c0a1a;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center}
+/* streak ring */
+.ringrow{display:flex;align-items:center;gap:9px;background:#1d1834;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:9px 10px}
+.ring{width:42px;height:42px;border-radius:50%;background:conic-gradient(var(--acc) 0 62%,rgba(255,255,255,.12) 62% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 42px}
+.ring i{width:32px;height:32px;border-radius:50%;background:#1d1834;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:11px}
+.ringtxt b{display:block;font-size:10.5px}
+.ringtxt span{color:var(--soft);font-size:9px}
+.claimbtn{margin-left:auto;background:var(--acc);color:#0c0a1a;font-weight:800;border-radius:99px;padding:5px 9px;font-size:9px;white-space:nowrap}
+.claimbtn.done{background:transparent;border:1px solid rgba(75,211,155,.5);color:var(--ok)}
+/* D1 path */
+.path{position:relative;margin:14px 0 0;padding-left:26px}
+.path:before{content:"";position:absolute;left:9px;top:4px;bottom:4px;width:2px;background:linear-gradient(180deg,rgba(75,211,155,.7),rgba(157,144,255,.6),rgba(255,255,255,.12))}
+.node{position:relative;margin-bottom:11px}
+.node:before{content:"";position:absolute;left:-23px;top:3px;width:12px;height:12px;border-radius:50%;background:#2a2347;border:2px solid rgba(255,255,255,.25)}
+.node.done:before{background:var(--ok);border-color:var(--ok)}
+.node.done .nt{color:var(--soft);text-decoration:line-through;text-decoration-color:rgba(164,157,196,.5)}
+.node.next:before{background:var(--acc);border-color:#cfc8ff;box-shadow:0 0 0 4px rgba(157,144,255,.28),0 0 14px rgba(157,144,255,.7)}
+.node .nt{font-size:10.5px;font-weight:700}
+.node .ns{font-size:8.5px;color:var(--soft)}
+.nextcard{background:linear-gradient(180deg,#241d47,#1a1533);border:1px solid var(--acc);box-shadow:0 0 18px rgba(157,144,255,.3);border-radius:13px;padding:10px;margin:2px 0 11px -4px}
+.nextcard .nt{font-size:11.5px}
+.gobtn{display:inline-block;background:var(--acc);color:#0c0a1a;font-weight:800;border-radius:99px;padding:5px 12px;font-size:9.5px;margin-top:7px}
+.node.lock:before{background:#1a1631;border-color:rgba(255,255,255,.15)}
+.node.lock .nt{color:#6d6694}
+.toastc{position:absolute;left:14px;right:14px;top:44%;background:linear-gradient(180deg,#241d47,#171130);border:1px solid var(--ok);border-radius:15px;padding:14px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.7)}
+.toastc .big{font-size:22px}
+.toastc b{display:block;font-size:12px;margin:4px 0 2px}
+.toastc span{color:var(--soft);font-size:9.5px}
+.rewpill{display:inline-block;background:rgba(75,211,155,.14);border:1px solid rgba(75,211,155,.5);color:var(--ok);border-radius:99px;padding:4px 9px;font-size:9px;font-weight:800;margin-top:8px}
+/* D2 journal */
+.todaycard{background:linear-gradient(180deg,#241d47,#1a1533);border:1px solid var(--acc);border-radius:13px;padding:10px;margin-bottom:10px}
+.todaycard b{font-size:12px;display:block}
+.todaycard span{color:var(--soft);font-size:9px}
+.entrybtns{display:flex;gap:6px;margin-top:8px}
+.ebtn{flex:1;text-align:center;border-radius:99px;padding:5px 4px;font-size:8.5px;font-weight:700}
+.ebtn.p{background:var(--acc);color:#0c0a1a}
+.ebtn.g{border:1px solid rgba(255,255,255,.22);color:var(--soft)}
+.dayrow{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.thumb{flex:0 0 74px;width:74px;height:46px;border-radius:9px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.14)}
+.thumb:after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-left:9px solid rgba(255,255,255,.92);border-top:5.5px solid transparent;border-bottom:5.5px solid transparent;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
+.t1{background:radial-gradient(90% 90% at 30% 25%,#7b5ea7,#2b1d50)}
+.t2{background:radial-gradient(90% 90% at 70% 30%,#4e9a8e,#16324a)}
+.t3{background:radial-gradient(90% 90% at 40% 70%,#a0526d,#3a1d3f)}
+.t4{background:radial-gradient(90% 90% at 60% 40%,#4f74c9,#1a2247)}
+.thumb.norec{background:#171331}.thumb.norec:after{display:none}
+.thumb.norec i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:15px;opacity:.65}
+.dmeta b{display:block;font-size:10px}
+.dmeta span{color:var(--soft);font-size:8.5px}
+.dhdr{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);font-weight:800;margin:9px 0 7px}
+.weekcard{background:linear-gradient(135deg,#2b2452,#1a1533);border:1px solid var(--warn);border-radius:13px;padding:10px;margin-bottom:10px;box-shadow:0 0 16px rgba(224,170,90,.18)}
+.weekcard .wtag{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--warn);font-weight:800}
+.weekcard b{display:block;font-size:11.5px;margin:3px 0 2px}
+.weekcard span{color:var(--soft);font-size:9px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:6px}
+.cd{aspect-ratio:1;border-radius:7px;background:#171331;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:8px;color:#6d6694;position:relative}
+.cd.has{border-color:rgba(157,144,255,.55);color:var(--ink)}
+.cd.has:after{content:"";position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--acc)}
+.cd.vid{background:radial-gradient(120% 120% at 30% 25%,#5b4390,#221744);color:#fff}
+.cd.today{outline:2px solid var(--acc)}
+/* D3 house */
+.houseimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hshade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(12,10,26,.55),transparent 22%,transparent 72%,rgba(12,10,26,.75))}
+.hlogo{position:absolute;top:10px;left:0;right:0;text-align:center;font-weight:800;font-size:12px;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+.hsub{position:absolute;top:26px;left:0;right:0;text-align:center;font-size:8.5px;color:#cfc8ff;text-shadow:0 1px 6px rgba(0,0,0,.8)}
+.roomtag{position:absolute;background:rgba(12,10,26,.78);border:1px solid rgba(157,144,255,.65);color:#e6e1ff;border-radius:99px;padding:4px 8px;font-size:8.5px;font-weight:800;box-shadow:0 0 12px rgba(157,144,255,.35);white-space:nowrap}
+.roomtag.lock{border-color:rgba(255,255,255,.25);color:#8f88b5;box-shadow:none}
+.roomtag i{font-style:normal;margin-right:3px}
+.hbottom{position:absolute;left:10px;right:10px;bottom:12px;background:rgba(12,10,26,.82);border:1px solid rgba(255,255,255,.16);border-radius:13px;padding:8px 10px;backdrop-filter:blur(3px)}
+.hbottom b{font-size:10px;display:block}
+.hbottom span{color:var(--soft);font-size:8.5px}
+/* D4 interpreter */
+.pmask{position:absolute;top:0;left:0;right:0;height:57%;overflow:hidden}
+.pmask img{width:100%;height:100%;object-fit:cover;object-position:top}
+.pmask:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,13,32,.15),transparent 45%,#100d20 97%)}
+.greet{position:absolute;top:52%;left:12px;right:12px}
+.greet .gname{font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--acc);font-weight:800}
+.greet h3{margin:3px 0 8px;font-size:15.5px;line-height:1.3;font-weight:800}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid rgba(157,144,255,.5);color:#cfc8ff;border-radius:99px;padding:5px 9px;font-size:10px;font-weight:700}
+.chip.p{background:var(--acc);border-color:var(--acc);color:#0c0a1a}
+.chip.ghost{border-color:rgba(255,255,255,.2);color:var(--soft)}
+.substrip{position:absolute;left:12px;right:12px;bottom:34px;display:flex;align-items:center;gap:7px;background:rgba(29,24,52,.85);border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:6px 9px;font-size:8.5px;color:var(--soft)}
+.substrip .mini{width:20px;height:20px;border-radius:50%;background:conic-gradient(var(--acc) 0 62%,rgba(255,255,255,.14) 62% 100%);flex:0 0 20px}
+.disc{font-size:8px;color:#8b84ad;text-align:center;position:absolute;bottom:4px;left:0;right:0}
+/* D5 dashboard */
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dcard{background:#1d1834;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:9px}
+.dcard.span{grid-column:span 2}
+.dcard .dt{font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--acc);font-weight:800;margin-bottom:4px}
+.dcard b{font-size:10.5px;display:block}
+.dcard span{color:var(--soft);font-size:8.5px}
+.dcard.hero{background:linear-gradient(180deg,#241d47,#1a1533);border-color:var(--acc)}
+.dcard.lockc{opacity:.9}
+.lockbar{height:5px;border-radius:99px;background:rgba(255,255,255,.1);margin:6px 0 4px;overflow:hidden}
+.lockbar i{display:block;height:100%;width:66%;background:var(--warn);border-radius:99px}
+.dcard.earned{border-color:var(--warn);box-shadow:0 0 14px rgba(224,170,90,.2)}
+.nextstrip{margin-top:8px;background:rgba(157,144,255,.1);border:1px dashed rgba(157,144,255,.45);border-radius:11px;padding:7px 9px;font-size:9px;color:#cfc8ff}
+.nextstrip b{color:var(--ink)}
+/* remarks */
+.card{background:var(--raise);border:2px solid var(--warn);box-shadow:0 0 0 3px rgba(224,170,90,.16);border-radius:14px;padding:13px 15px 15px;display:flex;flex-direction:column;gap:8px;margin:16px 0 0;max-width:640px}
+.card .id{font-weight:700;font-size:15px}
+.rl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--acc);font-weight:600;margin-top:2px}
+textarea.remark{width:100%;min-height:66px;resize:vertical;background:#0c0a1a;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:inherit;font-size:13px}
+textarea.remark:focus{outline:2px solid var(--acc);border-color:var(--acc)}
+.saverow{display:flex;align-items:center;gap:10px}
+.savebtn{font:inherit;font-weight:600;font-size:13px;padding:8px 16px;border-radius:9px;border:1px solid var(--acc);background:var(--acc);color:#0c0a1a;cursor:pointer}
+.savebtn:disabled{opacity:.6;cursor:default}
+.save-status{font-size:12.5px;color:var(--soft)}
+.save-status.ok{color:var(--ok);font-weight:600}
+.save-status.err{color:var(--err);font-weight:600}
+.card.overall{border-color:var(--acc);box-shadow:0 0 0 3px rgba(157,144,255,.2);margin-top:34px}
+.card.overall .id{color:var(--acc)}
+footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--soft);max-width:78ch}
+</style></head><body>
+<div class="wrap">
+<p class="eyebrow">DreamTube · Homepage redesign · five directions</p>
+<h1>Five competing homes — you pick</h1>
+<p class="lede">Five shapes for the new logged-in homepage. <b>Underneath, all five run the exact same machinery</b> — the dream journal, achievements/milestones, the Interpreter's Chamber, and the daily token claim — the only question is which shape greets you every morning. Leave <b>remarks per direction</b> below each one (they save straight to the tracker), and give an <b>overall favorite</b> in the last card. Mixing is allowed — e.g. "D5 layout with D4's greeting on top" is a valid answer.</p>
+
+<h2>D1 — “The Dream Path” <span style="color:var(--soft);font-weight:400;font-size:13px">· your journey as a vertical milestone path</span></h2>
+<p class="secnote"><b>Bets on:</b> the next step always front-and-center — the strongest proven pull for new users' first weeks (Duolingo's home shape). <b>Tradeoff:</b> the path exhausts for veterans once the big milestones are done.</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 140</div></div>
+  <div class="ringrow"><div class="ring"><i>🔥5</i></div><div class="ringtxt"><b>5-night capture streak</b><span>No recall still counts</span></div><div class="claimbtn">Claim +20</div></div>
+  <div class="path">
+   <div class="node done"><div class="nt">First dream logged</div><div class="ns">Mon · +100 tokens</div></div>
+   <div class="node done"><div class="nt">First dream video created</div><div class="ns">Tue · free re-edit earned</div></div>
+   <div class="node done"><div class="nt">First interpretation</div><div class="ns">Wed · The Depth Analyst</div></div>
+   <div class="node next"><div class="nextcard"><div class="nt">Tonight: log a dream → +20 tokens</div><div class="ns">Step 4 of your first week · keeps your streak alive</div><div class="gobtn">What did you dream?</div></div></div>
+   <div class="node lock"><div class="nt">7 dreams logged</div><div class="ns">2 to go · unlocks weekly readings</div></div>
+   <div class="node lock"><div class="nt">First repeating theme found</div><div class="ns">The interpreter announces it</div></div>
+  </div>
+  <div class="bnav"><span><b>Journey</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D1a · the path home</b> — streak ring + claim fused at top; done trail above, next node glowing center, locked milestones teasing below.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr" style="filter:brightness(.55)">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 140</div></div>
+  <div class="ringrow"><div class="ring"><i>🔥6</i></div><div class="ringtxt"><b>6-night capture streak</b><span>Best yet</span></div><div class="claimbtn done">Claimed ✓</div></div>
+  <div class="bnav"><span><b>Journey</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div>
+ <div class="toastc"><div class="big">✦</div><b>Milestone reached — 7 dreams logged</b><span>Your weekly readings are now unlocked</span><br><span class="rewpill">Reward: 1 free interpretation lens</span></div>
+ </div><p class="cap"><b>D1b · a milestone lands</b> — celebration moment; rewards lean on capabilities (free lens / re-edit), tokens only for the big ones.</p></div>
+</div>
+<div class="card"><span class="id">Remarks on D1 — The Dream Path</span>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="What works / what doesn't in D1…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="D1 DREAM PATH">Save</button><span class="save-status"></span></div>
+</div>
+
+<h2>D2 — “The Night Journal” <span style="color:var(--soft);font-weight:400;font-size:13px">· a journal you can watch</span></h2>
+<p class="secnote"><b>Bets on:</b> the daily ritual of the entry itself, with DreamTube's unfair advantage — your journal's entries are <b>watchable videos</b>, not text. <b>Tradeoff:</b> the timeline is only as alive as the logging habit, and it hard-requires server-side dream storage to survive.</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 140</div></div>
+  <div class="todaycard"><b>What did you dream?</b><span>Thu, Jul 29 · No recall is an entry too · claim +20 with today's entry</span>
+   <div class="entrybtns"><div class="ebtn p">Write it</div><div class="ebtn g">Speak it</div><div class="ebtn g">No recall</div></div>
+  </div>
+  <div class="dhdr">This week</div>
+  <div class="dayrow"><div class="thumb t1"></div><div class="dmeta"><b>The glass elevator</b><span>Wed · interpreted · 0:08</span></div></div>
+  <div class="dayrow"><div class="thumb norec"><i>☁︎</i></div><div class="dmeta"><b>No recall</b><span>Tue · streak kept</span></div></div>
+  <div class="dayrow"><div class="thumb t2"></div><div class="dmeta"><b>Deep water, calm</b><span>Mon · video + reading</span></div></div>
+  <div class="dhdr">Last week</div>
+  <div class="dayrow"><div class="thumb t3"></div><div class="dmeta"><b>Chased through the market</b><span>Sun · 0:08</span></div></div>
+  <div class="bnav"><span><b>Journal</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D2a · today on top</b> — the entry card leads, then the week as watchable dream cards; "no recall" mornings still count.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">July</div><div class="tokchip">18 dreams</div></div>
+  <div class="cal">
+   <div class="cd">M</div><div class="cd">T</div><div class="cd">W</div><div class="cd">T</div><div class="cd">F</div><div class="cd">S</div><div class="cd">S</div>
+   <div class="cd has vid">1</div><div class="cd">2</div><div class="cd has">3</div><div class="cd has vid">4</div><div class="cd">5</div><div class="cd has vid">6</div><div class="cd">7</div>
+   <div class="cd has">8</div><div class="cd has vid">9</div><div class="cd">10</div><div class="cd has">11</div><div class="cd has vid">12</div><div class="cd">13</div><div class="cd has">14</div>
+   <div class="cd">15</div><div class="cd has vid">16</div><div class="cd has">17</div><div class="cd">18</div><div class="cd has vid">19</div><div class="cd has">20</div><div class="cd">21</div>
+   <div class="cd has vid">22</div><div class="cd">23</div><div class="cd has">24</div><div class="cd has vid">25</div><div class="cd has">26</div><div class="cd has vid">27</div><div class="cd has">28</div>
+   <div class="cd today">29</div><div class="cd">30</div><div class="cd">31</div>
+  </div>
+  <div class="dhdr" style="margin-top:12px">Tap a day</div>
+  <div class="dayrow"><div class="thumb t4"></div><div class="dmeta"><b>Flying over the old street</b><span>Jul 27 · watch · read</span></div></div>
+  <div class="dayrow"><div class="thumb t1"></div><div class="dmeta"><b>The glass elevator</b><span>Jul 25 · watch · read</span></div></div>
+  <div class="bnav"><span><b>Journal</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D2b · the month view</b> — dotted days logged, filled days have videos; your dream life becomes a calendar you can scrub.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 160</div></div>
+  <div class="weekcard"><span class="wtag">Monday · your week in dreams</span><b>4 dreams · water came back twice</b><span>Your recall is up vs last week. Read the full weekly summary →</span></div>
+  <div class="todaycard" style="background:#1d1834;border-color:rgba(255,255,255,.12)"><b>What did you dream?</b><span>Mon, Aug 2 · start the new week · +20 with today's entry</span>
+   <div class="entrybtns"><div class="ebtn p">Write it</div><div class="ebtn g">Speak it</div><div class="ebtn g">No recall</div></div>
+  </div>
+  <div class="dhdr">Last week</div>
+  <div class="dayrow"><div class="thumb t2"></div><div class="dmeta"><b>Deep water, calm</b><span>Sun · in this week's summary</span></div></div>
+  <div class="dayrow"><div class="thumb t3"></div><div class="dmeta"><b>The tide pool</b><span>Fri · in this week's summary</span></div></div>
+  <div class="bnav"><span><b>Journal</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D2c · Monday morning</b> — the weekly-summary card pins itself on top of the journal once a week; earned, not ambient.</p></div>
+</div>
+<div class="card"><span class="id">Remarks on D2 — The Night Journal</span>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="What works / what doesn't in D2…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="D2 NIGHT JOURNAL">Save</button><span class="save-status"></span></div>
+</div>
+
+<h2>D3 — “The Dream House” <span style="color:var(--soft);font-weight:400;font-size:13px">· a night-world of rooms · real generated art below</span></h2>
+<p class="secnote"><b>Bets on:</b> emotional attachment to a place — a home you return to nightly, with new rooms as milestone rewards (Finch's proven shape). <b>Tradeoff:</b> the most expensive to build and art-direct, heaviest on mobile webviews, and it must be executed fully or it feels stapled on. The art in these frames is real AI-generated concept art in the app's palette, made for this mock.</p>
+<div class="row">
+ <div class="col"><div class="phone">
+  <img class="houseimg" src="home-mock-art-house1.jpg" alt="Dream observatory tower floating in a starry purple night sky">
+  <div class="hshade"></div>
+  <div class="hlogo">Your Dream House</div>
+  <div class="hsub">5-night streak · ◈ 140 · claim inside the Vault</div>
+  <div class="roomtag" style="top:24%;left:52%">🔮 Interpreter's Chamber</div>
+  <div class="roomtag" style="top:40%;left:8%">📖 Journal</div>
+  <div class="roomtag" style="top:53%;left:55%">🎬 Gallery</div>
+  <div class="roomtag" style="top:66%;left:12%">◈ Vault</div>
+  <div class="roomtag lock" style="top:33%;left:14%"><i>🔒</i>Unlocks at 7 dreams</div>
+  <div class="hbottom"><b>Tonight: bring the house a dream</b><span>Tap the door · +20 tokens · no recall counts too</span></div>
+ </div><p class="cap"><b>D3a · the house at night</b> — every feature is a glowing room; one door stays locked until your next milestone.</p></div>
+
+ <div class="col"><div class="phone">
+  <img class="houseimg" src="home-mock-art-house2.jpg" alt="Cutaway dream house with glowing rooms, floating on a rock island">
+  <div class="hshade"></div>
+  <div class="hlogo">A new room unlocked</div>
+  <div class="hsub">7 dreams logged · the Gallery opens</div>
+  <div class="roomtag" style="top:44%;left:10%">📖 Journal</div>
+  <div class="roomtag" style="top:56%;left:54%">🎬 Gallery — new!</div>
+  <div class="roomtag lock" style="top:31%;left:52%"><i>🔒</i>Next: first theme found</div>
+  <div class="hbottom"><b>Step inside the Gallery</b><span>Every dream video you've made, on the walls</span></div>
+ </div><p class="cap"><b>D3b · a room unlocks</b> — milestones open doors instead of granting tokens; the world literally grows with your journal.</p></div>
+</div>
+<div class="card"><span class="id">Remarks on D3 — The Dream House</span>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="What works / what doesn't in D3 (incl. the art style)…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="D3 DREAM HOUSE">Save</button><span class="save-status"></span></div>
+</div>
+
+<h2>D4 — “The Interpreter Greets You” <span style="color:var(--soft);font-weight:400;font-size:13px">· the companion is the home · original portrait below</span></h2>
+<p class="secnote"><b>Bets on:</b> a bond with a character who receives your mornings and personally announces discoveries — the strongest day-2 return story (Finch/Tolan mechanic). <b>Tradeoff:</b> lives or dies on the persona's quality and the still-open persona decisions; the rest of the app sits one layer deeper. Portrait is an original AI-painted character made for this mock — not a real person.</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div>
+  <div class="pmask"><img src="home-mock-art-interpreter.jpg" alt="Painterly portrait of an original dream-interpreter character"></div>
+  <div class="greet"><div class="gname">The Depth Analyst</div><h3>Good morning, Ron.<br>Did you dream?</h3>
+   <div class="chips"><span class="chip p">Yes — let me tell you</span><span class="chip">Only a fragment</span><span class="chip ghost">No recall today</span></div>
+  </div>
+  <div class="substrip"><div class="mini"></div><span>Streak night 5 · daily +20 ready — logging claims it</span></div>
+  <div class="disc">For reflection &amp; entertainment — not medical advice</div>
+ </div><p class="cap"><b>D4a · the morning greeting</b> — the interpreter opens the day; claim + streak ride quietly along the bottom, never compete.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div>
+  <div class="pmask"><img src="home-mock-art-interpreter.jpg" style="filter:brightness(1.06) saturate(1.05)" alt="The interpreter, announcing a discovery"></div>
+  <div class="greet"><div class="gname">The Depth Analyst · a discovery</div><h3>Water has returned in your dreams — shall we look?</h3>
+   <div class="chips"><span class="chip p">Open the Chamber</span><span class="chip">Make it a video</span><span class="chip ghost">Later</span></div>
+  </div>
+  <div class="substrip"><div class="mini"></div><span>3rd water dream in two weeks · from your journal</span></div>
+  <div class="disc">For reflection &amp; entertainment — not medical advice</div>
+ </div><p class="cap"><b>D4b · the discovery moment</b> — repeating themes get announced in-character, flowing into a reading or a themed video.</p></div>
+</div>
+<div class="card"><span class="id">Remarks on D4 — The Interpreter Greets You</span>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="What works / what doesn't in D4 (incl. the portrait style)…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="D4 INTERPRETER GREETS">Save</button><span class="save-status"></span></div>
+</div>
+
+<h2>D5 — “Rituals Dashboard” <span style="color:var(--soft);font-weight:400;font-size:13px">· cadence cards · the evaluation's recommended chassis</span></h2>
+<p class="secnote"><b>Bets on:</b> modular cadence cards — cheapest to ship, every card independently testable, and it can absorb the best of D1-D4 later (cards become rooms, the Today card gets D4's greeting). <b>Tradeoff:</b> the lowest wow of the five; a dashboard, not a world.</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 140</div></div>
+  <div class="dgrid">
+   <div class="dcard hero span"><div class="dt">Today</div><b>What did you dream?</b><span>No recall counts · logging claims your +20</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:7px"><div class="ring" style="width:34px;height:34px;flex:0 0 34px"><i style="width:25px;height:25px;font-size:9px">🔥5</i></div><div class="ringtxt"><b style="font-size:9.5px">5-night streak</b><span style="font-size:8px">claim +20 with today's entry</span></div><div class="claimbtn">Log it</div></div>
+   </div>
+   <div class="dcard lockc span"><div class="dt" style="color:var(--warn)">This week</div><b>Weekly summary — locked</b><span>2 of 3 dreams to unlock</span><div class="lockbar"><i></i></div></div>
+   <div class="dcard"><div class="dt">Chamber</div><b>🔮 Ask an interpreter</b><span>Your last reading: Wed</span></div>
+   <div class="dcard"><div class="dt">Vault</div><b>◈ 140 tokens</b><span>Claim history · packs</span></div>
+  </div>
+  <div class="nextstrip">Next milestone: <b>7 dreams logged</b> — 2 to go → weekly readings unlock</div>
+  <div class="bnav"><span><b>Home</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D5a · the ritual grid</b> — Today leads with log + claim + streak fused; This Week sits locked until it's earned.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="scr">
+  <div class="topbar"><div class="logo">DreamTube</div><div class="tokchip">◈ 160</div></div>
+  <div class="dgrid">
+   <div class="dcard hero span"><div class="dt">Today</div><b>Entry logged · streak night 6 ✓</b><span>+20 claimed · see tonight's video draft</span></div>
+   <div class="dcard earned span"><div class="dt" style="color:var(--warn)">This week · unlocked</div><b>3 dreams · water twice</b><span>Your weekly summary is ready — read it →</span></div>
+   <div class="dcard"><div class="dt">Chamber</div><b>🔮 Ask about the water</b><span>The Depth Analyst suggests it</span></div>
+   <div class="dcard"><div class="dt">Vault</div><b>◈ 160 tokens</b><span>+1 free re-edit earned</span></div>
+  </div>
+  <div class="nextstrip">Next milestone: <b>first repeating theme</b> — the interpreter will announce it</div>
+  <div class="bnav"><span><b>Home</b></span><span class="plus">+</span><span>Explore</span><span>Profile</span></div>
+ </div></div><p class="cap"><b>D5b · the earned state</b> — the week unlocks, the Chamber card gets contextual, capability rewards land in the Vault.</p></div>
+</div>
+<div class="card"><span class="id">Remarks on D5 — Rituals Dashboard</span>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="What works / what doesn't in D5…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="D5 RITUALS DASHBOARD">Save</button><span class="save-status"></span></div>
+</div>
+
+<div class="card overall"><span class="id">YOUR OVERALL PICK</span>
+ <p style="margin:0;font-size:13px;color:var(--soft)">Which direction should be the home — or which combination? (e.g. "D5 chassis, D4 greeting on top, D3 art later".) Anything here goes to the tracker as your decision note.</p>
+ <label class="rl">Your pick + reasoning</label>
+ <textarea class="remark" placeholder="My pick is…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="OVERALL PICK">Save</button><span class="save-status"></span></div>
+</div>
+
+<footer><b>Same engine under all five:</b> journal entries (with "no recall" counting), count-based milestones + a gentle streak (never zeroing progress), the Interpreter's Chamber one tap away, and the daily +20 claim folded into the morning ritual. Streak/claim numbers shown are illustrative. Whichever shape you pick, Explore stays one tap away and nothing already built is thrown out. This page is temporary and unlinked; remarks save straight to the homepage tracker item.</footer>
+</div>
+<script>
+// Same delegated-click pattern as the dedicated review site (labels in
+// data-attributes, immune to quotes/apostrophes). Posts the remark as a
+// Ron-authored comment on the homepage-direction tracker item, prefixed
+// with the direction label.
+document.addEventListener('click', async function (ev) {
+  var btn = ev.target.closest('.savebtn');
+  if (!btn) return;
+  var box = btn.closest('.card');
+  var ta = box.querySelector('textarea.remark');
+  var status = box.querySelector('.save-status');
+  var remark = ta.value.trim();
+  if (!remark) { status.textContent = 'Write something first.'; status.className = 'save-status err'; return; }
+  btn.disabled = true;
+  status.textContent = 'Saving…'; status.className = 'save-status';
+  try {
+    var res = await fetch('/.netlify/functions/update-tracker-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: 'for-ron-homepage-founder-has-a-new-idea--3ytmne',
+        email: 'ronbrightman@gmail.com',
+        comment: btn.dataset.commentLabel + ': ' + remark,
+        commentAuthor: 'ron'
+      })
+    });
+    var data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (res.ok && data.item) {
+      status.textContent = 'Saved ✓'; status.className = 'save-status ok';
+    } else {
+      status.textContent = 'Save failed: ' + (data.error || ('HTTP ' + res.status));
+      status.className = 'save-status err';
+    }
+  } catch (e) {
+    status.textContent = 'Save failed (network error).';
+    status.className = 'save-status err';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body></html>
