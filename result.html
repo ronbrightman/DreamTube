@@ -1273,6 +1273,21 @@
   // download is back, but centralized in js/share-sheet.js's mini-sheet
   // (tracker item for-product-build-share-mini-sheet-share-r42tc4), which
   // doShare()/share-btn above now opens instead of sharing a link directly.
+
+  // home.html's Chamber card deep-link (tracker item for-product-build-
+  // homepage-wave-1-the-ri-xr8mir) -- wave 1 routes Chamber taps to this
+  // EXISTING interpretation entry point rather than a new component, per
+  // that item's own explicit scope cut ("mount InterpretExperience when
+  // wave ships -- until then routes to existing interpretation"). A
+  // genuine synthetic click on the already-wired pill (not a separate
+  // code path) opens the same sheet a direct tap would -- same opt-in
+  // "never fires on page load itself" contract the pill's own click
+  // handler comment documents, just triggered by a query param instead of
+  // a finger, matching create.html's existing ?record=1 deep-link
+  // convention for the equivalent "land straight in the flow" case.
+  if(getParam('openInterp') === '1'){
+    document.getElementById('interp-cta-btn').click();
+  }
 </script>
 </body>
 </html>

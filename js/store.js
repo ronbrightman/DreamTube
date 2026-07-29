@@ -42,6 +42,11 @@
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
 //   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
+//   getDreamLogStatus()         -> local read, home.html's Today/This-Week card state (loggedToday,
+//       todayEntryType, weekCount vs. weekTarget, hasEverLogged) — tracker item
+//       for-product-build-homepage-wave-1-the-ri-xr8mir
+//   logNoRecallToday()          -> local write, records a content-less "no recall" dream-log
+//       check-in for today (idempotent per day, grants nothing) — see getDreamLogStatus above
 //   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
 //   importAccountBackup(backup) -> local write, restores a backup exported above into this browser
 //   getDream(id)                -> GET  /api/dreams/:id
@@ -520,6 +525,23 @@
     return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
   }
 
+  /**
+   * How many qualifying entries (real dreams OR "no recall" check-ins —
+   * see getDreamLogStatus below) a week needs before home.html's This Week
+   * card transforms from "locked" into the earned weekly summary, in
+   * place, per tracker item for-product-build-homepage-wave-1-the-ri-xr8mir.
+   */
+  var WEEK_SUMMARY_TARGET = 3;
+
+  /** Monday 00:00 local time of the week containing `d` — home.html's "This Week" window. Week starts Monday (matches the mock's own "Monday morning" framing), not Sunday. */
+  function startOfWeekMs(d) {
+    var day = d.getDay(); // 0=Sun..6=Sat
+    var diffToMonday = day === 0 ? 6 : day - 1;
+    var monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    return monday.getTime();
+  }
+
   function newCharId() { return 'c' + Math.random().toString(36).slice(2, 9); }
   /** Characters are private per-user — every accessor is scoped to the logged-in account, never global. */
   function myCharacterList() {
@@ -879,7 +901,19 @@
         likes: 0, likedByMe: false, isPublished: false,
         videoUrl: mediaType === 'video' ? mediaUrl : null,
         imageUrl: mediaType === 'image' ? mediaUrl : null,
-        sourceOperationName: operationName || null
+        sourceOperationName: operationName || null,
+        // createdAt (epoch ms, new — tracker item
+        // for-product-build-homepage-wave-1-the-ri-xr8mir): only ever
+        // stamped here, on a genuinely brand-new dream, never on the
+        // sourceDreamId/regenerate branch above (a regenerate/"Try Again"
+        // edits an EXISTING dream's content, it doesn't create a new
+        // week/day entry). Feeds home.html's "This Week" dream count and
+        // "logged today" check — same forward-only-migration shape as
+        // storyText/promptText above: a dream saved before this field
+        // existed simply has no createdAt, and every reader here treats a
+        // missing createdAt as "don't count this for a date-based check"
+        // rather than fabricating one.
+        createdAt: Date.now()
       };
       // Images never set a duration — there's no clip length concept for a
       // still image (see explore.html/profile.html's guarded d.dur render).
@@ -2231,6 +2265,105 @@
       var latest = DREAM_MILESTONES[0];
       DREAM_MILESTONES.forEach(function (m) { if (count >= m) latest = m; });
       return { count: count, latestMilestone: latest, label: ordinal(latest) + ' dream' };
+    },
+
+    /**
+     * home.html's Today/This-Week cards (tracker item
+     * for-product-build-homepage-wave-1-the-ri-xr8mir) — local read, no
+     * network call. Bundles three small, related date computations against
+     * this account's own dreams (getMyDreams's own filter) PLUS the
+     * account's "no recall" check-ins (see logNoRecallToday below — a
+     * dream-log entry that deliberately never creates a fake dream record,
+     * just a per-account date marker, so it never pollutes the shared
+     * feed/My Dreams gallery/milestone count with content-less entries):
+     *
+     *   loggedToday    — true if a real dream (createdAt is today) OR a
+     *                     "no recall" check-in for today exists.
+     *   todayEntryType — 'dream' | 'no_recall' | null, whichever produced
+     *                     loggedToday (a real dream wins if somehow both
+     *                     exist the same day).
+     *   todayDreamCaption — the caption of today's real dream, if that's
+     *                     what loggedToday resolved from; null otherwise.
+     *   loggedYesterday — same computation as loggedToday, one day back.
+     *                     Exposed so a caller (home.html's silent-streak-
+     *                     freeze analytics signal) never has to reach past
+     *                     this function into raw localStorage/account
+     *                     internals just to ask "was yesterday covered" —
+     *                     everything about what "covered" means (a real
+     *                     dream OR a no-recall check-in) stays defined in
+     *                     exactly one place.
+     *   weekCount      — qualifying entries (real dreams + no-recall
+     *                     check-ins, each calendar day counted at most once
+     *                     for no-recall since logNoRecallToday is itself
+     *                     idempotent per day) since this week's Monday.
+     *   weekTarget     — WEEK_SUMMARY_TARGET, exported so callers never
+     *                     hardcode their own copy of the threshold.
+     *   hasEverLogged  — true once this account has ever logged anything
+     *                     at all (a real dream or a no-recall check-in) —
+     *                     drives home.html's D1 (brand-new account)
+     *                     next-step strip vs. the returning-user one.
+     *
+     * A dream saved before the createdAt field existed (see finalizeDream's
+     * own doc comment) simply never counts toward loggedToday/weekCount —
+     * same "missing means don't count it, never fabricate" rule every
+     * other forward-only field in this file already follows.
+     */
+    getDreamLogStatus: function () {
+      var myHandle = state.user ? state.user.handle : null;
+      var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle && typeof d.createdAt === 'number'; });
+      var key = state.user ? state.user.username.toLowerCase() : null;
+      var account = key ? state.accounts[key] : null;
+      var noRecallDates = (account && account.noRecallDates) || [];
+
+      var now = new Date();
+      var weekStart = startOfWeekMs(now);
+      var weekDreamCount = mine.filter(function (d) { return d.createdAt >= weekStart; }).length;
+      var weekNoRecallCount = noRecallDates.filter(function (ds) { return new Date(ds).getTime() >= weekStart; }).length;
+
+      var todayStr = now.toDateString();
+      var todayDream = mine.filter(function (d) { return new Date(d.createdAt).toDateString() === todayStr; })[0] || null;
+      var todayNoRecall = noRecallDates.indexOf(todayStr) !== -1;
+
+      var yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      var yesterdayStr = yesterday.toDateString();
+      var loggedYesterday = mine.some(function (d) { return new Date(d.createdAt).toDateString() === yesterdayStr; }) || noRecallDates.indexOf(yesterdayStr) !== -1;
+
+      return {
+        loggedToday: !!todayDream || todayNoRecall,
+        todayEntryType: todayDream ? 'dream' : (todayNoRecall ? 'no_recall' : null),
+        todayDreamCaption: todayDream ? (todayDream.storyText || todayDream.caption) : null,
+        loggedYesterday: loggedYesterday,
+        weekCount: weekDreamCount + weekNoRecallCount,
+        weekTarget: WEEK_SUMMARY_TARGET,
+        hasEverLogged: mine.length > 0 || noRecallDates.length > 0
+      };
+    },
+
+    /**
+     * Logs a "no recall" dream-log entry for today — home.html's Today
+     * card third entry point, alongside Write it/Speak it (see
+     * getDreamLogStatus above for how this feeds loggedToday/weekCount).
+     * Deliberately does NOT create a dream record: a no-recall entry has
+     * no content to show on Explore, in My Dreams, or count toward the
+     * Profile milestone chip, so folding it into state.dreams would mean
+     * every reader of that array (the shared feed, profile.html's
+     * grids, getDreamMilestone) would need a new "is this a real dream"
+     * guard just to stay correct. Idempotent per calendar day (a second
+     * tap the same day is a no-op, not a duplicate) and grants nothing —
+     * no tokens, no achievement — per this wave's explicit scope cut
+     * (achievement/grant ledger is a separate, not-yet-built tracker item).
+     * No-ops (returns { ok:false }) when not logged in.
+     */
+    logNoRecallToday: function () {
+      if (!state.user) return { ok: false };
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return { ok: false };
+      if (!account.noRecallDates) account.noRecallDates = [];
+      var todayStr = new Date().toDateString();
+      if (account.noRecallDates.indexOf(todayStr) === -1) account.noRecallDates.push(todayStr);
+      persist();
+      return { ok: true };
     },
 
     /**

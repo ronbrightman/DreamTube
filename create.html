@@ -1729,6 +1729,14 @@
     textArea.value = draft.storyText || draft.caption;
     updateCharCount();
     DreamStore.setDraft({ restore: false });
+  } else if(new URLSearchParams(location.search).get('write') === '1'){
+    // home.html's Today-card "Write it" entry point (tracker item
+    // for-product-build-homepage-wave-1-the-ri-xr8mir) — jumps straight
+    // into Write mode instead of the Build/Write/Record choice screen,
+    // same deep-link convention as ?record=1 just below. Reuses the
+    // EXISTING #choice-write card's own click handler rather than
+    // duplicating what it does.
+    document.getElementById('choice-write').click();
   } else if(new URLSearchParams(location.search).get('record') === '1'){
     // Record-it handoff from the marketing funnel's Record-it path (see
     // start.html's completeFunnel()/isRecordMode — funnel visitor signed
