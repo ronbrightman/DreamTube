@@ -205,13 +205,22 @@ exports.handler = async function (event) {
     // 1. The account record itself.
     await accountStore.deleteAccount(event, account.username);
 
-    // 2. Token ledger, keyed by this account's own on-file email (never a
+    // 2. Invalidate every previously-minted authToken for this username —
+    // see header comment (round-2 security review finding, fixed) —
+    // deliberately right after the account record delete succeeds, not
+    // last: a later step below throwing (entitlements/feed writes are
+    // separate Blobs calls that can independently fail) must not leave a
+    // deleted account's old tokens still valid just because this call
+    // never got a chance to run (round-3 review finding).
+    await accountAuthToken.invalidateTokensForUsername(event, account.username);
+
+    // 3. Token ledger, keyed by this account's own on-file email (never a
     // client-supplied one — see header comment).
     if (account.email) {
       await entitlements.deleteEntitlement(event, account.email);
     }
 
-    // 3. Every dream this account ever published, from the shared feed.
+    // 4. Every dream this account ever published, from the shared feed.
     // Same "whole-array read-modify-write, not a real database" tradeoff
     // get-feed.js/publish-dream.js/unpublish-dream.js already document and
     // accept — this is one more caller of that same shape, just filtering
@@ -229,10 +238,6 @@ exports.handler = async function (event) {
     if (filtered.length !== feed.length) {
       await feedStore.setJSON('feed-index', filtered);
     }
-
-    // 5. Invalidate every previously-minted authToken for this username —
-    // see header comment (round-2 security review finding, fixed).
-    await accountAuthToken.invalidateTokensForUsername(event, account.username);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {
