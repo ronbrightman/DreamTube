@@ -445,6 +445,21 @@ async function syncTokens(event, email, opts) {
       ? { balance: INITIAL_GRANT }
       : { balance: 0 }; // capped for today — see doc block above, not a permanent block
 
+    // ACCEPTED LAZY-SEED RACE (tracker item decide-blobs-lazy-seed-race):
+    // this write is plain/unguarded, and the installed @netlify/blobs SDK
+    // has no atomic/conditional-write primitive to make "materialize a
+    // default on first read" race-proof. Two genuinely concurrent
+    // first-ever reads for the SAME email (two tabs, a signup racing an
+    // immediate generation) could each see `!record.tokens`, each compute
+    // an IDENTICAL `fresh` value, and each write — a redundant write, not
+    // a corrupting one, since both writes agree on the value. The one real
+    // side effect is `checkAndIncrement('token-init', ...)` above
+    // potentially being counted twice for what's effectively one grant.
+    // Same class of one-time, low-frequency bootstrap race as
+    // tracker-store.js's own getItems() seed branch — documented rather
+    // than fixed with a separate "seeded" marker key, per that tracker
+    // item's own cheaper option, given the low real-world likelihood
+    // (single email, narrow window) and non-corrupting outcome here.
     await setEntitlement(event, key, { tokens: fresh });
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
   }

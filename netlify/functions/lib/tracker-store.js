@@ -642,6 +642,17 @@ async function getItems(event) {
   connectLambda(event);
   var items = await store().get(KEY, { type: 'json' });
   if (!items) {
+    // ACCEPTED LAZY-SEED RACE (tracker item decide-blobs-lazy-seed-race):
+    // this write is plain/unguarded, same "no atomic/conditional-write
+    // primitive available" gap as entitlements.js's own first-ever-read
+    // materialize branch (see that file's matching comment). Narrower
+    // than the CONCURRENT-WRITE RACE this file's own addItem/deleteItem
+    // already call out explicitly below: this only ever fires ONCE per
+    // environment (the very first read anywhere), and every racer would
+    // write the SAME SEED_ITEMS value, so a lost race here can at worst
+    // redundantly re-write the identical seed, never diverge from it.
+    // Documented rather than fixed with a separate "seeded" marker key,
+    // per that tracker item's own cheaper option.
     items = SEED_ITEMS;
     await store().setJSON(KEY, items);
     return items;
