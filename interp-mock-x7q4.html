@@ -1,0 +1,155 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Interpretation — direction A vs B</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<!--
+  TEMPORARY founder-only design mock (unlinked, obscure URL). Two visual
+  directions for the interpretation wave-1 experience — founder picks.
+  Static mock, no live logic. DELETE after the pick (tracked on the
+  interpretation decisions tracker item).
+-->
+<style>
+:root{--bg:#0c0a1a;--raise:#151228;--ink:#eae7fb;--soft:#a49dc4;--line:#272144;--acc:#9d90ff;--accs:#201c3d;--warn:#e0aa5a;--ok:#4bd39b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding:clamp(18px,4vw,44px)}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);font-weight:600;margin:0 0 10px}
+h1{font-size:clamp(24px,5vw,36px);margin:0 0 8px;letter-spacing:-.02em}
+.lede{color:var(--soft);margin:0 0 26px;max-width:66ch}
+h2{font-size:18px;color:var(--warn);margin:34px 0 4px}
+.secnote{color:var(--soft);font-size:13px;margin:0 0 16px;max-width:72ch}
+.row{display:flex;flex-wrap:wrap;gap:22px}
+.col{display:flex;flex-direction:column;align-items:center;gap:8px}
+.cap{font-size:12px;color:var(--soft);max-width:250px;text-align:center}
+.phone{width:250px;height:530px;background:#000;border-radius:30px;border:1px solid rgba(255,255,255,.14);box-shadow:0 26px 60px -18px rgba(0,0,0,.8);overflow:hidden;position:relative;font-size:11.5px}
+.appbg{position:absolute;inset:0;background:radial-gradient(120% 80% at 25% 15%,rgba(131,58,180,.4),transparent 60%),radial-gradient(110% 80% at 80% 75%,rgba(90,60,190,.28),transparent 55%),#100d20}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.6)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#161225;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.16);padding:11px 12px 14px}
+.grab{width:34px;height:4px;border-radius:99px;background:rgba(255,255,255,.2);margin:0 auto 10px}
+.sh-title{font-weight:800;font-size:13.5px;margin:0 0 2px}
+.sh-sub{color:var(--soft);font-size:10.5px;margin:0 0 10px}
+.prow{display:flex;gap:8px;overflow:hidden;padding-bottom:4px}
+.pcard{flex:0 0 86px;background:#1d1834;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:8px 6px;text-align:center}
+.pcard.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(157,144,255,.35)}
+.pface{width:44px;height:44px;border-radius:50%;margin:0 auto 5px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.f1{background:linear-gradient(135deg,#3b2f63,#7b5ea7)}.f2{background:linear-gradient(135deg,#4a2c3e,#a0526d)}.f3{background:linear-gradient(135deg,#274b53,#4e9a8e)}.f4{background:linear-gradient(135deg,#25355c,#4f74c9)}.f5{background:linear-gradient(135deg,#4d3b23,#c99e4f)}
+.pname{font-weight:800;font-size:10.5px}
+.psub{color:var(--soft);font-size:8.5px;line-height:1.25;margin-top:2px}
+.qbox{background:#1d1834;border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:10px;margin-top:9px}
+.qper{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.qper .pface{width:26px;height:26px;font-size:12px;margin:0}
+.qper b{font-size:11px}
+.qtext{font-size:11.5px;margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid rgba(157,144,255,.5);color:#cfc8ff;border-radius:99px;padding:5px 9px;font-size:10px;font-weight:700}
+.chip.ghost{border-color:rgba(255,255,255,.2);color:var(--soft)}
+.skipline{text-align:center;color:var(--soft);font-size:10px;margin-top:9px;text-decoration:underline;text-underline-offset:2px}
+.reading{background:#1d1834;border:1px solid rgba(157,144,255,.45);border-radius:13px;padding:11px;margin-top:9px}
+.rtext{font-size:11px;color:#ddd7f5;margin:6px 0 0;line-height:1.5}
+.disc{font-size:8.5px;color:#8b84ad;text-align:center;margin-top:8px}
+.morebtn{margin-top:9px;text-align:center;border:1px solid rgba(255,255,255,.18);border-radius:99px;padding:7px;font-size:10.5px;font-weight:700;color:var(--soft)}
+/* chamber */
+.chtop{position:absolute;top:0;left:0;right:0;background:rgba(16,13,32,.94);border-bottom:1px solid rgba(255,255,255,.12);padding:9px 12px;display:flex;align-items:center;gap:8px;z-index:3}
+.chtop .pface{width:30px;height:30px;font-size:14px;margin:0}
+.chtop b{font-size:12px}
+.chtop span{color:var(--soft);font-size:9.5px;display:block}
+.chbody{position:absolute;inset:52px 0 0 0;padding:10px 10px 16px;overflow:hidden}
+.bub{max-width:82%;border-radius:14px;padding:8px 10px;font-size:11px;margin-bottom:8px}
+.bub.ai{background:#1d1834;border:1px solid rgba(255,255,255,.12);border-bottom-left-radius:5px}
+.bub.me{background:#2b2452;margin-left:auto;border-bottom-right-radius:5px}
+.rcard{border:1px solid rgba(157,144,255,.55);background:linear-gradient(180deg,#1d1834,#171130);border-radius:14px;padding:10px;margin-top:4px}
+.rhead{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--acc);font-weight:800;margin-bottom:4px}
+.carousel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px}
+.bigface{width:110px;height:110px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:52px;box-shadow:0 18px 50px -12px rgba(123,94,167,.6);margin-bottom:12px}
+.bigname{font-weight:800;font-size:17px}
+.bigsub{color:var(--soft);font-size:11px;max-width:200px;margin:4px 0 14px}
+.begin{background:var(--acc);color:#0c0a1a;font-weight:800;border-radius:99px;padding:9px 22px;font-size:12px}
+.dots{display:flex;gap:5px;margin-top:14px}
+.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.25)}
+.dot.on{background:var(--acc)}
+.arr{position:absolute;top:50%;font-size:18px;color:var(--soft)}
+footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--soft);max-width:76ch}
+.pill{display:inline-block;background:var(--warn);color:#2a1c04;font-weight:800;font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:5px 10px;border-radius:99px;margin-bottom:8px}
+</style></head><body>
+<div class="wrap">
+<p class="eyebrow">DreamTube · Interpretation flagship · wave 1</p>
+<h1>Two directions — you pick</h1>
+<p class="lede">Same approved flow in both: <b>choose your interpreter → they ask their method's questions (always skippable) → your reading, in their voice</b>. The five characters are originals "inspired by" the real methods, swappable in data. Faces here are placeholders — real illustrated portraits come after your pick. Reply in chat with <b>A</b> or <b>B</b> (+ any notes).</p>
+
+<h2>Direction A — “The Reading Table” <span style="color:var(--soft);font-weight:400;font-size:13px">· bottom sheet, fastest to ship</span></h2>
+<p class="secnote">Lives in the app's familiar bottom sheet — mounts on any page (fits whatever homepage plan comes). Persona row → one question at a time with tap-chips → reading. Trade-off: quick and native-feeling, but the interpreter stays a small header, less of a "presence."</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="dim"></div>
+  <div class="sheet">
+   <div class="grab"></div>
+   <p class="sh-title">Who should read this dream?</p>
+   <p class="sh-sub">AI characters inspired by real interpretation methods</p>
+   <div class="prow">
+    <div class="pcard sel"><div class="pface f1">🜁</div><div class="pname">The Depth Analyst</div><div class="psub">inspired by Jung</div></div>
+    <div class="pcard"><div class="pface f2">🗝️</div><div class="pname">The Analyst</div><div class="psub">inspired by Freud</div></div>
+    <div class="pcard"><div class="pface f3">🪞</div><div class="pname">The Mirror</div><div class="psub">Gestalt method</div></div>
+    <div class="pcard" style="opacity:.55"><div class="pface f4">🔬</div><div class="pname">The Scientist</div></div>
+   </div>
+   <div class="morebtn">Begin with The Depth Analyst</div>
+   <div class="disc">For reflection &amp; entertainment — not medical advice</div>
+  </div></div><p class="cap"><b>A1 · pick your interpreter</b> — horizontal card row, same visual grammar as the style picker you already have.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="dim"></div>
+  <div class="sheet">
+   <div class="grab"></div>
+   <div class="qbox">
+    <div class="qper"><div class="pface f1">🜁</div><b>The Depth Analyst</b><span style="color:var(--soft);font-size:9px">· 1 of 2</span></div>
+    <p class="qtext">Before I read this — where in your waking life do you feel most out of balance right now?</p>
+    <div class="chips"><span class="chip">Work</span><span class="chip">Love</span><span class="chip">Family</span><span class="chip">Money</span><span class="chip ghost">Type my own…</span></div>
+   </div>
+   <div class="skipline">Just interpret it →</div>
+  </div></div><p class="cap"><b>A2 · the questions</b> — one at a time, tap-chips (webview-friendly), always escapable via "Just interpret it".</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div><div class="dim"></div>
+  <div class="sheet">
+   <div class="grab"></div>
+   <div class="reading">
+    <div class="qper"><div class="pface f1">🜁</div><b>The Depth Analyst</b><span style="color:var(--soft);font-size:9px">· reading</span></div>
+    <p class="rtext">Your falling dream arrives just as work feels heaviest — and that is no accident. The dream shows the ground you trusted giving way, because part of you already knows the old routine can't hold you…</p>
+   </div>
+   <div class="morebtn">Ask another interpreter about this dream</div>
+   <div class="disc">For reflection &amp; entertainment — not medical advice</div>
+  </div></div><p class="cap"><b>A3 · the reading</b> — woven from your answers, in-method, with one-tap path to a second opinion.</p></div>
+</div>
+
+<h2>Direction B — “The Interpreter’s Chamber” <span style="color:var(--soft);font-weight:400;font-size:13px">· full-screen, built for the talking avatar later</span></h2>
+<p class="secnote">A destination of its own (linkable — could BE a homepage tile). Big persona carousel → a real conversation → the reading as a keepsake card. The pinned portrait top-left is exactly where the speaking avatar plugs in later with zero redesign. Trade-off: ~2× the build of A, new chat surface in the FB/IG webview (a known risk area we'd QA hard).</p>
+<div class="row">
+ <div class="col"><div class="phone"><div class="appbg"></div>
+  <div class="carousel">
+   <div class="bigface f1">🜁</div>
+   <div class="bigname">The Depth Analyst</div>
+   <div class="bigsub">Inspired by Jung's method — reads dreams as messages from the parts of you that daily life ignores.</div>
+   <div class="begin">Begin with The Depth Analyst</div>
+   <div class="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  </div>
+  <div class="arr" style="left:6px">‹</div><div class="arr" style="right:6px">›</div>
+ </div><p class="cap"><b>B1 · choose your interpreter</b> — swipeable full-width carousel, large portraits, one character at a time.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div>
+  <div class="chtop"><div class="pface f1">🜁</div><div><b>The Depth Analyst</b><span>inspired by Jung · reading your dream</span></div></div>
+  <div class="chbody">
+   <div class="bub ai">I've read your dream. Before I speak — where in your waking life do you feel most out of balance right now?</div>
+   <div class="bub me">Work, mostly.</div>
+   <div class="bub ai">And the water in your dream — when you picture it now, is it threatening… or inviting?</div>
+   <div class="chips" style="margin:2px 0 0 4px"><span class="chip">Threatening</span><span class="chip">Inviting</span><span class="chip ghost">Just interpret it →</span></div>
+  </div>
+ </div><p class="cap"><b>B2 · the conversation</b> — questions arrive as chat, answers by chips or typing; the transcript feels like a session.</p></div>
+
+ <div class="col"><div class="phone"><div class="appbg"></div>
+  <div class="chtop"><div class="pface f1">🜁</div><div><b>The Depth Analyst</b><span>your reading</span></div></div>
+  <div class="chbody">
+   <div class="rcard">
+    <div class="rhead">The Depth Analyst · on tonight’s dream</div>
+    <p class="rtext" style="font-size:11.5px">Your falling dream arrives just as work feels heaviest — and that is no accident. The dream shows the ground you trusted giving way, because part of you already knows the old routine can't hold you. Notice that in the dream you never land…</p>
+    <div class="disc" style="text-align:left;margin-top:7px">For reflection &amp; entertainment — not medical advice</div>
+   </div>
+   <div class="morebtn" style="font-size:10px;margin-top:8px">Hear another interpreter · Save reading</div>
+  </div>
+ </div><p class="cap"><b>B3 · the reading card</b> — a keepsake, with the second-opinion path built in.</p></div>
+</div>
+
+<footer><b>Both directions ship the identical engine underneath</b> — five data-defined characters, method-true questions, skippable always, free and unlimited for now (pricing deferred per your call), neutral analytics, crisis-safe. A can be promoted into B later; B pre-builds the Speaking Sage's home now. Placement in the app is deliberately undecided — waiting on your homepage plan. Reply in chat: <b>A</b> or <b>B</b>, plus any notes on the characters' names.</footer>
+</div></body></html>
