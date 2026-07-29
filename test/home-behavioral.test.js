@@ -293,6 +293,37 @@ test('home.html: Chamber card routes to the EXISTING interpretation entry point 
   }
 });
 
+test('home.html: home_chamber_href_computed fires at render time (not gated on a click) with the branch actually taken and the resolved href -- diagnostic added for tracker item for-product-bug-founder-new-home-tapping-yuspxa (founder tapped Chamber, landed in the store; every hypothesis traced statically came back unsupported, so this is the concrete signal a recurrence would need)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+
+    // Completed-dream branch -- never click the card, since this must fire
+    // purely from href computation, matching what actually happened on the
+    // live bug (the tap already landed somewhere before any click handler
+    // could matter).
+    await seedHomeUser(page, { dreams: [makeDream('ch-2')] });
+    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    var calls1 = await readPostHogCalls(page);
+    var fired1 = captures(calls1, 'home_chamber_href_computed');
+    assert.equal(fired1.length, 1, 'expected exactly one home_chamber_href_computed capture on load');
+    assert.deepEqual(fired1[0][2], { branch: 'completed_dream', href: 'result.html?id=ch-2&openInterp=1', dream_id: 'ch-2' });
+
+    // No-completed-dream branch.
+    await seedHomeUser(page, { username: 'nodreamsyet2', dreams: [] });
+    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    var calls2 = await readPostHogCalls(page);
+    var fired2 = captures(calls2, 'home_chamber_href_computed');
+    assert.equal(fired2.length, 1, 'expected exactly one home_chamber_href_computed capture on load');
+    assert.deepEqual(fired2[0][2], { branch: 'no_completed_dream', href: 'create.html', dream_id: null });
+  } finally {
+    await context.close();
+  }
+});
+
 test('home.html: Vault card shows the real token balance and links into shop.html', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
