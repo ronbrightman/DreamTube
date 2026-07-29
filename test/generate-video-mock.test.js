@@ -138,7 +138,7 @@ test('mock mode: rate limit (E109) still applies — a pre-tripped IP counter bl
   process.env.GENERATION_MOCK_MODE = 'true';
   var ip = nextIp();
   var todayUtc = new Date().toISOString().slice(0, 10);
-  mockBlobs.seed('dreamtube-rate-limits', 'ip:' + todayUtc + ':' + ip, 80); // cap raised to 80, founder directive 2026-07-29
+  mockBlobs.seed('dreamtube-rate-limits', 'ip:' + todayUtc + ':' + ip, 40); // cap default 40, founder directive 2026-07-29
   var res = await handler(genEvent({ ip: ip }));
   assert.equal(res.statusCode, 429);
   assert.match(JSON.parse(res.body).error, /^E109: rate_limited/);
