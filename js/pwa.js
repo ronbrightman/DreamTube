@@ -121,6 +121,122 @@ window.PwaInstall = (function () {
     return /iPad|iPhone|iPod/.test(ua) || (ua.indexOf('Macintosh') !== -1 && navigator.maxTouchPoints > 1);
   }
 
+  // ==========================================================================
+  // Stale-page-after-deploy fix (tracker item for-product-urgent-founder-
+  // gets-stale-pa-6dn54z). Root-caused via two DISTINCT gaps that both
+  // needed closing — neither one alone explains the founder's reported
+  // symptom (home.html showing the pre-deploy version a full 2 hours after
+  // a fresh deploy, on real iPhone Safari, fixed only by a private tab or
+  // closing all tabs):
+  //
+  //   Gap 1 — this file never called `registration.update()` or listened
+  //   for `controllerchange`. Without an explicit update() call, an update
+  //   check relies entirely on the browser's own background timing (the
+  //   spec allows throttling this to once per 24h; iOS Safari in
+  //   particular is long-documented as lazy/inconsistent about it). And
+  //   even once a new worker genuinely installs+activates+claims,
+  //   clients.claim() only changes which worker handles FUTURE fetches
+  //   from an already-open tab — it does not touch what's already
+  //   rendered in that tab's DOM, since this is a no-build-step app whose
+  //   pages carry real per-deploy logic in their own inline <script>
+  //   blocks (see CLAUDE.md), not just static markup.
+  //
+  //   Gap 2 — the actually dominant one for THIS reported symptom. sw.js's
+  //   own navigation handling is already network-first (see that file's
+  //   header comment) and Netlify's cache-control headers were confirmed
+  //   correct — so an ordinary reload or fresh navigation already gets a
+  //   fresh copy of a changed page regardless of the service worker's own
+  //   update lifecycle above (which only ever matters when sw.js's OWN
+  //   bytes change between deploys — a rare event; most deploys only
+  //   touch page HTML/CSS/JS, never sw.js). The reported "2 hours later"
+  //   sequence has no reload in it at all: iOS Safari can keep a
+  //   backgrounded tab's web content process alive-but-frozen (JS
+  //   execution paused, DOM untouched) for a long time without ever
+  //   re-navigating, distinct from the bfcache/back-forward case this
+  //   codebase already handles elsewhere (see processing.html's pagehide
+  //   comments) — no `pageshow` fires for this, only `visibilitychange`,
+  //   since nothing is being restored from history, it simply never left.
+  //   Reopening that same tab replays the exact frozen page with no
+  //   network request of any kind, so no caching layer -- HTTP or SW --
+  //   ever gets a chance to matter. This is exactly what "close all tabs /
+  //   open a private tab" works around: both force Safari to actually
+  //   tear down and recreate the process, i.e. a real navigation.
+  //
+  // Fix: force a real SW update check AND a real page reload whenever this
+  // tab becomes visible again after sitting hidden for a while — the one
+  // moment guaranteed to fire (visibilitychange) even when no navigation
+  // ever happens on its own.
+  // ==========================================================================
+
+  /** How long a tab must have been hidden before becoming visible again is treated as "possibly stale, worth a real reload" — short backgrounding (switching apps for a few seconds, an incoming call) shouldn't force a reload of a page someone is actively using; the founder's reported gap was measured in hours, not seconds. Overridable by test/pwa-sw-update-behavioral.test.js via window.__TEST_PWA_OVERRIDES__.hiddenStaleThresholdMs, same override-object convention js/purchase-sheet.js's pollForCredit already uses for its own real-but-slow timing. */
+  var HIDDEN_STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+  function hiddenStaleThresholdMs() {
+    var overrides = (typeof window !== 'undefined' && window.__TEST_PWA_OVERRIDES__) || {};
+    return typeof overrides.hiddenStaleThresholdMs === 'number' ? overrides.hiddenStaleThresholdMs : HIDDEN_STALE_THRESHOLD_MS;
+  }
+
+  /** True while the user looks to be actively entering text right now — the one case worth deferring an otherwise-safe reload for for-product-urgent-founder-gets-stale-pa-6dn54z's fix (a hard reload mid-typing on create.html/wizard.html would silently drop unsaved draft text). Deliberately generic (checks the focused element, not any one page's specific state) so this file doesn't need per-page knowledge of every form. */
+  function isEditingSomething() {
+    try {
+      var el = document.activeElement;
+      if (!el) return false;
+      var tag = (el.tagName || '').toUpperCase();
+      return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable === true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  var reloadOnceGuard = false;
+
+  /**
+   * Reloads the page exactly once (module-level guard — both callers below
+   * share it, since controllerchange can in principle fire more than once
+   * across a page's lifetime and both triggers ultimately want the same
+   * "get this tab onto the current deploy" outcome). Never interrupts
+   * someone actively typing: if isEditingSomething() is true right now,
+   * defers and re-checks on the next visibilitychange or focusout, rather
+   * than force-reloading straight through a draft in create.html/wizard.html.
+   * Every other page (including processing.html's generation wait) is safe
+   * to reload outright — generation state is already persisted server-side
+   * / in state.pendingJob (see js/store.js), not held only in memory.
+   */
+  function reloadWhenSafe() {
+    if (reloadOnceGuard) return;
+    function attempt() {
+      if (reloadOnceGuard) return;
+      if (isEditingSomething()) return; // still typing -- wait for the next signal
+      reloadOnceGuard = true;
+      document.removeEventListener('visibilitychange', attempt);
+      document.removeEventListener('focusout', attempt);
+      try {
+        location.reload();
+      } catch (e) { /* must never throw out of an event handler */ }
+    }
+    document.addEventListener('visibilitychange', attempt);
+    document.addEventListener('focusout', attempt);
+    attempt();
+  }
+
+  /**
+   * Resolves once registerServiceWorker()'s own registration.then() below
+   * has finished attaching its controllerchange/visibilitychange listeners
+   * -- exposed on the PwaInstall object purely so
+   * test/pwa-sw-update-behavioral.test.js can await a real, precise
+   * readiness signal instead of guessing at a fixed delay. That guess
+   * (waiting for navigator.serviceWorker.controller to be truthy, plus a
+   * fixed buffer) is exactly what made that test suite genuinely flaky --
+   * confirmed directly by running the same scenario standalone many times
+   * over and watching it occasionally miss the window -- since how long
+   * after `controller` becomes non-null this same .then() callback
+   * actually runs is real, variable async scheduling, not a fixed
+   * duration. Never awaited by any real page; harmless to leave in place
+   * for production loads.
+   */
+  var swListenersReadyResolve = null;
+  var swListenersReady = new Promise(function (resolve) { swListenersReadyResolve = resolve; });
+
   function registerServiceWorker() {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     // Service Worker registration itself throws for a non-http(s) origin
@@ -130,14 +246,75 @@ window.PwaInstall = (function () {
     // engines reject the registration Promise asynchronously in a way a
     // bare .catch still handles fine, but this is cheap and avoids even
     // attempting a call that's guaranteed to fail.
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') { swListenersReadyResolve(); return; }
     try {
-      navigator.serviceWorker.register('sw.js').catch(function () {
+      navigator.serviceWorker.register('sw.js').then(function (registration) {
+        if (!registration) { swListenersReadyResolve(); return; }
+
+        // Gap 1's fix, part A: force a real byte-comparison update check
+        // right now, rather than relying solely on the browser's own
+        // (possibly 24h-throttled) background timing.
+        registration.update().catch(function () { /* best-effort -- never break the page */ });
+
+        // Gap 1's fix, part B: once a new worker this registration
+        // controls actually takes over, get this tab onto the deploy it
+        // just activated, subject to reloadWhenSafe's typing guard above.
+        //
+        // Caught by this file's own test suite, NOT by manual testing --
+        // real proof this needed the guard below, not just theory: a
+        // controllerchange also fires the very FIRST time this tab ever
+        // gets a controller at all (an uncontrolled client transitioning
+        // to controlled the moment clients.claim() runs during this SW's
+        // first-ever activate for this tab) -- that's not a stale-content
+        // signal, it's just this exact page load's own service worker
+        // finishing its normal first-time setup, and reloading for it
+        // would force EVERY new visitor through a pointless extra reload
+        // on their very first page view. Only a controller actually being
+        // REPLACED (this tab already had one, and it just changed) is the
+        // real "a new deploy took over -- refresh" signal worth acting on.
+        var hadControllerAlready = !!navigator.serviceWorker.controller;
+        if (navigator.serviceWorker.addEventListener) {
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (!hadControllerAlready) {
+              hadControllerAlready = true; // first assignment, not a replacement -- ignore this once, then treat any later change as real
+              return;
+            }
+            reloadWhenSafe();
+          });
+        }
+
+        // Gap 2's fix: re-check for a real update AND force a full reload
+        // every time this tab becomes visible again after being hidden
+        // long enough to plausibly be stale — the one signal guaranteed to
+        // fire even when a frozen background tab never issues a fresh
+        // navigation/fetch of its own accord (see header comment above).
+        var hiddenAtMs = null;
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'hidden') {
+            hiddenAtMs = Date.now();
+            return;
+          }
+          if (document.visibilityState !== 'visible') return;
+
+          registration.update().catch(function () { /* best-effort */ });
+
+          if (hiddenAtMs !== null && (Date.now() - hiddenAtMs) >= hiddenStaleThresholdMs()) {
+            reloadWhenSafe();
+          }
+          hiddenAtMs = null;
+        });
+
+        swListenersReadyResolve();
+      }).catch(function () {
         // Registration can legitimately fail (unsupported context, a
         // restrictive browser setting) -- this must never break the page
         // it's loaded from.
+        swListenersReadyResolve();
       });
-    } catch (e) { /* same discipline as every other analytics/PWA-adjacent call in this codebase -- must never break the app */ }
+    } catch (e) {
+      // same discipline as every other analytics/PWA-adjacent call in this codebase -- must never break the app
+      swListenersReadyResolve();
+    }
   }
 
   registerServiceWorker();
@@ -154,6 +331,7 @@ window.PwaInstall = (function () {
     canPromptInstall: canPromptInstall,
     promptInstall: promptInstall,
     isStandalone: isStandalone,
-    isIOS: isIOS
+    isIOS: isIOS,
+    __swListenersReady: swListenersReady
   };
 })();

@@ -51,8 +51,25 @@
 // precached at install time; everything else is cached opportunistically,
 // the first time it's actually visited online, via the runtime fetch
 // handler below.
-
-var CACHE_VERSION = 'v1';
+//
+// CACHE_VERSION / bump discipline (tracker item for-product-urgent-founder-
+// gets-stale-pa-6dn54z): this only exists to name the runtime cache and
+// know which old one(s) to delete in the activate handler below — it does
+// NOT gate whether a page or static asset is served fresh (that's the
+// network-first strategy above, unconditional). Bumping it also has one
+// real side effect worth knowing: it changes this file's own bytes, which
+// is what makes the browser notice sw.js itself has a new version worth
+// installing (see js/pwa.js's registerServiceWorker() header comment on
+// why that update-detection matters, and why it's still a narrow slice of
+// this bug — most deploys never touch this file at all, only page HTML/
+// CSS/JS, which the network-first strategy already serves fresh with no
+// dependency on this version number). This repo has no build step to key
+// a version off (grepped for any existing DEPLOY_ID/COMMIT_REF/BUILD_ID/
+// version convention first — none exists), so the honest, simplest choice
+// for a project that deploys many times a day is a manual bump here
+// whenever this file's OWN caching logic or PRECACHE_URLS list changes —
+// not on every routine content deploy, which doesn't need it.
+var CACHE_VERSION = 'v2';
 var CACHE_NAME = 'dreamtube-shell-' + CACHE_VERSION;
 
 // Precached at install time — the minimum needed so a completely fresh
