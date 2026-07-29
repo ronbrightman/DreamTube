@@ -124,6 +124,28 @@
     // item). Standard two-overlapping-rectangles copy glyph, no existing
     // icon in this file fit, confirmed by grep — same 24x24/currentColor/
     // stroke-only convention as every other entry here.
-    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>')
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
+    // Added for the public-feed-safety build (tracker item
+    // for-product-public-feed-safety-in-app-re-ppuw77) — explore.html's
+    // feed-card "More" action (report/block), opening js/report-sheet.js.
+    // Standard horizontal-kebab "more options" glyph (three dots), no
+    // existing icon in this file fit, confirmed by grep — same 24x24/
+    // currentColor/stroke-only convention as every other entry here,
+    // filled dots rather than stroked (matches the standard rendering of
+    // this specific glyph everywhere it's used).
+    moreHorizontal: svg('<circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/>'),
+
+    // Report option inside js/report-sheet.js — standard line-art flag
+    // glyph (pole + waving banner), no existing icon fit, confirmed by
+    // grep — same convention as every other entry here.
+    flag: svg('<path d="M5 21V4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 4c1.5-1.3 3.5-1.3 5 0s3.5 1.3 5 0v9c-1.5 1.3-3.5 1.3-5 0s-3.5-1.3-5 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
+    // Block option inside js/report-sheet.js — the existing `person` glyph
+    // plus a diagonal "no/slash" line through it (the standard "block this
+    // user" convention), rather than a wholly new figure — keeps it
+    // instantly legible as "person" + "not allowed" together. Same
+    // convention as every other entry here.
+    userX: svg('<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
   };
 })();

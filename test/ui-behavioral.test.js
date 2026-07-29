@@ -303,8 +303,18 @@ test('Explore cards render without the removed comment/repost icons and without 
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.feed-card', { timeout: 5000 });
 
+    // Exactly 3 actions per card as of the public-feed-safety build
+    // (tracker item for-product-public-feed-safety-in-app-re-ppuw77):
+    // like + share + the new Report/Block "More" action (js/report-sheet.js)
+    // — a deliberate, intentional addition, NOT a reappearance of the old
+    // comment/repost icons this test originally guarded against removing
+    // (see the specific comment/repost path-fragment assertions below,
+    // which still must hold). This viewer is logged out for this test
+    // (no state.user seeded), and the mocked dream isn't "mine" either
+    // way, so More is expected to render here — see explore.html's
+    // cardHTML, which hides it only for d.mine.
     var actionCount = await page.$$eval('.feed-card .feed-actions .feed-action', function (els) { return els.length; });
-    assert.equal(actionCount, 2, 'expected exactly like+share actions per card, no comment/repost');
+    assert.equal(actionCount, 3, 'expected exactly like+share+more actions per card, no comment/repost');
 
     var actionsHTML = await page.$eval('.feed-card .feed-actions', function (el) { return el.innerHTML; });
     assert.ok(!/repost/i.test(actionsHTML), 'no leftover "repost" reference in the actions markup');
@@ -313,6 +323,7 @@ test('Explore cards render without the removed comment/repost icons and without 
     // embedded even under a different data-attribute/class name.
     assert.ok(actionsHTML.indexOf('M21 11.5a8.4') === -1, 'comment icon path should not be present');
     assert.ok(actionsHTML.indexOf('M17 2l4 4-4 4') === -1, 'repost icon path should not be present');
+    assert.equal(await page.locator('.feed-card .feed-actions [data-more]').count(), 1, 'the new Report/Block "More" action must be present');
 
     var box = await page.$eval('.feed-card .feed-actions', function (el) {
       var r = el.getBoundingClientRect();

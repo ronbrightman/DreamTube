@@ -97,6 +97,7 @@
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/share-sheet.js"></script>
+<script src="js/report-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
   // Deliberately no login gate here, unlike every other page — Explore is
@@ -258,6 +259,10 @@
           '<div class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
         '</div>' +
         '<div class="feed-action" data-share="'+d.id+'"><div class="icon">'+Icons.share+'</div><span>Share</span></div>' +
+        // Report/block (tracker item for-product-public-feed-safety-in-app-re-ppuw77)
+        // — hidden on the viewer's own dream, since reporting/blocking yourself
+        // has no meaning here.
+        (d.mine ? '' : '<div class="feed-action" data-more="'+d.id+'"><div class="icon">'+Icons.moreHorizontal+'</div><span>More</span></div>') +
       '</div>' +
       (isFirst ? '<div class="feed-swipe-hint">↕ SWIPE FOR NEXT DREAM</div>' : '') +
     '</div>';
@@ -594,7 +599,11 @@
       chip.style.display = 'none';
       return;
     }
-    var dreams = allDreams;
+    // Blocked authors (tracker item for-product-public-feed-safety-in-app-re-ppuw77)
+    // are excluded from the feed entirely, not just flagged -- this is the
+    // one place that actually enforces DreamStore.getSharedFeed()'s
+    // per-viewer blockedByMe flag.
+    var dreams = allDreams.filter(function(d){ return !d.blockedByMe; });
     if(filter){
       dreams = dreams.filter(function(d){
         return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
@@ -641,7 +650,17 @@
   })();
 
   function loadFeed(){
-    DreamStore.getSharedFeed().then(function(dreams){
+    // Hydrate this device's local block list from the signed-in account's
+    // durable server-side copy (tracker item
+    // for-product-public-feed-safety-in-app-re-ppuw77) BEFORE computing the
+    // feed's own blockedByMe flags below, so a different device (or a
+    // cleared browser) picks up existing blocks on its very first load
+    // rather than briefly showing already-blocked authors. Never rejects
+    // (see its own doc comment) -- always safe to chain straight into
+    // getSharedFeed regardless of outcome.
+    DreamStore.syncBlockedHandlesFromServer().then(function(){
+      return DreamStore.getSharedFeed();
+    }).then(function(dreams){
       allDreams = dreams;
       // The pick itself is the server's job now (get-feed.js's
       // resolveDreamOfDay — same dream for every visitor on a given
@@ -861,6 +880,34 @@
       ShareSheet.show({
         dream: dream,
         shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
+        onToast: showToast
+      });
+      return;
+    }
+    var moreEl = e.target.closest('[data-more]');
+    if(moreEl){
+      var target = findLoadedDream(moreEl.dataset.more);
+      if(!target) return;
+      ReportSheet.show({
+        dream: target,
+        isLoggedIn: !!DreamStore.getCurrentUser(),
+        onRequireLogin: function(){
+          // Same signup-nudge modal explore.html already uses for the
+          // +Create/Profile nav taps (see gateNavLink above) -- blocking
+          // needs a real signed-in identity to durably sync (see
+          // js/store.js's blockUser doc comment), so a logged-out tap
+          // routes here instead of silently doing nothing.
+          signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent('explore.html');
+          signupNudge.classList.add('open');
+        },
+        onBlocked: function(handle){
+          // Reflect the block immediately in THIS already-loaded feed
+          // (both the in-memory flag, so a later render() call stays
+          // consistent, and an immediate re-render) rather than waiting
+          // for a full reload.
+          allDreams.forEach(function(d){ if(d.ownerHandle === handle) d.blockedByMe = true; });
+          render();
+        },
         onToast: showToast
       });
     }

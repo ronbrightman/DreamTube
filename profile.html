@@ -285,6 +285,22 @@
         </a>
       </div>
 
+      <!-- Blocked accounts (tracker item
+           for-product-public-feed-safety-in-app-re-ppuw77) — hidden
+           entirely when the list is empty (same "hide entirely, don't
+           show an empty placeholder" convention as new-likes-banner/
+           owner-topup-block elsewhere on this page), populated by
+           renderBlockedAccounts() from DreamStore.getBlockedHandles()
+           every time Settings opens. Each row's Unblock control calls
+           DreamStore.unblockUser (local write + best-effort durable
+           server sync, see js/store.js's own doc comment) then
+           re-renders this list. -->
+      <div class="settings-section" id="blocked-accounts-section" style="display:none;">
+        <div class="section-label">Blocked accounts</div>
+        <div class="auth-sub" style="margin-bottom:10px;">Dreams from blocked accounts won't show up in your Explore feed.</div>
+        <div id="blocked-accounts-list"></div>
+      </div>
+
       <!-- Owner-only manual top-up — resolves the "owner bypass for the
            token gate" question the founder's own way: not an E112
            exemption (generate-video.js's gate stays unconditional for
@@ -1014,6 +1030,37 @@
     else renderTokenText();
   }, 60000);
 
+  // ===== Blocked accounts (tracker item for-product-public-feed-safety-in-app-re-ppuw77) =====
+  // Reuses this file's existing esc() helper (defined above, function
+  // declarations are hoisted to the top of this script block regardless
+  // of source order).
+  function renderBlockedAccounts(){
+    var handles = DreamStore.getBlockedHandles();
+    var section = document.getElementById('blocked-accounts-section');
+    var list = document.getElementById('blocked-accounts-list');
+    if(!handles.length){
+      section.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    section.style.display = 'block';
+    list.innerHTML = handles.map(function(handle){
+      return '<div class="settings-row" style="cursor:default;">' +
+        '<div class="settings-row-text"><div class="settings-row-title">'+esc(handle)+'</div></div>' +
+        '<span class="link-text" data-unblock="'+esc(handle)+'" style="cursor:pointer; flex:none;">Unblock</span>' +
+      '</div>';
+    }).join('');
+  }
+  document.getElementById('blocked-accounts-list').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-unblock]');
+    if(!btn) return;
+    var handle = btn.dataset.unblock;
+    DreamStore.unblockUser(handle).then(function(){
+      renderBlockedAccounts();
+      showToast('Unblocked ' + handle);
+    });
+  });
+
   document.getElementById('account-success-icon').innerHTML = Icons.mail;
   var accountOverlay = document.getElementById('sheet-account-overlay');
   function openAccountSheet(){
@@ -1023,6 +1070,7 @@
     document.getElementById('account-error').textContent = '';
     document.getElementById('account-success').style.display = 'none';
     ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
+    renderBlockedAccounts();
     // Always reopen Settings with the support/feedback compose panel
     // collapsed — never carries over a previous open/typed-into state
     // from earlier in the session. Also bumps supportComposeToken (see

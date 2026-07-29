@@ -33,6 +33,12 @@
 //   getAccountCreatedAt()        -> local read, epoch-ms signup timestamp (null for pre-existing accounts, see its own comment) — feeds Settings' support/feedback form
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
+//   isBlocked(handle) / getBlockedHandles() -> local reads of this device's block list
+//   blockUser(handle) / unblockUser(handle) -> local write + best-effort POST
+//       /.netlify/functions/block-user (public feed safety, tracker item
+//       for-product-public-feed-safety-in-app-re-ppuw77)
+//   syncBlockedHandlesFromServer() -> best-effort GET /.netlify/functions/block-user,
+//       merges a signed-in account's durable server-side block list into this device
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
 //   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
@@ -176,11 +182,24 @@
                          // can.
       charactersByUser: {}, // lowercased username -> array of character objects. Private
                              // per-user and reusable across dreams, same key scheme as accounts.
-      likedIds: {} // dream id -> true. Purely local "have I liked this" state for the shared
+      likedIds: {}, // dream id -> true. Purely local "have I liked this" state for the shared
                     // feed's heart icon — the real aggregate like count lives server-side in
                     // Blobs (see getSharedFeed/toggleSharedLike), this just decides +1 vs -1
                     // and which browsers see a filled heart. Not deduped across devices/users;
                     // there's no real account system to dedupe against, same as everywhere else.
+      blockedHandles: {} // ownerHandle (e.g. "@alice") -> true. Purely local "have I blocked
+                    // this author" state for the shared feed (tracker item
+                    // for-product-public-feed-safety-in-app-re-ppuw77) — deliberately mirrors
+                    // likedIds immediately above: a plain device-level map, NOT deduped/scoped
+                    // per signed-in account (same "no real account system to dedupe against"
+                    // tradeoff already accepted for likes). This is what actually filters a
+                    // blocked author's dreams out of getSharedFeed() below. A signed-in
+                    // account's blocks are ALSO durably synced server-side (see blockUser/
+                    // unblockUser/syncBlockedHandlesFromServer and
+                    // netlify/functions/lib/block-store.js) so they survive a cleared browser
+                    // or a different device — this local map is the fast, always-available
+                    // copy that actually drives rendering, seeded/merged from that server copy
+                    // on demand, never the other way around.
     };
   }
 
@@ -283,6 +302,7 @@
       if (parsed.draft.audioOn === undefined) parsed.draft.audioOn = false;
       if (parsed.draft.musicStyle === undefined) parsed.draft.musicStyle = null;
       if (!parsed.likedIds) parsed.likedIds = {};
+      if (!parsed.blockedHandles) parsed.blockedHandles = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -329,8 +349,9 @@
    * no reason to let a deleted account's job data linger). Then resets
    * `state.user`/`state.draft` — the current session's own transient
    * state, not account data — the same way logout() resets `state.user`.
-   * `state.likedIds` is left alone: already documented (see its own
-   * comment) as not deduped per-account at all, same as logout().
+   * `state.likedIds`/`state.blockedHandles` are both left alone: already
+   * documented (see their own comments) as not deduped per-account at
+   * all, same as logout().
    *
    * Deliberately does NOT touch the feed-backfill/persistent-storage
    * "have I already done this" flags or the genuinely device-level prefs
@@ -2587,9 +2608,17 @@
 
     /**
      * The real, cross-browser shared feed — every published dream from
-     * every user, fetched from Blobs via get-feed.js. Adds mine/likedByMe
-     * per-viewer, computed locally since the shared record itself carries
-     * neither (no real accounts to know who's asking).
+     * every user, fetched from Blobs via get-feed.js. Adds
+     * mine/likedByMe/blockedByMe per-viewer, computed locally since the
+     * shared record itself carries none of them (no real accounts to know
+     * who's asking). `blockedByMe` (tracker item
+     * for-product-public-feed-safety-in-app-re-ppuw77) is purely a local
+     * state.blockedHandles lookup, same mechanism as likedByMe — callers
+     * that want blocked authors actually excluded (not just flagged) must
+     * filter on it themselves (see explore.html's own render(), which
+     * drops any d.blockedByMe dream before rendering) — this function
+     * itself never drops entries, same "return everything, let the page
+     * decide what to do with the flag" posture likedByMe/mine already have.
      */
     getSharedFeed: function () {
       return fetch('/.netlify/functions/get-feed').then(function (res) {
@@ -2598,11 +2627,13 @@
         if (data.error) throw new Error(data.error);
         lastDreamOfDayId = data.dreamOfDayId || null;
         var likedIds = state.likedIds || {};
+        var blockedHandles = state.blockedHandles || {};
         var myHandle = state.user ? state.user.handle : null;
         return (data.feed || []).map(function (d) {
           return Object.assign({}, d, {
             likedByMe: !!likedIds[d.id],
-            mine: !!myHandle && d.ownerHandle === myHandle
+            mine: !!myHandle && d.ownerHandle === myHandle,
+            blockedByMe: !!blockedHandles[d.ownerHandle]
           });
         });
       });
@@ -2645,6 +2676,100 @@
         persist();
         return { likes: data.likes, likedByMe: !currentlyLiked };
       });
+    },
+
+    // ===== Block user (tracker item for-product-public-feed-safety-in-app-re-ppuw77) =====
+    //
+    // Blocking hides a published author's dreams from THIS device's own
+    // Explore feed going forward (see getSharedFeed's blockedByMe flag +
+    // explore.html's own filtering) — same "device-level, not deduped per
+    // signed-in account" tradeoff already accepted for state.likedIds (see
+    // that field's own comment), not a new bug class: this app has no real
+    // server-side session/account boundary anywhere else either, so a
+    // heavier per-account-scoped local model would be inconsistent with
+    // every other piece of local state in this file, not more correct.
+    //
+    // A signed-in account's blocks are ALSO written through to a durable
+    // server-side store (netlify/functions/block-user.js/lib/block-store.js,
+    // keyed by username) — best-effort and fire-and-forget: the LOCAL write
+    // (isBlocked/getSharedFeed's blockedByMe) already fully applies on this
+    // device regardless of whether the network call below ever succeeds,
+    // so a Blobs write failure or offline network never blocks the feature
+    // from working right now, only from being synced to another device
+    // later. Skipped entirely when logged out (no username to key the
+    // server record on) — the local block still applies on this device
+    // either way.
+
+    /** True if this device has locally blocked `handle` (e.g. "@alice"). Synchronous, no network. */
+    isBlocked: function (handle) {
+      return !!(handle && state.blockedHandles && state.blockedHandles[handle]);
+    },
+
+    /** Every handle this device has locally blocked, as a plain array — feeds Settings' "Blocked accounts" list (see profile.html). */
+    getBlockedHandles: function () {
+      return Object.keys(state.blockedHandles || {});
+    },
+
+    /**
+     * Blocks `handle`: applies the local flag immediately (synchronous,
+     * persisted before this function's Promise ever settles — a caller
+     * that only cares about the immediate on-device effect doesn't need to
+     * wait on the returned Promise at all), then best-effort syncs it to
+     * the durable server-side store if signed in. The returned Promise
+     * always resolves (never rejects) once the local write is done — a
+     * server sync failure is swallowed, matching this feature's "local
+     * effect must never depend on network" design above.
+     */
+    blockUser: function (handle) {
+      if (!handle) return Promise.resolve();
+      if (!state.blockedHandles) state.blockedHandles = {};
+      state.blockedHandles[handle] = true;
+      persist();
+      if (!state.user) return Promise.resolve();
+      return fetch('/.netlify/functions/block-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: state.user.username, blockedHandle: handle, action: 'block' })
+      }).catch(function () { /* local block already applied -- server sync is best-effort, see header comment */ });
+    },
+
+    /** Unblocks `handle` — mirrors blockUser's local-first, best-effort-server-sync shape exactly. */
+    unblockUser: function (handle) {
+      if (!handle) return Promise.resolve();
+      if (state.blockedHandles) delete state.blockedHandles[handle];
+      persist();
+      if (!state.user) return Promise.resolve();
+      return fetch('/.netlify/functions/block-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: state.user.username, blockedHandle: handle, action: 'unblock' })
+      }).catch(function () { /* local unblock already applied -- server sync is best-effort, see header comment */ });
+    },
+
+    /**
+     * Hydrates this device's local blockedHandles from the signed-in
+     * account's durable server-side list (netlify/functions/block-user.js
+     * GET) — a UNION merge (never removes a local block the server copy
+     * doesn't have; a block made on THIS device moments ago and not yet
+     * synced must not be reverted by this call), so this is always safe to
+     * call speculatively on page load. No-ops (resolves immediately) when
+     * logged out — there's no account to fetch a server list for. Never
+     * rejects: a fetch failure just leaves the local list as-is, same
+     * honest-degrade posture as every other best-effort network call in
+     * this file. Called by explore.html on load so a different device (or
+     * a cleared browser) picks up an already-signed-in account's existing
+     * blocks before the feed renders.
+     */
+    syncBlockedHandlesFromServer: function () {
+      if (!state.user) return Promise.resolve();
+      return fetch('/.netlify/functions/block-user?username=' + encodeURIComponent(state.user.username))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var serverHandles = (data && Array.isArray(data.blockedHandles)) ? data.blockedHandles : [];
+          if (!state.blockedHandles) state.blockedHandles = {};
+          serverHandles.forEach(function (h) { state.blockedHandles[h] = true; });
+          persist();
+        }).catch(function () { /* leave the local list as-is -- see header comment */ });
     },
 
     /**
