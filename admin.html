@@ -141,6 +141,46 @@
         <div id="admin-diagnose-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Consolidate founder accounts (tracker.html's
+           for-product-rename-dry-run-refused-u-ron-rd0sm9 item, the
+           follow-on from the Diagnose panel above): the diagnose run
+           confirmed BOTH __probe_throwaway_user__ and ronbrightman really
+           are the founder's own accounts, so this merges them into ONE
+           surviving u:ronbrightman record on OWNER_EMAIL (ronbrightman@
+           gmail.com) -- see admin-consolidate-accounts.js's own header
+           comment for the full email/password/token/dream/index write-up
+           this performs. Same "founder actions get a direct link, never a
+           curl" standing rule as the rename panel above -- thin client for
+           an already-reviewed, hardcoded one-off endpoint, no auth logic
+           of its own. Always run a dry run first; the toggle defaults on,
+           same pattern as the rename panel. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Consolidate founder accounts</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Merge __probe_throwaway_user__ into ronbrightman</div>
+          <div class="admin-row-sub">Calls admin-consolidate-accounts.js, the one-off tool that merges both accounts' email/password/tokens/published dreams onto the surviving u:ronbrightman record. Always run a dry run first — its result is shown below before a real run is possible.</div>
+        </div>
+        <input class="field" id="admin-consolidate-source" type="text" placeholder="Username or email (for password check)" value="__probe_throwaway_user__" autocomplete="off" dir="auto">
+        <input class="field" id="admin-consolidate-password" type="password" placeholder="That account's real password" autocomplete="current-password">
+        <div class="choice-card" style="cursor:pointer; padding:12px 14px; margin-bottom:12px;" id="admin-consolidate-skip-row">
+          <div class="choice-text">
+            <div class="choice-title" style="font-size:14px;">Skip snapshot sanity checks</div>
+            <div class="admin-row-sub" id="admin-consolidate-skip-sub">Off — refuses if token balances/dream counts have drifted from the diagnosed snapshot. Turn on only if you've confirmed the drift is expected (e.g. real usage since the diagnosis ran).</div>
+          </div>
+          <div class="toggle-switch" id="admin-consolidate-skip-toggle" role="switch" aria-checked="false" aria-label="Skip snapshot sanity checks"></div>
+        </div>
+        <div class="choice-card" style="cursor:pointer; padding:12px 14px; margin-bottom:12px;" id="admin-consolidate-dryrun-row">
+          <div class="choice-text">
+            <div class="choice-title" style="font-size:14px;">Dry run</div>
+            <div class="admin-row-sub" id="admin-consolidate-dryrun-sub">On — previews the result, makes no changes.</div>
+          </div>
+          <div class="toggle-switch on" id="admin-consolidate-dryrun-toggle" role="switch" aria-checked="true" aria-label="Dry run"></div>
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="admin-consolidate-submit">Preview (dry run)</button>
+        <div class="err-text" id="admin-consolidate-error" style="margin-top:4px;"></div>
+        <div id="admin-consolidate-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -481,6 +521,166 @@
       .catch(function () {
         diagnoseSubmitBtn.disabled = false;
         diagnoseErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
+      });
+  });
+
+  // ===== Consolidate founder accounts (admin-consolidate-accounts.js) =====
+  var consolidateSourceEl = document.getElementById('admin-consolidate-source');
+  var consolidatePasswordEl = document.getElementById('admin-consolidate-password');
+  var consolidateSkipRow = document.getElementById('admin-consolidate-skip-row');
+  var consolidateSkipToggle = document.getElementById('admin-consolidate-skip-toggle');
+  var consolidateSkipSub = document.getElementById('admin-consolidate-skip-sub');
+  var consolidateDryRunRow = document.getElementById('admin-consolidate-dryrun-row');
+  var consolidateDryRunToggle = document.getElementById('admin-consolidate-dryrun-toggle');
+  var consolidateDryRunSub = document.getElementById('admin-consolidate-dryrun-sub');
+  var consolidateSubmitBtn = document.getElementById('admin-consolidate-submit');
+  var consolidateErrorEl = document.getElementById('admin-consolidate-error');
+  var consolidateResultEl = document.getElementById('admin-consolidate-result');
+
+  // Same "a dry run only ever previews THESE exact credentials" discipline
+  // as the rename panel above (round-2 review finding on that panel:
+  // editing the password after a dry run must invalidate it before a real
+  // run is allowed) -- reset whenever the credential field OR the skip
+  // toggle changes, since either changes what the real run would actually
+  // do.
+  var lastConsolidateDryRunOk = null;
+  consolidateSourceEl.addEventListener('input', function () { lastConsolidateDryRunOk = null; });
+  consolidatePasswordEl.addEventListener('input', function () { lastConsolidateDryRunOk = null; });
+
+  function consolidateSkipIsOn() {
+    return consolidateSkipToggle.classList.contains('on');
+  }
+
+  consolidateSkipRow.addEventListener('click', function () {
+    if (consolidateSubmitBtn.disabled) return;
+    var on = !consolidateSkipIsOn();
+    consolidateSkipToggle.classList.toggle('on', on);
+    consolidateSkipToggle.setAttribute('aria-checked', String(on));
+    consolidateSkipSub.textContent = on
+      ? "On — proceeds even if token balances/dream counts don't match the diagnosed snapshot. Only the two account-identity checks still refuse."
+      : "Off — refuses if token balances/dream counts have drifted from the diagnosed snapshot. Turn on only if you've confirmed the drift is expected (e.g. real usage since the diagnosis ran).";
+    lastConsolidateDryRunOk = null;
+  });
+
+  function consolidateIsDryRun() {
+    return consolidateDryRunToggle.classList.contains('on');
+  }
+
+  function setConsolidateDryRun(on) {
+    consolidateDryRunToggle.classList.toggle('on', on);
+    consolidateDryRunToggle.setAttribute('aria-checked', String(on));
+    consolidateDryRunSub.textContent = on
+      ? 'On — previews the result, makes no changes.'
+      : 'Off — the next submit makes a REAL change (merges balances, retags dreams, deletes the old account record).';
+    consolidateSubmitBtn.textContent = on ? 'Preview (dry run)' : 'Consolidate for real';
+    consolidateSubmitBtn.style.background = on ? '' : 'var(--danger)';
+    consolidateSubmitBtn.style.color = on ? '' : '#fff';
+    consolidateSubmitBtn.style.boxShadow = on ? '' : 'none';
+  }
+
+  consolidateDryRunRow.addEventListener('click', function () {
+    if (consolidateSubmitBtn.disabled) return;
+    setConsolidateDryRun(!consolidateIsDryRun());
+  });
+
+  var CONSOLIDATE_STATUS_COPY = {
+    consolidated: { preview: 'Would consolidate both accounts (fresh run).', done: 'Consolidated both accounts.' },
+    resumed: { preview: 'Would finish a previously interrupted consolidation.', done: 'Finished a previously interrupted consolidation.' },
+    already_done: { preview: 'Already consolidated — nothing to do.', done: 'Already consolidated — nothing was done.' },
+    nothing_to_do: { preview: 'Neither account exists — nothing to do.', done: 'Neither account existed — nothing was done.' }
+  };
+
+  var CONSOLIDATE_ERROR_COPY = {
+    'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+    'E4: missing_fields': 'Enter a username/email and password.',
+    'E5: forbidden': "Couldn't verify — check the username/email and password (must be the account owner's real credentials).",
+    'E7: source_email_mismatch': "Refused: the probe account's on-file email doesn't match the owner's email. Nothing was touched.",
+    'E8: ronbrightman_missing': "Refused: u:ronbrightman doesn't exist at all — there's nothing to consolidate into. Nothing was touched.",
+    'E9: ronbrightman_email_mismatch': "Refused: u:ronbrightman's on-file email is neither the owner's email nor the expected dotted address. Nothing was touched.",
+    'E10: snapshot_mismatch': "Refused: token balances or dream counts don't match the diagnosed snapshot. See details below, or turn on \"Skip snapshot sanity checks\" if the drift is expected. Nothing was touched.",
+    'E11: ambiguous_partial_state': "Refused: the probe account is already gone but ronbrightman's email looks unexpected — can't safely auto-resolve this. Nothing was touched."
+  };
+
+  function renderConsolidateResult(dryRun, data) {
+    consolidateResultEl.style.display = 'block';
+    if (!data.ok) {
+      consolidateResultEl.textContent = '';
+      consolidateResultEl.style.display = 'none';
+      var copy = CONSOLIDATE_ERROR_COPY[data.error] || (data.error && data.error.indexOf('E6') === 0 ? data.error.replace(/^E6:\s*/, '') : (data.error || "Something went wrong — try again."));
+      if (data.details) copy += '\n' + JSON.stringify(data.details, null, 2);
+      consolidateErrorEl.textContent = copy;
+      return;
+    }
+    consolidateErrorEl.textContent = '';
+    var statusCopy = CONSOLIDATE_STATUS_COPY[data.status] || { preview: data.status, done: data.status };
+    var lines = [(dryRun ? 'DRY RUN — ' : '') + (dryRun ? statusCopy.preview : statusCopy.done)];
+    if (data.account) {
+      lines.push('Account: ' + data.account.username + ' (' + data.account.email + ')');
+    }
+    if (data.tokens) {
+      lines.push('Tokens: ' + data.tokens.ownerEmailBalanceBefore + ' + ' + data.tokens.oldEmailBalanceBefore +
+        ' -> ' + data.tokens.newOwnerEmailBalance + (data.tokens.oldEmailDrainedToZero ? ' (old email drained to 0)' : ' (nothing to drain)'));
+    }
+    if (data.feed) {
+      lines.push('Feed entries ' + (dryRun ? 'that would be retagged' : 'retagged') + ': ' + data.feed.updatedCount +
+        (data.feed.dreamIds && data.feed.dreamIds.length ? ' (' + data.feed.dreamIds.join(', ') + ')' : ''));
+    }
+    if (data.tombstoned) {
+      lines.push('Probe account ' + (dryRun ? 'would be deleted' : 'deleted') + ': ' + data.tombstoned.probeAccountDeleted);
+      lines.push('Old email index ' + (dryRun ? 'would be tombstoned' : 'tombstoned') + ': ' + data.tombstoned.oldEmailIndexDeleted);
+    }
+    consolidateResultEl.textContent = lines.join('\n');
+  }
+
+  consolidateSubmitBtn.addEventListener('click', function () {
+    consolidateErrorEl.textContent = '';
+    var usernameOrEmail = consolidateSourceEl.value.trim();
+    var password = consolidatePasswordEl.value;
+    if (!usernameOrEmail || !password) {
+      consolidateErrorEl.textContent = 'Enter a username/email and password.';
+      return;
+    }
+
+    var dryRun = consolidateIsDryRun();
+
+    // Never let the real run be the first thing that fires -- same
+    // discipline as the rename panel above.
+    if (!dryRun && !lastConsolidateDryRunOk) {
+      consolidateErrorEl.textContent = 'Run a dry run first and check its result before running for real.';
+      return;
+    }
+
+    if (!dryRun) {
+      var confirmed = window.confirm('This performs a REAL consolidation (not a preview): merges token balances, retags published dreams, and deletes the old probe account record. Continue?');
+      if (!confirmed) return;
+    }
+
+    consolidateSubmitBtn.disabled = true;
+    consolidateDryRunToggle.classList.add('disabled');
+    consolidateSkipToggle.classList.add('disabled');
+
+    fetch('/.netlify/functions/admin-consolidate-accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, dryRun: dryRun, skipSnapshotSanityChecks: consolidateSkipIsOn() })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        consolidateSubmitBtn.disabled = false;
+        consolidateDryRunToggle.classList.remove('disabled');
+        consolidateSkipToggle.classList.remove('disabled');
+        renderConsolidateResult(dryRun, result.data);
+        if (dryRun && result.data && result.data.ok) {
+          lastConsolidateDryRunOk = true;
+        }
+      })
+      .catch(function () {
+        consolidateSubmitBtn.disabled = false;
+        consolidateDryRunToggle.classList.remove('disabled');
+        consolidateSkipToggle.classList.remove('disabled');
+        consolidateErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
       });
   });
 </script>
