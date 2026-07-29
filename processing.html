@@ -436,7 +436,15 @@
   // real .play() call). Off-screen tiles stay untouched (no network
   // activity at all) on their gradient background until scrolled into
   // view, so at most a handful compete for bandwidth rather than all ten.
+  // Holds the IntersectionObserver from the most recent wirePreviewErrorFallback
+  // call, so a re-render (retry, resumed job, credited-tokens path -- renderPreview
+  // can run multiple times per page view) disconnects the previous one instead of
+  // leaking it forever, same disconnect-before-reobserve pattern explore.html's own
+  // videoObserver already uses.
+  var currentPreviewObserver = null;
+
   function wirePreviewErrorFallback(row, dreams){
+    if(currentPreviewObserver){ currentPreviewObserver.disconnect(); currentPreviewObserver = null; }
     var canObserve = ('IntersectionObserver' in window);
     var observer = canObserve ? new IntersectionObserver(function(entries){
       entries.forEach(function(entry){
@@ -475,6 +483,7 @@
       if(observer){ observer.observe(el); }
       else { el.__pptBegin(); }
     });
+    currentPreviewObserver = observer;
   }
 
   // A brand-new user has no dreams of their own yet, so this section used
