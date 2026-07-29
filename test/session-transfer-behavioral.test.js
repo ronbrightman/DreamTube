@@ -12,6 +12,18 @@
 // adds a real action alongside the existing hint-emphasis behavior, it
 // doesn't remove it).
 //
+// EXTENDED for tracker item for-product-webview-notify-escape-nudge--5yray5
+// (founder round-2 feedback, real live FB in-app-webview funnel test): (1)
+// a persistent (non-auto-dismissing) post-copy instruction line alongside
+// the existing toast, and (2) porting the same "Copy link for your browser"
+// fix to create.html's SEPARATE, previously-unfixed copy of this same
+// pattern (#rec-inapp-open-btn, shown when Record mode detects mic access
+// is blocked in a webview) — that one still unconditionally said "Open in
+// my browser" and did nothing on non-Android, the exact "misleading fake
+// button" the founder reported. Wires create.html into the session-transfer
+// chain for the first time in the process, since it never consumed/minted
+// ?bt= tokens before this fix.
+//
 // The REAL server-side token mechanics (single-use, TTL, password-gated
 // minting) have direct Node-level coverage in test/session-transfer.test.js
 // — this file stubs both endpoints via page.route() (this repo's static
@@ -225,6 +237,19 @@ test('processing.html: on iOS, the nudge button is relabeled "Copy link for your
       return document.getElementById('proc-nudge-hint').classList.contains('proc-nudge-hint-emph');
     });
     assert.equal(hintHasEmphasis, true, 'the emphasized hint must still appear alongside the new copy action, per the fix\'s own "keep the emphasized hint" instruction');
+
+    // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+    // nudge--5yray5): a PERSISTENT instruction line (closer to the
+    // founder's own verbatim ask, "open your browser and paste the link
+    // there") must appear alongside the toast and, unlike the toast, must
+    // NOT auto-dismiss after a couple seconds.
+    var noteEl = page.locator('#proc-nudge-copied-note');
+    await noteEl.waitFor({ state: 'visible', timeout: 2000 });
+    var noteText = await noteEl.textContent();
+    assert.match(noteText, /open your browser/i, 'the persistent note must give the exact next step, not just confirm the copy');
+    assert.match(noteText, /paste/i, 'the persistent note must tell the visitor to paste the link');
+    await page.waitForTimeout(2500); // outlast the toast's own ~2.2s auto-dismiss
+    assert.equal(await noteEl.isVisible(), true, 'the note must still be visible after the toast itself has faded -- that is the whole point of it being separate from the toast');
   } finally {
     await context.close();
   }
@@ -251,6 +276,99 @@ test('processing.html: on Android, the nudge button keeps the "Open in my browse
     var intentUrl = await page.evaluate(function () { return buildAndroidChromeIntentUrl(); });
     assert.match(intentUrl, /^intent:\/\//);
     assert.match(intentUrl, /bt=android-intent-token-xyz789/, 'the Android intent:// URL must also carry the session-transfer token, per the fix\'s own instruction');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== create.html's OWN copy of the same escape pattern (tracker item
+// for-product-webview-notify-escape-nudge--5yray5, ask 3): before this fix,
+// #rec-inapp-open-btn unconditionally said "Open in my browser" and did
+// NOTHING on non-Android -- a genuinely misleading button-shaped element,
+// the exact bug the founder reported from a live FB in-app-webview test.
+// This ports processing.html's already-correct fix (above) to create.html's
+// record-blocked panel, plus wires create.html into the session-transfer
+// chain for the first time (it never consumed/minted ?bt= tokens before) so
+// the copied link actually lands signed in, not just on the right page. =====
+
+/** Seeds a signed-in account (real cached password, required for mintSessionTransferToken) with no draft requirement -- create.html's own top-of-script guard only requires being signed in, unlike processing.html's draft/pendingJob requirement. */
+async function seedAccountForCreate(page, opts) {
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@' + o.username, username: o.username };
+    if (!state.accounts) state.accounts = {};
+    state.accounts[o.username] = { password: o.password || 'testpass1', email: o.email || (o.username + '@example.com') };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, opts);
+}
+
+test('create.html: on iOS, the record-blocked panel\'s button is relabeled "Copy link for your browser" and actually copies the current URL (including a freshly-minted ?bt= token) to the clipboard, with a persistent post-copy instruction', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: FB_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockCreateSessionTransfer(page, 'create-ios-copy-token-1');
+    await seedAccountForCreate(page, { username: 'createioscopyuser' });
+    await page.goto(baseUrl + '/create.html?record=1', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
+    var btnLabel = await page.textContent('#rec-inapp-open-btn');
+    assert.match(btnLabel, /Copy link for your browser/, 'non-Android must show the same honest "Copy link" action processing.html already has, not the old "Open in my browser" label that did nothing');
+
+    // create.html never consumed/minted ?bt= tokens before this fix -- must
+    // now, so the copied link actually works.
+    await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
+    var urlAtClick = page.url();
+    assert.match(urlAtClick, /[?&]bt=create-ios-copy-token-1(&|$)/, 'the token must be on the address bar before the button is used');
+
+    await page.click('#rec-inapp-open-btn');
+    await page.waitForSelector('.toast.show', { timeout: 3000 });
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Link copied.*Safari/i);
+
+    var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
+    assert.equal(clipboardText, urlAtClick, 'clipboard must contain exactly the current URL, including its ?bt= token and ?record=1');
+    assert.match(clipboardText, /record=1/, 'the copied link must preserve ?record=1 so pasting it back in a real browser lands right back in the record flow');
+
+    var noteEl = page.locator('#rec-inapp-copied-note');
+    await noteEl.waitFor({ state: 'visible', timeout: 2000 });
+    var noteText = await noteEl.textContent();
+    assert.match(noteText, /open your browser/i, 'must give the founder\'s own verbatim next-step instruction');
+    assert.match(noteText, /paste/i);
+
+    // The pre-existing hint-emphasis fallback must still work alongside the
+    // new copy action.
+    var hintHasEmphasis = await page.evaluate(function () {
+      return document.getElementById('rec-inapp-hint').classList.contains('proc-nudge-hint-emph');
+    });
+    assert.equal(hintHasEmphasis, true);
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html: on Android, the record-blocked panel keeps a REAL "Open in my browser" button (intent:// escape, carrying the ?bt= token and ?record=1)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockCreateSessionTransfer(page, 'create-android-token-1');
+    await seedAccountForCreate(page, { username: 'createandroidtokenuser' });
+    await page.goto(baseUrl + '/create.html?record=1', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
+    var btnLabel = await page.textContent('#rec-inapp-open-btn');
+    assert.match(btnLabel, /Open in my browser/, 'Android keeps the real, working intent:// escape button -- this fix only changes the non-Android branch');
+
+    await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
+    var intentUrl = await page.evaluate(function () { return buildAndroidChromeIntentUrl(); });
+    assert.match(intentUrl, /^intent:\/\//);
+    assert.match(intentUrl, /bt=create-android-token-1/, 'the Android intent:// URL must carry the session-transfer token too, so the visitor lands signed in');
+    assert.ok(intentUrl.indexOf('record%3D1') !== -1 || intentUrl.indexOf('record=1') !== -1, 'must still preserve ?record=1');
   } finally {
     await context.close();
   }

@@ -511,13 +511,16 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .ppt-bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
 /* Post-signup FB/IG in-app-browser nudge (docs/design/inapp-browser-nudge.html,
    Frame 1 only — see processing.html's initInAppNudge). Shown only when the
-   UA is Instagram's or Facebook's own in-app webview, only once signed in,
-   and only until dismissed once (remembered forever after, see
-   DreamStore.getInAppNudgeDismissed/dismissInAppNudge). Reuses the app's
-   existing --accent-trust blue (already used for token-pack "best value"
-   and the tracker's own "ron" badge) and --gradient-ig (the app's one
-   Instagram-style gradient, already used for the "+" nav button and the
-   profile avatar ring) rather than inventing new colors. */
+   UA is Instagram's or Facebook's own in-app webview and only once signed
+   in. ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+   nudge--5yray5): dismissing this card no longer makes it vanish forever —
+   it collapses to the small .proc-nudge-chip pill below instead (see
+   DreamStore.getInAppNudgeDismissed/dismissInAppNudge's own updated doc
+   comment). Reuses the app's existing --accent-trust blue (already used
+   for token-pack "best value" and the tracker's own "ron" badge) and
+   --gradient-ig (the app's one Instagram-style gradient, already used for
+   the "+" nav button and the profile avatar ring) rather than inventing
+   new colors. */
 .proc-nudge-card{ width:100%; text-align:left; position:relative; margin-top:6px; padding:13px 30px 13px 14px; border-radius:16px; background:var(--surface); border:1px solid rgba(108,140,255,.35);}
 .proc-nudge-x{ position:absolute; top:9px; right:10px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); background:none; border:none; font-size:16px; line-height:1; cursor:pointer; padding:0;}
 .proc-nudge-head{ display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:800; color:var(--text-primary); margin-bottom:5px;}
@@ -528,6 +531,41 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-nudge-btn .icon{ width:14px; height:14px;}
 .proc-nudge-hint{ font-size:10.5px; color:var(--text-faint); text-align:center; margin-top:7px; transition:color .3s ease;}
 .proc-nudge-hint.proc-nudge-hint-emph{ color:var(--accent-trust); font-weight:700;}
+/* Persistent post-copy instruction line — tracker item for-product-webview-
+   notify-escape-nudge--5yray5 (founder, round 2): the pre-existing toast
+   ("Link copied — paste it in Safari...") auto-dismisses after ~2.2s, so a
+   visitor who looks back at the screen a few seconds later saw nothing
+   telling them what to do next. This renders alongside the toast (doesn't
+   replace it) and, unlike the toast, stays up for as long as the card/panel
+   itself is visible — closer to the founder's own verbatim ask ("open your
+   browser and paste the link there"). Shared by processing.html's
+   #proc-nudge-copied-note and create.html's #rec-inapp-copied-note, same
+   "one visual language, not two implementations" precedent as
+   .menu-row-replica below. Hidden by default; shown once copyLinkForBrowser
+   actually succeeds, not merely on button click (a failed copy shows its
+   own distinct toast instead, see copyLinkForBrowser's own doc comment). */
+.proc-nudge-copied-note{ display:none; font-size:11px; font-weight:700; color:var(--accent-trust); text-align:center; margin-top:8px; line-height:1.4;}
+/* Collapsed re-entry pill — tracker item for-product-webview-notify-escape-
+   nudge--5yray5 (founder, round 2): the X-dismiss on the in-app-webview
+   nudge card used to make it vanish forever, the same one-shot-
+   disappearance mistake fixed elsewhere for the original A2HS nudge (see
+   js/install-nudge.js's own 2026-07-29 revision note) — but that fix's
+   actual mechanism (a separate ALWAYS-shown home.html journey card, gated
+   on a real "verified installed" signal, not on that small card's own
+   dismiss state) doesn't transplant here: there's no equivalent "verified"
+   signal for having escaped a webview, and this card doesn't live on a
+   persistent dashboard page like home.html. So this is a new, small
+   idiom — a low-profile pill that replaces the full card once dismissed
+   (initInAppNudge renders this INSTEAD of the full card on any load where
+   DreamStore.getInAppNudgeDismissed() is already true, and the dismiss
+   button swaps to it in place rather than removing the card from the DOM)
+   and re-expands the full card on tap. Deliberately small/quiet — this is a
+   re-entry point for someone who already said "not now," not a second nudge
+   competing for attention — sized/shaped like the app's existing small pill
+   chips (.token-chip-compact) rather than inventing a new pill language. */
+.proc-nudge-chip{ display:flex; align-items:center; gap:6px; width:max-content; max-width:100%; margin-top:6px; padding:7px 14px 7px 8px; border-radius:100px; background:var(--surface-alt); border:1px solid var(--border-strong); color:var(--text-muted); font-size:11px; font-weight:700; cursor:pointer;}
+.proc-nudge-chip-dot{ flex:0 0 auto; width:18px; height:18px; border-radius:50%; background:var(--gradient-ig); display:flex; align-items:center; justify-content:center; color:#fff;}
+.proc-nudge-chip-dot svg{ width:10px; height:10px;}
 /* Static, non-interactive replica of the actual menu row a visitor has to
    find inside their host app's own "..." menu (Instagram's/Facebook's
    in-app-browser chrome) -- tracker item

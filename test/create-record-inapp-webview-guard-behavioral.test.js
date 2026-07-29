@@ -276,9 +276,9 @@ test('create.html?record=1: on Android, the guard panel\'s "Open in my browser" 
   }
 });
 
-test('create.html?record=1: on iOS, clicking "Open in my browser" never navigates away -- it emphasizes the host-app-menu hint instead, since no programmatic escape exists there', async function (t) {
+test('create.html?record=1: on iOS, the button is a real "Copy link for your browser" action (not the old fake "Open in my browser") -- clicking it never navigates away, copies the link, and still emphasizes the host-app-menu hint as a fallback -- round-2 founder fix, tracker item for-product-webview-notify-escape-nudge--5yray5', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ userAgent: FB_IOS_UA });
+  var context = await browser.newContext({ userAgent: FB_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
   try {
     await installMediaRecorderMock(context);
     var page = await context.newPage();
@@ -287,9 +287,25 @@ test('create.html?record=1: on iOS, clicking "Open in my browser" never navigate
     await seedLoggedInUserAt(page, 'iosopenguard', '/create.html?record=1');
     await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
 
+    // ROUND-2 FOUNDER FIX: this button used to unconditionally say "Open in
+    // my browser" and do NOTHING on iOS -- a misleading button-shaped
+    // element with no real action behind it. Non-Android now gets the same
+    // honest "Copy link for your browser" action processing.html's nudge
+    // card already had (see test/session-transfer-behavioral.test.js for the
+    // full clipboard/?bt=-token round trip coverage of this exact button).
+    var btnLabel = await page.textContent('#rec-inapp-open-btn');
+    assert.match(btnLabel, /Copy link for your browser/, 'non-Android must show a real, working action label, never the old "Open in my browser" that promised something the click handler could not do');
+
     await page.click('#rec-inapp-open-btn');
     await page.waitForTimeout(200);
     assert.match(page.url(), /create\.html/, 'clicking the button on iOS must never navigate away from create.html');
+
+    var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
+    assert.match(clipboardText, /create\.html/, 'clicking the button must actually copy the current link -- a real action, not a silent no-op');
+
+    var noteEl = page.locator('#rec-inapp-copied-note');
+    await noteEl.waitFor({ state: 'visible', timeout: 2000 });
+    assert.match(await noteEl.textContent(), /open your browser/i, 'a persistent instruction must appear telling the visitor exactly what to do next');
 
     // Assert on the visible-only span, not the whole #rec-inapp-hint
     // container -- the container also contains the aria-hidden decorative
@@ -301,7 +317,7 @@ test('create.html?record=1: on iOS, clicking "Open in my browser" never navigate
     var hintHasEmphasis = await page.evaluate(function () {
       return document.getElementById('rec-inapp-hint').classList.contains('proc-nudge-hint-emph');
     });
-    assert.equal(hintHasEmphasis, true, 'clicking the button on iOS should emphasize the hint line');
+    assert.equal(hintHasEmphasis, true, 'clicking the button on iOS should still emphasize the hint line as a fallback');
   } finally {
     await context.close();
   }

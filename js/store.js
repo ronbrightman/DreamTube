@@ -3392,13 +3392,21 @@
     /**
      * Device-level "has this browser already dismissed the post-signup
      * FB/IG in-app-browser nudge card on the generation wait screen"
-     * marker (see processing.html's initInAppNudge). Device-level (not
-     * account-scoped) for the same reason as getSoundPref/
-     * getSeenDreamOfDayId — the in-app-webview context belongs to the
-     * browser/app the visitor is inside, not to whichever account happens
-     * to be signed in. Once dismissed it never shows again in this
-     * browser, no matter how many more times generation runs or which
-     * account is signed in.
+     * marker (see processing.html's/create.html's initInAppNudge-family
+     * code). Device-level (not account-scoped) for the same reason as
+     * getSoundPref/getSeenDreamOfDayId — the in-app-webview context belongs
+     * to the browser/app the visitor is inside, not to whichever account
+     * happens to be signed in.
+     *
+     * ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+     * nudge--5yray5): dismissing used to make the full card vanish forever
+     * — the same one-shot-disappearance mistake the original A2HS nudge
+     * had. This flag now means "show the small persistent re-entry chip
+     * instead of the full card by default," not "never show anything
+     * again" — callers still gate the FULL card on this being false, but
+     * once it's true they show the small chip (which re-expands the full
+     * card on tap) rather than nothing at all. No storage-shape change was
+     * needed for this fix, just the read-site behavior around it.
      */
     getInAppNudgeDismissed: function () {
       try { return localStorage.getItem('dreamtube_inapp_nudge_dismissed_v1') === '1'; }

@@ -254,7 +254,7 @@ test('processing.html: the menu-row replica does not overflow the nudge card on 
   }
 });
 
-test('processing.html: dismissing the in-app nudge hides it immediately and it never shows again on a later visit in the same browser', async function (t) {
+test('processing.html: dismissing the in-app nudge collapses it to a small persistent chip (never vanishes forever), and the chip re-expands the full card on tap -- round-2 founder fix, tracker item for-product-webview-notify-escape-nudge--5yray5', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
   try {
@@ -266,16 +266,29 @@ test('processing.html: dismissing the in-app nudge hides it immediately and it n
 
     await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
     await page.click('#proc-nudge-dismiss');
-    assert.equal(await page.locator('#proc-nudge-card').isVisible(), false, 'the card must hide immediately on dismiss');
+    assert.equal(await page.locator('#proc-nudge-card').isVisible(), false, 'the full card must hide immediately on dismiss');
+
+    // ROUND-2 FIX: dismiss must collapse to the small re-entry chip, not
+    // leave nothing on screen at all -- the same one-shot-disappearance
+    // mistake already fixed for the original A2HS nudge must not recur here.
+    await page.waitForSelector('#proc-nudge-chip', { state: 'visible', timeout: 3000 });
+    var chipLabel = await page.textContent('#proc-nudge-chip-label');
+    assert.match(chipLabel, /Instagram/i, 'the chip should still reference the detected host app');
 
     var dismissedFlag = await page.evaluate(function () { return DreamStore.getInAppNudgeDismissed(); });
     assert.equal(dismissedFlag, true, 'dismissal must be durably recorded via DreamStore.getInAppNudgeDismissed');
 
-    // A later visit -- reload the same wait screen -- must not resurrect it,
-    // even though the UA is still the same in-app browser and generation is
-    // (per the mock) still in flight.
+    // Tapping the chip must re-expand the full card, not just leave the chip
+    // sitting there inert.
+    await page.click('#proc-nudge-chip');
+    assert.equal(await page.locator('#proc-nudge-card').isVisible(), true, 'tapping the chip must re-expand the full card');
+    assert.equal(await page.locator('#proc-nudge-chip').isVisible(), false, 'the chip itself must hide once the card is re-expanded');
+
+    // A later visit -- reload the same wait screen -- must open straight to
+    // the CHIP (not the full card again, and not nothing at all).
     await page.reload({ waitUntil: 'domcontentloaded' });
-    assert.equal(await page.locator('#proc-nudge-card').isVisible(), false, 'a later visit in the same browser must never show the nudge again once dismissed');
+    assert.equal(await page.locator('#proc-nudge-card').isVisible(), false, 'a later visit in the same browser must not show the full card again once dismissed');
+    assert.equal(await page.locator('#proc-nudge-chip').isVisible(), true, 'a later visit in the same browser must still offer the small re-entry chip, never nothing at all');
   } finally {
     await context.close();
   }

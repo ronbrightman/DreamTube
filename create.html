@@ -224,6 +224,10 @@
     <div style="font-size:13px; color:var(--text-muted); text-align:center; padding:0 14px; line-height:1.5;" id="rec-inapp-body"></div>
     <div style="width:100%; padding:0 4px;">
       <button type="button" class="proc-nudge-btn" id="rec-inapp-open-btn"></button>
+      <!-- Persistent post-copy instruction -- see .proc-nudge-copied-note's
+           own doc comment in css/styles.css. Hidden until copyLinkForBrowser
+           actually succeeds. -->
+      <div class="proc-nudge-copied-note" id="rec-inapp-copied-note" style="display:none;"></div>
       <div class="proc-nudge-hint" id="rec-inapp-hint">
         <span id="rec-inapp-hint-text"></span>
         <div class="menu-row-replica" id="rec-inapp-menu-replica" aria-hidden="true">
@@ -300,16 +304,38 @@
       <span class="link-text" id="build-char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
 </div>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
+  // Consume a ?bt=<session-transfer-token> param BEFORE the sign-in guard
+  // below runs, and keep minting fresh ones for as long as this page stays
+  // open/signed-in/in-webview -- same processing.html/result.html pattern
+  // (see js/store.js's own doc comments on both). Added as part of tracker
+  // item for-product-webview-notify-escape-nudge--5yray5's fix: this page's
+  // own copy-link/intent-escape actions below (showRecordBlockedPanel) read
+  // location.href at click time, so without this call they'd hand the
+  // visitor a link that opens signed OUT, defeating the whole point of a
+  // "come back in your real browser" escape. No-ops instantly when there's
+  // no `bt` param / not in a detected webview, the overwhelmingly common
+  // case for every normal, non-webview page load.
+  DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  DreamStore.maintainSessionTransferUrl();
+  // Same "just escaped the webview -- offer the next step" moment
+  // processing.html/result.html already use (see js/install-nudge.js's own
+  // doc comment) -- lets this page's own escape flow hand off to the
+  // existing A2HS guidance once the visitor is actually back in a real
+  // browser, rather than dead-ending here.
+  InstallNudge.init({ trigger: 'session-transfer' });
 
   // Topbar balance chip (tracker item
   // for-product-build-out-of-tokens-purchase-2y8hyw, item 3) — no gate
@@ -944,15 +970,52 @@
 
   var recordBlockedEl = document.getElementById('create-record-blocked');
 
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+  // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+  // nudge--5yray5, ask 3): this button used to unconditionally say "Open in
+  // my browser" on every platform, including iOS/non-Android, where its
+  // click handler did NOTHING but scroll to and briefly highlight the hint
+  // text below — a button-shaped element promising an action it could not
+  // perform, exactly the "misleading fake button" the founder flagged from
+  // a live FB in-app-webview test. processing.html's initInAppNudge already
+  // has the correct fix for this exact same pattern (tracker item
+  // for-product-bug-fix-founder-high-in-app--sv3mym) — this is that same
+  // fix, ported here: capability-detect-and-hide, not hand-hold. Own copy
+  // rather than a shared function, same "each page owns its own copy of
+  // this trio" convention as detectInAppHost/isAndroidUA/
+  // buildAndroidChromeIntentUrl above. Reads location.href at CLICK time so
+  // it naturally carries whatever ?bt= session-transfer token
+  // DreamStore.maintainSessionTransferUrl (called at the top of this
+  // script) has most recently written there — pasting into Safari lands
+  // the visitor signed in, not just on the right page, same reasoning as
+  // processing.html's own copyLinkForBrowser.
+  function copyLinkForBrowser(onCopied){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(location.href).then(function(){
+        showToast('Link copied — paste it in Safari. Keep it to yourself.');
+        if(onCopied) onCopied();
+      }).catch(function(){
+        showToast("Couldn't copy link");
+      });
+    } else {
+      showToast("Copying isn't supported in this browser");
+    }
+  }
+
   /**
    * Shown instead of ever calling getUserMedia when detectInAppHost() finds
    * an in-app webview — hides every other panel and points the visitor at
-   * opening their real browser (Android: an intent:// Chrome URL that
+   * opening their real browser (Android: a real intent:// Chrome URL that
    * preserves the current URL including ?record=1, so tapping through lands
-   * them right back in a working record flow; iOS: no reliable programmatic
-   * escape exists, so the button instead emphasizes the host-app-menu hint,
-   * same tradeoff processing.html's nudge makes), or writing the dream
-   * instead.
+   * them right back in a working record flow; non-Android: there is no
+   * reliable programmatic escape, so the button's single honest action is
+   * copying the link instead — see copyLinkForBrowser's own doc comment),
+   * or writing the dream instead.
    */
   function showRecordBlockedPanel(host){
     hideError('select-error');
@@ -967,7 +1030,11 @@
     document.getElementById('rec-inapp-title').textContent = host + ' blocks microphone access';
     document.getElementById('rec-inapp-body').textContent = "In-app browsers built into " + host + " don't allow microphone access, so recording won't work here. Open DreamTube in your real browser to record — or write your dream instead.";
     var openBtn = document.getElementById('rec-inapp-open-btn');
-    openBtn.innerHTML = 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>';
+    var onAndroid = isAndroidUA();
+    openBtn.innerHTML = onAndroid
+      ? 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>'
+      : 'Copy link for your browser <span class="icon">' + Icons.copy + '</span>';
+    document.getElementById('rec-inapp-copied-note').style.display = 'none';
     // Same host-dynamic sentence + static menu-row-replica visual pattern as
     // processing.html's nudge card (see .menu-row-replica in
     // css/styles.css) — tracker item
@@ -986,10 +1053,17 @@
     if(isAndroidUA()){
       location.href = buildAndroidChromeIntentUrl();
     } else {
-      // iOS (and anything else that isn't Android): there is no reliable
-      // programmatic way to escape an in-app webview, so don't attempt one
-      // that would just silently fail — draw attention to the hint line
-      // instead, same as processing.html's own nudge does.
+      // Non-Android: there is no reliable programmatic way to escape an
+      // in-app webview, so the button does the one thing that actually
+      // works there (copy the link) instead of attempting an "open" that
+      // would just silently fail. The hint line stays emphasized alongside
+      // this too — copying the link still requires the user to go open
+      // Safari themselves.
+      copyLinkForBrowser(function(){
+        var note = document.getElementById('rec-inapp-copied-note');
+        note.textContent = 'Copied! Now open your browser and paste the link there.';
+        note.style.display = 'block';
+      });
       var hint = document.getElementById('rec-inapp-hint');
       hint.classList.add('proc-nudge-hint-emph');
       hint.scrollIntoView({ behavior: 'smooth', block: 'center' });

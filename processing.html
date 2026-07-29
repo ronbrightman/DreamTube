@@ -78,13 +78,20 @@
       <!-- Post-signup FB/IG in-app-browser nudge (Frame 1 of
            docs/design/inapp-browser-nudge.html only) -- hidden by default,
            shown by initInAppNudge() below only for a detected FB/IG
-           in-app webview, only once signed in, and only if not already
-           dismissed. -->
+           in-app webview and only once signed in. ROUND-2 FOUNDER FIX
+           (tracker item for-product-webview-notify-escape-nudge--5yray5):
+           once dismissed, initInAppNudge renders #proc-nudge-chip below
+           INSTEAD of this full card (never neither -- see that function's
+           own doc comment), rather than the old vanish-forever behavior. -->
       <div class="proc-nudge-card" id="proc-nudge-card" style="display:none;">
         <button type="button" class="proc-nudge-x" id="proc-nudge-dismiss" aria-label="Dismiss">&times;</button>
         <div class="proc-nudge-head"><span class="proc-nudge-dot" id="proc-nudge-icon"></span><span id="proc-nudge-title"></span></div>
         <div class="proc-nudge-body">Videos play smoother — and you stay signed in — in your real browser. Your dream will be right here waiting.</div>
         <button type="button" class="proc-nudge-btn" id="proc-nudge-open-btn"></button>
+        <!-- Persistent post-copy instruction -- see .proc-nudge-copied-note's
+             own doc comment in css/styles.css. Hidden until copyLinkForBrowser
+             actually succeeds. -->
+        <div class="proc-nudge-copied-note" id="proc-nudge-copied-note" style="display:none;"></div>
         <div class="proc-nudge-hint" id="proc-nudge-hint">
           <span id="proc-nudge-hint-text"></span>
           <div class="menu-row-replica" id="proc-nudge-menu-replica" aria-hidden="true">
@@ -93,6 +100,15 @@
           </div>
         </div>
       </div>
+      <!-- Collapsed re-entry chip -- see .proc-nudge-chip's own doc comment
+           in css/styles.css. Hidden by default; shown INSTEAD of the full
+           card above once DreamStore.getInAppNudgeDismissed() is true (or
+           right after the card's own X-dismiss is tapped), tapping it
+           re-expands the full card. -->
+      <button type="button" class="proc-nudge-chip" id="proc-nudge-chip" style="display:none;" aria-label="Show browser tip again">
+        <span class="proc-nudge-chip-dot" id="proc-nudge-chip-icon"></span>
+        <span id="proc-nudge-chip-label"></span>
+      </button>
       <!-- Push-subscribe ask (tracker item for-product-build-stage-0-pwa-
            web-push-f-jbutt5, part 3) -- empty by default, populated by
            js/push-subscribe.js's maybeShowAsk() only right after a
@@ -820,16 +836,39 @@
   // clipboard — clipboard managers/sync and simple paste-into-the-wrong-
   // place mistakes are a real exposure surface this copy should at least
   // name, even though the single-use+short-TTL design already bounds it).
-  function copyLinkForBrowser(){
+  //
+  // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+  // nudge--5yray5): the toast alone auto-dismisses after ~2.2s ("Get out of
+  // this webview and open your browser and paste the link there" was the
+  // founder's own verbatim ask, made AFTER tapping Copy — he'd stopped
+  // looking by the time the toast would have told him). onCopied is called
+  // only on a genuine successful clipboard write, and its caller shows a
+  // persistent instruction line that does NOT auto-hide, alongside (not
+  // instead of) this toast.
+  function copyLinkForBrowser(onCopied){
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(location.href).then(function(){
         showToast('Link copied — paste it in Safari. Keep it to yourself.');
+        if(onCopied) onCopied();
       }).catch(function(){
         showToast("Couldn't copy link");
       });
     } else {
       showToast("Copying isn't supported in this browser");
     }
+  }
+  /**
+   * Swaps the full nudge card out for the small .proc-nudge-chip pill —
+   * used both when the visitor taps X (this load) and on a later page load
+   * where DreamStore.getInAppNudgeDismissed() is already true (see
+   * initInAppNudge below) — tracker item for-product-webview-notify-
+   * escape-nudge--5yray5's "collapse, don't vanish" fix.
+   */
+  function collapseNudgeToChip(host){
+    document.getElementById('proc-nudge-card').style.display = 'none';
+    document.getElementById('proc-nudge-chip-icon').innerHTML = Icons.globe;
+    document.getElementById('proc-nudge-chip-label').textContent = "Viewing in " + host + " — browser tip";
+    document.getElementById('proc-nudge-chip').style.display = 'flex';
   }
   function initInAppNudge(){
     var host = DreamStore.detectInAppWebviewHost();
@@ -840,9 +879,9 @@
     // gate on it explicitly too per the tracker item's own instruction,
     // rather than relying solely on the page-level redirect.
     if(!DreamStore.getCurrentUser()) return;
-    if(DreamStore.getInAppNudgeDismissed()) return;
 
     var card = document.getElementById('proc-nudge-card');
+    var chip = document.getElementById('proc-nudge-chip');
     document.getElementById('proc-nudge-icon').innerHTML = Icons.globe;
     document.getElementById('proc-nudge-title').textContent = "You're viewing this in " + host;
     var onAndroid = isAndroidUA();
@@ -855,6 +894,7 @@
       ? 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>'
       : 'Copy link for your browser <span class="icon">' + Icons.copy + '</span>';
     var hint = document.getElementById('proc-nudge-hint');
+    var copiedNote = document.getElementById('proc-nudge-copied-note');
     // Must explicitly name the HOST APP's own "..." menu — a bare "tap ...
     // above" reads to users as this app's own icon, not the host app's
     // chrome (the founder caught exactly this ambiguity in review of the
@@ -872,7 +912,23 @@
     // feedback: "show the EXACT look of the menu item the user must find").
     document.getElementById('proc-nudge-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for “Open in external browser”:';
     document.getElementById('proc-nudge-menu-replica-icon').innerHTML = Icons.externalLink;
-    card.style.display = 'block';
+
+    // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
+    // nudge--5yray5): a device that already dismissed this once opens
+    // straight to the small chip, never the full card again — but never to
+    // NEITHER, which was the original one-shot-forever bug.
+    if(DreamStore.getInAppNudgeDismissed()){
+      collapseNudgeToChip(host);
+    } else {
+      card.style.display = 'block';
+    }
+
+    // Guard against double-wiring if initInAppNudge is ever called more
+    // than once in the same page life (it is, along the checkout-resume
+    // paths further down this script) — attaching the click listeners a
+    // second time would fire the copy/dismiss action twice per tap.
+    if(card.dataset.wired === '1') return;
+    card.dataset.wired = '1';
 
     openBtn.addEventListener('click', function(){
       if(onAndroid){
@@ -884,7 +940,10 @@
         // of attempting an "open" that would just silently fail. The hint
         // line stays emphasized alongside this too — copying the link
         // still requires the user to go open Safari themselves.
-        copyLinkForBrowser();
+        copyLinkForBrowser(function(){
+          copiedNote.textContent = 'Copied! Now open your browser and paste the link there.';
+          copiedNote.style.display = 'block';
+        });
         hint.classList.add('proc-nudge-hint-emph');
         hint.scrollIntoView({ behavior: 'smooth', block: 'center' });
         setTimeout(function(){ hint.classList.remove('proc-nudge-hint-emph'); }, 1600);
@@ -892,7 +951,11 @@
     });
     document.getElementById('proc-nudge-dismiss').addEventListener('click', function(){
       DreamStore.dismissInAppNudge();
-      card.style.display = 'none';
+      collapseNudgeToChip(host);
+    });
+    chip.addEventListener('click', function(){
+      chip.style.display = 'none';
+      card.style.display = 'block';
     });
   }
   // ===== "Payment received" resume state + auto-resume =====
