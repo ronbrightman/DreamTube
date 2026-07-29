@@ -11,12 +11,12 @@
 // out of scope here (their durable copy already lives in the shared
 // feed-index instead).
 //
-// SECURITY: same identity-binding bar as block-user.js on the sibling,
-// not-yet-merged feature/public-feed-safety-report-block branch (see
-// lib/account-auth-token.js's own header comment for the full "why ported
-// here" story) — the acting account is resolved from a VERIFIED authToken
-// (lib/account-auth-token.js, minted only at a real server-side
-// login/signup success), never from a bare client-supplied username.
+// SECURITY: same identity-binding bar as block-user.js (see
+// lib/account-auth-token.js's own header comment — dream-sync.js is that
+// module's second consumer) — the acting account is resolved from a
+// VERIFIED authToken (lib/account-auth-token.js, minted only at a real
+// server-side login/signup success), never from a bare client-supplied
+// username.
 // A private dream store is at LEAST as sensitive as a blocklist: unlike
 // save-push-subscription.js's bare-username trust (whose worst case is
 // only a misdirected push notification), a bare username here would let

@@ -72,7 +72,7 @@ async function safeGoto(page, url) {
   }
 }
 
-/** Seeds a signed-in account with a real authToken directly into localStorage, bypassing a real login round trip — same shortcut test/delete-account-behavioral.test.js's own seedUser uses, extended with authToken/updatedAt (both new fields this feature adds). */
+/** Seeds a signed-in account with a real authToken directly into localStorage, bypassing a real login round trip — same shortcut test/delete-account-behavioral.test.js's own seedUser uses, extended with authToken/updatedAt (both new fields this feature adds). Every dream id this file seeds is deliberately NOT "d0".."d5" — js/store.js's migrateLegacyState strips any dream id matching /^d[0-5]$/ as stale pre-fal.ai mock seed data on the very next page load/navigation (found the hard way: an earlier version of this file used plain "d1" ids, which silently vanished from state.dreams before publishDream/unpublishDream/deleteDream ever ran, making every assertion here fail against a null dream). */
 async function seedUser(page, opts) {
   opts = opts || {};
   await safeGoto(page, baseUrl + '/login.html');
@@ -243,12 +243,12 @@ test('publishDream fires a best-effort DELETE against dream-sync (a published dr
   try {
     var dreamSyncCalls = mockDreamSync(page);
     mockPublishDream(page);
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
     await safeGoto(page, baseUrl + '/login.html');
 
-    await page.evaluate(function () { window.DreamStore.publishDream('d1'); });
+    await page.evaluate(function () { window.DreamStore.publishDream('private-dream-1'); });
 
-    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'delete' && c.body.dreamId === 'd1'; }); });
+    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'delete' && c.body.dreamId === 'private-dream-1'; }); });
     assert.ok(got, 'publishing a dream must remove it from the private-dream server store');
   } finally {
     await page.close();
@@ -262,12 +262,12 @@ test('unpublishDream fires a best-effort upsert against dream-sync (an unpublish
   try {
     var dreamSyncCalls = mockDreamSync(page);
     mockUnpublishDream(page);
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: true, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: true, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
     await safeGoto(page, baseUrl + '/login.html');
 
-    await page.evaluate(function () { window.DreamStore.unpublishDream('d1'); });
+    await page.evaluate(function () { window.DreamStore.unpublishDream('private-dream-1'); });
 
-    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'upsert' && c.body.dream.id === 'd1'; }); });
+    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'upsert' && c.body.dream.id === 'private-dream-1'; }); });
     assert.ok(got, 'unpublishing a dream must give it a fresh durable private-store copy');
   } finally {
     await page.close();
@@ -280,12 +280,12 @@ test('deleteDream fires a best-effort DELETE against dream-sync', async function
   await blockThirdParty(page);
   try {
     var dreamSyncCalls = mockDreamSync(page);
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
     await safeGoto(page, baseUrl + '/login.html');
 
-    await page.evaluate(function () { window.DreamStore.deleteDream('d1'); });
+    await page.evaluate(function () { window.DreamStore.deleteDream('private-dream-1'); });
 
-    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'delete' && c.body.dreamId === 'd1'; }); });
+    var got = await waitForCall(function () { return dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'delete' && c.body.dreamId === 'private-dream-1'; }); });
     assert.ok(got);
   } finally {
     await page.close();
@@ -298,12 +298,12 @@ test('a signed-in session with NO authToken (a legacy/local-only login) never ca
   await blockThirdParty(page);
   try {
     var dreamSyncCalls = mockDreamSync(page);
-    await seedUser(page, { authToken: null, dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
+    await seedUser(page, { authToken: null, dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video' }] });
     await safeGoto(page, baseUrl + '/login.html');
 
     await page.evaluate(function () {
       window.DreamStore.saveClaimedDream('x', 'Cartoon', 'https://x/v2.mp4', 'x');
-      window.DreamStore.deleteDream('d1');
+      window.DreamStore.deleteDream('private-dream-1');
     });
     await new Promise(function (r) { setTimeout(r, 200); });
     assert.equal(dreamSyncCalls.length, 0, 'no authToken on file must mean every dream-sync call site silently no-ops');
@@ -350,12 +350,12 @@ test('reconcile: a PUBLISHED local dream is never overwritten by a stale dream-s
     // Simulates publishDream's own best-effort delete-from-dream-sync
     // having silently failed once -- the (private, stale) copy still
     // exists server-side even though this device knows it's published.
-    var staleServerDream = { id: 'd1', ownerHandle: '@tester', caption: 'STALE PRE-PUBLISH TEXT', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/old.mp4', isPublished: false, updatedAt: Date.now() - 100000 };
+    var staleServerDream = { id: 'private-dream-1', ownerHandle: '@tester', caption: 'STALE PRE-PUBLISH TEXT', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/old.mp4', isPublished: false, updatedAt: Date.now() - 100000 };
     mockDreamSync(page, { ok: true, dreams: [staleServerDream] });
     page.route('**/.netlify/functions/account-login', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'tester', email: 'tester@example.com', authToken: 'tok' }) });
     });
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'REAL PUBLISHED CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: true, videoUrl: 'https://x/new.mp4', mediaType: 'video', updatedAt: Date.now() }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'REAL PUBLISHED CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: true, videoUrl: 'https://x/new.mp4', mediaType: 'video', updatedAt: Date.now() }] });
     await safeGoto(page, baseUrl + '/login.html');
     await page.evaluate(function () {
       window.DreamStore.__loginResult = null;
@@ -364,7 +364,7 @@ test('reconcile: a PUBLISHED local dream is never overwritten by a stale dream-s
     await page.waitForFunction(function () { return window.DreamStore.__loginResult !== null; });
     await new Promise(function (r) { setTimeout(r, 300); });
 
-    var dream = await page.evaluate(function () { return window.DreamStore.getDream('d1'); });
+    var dream = await page.evaluate(function () { return window.DreamStore.getDream('private-dream-1'); });
     assert.equal(dream.caption, 'REAL PUBLISHED CAPTION', 'a published dream must never be overwritten by a stale private-store snapshot');
     assert.equal(dream.isPublished, true);
   } finally {
@@ -377,12 +377,12 @@ test('reconcile: a NEWER local edit is re-pushed to the server rather than being
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    var olderServerDream = { id: 'd1', ownerHandle: '@tester', caption: 'OLD SERVER CAPTION', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/old.mp4', isPublished: false, updatedAt: 1000 };
+    var olderServerDream = { id: 'private-dream-1', ownerHandle: '@tester', caption: 'OLD SERVER CAPTION', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/old.mp4', isPublished: false, updatedAt: 1000 };
     var dreamSyncCalls = mockDreamSync(page, { ok: true, dreams: [olderServerDream] });
     page.route('**/.netlify/functions/account-login', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'tester', email: 'tester@example.com', authToken: 'tok' }) });
     });
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'NEWER LOCAL CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/new.mp4', mediaType: 'video', updatedAt: Date.now() }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'NEWER LOCAL CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/new.mp4', mediaType: 'video', updatedAt: Date.now() }] });
     await safeGoto(page, baseUrl + '/login.html');
     await page.evaluate(function () {
       window.DreamStore.__loginResult = null;
@@ -391,10 +391,10 @@ test('reconcile: a NEWER local edit is re-pushed to the server rather than being
     await page.waitForFunction(function () { return window.DreamStore.__loginResult !== null; });
     await new Promise(function (r) { setTimeout(r, 300); });
 
-    var dream = await page.evaluate(function () { return window.DreamStore.getDream('d1'); });
+    var dream = await page.evaluate(function () { return window.DreamStore.getDream('private-dream-1'); });
     assert.equal(dream.caption, 'NEWER LOCAL CAPTION', 'the device with the newer edit must keep it, not silently lose it to an older server copy');
 
-    var rePushed = dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'upsert' && c.body.dream.id === 'd1' && c.body.dream.caption === 'NEWER LOCAL CAPTION'; });
+    var rePushed = dreamSyncCalls.some(function (c) { return c.method === 'POST' && c.body.action === 'upsert' && c.body.dream.id === 'private-dream-1' && c.body.dream.caption === 'NEWER LOCAL CAPTION'; });
     assert.ok(rePushed, 'the newer local edit should also be re-pushed to catch the server copy up');
   } finally {
     await page.close();
@@ -406,12 +406,12 @@ test('reconcile: a NEWER server copy (edited on a different device) overwrites t
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    var newerServerDream = { id: 'd1', ownerHandle: '@tester', caption: 'NEWER FROM OTHER DEVICE', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/new.mp4', isPublished: false, updatedAt: Date.now() };
+    var newerServerDream = { id: 'private-dream-1', ownerHandle: '@tester', caption: 'NEWER FROM OTHER DEVICE', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/new.mp4', isPublished: false, updatedAt: Date.now() };
     mockDreamSync(page, { ok: true, dreams: [newerServerDream] });
     page.route('**/.netlify/functions/account-login', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'tester', email: 'tester@example.com', authToken: 'tok' }) });
     });
-    await seedUser(page, { dreams: [{ id: 'd1', ownerHandle: '@tester', caption: 'OLDER LOCAL CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/old.mp4', mediaType: 'video', updatedAt: 1000 }] });
+    await seedUser(page, { dreams: [{ id: 'private-dream-1', ownerHandle: '@tester', caption: 'OLDER LOCAL CAPTION', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/old.mp4', mediaType: 'video', updatedAt: 1000 }] });
     await safeGoto(page, baseUrl + '/login.html');
     await page.evaluate(function () {
       window.DreamStore.__loginResult = null;
@@ -420,7 +420,7 @@ test('reconcile: a NEWER server copy (edited on a different device) overwrites t
     await page.waitForFunction(function () { return window.DreamStore.__loginResult !== null; });
     await new Promise(function (r) { setTimeout(r, 300); });
 
-    var dream = await page.evaluate(function () { return window.DreamStore.getDream('d1'); });
+    var dream = await page.evaluate(function () { return window.DreamStore.getDream('private-dream-1'); });
     assert.equal(dream.caption, 'NEWER FROM OTHER DEVICE', 'a genuinely newer server-side edit must win over this device\'s stale local copy');
   } finally {
     await page.close();
