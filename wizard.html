@@ -1534,6 +1534,18 @@
     // every Back click, including ones that have nothing to do with
     // Signup -- there's simply nothing in flight for it to invalidate.
     signupAttemptToken++;
+    // Also invalidates any in-flight DreamStore.signup() call at the
+    // STORE layer, not just this file's own UI-level token above --
+    // signupAttemptToken alone only stops THIS page's callback from
+    // reacting to a stale response (force-navigating, updating the
+    // screen); it can't stop js/store.js's commitLocalSignupIfCurrent
+    // from silently writing state.user/state.accounts in the background,
+    // since that write happens INSIDE signup(), before this callback (or
+    // its token check) ever runs. See DreamStore.invalidatePendingSignup's
+    // own doc comment (js/store.js) and tracker item
+    // js-store-js-signupcallseq-only-invalidat-ijwpht. Harmless to call
+    // unconditionally on every Back click, same as the bump above.
+    DreamStore.invalidatePendingSignup();
     // Same reasoning, for Contact's own pendingGenerationToken (tracker
     // item for-product-money-leak-blocked-signups-e-v2g1vi): Continue no
     // longer calls next() synchronously -- it now waits on

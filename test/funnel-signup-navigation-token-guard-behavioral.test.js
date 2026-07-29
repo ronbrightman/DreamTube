@@ -439,3 +439,124 @@ test('start.html: check-email.js failing outright (rate-limited/5xx) fails OPEN 
     await page.close();
   }
 });
+
+// ===========================================================================
+// signupCallSeq navigation-away invalidation (tracker item
+// js-store-js-signupcallseq-only-invalidat-ijwpht) -- the 4th confirmed
+// instance of this codebase's recurring "async callback side effects not
+// scoped to the attempt that started them" bug class, this time one layer
+// BELOW the signupAttemptToken guard the tests above cover. Even with
+// signupAttemptToken correctly stopping this page's own callback from
+// reacting to a stale response, js/store.js's commitLocalSignupIfCurrent
+// (gated by its own module-private signupCallSeq) used to keep committing
+// state.user/state.accounts in the background regardless, because
+// signupCallSeq only ever bumped when a NEWER signup() call actually
+// started -- never on a plain "the visitor navigated away and abandoned
+// the funnel" with no second attempt ever fired. Fix: backBtn's click
+// handler now also calls DreamStore.invalidatePendingSignup() (js/store.js)
+// alongside its existing signupAttemptToken bump. Unlike the tests above
+// (which prove the UI never force-navigates/re-renders), these two prove
+// the deeper claim: the store itself never silently signs the browser in.
+// ===========================================================================
+
+test('start.html: Signup Continue -> immediate Back (forced past the Back-disable, same isolation technique as the token-guard test above) -> abandon the funnel entirely (never resubmit) -- once the delayed register-account response finally lands, DreamStore.getCurrentUser() must show NOT signed in', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var ABANDONED_EMAIL = 'start-signup-abandon@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-abandon-1', operationName: 'fal:fake-model:req-start-abandon-1' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', async function (route) {
+      // Held back well past the point the visitor has abandoned the
+      // funnel -- the exact repro: Continue is clicked, then Back is
+      // clicked before this ever resolves, and the visitor never comes
+      // back to resubmit.
+      await new Promise(function (r) { setTimeout(r, 900); });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', ABANDONED_EMAIL);
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    // Confirm genuinely mid-flight (Back disabled) before forcing past it
+    // -- same isolation technique the existing race test above uses, so
+    // this test attributes the outcome to the token/store guards
+    // themselves, not merely to Back being unclickable.
+    await page.waitForFunction(function () {
+      var b = document.getElementById('fnBack');
+      return !!(b && b.disabled);
+    }, null, { timeout: 5000 });
+    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
+    await page.click('#fnBack');
+    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+
+    // Abandon the funnel entirely from here -- deliberately never
+    // resubmit, never start a second signup() call. Just sit idle while
+    // the delayed register-account response (900ms above) lands.
+    await new Promise(function (r) { setTimeout(r, 1100); });
+
+    var state = await page.evaluate(function () {
+      var accounts = JSON.parse(localStorage.getItem('dreamtube_state_v1') || '{}').accounts || {};
+      var accountEmails = Object.keys(accounts).map(function (k) { return accounts[k].email; });
+      return {
+        currentUser: window.DreamStore.getCurrentUser(),
+        accountEmails: accountEmails
+      };
+    });
+
+    assert.equal(state.currentUser, null, 'DreamStore.getCurrentUser() must show NOT signed in -- the abandoned attempt\'s late response must never silently sign this browser in after the visitor navigated away and never resubmitted');
+    assert.equal(state.accountEmails.indexOf(ABANDONED_EMAIL), -1, 'the abandoned attempt must not have written a state.accounts entry for the email the visitor abandoned mid-signup');
+  } finally {
+    await page.close();
+  }
+});
+
+test('start.html: control case -- a NORMAL, non-abandoned signup (Back never clicked) still signs the visitor in and reaches screen 14 correctly', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var COMPLETED_EMAIL = 'start-signup-completed@example.com';
+
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-completed-1', operationName: 'fal:fake-model:req-start-completed-1' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', COMPLETED_EMAIL);
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
+
+    var state = await page.evaluate(function () {
+      var accounts = JSON.parse(localStorage.getItem('dreamtube_state_v1') || '{}').accounts || {};
+      var accountEmails = Object.keys(accounts).map(function (k) { return accounts[k].email; });
+      return {
+        currentUser: window.DreamStore.getCurrentUser(),
+        accountEmails: accountEmails
+      };
+    });
+
+    assert.ok(state.currentUser, 'a normal, non-abandoned signup must still sign the visitor in -- the navigation-away fix must not be so aggressive it breaks the happy path');
+    assert.notEqual(state.accountEmails.indexOf(COMPLETED_EMAIL), -1, 'a normal, non-abandoned signup must still write its state.accounts entry');
+  } finally {
+    await page.close();
+  }
+});

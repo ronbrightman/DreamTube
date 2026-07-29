@@ -1480,6 +1480,39 @@
     return commitLocalSignup(username, password, email);
   }
 
+  /**
+   * Bumps signupCallSeq WITHOUT starting a signup() call of its own — the
+   * store-level half of tracker item
+   * js-store-js-signupcallseq-only-invalidat-ijwpht. signupCallSeq (see
+   * its own doc comment above) only ever bumped when a NEW signup() call
+   * actually reached the network, which correctly invalidates an
+   * abandoned attempt's late settlement against a genuinely newer
+   * competing signup() call, but does nothing for the far more common
+   * case: the visitor just navigates away (Back, Change email) and never
+   * resubmits at all. In that case signupCallSeq never bumps again, so
+   * commitLocalSignupIfCurrent's mySeq === signupCallSeq check still
+   * passes once the original call's response lands late, and it silently
+   * commits state.user/state.accounts anyway — even though
+   * wizard.html's/start.html's own UI-level signupAttemptToken guard
+   * correctly kept the visible screen from reacting to it. That UI-level
+   * token only gates what the CALLER does with a stale response (skip
+   * navigating, skip re-rendering); it has no way to reach into the
+   * store and stop the write itself, since commitLocalSignupIfCurrent
+   * runs inside signup(), before any caller callback (or its token
+   * check) ever executes.
+   *
+   * Callable from any UI page the same moment it bumps its own
+   * navigation-away token (wizard.html's/start.html's backBtn handlers,
+   * start.html's Change-email link) — see each call site's own comment.
+   * Synchronous, side-effect-free beyond the counter bump: matches
+   * signupCallSeq's own stated design goal of making signup()'s
+   * commit-guard safe for ANY caller, not just ones that happen to fire
+   * a second signup() call.
+   */
+  function invalidatePendingSignup() {
+    signupCallSeq++;
+  }
+
   /** Maps register-account.js's error codes to the exact same human-readable strings signup() has always returned locally, so callers (e.g. start.html's attemptSignup, which string-matches 'That username is already taken.' to retry with a new suffix) don't need to know or care whether the rejection came from the server or a local check. */
   function mapRegisterError(code) {
     code = code || '';
@@ -1825,6 +1858,20 @@
         return commitLocalSignupIfCurrent(mySignupSeq, username, password, email);
       });
     },
+
+    /**
+     * Invalidates any in-flight signup() call without starting a new one
+     * — see invalidatePendingSignup's own doc comment above for the full
+     * "why" (tracker item js-store-js-signupcallseq-only-invalidat-ijwpht).
+     * Call this the same moment a caller bumps its own UI-level
+     * navigation-away token (e.g. wizard.html's/start.html's backBtn
+     * handlers, start.html's Change-email link), so an abandoned signup
+     * attempt's late server response can never silently commit
+     * state.user/state.accounts in the background after the visitor has
+     * already navigated away, even though the visible screen correctly
+     * never reacted to it.
+     */
+    invalidatePendingSignup: invalidatePendingSignup,
 
     /**
      * Logs in with an existing account, identified by username OR email.
