@@ -510,3 +510,46 @@ Founder ask, 2026-07-28 (tracker item `for-product-claim-dream-html-retention-e-
 | **`claim_page_maybe_later_clicked`** | Fires when the "Just watching — maybe later" escape link is clicked, purely additive to that link's existing (unchanged) behavior — `{}` |
 
 **Files touched:** `claim-dream.html` — PostHog loading added to `<head>` (reads `POSTHOG_KEY`/`POSTHOG_HOST` from `js/analytics-config.js`, same snippet as every other page), a `track()` helper, a `viewedFired` once-guard, and two short benefit bullets next to the signup CTA (reusing `processing.html`'s `.proc-checklist`/`.proc-check-item` styling) — the "maybe later" escape itself is unchanged, both in position and in not being blocked by the bullets. `test/claim-dream-retention-motivators-behavioral.test.js` — new, real-browser coverage.
+
+### push_prompt_shown / push_prompt_granted / push_prompt_denied / push_sent / push_clicked
+
+Web Push instrumentation — tracker item `for-product-build-stage-0-pwa-
+web-push-f-jbutt5` (Stage 0 of a staged app-store plan, founder-approved
+2026-07-29). PostHog only (no Meta CAPI — this is product-engagement
+instrumentation, not an ad-optimization conversion event).
+
+| | |
+|---|---|
+| **`push_prompt_shown`** | Fires when `js/push-subscribe.js`'s own ask card renders on `processing.html`, right after a video/image starts generating — see that file's `maybeShowAsk` for every gate (real browser, `Notification.permission === 'default'`, never asked before in this browser). `{}` |
+| **`push_prompt_granted`** / **`push_prompt_denied`** | Fires off the REAL OS-level `Notification.requestPermission()` result, the moment the visitor answers that dialog (not the card's own "Notify me" tap, which only triggers the request) — `granted` also kicks off `PushSubscribe.subscribe()` right after. `{}` |
+| **`push_sent`** | Server-side, `netlify/functions/lib/push-sender.js`'s `sendToUser` — fires once per `sendToUser` call that delivers to at least one real subscription (not once per device — an account with 3 subscribed devices getting the same push fires this once, not 3 times). `distinct_id` is the account's raw username (matches `identifyForAnalytics`'s value). `{ type: 'video-ready' \| 'daily-claim-available' }` |
+| **`push_clicked`** | Fires from `sw.js`'s own `notificationclick` handler via a bare `fetch()` straight to PostHog's public capture endpoint (no PostHog JS SDK inside a service worker, and often no open tab to relay through either — see that handler's own doc comment). `distinct_id` comes from the notification's own `data.distinctId`, stamped there by `push-sender.js` at send time. `{ type: 'video-ready' \| 'daily-claim-available' }` |
+
+**Two push types wired in this build:**
+- **video-ready** (`netlify/functions/mark-generation-completed.js`'s new
+  `maybeSendVideoReadyPush`) — fires from the same server-verified
+  "generation just completed" choke point the automatic first-dream
+  retention email already uses, but is a DELIBERATELY independent second
+  channel with its own per-`operationName` dedup marker
+  (`netlify/functions/lib/push-dedup-store.js`) — see that file's header
+  comment for exactly why it can't reuse the email's once-ever-per-account
+  marker, and `maybeSendVideoReadyPush`'s own doc comment for how the two
+  channels are meant to coordinate (both firing for the same completion is
+  the intended outcome, not a bug).
+- **daily-claim-available** (`netlify/functions/send-daily-claim-pushes.js`)
+  — this repo's first Scheduled Function, hourly, scanning
+  `lib/entitlements.js`'s own store for any account whose
+  `lastClaimAt + CLAIM_COOLDOWN_MS` was just crossed.
+
+**Files touched:** `js/push-config.js` (VAPID public key), `js/push-subscribe.js`
+(ask flow), `js/install-nudge.js`/`js/pwa.js` (unrelated PWA-installability
+work from the same tracker item, see `docs/PWA_PUSH_SETUP.md`),
+`netlify/functions/save-push-subscription.js`,
+`netlify/functions/lib/push-subscription-store.js`,
+`netlify/functions/lib/push-sender.js`,
+`netlify/functions/lib/push-dedup-store.js`,
+`netlify/functions/send-daily-claim-pushes.js`, `sw.js`,
+`netlify/functions/mark-generation-completed.js` (new
+`maybeSendVideoReadyPush`), `netlify.toml` (schedule declaration). See
+`docs/PWA_PUSH_SETUP.md` for the human setup step (`VAPID_PRIVATE_KEY`)
+this feature needs before any push actually delivers.

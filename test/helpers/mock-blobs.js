@@ -62,6 +62,21 @@ function fakeGetStore(opts) {
     },
     delete: async function (key) {
       map.delete(key);
+    },
+    // Minimal stand-in for real @netlify/blobs' list() — added for
+    // tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5's
+    // send-daily-claim-pushes.js (this repo's first scheduled function),
+    // which has no per-record key to read directly and must enumerate an
+    // entire store instead. Only the non-paginated, no-options shape
+    // (`Promise<{ blobs, directories }>`) is implemented — every real
+    // call site added alongside this comment uses exactly that shape;
+    // `directories` is always empty (this mock has no concept of blob
+    // "directories", a real-Blobs-only feature no caller here uses).
+    list: async function () {
+      return {
+        blobs: Array.from(map.keys()).map(function (key) { return { key: key, etag: 'mock-etag' }; }),
+        directories: []
+      };
     }
   };
 }

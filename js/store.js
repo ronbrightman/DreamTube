@@ -1040,6 +1040,21 @@
   // since home.html/processing.html also call it and only care about that.
   var lastDreamOfDayId = null;
 
+  // Set by commitTransferredSession (below) exactly when THIS page load
+  // just consumed a valid `?bt=` session-transfer token — i.e. the visitor
+  // just landed here signed in, straight out of an FB/IG in-app webview's
+  // "open in browser" action (see consumeSessionTransferTokenFromUrlSync's
+  // own doc comment). Read by js/install-nudge.js's wasSessionJustTransferred
+  // below — this is the "just escaped the webview into a real browser"
+  // moment tracker item home-screen-shortcut-a2hs-nudge-founder--yylzoq's
+  // placement analysis calls out as the best moment for the install nudge,
+  // now absorbed into for-product-build-stage-0-pwa-web-push-f-jbutt5. A
+  // page-load-scoped flag (never persisted) — deliberately not
+  // localStorage-backed, since "was this THIS load" is exactly what it
+  // needs to mean; every subsequent load of the same page starts false
+  // again until another transfer token is consumed.
+  var sessionTransferredThisLoad = false;
+
   /**
    * Best-effort request for persistent (eviction-resistant) storage — part
    * of the client-only mitigation for accounts/dreams living only in
@@ -1771,6 +1786,7 @@
     state.user = { handle: '@' + displayUsername, username: displayUsername };
     persist();
     identifyForAnalytics(displayUsername);
+    sessionTransferredThisLoad = true;
   }
 
   window.DreamStore = {
@@ -2867,6 +2883,87 @@
       if (/FBAN|FBAV/.test(ua)) return 'Facebook';
       if (/Instagram/.test(ua)) return 'Instagram';
       return null;
+    },
+
+    /**
+     * True exactly when THIS page load just consumed a real `?bt=`
+     * session-transfer token (see sessionTransferredThisLoad's own doc
+     * comment above and commitTransferredSession, which sets it) — i.e.
+     * the visitor just landed here signed in, straight out of an FB/IG
+     * in-app webview's "open in browser" action. Used by
+     * js/install-nudge.js to gate the post-escape install nudge to
+     * exactly that one moment, never a later plain revisit of the same
+     * page (tracker.html's home-screen-shortcut-a2hs-nudge-founder--
+     * yylzoq placement analysis, absorbed into for-product-build-stage-
+     * 0-pwa-web-push-f-jbutt5).
+     */
+    wasSessionJustTransferred: function () {
+      return sessionTransferredThisLoad;
+    },
+
+    /**
+     * Device-level (not account-scoped — same reasoning as
+     * getInAppNudgeDismissed above: the browser/device this nudge shows
+     * in belongs to whoever is holding the phone, not to whichever
+     * account happens to be signed in) "has this browser already
+     * dismissed the install-to-home-screen (A2HS) nudge" marker — a
+     * SEPARATE marker from getInAppNudgeDismissed/dismissInAppNudge
+     * above, which gate the different in-app-webview-escape nudge card.
+     * Once dismissed, js/install-nudge.js never shows the install nudge
+     * again in this browser.
+     */
+    getInstallNudgeDismissed: function () {
+      try { return localStorage.getItem('dreamtube_install_nudge_dismissed_v1') === '1'; }
+      catch (e) { return false; }
+    },
+    dismissInstallNudge: function () {
+      try { localStorage.setItem('dreamtube_install_nudge_dismissed_v1', '1'); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
+     * Device-level, per-page-key visit counter — used by
+     * js/install-nudge.js to gate the install nudge's "repeat visitor on
+     * result.html/profile.html" trigger (tracker.html's home-screen-
+     * shortcut-a2hs-nudge-founder--yylzoq placement analysis: "also: repeat
+     * visitors on result/profile in a real browser") to an actual REPEAT
+     * visit, not a visitor's very first page load ever. Returns the new
+     * count after incrementing (1 on a page's first-ever call in this
+     * browser, 2+ from then on) so the caller can gate on `count >= 2`
+     * without a second read. Best-effort — a private-browsing/storage-
+     * disabled browser always reads back 1, which simply means the nudge
+     * never fires from this trigger there (an honest degrade, same class
+     * as every other localStorage-dependent feature in this codebase).
+     */
+    recordRealBrowserVisit: function (pageKey) {
+      var key = 'dreamtube_visit_count_' + pageKey + '_v1';
+      try {
+        var count = parseInt(localStorage.getItem(key), 10) || 0;
+        count += 1;
+        localStorage.setItem(key, String(count));
+        return count;
+      } catch (e) { return 1; }
+    },
+
+    /**
+     * Device-level "has this browser already been asked (in any outcome —
+     * granted, denied, or just dismissed without answering) to subscribe
+     * to push notifications" marker — see js/push-subscribe.js's own doc
+     * comment for the full ask flow (tracker item for-product-build-
+     * stage-0-pwa-web-push-f-jbutt5, part 3). Asked at most ONCE EVER per
+     * browser, right after a first video starts generating — never
+     * re-shown on every later generation, and never re-shown after a real
+     * OS-level Notification.permission answer either (that's checked
+     * separately, directly against Notification.permission itself, which
+     * this marker doesn't duplicate).
+     */
+    getPushAskDismissed: function () {
+      try { return localStorage.getItem('dreamtube_push_ask_dismissed_v1') === '1'; }
+      catch (e) { return false; }
+    },
+    dismissPushAsk: function () {
+      try { localStorage.setItem('dreamtube_push_ask_dismissed_v1', '1'); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
     },
 
     /**
