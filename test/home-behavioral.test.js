@@ -427,6 +427,66 @@ test('home.html: silent streak freeze -- a real gap since the last logged day fi
   }
 });
 
+test('home.html: the weekly-summary and streak-freeze analytics dedup flags are scoped per account, not just per date -- a second account sharing the same browser still fires its own first-time events (review finding, fixed)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // --- Account A earns the weekly summary + a streak freeze, same session ---
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 5 });
+    await seedHomeUser(page, {
+      username: 'homescopetesta',
+      dreams: [
+        makeDream('a-1', { ownerHandle: '@homescopetesta', createdAt: Date.now() }),
+        makeDream('a-2', { ownerHandle: '@homescopetesta', createdAt: Date.now() - 1000 }),
+        makeDream('a-3', { ownerHandle: '@homescopetesta', createdAt: Date.now() - 2000 }),
+        // Gap dreams so loggedYesterday is false, matching the existing
+        // streak-freeze test's own real-gap shape.
+        makeDream('a-4', { ownerHandle: '@homescopetesta', createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000 })
+      ]
+    });
+    await page.waitForFunction(function () {
+      var calls = window.posthog && typeof window.posthog.slice === 'function' ? window.posthog.slice() : [];
+      var names = calls.filter(function (e) { return e[0] === 'capture'; }).map(function (e) { return e[1]; });
+      return names.indexOf('home_weekly_summary_earned') !== -1 && names.indexOf('home_streak_freeze_shown') !== -1;
+    }, null, { timeout: 5000 });
+
+    // --- Account B logs in on the SAME browser/context (real shared-device
+    // scenario, not a fresh browser.newPage() which would get isolated
+    // storage and structurally can't reproduce this) and legitimately
+    // earns the identical events for the first time ---
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 5 });
+    await seedHomeUser(page, {
+      username: 'homescopetestb',
+      dreams: [
+        makeDream('b-1', { ownerHandle: '@homescopetestb', createdAt: Date.now() }),
+        makeDream('b-2', { ownerHandle: '@homescopetestb', createdAt: Date.now() - 1000 }),
+        makeDream('b-3', { ownerHandle: '@homescopetestb', createdAt: Date.now() - 2000 }),
+        makeDream('b-4', { ownerHandle: '@homescopetestb', createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000 })
+      ]
+    });
+
+    // Each full navigation gets a fresh in-page PostHog stub (its own
+    // pending-call queue resets), so this checks Account B's OWN session
+    // fired both events at least once -- NOT a cumulative count across
+    // navigations. Before the account-scoping fix, this is exactly where
+    // the bug bit: localStorage (unlike the in-page posthog stub) DOES
+    // persist across navigation, so Account B's home.html would find
+    // Account A's unscoped flag already set and silently skip firing
+    // track() at all -- Account B's own fresh queue would stay empty for
+    // both events forever.
+    await page.waitForFunction(function () {
+      var calls = window.posthog && typeof window.posthog.slice === 'function' ? window.posthog.slice() : [];
+      var names = calls.filter(function (e) { return e[0] === 'capture'; }).map(function (e) { return e[1]; });
+      return names.indexOf('home_weekly_summary_earned') !== -1 && names.indexOf('home_streak_freeze_shown') !== -1;
+    }, null, { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
 test('create.html: ?write=1 deep-link jumps straight into Write mode (mirrors the existing ?record=1 convention)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

@@ -478,7 +478,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         '<div class="weekrow"><div class="wtxt"><b>' + n + ' dreams this week</b><span>' + esc(subText) + '</span></div>' +
         renderConstellation(3) + '</div>';
 
-      var key = WEEK_SUMMARY_SHOWN_PREFIX + new Date(startOfThisWeekMs()).toDateString();
+      // Keyed by the CURRENT account's own handle, not just the date --
+      // review finding: a shared browser where a different account later
+      // logs in and legitimately earns the same week's summary must not
+      // find this flag already tripped by someone else's session.
+      var key = WEEK_SUMMARY_SHOWN_PREFIX + (user && user.handle ? user.handle : '') + '_' + new Date(startOfThisWeekMs()).toDateString();
       try {
         if(!localStorage.getItem(key)){
           localStorage.setItem(key, '1');
@@ -498,7 +502,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function maybeTrackStreakFreeze(tokenStatus){
     if(!tokenStatus || !tokenStatus.streak || tokenStatus.streak < 2) return;
     if(logStatus.loggedYesterday) return; // yesterday was covered normally -- no freeze happened
-    var flagKey = 'dreamtube_home_streak_freeze_shown_' + new Date().toDateString();
+    // Same account-scoping fix as WEEK_SUMMARY_SHOWN_PREFIX above -- see
+    // that key's own comment for the shared-browser scenario this guards
+    // against (review finding).
+    var flagKey = 'dreamtube_home_streak_freeze_shown_' + (user && user.handle ? user.handle : '') + '_' + new Date().toDateString();
     try {
       if(!localStorage.getItem(flagKey)){
         localStorage.setItem(flagKey, '1');
