@@ -190,7 +190,7 @@ exports.handler = async function (event) {
   }
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
-  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 40; // default doubled 20->40, founder directive 2026-07-29
 
   var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);
   if (!ipLimit.allowed) {

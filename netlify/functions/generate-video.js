@@ -633,7 +633,12 @@ function resolveGenerationProfile(email, event) {
   var isOwner = !!(ownerEmail && email && email === ownerEmail);
   var isIsrael = geo.resolveCountryCode(event) === 'IL';
   return {
-    forceAudioOff: isOwner || isIsrael,
+    // Founder directive 2026-07-29 ("Regarding Sound for Israel don't
+    // disable it just leave it the same for everyone, including
+    // myself"): the owner/IL audio force-off is retired — the client's
+    // audio toggle is honored identically for every requester. The
+    // profile label stays for cost-attribution logging only.
+    forceAudioOff: false,
     profile: isOwner ? 'cheap_owner' : (isIsrael ? 'cheap_il' : 'standard')
   };
 }
@@ -790,7 +795,7 @@ exports.handler = async function (event) {
   console.log('generate-video: generation_profile=' + generationProfileResult.profile);
 
   var maxPerDay = parseInt(process.env.MAX_GENERATIONS_PER_IP_PER_DAY, 10);
-  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 20;
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 40; // default doubled 20->40, founder directive 2026-07-29
 
   if (!ownerBypassActive) {
     var ipLimit = await rateLimit.checkAndIncrement(event, 'ip', ip, maxPerDay);

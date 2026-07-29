@@ -154,32 +154,37 @@ test('token cost is exactly 100 whether audio is on or off (founder explicit: no
   assert.equal(afterOff.balance, 400);
 });
 
-// ----- Part B: silent server-side owner/IL audio-off forcing -----
+// ----- Part B: the owner/IL audio force-off is RETIRED (founder
+// directive 2026-07-29: "Regarding Sound for Israel don't disable it
+// just leave it the same for everyone, including myself") — these tests
+// now pin the NEW contract: the client's audioOn is honored identically
+// for owner-email and Israel-geo requests. The profile label itself is
+// still computed (cost-attribution logging) via resolveGenerationProfile.
 
-test('OWNER_EMAIL match forces generate_audio:false even though the client asked for audioOn:true', function () {
+test('OWNER_EMAIL match no longer overrides audio: audioOn:true is honored for the owner', function () {
   return withEnv({ OWNER_EMAIL: DEFAULT_EMAIL }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({ body: { audioOn: true, musicStyle: 'dreamy' } }));
-    assert.equal(res.statusCode, 200, 'the request must still succeed normally — forcing is silent, never an error');
-    assert.equal(calls[0].body.generate_audio, false);
-    assert.doesNotMatch(calls[0].body.prompt, /dreamy ambient/, 'no music modifier should leak into the prompt once audio is force-disabled');
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls[0].body.generate_audio, true);
+    assert.match(calls[0].body.prompt, /dreamy ambient/, 'the music modifier flows through now that audio is honored');
   });
 });
 
-test('OWNER_EMAIL comparison is normalized (case/whitespace) the same way entitlements.normalizeEmail treats every other email in this codebase', function () {
+test('resolveGenerationProfile still labels the owner (normalized email match) for cost attribution, without forcing audio off', function () {
   return withEnv({ OWNER_EMAIL: '  Founder@DreamTube.Example  ' }, async function () {
-    var calls = installFetchSpy();
-    await entitlements.setEntitlement({}, 'founder@dreamtube.example', { tokens: { balance: 100000, lastClaimAt: Date.now() } });
-    await handler(genEvent({ body: { email: 'founder@dreamtube.example', audioOn: true } }));
-    assert.equal(calls[0].body.generate_audio, false);
+    var mod = require('../netlify/functions/generate-video.js');
+    var profile = mod.resolveGenerationProfile('founder@dreamtube.example', fakeEvent({}));
+    assert.equal(profile.profile, 'cheap_owner');
+    assert.equal(profile.forceAudioOff, false);
   });
 });
 
-test('an Israel-geo request (x-nf-geo) forces generate_audio:false even with audioOn:true, for a non-owner email', function () {
+test('an Israel-geo request (x-nf-geo) keeps audioOn:true honored, same as everyone else', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') }, body: { audioOn: true, musicStyle: 'upbeat' } })).then(function (res) {
     assert.equal(res.statusCode, 200);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true);
   });
 });
 

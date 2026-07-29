@@ -224,7 +224,7 @@ test('real fal success spends exactly 10 tokens', async function () {
 test('E409 rate limit fires independently of the token gate', async function () {
   var ip = nextIp();
   var todayUtc = new Date().toISOString().slice(0, 10);
-  mockBlobs.seed('dreamtube-rate-limits', 'ip:' + todayUtc + ':' + ip, 20);
+  mockBlobs.seed('dreamtube-rate-limits', 'ip:' + todayUtc + ':' + ip, 40); // cap default doubled 20->40, founder directive 2026-07-29
   var res = await handler(genEvent({ ip: ip }));
   assert.equal(res.statusCode, 429);
   assert.match(JSON.parse(res.body).error, /^E409: rate_limited/);
