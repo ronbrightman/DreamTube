@@ -1839,12 +1839,28 @@
     // already signed in as a different account, so this can't rely
     // solely on logout() having run first.
     clearLikesTrackingState();
-    // authToken: null -- this is the pre-fix, fully-LOCAL login check (no
-    // real server-side password verification happens on THIS call itself;
-    // backfillAccountServerSide below is fire-and-forget and its response
-    // is never awaited before state.user is set) -- see commitLocalSignup's
-    // identical-reasoning doc comment for what a null authToken means for
-    // authToken-gated features.
+    // authToken: null -- genuinely category-1 "no real server round trip
+    // to mint one from" (reviewed explicitly for tracker item
+    // publish-dream-js-trusts-client-supplied--lkppcu, which made Publish
+    // authToken-gated too -- see that fix's own doc comments for why a
+    // null token there is a bigger deal than it is for blockUser/
+    // unblockUser). login()'s own comment above explains attemptLocalLogin
+    // is ONLY ever reached when the real server-side account-login.js call
+    // either found no matching account at all, or couldn't be reached --
+    // by construction, there is no fresh, real password verification of
+    // THIS login attempt to mint a token from. backfillAccountServerSide
+    // below is a different thing entirely: a fire-and-forget, best-effort
+    // registration of whatever's cached locally, which -- even when it
+    // succeeds -- doesn't re-verify this attempt's password against any
+    // pre-existing authoritative record (there wasn't one), so minting a
+    // token off its result would look exactly as trustworthy as login()'s
+    // real branch while actually being no stronger than the same local-
+    // cache trust this whole fallback already represents. Net effect: a
+    // dream published immediately after a local-only-account login (rare
+    // -- only pre-server-store legacy accounts, or an outright
+    // unreachable-server moment) won't reach the shared feed until this
+    // account's next real, server-confirmed login elsewhere -- an honest,
+    // accepted degrade, not a bug to chase further.
     state.user = { handle: '@' + username, username: username, authToken: null };
     persist();
     identifyForAnalytics(username);
@@ -1932,8 +1948,23 @@
    * indication their own prior session (if any) just got swapped out.
    * A same-identity "refresh" (key already equals the signed-in user) is
    * still allowed through — harmless, matches what was already there.
+   *
+   * authToken (tracker item publish-dream-js-trusts-client-supplied--lkppcu,
+   * found in review of that item's own fix): verify-session-transfer.js
+   * now mints a real lib/account-auth-token.js token on every successful
+   * verify — the exact same trust level as login()'s own real branch,
+   * since the underlying password check already happened, just earlier,
+   * at create-session-transfer.js's mint time. Before this, a session
+   * committed here had a genuinely signed-in state.user with NO authToken
+   * at all, which isn't a lesser-trust degrade the way a missing token is
+   * for blockUser/unblockUser (whose LOCAL effect still fully applies
+   * either way) — Publish has no local-only equivalent, so a null token
+   * here meant a dream published right after this flow would silently,
+   * permanently never reach the shared feed. See this function's own call
+   * site (consumeSessionTransferTokenFromUrlSync) for where authToken
+   * comes from.
    */
-  function commitTransferredSession(username, email) {
+  function commitTransferredSession(username, email, authToken) {
     var key = (username || '').toLowerCase();
     if (!key) return;
     // Treat "signed in as someone whose username isn't readable" the same
@@ -1947,7 +1978,7 @@
       state.accounts[key].email = email.toLowerCase();
     }
     var displayUsername = pinLegacyRenameIdentity(key, username);
-    state.user = { handle: '@' + displayUsername, username: displayUsername };
+    state.user = { handle: '@' + displayUsername, username: displayUsername, authToken: authToken || null };
     persist();
     identifyForAnalytics(displayUsername);
     sessionTransferredThisLoad = true;
@@ -2523,10 +2554,20 @@
       // backup's own identity to a different account would be a stranger
       // kind of surprise than leaving it alone.
       var username = pinLegacyRenameIdentity(key, backup.username);
-      // authToken: null -- a backup restore has no real-time server
-      // verification of its own (see commitLocalSignup's identical-
-      // reasoning doc comment for what this means for authToken-gated
-      // features).
+      // authToken: null -- genuinely category-1 "no server round trip
+      // happens here at all" (reviewed explicitly for tracker item
+      // publish-dream-js-trusts-client-supplied--lkppcu, which made
+      // Publish authToken-gated too -- see that fix's own doc comments for
+      // why a null token is a bigger deal here than it is for
+      // blockUser/unblockUser). This entire function is a local file
+      // import -- it never talks to the server at all, so unlike
+      // attemptLocalLogin's backfillAccountServerSide (which at least
+      // fires an opportunistic, if unverifying, registration call), there
+      // is nothing here to mint a token from. Net effect: a dream
+      // published immediately after restoring a backup won't reach the
+      // shared feed until this account's next real, server-confirmed
+      // login on this device -- an honest, accepted degrade for a rare,
+      // manual, user-initiated recovery flow, not a bug to chase further.
       state.user = { handle: '@' + username, username: username, authToken: null };
       persist();
       identifyForAnalytics(username);
@@ -3649,7 +3690,7 @@
         if (xhr.status !== 200) return;
         var data = JSON.parse(xhr.responseText || '{}');
         if (!data || !data.ok || !data.username) return;
-        commitTransferredSession(data.username, data.email);
+        commitTransferredSession(data.username, data.email, data.authToken);
       } catch (e) { /* network failure / sync XHR unavailable — silent no-op, see doc comment above */ }
     },
 

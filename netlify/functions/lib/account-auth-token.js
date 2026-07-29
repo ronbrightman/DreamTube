@@ -28,10 +28,22 @@
 //
 // NOT a general session-replacement for the rest of this codebase's many
 // other client-trusted-identity call sites (generate-video.js's client-
-// supplied email, publish-dream.js's ownerHandle, etc.) — those keep their
-// existing, already-documented tradeoffs. This exists narrowly for the one
-// place a security review flagged as a real problem; expand its use
-// deliberately, not by default.
+// supplied email, etc.) — those keep their existing, already-documented
+// tradeoffs. This exists narrowly for the places a security review flagged
+// as a real problem; expand its use deliberately, not by default.
+//
+// SECOND USE (tracker item publish-dream-js-trusts-client-supplied--lkppcu,
+// same "expand deliberately" reasoning as above): publish-dream.js/
+// unpublish-dream.js now also require a verified token, for the same
+// class of reason as block-user.js — a dream's public `id` gives anyone
+// enough to forge a raw POST to either endpoint, and publish-dream.js's
+// shared feed record started carrying real legal republish-consent state
+// (channelLicenseGrantedAt/channelLicenseRevokedAt/okToFeatureOnChannels),
+// making a bare client-supplied ownerHandle a real problem there too, not
+// just honest MVP scope. verify-session-transfer.js also mints one now,
+// on the same "a real password check already happened" basis as
+// account-login.js/register-account.js — see that file's own header
+// comment.
 //
 // IDENTITY-CUTOFF INVALIDATION (round-2 review finding, fixed): a token is
 // bound to a username STRING at mint time, but a username isn't a stable

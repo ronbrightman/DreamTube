@@ -135,7 +135,20 @@ function mockCreateSessionTransfer(page, token) {
   }).then(function () { return calls; });
 }
 
-/** Stubs POST /.netlify/functions/verify-session-transfer -- ok:true resolves once (then falls back to ok:false, mirroring the real single-use server behavior) for `okOnce`, everything else is ok:false. */
+/**
+ * Stubs POST /.netlify/functions/verify-session-transfer -- ok:true
+ * resolves once (then falls back to ok:false, mirroring the real
+ * single-use server behavior) for `okOnce`, everything else is ok:false.
+ *
+ * authToken (tracker item publish-dream-js-trusts-client-supplied--lkppcu,
+ * review finding): the real verify-session-transfer.js now mints a real
+ * lib/account-auth-token.js token on every successful verify -- this stub
+ * includes one too (defaulting to a fixed, recognizable string derived
+ * from the token if `okOnce.authToken` isn't given) so tests below can
+ * confirm js/store.js's commitTransferredSession actually threads it
+ * through into state.user, and that publish-dream.js's own mocked stub
+ * later sees that exact value on a real Publish tap.
+ */
 function mockVerifySessionTransfer(page, okOnce) {
   var consumed = false;
   return page.route('**/.netlify/functions/verify-session-transfer', function (route) {
@@ -144,11 +157,23 @@ function mockVerifySessionTransfer(page, okOnce) {
     var match = okOnce && !consumed && body && body.token === okOnce.token;
     if (match) {
       consumed = true;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: okOnce.username, email: okOnce.email }) });
+      var authToken = okOnce.authToken !== undefined ? okOnce.authToken : ('minted-authtoken-for-' + okOnce.username);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: okOnce.username, email: okOnce.email, authToken: authToken }) });
     } else {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false }) });
     }
   });
+}
+
+/** Stubs POST /.netlify/functions/publish-dream, recording every request body it saw (so a test can assert on the authToken a real Publish tap actually sent), and always reports success. */
+function mockPublishDreamCapture(page) {
+  var calls = [];
+  return page.route('**/.netlify/functions/publish-dream', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    calls.push(body);
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, dream: body }) });
+  }).then(function () { return calls; });
 }
 
 /** Mocks a never-finishing generation, same as wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's own helper -- keeps processing.html parked on the wait screen. */
@@ -253,9 +278,60 @@ test('result.html: landing with a VALID ?bt= token commits a real local session 
     assert.ok(committedUser, 'a session must actually be committed');
     assert.equal(committedUser.username, 'transferreduser');
     assert.equal(committedUser.handle, '@transferreduser');
+    assert.equal(committedUser.authToken, 'minted-authtoken-for-transferreduser', 'the authToken verify-session-transfer.js mints on success (tracker item publish-dream-js-trusts-client-supplied--lkppcu) must actually land on state.user, not just username/email');
 
     assert.equal(page.url().indexOf('bt='), -1, 'the ?bt= param must be stripped from the address bar once consumed, valid or not');
     assert.match(page.url(), /id=d-transfer-1/, 'stripping bt= must not disturb the ?id= param this page actually needs');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== authToken threading + Publish (tracker item
+// publish-dream-js-trusts-client-supplied--lkppcu, review finding): no
+// existing test in this file exercised "session established via
+// commitTransferredSession, then tap Publish" -- every test in
+// test/publish-unpublish-dream-auth.test.js mints its authToken directly
+// via accountAuthToken.mintToken, bypassing this client-side construction
+// path entirely, which is exactly why the missing-authToken regression
+// wasn't caught. This closes that gap end-to-end through the real browser
+// flow: land with a valid ?bt=, then actually tap Publish and confirm the
+// real outgoing publish-dream request carries the session-transfer-minted
+// authToken. =====
+
+test('result.html: a session established via the session-transfer link (?bt=) can actually Publish -- the real outgoing publish-dream request carries the authToken verify-session-transfer.js minted, closing the review finding that this flow silently broke Publish', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockVerifySessionTransfer(page, { token: 'publish-after-transfer-token', username: 'transferpublisher', email: 'transferpublisher@example.com' });
+    var publishCalls = await mockPublishDreamCapture(page);
+
+    // Signed-out browser, exactly like the round-trip test above, but with
+    // an UNPUBLISHED dream so tapping Publish is a real state transition,
+    // not a no-op re-sync.
+    await seedSignedOutWithDream(page, { username: 'transferpublisher', dreamId: 'd-transfer-publish-1' });
+    await page.goto(baseUrl + '/result.html?id=d-transfer-publish-1&bt=publish-after-transfer-token', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(300);
+
+    // Confirm the session really was established via the transfer link
+    // (not some other path) before treating the Publish assertion below as
+    // meaningful.
+    var committedUser = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.equal(committedUser.username, 'transferpublisher');
+    assert.equal(committedUser.authToken, 'minted-authtoken-for-transferpublisher');
+
+    await page.click('#publish-btn');
+    await page.waitForSelector('#modal-publish.open');
+    await page.click('#publish-confirm');
+
+    assert.equal(publishCalls.length, 1, 'Publish must have actually sent a real publish-dream request');
+    assert.equal(publishCalls[0].authToken, 'minted-authtoken-for-transferpublisher', 'the outgoing publish-dream request must carry the session-transfer-minted authToken -- before this fix, commitTransferredSession never set one at all, so this would have been null/undefined and publish-dream.js would reject it (E4 auth_token_required)');
+    assert.equal(publishCalls[0].ownerHandle, '@transferpublisher');
+
+    var isPublished = await page.evaluate(function () { return DreamStore.getDream('d-transfer-publish-1').isPublished; });
+    assert.equal(isPublished, true, 'Publish must still succeed locally regardless -- this test is specifically about the SHARED-feed sync request now carrying a real token');
   } finally {
     await context.close();
   }
