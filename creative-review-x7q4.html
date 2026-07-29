@@ -1,16 +1,13 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Review — round 5: v5 + end cards + archetypes</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Review — round 6: final cuts</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <!--
   TEMPORARY founder-only review page (unlinked, obscure URL — same
-  security model as tracker.html). Rounds 1-4 reviewed; decisions on the
-  tracker. Round 5 = founder's round-4 verdicts applied (UGC v5 with
-  side faces + amazement dialogue, UGC-1 off-screen-voice beat), the
-  reusable 3s END CARDS + the A2 conversion-test variant, and the POV
-  wave (fall-with-sound keeper, school, too-late). End-card cuts and the
-  A2 variant are hosted same-origin (crx-*.mp4, ffmpeg outputs not on
-  fal); raw clips stream from fal (~expire 2026-08-05). DELETE this file
-  + all crx-*.mp4 once the round closes — tracked on the "creative
-  awaiting your review" tracker item.
+  security model as tracker.html). Rounds 1-5 reviewed; decisions on the
+  tracker. Round 6 = redesigned end cards (B/C only), the A2
+  conversion-test variants with the burned-in CTA removed, UGC v6 fixes,
+  and the new SLEEPER-JOURNEY flagship. Local ffmpeg outputs hosted
+  same-origin (crx-*.mp4); raw clips stream from fal (~expire
+  2026-08-05). DELETE this file + all crx-*.mp4 once the round closes.
 -->
 <style>
 :root{--bg:#0c0a1a;--raise:#151228;--ink:#eae7fb;--soft:#a49dc4;--line:#272144;--acc:#9d90ff;--accs:#201c3d;--ok:#4bd39b;--warn:#e0aa5a;--err:#ef6a6a}
@@ -26,8 +23,6 @@ h2{font-size:17px;color:var(--warn);margin:30px 0 6px;letter-spacing:.01em}
 @media (max-width:620px){.card.dual{grid-column:span 1}}
 .feedback-pill{background:var(--warn);color:#2a1c04;font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;padding:8px 10px;text-align:center}
 .videos.dual{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
-.videos.trio{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line)}
-@media (max-width:620px){.videos.trio{grid-template-columns:1fr}}
 .vwrap{background:#000;display:flex;flex-direction:column}
 .soundlabel{font-size:11px;font-weight:700;color:var(--acc);background:var(--accs);padding:5px 9px;text-align:center}
 .card video{width:100%;aspect-ratio:9/16;max-height:380px;background:#000;object-fit:contain;display:block}
@@ -47,107 +42,82 @@ textarea.remark:focus{outline:2px solid var(--acc);border-color:var(--acc)}
 .save-status.err{color:var(--err);font-weight:600}
 footer{margin-top:38px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--soft);max-width:78ch}
 </style></head><body>
-<div class="wrap"><p class="eyebrow">DreamTube · Growth · Creative Review — round 5</p>
-<h1>v5 + your end cards <span style="font-size:.55em;color:var(--soft);font-weight:500">2026-07-29 · sound up 🔊</span></h1>
-<p class="lede">Everything from your last verdicts: side faces during dialogue, amazement instead of the fake laughter, the off-screen voice beat, and the reusable 3-second end cards — including the conversion-test variant of the running A2 ad you asked for. Since you allowed faces from the side, each card notes how the casting reads — those calls are yours now. Model decision stays open per your call; both models in use.</p>
+<div class="wrap"><p class="eyebrow">DreamTube · Growth · Creative Review — round 6</p>
+<h1>Final cuts + the new flagship <span style="font-size:.55em;color:var(--soft);font-weight:500">2026-07-29 · sound up 🔊</span></h1>
+<p class="lede">Everything from your last verdicts: redesigned cards (B and C only), the A2 test with the in-video CTA removed so the card carries it alone, the dialogue-order fix, your glance fix, and the sleeper-journey concept grown from the fall clip you liked. $7.13 of today's budget is held for one fix wave after this review.</p>
 
-<h2>1 · The end cards — pick one (this asset outlives any single ad)</h2>
-<p class="secnote">Built as clean motion graphics (not AI), funnel color palette, identical every time. The UGC clips below already end with card A so you can feel the flow; swapping to B or C is instant.</p>
+<h2>1 · Redesigned end cards — B vs C</h2>
 <div class="grid">
-<figure class="card dual" data-creative="ENDCARDS">
- <div class="feedback-pill">⚠ Pick a card (or edit the wording)</div>
- <div class="videos trio">
-  <div class="vwrap"><div class="soundlabel">A — “Try it yourself.”</div><video controls preload="metadata" playsinline src="crx-endcard-a.mp4"></video></div>
-  <div class="vwrap"><div class="soundlabel">B — “Turn your dreams into real videos.”</div><video controls preload="metadata" playsinline src="crx-endcard-b.mp4"></video></div>
-  <div class="vwrap"><div class="soundlabel">C — “Your dreams come alive.”</div><video controls preload="metadata" playsinline src="crx-endcard-c.mp4"></video></div>
- </div>
- <figcaption><span class="id">End card options</span>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Which card? Any wording change?"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="END CARD PICK (A/B/C)">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-
-<figure class="card" data-creative="A2-ENDCARD-TEST">
- <div class="feedback-pill">⚠ Your conversion test — ready to run on your go</div>
- <div class="soundlabel">A2 v6 (running ad) + card A · 18s · pure edit</div>
- <video controls preload="metadata" playsinline src="crx-a2v6-endcard-test.mp4"></video>
- <figcaption><span class="id">A2 v6 end-card test variant</span>
- <p class="concept">Exactly your test design: the currently running A2 ad, unchanged, with the end card appended — so an ad-level A/B against the original measures the card's conversion effect in isolation.</p>
- <p class="note"><b>Nothing uploads without your go.</b> Say "run the A2 end-card test" and it goes through compliance + into Meta as a variant.</p>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Go / hold / change the card first?"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="A2 END-CARD CONVERSION TEST">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-</div>
-
-<h2>2 · UGC v5 — your dialogue, side faces, ending into card A</h2>
-<div class="grid">
-<figure class="card dual" data-creative="UGC2-V5">
- <div class="feedback-pill">⚠ Both models, your script v2 — compare</div>
+<figure class="card dual" data-creative="ENDCARDS-V2">
+ <div class="feedback-pill">⚠ Design OK now? B or C (or both to test)?</div>
  <div class="videos dual">
-  <div class="vwrap"><div class="soundlabel">Seedance · strongest voices (3-beat arc) · casting reads white</div><video controls preload="metadata" playsinline src="crx-ugc2v5-seedance.mp4"></video></div>
-  <div class="vwrap"><div class="soundlabel">Kling · 1080p, best side-profile staging · casting reads Asian</div><video controls preload="metadata" playsinline src="crx-ugc2v5-kling.mp4"></video></div>
+  <div class="vwrap"><div class="soundlabel">B — “Turn your dreams into real videos.”</div><video controls preload="metadata" playsinline src="crx-cardB.mp4"></video></div>
+  <div class="vwrap"><div class="soundlabel">C — “Your dreams come alive.”</div><video controls preload="metadata" playsinline src="crx-cardC.mp4"></video></div>
  </div>
- <figcaption><span class="id">UGC-2 v5 · friend reaction → “I’m checking it out for myself right now” → end card</span>
- <p class="concept">Side/three-quarter faces during dialogue as you asked; no laughter — amazement lines; phone stays edge-on; both cut into end card A (13s total).</p>
- <p class="note"><b>Your calls:</b> which voices/faces feel real; and since faces are now visible, the casting-read flags above — tell me if either bothers you or if we should vary casting across variants.</p>
+ <figcaption><span class="id">End cards v2 · animated night sky — drifting aurora, parallax stars, glowing text</span>
  <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Compare the two — which one moves forward?"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-2 v5 (Seedance vs Kling, with end card)">Save</button><span class="save-status"></span></div>
+ <textarea class="remark" placeholder="Design verdict + B/C…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="END CARDS v2 (B vs C)">Save</button><span class="save-status"></span></div>
  </figcaption></figure>
 
-<figure class="card" data-creative="UGC1-V5">
- <div class="feedback-pill">⚠ Needs your feedback</div>
- <div class="soundlabel">🔊 Kling · your off-screen-voice beat · casting reads Asian</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42d27/5jeU3pnXcj5HOhuhhVLDI_output.mp4"></video>
- <figcaption><span class="id">UGC-1 v5 · morning reveal, restaged per your notes</span>
- <p class="concept">She faces camera from the moment she speaks; off-screen male voice asks "what are you so excited about?" and she answers; the on-phone dream now has a character — a figure walking toward a huge moon — with strong motion.</p>
- <p class="note"><b>One recurring Kling quirk:</b> it again drew fake player-app text around the on-phone video despite prompting (2nd time) — say if it kills the clip or reads as authentic phone-ness.</p>
+<figure class="card dual" data-creative="A2-TEST-V2">
+ <div class="feedback-pill">⚠ Your conversion test, rebuilt per your note</div>
+ <div class="videos dual">
+  <div class="vwrap"><div class="soundlabel">A2 (CTA removed) + card B · 13.4s</div><video controls preload="metadata" playsinline src="crx-a2-testB.mp4"></video></div>
+  <div class="vwrap"><div class="soundlabel">A2 (CTA removed) + card C · 13.4s</div><video controls preload="metadata" playsinline src="crx-a2-testC.mp4"></video></div>
+ </div>
+ <figcaption><span class="id">A2 end-card test variants</span>
+ <p class="concept">The burned-in CTA was found at ~10.4s and trimmed cleanly (the footage under it was CTA-only scenery) — the call to action now lives ONLY in the card, exactly as you asked. Both text options ready for the ad-level test.</p>
+ <p class="note"><b>On your confirm</b> these go to compliance and then into Meta as test ads against the original A2.</p>
  <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for UGC-1 v5 here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-1 v5 (Kling, off-screen voice)">Save</button><span class="save-status"></span></div>
+ <textarea class="remark" placeholder="Confirm the test launch / notes…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="A2 TEST v2 (launch confirm)">Save</button><span class="save-status"></span></div>
  </figcaption></figure>
 </div>
 
-<h2>3 · POV wave — fall keeper with sound + two new archetypes</h2>
+<h2>2 · The new flagship — sleeper journey</h2>
 <div class="grid">
-<figure class="card" data-creative="POV-FALL-V2">
- <div class="feedback-pill">⚠ The keeper, now with sound</div>
- <div class="soundlabel">🔊 Kling · wind ambience · your bed-through-the-floor direction</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42c97/LbuGAvfGTTIkc4S1eGkAK_output.mp4"></video>
- <figcaption><span class="id">POV-FALL v2 · “that dream where you’re falling”</span>
- <p class="concept">The direction you loved — sleeper in bed, floor dissolves, falling through night sky over city lights — regenerated with native wind sound building through the fall.</p>
- <p class="note"><b>Honest read:</b> this take's fall is gentler/more floaty than the original's dramatic drop — judge which energy you want; the original silent take still exists if you prefer its motion with added sound in the edit.</p>
+<figure class="card" data-creative="SLEEPER-JOURNEY">
+ <div class="feedback-pill">⚠ Your concept, grown — 15s</div>
+ <div class="soundlabel">🔊 Kling · wind &amp; chimes · eyes shut throughout</div>
+ <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42ebb/R5s0jekt5hzFHyouvtadV_output.mp4"></video>
+ <figcaption><span class="id">SLEEPER-JOURNEY · asleep in bed, carried into a magical night</span>
+ <p class="concept">Short bed intro (~2.5s), then the sleeper — eyes shut the whole way, verified frame-by-frame — drifts through aurora ribbons, a starlight whale, floating lanterns and shooting stars. Serene, not busy.</p>
+ <p class="note"><b>One flag:</b> the whale renders slightly illustration-like against the photoreal bed — say if that mix bothers you or reads as dreamlike.</p>
  <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-FALL v2 here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-FALL v2 (Kling, with sound)">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-
-<figure class="card" data-creative="POV-SCHOOL">
- <div class="feedback-pill">⚠ Needs your feedback · all beats passed</div>
- <div class="soundlabel">🔇 Silent base · Kling · #4 archetype (67.1%)</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42ca8/EU2VlZrjDtIbSBAh-hNtC_output.mp4"></video>
- <figcaption><span class="id">POV-SCHOOL · “that dream where you’re back at school and there’s a test”</span>
- <p class="concept">First-person: exam paper where the questions swim and rearrange, look up — the classroom has become an endless surreal hall. Wonder, not horror. Strongest clip of this wave by verification.</p>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-SCHOOL here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-SCHOOL (Kling)">Save</button><span class="save-status"></span></div>
- </figcaption></figure>
-
-<figure class="card" data-creative="POV-TOO-LATE">
- <div class="feedback-pill">⚠ Missed its brief — but so did your fall favorite</div>
- <div class="soundlabel">🔇 Silent base · Kling · #5 archetype (59.5%)</div>
- <video controls preload="metadata" playsinline src="https://v3b.fal.media/files/b/0aa42cc2/-xbqrx1A363BiNJ2LEhvt_output.mp4"></video>
- <figcaption><span class="id">POV-TOO-LATE · “that dream where you’re running late and can’t make it”</span>
- <p class="concept">Station chase where the dream bends into calm wonder at the end.</p>
- <p class="note"><b>Honest fails:</b> rendered third-person (not through your eyes) and the train leaves early instead of the door-closing beat. Shown anyway because your fall favorite was exactly this kind of "wrong but great" — judge on impact.</p>
- <label class="rl">Your remarks</label>
- <textarea class="remark" placeholder="Write feedback for POV-TOO-LATE here…"></textarea>
- <div class="saverow"><button type="button" class="savebtn" data-comment-label="POV-TOO-LATE (Kling)">Save</button><span class="save-status"></span></div>
+ <textarea class="remark" placeholder="Write feedback for SLEEPER-JOURNEY here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="SLEEPER-JOURNEY (15s flagship)">Save</button><span class="save-status"></span></div>
  </figcaption></figure>
 </div>
 
-<footer>Nothing uploads to Meta without your go + a compliance pass — including the A2 end-card test. Round-5 spend: $10.31 of your $15 override ($4.69 unspent, override expires tonight). fal-hosted clips expire ~Aug 5; the end cards and edited cuts are hosted here and rebuild identically from the committed script. Growth is back — it takes creative ownership from tomorrow. This page is temporary and will be removed once the round closes.</footer></div>
+<h2>3 · UGC v6 — both of your fixes, ending into card B</h2>
+<div class="grid">
+<figure class="card" data-creative="UGC2-V6">
+ <div class="feedback-pill">⚠ Dialogue order fixed</div>
+ <div class="soundlabel">🔊 Kling · 13s with card B</div>
+ <video controls preload="metadata" playsinline src="crx-ugc2v6.mp4"></video>
+ <figcaption><span class="id">UGC-2 v6 · owner speaks first, friend reacts</span>
+ <p class="concept">Order corrected: she opens with "Check this out — I turned my dream into a real video — on DreamTube," then the friend's excitement exactly as before. Side profiles, phone edge-on, bright, into card B.</p>
+ <p class="note"><b>Confirm by ear</b> the words land in order. Casting reads white this take — your call. (First roll came out physically sideways — a new model quirk, caught and re-rolled; both takes billed, logged honestly.)</p>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="Write feedback for UGC-2 v6 here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-2 v6 (order fixed, card B)">Save</button><span class="save-status"></span></div>
+ </figcaption></figure>
+
+<figure class="card" data-creative="UGC1-V6">
+ <div class="feedback-pill">⚠ Glance fix in</div>
+ <div class="soundlabel">🔊 Kling · 13s with card B</div>
+ <video controls preload="metadata" playsinline src="crx-ugc1v6.mp4"></video>
+ <figcaption><span class="id">UGC-1 v6 · morning reveal, final shape</span>
+ <p class="concept">Your fix verified: excitement to camera, a full head-turn toward the off-screen voice at ~3.5s, then she answers looking straight into the lens. On-phone dream keeps the character and strong motion; ends into card B.</p>
+ <p class="note"><b>Two by-ear checks:</b> the male voice is quieter this take; and Kling again drew faint fake player-text on the phone (3rd time — it may just be its handwriting; say if it kills the clip).</p>
+ <label class="rl">Your remarks</label>
+ <textarea class="remark" placeholder="Write feedback for UGC-1 v6 here…"></textarea>
+ <div class="saverow"><button type="button" class="savebtn" data-comment-label="UGC-1 v6 (glance fix, card B)">Save</button><span class="save-status"></span></div>
+ </figcaption></figure>
+</div>
+
+<footer>Nothing uploads to Meta without your confirm + a compliance pass — including the A2 test. Today's ledger: $17.87 of $25 used; $7.13 held for one fix wave after this review (expires tonight). fal clips expire ~Aug 5. Growth resumes creative ownership tomorrow with the full paper trail. This page is temporary.</footer></div>
 <script>
 // Same delegated-click pattern as the dedicated review site (labels in
 // data-attributes, immune to quotes/apostrophes). Posts the remark as a
