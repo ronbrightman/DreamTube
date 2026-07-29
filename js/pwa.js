@@ -57,6 +57,18 @@ window.PwaInstall = (function () {
     window.addEventListener('beforeinstallprompt', function (e) {
       e.preventDefault();
       deferredPrompt = e;
+      // Review finding, tracker item for-product-a2hs-install-nudge-3-
+      // founder-vcofk7: beforeinstallprompt is async and heuristic-gated
+      // (Chrome doesn't always fire it immediately on page load), so
+      // home.html's persistent #card-install journey card -- which computes
+      // its own visibility synchronously on load, before this event may
+      // have fired -- could stay wrongly hidden for an entire page view
+      // with no way to reconcile. Dispatching a real DOM event here lets
+      // that card (or anything else caring about install-capability
+      // changing mid-load) react the moment a real prompt actually becomes
+      // available, rather than only ever re-checking on the later
+      // appinstalled event.
+      window.dispatchEvent(new CustomEvent('dreamtube:install-capability-changed'));
     });
     window.addEventListener('appinstalled', function () {
       deferredPrompt = null;

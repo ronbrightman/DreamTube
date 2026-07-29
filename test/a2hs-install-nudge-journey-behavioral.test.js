@@ -226,6 +226,46 @@ test('homepage journey card: hidden on a platform with nothing real to offer (de
   }
 });
 
+test('homepage journey card: a beforeinstallprompt that arrives AFTER this script already ran (Android/Chrome\'s real, common timing) still makes the card appear and become clickable in the SAME page load, not just on a later reload (review finding)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext(); // default desktop Chromium UA -- beforeinstallprompt never fires on its own in this test harness, so this is genuinely simulating the "not yet available" starting state
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var username = 'homelateprompt' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username);
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.nav-icon', { timeout: 5000 });
+
+    // Confirms the starting state genuinely has nothing to offer yet --
+    // this test would be meaningless if the card were already visible.
+    var initialDisplay = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(initialDisplay, 'none', 'must start hidden -- nothing captured yet, same as the desktop-with-nothing-to-offer case');
+
+    // Dispatches a REAL beforeinstallprompt-shaped event through the actual
+    // window listener js/pwa.js registers -- not a stub of canOfferInstall
+    // itself -- so this exercises the genuine code path: pwa.js's real
+    // listener sets its real deferredPrompt AND dispatches the real
+    // dreamtube:install-capability-changed event this fix listens for.
+    await page.evaluate(function () {
+      var fakeEvent = new Event('beforeinstallprompt', { cancelable: true });
+      fakeEvent.prompt = function () {};
+      fakeEvent.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(fakeEvent);
+    });
+
+    // The card must appear WITHOUT a reload, and its own click wiring
+    // (which the pre-fix code only ever attached if the card was already
+    // visible on the very first synchronous pass) must actually work.
+    await page.waitForSelector('#card-install', { state: 'visible', timeout: 2000 });
+    await page.click('#install-hcard-btn');
+    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 2000 });
+  } finally {
+    await context.close();
+  }
+});
+
 test('homepage journey card: hidden once the account is genuinely verified installed', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });

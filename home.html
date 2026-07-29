@@ -615,6 +615,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   (function installJourneyCard(){
     var card = document.getElementById('card-install');
     var overlay = document.getElementById('install-sheet-overlay');
+    var wired = false;
 
     function shouldShow(){
       return !!(window.InstallNudge && window.PwaInstall && window.DreamStore &&
@@ -624,10 +625,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     function refresh(){
       card.style.display = shouldShow() ? '' : 'none';
     }
-    refresh();
-    if(card.style.display === 'none') return; // nothing else to wire if it can never show on this load
-
-    document.getElementById('install-hcard-icon').innerHTML = window.Icons ? Icons.download : '';
 
     function closeSheet(){ overlay.classList.remove('open'); }
 
@@ -654,19 +651,48 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       overlay.classList.add('open');
     }
 
-    document.getElementById('install-hcard-btn').addEventListener('click', function(){
-      track('home_install_card_tapped', {});
-      openSheet();
-    });
-    document.getElementById('install-sheet-close').addEventListener('click', closeSheet);
-    SheetDismiss.wire(overlay, closeSheet);
+    // Wires the card's own controls exactly once -- separated from the
+    // initial refresh() below because Android's beforeinstallprompt can
+    // arrive AFTER this script's first pass already found nothing to
+    // offer (see the dreamtube:install-capability-changed listener at the
+    // bottom of this IIFE) -- the card's buttons must still get wired the
+    // moment it first becomes actually showable, not only if it already
+    // was on the very first synchronous pass.
+    function wireUp(){
+      if(wired) return;
+      wired = true;
+      document.getElementById('install-hcard-icon').innerHTML = window.Icons ? Icons.download : '';
+      document.getElementById('install-hcard-btn').addEventListener('click', function(){
+        track('home_install_card_tapped', {});
+        openSheet();
+      });
+      document.getElementById('install-sheet-close').addEventListener('click', closeSheet);
+      SheetDismiss.wire(overlay, closeSheet);
+      // Android's real appinstalled event can fire while this exact page is
+      // still open (accept the sheet's own install button above, or the
+      // browser's native mini-infobar) — re-check right away rather than
+      // only on a later reload, so the card completes in the SAME session
+      // it was actually installed in.
+      window.addEventListener('appinstalled', refresh);
+    }
 
-    // Android's real appinstalled event can fire while this exact page is
-    // still open (accept the sheet's own install button above, or the
-    // browser's native mini-infobar) — re-check right away rather than
-    // only on a later reload, so the card completes in the SAME session
-    // it was actually installed in.
-    window.addEventListener('appinstalled', refresh);
+    refresh();
+    if(card.style.display !== 'none') wireUp();
+
+    // Review finding, tracker item for-product-a2hs-install-nudge-3-
+    // founder-vcofk7: beforeinstallprompt (Android/Chrome) is async and
+    // heuristic-gated, so it can fire moments AFTER this script's first
+    // synchronous pass already computed the card as hidden -- without this
+    // listener, the card would stay wrongly hidden for the WHOLE page
+    // view (undermining the very "persistent, not one-shot" fix this card
+    // exists to be). js/pwa.js dispatches this real DOM event the instant
+    // it captures beforeinstallprompt; re-checking here lets the card
+    // appear (and get wired, if this is its first time becoming showable)
+    // later in the same load, not just at the next reload.
+    window.addEventListener('dreamtube:install-capability-changed', function(){
+      refresh();
+      if(card.style.display !== 'none') wireUp();
+    });
   })();
 
   // ===== Vault card =====
