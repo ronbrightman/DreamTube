@@ -12,9 +12,17 @@
 // generation, not a separate music-generation call. The FINAL
 // generate_audio sent to fal is never audioOn taken as-is — see
 // generateAudio's own computation in the handler below, which can
-// independently override it to false (a condensed caption, or the
-// server-side owner/IL cost-control profile — see
-// resolveGenerationProfile) but never override it to true.
+// independently override it to false (a condensed caption — see
+// promptCondenser.condenseIfNeeded) but never override it to true.
+// Founder override 2026-07-29 (tracker item for-product-audio-toggle-
+// silently-overri-6qroev, verbatim: "Regarding Sound for Israel don't
+// disable it just leave it the same for everyone, including myself."):
+// resolveGenerationProfile's cheap owner/IL cost profile used to also
+// silently force generate_audio:false — that side effect is gone, so a
+// user's own audioOn choice is now honored identically regardless of
+// owner/IL status. The profile itself (isOwner/isIsrael/'cheap_owner'/
+// 'cheap_il'/'standard') is untouched and still logged for cost
+// attribution — only the audio-forcing was removed.
 //
 // ownerBypassToken (optional) — see lib/owner-bypass.js and
 // verify-owner-bypass.js for how the founder obtains one (a real,
@@ -599,41 +607,36 @@ var geo = require('./lib/geo');
 
 /**
  * Server-side "cheap generation profile" (tracker item for-product-cheap-
- * generation-profile-for-yz2ina, founder-approved 2026-07-28 — SCOPED to
- * the audio-off-forcing portion only; the budget-model-switch/shorter-
- * duration portion is explicitly out of scope here, blocked on a
- * still-running model-selection eval elsewhere in this pipeline). The
- * founder's own generations, and IL-geo traffic generally, are ~all
- * testing per his own tracker note — so when the request's resolved
- * email matches OWNER_EMAIL (same normalizeEmail-against-OWNER_EMAIL
- * pattern as admin-paywall-toggle.js/add-tracker-item.js — reused, not
- * reinvented) OR the request's geolocation resolves to Israel (lib/geo.js),
- * this forces generate_audio:false regardless of whatever the client's
- * own Part-A audio toggle asked for. Deliberately SILENT to the client —
- * no UI indication, no error — this is pure cost control on traffic
- * that's overwhelmingly the founder's own testing, not a user-facing
- * feature; the accepted tradeoff (founder explicit, per the tracker item)
- * is that any genuine non-testing IL user also gets the cheaper profile,
- * acceptable since IL is already excluded from every metric this app
- * tracks.
+ * generation-profile-for-yz2ina, founder-approved 2026-07-28). Identifies
+ * whether this request is the founder's own (email matches OWNER_EMAIL —
+ * same normalizeEmail-against-OWNER_EMAIL pattern as admin-paywall-
+ * toggle.js/add-tracker-item.js — reused, not reinvented) or IL-geo
+ * traffic (lib/geo.js) — both ~all testing per the founder's own tracker
+ * note — purely for cost-attribution logging (see the call site below,
+ * console.log('generation_profile=...')). Never sent to the client.
+ *
+ * FOUNDER OVERRIDE 2026-07-29 (tracker item for-product-audio-toggle-
+ * silently-overri-6qroev, verbatim: "Regarding Sound for Israel don't
+ * disable it just leave it the same for everyone, including myself."):
+ * this used to also return forceAudioOff (isOwner || isIsrael) and every
+ * caller AND'ed it into generateAudio, silently forcing audio off for
+ * owner/IL traffic regardless of the client's own toggle. That field and
+ * every use of it are removed — a user's audioOn choice is now honored
+ * identically no matter who they are. isOwner/isIsrael/the profile string
+ * ('cheap_owner'/'cheap_il'/'standard') are UNCHANGED and still used for
+ * whatever cheap MODEL routing exists beyond audio (currently none beyond
+ * the now-global Lite default — see for-product-cheap-generation-profile-
+ * for-yz2ina's own tracker history) — only the audio side effect is gone.
  *
  * A malformed/unreadable geo header (lib/geo.js's own fail-open contract)
- * resolves to "not Israel" here too — a geo-parsing hiccup can only ever
- * cost MORE (the standard, non-forced path), never silently under-bill a
- * non-owner/non-IL requester.
- *
- * Returns { forceAudioOff, profile } — profile is 'cheap_owner' /
- * 'cheap_il' / 'standard', for cost-attribution logging only (see the
- * call site below) — never sent to the client, and this deliberately
- * touches NOTHING beyond generate_audio (not the model, not duration —
- * see this branch's own scope note above).
+ * resolves to "not Israel" here too, same as before — this only affects
+ * the logged profile label now, not any generation behavior.
  */
 function resolveGenerationProfile(email, event) {
   var ownerEmail = entitlements.normalizeEmail(process.env.OWNER_EMAIL);
   var isOwner = !!(ownerEmail && email && email === ownerEmail);
   var isIsrael = geo.resolveCountryCode(event) === 'IL';
   return {
-    forceAudioOff: isOwner || isIsrael,
     profile: isOwner ? 'cheap_owner' : (isIsrael ? 'cheap_il' : 'standard')
   };
 }
@@ -779,8 +782,9 @@ exports.handler = async function (event) {
 
   // Cheap generation profile (tracker item for-product-cheap-generation-
   // profile-for-yz2ina) — resolved once, up front, so both the mock and
-  // real paths below see the identical forceAudioOff decision. See
-  // resolveGenerationProfile's own doc comment for the full mechanism.
+  // real paths below see the identical profile. See resolveGenerationProfile's
+  // own doc comment for the full mechanism, including the 2026-07-29 founder
+  // override that removed this profile's former audio-forcing side effect.
   // Logged here (rather than a PostHog event — see that function's own
   // doc comment on why no existing server-side capture call exists in
   // this file to attach the property to) purely for operational cost-
@@ -874,12 +878,16 @@ exports.handler = async function (event) {
   // clientAudioOn (style.html's toggle, default off — see the payload-
   // parsing block above) is the PRIMARY gate as of this feature: audio is
   // only ever on when the user actually asked for it. condensed.wasCondensed
-  // and generationProfileResult.forceAudioOff (Part B's silent owner/IL
-  // cost-control override, see resolveGenerationProfile above) can each
-  // independently turn it back off, never on — this is a three-way AND,
-  // not a priority order, so any one of them being true is enough to keep
-  // this a text-and-visuals-only generation.
-  var generateAudio = clientAudioOn && !condensed.wasCondensed && !generationProfileResult.forceAudioOff;
+  // can independently turn it back off, never on. Founder override
+  // 2026-07-29 (tracker item for-product-audio-toggle-silently-overri-
+  // 6qroev — see resolveGenerationProfile's own doc comment above for the
+  // full history): this used to also AND in
+  // !generationProfileResult.forceAudioOff, silently forcing audio off for
+  // owner/IL requests regardless of clientAudioOn — removed per the
+  // founder's explicit instruction to leave audio the same for everyone,
+  // including himself. generationProfileResult is still resolved above
+  // (for the cost-attribution log line only) but no longer read here.
+  var generateAudio = clientAudioOn && !condensed.wasCondensed;
   // Only fed to the model when audio is actually going to be on — see
   // MUSIC_STYLE_MODIFIERS' own doc comment for why appending a music
   // instruction to a silent generation would be meaningless.

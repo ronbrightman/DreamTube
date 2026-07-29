@@ -1,17 +1,23 @@
 // test/generate-video-audio-toggle.test.js
 //
-// Covers netlify/functions/generate-video.js's two audio-related tracker
-// items, both founder-approved 2026-07-28:
-//   - for-product-audio-on-off-choice-at-creat-dyyr98 (Part A): style.html's
-//     client-side audio/music toggle — DEFAULT OFF, only sent to fal when
-//     the client actually asked for it (and the caption wasn't condensed —
-//     existing, pre-dating behavior this must not regress), with the
-//     musicStyle preset folded into the prompt only when audio ends up
-//     actually on.
-//   - for-product-cheap-generation-profile-for-yz2ina (Part B, SCOPED to
-//     audio-off-forcing only): OWNER_EMAIL or an Israel-geo request forces
-//     generate_audio:false server-side, silently, regardless of what the
-//     client asked for.
+// Covers netlify/functions/generate-video.js's audio-related tracker items:
+//   - for-product-audio-on-off-choice-at-creat-dyyr98 (Part A, founder-
+//     approved 2026-07-28): style.html's client-side audio/music toggle —
+//     DEFAULT OFF, only sent to fal when the client actually asked for it
+//     (and the caption wasn't condensed — existing, pre-dating behavior
+//     this must not regress), with the musicStyle preset folded into the
+//     prompt only when audio ends up actually on.
+//   - for-product-cheap-generation-profile-for-yz2ina (Part B) originally
+//     forced generate_audio:false server-side for OWNER_EMAIL/Israel-geo
+//     requests regardless of the client's own toggle. FOUNDER OVERRIDE
+//     2026-07-29 (tracker item for-product-audio-toggle-silently-overri-
+//     6qroev, verbatim: "Regarding Sound for Israel don't disable it just
+//     leave it the same for everyone, including myself.") removed that
+//     forcing entirely — resolveGenerationProfile no longer has a
+//     forceAudioOff field at all, and owner/IL requests are asserted below
+//     to behave IDENTICALLY to any other request. The "Part B" section
+//     below now guards against a regression back to the old forcing
+//     behavior, rather than asserting the forcing itself.
 //   - Token cost stays flat at 100 regardless of audio on/off (founder
 //     explicit — no split pricing).
 
@@ -154,36 +160,46 @@ test('token cost is exactly 100 whether audio is on or off (founder explicit: no
   assert.equal(afterOff.balance, 400);
 });
 
-// ----- Part B: silent server-side owner/IL audio-off forcing -----
+// ----- Part B: owner/IL audio is honored identically to everyone else -----
+// (founder override 2026-07-29, for-product-audio-toggle-silently-overri-
+// 6qroev — see this file's header comment. These guard against a
+// regression back to the old silent forceAudioOff behavior.)
 
-test('OWNER_EMAIL match forces generate_audio:false even though the client asked for audioOn:true', function () {
+test('OWNER_EMAIL match: audioOn:true still produces generate_audio:true, unaffected by owner status', function () {
   return withEnv({ OWNER_EMAIL: DEFAULT_EMAIL }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({ body: { audioOn: true, musicStyle: 'dreamy' } }));
-    assert.equal(res.statusCode, 200, 'the request must still succeed normally — forcing is silent, never an error');
-    assert.equal(calls[0].body.generate_audio, false);
-    assert.doesNotMatch(calls[0].body.prompt, /dreamy ambient/, 'no music modifier should leak into the prompt once audio is force-disabled');
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls[0].body.generate_audio, true, 'the founder\'s own audioOn choice must be honored exactly like any other user\'s');
+    assert.match(calls[0].body.prompt, /dreamy ambient/, 'the music modifier must flow through for the owner exactly like for anyone else');
   });
 });
 
-test('OWNER_EMAIL comparison is normalized (case/whitespace) the same way entitlements.normalizeEmail treats every other email in this codebase', function () {
-  return withEnv({ OWNER_EMAIL: '  Founder@DreamTube.Example  ' }, async function () {
+test('OWNER_EMAIL match: audioOn:false still produces generate_audio:false (this was never the bug — must not accidentally flip)', function () {
+  return withEnv({ OWNER_EMAIL: DEFAULT_EMAIL }, async function () {
     var calls = installFetchSpy();
-    await entitlements.setEntitlement({}, 'founder@dreamtube.example', { tokens: { balance: 100000, lastClaimAt: Date.now() } });
-    await handler(genEvent({ body: { email: 'founder@dreamtube.example', audioOn: true } }));
+    await handler(genEvent({ body: { audioOn: false } }));
     assert.equal(calls[0].body.generate_audio, false);
   });
 });
 
-test('an Israel-geo request (x-nf-geo) forces generate_audio:false even with audioOn:true, for a non-owner email', function () {
+test('an Israel-geo request (x-nf-geo) with audioOn:true produces generate_audio:true, unaffected by IL geo, for a non-owner email', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') }, body: { audioOn: true, musicStyle: 'upbeat' } })).then(function (res) {
     assert.equal(res.statusCode, 200);
+    assert.equal(calls[0].body.generate_audio, true, 'an IL-geo user\'s own audioOn choice must be honored exactly like any other user\'s');
+    assert.match(calls[0].body.prompt, /upbeat, energetic/);
+  });
+});
+
+test('an Israel-geo request with audioOn:false still produces generate_audio:false (this was never the bug — must not accidentally flip)', function () {
+  var calls = installFetchSpy();
+  return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') }, body: { audioOn: false } })).then(function (res) {
     assert.equal(calls[0].body.generate_audio, false);
   });
 });
 
-test('a non-owner, non-IL request keeps the client\'s own audioOn:true untouched', function () {
+test('a non-owner, non-IL request keeps the client\'s own audioOn:true untouched (baseline, unrelated to owner/IL)', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('US') }, body: { audioOn: true } })).then(function (res) {
     assert.equal(res.statusCode, 200);
@@ -191,17 +207,26 @@ test('a non-owner, non-IL request keeps the client\'s own audioOn:true untouched
   });
 });
 
-test('a malformed/missing x-nf-geo header fails open toward "not Israel" (audio stays on if the client asked for it) rather than silently forcing the cheap path', async function () {
+test('a malformed/missing x-nf-geo header still honors the client\'s own audioOn:true (geo resolution no longer affects audio at all)', async function () {
   var calls = installFetchSpy();
   await handler(genEvent({ headers: { 'x-nf-geo': 'not-valid-base64-json!!!' }, body: { audioOn: true } }));
   assert.equal(calls[0].body.generate_audio, true);
 });
 
-test('OWNER_EMAIL unset entirely: no request can ever match it, so forcing only ever comes from geo', function () {
+test('OWNER_EMAIL unset entirely: audioOn:true still honored (no owner/IL status can ever affect audio now)', function () {
   return withEnv({ OWNER_EMAIL: undefined }, async function () {
     var calls = installFetchSpy();
     await handler(genEvent({ body: { audioOn: true } }));
     assert.equal(calls[0].body.generate_audio, true);
+  });
+});
+
+test('resolveGenerationProfile no longer exposes a forceAudioOff field at all (the mechanism this fix removed, not just a behavior change)', function () {
+  return withEnv({ OWNER_EMAIL: DEFAULT_EMAIL }, function () {
+    var resolveGenerationProfile = require('../netlify/functions/generate-video').resolveGenerationProfile;
+    var result = resolveGenerationProfile(DEFAULT_EMAIL, genEvent({}));
+    assert.equal(result.profile, 'cheap_owner', 'the cost-attribution profile itself is untouched by this fix');
+    assert.equal(Object.prototype.hasOwnProperty.call(result, 'forceAudioOff'), false);
   });
 });
 

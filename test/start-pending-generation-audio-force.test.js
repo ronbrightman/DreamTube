@@ -1,15 +1,18 @@
 // test/start-pending-generation-audio-force.test.js
 //
 // Covers start-pending-generation.js's half of tracker item for-product-
-// cheap-generation-profile-for-yz2ina (Part B, SCOPED to audio-off-forcing
-// only): the same silent OWNER_EMAIL/Israel-geo generate_audio:false
-// override generate-video.js's own handler applies (see
-// genVideo.resolveGenerationProfile, reused here rather than
-// reimplemented) must also apply to this file's pre-signup submission
-// path — wizard.html/start.html traffic is real fal.ai cost too. Unlike
-// generate-video.js, this file has no client-facing audio toggle (Part A
-// is style.html-only) — the base "audio on unless the caption was
-// condensed" behavior is unchanged, this only adds the override on top.
+// cheap-generation-profile-for-yz2ina. This originally forced
+// generate_audio:false for OWNER_EMAIL/Israel-geo requests (Part B),
+// reusing genVideo.resolveGenerationProfile. FOUNDER OVERRIDE 2026-07-29
+// (tracker item for-product-audio-toggle-silently-overri-6qroev, verbatim:
+// "Regarding Sound for Israel don't disable it just leave it the same for
+// everyone, including myself.") removed that forcing entirely, in both
+// this file and generate-video.js — resolveGenerationProfile no longer has
+// a forceAudioOff field at all. This file has no client-facing audio
+// toggle (Part A is style.html-only) — the base "audio on unless the
+// caption was condensed" behavior is now simply unconditional for
+// everyone, owner/IL included. The tests below guard against a regression
+// back to the old forcing behavior.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -88,7 +91,7 @@ test('standard (non-owner, non-IL) request keeps the pre-existing "audio on unle
   assert.equal(calls[0].body.generate_audio, true);
 });
 
-test('OWNER_EMAIL match forces generate_audio:false, silently — response shape/status is unaffected', function () {
+test('OWNER_EMAIL match: generate_audio stays true (no forcing) — response shape/status is unaffected', function () {
   return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({}));
@@ -96,22 +99,45 @@ test('OWNER_EMAIL match forces generate_audio:false, silently — response shape
     var data = JSON.parse(res.body);
     assert.ok(data.pendingId);
     assert.match(data.operationName, /^fal:/);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true, 'owner status must no longer force audio off on this path either');
   });
 });
 
-test('an Israel-geo request forces generate_audio:false for a non-owner email', function () {
+test('an Israel-geo request: generate_audio stays true (no forcing) for a non-owner email', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') } })).then(function (res) {
     assert.equal(res.statusCode, 200);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true, 'IL geo must no longer force audio off on this path either');
   });
 });
 
-test('a malformed x-nf-geo header fails open (generate_audio stays true) rather than silently forcing the cheap path', async function () {
+test('a malformed x-nf-geo header: generate_audio stays true (unaffected either way, since geo no longer touches audio)', async function () {
   var calls = installFetchSpy();
   await handler(genEvent({ headers: { 'x-nf-geo': 'garbage-not-base64-json' } }));
   assert.equal(calls[0].body.generate_audio, true);
+});
+
+test('a condensed caption still forces audio off regardless of owner/IL status (unrelated, pre-existing gate — must not regress)', function () {
+  return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
+    var longCaption = new Array(80).join('I was flying through a golden sky above endless mountains and glowing rivers. ');
+    process.env.GEM_API_KEY = 'test-gemini-key';
+    var falCalls = [];
+    global.fetch = async function (url, opts) {
+      if (String(url).indexOf('generativelanguage.googleapis.com') !== -1) {
+        return { ok: true, status: 200, json: async function () { return { candidates: [{ content: { parts: [{ text: 'a short condensed dream about flying' }] } }] }; } };
+      }
+      falCalls.push({ url: url, body: JSON.parse(opts.body) });
+      return { ok: true, status: 200, json: async function () { return { request_id: 'fake-request-id' }; } };
+    };
+    try {
+      var res = await handler(genEvent({ body: { caption: longCaption } }));
+      assert.equal(res.statusCode, 200);
+      assert.equal(falCalls.length, 1);
+      assert.equal(falCalls[0].body.generate_audio, false, 'a condensed caption must never be narrated, owner or not');
+    } finally {
+      delete process.env.GEM_API_KEY;
+    }
+  });
 });
 
 test('mediaType:"image" requests are untouched by this profile entirely (no generate_audio concept for a still image)', function () {
