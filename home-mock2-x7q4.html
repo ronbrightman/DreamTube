@@ -10,7 +10,11 @@
   applied: brand mark separated from greeting, Wizard entry option,
   coherent numbers across states, plain freeze copy, streak consolidated
   into the This Week card, 9:16 portrait dream carousel, Chamber name
-  candidates, Profile integrated behind a top-right avatar. Static mock,
+  candidates, Profile integrated behind a top-right avatar. Round-3
+  patches: brand mark restyled in the real logo's colors (tiny crescent
+  icon extracted from assets/logo-v2.png as an inline data URI + the
+  logo's pink-to-orange gradient on "tube"), and dates removed from the
+  in-phone sky headers. Static mock,
   no live logic; the remarks card posts to the homepage tracker item.
   Art assets home-mock-art-*.jpg belong to these mock pages. DELETE both
   mock pages + art after the final decision (tracked on the homepage
@@ -52,9 +56,12 @@ h2{font-size:18px;color:var(--warn);margin:40px 0 4px}
 .greet span{font-size:8.5px;color:#cfc8ff;text-shadow:0 1px 6px rgba(0,0,0,.85)}
 .scr{position:absolute;inset:0;padding:12px 11px;overflow:hidden}
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-/* brand mark — deliberately small + muted so it can't read as part of the greeting */
-.logo{font-weight:700;font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;color:#b7aede;opacity:.85;text-shadow:0 1px 6px rgba(0,0,0,.9)}
-.logo i{font-style:normal;letter-spacing:0;margin-right:3px}
+/* brand mark — small + muted but in the real logo's identity: the crescent-play
+   icon (extracted from assets/logo-v2.png, black bg -> alpha) + the logo's
+   white "dream" / pink-to-orange "tube" split */
+.logo{font-weight:700;font-size:7.5px;letter-spacing:.22em;text-transform:uppercase;color:#ded8ee;opacity:.92;text-shadow:0 1px 6px rgba(0,0,0,.9);display:flex;align-items:center}
+.logo i{font-style:normal;width:11px;height:11px;flex:0 0 11px;margin-right:4px;background:url(data:image/png;base64,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) center/contain no-repeat;filter:drop-shadow(0 1px 3px rgba(0,0,0,.8))}
+.logo em{font-style:normal;background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 1px 4px rgba(0,0,0,.85))}
 .topright{display:flex;align-items:center;gap:5px}
 .tokchip{background:rgba(12,10,26,.62);border:1px solid rgba(157,144,255,.55);color:#cfc8ff;border-radius:99px;padding:3px 8px;font-size:9.5px;font-weight:700;backdrop-filter:blur(2px)}
 /* profile avatar — opens the existing profile/settings as a sheet */
@@ -182,8 +189,8 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
  <!-- STATE 1 · fresh morning · Wed Jul 29 · streak 5 · ◈140 · +20 unclaimed · 1/3 dreams -->
  <div class="col"><div class="phone"><div class="appbg"></div><div class="starsA"></div><div class="starsB"></div><div class="aurora"></div><div class="scr">
   <div class="sky">
-   <div class="topbar"><div class="logo"><i>☾</i>DreamTube</div><div class="topright"><div class="tokchip">◈ 140</div><div class="ava">R</div></div></div>
-   <div class="greet"><b>Good morning, Ron</b><span>Wed, Jul 29 · the observatory kept watch</span></div>
+   <div class="topbar"><div class="logo"><i></i>Dream<em>Tube</em></div><div class="topright"><div class="tokchip">◈ 140</div><div class="ava">R</div></div></div>
+   <div class="greet"><b>Good morning, Ron</b><span>the observatory kept watch</span></div>
   </div>
   <div class="dgrid">
    <div class="dcard hero span"><div class="heroglint">✦</div><div class="dt">Today</div><b>What did you dream?</b><span>No recall is an entry too</span>
@@ -208,8 +215,8 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
  <!-- STATE 2 · after logging · Wed Jul 29 · streak 6 · ◈160 · +20 claimed · 2/3 dreams -->
  <div class="col"><div class="phone"><div class="appbg"></div><div class="starsA"></div><div class="starsB"></div><div class="aurora"></div><div class="scr">
   <div class="sky">
-   <div class="topbar"><div class="logo"><i>☾</i>DreamTube</div><div class="topright"><div class="tokchip">◈ 160</div><div class="ava">R</div></div></div>
-   <div class="greet"><b>Dream received ✓</b><span>Wed, Jul 29 · tonight's video draft is brewing</span></div>
+   <div class="topbar"><div class="logo"><i></i>Dream<em>Tube</em></div><div class="topright"><div class="tokchip">◈ 160</div><div class="ava">R</div></div></div>
+   <div class="greet"><b>Dream received ✓</b><span>tonight's video draft is brewing</span></div>
   </div>
   <div class="dgrid">
    <div class="dcard hero span"><div class="heroglint">✦</div><div class="dt">Today</div><b>Logged ✓</b><span>“Deep water, calm” · watch the draft when it's ready</span>
@@ -232,8 +239,8 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
  <!-- STATE 3 · milestone celebration · Thu Jul 30 · streak 7 · ◈180 · 3/3 dreams -->
  <div class="col"><div class="phone"><div class="appbg"></div><div class="starsA"></div><div class="starsB"></div><div class="scr dimmed">
   <div class="sky">
-   <div class="topbar"><div class="logo"><i>☾</i>DreamTube</div><div class="topright"><div class="tokchip">◈ 180</div><div class="ava">R</div></div></div>
-   <div class="greet"><b>Dream received ✓</b><span>Thu, Jul 30</span></div>
+   <div class="topbar"><div class="logo"><i></i>Dream<em>Tube</em></div><div class="topright"><div class="tokchip">◈ 180</div><div class="ava">R</div></div></div>
+   <div class="greet"><b>Dream received ✓</b><span>streak night 7</span></div>
   </div>
   <div class="dgrid">
    <div class="dcard hero span"><div class="dt">Today</div><b>Logged ✓ · +20 claimed</b></div>
@@ -250,8 +257,8 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
  <!-- STATE 4 · Monday morning (D2c moment) · Mon Aug 3 · streak 10 · ◈240 -->
  <div class="col"><div class="phone"><div class="appbg"></div><div class="starsA"></div><div class="starsB"></div><div class="aurora"></div><div class="scr">
   <div class="sky">
-   <div class="topbar"><div class="logo"><i>☾</i>DreamTube</div><div class="topright"><div class="tokchip">◈ 240</div><div class="ava">R</div></div></div>
-   <div class="greet"><b>Good morning, Ron</b><span>Mon, Aug 3 · a new week begins</span></div>
+   <div class="topbar"><div class="logo"><i></i>Dream<em>Tube</em></div><div class="topright"><div class="tokchip">◈ 240</div><div class="ava">R</div></div></div>
+   <div class="greet"><b>Good morning, Ron</b><span>a new week begins</span></div>
   </div>
   <div class="dgrid">
    <div class="dcard hero span"><div class="dt">Today</div><b>What did you dream?</b><span>start the new week</span>
@@ -275,7 +282,7 @@ footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);font-si
 </div>
 
 <div class="card"><span class="id">Final look — approve or adjust</span>
- <p style="margin:0;font-size:13px;color:var(--soft)">Round-2 fixes are in: brand mark vs greeting separated, Wizard added as the lead entry, one coherent set of numbers across all four screens, plain streak-survives copy, all streak UI merged into the This Week card, tall swipeable dream tiles, Chamber name candidates under the card, and Profile folded behind the avatar. If it's right, say go and it moves to build. If anything's off, say what to change.</p>
+ <p style="margin:0;font-size:13px;color:var(--soft)">Round-3 fixes are in: the DreamTube mark now carries the real logo — the tiny crescent-play icon plus the logo's pink-to-orange colors on “tube” — and the dates are gone from the in-app headers (the small labels under each phone are just for this review page). Round-2 fixes remain: Wizard leads the entry row, one coherent set of numbers, streak merged into This Week, tall dream tiles, Chamber name candidates, Profile behind the avatar. If it's right, say go and it moves to build. If anything's off, say what to change.</p>
  <label class="rl">Your remarks</label>
  <textarea class="remark" placeholder="Approve, or what to adjust…"></textarea>
  <div class="saverow"><button type="button" class="savebtn" data-comment-label="HOME SYNTHESIS FINAL">Save</button><span class="save-status"></span></div>
