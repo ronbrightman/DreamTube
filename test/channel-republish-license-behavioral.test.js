@@ -516,23 +516,38 @@ test('result.html: Publish/Edit/Delete are hidden (and the feature toggle stays 
   }
 });
 
-// ===== SECOND review round: DreamStore.generateInterpretation had no
-// ownership check, and result.html never gated the interpretation pill by
-// ownership either (both missed by the first round's audit of this same
-// page) =====
+// ===== SECOND round (superseded by Interpretation Wave 1, tracker item
+// for-product-build-interpretation-wave-1--xuftyn): the ownership guard on
+// the OLD generateInterpretation/getInterpretation methods is now a guard
+// on their replacements, DreamStore.requestInterpretationQuestions/
+// generateInterpretationReading/getInterpretations (see js/store.js's own
+// header comment) -- same ownership comparison, same "hidden pill /
+// rejected write / null read for a non-owner" contract, re-verified below
+// against the actual current methods rather than left testing code that no
+// longer exists. THIRD round's `?openInterp=1` deep-link angle is gone
+// entirely too (see test/home-behavioral.test.js's own comment on that
+// mechanism's removal) -- the private-read leak this originally guarded
+// against is re-verified directly against getInterpretations instead,
+// since that's the only path into a saved reading now (no query-param
+// synthetic-click surface left to worry about). =====
 
-/** Mocks interpret-dream.js with a fixed response, matching js/store.js's generateInterpretation's expected {interpretation} shape. */
-function mockInterpretDream(page, text) {
+/** Mocks interpret-dream.js's mode:"reading" response, matching js/store.js's generateInterpretationReading's expected {interpretation} shape. */
+function mockInterpretDreamReading(page, text) {
   return page.route('**/.netlify/functions/interpret-dream', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: text || 'A reflection.' }) });
+    var body = JSON.parse(route.request().postData() || '{}');
+    if (body.mode === 'reading') {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: text || 'A reflection.' }) });
+      return;
+    }
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ questions: [] }) });
   });
 }
 
-test('DreamStore.generateInterpretation refuses to act on another account\'s dream shared in the same browser\'s state.dreams, and the interpretation pill is hidden for it -- both work normally for the real owner', async function (t) {
+test('DreamStore.requestInterpretationQuestions/generateInterpretationReading refuse to act on another account\'s dream shared in the same browser\'s state.dreams, and the interpretation pill is hidden for it -- both work normally for the real owner', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
-  await mockInterpretDream(page, 'Should never be reached by a non-owner.');
+  await mockInterpretDreamReading(page, 'Should never be reached by a non-owner.');
   try {
     // Account A: a dream with no saved interpretation yet.
     await seedAccount(page, {
@@ -550,52 +565,52 @@ test('DreamStore.generateInterpretation refuses to act on another account\'s dre
 
     // Defense in depth: even if invoked directly, js/store.js's own
     // ownership guard must reject the promise and leave the dream untouched.
-    var blockedResult = await page.evaluate(function () {
-      return window.DreamStore.generateInterpretation('not-mine-interp-dream').then(
+    var blockedQuestions = await page.evaluate(function () {
+      return window.DreamStore.requestInterpretationQuestions('not-mine-interp-dream', 'jung').then(
         function (resolved) { return { rejected: false, resolved: resolved }; },
         function (err) { return { rejected: true, message: err.message }; }
       );
     });
-    assert.equal(blockedResult.rejected, true, 'generateInterpretation must reject for another account\'s dream');
+    assert.equal(blockedQuestions.rejected, true, 'requestInterpretationQuestions must reject for another account\'s dream');
+    var blockedReading = await page.evaluate(function () {
+      return window.DreamStore.generateInterpretationReading('not-mine-interp-dream', 'jung', []).then(
+        function (resolved) { return { rejected: false, resolved: resolved }; },
+        function (err) { return { rejected: true, message: err.message }; }
+      );
+    });
+    assert.equal(blockedReading.rejected, true, 'generateInterpretationReading must reject for another account\'s dream');
     var stillUntouched = await page.evaluate(function () { return window.DreamStore.getDream('not-mine-interp-dream'); });
-    assert.equal(stillUntouched.interpretationText, undefined, 'no interpretation must be written by a non-owner\'s attempt');
+    assert.equal(stillUntouched.interpretations, undefined, 'no interpretation must be written by a non-owner\'s attempt');
 
     // Now sign back in as the real owner -- both the pill and the store
-    // function must work normally again, proving this is a real ownership
-    // comparison and not just "always blocked".
+    // functions must work normally again, proving this is a real
+    // ownership comparison and not just "always blocked".
     await switchToAccount(page, 'interpOwnerA');
     await safeGoto(page, baseUrl + '/result.html?id=not-mine-interp-dream');
     assert.equal(await page.locator('#interp-cta-btn').isVisible(), true, 'the interpretation pill must be visible again for the actual owner');
 
     await page.click('#interp-cta-btn');
-    await page.waitForSelector('#interp-ready', { state: 'visible', timeout: 5000 });
-    var bodyText = await page.locator('#interp-text-body').textContent();
+    await page.waitForSelector('.itp-persona-card[data-key="jung"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="jung"]');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    var bodyText = await page.locator('#itp-reading-text').textContent();
     assert.equal(bodyText, 'Should never be reached by a non-owner.');
 
     var allowedResult = await page.evaluate(function () { return window.DreamStore.getDream('not-mine-interp-dream'); });
-    assert.equal(allowedResult.interpretationText, 'Should never be reached by a non-owner.', 'the real owner must still be able to generate an interpretation for their own dream');
+    assert.equal(allowedResult.interpretations.jung.text, 'Should never be reached by a non-owner.', 'the real owner must still be able to generate an interpretation for their own dream');
   } finally {
     await page.close();
   }
 });
 
-// ===== THIRD review round: DreamStore.getInterpretation (the read-only
-// sibling of generateInterpretation) had no ownership check at all --
-// generateInterpretation's own round-2 guard only protects the WRITE path.
-// A dream with an ALREADY-SAVED interpretation from a previous owner sitting
-// in the shared browser's state.dreams could leak that private reflection
-// text to a different account reading it, via result.html's own
-// ?openInterp=1 deep link (home.html's Chamber card) synthesizing a .click()
-// on the interpretation pill even while it's display:none for a non-owner --
-// CSS visibility does not block a JS .click() call from firing its handler. =====
-test('DreamStore.getInterpretation refuses to return another account\'s already-saved interpretation, closing the ?openInterp=1 deep-link leak -- still returns it correctly for the real owner', async function (t) {
+test('DreamStore.getInterpretations refuses to return another account\'s already-saved interpretation (even a pre-wave-1 legacy one) -- still returns it correctly for the real owner', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    // Account A: a dream that ALREADY has a saved, private interpretation --
-    // the exact shape a real previous owner-only generateInterpretation call
-    // would have left behind.
+    // Account A: a dream that ALREADY has a saved, private interpretation
+    // -- the OLD legacy shape (pre-wave-1), the exact kind
+    // ensureInterpretationsMigrated's lazy migration reads.
     await seedAccount(page, {
       username: 'interpReadOwnerA',
       dreams: [{
@@ -613,23 +628,21 @@ test('DreamStore.getInterpretation refuses to return another account\'s already-
     // file's own round-2 test discovered).
     await switchToAccount(page, 'interpReadViewerB');
     await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream');
-    var leaked = await page.evaluate(function () { return window.DreamStore.getInterpretation('already-interpreted-dream'); });
-    assert.equal(leaked, null, 'getInterpretation must return null for a dream that is not the current account\'s own, even when a saved interpretation exists');
+    var leaked = await page.evaluate(function () { return window.DreamStore.getInterpretations('already-interpreted-dream'); });
+    assert.equal(leaked, null, 'getInterpretations must return null for a dream that is not the current account\'s own, even when a saved interpretation exists');
 
-    // Confirms the actual reported exploit path is closed too: the
-    // ?openInterp=1 deep link's synthetic .click() on the (hidden-for-
-    // account-B) pill must not surface account A's saved text anywhere in
-    // the DOM.
-    await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream&openInterp=1');
+    // The pill itself must also stay hidden for account B, and no trace of
+    // the saved text can appear anywhere on the page.
     assert.equal(await page.locator('#interp-cta-btn').isVisible(), false, 'the pill stays hidden for a non-owned dream');
     var pageText = await page.locator('#app').textContent();
     assert.doesNotMatch(pageText, /must never leak to account B/, 'account A\'s saved interpretation text must not appear anywhere on the page for account B');
 
-    // Sign back in as the real owner -- the exact same read must succeed normally.
+    // Sign back in as the real owner -- the exact same read must succeed
+    // normally, migrated into interpretations.classic.
     await switchToAccount(page, 'interpReadOwnerA');
     await safeGoto(page, baseUrl + '/result.html?id=already-interpreted-dream');
-    var ownResult = await page.evaluate(function () { return window.DreamStore.getInterpretation('already-interpreted-dream'); });
-    assert.equal(ownResult.interpretationText, 'Account A\'s private reflection -- must never leak to account B.', 'the real owner must still read their own saved interpretation normally');
+    var ownResult = await page.evaluate(function () { return window.DreamStore.getInterpretations('already-interpreted-dream'); });
+    assert.equal(ownResult.classic.text, 'Account A\'s private reflection -- must never leak to account B.', 'the real owner must still read their own saved interpretation normally, migrated under the classic key');
   } finally {
     await page.close();
   }

@@ -101,8 +101,18 @@
 //   getCharacters()                   -> GET  /api/users/me/characters
 //   saveCharacter(patch)                -> POST /api/users/me/characters[/:id]
 //   deleteCharacter(id)                   -> DELETE /api/users/me/characters/:id
-//   getInterpretation(id)                -> local read of a dream's saved "what this might mean" reflection
-//   generateInterpretation(id)            -> POST /.netlify/functions/interpret-dream (see that file)
+//   getInterpretations(id)                       -> local read of a dream's saved per-persona
+//       readings ({ [personaKey]: {text, at} }) — Interpretation Wave 1 ("The Interpreter's
+//       Chamber," docs/INTERPRETATION_WAVE1_SPEC.md). Lazily migrates a legacy single-blended
+//       interpretationText/interpretationAt (pre-wave-1) into interpretations.classic on first
+//       access — see ensureInterpretationsMigrated below.
+//   requestInterpretationQuestions(id,personaKey) -> POST /.netlify/functions/interpret-dream
+//       { mode:'questions' } — no local write, purely a network passthrough (see that file).
+//   generateInterpretationReading(id,personaKey,qa) -> POST /.netlify/functions/interpret-dream
+//       { mode:'reading' } — on success, writes interpretations[personaKey] and persists.
+//       Replaces the old, now-removed getInterpretation/generateInterpretation (single blended
+//       reading, no persona/questions) — see this file's own INTERPRETATION_WAVE1_SPEC.md-linked
+//       comment near ensureInterpretationsMigrated for the full migration/data-model story.
 //   getTokenStatus()                      -> GET  /.netlify/functions/get-token-status
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
@@ -150,15 +160,18 @@
 //   E399 server returned an error response with no error text at all (should be unreachable — every
 //        E1xx/E2xx path always sets one — but a code exists in case something upstream changes)
 //
-// generateInterpretation() below passes through whatever "E4NN: reason"
-// string interpret-dream.js's response carries as-is (same pattern as
-// E1xx/E2xx above) — see that file's own header comment for the E4xx list.
-// A plain network failure reaching the function at all (no response to read
-// a code from) surfaces as an uncoded "network_error_requesting_interpretation"
-// message instead — result.html's error state doesn't display the raw
-// message either way (see its Direction B error copy), so no dedicated code
-// was reserved for that case the way E303 exists for generate-video's
-// equivalent client-side network failure.
+// requestInterpretationQuestions()/generateInterpretationReading() below
+// (Interpretation Wave 1) pass through whatever "E4NN: reason" string
+// interpret-dream.js's response carries as-is (same pattern as E1xx/E2xx
+// above) — see that file's own header comment for the full E4xx list,
+// including the two new codes this wave added (E408 unknown_persona, E409
+// invalid_mode). A plain network failure reaching the function at all (no
+// response to read a code from) surfaces as an uncoded
+// "network_error_requesting_interpretation" message instead —
+// js/interpret-experience.js's error/fallback states don't display the raw
+// message either way, so no dedicated code was reserved for that case the
+// way E303 exists for generate-video's equivalent client-side network
+// failure.
 
 (function () {
   var KEY = 'dreamtube_state_v1';
@@ -499,6 +512,49 @@
     return null;
   }
   function gradientFor(d) { return STYLE_GRADIENTS[d.style] || STYLE_GRADIENTS.Cinematic; }
+
+  /**
+   * Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md §5) — lazy,
+   * read-time migration of a dream's OLD single-blended
+   * interpretationText/interpretationAt fields (pre-wave-1) into the new
+   * per-persona `interpretations` map, under the synthetic `classic` key.
+   * Deliberately lazy/per-dream rather than a bulk migration pass over
+   * every dream at load time — per the spec's own explicit instruction —
+   * so this only ever does work for a dream someone actually opens the
+   * interpretation surface for.
+   *
+   * Runs (and persists) AT MOST ONCE per dream: once `interpretations` is
+   * a real object, later calls are a no-op read (the `!map.classic &&
+   * dream.interpretationText` guard below only fires while `classic` is
+   * still unset). The legacy interpretationText/interpretationAt fields
+   * are deliberately left in place on the dream record afterward (never
+   * cleared) — they're simply no longer written to going forward; every
+   * new/updated reading is written through `interpretations` only (see
+   * generateInterpretationReading above).
+   *
+   * `classic` is a synthetic persona key with NO matching entry in
+   * js/interpreter-personas.js — js/interpret-experience.js's picker never
+   * shows a "classic" card; a migrated `classic` reading only ever
+   * surfaces via the revisit-without-network path (spec §3.0: "If the
+   * dream already has ≥1 saved interpretation, open on reading phase
+   * showing the most recent one"), same as any other already-saved
+   * persona reading would.
+   *
+   * Returns the dream's `interpretations` map directly (not a copy) —
+   * every call site here already holds a real dream record it's allowed
+   * to mutate (ownership-guarded by its own caller), so returning the
+   * live object (rather than forcing a redundant re-lookup) is safe and
+   * matches this file's existing convention elsewhere (e.g. findDream's
+   * own callers mutate its return value directly).
+   */
+  function ensureInterpretationsMigrated(dream) {
+    if (!dream.interpretations) dream.interpretations = {};
+    if (!dream.interpretations.classic && dream.interpretationText) {
+      dream.interpretations.classic = { text: dream.interpretationText, at: dream.interpretationAt || Date.now(), qa: [] };
+      persist();
+    }
+    return dream.interpretations;
+  }
 
   /**
    * Keyword-based recurring-theme detector for the Profile "pattern
@@ -969,12 +1025,21 @@
       // generated interpretation was reflecting on content that no longer
       // exists — clear it here rather than silently leaving a stale
       // reflection attached to the new caption/style. This puts the dream
-      // back in the "never generated" state, so result.html shows the
-      // plain CTA again and a fresh opt-in tap is required, per the design
-      // spec's privacy/data-model section.
+      // back in the "never generated" state, so the interpretation surface
+      // shows its plain picker again and a fresh opt-in tap is required.
+      // Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md §3.6):
+      // nulls the WHOLE per-persona `interpretations` map, not just the
+      // old single blended interpretationText/interpretationAt fields —
+      // stale readings of changed dream text are wrong for EVERY persona
+      // equally, not just whichever one happened to be generated first.
+      // The legacy fields themselves stay in the patch too (still cleared
+      // the same way) since ensureInterpretationsMigrated's lazy migration
+      // reads them if a dream somehow still has them set without a
+      // migrated `interpretations` map yet.
       var patch = {
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
-        style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null, sourceOperationName: operationName || null
+        style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null,
+        interpretations: null, sourceOperationName: operationName || null
       };
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
@@ -2904,59 +2969,79 @@
     },
 
     /**
-     * Reads a dream's saved "what this might mean" reflection, if any —
-     * purely local, no network call. Returns null if the dream doesn't
-     * exist; otherwise { interpretationText, interpretationAt }, both null
-     * if one has never been generated (or was cleared by a regenerate, see
-     * finalizeDream above).
+     * Reads a dream's saved per-persona interpretation readings —
+     * Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md §5),
+     * replacing the old single-blended getInterpretation. Purely local, no
+     * network call. Returns null if the dream doesn't exist (or isn't this
+     * account's own — same ownership guard every private per-account read
+     * here uses); otherwise `{ [personaKey]: { text, at, qa } }`.
+     *
+     * NOTE on `qa`: the spec's own §5 documents this read shape as
+     * `{ text, at }`, explicitly omitting `qa` ("result.html doesn't need
+     * it") — written when result.html was still expected to be the direct
+     * consumer of interpretation state. Under the actual Direction-B
+     * build, result.html never touches interpretation internals at all
+     * (it only calls InterpretExperience.open()); js/interpret-experience.js
+     * is the real consumer, and it needs `qa` to honor spec §3.5's
+     * "Regenerate... re-runs mode:'reading' with the same persona + same
+     * qa" even on a REVISIT (opened straight to a saved reading, with no
+     * in-session qa in memory yet). Returning `qa` here is therefore a
+     * deliberate, documented superset of the spec's literal read shape,
+     * not a narrowing — same ownership-gated, private-only read either
+     * way, no privacy change (this data was always sitting in the raw
+     * dream record; this just exposes it through the read method that
+     * actually needs it, rather than a second bespoke accessor).
+     *
+     * Runs ensureInterpretationsMigrated first (see below) so a dream that
+     * only ever has the OLD legacy interpretationText/interpretationAt
+     * fields still shows up here, under the synthetic `classic` key, the
+     * moment it's first read this way.
      */
-    getInterpretation: function (id) {
+    getInterpretations: function (id) {
       var d = findDream(id);
-      // Ownership guard (review finding, tracker item for-product-terms-
-      // republish-license-per--fhpcxk, third round): this is generateInterpretation's
-      // own read-only sibling, and was missed when that write path got its
-      // ownerHandle guard in round 2 -- reading is just as much an exposure
-      // here, since interpretationText is a private, per-account reflection
-      // (see this function's own doc comment) that can genuinely be sitting
-      // on a dream record from a DIFFERENT account that previously used this
-      // browser (state.dreams is never cleared on logout/login). Same guard,
-      // same null-for-non-owner contract as an id that doesn't resolve at all.
+      // Ownership guard — same `ownerHandle === myHandle` convention every
+      // other private per-account read/write in this file uses (see
+      // publishDream/deleteDream/setOkToFeatureOnChannels above): a saved
+      // interpretation reading is exactly as private as the old
+      // interpretationText field was, and state.dreams is never cleared on
+      // logout/login, so a dream record from a DIFFERENT account that
+      // previously used this browser can still be sitting in state.dreams.
       var myHandle = state.user ? state.user.handle : null;
       if (!d || !myHandle || d.ownerHandle !== myHandle) return null;
-      return { interpretationText: d.interpretationText || null, interpretationAt: d.interpretationAt || null };
+      var map = ensureInterpretationsMigrated(d);
+      var out = {};
+      Object.keys(map).forEach(function (key) {
+        var entry = map[key];
+        if (entry) out[key] = { text: entry.text, at: entry.at, qa: entry.qa || [] };
+      });
+      return out;
     },
 
     /**
-     * Generates (or regenerates) the dream's "what this might mean"
-     * reflection via interpret-dream.js, POSTing { caption, style } from
-     * the current dream record. Always opt-in — result.html only ever
-     * calls this from a direct user tap (the initial CTA, or the sheet's
-     * Regenerate affordance), never automatically. On success, writes
-     * interpretationText/interpretationAt onto the dream and persists,
-     * then resolves with the saved { interpretationText, interpretationAt }.
-     * On failure, rejects with an Error whose message is the function's own
-     * "E4NN: reason" string (see interpret-dream.js's header comment for
-     * the code list) — result.html treats every rejection here uniformly
-     * as its Direction B error state, isolated from the rest of the Result
-     * screen (video playback, Edit, Publish, Delete are all unaffected).
+     * Requests 1-`maxQuestions` clarifying questions, in a given persona's
+     * voice, via interpret-dream.js's `mode:"questions"` — the first
+     * network call of a fresh interpretation flow (js/interpret-experience.js's
+     * q_loading phase). Purely a network passthrough: NO local write
+     * happens here (questions themselves are never saved — only the final
+     * reading is, via generateInterpretationReading below), matching the
+     * spec's "questions are never a gate" contract — a failure here is
+     * meant to be silently swallowed by the caller, which falls straight
+     * to a direct reading instead of surfacing an error screen (spec §3.2).
      *
-     * This is a private, local-only write: nothing here calls
-     * syncPublishedDreamToFeed, and interpretationText/interpretationAt are
-     * never part of that function's payload (see it above) — so this stays
-     * off the shared feed even for a dream that's already published.
+     * On success resolves `{ questions }` (interpret-dream.js's own
+     * `[ { id, text, chips }, ... ]` shape, passed through as-is). On
+     * failure rejects with an Error whose message is the function's own
+     * "E4NN: reason" string, or an uncoded
+     * "network_error_requesting_interpretation" message for a request that
+     * never reached the function at all — same error-passing convention
+     * the old generateInterpretation used.
      */
-    generateInterpretation: function (id) {
+    requestInterpretationQuestions: function (id, personaKey) {
       var d = findDream(id);
       var myHandle = state.user ? state.user.handle : null;
-      // Ownership guard (review finding, tracker item for-product-terms-
-      // republish-license-per--fhpcxk, second round): same `ownerHandle ===
-      // myHandle` check deleteDream/publishDream/turnImageIntoVideo use --
-      // this is a private, per-account write (see this function's own doc
-      // comment above) onto whatever dream id is passed in, and
-      // result.html?id=<id> is legitimately reachable for another
-      // account's published dream. Rejects the same way an id that
-      // doesn't resolve to any dream at all already does, since a dream
-      // that isn't this account's own is equally not a valid target here.
+      // Ownership guard — same reasoning as getInterpretations above; a
+      // dream that isn't this account's own is not a valid target for a
+      // persona-flavored question call about its content either.
       if (!d || !myHandle || d.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
@@ -2968,17 +3053,63 @@
         // dream saved before this field existed (see finalizeDream's own
         // doc comment) — behaviorally identical to today for every
         // existing dream, and correctly storyText-only for every new one.
-        body: JSON.stringify({ caption: d.storyText || d.caption, style: d.style })
+        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'questions' })
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
+          return { questions: data.questions || [] };
+        });
+      }, function (err) {
+        throw new Error('network_error_requesting_interpretation' + (err && err.message ? ': ' + err.message : ''));
+      });
+    },
+
+    /**
+     * Generates (or regenerates) a specific persona's reading via
+     * interpret-dream.js's `mode:"reading"`, POSTing the dream's own
+     * storyText/caption plus whatever `qa` (answers, may be `[]`) the
+     * questions phase collected. Always opt-in — js/interpret-experience.js
+     * only ever calls this from the r_loading phase (a persona pick
+     * following through the questions flow, "Just interpret it", or an
+     * explicit Regenerate tap), never automatically.
+     *
+     * On success, writes `dream.interpretations[personaKey] = { text, at,
+     * qa }` and persists, then resolves `{ text, at }`. On failure,
+     * rejects the same "E4NN: reason" / "network_error_requesting_interpretation"
+     * way requestInterpretationQuestions above does.
+     *
+     * This is a private, local-only write: nothing here calls
+     * syncPublishedDreamToFeed, and `interpretations` is never part of
+     * that function's payload (see it above, and this file's own
+     * ensureInterpretationsMigrated comment) — so this stays off the
+     * shared feed even for a dream that's already published, same
+     * guarantee the old interpretationText field always had.
+     */
+    generateInterpretationReading: function (id, personaKey, qa) {
+      var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      // Ownership guard — same `ownerHandle === myHandle` check
+      // deleteDream/publishDream/turnImageIntoVideo use: this is a
+      // private, per-account write onto whatever dream id is passed in,
+      // and an interpretation-surface deep link is legitimately reachable
+      // for another account's published dream. Rejects the same way an id
+      // that doesn't resolve to any dream at all already does.
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
+      return fetch('/.netlify/functions/interpret-dream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'reading', qa: qa || [] })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
           var dream = findDream(id);
+          var at = Date.now();
           if (dream) {
-            dream.interpretationText = data.interpretation;
-            dream.interpretationAt = Date.now();
+            var map = ensureInterpretationsMigrated(dream);
+            map[personaKey] = { text: data.interpretation, at: at, qa: qa || [] };
             persist();
           }
-          return { interpretationText: data.interpretation, interpretationAt: dream ? dream.interpretationAt : null };
+          return { text: data.interpretation, at: dream ? at : null };
         });
       }, function (err) {
         throw new Error('network_error_requesting_interpretation' + (err && err.message ? ': ' + err.message : ''));

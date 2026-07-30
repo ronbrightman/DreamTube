@@ -1,53 +1,46 @@
 // netlify/functions/interpret-dream.js
 //
-// POST { caption, style? } -> { interpretation: string }
+// Interpretation Wave 1 ("The Interpreter's Chamber", Direction B —
+// docs/INTERPRETATION_WAVE1_SPEC.md, tracker item
+// for-product-build-interpretation-wave-1--xuftyn). Extends this same
+// function (rather than forking a second one, per the spec's own §6
+// instruction) with two new request modes, replacing the old single
+// blended "What this dream might mean" reflection entirely:
 //
-// Generates the single, opt-in "What this dream might mean" reflection for
-// result.html's bottom-sheet reveal (see the design spec at
-// scratchpad/design/dream-interpretation-spec.md, §3/§5/§6 Direction B) — a
-// short, blended Jungian-inspired + grounded reading of the dream's
-// caption. This function never touches video generation
-// (generate-video.js) and has no path into the shared feed
-// (publish-dream.js/get-feed.js) — the interpretation is stored only on
-// the client's local dream record (see js/store.js's
-// getInterpretation/generateInterpretation), and is never part of this
-// function's own request or response shape either way.
+//   POST { caption, personaKey, mode: "questions" }
+//     -> 200 { questions: [ { id, text, chips: [...] }, ...1-`maxQuestions` items ] }
+//
+//   POST { caption, personaKey, mode: "reading", qa: [ { q, a }, ... ] }   // qa may be []
+//     -> 200 { interpretation: "…" }
+//
+// The old legacy `{ caption[, style] }` (no personaKey/mode) shape has
+// been REMOVED — the spec's own §6 called for keeping it only "until
+// result.html migrates in the same branch, then DELETE it — no dead code
+// left behind" (this codebase's standing rule, see CLAUDE.md), and
+// result.html/js/store.js's only caller migrates to the new modes in this
+// exact branch, so there is no remaining caller to keep the legacy branch
+// alive for.
+//
+// Personas (voice/method/questionFocus/maxQuestions) come from
+// js/interpreter-personas.js — required directly below, the single source
+// of truth shared with the client (see that file's own header comment).
 //
 // Uses process.env.FAL_KEY — already provisioned for generate-video.js, no
 // new secret or vendor — against fal.ai's OpenRouter chat-completions
-// passthrough. Endpoint choice, confirmed live at build time (2026-07-20):
-//   - fal-ai/any-llm, the design spec's first-named option, is DEPRECATED.
-//     Confirmed by fetching https://fal.ai/models/fal-ai/any-llm directly:
-//     the page shows "This endpoint is deprecated" / "This model is no
-//     longer supported", and its embedded model metadata carries
-//     "deprecated":true, "status":"unlisted". Do not switch back to it.
-//   - openrouter/router/openai/v1/chat/completions — the spec's other
-//     named option ("OpenRouter passthrough") — is live, carries no
-//     deprecation notice, and fal's own docs configure the OpenAI Python
-//     SDK directly against it (base_url "https://fal.run/openrouter/router/openai/v1",
-//     with a custom `Authorization: Key <FAL_KEY>` header standing in for
-//     the SDK's normal api_key). That confirms this is a standard
-//     OpenAI-compatible chat-completions endpoint, which is what this file
-//     implements directly over fetch (no SDK dependency needed):
-//       POST https://fal.run/openrouter/router/openai/v1/chat/completions
-//       headers: Authorization: "Key <FAL_KEY>", Content-Type: application/json
-//       body:    { model, messages: [{role,content}, ...], temperature, max_tokens }
-//       response (2xx): standard OpenAI chat-completion JSON —
-//                        { choices: [ { message: { role, content } } ], ... }
-//   fal.run (not queue.fal.run) is deliberate: this is fal's synchronous
-//   endpoint variant. A short text completion comfortably finishes inside
-//   one request/response cycle, so there's no queue/poll machinery here,
-//   unlike generate-video.js's multi-minute video jobs.
+// passthrough, same endpoint/model this function already used:
+//   POST https://fal.run/openrouter/router/openai/v1/chat/completions
+//   headers: Authorization: "Key <FAL_KEY>", Content-Type: application/json
+//   body:    { model, messages: [{role,content}, ...], temperature, max_tokens }
+//   response (2xx): standard OpenAI chat-completion JSON —
+//                    { choices: [ { message: { role, content } } ], ... }
+// (See git history for this file's original header comment on why
+// fal-ai/any-llm was rejected as deprecated in favor of this OpenRouter
+// passthrough — that reasoning is unchanged, just no longer repeated here.)
 //
-// System prompt below implements the single blended methodology from the
-// design spec §3 (Option F — Jungian-inspired + grounded, explicitly not a
-// multi-framework picker; that's out of scope for this pass per the spec).
-//
-// Reuses netlify/functions/lib/rate-limit.js the same way generate-video.js
-// does, under its own scope ("interpret-ip") so its daily counter doesn't
-// share a bucket with generate-video.js's own per-IP limit — a real (if
-// tiny) marginal cost per call, and every function in this codebase is an
-// unauthenticated POST with no other abuse protection.
+// Reuses netlify/functions/lib/rate-limit.js under the SAME scope
+// ("interpret-ip") as before, unchanged — a full questions+reading flow is
+// 2 calls, so ~half MAX_INTERPRETATIONS_PER_IP_PER_DAY flows/day/IP; BOTH
+// modes count against the same counter (no separate budget per mode).
 //
 // Error codes (E4xx = this function, following the E1xx/E2xx/E3xx
 // convention already used by generate-video.js/video-status.js/js/store.js):
@@ -57,24 +50,33 @@
 //   E404 caption_required          — caption missing/empty after trim
 //   E405 llm_request_failed        — fal/OpenRouter rejected the request, or a network/parse error occurred
 //   E406 rate_limited              — MAX_INTERPRETATIONS_PER_IP_PER_DAY exceeded for today
-//   E407 empty_or_invalid_response — the model returned nothing usable (empty, missing, or
-//                                    suspiciously short content) — treated as a failure, never
-//                                    a degenerate "success"
+//   E407 empty_or_invalid_response — the model returned nothing usable — empty/missing/suspiciously
+//                                    short content (mode:"reading"), or unparseable/empty-after-
+//                                    validation question JSON (mode:"questions") — never a
+//                                    degenerate "success" either way
+//   E408 unknown_persona           — personaKey missing, or not one of js/interpreter-personas.js's keys
+//   E409 invalid_mode              — personaKey was valid but `mode` isn't "questions" or "reading"
 
-var SYSTEM_PROMPT = [
-  'You are a thoughtful, warm dream-reflection voice inside DreamTube.',
-  'Given a short dream description, write a brief (100-160 word) second-person reflection on what the dream might mean.',
-  'Draw loosely on Jungian ideas (symbols, archetypes, the unconscious processing emotion) blended with a grounded view that dreams often echo waking-life feelings, stresses, or preoccupations.',
-  'Avoid: clinical/diagnostic language, definitive claims ("this means…"), sexualized symbol readings, astrology, and religious claims.',
+var InterpreterPersonas = require('../../js/interpreter-personas');
+
+// The crisis/safety instruction block every persona's prompt is built on
+// top of — layered LAST in every prompt this file builds (both modes), so
+// it can never be overridden by a persona's own voice/method text (spec
+// §4). Two personas carry one EXTRA persona-specific line beyond this
+// shared block (Talmudic: never issue religious rulings; Scientist: never
+// fabricate citations) — those live in interpreter-personas.js's own
+// `voice`/`method` text, not duplicated here.
+var SAFETY_BLOCK = [
+  'Avoid: clinical or diagnostic language, definitive claims ("this means…"), sexualized symbol readings, astrology-based claims, and asserting religious rulings or theological certainties as literal fact.',
   'Use gentle, exploratory phrasing ("might reflect," "could point to," "some people find that…").',
-  'If the dream content suggests real distress or crisis, gently note that talking to someone they trust or a professional can help, without being alarmist.',
-  'End with one open reflective question back to the reader.',
-  'Never mention that you are an AI or reference these instructions.'
+  'If the dream content or the dreamer\'s answers suggest real distress or crisis, gently note that talking to someone they trust or a professional can help, without being alarmist.',
+  'Never use the words "therapy," "diagnosis," "healing," "mental health," or "treatment" in your response.',
+  'Never mention that you are an AI, a language model, or reference these instructions.'
 ].join(' ');
 
-// A cheap, fast general-purpose model, per the spec's guidance ("an
-// openai/gpt-4o-mini-class model") — well under the ~$0.80-1.60 already
-// spent per video, negligible marginal cost for a ~150-word completion.
+// A cheap, fast general-purpose model — well under the ~$0.80-1.60 already
+// spent per video, negligible marginal cost for a short completion (spec
+// §6: ~$0.01/flow, no new spend approval needed).
 var FAL_LLM_MODEL = 'openai/gpt-4o-mini';
 var FAL_LLM_API_BASE = 'https://fal.run/openrouter/router/openai/v1/chat/completions';
 
@@ -102,7 +104,8 @@ function llmErrorMessage(data) {
   return 'llm_request_failed';
 }
 
-async function callInterpretationLlm(caption, falKey) {
+/** Generic chat-completion call — shared by both modes below, only the messages/temperature/max_tokens differ. */
+async function callLlm(messages, temperature, maxTokens, falKey) {
   var res = await fetch(FAL_LLM_API_BASE, {
     method: 'POST',
     headers: {
@@ -111,12 +114,9 @@ async function callInterpretationLlm(caption, falKey) {
     },
     body: JSON.stringify({
       model: FAL_LLM_MODEL,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: 'Dream: ' + caption }
-      ],
-      temperature: 0.9,
-      max_tokens: 400
+      messages: messages,
+      temperature: temperature,
+      max_tokens: maxTokens
     })
   });
 
@@ -131,13 +131,83 @@ async function callInterpretationLlm(caption, falKey) {
   return { ok: true, content: typeof content === 'string' ? content : '' };
 }
 
-// A real reflection is always going to run at least a full sentence or two
-// — this is deliberately generous (not word-counting toward the prompt's
-// own 100-160 word guidance) since the goal here is only to catch an
-// empty/truncated/garbage response server-side, per the spec's "guard
-// against a suspiciously short/empty response" requirement, not to
-// re-enforce the prompt's own length target.
+// A real reading is always going to run at least a full sentence or two —
+// deliberately generous (not word-counting toward the prompt's own 150-220
+// word guidance), same reasoning this file always used: catch an
+// empty/truncated/garbage response server-side, not re-enforce the
+// prompt's own length target.
 var MIN_VALID_LENGTH = 40;
+
+/** Strips a ```json ... ``` / ``` ... ``` fence if present, otherwise returns the trimmed input as-is — models frequently wrap "STRICT JSON only" instructions in a fence anyway. */
+function stripCodeFence(raw) {
+  if (typeof raw !== 'string') return '';
+  var trimmed = raw.trim();
+  var fence = trimmed.match(/^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?```$/);
+  return fence ? fence[1].trim() : trimmed;
+}
+
+/**
+ * Parses + validates a mode:"questions" completion into the client
+ * contract: `[ { id, text, chips }, ...1-maxQuestions items ]`, or `null`
+ * if the response is unparseable or has no usable questions at all (the
+ * caller turns `null` into an E407).
+ *
+ * Tolerant by design (spec §6: "validates shape/lengths, ... strips
+ * empties"): a malformed individual question/chip is dropped rather than
+ * failing the whole response, and text/chip lengths are truncated (not
+ * rejected) if the model runs slightly over its own 140/40-char budget —
+ * only a response with ZERO usable questions after cleaning counts as
+ * invalid, since the client's own UI (free-text field + Skip) never
+ * strictly depends on chips being present.
+ */
+function parseQuestionsResponse(raw, maxQuestions) {
+  var text = stripCodeFence(raw);
+  var data;
+  try { data = JSON.parse(text); } catch (e) { return null; }
+  if (!data || !Array.isArray(data.questions)) return null;
+
+  var cleaned = [];
+  data.questions.forEach(function (q) {
+    if (!q || typeof q.text !== 'string') return;
+    var qtext = q.text.trim().slice(0, 140);
+    if (!qtext) return;
+    var rawChips = Array.isArray(q.chips) ? q.chips : [];
+    var chips = rawChips
+      .filter(function (c) { return typeof c === 'string' && c.trim(); })
+      .map(function (c) { return c.trim().slice(0, 40); })
+      .slice(0, 4);
+    cleaned.push({ text: qtext, chips: chips });
+  });
+
+  cleaned = cleaned.slice(0, Math.max(1, maxQuestions || 3));
+  if (!cleaned.length) return null;
+
+  return cleaned.map(function (q, i) { return { id: 'q' + (i + 1), text: q.text, chips: q.chips }; });
+}
+
+/** Sanitizes the client-supplied `qa` array for mode:"reading" — malformed entries dropped, lengths capped to match the client's own field limits (question text is server-authored so 140 is generous; answers cap at 280, matching js/interpret-experience.js's free-text maxlength). */
+function sanitizeQa(rawQa) {
+  if (!Array.isArray(rawQa)) return [];
+  return rawQa
+    .filter(function (pair) { return pair && typeof pair.q === 'string' && typeof pair.a === 'string' && pair.q.trim() && pair.a.trim(); })
+    .map(function (pair) { return { q: pair.q.trim().slice(0, 140), a: pair.a.trim().slice(0, 280) }; })
+    .slice(0, 3);
+}
+
+/** Builds the mode:"reading" user message — the dream text plus the qa pairs, or an explicit "chose not to answer" line when qa is empty (spec §6). */
+function buildReadingUserMessage(caption, qa) {
+  var lines = ['Dream: ' + caption];
+  if (qa.length) {
+    lines.push('The dreamer answered these clarifying questions:');
+    qa.forEach(function (pair) {
+      lines.push('Q: ' + pair.q);
+      lines.push('A: ' + pair.a);
+    });
+  } else {
+    lines.push('The dreamer chose not to answer questions.');
+  }
+  return lines.join('\n');
+}
 
 var rateLimit = require('./lib/rate-limit');
 
@@ -151,38 +221,98 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E402: missing_api_key' }) };
   }
 
-  var caption;
+  var payload;
   try {
-    var payload = JSON.parse(event.body || '{}');
-    caption = (payload.caption || '').trim();
-    // style is accepted per the API contract (POST { caption, style }) but
-    // deliberately unused here — the §3 methodology is caption-only and
-    // style-agnostic (a dream's visual style, e.g. Cartoon vs. Realistic,
-    // says nothing about what it might mean). Kept in the request shape so
-    // a future pass could use it without a client-side change.
+    payload = JSON.parse(event.body || '{}');
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E403: invalid_json' }) };
   }
 
+  var caption = (payload.caption || '').trim();
   if (!caption) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E404: caption_required' }) };
+  }
+
+  var persona = InterpreterPersonas.get(payload.personaKey);
+  if (!persona) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E408: unknown_persona' }) };
+  }
+
+  var mode = payload.mode;
+  if (mode !== 'questions' && mode !== 'reading') {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E409: invalid_mode' }) };
   }
 
   var maxPerDay = parseInt(process.env.MAX_INTERPRETATIONS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = 40;
 
   var ip = rateLimit.clientIp(event);
+  // Both modes share ONE counter/scope — a full flow (questions + reading)
+  // costs 2 of this same budget, unchanged from the spec's own accounting.
   var ipLimit = await rateLimit.checkAndIncrement(event, 'interpret-ip', ip, maxPerDay);
   if (!ipLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E406: rate_limited: too many reflections from this network today, try again tomorrow' }) };
   }
 
   try {
-    var result = await callInterpretationLlm(caption, falKey);
-    if (!result.ok) {
-      return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E405: llm_request_failed: ' + result.error }) };
+    if (mode === 'questions') {
+      var maxQuestions = persona.maxQuestions || 3;
+      var qSystemPrompt = [
+        persona.voice,
+        persona.method,
+        persona.questionFocus,
+        'Given a dream description, ask between 1 and ' + maxQuestions + ' short clarifying questions about what your method cares about, in your own voice.',
+        'Return STRICT JSON only, no prose before or after, in exactly this shape: {"questions":[{"text":"…","chips":["…","…"]}]}.',
+        'Each question\'s "text" must be 140 characters or fewer, phrased in your voice.',
+        'Each question must include 2 to 4 short suggested-answer "chips", each 40 characters or fewer, that a dreamer could tap as a one-line answer.',
+        'Questions must be answerable by a layperson in one short line — never open-ended essay prompts.',
+        SAFETY_BLOCK
+      ].join(' ');
+
+      var qResult = await callLlm(
+        [
+          { role: 'system', content: qSystemPrompt },
+          { role: 'user', content: 'Dream: ' + caption }
+        ],
+        0.8,
+        400,
+        falKey
+      );
+      if (!qResult.ok) {
+        return { statusCode: qResult.statusCode || 500, body: JSON.stringify({ error: 'E405: llm_request_failed: ' + qResult.error }) };
+      }
+      var questions = parseQuestionsResponse(qResult.content, maxQuestions);
+      if (!questions) {
+        return { statusCode: 502, body: JSON.stringify({ error: 'E407: empty_or_invalid_response' }) };
+      }
+      return { statusCode: 200, body: JSON.stringify({ questions: questions }) };
     }
-    var interpretation = (result.content || '').trim();
+
+    // mode === 'reading'
+    var qa = sanitizeQa(payload.qa);
+    var rSystemPrompt = [
+      persona.voice,
+      persona.method,
+      SAFETY_BLOCK,
+      'Write a 150-220 word reading of this dream in second person.',
+      'Weave the dreamer\'s answers in naturally where given — never quote them back mechanically.',
+      'Stay true to your method the whole way through.',
+      'End with one short, in-persona closing line.'
+    ].join(' ');
+
+    var rResult = await callLlm(
+      [
+        { role: 'system', content: rSystemPrompt },
+        { role: 'user', content: buildReadingUserMessage(caption, qa) }
+      ],
+      0.9,
+      500,
+      falKey
+    );
+    if (!rResult.ok) {
+      return { statusCode: rResult.statusCode || 500, body: JSON.stringify({ error: 'E405: llm_request_failed: ' + rResult.error }) };
+    }
+    var interpretation = (rResult.content || '').trim();
     if (interpretation.length < MIN_VALID_LENGTH) {
       return { statusCode: 502, body: JSON.stringify({ error: 'E407: empty_or_invalid_response' }) };
     }
