@@ -78,20 +78,6 @@ var tfDays=0;
 function view(){ return tfDays? DAYS.slice(-tfDays) : DAYS; }
 function fmt(v,kind){ if(v==null)return "–"; if(kind==="m")return "$"+(v>=100?v.toFixed(0):v.toFixed(2)); return v%1?v.toFixed(1):v.toLocaleString(); }
 function sum(days,k){var s=0,any=false;days.forEach(function(d){if(d[k]!=null){s+=d[k];any=true}});return any?s:null}
-function mini(title,vals,kind,foot){
- var W=200,H=64,n=vals.length,max=0;
- vals.forEach(function(v){if(v!=null&&v>max)max=v});
- var bw=Math.max(2,Math.floor(W/n)-2);
- var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
- vals.forEach(function(v,i){
-  var x=i*(W/n)+1;
-  if(v==null){svg+='<rect class="nullband" x="'+x+'" y="0" width="'+bw+'" height="'+H+'"/>';return;}
-  var h=max?Math.max(v>0?3:0,Math.round((v/max)*(H-6))):0;
-  svg+='<rect class="bar'+(kind==="m"?" money":"")+'" x="'+x+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" data-tip="'+DAYSLBL[ (DAYS.length-vals.length)+i ]+': '+fmt(v,kind)+'"/>';
- });
- svg+='</svg>';
- var latest=null;for(var i=vals.length-1;i>=0;i--){if(vals[i]!=null){latest=vals[i];break}}
- return '<div class="mini"><div class="t">'+title+'</div><div class="big">'+fmt(sum? null:null,kind)+'</div></div>'; }
 var DAYSLBL=DAYS.map(function(d){return d.date.slice(5)});
 function card(title,vals,kind,agg){
  var W=200,H=64,n=vals.length,max=0;
