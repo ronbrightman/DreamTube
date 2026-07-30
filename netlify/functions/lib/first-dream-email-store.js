@@ -122,7 +122,53 @@ async function markSentOnce(event, username, dreamId) {
   });
 
   if (result.ok) return { ok: true, claimId: claimId };
-  if (result.skipped) return { ok: false, alreadySent: true };
+
+  // ── IS THIS SKIP OUR OWN WRITE? (tracker.html's
+  //    for-product-bug-founder-affects-all-funn-0efe7t item, round 5) ──
+  //
+  // blobs-retry returns `skipped` whenever an attempt's fresh read showed an
+  // existing record, because `mutate` above answers "something is already
+  // there, nothing to write." That existing record has TWO possible origins,
+  // and this used to collapse both into alreadySent:
+  //   (a) a genuinely separate, earlier claim for this account -- that caller
+  //       is the one sending, so this call correctly must not; or
+  //   (b) THIS SAME CALL's own write from an earlier attempt in this very
+  //       loop. Attempt 1's write can land for real while attempt 1's own
+  //       verify-read races it and comes back empty (Blobs is only eventually
+  //       consistent -- see blobs-retry.js's header comment); the loop then
+  //       retries, and attempt 2's fresh read is the one that finally catches
+  //       up -- seeing OUR record, and skipping on it.
+  // In case (b) nobody has claimed anything but us, so reporting alreadySent
+  // is exactly wrong twice over: sendIfEligible treats any !ok as "don't
+  // send," so the account's one-time-ever retention email is skipped, AND the
+  // once-ever marker stays burned behind it (releaseFailedSend is only ever
+  // called by a caller that believes it WON), so it can never be retried. It
+  // is also invisible in a log review, being indistinguishable from an
+  // ordinary, correct duplicate-send prevention.
+  //
+  // This is the identical hazard the exhaustion branch below already guards
+  // via its final confirming read, just reachable one step earlier, and the
+  // identical guard lib/entitlements.js's claimDailyTokens already applies on
+  // its OWN skip branch ("if (result.current.lastClaimAttemptId === attemptId)
+  // return claimed:true"), for the identical reason, in a path where getting
+  // it wrong costs real tokens. This function is the same shape and only ever
+  // got half of it.
+  //
+  // Still fails CLOSED in every ambiguous case: `claimId` is truthy ONLY if
+  // this call's own `mutate` actually ran and built a record to write, so a
+  // call that skipped on its very first read (never minting a claimId) can
+  // never match -- which is what keeps a legacy, pre-claimId record shape
+  // (`current.claimId` undefined) from reading as `undefined === undefined`
+  // and wrongly reporting a win against someone else's already-sent email.
+  if (result.skipped) {
+    if (claimId && result.current && result.current.claimId === claimId) {
+      console.error('first-dream-email-store: retry loop skipped for ' + key
+        + ', but the record it skipped on carries OUR OWN claim -- treating the claim as won'
+        + ' (blobs-retry trace: ' + JSON.stringify(result.attempts || []) + ')');
+      return { ok: true, claimId: claimId };
+    }
+    return { ok: false, alreadySent: true };
+  }
 
   // ── FINAL CONFIRMING READ (tracker.html's
   //    for-product-bug-founder-affects-all-funn-0efe7t item, round 4) ──

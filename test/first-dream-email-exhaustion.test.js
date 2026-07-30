@@ -232,6 +232,64 @@ test('markSentOnce: the ordinary uncontended path is unchanged -- first call win
   assert.equal(second.alreadySent, true, 'per-ACCOUNT, not per-dream, and case-insensitive');
 });
 
+// ===== markSentOnce: the SKIP branch's own self-clobber check (round 5) =====
+//
+// Round 4 fixed the EXHAUSTION branch ("no verify-read ever saw our claim")
+// but left the identical hazard live one step earlier, on the SKIP branch.
+// blobs-retry's SKIP fires whenever a fresh read shows an existing record --
+// and that record can be OUR OWN just-landed write from a previous attempt in
+// this very same call, seen by a read that finally caught up after the
+// verify-read that raced it did not. Reporting that as alreadySent silently
+// burns a real account's one-time-ever retention email with nothing sent
+// behind it, and (unlike a lost race) nobody else is sending either.
+
+test('markSentOnce: a SKIP caused by OUR OWN previous attempt\'s just-landed write is a WIN, not alreadySent', async function () {
+  // Attempt 1: read sees nothing (call 1) -> write lands for real -> its own
+  // verify-read lags and sees nothing (call 2) -> verify fails, loop retries.
+  // Attempt 2: this read (call 3) falls through to the real store and now
+  // sees attempt 1's OWN record -> mutate returns SKIP.
+  mockBlobs.setReadOverride(STORE_NAME, function (key, callIndex) {
+    if (callIndex <= 2) return { value: undefined };
+    return null; // fall through to what genuinely landed
+  });
+
+  var result = await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'SelfSkipUser', 'dream-1');
+
+  assert.equal(result.ok, true, 'the record causing the SKIP carries THIS call\'s own claimId -- nobody else claimed anything, so this call holds the claim and must send');
+  assert.ok(result.claimId, 'the winning claimId must come back so a failed Resend send can still release it');
+  assert.equal(result.alreadySent, undefined);
+
+  mockBlobs.clearReadOverride(STORE_NAME);
+  var { getStore } = require('@netlify/blobs');
+  var persisted = await getStore({ name: STORE_NAME }).get('selfskipuser', { type: 'json' });
+  assert.equal(persisted.claimId, result.claimId, 'the claim reported back must be the one actually sitting in the store');
+});
+
+test('markSentOnce: a SKIP caused by a genuinely DIFFERENT caller\'s record still reports alreadySent', async function () {
+  mockBlobs.seed(STORE_NAME, 'contendeduser', {
+    username: 'contendeduser', dreamId: 'other', sentAt: Date.now(), claimId: 'a-different-callers-claim'
+  });
+
+  var result = await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'ContendedUser', 'dream-1');
+
+  assert.equal(result.ok, false, 'this must NOT overcorrect into treating every skip as ours');
+  assert.equal(result.alreadySent, true);
+  assert.equal(result.error, undefined);
+});
+
+test('markSentOnce: a SKIP caused by a legacy record with NO claimId at all reports alreadySent, never a win', async function () {
+  // Pre-fix record shape (written before claimId existed). A naive
+  // `current.claimId === claimId` check would compare undefined to undefined
+  // -- for a call whose mutate never even ran, claimId is undefined too --
+  // and wrongly report a win against someone else's already-sent email.
+  mockBlobs.seed(STORE_NAME, 'legacyuser', { username: 'legacyuser', dreamId: 'old', sentAt: Date.now() });
+
+  var result = await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'LegacyUser', 'dream-1');
+
+  assert.equal(result.ok, false, 'an undefined claimId on both sides must never read as "this is mine"');
+  assert.equal(result.alreadySent, true);
+});
+
 test('markSentOnce: releaseFailedSend still undoes only the claim it was given, including one won via the final confirming read', async function () {
   mockBlobs.setReadOverride(STORE_NAME, function (key, callIndex) {
     if (callIndex <= 6) return { value: undefined };
