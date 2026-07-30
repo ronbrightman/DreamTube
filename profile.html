@@ -114,12 +114,7 @@
     </div>
   </div>
   <!-- cache-bust 2026-07-29T19:20Z: force fresh digest after Netlify dedup served stale content -->
-  <div class="bottom-nav">
-    <a class="nav-item" href="home.html"><div class="nav-icon icon"></div>Home</a>
-    <a class="nav-item" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
-    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item active" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
-  </div>
+  <div class="bottom-nav" id="bottom-nav-mount"></div>
 
   <div class="sheet-overlay" id="sheet-account-overlay">
     <div class="sheet">
@@ -487,8 +482,11 @@
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/bottom-nav.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  BottomNav.mount('bottom-nav-mount', { active: 'profile' });
   // Install-to-home-screen nudge for a real-browser visitor's 2nd+ time on
   // Profile (tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5,
   // absorbing home-screen-shortcut-a2hs-nudge-founder--yylzoq's "repeat
@@ -512,10 +510,6 @@
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
   document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
-  var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.home;
-  navIcons[1].innerHTML = Icons.compass;
-  navIcons[2].innerHTML = Icons.person;
   document.getElementById('feedback-cta-icon').innerHTML = Icons.megaphone;
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
