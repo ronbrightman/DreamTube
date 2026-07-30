@@ -26,6 +26,9 @@ var mockWebPush = require('./helpers/mock-web-push');
 mockWebPush.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's test-process guard lets its analytics fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 var jobOwners = require('../netlify/functions/lib/job-owners');
 var accountStore = require('../netlify/functions/lib/account-store');
 var pushSubscriptionStore = require('../netlify/functions/lib/push-subscription-store');
@@ -44,6 +47,7 @@ function installPosthogSpy() {
     }
     throw new Error('unexpected fetch to ' + urlStr);
   };
+  markInstalledFetchAsTestDouble();
 }
 
 var opCounter = 0;

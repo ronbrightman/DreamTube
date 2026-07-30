@@ -26,13 +26,36 @@ var accountStore = require('../netlify/functions/lib/account-store');
 var pushSubscriptionStore = require('../netlify/functions/lib/push-subscription-store');
 var sendDailyClaimPushes = require('../netlify/functions/send-daily-claim-pushes');
 
+var realFetch = global.fetch;
+
+/**
+ * Blocks real outbound network for every test in this file (tracker.html's
+ * for-product-bug-founder-affects-all-funn-0efe7t item, round 4).
+ *
+ * This file already mocks web-push, but nothing mocked
+ * lib/push-sender.js's OTHER outbound call: its `push_sent` PostHog fire via
+ * lib/posthog-capture.js, whose POSTHOG_KEY is require()'d from a checked-in
+ * file rather than an env var. So every `npm test` run POSTed 5 REAL
+ * `push_sent` events for the fixture usernames alice/frank/grace/henry into
+ * the founder's REAL production PostHog project. Those exact four fixture
+ * names then showed up in a production analytics review as "395 push_sent in
+ * 16h to 4 test-fixture accounts -- dedup store not working", which was read
+ * as a production dedup bug. It was this file.
+ *
+ * lib/posthog-capture.js now refuses to fire under a test runner at all (its
+ * own TEST-ENVIRONMENT GUARD); this stub is the belt to that lib's braces.
+ */
 test.beforeEach(function () {
+  global.fetch = async function (url) {
+    throw new Error('unexpected real network call in a test: ' + String(url));
+  };
   mockBlobs.reset();
   mockWebPush.reset();
   process.env.VAPID_PRIVATE_KEY = 'test-private-key';
 });
 
 test.after(function () {
+  global.fetch = realFetch;
   delete process.env.VAPID_PRIVATE_KEY;
 });
 

@@ -12,6 +12,9 @@ var test = require('node:test');
 var assert = require('node:assert/strict');
 
 var realFetch = global.fetch;
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's own test-process guard lets these fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 var posthogCapture = require('../netlify/functions/lib/posthog-capture');
 var analyticsConfig = require('../js/analytics-config');
 
@@ -31,6 +34,7 @@ function installFetchSpy(status) {
       text: async function () { return status && status >= 300 ? 'posthog error body' : 'ok'; }
     };
   };
+  markInstalledFetchAsTestDouble();
   return calls;
 }
 
@@ -85,6 +89,7 @@ test('captureEvent: a non-2xx response from PostHog -> { ok:false, error }, neve
 
 test('captureEvent: fetch itself rejecting (network failure) -> { ok:false, error }, never throws', async function () {
   global.fetch = async function () { throw new Error('ECONNRESET'); };
+  markInstalledFetchAsTestDouble();
   var res = await posthogCapture.captureEvent({ event: 'video_created', distinct_id: 'alice' });
   assert.equal(res.ok, false);
   assert.match(res.error, /posthog_network_failure/);

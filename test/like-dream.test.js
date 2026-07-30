@@ -20,6 +20,9 @@ var { getStore } = require('@netlify/blobs');
 var handler = require('../netlify/functions/like-dream').handler;
 
 var realFetch = global.fetch;
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's test-process guard lets its analytics fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 
 function installPostHogSpy(opts) {
   opts = opts || {};
@@ -31,6 +34,7 @@ function installPostHogSpy(opts) {
     if (opts.fails) return { ok: false, status: 500, json: async function () { return {}; }, text: async function () { return 'down'; } };
     return { ok: true, status: 200, json: async function () { return {}; }, text: async function () { return 'ok'; } };
   };
+  markInstalledFetchAsTestDouble();
   return calls;
 }
 

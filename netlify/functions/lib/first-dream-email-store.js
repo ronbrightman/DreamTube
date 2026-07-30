@@ -81,14 +81,19 @@ async function hasSent(event, username) {
  * racer never sends a duplicate — see header comment for why this is now
  * genuinely race-safe, not just "check then act."
  *
- * On the rare case every retry attempt's verify-read fails to confirm
- * OUR OWN write (blobs-retry.js's bounded loop exhausted — an eventually-
- * consistent read that never converged in time, or a true, unresolvable
- * clobber), this fails CLOSED: `{ ok:false, error:'exhausted' }`, treated
- * by every caller exactly like `alreadySent` (skip the send) — never
- * treated as "safe to send anyway." A real account very rarely, honestly
- * missing this one email is an acceptable outcome; a duplicate send to a
- * real inbox is not.
+ * When every retry attempt's verify-read fails to confirm OUR OWN write
+ * (blobs-retry.js's bounded loop exhausted), this makes ONE final
+ * confirming read before deciding — see the FINAL CONFIRMING READ comment
+ * in the body for the full reasoning and the in-codebase precedent
+ * (entitlements.js's claimDailyTokens does the identical thing on the
+ * identical branch). That read resolves to `{ ok:true }` only if the store
+ * is showing OUR own per-attempt-random claimId; to `{ ok:false,
+ * alreadySent:true }` if a different, legitimate claim is what actually
+ * landed; and otherwise this still fails CLOSED: `{ ok:false,
+ * error:'exhausted' }`, treated by every caller exactly like `alreadySent`
+ * (skip the send) — never treated as "safe to send anyway." A real account
+ * very rarely, honestly missing this one email is an acceptable outcome; a
+ * duplicate send to a real inbox is not.
  */
 async function markSentOnce(event, username, dreamId) {
   var key = normalizeUsername(username);
@@ -119,10 +124,76 @@ async function markSentOnce(event, username, dreamId) {
   if (result.ok) return { ok: true, claimId: claimId };
   if (result.skipped) return { ok: false, alreadySent: true };
 
+  // ── FINAL CONFIRMING READ (tracker.html's
+  //    for-product-bug-founder-affects-all-funn-0efe7t item, round 4) ──
+  //
+  // Exhaustion above means no attempt's verify-read ever came back showing
+  // OUR claimId. That covers two genuinely different situations, and the old
+  // code collapsed both into 'exhausted':
+  //   (a) our write never landed, or a concurrent racer's write is the one
+  //       that did -- correctly "we did not claim this";
+  //   (b) our write DID land and simply hadn't propagated to any of the
+  //       loop's verify-reads yet. Netlify's own documented guarantee for
+  //       Blobs is that a write reaches all edge locations "within 60
+  //       seconds"; this loop's entire wall-clock budget is (maxAttempts-1)
+  //       x retryDelayMs, i.e. ~400ms at the shared defaults -- 0.7% of that
+  //       window. A read that hasn't caught up inside 400ms is an ordinary
+  //       outcome, not an exotic one.
+  // In case (b) the marker is genuinely, durably ours; treating it as
+  // 'exhausted' both skips an email the account should have received AND
+  // leaves the once-ever marker burned with no send behind it, since
+  // releaseFailedSend is only ever called by a caller that believes it WON
+  // the claim. That is the worst of both outcomes.
+  //
+  // So: one more read, after one more propagation delay, asking the only
+  // question that actually matters -- is the record now visible, and is the
+  // claimId on it OURS. This is not a new invention or a loosening of the
+  // guarantee: lib/entitlements.js's claimDailyTokens already does exactly
+  // this on exactly this branch ("var finalRead = await getEntitlement(...);
+  // if (finalRead.lastClaimAttemptId === attemptId) return claimed:true"),
+  // for exactly this reason, in a path where getting it wrong costs real
+  // tokens. This function is the same shape and simply never got it.
+  //
+  // Still fails CLOSED in every ambiguous case, so the "never double-send"
+  // guarantee is untouched -- ok:true here requires the store to be showing
+  // OUR OWN freshly-minted, per-attempt-random claimId. A concurrent racer
+  // that won instead has necessarily overwritten it with its own, which
+  // reads as alreadySent (correct: that racer is sending, we must not).
+  // Nothing visible at all stays 'exhausted' (correct: no evidence we hold
+  // the claim, so refuse).
+  try {
+    if (blobsRetry.DEFAULT_RETRY_DELAY_MS > 0) {
+      await new Promise(function (resolve) { setTimeout(resolve, blobsRetry.DEFAULT_RETRY_DELAY_MS); });
+    }
+    connectLambda(event);
+    var finalRead = await store().get(key, { type: 'json' });
+    if (finalRead && claimId && finalRead.claimId === claimId) {
+      console.error('first-dream-email-store: retry loop exhausted for ' + key
+        + ', but a final confirming read shows OUR OWN claim landed -- treating the claim as won'
+        + ' (blobs-retry trace: ' + JSON.stringify(result.attempts || []) + ')');
+      return { ok: true, claimId: claimId };
+    }
+    if (finalRead) {
+      // Someone else's legitimate claim is what's actually stored -- they
+      // are the ones sending, so this call must not.
+      return { ok: false, alreadySent: true };
+    }
+  } catch (e) {
+    // A failed confirming read tells us nothing -- fall through to the
+    // fail-closed outcome below, same best-effort posture as every other
+    // read in this feature.
+    console.error('first-dream-email-store: final confirming read failed for ' + key, e);
+  }
+
   // Genuine exhaustion, not the legitimate `skipped` case -- see this
   // function's own doc comment on why this fails closed rather than
-  // guessing it's safe to send.
-  console.error('first-dream-email-store: exhausted attempts claiming the send-once marker for ' + key + ' -- refusing to send rather than risk a double-send');
+  // guessing it's safe to send. The blobs-retry trace (per-attempt elapsed
+  // ms + what each read/verify-read actually saw) is what makes this
+  // diagnosable at all -- see lib/blobs-retry.js's own
+  // "PER-ATTEMPT DIAGNOSTICS" comment.
+  console.error('first-dream-email-store: exhausted attempts claiming the send-once marker for ' + key
+    + ' -- refusing to send rather than risk a double-send'
+    + ' (blobs-retry trace: ' + JSON.stringify(result.attempts || []) + ')');
   return { ok: false, error: 'exhausted' };
 }
 

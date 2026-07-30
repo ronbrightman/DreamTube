@@ -18,6 +18,9 @@ mockBlobs.install();
 
 var { Webhook } = require('standardwebhooks');
 var { fakeEvent } = require('./helpers/fake-event');
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's test-process guard lets its analytics fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var accountStore = require('../netlify/functions/lib/account-store');
 var analyticsConfig = require('../js/analytics-config');
@@ -129,6 +132,7 @@ function installAnalyticsFetchSpy(opts) {
     }
     throw new Error('unexpected fetch to ' + urlStr);
   };
+  markInstalledFetchAsTestDouble();
   return { posthogCalls: posthogCalls, metaCalls: metaCalls };
 }
 
