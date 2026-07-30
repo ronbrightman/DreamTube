@@ -849,3 +849,262 @@ test('signup_email_first_variant_shown fires once on reaching screen 13, and pos
     await context.close();
   }
 });
+
+// ===========================================================================
+// signup_email_entered / signup_error_shown -- tracker item
+// for-product-instrument-entered-email-mic-k1fux1. Between
+// ReachedEmailEntry (fires at render, above) and signed_up there was
+// previously no signal for "actually typed/submitted an email" at all --
+// these two events decide whether the 98->36 signup leak's story is
+// trust-at-first-glance (nobody types anything) or the password field
+// itself (people enter an email fine, then bail once asked for a
+// password). Both fire for both variants -- see emailEnteredTracked's own
+// doc comment in start.html for the full reasoning on why this lives as a
+// single, once-per-visit flag rather than per-variant logic.
+// ===========================================================================
+
+function captureNamed(calls, name) {
+  return calls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === name; });
+}
+
+test('signup_email_entered: variant "a" fires exactly once on a Continue tap with a non-empty email, not on the earlier blur that first populated the field', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'entered-a@example.com');
+    // Same field's blur (tabbing to the password field counts) -- must not
+    // double-fire alongside the click below, since both trigger the same
+    // once-per-visit flag.
+    await page.fill('#fn-password', 'longenoughpassword1');
+
+    await mockHappyPathRoutes(page);
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var entered = captureNamed(calls, 'signup_email_entered');
+    assert.equal(entered.length, 1, 'expected exactly one signup_email_entered capture call across blur + submit');
+    assert.deepEqual(entered[0][2], { variant: 'a' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_email_entered: variant "a" fires on blur alone when the visitor types an email then abandons without ever tapping Continue', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'blur-only-a@example.com');
+    await page.locator('#fn-email').blur();
+    await page.waitForFunction(function () {
+      return (window.posthog && typeof window.posthog.slice === 'function' ? window.posthog.slice() : []).some(function (e) { return e[0] === 'capture' && e[1] === 'signup_email_entered'; });
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var entered = captureNamed(calls, 'signup_email_entered');
+    assert.equal(entered.length, 1, 'a blur with a non-empty email must fire signup_email_entered even with no submit attempt');
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_email_entered: never fires on a blur or a rejected submit attempt while the email field is still empty', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.locator('#fn-email').focus();
+    await page.locator('#fn-email').blur();
+    await page.click('#fn-s13-continue'); // empty email -- rejected by the format check, never reaches the network
+
+    var calls = await readPostHogCalls(page);
+    assert.equal(captureNamed(calls, 'signup_email_entered').length, 0, 'an empty field must never fire signup_email_entered, on blur or on a rejected submit attempt');
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_email_entered: variant "b" fires once at the email step\'s own Continue tap, and the later email-step -> password-step swap does not re-fire it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'entered-b@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var entered = captureNamed(calls, 'signup_email_entered');
+    assert.equal(entered.length, 1, 'expected exactly one signup_email_entered capture call');
+    assert.deepEqual(entered[0][2], { variant: 'b' });
+
+    // The password step re-renders #fn-email read-only -- must not
+    // re-trigger the flag via its own (harmless, no-op) blur listener.
+    await page.locator('#fn-password').focus();
+    var callsAfter = await readPostHogCalls(page);
+    assert.equal(captureNamed(callsAfter, 'signup_email_entered').length, 1, 'the password step must not re-fire signup_email_entered a second time');
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: fires with reason invalid_email on a malformed address, for both variants', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'not-an-email');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('valid email') !== -1;
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'invalid_email', variant: 'a' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: variant "b"\'s own email-step validation fires reason invalid_email too', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'still-not-an-email');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('valid email') !== -1;
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'invalid_email', variant: 'b' });
+    assert.equal(await page.$('#fn-password'), null, 'must not have advanced to the password step');
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: fires with reason missing_password when the email is valid but the password field is left empty (variant "a")', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await page.fill('#fn-email', 'valid-no-password@example.com');
+    await page.click('#fn-s13-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('Enter a password') !== -1;
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'missing_password', variant: 'a' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: fires with reason already_registered when check-email.js reports the address is taken (variant "b")', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'b');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'error-shown-taken@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'already_registered', variant: 'b' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: fires with reason signup_failed when register-account.js rejects the attempt outright (variant "a")', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await seedVariant(context, 'a');
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-signupfail-1', operationName: 'fal:fake-model:req-signupfail-1' }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E7: registration_failed' }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'server-reject-a@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.length > 0;
+    }, null, { timeout: 5000 });
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'signup_failed', variant: 'a' });
+  } finally {
+    await context.close();
+  }
+});
