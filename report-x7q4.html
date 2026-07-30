@@ -1,0 +1,168 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>DreamTube — Owner Report</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<!-- Owner reporting dashboard (founder-only, unlinked obscure URL - same model
+     as tracker.html). Data baked at generation time by Manager's morning cycle;
+     regenerate by replacing DASH_DATA + pushing. v1 2026-07-30. -->
+<style>
+:root{color-scheme:dark;
+ --surface:#131118;--card:#1b1823;--line:rgba(255,255,255,.09);
+ --ink:#f0eefa;--soft:#a9a4bd;--muted:#736e87;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;
+ --money:#c98500;--count:#3987e5;--warnbg:rgba(217,89,38,.12)}
+*{box-sizing:border-box}body{margin:0;background:var(--surface);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.45;padding:18px 12px 60px;max-width:900px;margin-inline:auto}
+h1{font-size:19px;margin:2px 0 0}.sub{color:var(--soft);font-size:12px;margin:2px 0 14px}
+h2{font-size:14px;font-weight:800;margin:26px 0 4px}
+.secnote{font-size:11.5px;color:var(--muted);margin:0 0 10px}
+.chips{display:flex;gap:8px;margin:10px 0 14px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--soft);border-radius:99px;padding:6px 14px;font-size:12.5px;font-weight:700;cursor:pointer}
+.chip.on{background:var(--ink);color:#14121a;border-color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi .l{font-size:11px;color:var(--soft);font-weight:700}
+.kpi .v{font-size:22px;font-weight:800;margin-top:2px}
+.kpi .d{font-size:10.5px;color:var(--muted);margin-top:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.mini{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
+.mini .t{font-size:11.5px;font-weight:800;color:var(--soft)}
+.mini .big{font-size:16px;font-weight:800;margin:1px 0 4px}
+.mini svg{width:100%;height:64px;display:block}
+.mini .foot{font-size:10px;color:var(--muted);margin:3px 0 4px;min-height:12px}
+.bar{fill:var(--count)}.bar.money{fill:var(--money)}
+.bar:hover{opacity:.75}
+.nullband{fill:rgba(255,255,255,.045)}
+.tbl-toggle{margin-top:20px}
+table{border-collapse:collapse;width:100%;font-size:11px;margin-top:10px}
+th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;color:var(--soft);white-space:nowrap}
+th{color:var(--ink);position:sticky;top:0;background:var(--surface)}
+td:first-child,th:first-child{text-align:left}
+.twrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;display:none}
+.notes{background:var(--warnbg);border:1px solid rgba(217,89,38,.3);border-radius:12px;padding:11px 14px;font-size:11.5px;color:var(--soft);margin-top:22px}
+.notes b{color:var(--ink)}
+.tip{position:fixed;background:#26212f;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:11px;pointer-events:none;opacity:0;z-index:9;color:var(--ink)}
+</style></head><body data-palette="#3987e5,#d95926,#199e70,#c98500,#d55181">
+<h1>DreamTube — Owner Report</h1>
+<div class="sub" id="gen-sub"></div>
+<div class="chips" id="tf-chips">
+ <button class="chip" data-tf="7">Last 7 days</button>
+ <button class="chip on" data-tf="0">All (since Jul 18)</button>
+</div>
+<div class="kpis" id="kpis"></div>
+<h2>Daily totals</h2>
+<p class="secnote">One small chart per metric — dollars never share an axis with counts. Faded bands = not yet instrumented / unverified that day (never shown as zero).</p>
+<div class="grid" id="totals"></div>
+<h2>Per-user averages</h2>
+<p class="secnote">Computed only on days where both sides of the ratio are verified.</p>
+<div class="grid" id="ratios"></div>
+<button class="chip tbl-toggle" id="tbl-btn">Show data table</button>
+<div class="twrap" id="twrap"></div>
+<div class="notes" id="notes"></div>
+<div class="tip" id="tip"></div>
+<script>
+var DASH_DATA = {"generated_at":"2026-07-30T09:24:54+00:00","window":{"start":"2026-07-18","end":"2026-07-30"},"days":[{"date":"2026-07-18","new_users":0,"returning_users":0,"signups":null,"first_videos":null,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":55.21,"marketing_spend_usd":null,"funnel_entrants":null,"reached_signup_screen":null},{"date":"2026-07-19","new_users":1,"returning_users":0,"signups":null,"first_videos":null,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":6.0,"marketing_spend_usd":null,"funnel_entrants":0,"reached_signup_screen":0},{"date":"2026-07-20","new_users":0,"returning_users":0,"signups":null,"first_videos":null,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":15.62,"marketing_spend_usd":null,"funnel_entrants":0,"reached_signup_screen":0},{"date":"2026-07-21","new_users":5,"returning_users":0,"signups":null,"first_videos":null,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":73.07,"marketing_spend_usd":null,"funnel_entrants":1,"reached_signup_screen":0},{"date":"2026-07-22","new_users":390,"returning_users":0,"signups":null,"first_videos":0,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":1.2,"marketing_spend_usd":null,"funnel_entrants":334,"reached_signup_screen":1},{"date":"2026-07-23","new_users":245,"returning_users":4,"signups":null,"first_videos":2,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":6.01,"marketing_spend_usd":null,"funnel_entrants":214,"reached_signup_screen":2},{"date":"2026-07-24","new_users":235,"returning_users":6,"signups":null,"first_videos":7,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":29.08,"marketing_spend_usd":null,"funnel_entrants":208,"reached_signup_screen":16},{"date":"2026-07-25","new_users":87,"returning_users":7,"signups":null,"first_videos":3,"videos_total":null,"images_total":null,"published":null,"likes":null,"interpretations":null,"daily_claims":null,"purchases":null,"revenue_usd":null,"model_cost_usd":5.63,"marketing_spend_usd":null,"funnel_entrants":79,"reached_signup_screen":11},{"date":"2026-07-26","new_users":128,"returning_users":8,"signups":0,"first_videos":9,"videos_total":0,"images_total":0,"published":0,"likes":0,"interpretations":null,"daily_claims":null,"purchases":0,"revenue_usd":0.0,"model_cost_usd":20.4,"marketing_spend_usd":null,"funnel_entrants":111,"reached_signup_screen":27},{"date":"2026-07-27","new_users":123,"returning_users":13,"signups":3,"first_videos":3,"videos_total":4,"images_total":0,"published":1,"likes":0,"interpretations":null,"daily_claims":null,"purchases":0,"revenue_usd":0.0,"model_cost_usd":22.23,"marketing_spend_usd":50.48,"funnel_entrants":87,"reached_signup_screen":13},{"date":"2026-07-28","new_users":50,"returning_users":7,"signups":3,"first_videos":1,"videos_total":1,"images_total":0,"published":0,"likes":3,"interpretations":null,"daily_claims":2,"purchases":0,"revenue_usd":0.0,"model_cost_usd":31.66,"marketing_spend_usd":17.08,"funnel_entrants":38,"reached_signup_screen":4},{"date":"2026-07-29","new_users":96,"returning_users":11,"signups":12,"first_videos":9,"videos_total":13,"images_total":0,"published":0,"likes":2,"interpretations":1,"daily_claims":7,"purchases":0,"revenue_usd":0.0,"model_cost_usd":52.84,"marketing_spend_usd":37.91,"funnel_entrants":90,"reached_signup_screen":23},{"date":"2026-07-30","new_users":32,"returning_users":9,"signups":1,"first_videos":1,"videos_total":1,"images_total":0,"published":0,"likes":0,"interpretations":0,"daily_claims":1,"purchases":0,"revenue_usd":0.0,"model_cost_usd":0.8,"marketing_spend_usd":null,"funnel_entrants":31,"reached_signup_screen":4}],"notes":["Hygiene exclusions applied to every PostHog metric: IL geo (event- and person-level), is_test persons, __probe/__x__ usernames, founder accounts (ronbrightman/benbrightman14), @example.com identities. Same predicate as the 2026-07-30 funnel-churn analysis.","Nulls = metric not instrumented/verified that day, never zero-filled: signups (signed_up), videos_total/images_total (video_created), published, likes, purchases/revenue_usd all instrumented 2026-07-26 (~20:00 UTC, so 07-26 itself is a partial-instrumentation day); daily_claims (daily_claim_completed - the actual event name; the daily-claim feature launched 2026-07-28); interpretations (interp_opened, instrumented 2026-07-29); first_videos instrumented 2026-07-22; funnel_entrants/reached_signup_screen (funnel_step_viewed) instrumented 2026-07-19.","Signups before 07-26 did happen but are only proxied by post-signup pricing-screen views (~17 persons 07-23..07-25 per the funnel analysis); they are NOT in the signups series because its definition is the signed_up event. Total signed_up since 07-23 = 19 vs the funnel table's 36 unique pricing-screen persons - the gap is pre-instrumentation days, not missing data.","purchases/revenue_usd count REAL purchases only: all 26 historical purchase_completed events are fixtures/probes/founder and are removed by the hygiene predicate - real purchases and revenue to date are 0.","model_cost_usd = fal.ai usage API, aggregated per UTC calendar day; it includes ad-creative-side generation (same fal account), not only user-facing app generation.","marketing_spend_usd is null except 2026-07-27/28/29, the only days with a verified [NIGHTLY] spend line on the growth decisions-log tracker item; the campaign also spent on other days (~07-23 onward) but no verified per-day number exists, so those are null, never estimated.","new_users = persons (including anonymous marketing-site visitors) whose first-ever clean event lands that day (all-time min timestamp per person_id); returning_users = active persons first seen on an earlier day.","funnel_entrants = unique persons/day viewing funnel step 1 (funnel_step_viewed screen in welcome/hook/promise); reached_signup_screen = unique persons/day viewing screen email_capture - same definitions as the funnel analysis daily table.","2026-07-30 is a partial day (data pulled ~09:30 UTC)."]};
+var DAYS = DASH_DATA.days;
+var TOTALS = [
+ ["signups","Signups","c"],["new_users","New visitors","c"],["returning_users","Returning users","c"],
+ ["first_videos","First videos","c"],["videos_total","Videos made","c"],["images_total","Images made","c"],
+ ["published","Published","c"],["likes","Likes given","c"],["interpretations","Interpretations","c"],
+ ["daily_claims","Daily claims","c"],["purchases","Purchases","c"],["revenue_usd","Revenue $","m"],
+ ["marketing_spend_usd","Marketing spend $","m"],["model_cost_usd","Model cost $","m"],
+ ["funnel_entrants","Funnel entrants","c"],["reached_signup_screen","Reached signup","c"]];
+function ratioDefs(){return [
+ ["Cost per signup $",function(d){return (d.marketing_spend_usd!=null&&d.signups>0)?d.marketing_spend_usd/d.signups:null},"m"],
+ ["Cost per new visitor $",function(d){return (d.marketing_spend_usd!=null&&d.new_users>0)?d.marketing_spend_usd/d.new_users:null},"m"],
+ ["Model cost per video $",function(d){return (d.model_cost_usd!=null&&d.videos_total>0)?d.model_cost_usd/d.videos_total:null},"m"],
+ ["Videos per creator",function(d){var c=d.first_videos;return (d.videos_total!=null&&c>0)?d.videos_total/c:null},"c"],
+ ["Signup rate % (of funnel entrants)",function(d){return (d.signups!=null&&d.funnel_entrants>0)?100*d.signups/d.funnel_entrants:null},"c"],
+ ["Revenue per signup $",function(d){return (d.revenue_usd!=null&&d.signups>0)?d.revenue_usd/d.signups:null},"m"]];}
+var tfDays=0;
+function view(){ return tfDays? DAYS.slice(-tfDays) : DAYS; }
+function fmt(v,kind){ if(v==null)return "–"; if(kind==="m")return "$"+(v>=100?v.toFixed(0):v.toFixed(2)); return v%1?v.toFixed(1):v.toLocaleString(); }
+function sum(days,k){var s=0,any=false;days.forEach(function(d){if(d[k]!=null){s+=d[k];any=true}});return any?s:null}
+function mini(title,vals,kind,foot){
+ var W=200,H=64,n=vals.length,max=0;
+ vals.forEach(function(v){if(v!=null&&v>max)max=v});
+ var bw=Math.max(2,Math.floor(W/n)-2);
+ var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
+ vals.forEach(function(v,i){
+  var x=i*(W/n)+1;
+  if(v==null){svg+='<rect class="nullband" x="'+x+'" y="0" width="'+bw+'" height="'+H+'"/>';return;}
+  var h=max?Math.max(v>0?3:0,Math.round((v/max)*(H-6))):0;
+  svg+='<rect class="bar'+(kind==="m"?" money":"")+'" x="'+x+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" data-tip="'+DAYSLBL[ (DAYS.length-vals.length)+i ]+': '+fmt(v,kind)+'"/>';
+ });
+ svg+='</svg>';
+ var latest=null;for(var i=vals.length-1;i>=0;i--){if(vals[i]!=null){latest=vals[i];break}}
+ return '<div class="mini"><div class="t">'+title+'</div><div class="big">'+fmt(sum? null:null,kind)+'</div></div>'; }
+var DAYSLBL=DAYS.map(function(d){return d.date.slice(5)});
+function card(title,vals,kind,agg){
+ var W=200,H=64,n=vals.length,max=0;
+ vals.forEach(function(v){if(v!=null&&v>max)max=v});
+ var bw=Math.max(2,Math.floor(W/n)-2);
+ var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
+ var offset=DAYS.length-n;
+ vals.forEach(function(v,i){
+  var x=i*(W/n)+1;
+  if(v==null){svg+='<rect class="nullband" x="'+x+'" y="0" width="'+bw+'" height="'+H+'"/>';return;}
+  var h=max?Math.max(v>0?3:1,Math.round((v/max)*(H-6))):1;
+  svg+='<rect class="bar'+(kind==="m"?" money":"")+'" x="'+x+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" data-tip="'+DAYSLBL[offset+i]+' · '+fmt(v,kind)+'"/>';
+ });
+ svg+='</svg>';
+ return '<div class="mini"><div class="t">'+title+'</div><div class="big">'+agg+'</div>'+svg+'<div class="foot">peak '+fmt(max||null,kind)+'</div></div>';
+}
+function render(){
+ var days=view();
+ // KPI row: last complete day (second-to-last if today partial)
+ var last=days[days.length-1], prev=days[days.length-2]||last;
+ var kd = (DASH_DATA.notes.join(" ").indexOf("partial")>-1)? prev : last;
+ var kp=document.getElementById("kpis");
+ kp.innerHTML=[
+  ["Spend (last full day)",fmt(kd.marketing_spend_usd,"m"),kd.date],
+  ["Signups",fmt(kd.signups,"c"),kd.date],
+  ["Cost / signup",fmt((kd.marketing_spend_usd!=null&&kd.signups>0)?kd.marketing_spend_usd/kd.signups:null,"m"),kd.date],
+  ["Revenue",fmt(kd.revenue_usd,"m"),kd.date],
+  ["Model cost",fmt(kd.model_cost_usd,"m"),kd.date],
+  ["Videos",fmt(kd.videos_total,"c"),kd.date]
+ ].map(function(k){return '<div class="kpi"><div class="l">'+k[0]+'</div><div class="v">'+k[1]+'</div><div class="d">'+k[2]+'</div></div>'}).join("");
+ // totals grid
+ var tg=document.getElementById("totals");
+ tg.innerHTML=TOTALS.map(function(m){
+  var vals=days.map(function(d){return d[m[0]]});
+  var s=sum(days,m[0]);
+  return card(m[1],vals,m[2],(m[2]==="m"?fmt(s,"m"):fmt(s,"c"))+" total");
+ }).join("");
+ // ratios grid
+ var rg=document.getElementById("ratios");
+ rg.innerHTML=ratioDefs().map(function(r){
+  var vals=days.map(r[1]);
+  var have=vals.filter(function(v){return v!=null});
+  var avg=have.length? have.reduce(function(a,b){return a+b},0)/have.length : null;
+  return card(r[0],vals,r[2],(avg!=null?("avg "+fmt(avg,r[2])):"no verified days"));
+ }).join("");
+ // table
+ var t='<table><tr><th>date</th>'+TOTALS.map(function(m){return '<th>'+m[1]+'</th>'}).join("")+'</tr>';
+ days.forEach(function(d){t+='<tr><td>'+d.date+'</td>'+TOTALS.map(function(m){return '<td>'+fmt(d[m[0]],m[2])+'</td>'}).join("")+'</tr>'});
+ document.getElementById("twrap").innerHTML=t+'</table>';
+}
+document.getElementById("tf-chips").addEventListener("click",function(e){
+ var c=e.target.closest(".chip"); if(!c)return;
+ document.querySelectorAll("#tf-chips .chip").forEach(function(x){x.classList.remove("on")});
+ c.classList.add("on"); tfDays=parseInt(c.getAttribute("data-tf"),10)||0; render();
+});
+document.getElementById("tbl-btn").addEventListener("click",function(){
+ var w=document.getElementById("twrap"); var show=w.style.display!=="block";
+ w.style.display=show?"block":"none"; this.textContent=show?"Hide data table":"Show data table";
+});
+var tip=document.getElementById("tip");
+document.addEventListener("pointerover",function(e){
+ var r=e.target.closest("[data-tip]");
+ if(!r){tip.style.opacity=0;return}
+ tip.textContent=r.getAttribute("data-tip");
+ tip.style.opacity=1;
+});
+document.addEventListener("pointermove",function(e){
+ if(tip.style.opacity=="1"){tip.style.left=Math.min(e.clientX+10,window.innerWidth-120)+"px";tip.style.top=(e.clientY-30)+"px"}
+});
+document.getElementById("gen-sub").textContent="Data as of "+DASH_DATA.generated_at.slice(0,16).replace("T"," ")+" UTC · regenerated with every morning summary · "+DAYS.length+" days";
+var nn=document.getElementById("notes");
+nn.innerHTML="<b>Data honesty notes:</b><br>"+DASH_DATA.notes.map(function(x){return "· "+x}).join("<br>");
+render();
+</script></body></html>
