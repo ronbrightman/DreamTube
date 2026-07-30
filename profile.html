@@ -180,6 +180,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .token-chip-plain .token-chip-sep{ color:var(--home-soft); }
 .token-chip-plain .token-chip-cta{ color:#cfc8ff; }
 
+/* Token shop CTA -- was a plain, unstyled btn-secondary, visually
+   identical to the neighboring "Export backup" utility button (tracker
+   item settings-sheet-profile-html-review-swipe-igw84s, item 3: "should
+   be more attractive"). Reuses the same star-accent language as the
+   top-bar token chip above (.token-chip-star) instead of inventing a
+   new visual idiom. */
+.shop-cta-btn{
+  background:linear-gradient(135deg, rgba(157,144,255,.22), rgba(90,60,190,.22));
+  border-color:var(--home-acc); color:var(--home-ink);
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.shop-cta-btn:hover{ background:linear-gradient(135deg, rgba(157,144,255,.32), rgba(90,60,190,.32)); }
+.shop-cta-btn:active{ background:linear-gradient(135deg, rgba(157,144,255,.4), rgba(90,60,190,.4)); }
+.shop-cta-btn .shop-cta-star{ color:var(--home-acc); font-size:15px; }
+
 /* ===== night cards (likes banner, insight, milestones) ===== */
 .new-likes-banner{
   margin:16px 14px 0; padding:14px 15px; border-radius:18px;
@@ -416,7 +431,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 
       <div class="settings-section">
         <div class="section-label">Tokens</div>
-        <a class="btn btn-secondary btn-block" href="shop.html" id="account-shop-link">Token shop</a>
+        <a class="btn btn-secondary btn-block shop-cta-btn" href="shop.html" id="account-shop-link"><span class="shop-cta-star" aria-hidden="true">✦</span> Token shop</a>
       </div>
 
       <!-- FAQ (tracker.html's idea-faq-section item) — static, no backend
