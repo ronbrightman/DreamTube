@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-30) — unlinked, delete after decision.
+
+  Profile restyle + bottom-bar redesign mock, per
+  Manager/research/2026-07-30-profile-restyle-bottombar.md:
+    Part 2 — Profile in the Home night language (sky layers, identity header,
+             plain token chip, likes card, kicker labels, 9:14 tiles).
+    Part 3 — BOTH bottom-bar directions, switchable at the top:
+             Bar A "night dock" (anchored translucent, labels, in-row 44px +, avatar-as-Profile)
+             Bar B "floating dream pill" (Liquid-Glass pill, icon-only, protruding 48px +)
+  Content scrolls BEHIND the bar in both (overlay positioning + bottom clearance).
+  Static, self-contained: gradient placeholder tiles (same idea as the app's gradientFor
+  fallback). No app JS. Visual tokens copied from home.html (commit on main, 2026-07-30).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Profile mock — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+}
+html,body{ height:100%; }
+body{
+  font-family:'Manrope',sans-serif;
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+  padding-top:calc(env(safe-area-inset-top,0px) + 48px);
+}
+
+/* ===== mock-review switcher (not part of the product screen) ===== */
+.mockbar{
+  position:fixed; top:0; left:0; right:0; z-index:50;
+  display:flex; justify-content:center;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 8px;
+  background:rgba(6,5,16,.92); border-bottom:1px solid rgba(157,144,255,.18);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+}
+.seg{ display:flex; gap:2px; background:rgba(255,255,255,.06); border:1px solid rgba(157,144,255,.3); border-radius:99px; padding:3px; }
+.seg button{
+  border:none; background:transparent; color:#8f88b3; font:700 11px 'Manrope',sans-serif;
+  padding:6px 12px; border-radius:99px; cursor:pointer; white-space:nowrap; letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.seg button.on{ background:rgba(157,144,255,.25); color:var(--home-ink); }
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:calc(100dvh - env(safe-area-inset-top,0px) - 48px);
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+
+/* ===== the living night sky (home.html:96-135, verbatim) ===== */
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora{ animation:none !important; }
+}
+
+/* ===== page ===== */
+.fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px 0; flex:none;
+}
+.page-title{ font-weight:800; font-size:16px; color:var(--home-ink); letter-spacing:-.01em; }
+.chipbtn{
+  width:36px; height:36px; border-radius:50%;
+  background:rgba(12,10,26,.62); border:1px solid rgba(157,144,255,.4);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  color:var(--home-ink); display:flex; align-items:center; justify-content:center;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.chipbtn svg{ width:18px; height:18px; }
+.chipbtn:active{ transform:scale(.9); }
+
+/* scroll area — content passes BEHIND the overlaid bar (clearance at the bottom) */
+.scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:0 14px calc(112px + env(safe-area-inset-bottom,0px));
+}
+
+/* identity header */
+.identity{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:16px 20px 4px; }
+.avatar-wrap{ position:relative; }
+.avatar{
+  width:84px; height:84px; border-radius:50%; padding:3px;
+  background:var(--gradient-ig);
+  box-shadow:0 0 28px -4px rgba(157,144,255,.45);
+}
+.avatar i{
+  display:flex; width:100%; height:100%; border-radius:50%;
+  background:#1d1834; border:3px solid #100d20;
+  align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:30px; color:var(--home-ink);
+}
+.pencil{
+  position:absolute; right:-3px; bottom:1px; width:26px; height:26px; border-radius:50%;
+  background:#1d1834; border:1px solid var(--home-line); color:var(--home-ink);
+  display:flex; align-items:center; justify-content:center; font-size:12px;
+}
+.pname{ font-size:16px; font-weight:800; color:var(--home-ink); margin-top:10px; }
+.pcaption{ font-size:11.5px; color:var(--home-soft); margin-top:2px; }
+.pstats{ font-size:12.5px; color:var(--home-soft); margin-top:7px; }
+.pstats b{ color:var(--home-ink); font-weight:800; }
+.tokenchip{
+  display:inline-flex; align-items:center; gap:6px; margin-top:12px;
+  padding:7px 14px; border-radius:99px; cursor:pointer; border:1px solid rgba(157,144,255,.4);
+  background:rgba(12,10,26,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  font:700 12px 'Manrope',sans-serif; color:var(--home-ink); text-decoration:none;
+}
+.tokenchip .star{ color:var(--home-acc); }
+.tokenchip .sep{ color:var(--home-soft); font-weight:400; }
+.tokenchip .shop{ color:#cfc8ff; }
+
+/* likes card */
+.hcard{
+  position:relative; overflow:hidden; color:var(--home-ink);
+  background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid var(--home-line); border-radius:18px; padding:14px 15px;
+}
+.likescard{ display:flex; align-items:center; gap:10px; margin-top:16px; font-size:13px; font-weight:600; }
+.likescard svg{ width:18px; height:18px; flex:none; color:var(--danger); }
+.likescard b{ font-weight:800; }
+
+/* library */
+.kicker{
+  font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--home-acc); font-weight:800; margin:20px 2px 9px;
+}
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.vc{ display:block; text-decoration:none; color:inherit; cursor:pointer; }
+.vct{
+  position:relative; aspect-ratio:9/14; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.14); background:var(--home-raise2);
+}
+.vct::after{
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(65% 42% at 50% 28%, rgba(255,255,255,.14), transparent 72%);
+}
+.vct.g1{ background:radial-gradient(80% 55% at 68% 22%, rgba(250,196,132,.5), transparent 60%), linear-gradient(160deg,#3b2170,#6b3fa8 48%, #b06a4e 108%); }
+.vct.g2{ background:radial-gradient(75% 50% at 30% 25%, rgba(127,208,216,.42), transparent 62%), linear-gradient(165deg,#0f2a5e,#1d5f9e 58%, #3f9ab0 110%); }
+.vct.g3{ background:radial-gradient(70% 48% at 65% 70%, rgba(224,170,90,.4), transparent 62%), linear-gradient(160deg,#42243c,#7d4257 55%, #b3774f 112%); }
+.vct.g4{ background:radial-gradient(75% 50% at 45% 20%, rgba(157,144,255,.4), transparent 62%), linear-gradient(160deg,#1e1b4a,#3a2c74 52%, #7a6fc0 112%); }
+.vct .priv{
+  position:absolute; left:6px; bottom:6px; background:rgba(0,0,0,.65); color:#fff;
+  font-size:9px; font-weight:700; padding:2px 6px; border-radius:6px; letter-spacing:.02em;
+}
+.vct .priv.pub{ background:rgba(255,255,255,.92); color:#000; }
+.vct .dur{
+  position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.6); color:#fff;
+  font-size:10px; font-weight:700; padding:2px 6px; border-radius:6px;
+}
+.vct .playind{ position:absolute; top:8px; right:8px; width:13px; height:13px; color:#fff; opacity:.9; }
+.vc-title{ font-size:13px; font-weight:600; color:var(--home-ink); margin-top:8px; line-height:1.3; }
+.vc-meta{ font-size:11px; color:var(--home-soft); margin-top:2px; }
+.grid-note{ font-size:12px; color:var(--home-soft); margin:2px 2px 0; }
+
+/* ===================== Bar A — "night dock" ===================== */
+.bar-a{
+  position:absolute; left:0; right:0; bottom:0; z-index:10;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+.bar-a[hidden]{ display:none; }
+.na{
+  display:flex; flex-direction:column; align-items:center; gap:3px; width:64px;
+  color:#8f88b3; font:700 10px 'Manrope',sans-serif; letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.na svg{ width:22px; height:22px; display:block; }
+.na.on{ color:var(--home-ink); }
+.na:active{ transform:scale(.92); }
+.plus-a{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  -webkit-tap-highlight-color:transparent;
+}
+.plus-a svg{ width:24px; height:24px; }
+.plus-a:active{ transform:scale(.94); }
+
+/* avatar-as-Profile-icon (YouTube "You" treatment) + likes badge dot */
+.navav-wrap{ position:relative; display:inline-flex; }
+.navav{
+  width:20px; height:20px; border-radius:50%; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9px; color:var(--home-ink);
+}
+.na.on .navav, .nb.on .navav{ border-color:var(--home-acc); }
+.badge-dot{
+  position:absolute; top:-2px; right:-4px; width:9px; height:9px; border-radius:50%;
+  background:var(--danger); border:1.5px solid #0c0a1a;
+}
+
+/* ===================== Bar B — "floating dream pill" ===================== */
+.bar-b{
+  position:absolute; left:50%; transform:translateX(-50%); z-index:10;
+  bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  width:calc(100% - 32px); max-width:420px; height:58px; border-radius:999px;
+  background:rgba(20,16,38,.72);
+  backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(157,144,255,.35);
+  box-shadow:0 12px 32px -8px rgba(0,0,0,.6), 0 0 24px -8px rgba(157,144,255,.25);
+  display:flex; align-items:center; justify-content:space-around;
+}
+@supports not (backdrop-filter:blur(1px)){
+  .bar-b{ background:rgba(20,16,38,.94); }
+}
+.bar-b[hidden]{ display:none; }
+.nb{
+  display:flex; align-items:center; justify-content:center;
+  width:48px; height:40px; border-radius:99px; color:#8f88b3;
+  text-decoration:none; cursor:pointer; transition:color .15s ease, background .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.nb svg{ width:24px; height:24px; display:block; }
+.nb.on{ width:56px; background:rgba(157,144,255,.18); color:var(--home-acc); }
+.nb:active{ transform:scale(.92); }
+.nb .navav{ width:24px; height:24px; font-size:10px; }
+.plus-b{
+  width:48px; height:48px; border-radius:50%; flex:none; cursor:pointer; border:none;
+  position:relative; top:-13px;
+  background:var(--gradient-ig); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 0 4px rgba(20,16,38,.9), 0 8px 18px -6px rgba(253,29,29,.4);
+  -webkit-tap-highlight-color:transparent;
+}
+.plus-b svg{ width:26px; height:26px; }
+.plus-b:active{ transform:scale(.94); }
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <div class="seg" id="seg" role="tablist" aria-label="Bottom bar direction">
+    <button class="on" data-bar="a">Bar A · Night dock</button>
+    <button data-bar="b">Bar B · Floating pill</button>
+  </div>
+</div>
+
+<div id="app">
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <div class="fg">
+    <div class="topbar">
+      <div class="page-title">Profile</div>
+      <button class="chipbtn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01A1.7 1.7 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+
+    <div class="scroll">
+      <div class="identity">
+        <div class="avatar-wrap">
+          <div class="avatar"><i>R</i></div>
+          <div class="pencil">✎</div>
+        </div>
+        <div class="pname">Ron</div>
+        <div class="pcaption">This is you in your dreams</div>
+        <div class="pstats"><b>12</b> created &nbsp;·&nbsp; <b>5</b> shared</div>
+        <a class="tokenchip" href="#" onclick="return false;">
+          <span class="star">✦</span> 240 <span class="sep">·</span> <span class="shop">Shop</span>
+        </a>
+      </div>
+
+      <div class="hcard likescard">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.7-10-9.3C.4 8.6 2.4 5 5.8 5c2 0 3.4 1.1 4.2 2.4h4c.8-1.3 2.2-2.4 4.2-2.4 3.4 0 5.4 3.6 3.8 6.7C19.5 16.3 12 21 12 21z"/></svg>
+        <span>Your dreams got <b>3 new likes</b> since your last visit</span>
+      </div>
+
+      <div class="kicker">Shared</div>
+      <div class="grid">
+        <a class="vc" href="#" onclick="return false;">
+          <div class="vct g1">
+            <svg class="playind" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <span class="priv pub">Public</span>
+            <span class="dur">0:08</span>
+          </div>
+          <div class="vc-title">Flying over a golden city</div>
+          <div class="vc-meta">2 days ago</div>
+        </a>
+        <a class="vc" href="#" onclick="return false;">
+          <div class="vct g2">
+            <svg class="playind" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <span class="priv pub">Public</span>
+            <span class="dur">0:08</span>
+          </div>
+          <div class="vc-title">The ocean staircase</div>
+          <div class="vc-meta">5 days ago</div>
+        </a>
+      </div>
+
+      <div class="kicker">Private</div>
+      <div class="grid">
+        <a class="vc" href="#" onclick="return false;">
+          <div class="vct g3">
+            <svg class="playind" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <span class="priv">Private</span>
+            <span class="dur">0:08</span>
+          </div>
+          <div class="vc-title">Talking to my childhood dog</div>
+          <div class="vc-meta">1 week ago</div>
+        </a>
+        <a class="vc" href="#" onclick="return false;">
+          <div class="vct g4">
+            <svg class="playind" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <span class="priv">Private</span>
+            <span class="dur">0:08</span>
+          </div>
+          <div class="vc-title">The library of unwritten books</div>
+          <div class="vc-meta">2 weeks ago</div>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Bar A — anchored translucent "night dock" ============ -->
+  <nav class="bar-a" id="bar-a">
+    <a class="na" href="#" onclick="return false;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>
+      Home
+    </a>
+    <a class="na" href="#" onclick="return false;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 5-5 2.2 2.2-5z"/></svg>
+      Explore
+    </a>
+    <button class="plus-a" aria-label="Create">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <a class="na on" href="#" onclick="return false;">
+      <span class="navav-wrap"><i class="navav">R</i><span class="badge-dot"></span></span>
+      Profile
+    </a>
+  </nav>
+
+  <!-- ============ Bar B — floating "dream pill" ============ -->
+  <nav class="bar-b" id="bar-b" hidden>
+    <a class="nb" href="#" onclick="return false;" aria-label="Home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>
+    </a>
+    <a class="nb" href="#" onclick="return false;" aria-label="Explore">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 5-5 2.2 2.2-5z"/></svg>
+    </a>
+    <button class="plus-b" aria-label="Create">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+    <a class="nb on" href="#" onclick="return false;" aria-label="Profile">
+      <span class="navav-wrap"><i class="navav">R</i><span class="badge-dot"></span></span>
+    </a>
+  </nav>
+</div>
+
+<script>
+(function(){
+  var seg = document.getElementById('seg');
+  var barA = document.getElementById('bar-a');
+  var barB = document.getElementById('bar-b');
+  seg.addEventListener('click', function(e){
+    var b = e.target.closest('button');
+    if (!b) return;
+    var btns = seg.querySelectorAll('button');
+    for (var i=0;i<btns.length;i++) btns[i].classList.toggle('on', btns[i] === b);
+    barA.hidden = (b.dataset.bar !== 'a');
+    barB.hidden = (b.dataset.bar !== 'b');
+  });
+})();
+</script>
+</body>
+</html>

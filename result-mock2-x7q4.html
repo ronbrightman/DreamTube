@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-30) — unlinked, delete after decision.
+
+  Result-screen redesign mock, per Manager/research/2026-07-30-result-screen-redesign.md:
+    D1 · Private  — Direction 1 "Sora moment", fresh unpublished state (hero "✦ Post your dream")
+    D1 · Posted   — Direction 1 published state (tag "Public ✓", hero "Share your dream")
+    D2 · Ritual   — Direction 2 "Ritual completion card" (home.html night sky + hcard)
+  Tapping the hero in D1 · Private walks through the real posting flow (Posting… → Posted view + toast).
+  Static, self-contained: the "video" is a CSS gradient placeholder (same idea as the app's
+  gradientFor fallback). No app JS. Visual tokens copied from home.html (commit on main, 2026-07-30).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Result mock — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+}
+html,body{ height:100%; }
+body{
+  font-family:'Manrope',sans-serif;
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+  padding-top:calc(env(safe-area-inset-top,0px) + 48px);
+}
+
+/* ===== mock-review switcher (not part of the product screen) ===== */
+.mockbar{
+  position:fixed; top:0; left:0; right:0; z-index:50;
+  display:flex; justify-content:center;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 8px;
+  background:rgba(6,5,16,.92); border-bottom:1px solid rgba(157,144,255,.18);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+}
+.seg{ display:flex; gap:2px; background:rgba(255,255,255,.06); border:1px solid rgba(157,144,255,.3); border-radius:99px; padding:3px; }
+.seg button{
+  border:none; background:transparent; color:#8f88b3; font:700 11px 'Manrope',sans-serif;
+  padding:6px 11px; border-radius:99px; cursor:pointer; white-space:nowrap; letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.seg button.on{ background:rgba(157,144,255,.25); color:var(--home-ink); }
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:calc(100dvh - env(safe-area-inset-top,0px) - 48px);
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+.screen{ position:absolute; inset:0; }
+.screen[hidden]{ display:none; }
+
+/* ===== Direction 1 — "Sora moment": full-bleed video, night chrome ===== */
+.fakevideo{ position:absolute; inset:0; overflow:hidden; }
+.fakevideo i{
+  position:absolute; inset:-6%;
+  background:
+    radial-gradient(90% 55% at 70% 16%, rgba(139,92,236,.7), transparent 62%),
+    radial-gradient(85% 60% at 20% 74%, rgba(48,116,215,.6), transparent 62%),
+    radial-gradient(70% 30% at 50% 96%, rgba(250,180,100,.4), transparent 72%),
+    radial-gradient(42% 26% at 84% 58%, rgba(224,120,190,.28), transparent 70%),
+    linear-gradient(168deg,#2a1866,#3d2488 34%,#22418c 68%,#101538);
+  animation:vidBreathe 18s ease-in-out infinite alternate;
+}
+@keyframes vidBreathe{ from{ transform:scale(1) translateY(0); } to{ transform:scale(1.07) translateY(-1.5%); } }
+
+.playbadge{
+  position:absolute; left:50%; top:44%; transform:translate(-50%,-50%); z-index:1;
+  width:62px; height:62px; border-radius:50%;
+  background:rgba(12,10,26,.35); border:1px solid rgba(255,255,255,.35);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  display:flex; align-items:center; justify-content:center; opacity:.85; pointer-events:none;
+}
+.playbadge svg{ width:22px; height:22px; margin-left:3px; color:#fff; }
+
+.scrim{
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:linear-gradient(180deg, rgba(12,10,26,.45), transparent 26%, transparent 50%, rgba(12,10,26,.86) 82%, rgba(12,10,26,.97));
+}
+
+.d1-topbar{
+  position:absolute; top:0; left:0; right:0; z-index:3;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px 0;
+}
+.chipbtn{
+  width:36px; height:36px; border-radius:50%;
+  background:rgba(12,10,26,.62); border:1px solid rgba(157,144,255,.4);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  color:var(--home-ink); display:flex; align-items:center; justify-content:center;
+  cursor:pointer; text-decoration:none; -webkit-tap-highlight-color:transparent;
+}
+.chipbtn svg{ width:18px; height:18px; }
+.chipbtn:active{ transform:scale(.9); }
+
+.panel{
+  position:absolute; left:0; right:0; bottom:0; z-index:2;
+  padding:0 20px calc(18px + env(safe-area-inset-bottom,0px));
+}
+.quote{
+  font-size:14px; line-height:1.45; font-weight:600; color:var(--home-ink);
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.quote-hint{ font-size:11.5px; color:var(--home-soft); margin-top:4px; cursor:pointer; }
+
+.ptag{
+  display:inline-flex; align-items:center; gap:5px; margin-top:11px;
+  padding:5px 11px; border-radius:99px; border:none; cursor:pointer;
+  font:800 10.5px 'Manrope',sans-serif; letter-spacing:.05em;
+  background:rgba(12,10,26,.55); border:1px solid rgba(255,255,255,.28); color:#cfc8ff;
+  -webkit-tap-highlight-color:transparent;
+}
+.ptag.pub{ border-color:rgba(75,211,155,.55); color:var(--home-ok); background:rgba(75,211,155,.08); }
+
+.hero-cta{
+  display:block; width:100%; margin-top:12px; padding:15px 18px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 15.5px 'Manrope',sans-serif; letter-spacing:.01em; text-align:center;
+  animation:homePulse 2.6s ease-in-out infinite;
+  transition:transform .12s ease, opacity .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.hero-cta:active{ transform:scale(.97); }
+.hero-cta:disabled{ opacity:.75; cursor:default; animation:none; }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 14px rgba(157,144,255,.85); } }
+
+.micro{ margin-top:9px; text-align:center; font-size:11.5px; line-height:1.45; color:var(--home-soft); }
+.livelink{
+  display:block; margin-top:10px; text-align:center; text-decoration:none;
+  font:700 12px 'Manrope',sans-serif; color:#cfc8ff;
+}
+
+.qrow{ display:flex; justify-content:center; align-items:center; gap:20px; margin-top:15px; }
+.qlink{
+  background:none; border:none; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  display:inline-flex; align-items:center; gap:5px;
+  color:#8f88b3; font:600 12px 'Manrope',sans-serif; text-decoration:none;
+}
+.qlink svg{ width:13px; height:13px; }
+.qlink.danger svg{ color:#ff5560; }
+
+/* ===== Direction 2 — "Ritual completion card": night-sky scroll + hcard ===== */
+.screen-d2{ display:flex; flex-direction:column; background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.hero-cta,.ebtn.p,.fakevideo i{ animation:none !important; }
+}
+
+.d2-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.d2-topbar{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px 0; flex:none; }
+.d2-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 14px calc(24px + env(safe-area-inset-bottom,0px)); }
+
+.hcard{
+  position:relative; overflow:hidden; color:var(--home-ink);
+  background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid var(--home-line); border-radius:18px; padding:14px 15px;
+}
+.hcard.hero{ border-color:rgba(157,144,255,.55); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 18px -4px rgba(157,144,255,.28); }
+.hcard-dt{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--home-acc); font-weight:800; margin-bottom:5px; }
+.hcard-title{ font-size:15px; font-weight:800; display:block; margin:0 0 3px; }
+.hcard-sub{ color:var(--home-soft); font-size:12px; line-height:1.5; display:block; }
+
+.d2video{
+  position:relative; aspect-ratio:16/9; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55);
+  box-shadow:0 0 18px -4px rgba(157,144,255,.38);
+  margin:11px 0 10px;
+}
+.d2video i{
+  position:absolute; inset:-6%;
+  background:
+    radial-gradient(90% 55% at 70% 16%, rgba(139,92,236,.7), transparent 62%),
+    radial-gradient(85% 60% at 20% 74%, rgba(48,116,215,.6), transparent 62%),
+    radial-gradient(70% 34% at 50% 96%, rgba(250,180,100,.4), transparent 72%),
+    linear-gradient(168deg,#2a1866,#3d2488 34%,#22418c 68%,#101538);
+}
+.d2video .playbadge{ width:46px; height:46px; top:50%; }
+.d2video .playbadge svg{ width:17px; height:17px; margin-left:2px; }
+.d2video .dur{
+  position:absolute; right:8px; bottom:8px; background:rgba(0,0,0,.6); color:#fff;
+  font-size:10px; font-weight:700; padding:2px 6px; border-radius:6px;
+}
+.d2-tagrow{ display:flex; margin-top:2px; }
+.d2-tagrow .ptag{ margin-top:0; }
+
+.ebtn{
+  display:block; width:100%; text-align:center; border-radius:99px; padding:13px 6px;
+  font:700 13px 'Manrope',sans-serif; border:none; cursor:pointer;
+  -webkit-tap-highlight-color:transparent; margin-top:12px;
+}
+.ebtn.p{ background:var(--home-acc); color:#0c0a1a; font-weight:800; animation:homePulse 2.6s ease-in-out infinite; }
+.ebtn.p:active{ transform:scale(.97); }
+.ebtn.p:disabled{ opacity:.75; animation:none; cursor:default; }
+
+.nextstrip{
+  margin-top:10px; background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4);
+  border-radius:12px; padding:10px 12px; font-size:11.5px; line-height:1.5; color:#cfc8ff;
+}
+.nextstrip b{ color:var(--home-ink); }
+
+.d2-quietcard{ margin-top:10px; padding:12px 15px; }
+.d2-quietcard .qrow{ margin-top:0; }
+
+/* ===== toast (home.html treatment) ===== */
+.toast{
+  position:fixed; left:50%; bottom:calc(288px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,10px);
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  z-index:60; max-width:88%; text-align:center;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <div class="seg" id="seg" role="tablist" aria-label="Mock views">
+    <button class="on" data-view="d1-private">D1 · Private</button>
+    <button data-view="d1-posted">D1 · Posted</button>
+    <button data-view="d2">D2 · Ritual card</button>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- ============ Direction 1 (both states) ============ -->
+  <section class="screen" id="screen-d1">
+    <div class="fakevideo"><i></i></div>
+    <div class="playbadge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg></div>
+    <div class="scrim"></div>
+
+    <div class="d1-topbar">
+      <a class="chipbtn" href="#" aria-label="Back" onclick="return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <button class="chipbtn" aria-label="Unmute">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><line x1="16" y1="9.5" x2="21" y2="14.5"/><line x1="21" y1="9.5" x2="16" y2="14.5"/></svg>
+      </button>
+    </div>
+
+    <div class="panel">
+      <div class="quote" dir="auto">&ldquo;I&rsquo;m flying over a golden city at night, and the rooftops are made of light. Someone below keeps calling my name&hellip;&rdquo;</div>
+      <div class="quote-hint">Show more</div>
+
+      <div>
+        <button class="ptag" id="d1-tag">PRIVATE</button>
+      </div>
+
+      <button class="hero-cta" id="d1-hero">✦ &nbsp;Post your dream</button>
+
+      <div class="micro" id="d1-micro">Goes public on Explore — you can take it back anytime.</div>
+      <a class="livelink" id="d1-live" href="#" hidden onclick="return false;">Live on Explore →</a>
+
+      <div class="qrow">
+        <button class="qlink">✨ Interpret</button>
+        <button class="qlink">✎ Edit</button>
+        <button class="qlink">＋ Another</button>
+        <button class="qlink danger">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          Delete
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Direction 2 — ritual completion card ============ -->
+  <section class="screen screen-d2" id="screen-d2" hidden>
+    <div class="home-bg"></div>
+    <div class="home-stars-a"></div>
+    <div class="home-stars-b"></div>
+    <div class="home-aurora"></div>
+
+    <div class="d2-fg">
+      <div class="d2-topbar">
+        <a class="chipbtn" href="#" aria-label="Back" onclick="return false;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <button class="chipbtn" aria-label="Unmute">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><line x1="16" y1="9.5" x2="21" y2="14.5"/><line x1="21" y1="9.5" x2="16" y2="14.5"/></svg>
+        </button>
+      </div>
+
+      <div class="d2-scroll">
+        <div class="hcard hero">
+          <div class="hcard-dt">Just now</div>
+          <span class="hcard-title">Dream captured ✦</span>
+
+          <div class="d2video">
+            <i></i>
+            <div class="playbadge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg></div>
+            <div class="dur">0:08</div>
+          </div>
+
+          <span class="hcard-sub">&ldquo;I&rsquo;m flying over a golden city at night, and the rooftops are made of light. Someone below keeps calling my name&hellip;&rdquo;</span>
+
+          <div class="d2-tagrow" style="margin-top:10px;">
+            <button class="ptag" id="d2-tag">PRIVATE</button>
+          </div>
+
+          <button class="ebtn p" id="d2-hero">✦ &nbsp;Post your dream</button>
+          <div class="micro" id="d2-micro">Goes public on Explore — you can take it back anytime.</div>
+        </div>
+
+        <div class="nextstrip">🌙 <b>Tomorrow:</b> log your next dream — your <b>+100 bonus</b> is waiting.</div>
+
+        <div class="hcard d2-quietcard">
+          <div class="qrow">
+            <button class="qlink">✨ Interpret</button>
+            <button class="qlink">✎ Edit</button>
+            <button class="qlink">＋ Another</button>
+            <button class="qlink danger">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  var seg = document.getElementById('seg');
+  var d1 = document.getElementById('screen-d1');
+  var d2 = document.getElementById('screen-d2');
+  var tag = document.getElementById('d1-tag');
+  var hero = document.getElementById('d1-hero');
+  var micro = document.getElementById('d1-micro');
+  var live = document.getElementById('d1-live');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2200);
+  }
+
+  function setSeg(view){
+    var btns = seg.querySelectorAll('button');
+    for (var i=0;i<btns.length;i++) btns[i].classList.toggle('on', btns[i].dataset.view === view);
+  }
+
+  function setD1State(posted){
+    if (posted){
+      tag.textContent = 'PUBLIC ✓';
+      tag.classList.add('pub');
+      tag.title = 'Tap to make private again';
+      hero.textContent = 'Share your dream';
+      hero.disabled = false;
+      micro.hidden = true;
+      live.hidden = false;
+    } else {
+      tag.textContent = 'PRIVATE';
+      tag.classList.remove('pub');
+      tag.title = '';
+      hero.innerHTML = '✦ &nbsp;Post your dream';
+      hero.disabled = false;
+      micro.hidden = false;
+      live.hidden = true;
+    }
+  }
+
+  function setView(view){
+    d1.hidden = (view === 'd2');
+    d2.hidden = (view !== 'd2');
+    if (view === 'd1-private') setD1State(false);
+    if (view === 'd1-posted') setD1State(true);
+    setSeg(view);
+  }
+
+  seg.addEventListener('click', function(e){
+    var b = e.target.closest('button');
+    if (b) setView(b.dataset.view);
+  });
+
+  // D1 hero flow: Private → Posting… → Posted (+toast). Posted → share stub.
+  hero.addEventListener('click', function(){
+    if (tag.classList.contains('pub')){
+      toast('Opens the share sheet');
+      return;
+    }
+    hero.disabled = true;
+    hero.textContent = 'Posting…';
+    setTimeout(function(){
+      setView('d1-posted');
+      toast('Posted to Explore ✓');
+    }, 650);
+  });
+
+  // Public ✓ tag is the unpublish control.
+  tag.addEventListener('click', function(){
+    if (!tag.classList.contains('pub')) return;
+    setView('d1-private');
+    toast('Dream is private again');
+  });
+
+  // D2 publish flow (same consent model, in-card).
+  var d2hero = document.getElementById('d2-hero');
+  var d2tag = document.getElementById('d2-tag');
+  var d2micro = document.getElementById('d2-micro');
+  d2hero.addEventListener('click', function(){
+    if (d2tag.classList.contains('pub')){ toast('Opens the share sheet'); return; }
+    d2hero.disabled = true;
+    d2hero.textContent = 'Posting…';
+    setTimeout(function(){
+      d2tag.textContent = 'PUBLIC ✓';
+      d2tag.classList.add('pub');
+      d2hero.disabled = false;
+      d2hero.textContent = 'Share your dream';
+      d2micro.hidden = true;
+      toast('Posted to Explore ✓');
+    }, 650);
+  });
+})();
+</script>
+</body>
+</html>
