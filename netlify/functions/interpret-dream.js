@@ -293,11 +293,19 @@ exports.handler = async function (event) {
     var rSystemPrompt = [
       persona.voice,
       persona.method,
-      SAFETY_BLOCK,
       'Write a 150-220 word reading of this dream in second person.',
       'Weave the dreamer\'s answers in naturally where given — never quote them back mechanically.',
       'Stay true to your method the whole way through.',
-      'End with one short, in-persona closing line.'
+      'End with one short, in-persona closing line.',
+      // SAFETY_BLOCK must be LAST — spec §4: "layered UNDER the persona
+      // voice instructions, which may never override them (safety block
+      // is appended last in the prompt)". Review finding: this used to
+      // sit at index 2 (before the length/weave/method/closing-line
+      // instructions), which both contradicted the spec and this file's
+      // own header comment, AND was inconsistent with the mode:"questions"
+      // prompt just above, which already puts SAFETY_BLOCK last. Fixed by
+      // moving it to the true tail position, matching that prompt.
+      SAFETY_BLOCK
     ].join(' ');
 
     var rResult = await callLlm(
@@ -321,3 +329,12 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E405: llm_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
   }
 };
+
+// Exported for test/interpret-dream.test.js's own position assertions
+// (SAFETY_BLOCK must be the LAST thing in every system prompt this file
+// builds, spec §4 — a presence-only check can't catch it sitting in the
+// middle, which is exactly how the review-round-1 finding slipped past
+// the original presence-only tests) — same "export an internal for
+// testability" precedent as generate-video.js's own FAL_MODEL/buildPrompt
+// exports.
+exports.SAFETY_BLOCK = SAFETY_BLOCK;

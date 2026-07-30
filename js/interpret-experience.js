@@ -116,11 +116,33 @@
     host.appendChild(root);
   }
 
-  /** Real portrait <img> (spec §12: not shipped this branch — see js/interpreter-personas.js's own header) with the documented accent-gradient + initial fallback underneath, shown via the img's own onerror hiding itself. The initial is the persona's KEY's first letter (stable across a display-name rename — see interpreter-personas.js's own header on why display names are still proposals). */
+  /**
+   * Real portrait <img> (spec §12: not shipped this branch — see
+   * js/interpreter-personas.js's own header) with the documented accent-
+   * gradient + initial fallback underneath.
+   *
+   * Review finding (round 2): css/styles.css's `.itp-portrait img` has no
+   * `position` set (defaults to static) while `.itp-portrait-fallback` is
+   * `position:absolute`. Per CSS painting order, a positioned element
+   * always paints ABOVE an in-flow static sibling regardless of DOM order
+   * — so the fallback (an opaque accent-gradient) would permanently cover
+   * the <img> even once real portrait assets ship and load successfully.
+   * This was invisible on this branch only because the img always 404s
+   * (no portrait files exist yet), so "always show the fallback" looked
+   * correct by accident. Fixed with an explicit `onload` that hides the
+   * fallback sibling the moment the image genuinely loads — same
+   * "onerror hides itself" idea already used for the failure case, just
+   * the success-case mirror of it — rather than a CSS stacking fix, so
+   * this function's own "real image wins once it loads" contract doesn't
+   * depend on css/styles.css's positioning rules staying exactly as they
+   * are today. The initial is the persona's KEY's first letter (stable
+   * across a display-name rename — see interpreter-personas.js's own
+   * header on why display names are still proposals).
+   */
   function portraitHtml(persona) {
     var initial = (persona.key || '?').charAt(0).toUpperCase();
     return '<div class="itp-portrait">' +
-      '<img src="' + esc(persona.portrait) + '" alt="" onerror="this.style.display=\'none\';">' +
+      '<img src="' + esc(persona.portrait) + '" alt="" onerror="this.style.display=\'none\';" onload="this.nextElementSibling.style.display=\'none\';">' +
       '<div class="itp-portrait-fallback" style="background:linear-gradient(155deg,' + esc(persona.accent) + ',rgba(10,10,10,.85))">' + esc(initial) + '</div>' +
       '</div>';
   }

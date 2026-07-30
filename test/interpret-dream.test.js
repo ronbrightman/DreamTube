@@ -26,7 +26,9 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
-var handler = require('../netlify/functions/interpret-dream').handler;
+var interpretDream = require('../netlify/functions/interpret-dream');
+var handler = interpretDream.handler;
+var SAFETY_BLOCK = interpretDream.SAFETY_BLOCK;
 var InterpreterPersonas = require('../js/interpreter-personas');
 
 var realFetch = global.fetch;
@@ -396,6 +398,50 @@ test('mode:reading uses temperature 0.9 and includes the persona\'s voice/method
   assert.ok(systemMsg.indexOf(talmudic.method) !== -1, 'system prompt must include the persona\'s method');
   assert.match(systemMsg, /never mention that you are an ai/i);
   assert.match(systemMsg, /religious ruling/i);
+});
+
+// ===== Review finding: SAFETY_BLOCK must be POSITIONED last, not merely
+// PRESENT (spec §4: "layered UNDER the persona voice instructions, which
+// may never override them (safety block is appended last in the
+// prompt)") — a presence-only assertion (matched by every other test in
+// this file that checks system-prompt content) previously let a real bug
+// slip through: mode:"reading"'s prompt had SAFETY_BLOCK at index 2 of 7,
+// followed by four more instructions that could in principle read as
+// overriding it. These two tests assert POSITION: the system prompt must
+// literally END with SAFETY_BLOCK's own content, for both modes. =====
+
+test('mode:questions system prompt: SAFETY_BLOCK is the true tail of the built prompt, not just present somewhere in it', async function () {
+  stubFetchOkQuestions();
+  var capturedBody = null;
+  global.fetch = async function (url, opts) {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, json: async function () { return { choices: [{ message: { content: JSON.stringify({ questions: [{ text: 'Q?', chips: ['a', 'b'] }] }) } }] }; } };
+  };
+  var res = await handler(genEvent({ body: { personaKey: 'jung', mode: 'questions' } }));
+  assert.equal(res.statusCode, 200);
+  var systemMsg = capturedBody.messages.filter(function (m) { return m.role === 'system'; })[0].content;
+  assert.ok(systemMsg.endsWith(SAFETY_BLOCK), 'the system prompt must literally END with SAFETY_BLOCK, not merely contain it somewhere in the middle');
+});
+
+test('mode:reading system prompt: SAFETY_BLOCK is the true tail of the built prompt, not just present somewhere in it (review-round-1 regression: this used to sit at index 2 of 7, followed by four more instructions)', async function () {
+  var capturedBody = null;
+  global.fetch = async function (url, opts) {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, json: async function () { return { choices: [{ message: { content: SAMPLE_READING } }] }; } };
+  };
+  var res = await handler(genEvent({ body: { personaKey: 'jung', mode: 'reading', qa: [] } }));
+  assert.equal(res.statusCode, 200);
+  var systemMsg = capturedBody.messages.filter(function (m) { return m.role === 'system'; })[0].content;
+  assert.ok(systemMsg.endsWith(SAFETY_BLOCK), 'the system prompt must literally END with SAFETY_BLOCK, not merely contain it somewhere in the middle');
+  // Belt-and-suspenders against a regression narrower than "ends with
+  // SAFETY_BLOCK" alone would catch (e.g. SAFETY_BLOCK duplicated once at
+  // the tail while ALSO still present earlier, which .endsWith() alone
+  // wouldn't flag as wrong): SAFETY_BLOCK's own content must appear
+  // EXACTLY once in the whole prompt, and that one occurrence must be the
+  // suffix.
+  var firstIndex = systemMsg.indexOf(SAFETY_BLOCK);
+  assert.equal(firstIndex, systemMsg.length - SAFETY_BLOCK.length, 'SAFETY_BLOCK\'s one occurrence must be the literal tail of the prompt');
+  assert.equal(systemMsg.indexOf(SAFETY_BLOCK, firstIndex + 1), -1, 'SAFETY_BLOCK must appear exactly once');
 });
 
 test('mode:reading with an empty completion is rejected E407', async function () {
