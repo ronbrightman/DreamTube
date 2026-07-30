@@ -1263,6 +1263,27 @@
   // bump is the only thing standing between a stale settlement and a
   // silently-adopted stale account.
   var signupAttemptToken = 0;
+  // "Entered email" micro-step (tracker item
+  // for-product-instrument-entered-email-mic-k1fux1): between
+  // ReachedEmailEntry (fires at render, above) and signed_up there was no
+  // signal for "actually typed/submitted an email" at all -- this is the
+  // one event that decides whether the 98->36 signup leak's story is
+  // trust-at-first-glance (nobody types anything) or the password field
+  // (people type an email fine, then bail once password is asked for).
+  // Fires at most ONCE per real arrival at screen 13 (reset in
+  // renderScreen13 below, NOT on variant b's own internal email->password
+  // DOM swap, which is the same visit, not a fresh one) -- on whichever
+  // comes first, blur-with-content or a submit attempt, matching the
+  // item's own "first non-empty email field blur or submit attempt"
+  // wording. A blur with an empty field never fires this; that's the
+  // "never engaged at all" case this event exists to distinguish from.
+  var emailEnteredTracked = false;
+  function maybeTrackEmailEntered(email){
+    if(emailEnteredTracked) return;
+    if(!email) return;
+    emailEnteredTracked = true;
+    track('signup_email_entered', { variant: signupVariant });
+  }
   function deriveUsernameBase(email){
     var local = (email.split('@')[0] || '').toLowerCase();
     var sanitized = local.replace(/[^a-z0-9]/g, '');
@@ -1313,6 +1334,11 @@
     tryUsername(base);
   }
   function renderScreen13(el){
+    // Reset per fresh arrival at this screen (goToStep/render calling in
+    // here) -- NOT reset by variant b's own internal email->password DOM
+    // swap inside renderScreen13EmailFirst, which never re-enters this
+    // function; see emailEnteredTracked's own doc comment above.
+    emailEnteredTracked = false;
     // Record-mode-aware (bug fix, tracker item
     // for-product-bug-founder-high-record-it-f-8ng0nf): the default
     // headline/reassurance assume a dream already exists and is just
@@ -1412,6 +1438,15 @@
 
     var continueBtn = document.getElementById('fn-s13-continue');
     var errEl = document.getElementById('fn-signup-error');
+    var emailFieldEl = document.getElementById('fn-email');
+    // Blur trigger for signup_email_entered (see that flag's own doc
+    // comment above) -- catches a visitor who types an email then
+    // abandons WITHOUT ever tapping Continue, which the submit-attempt
+    // trigger below can't see on its own. Harmless no-op on variant b's
+    // password step re-render of this same field (it's read-only there,
+    // already tracked from the earlier email step, and the flag is
+    // already set by then anyway).
+    emailFieldEl.addEventListener('blur', function(){ maybeTrackEmailEntered(emailFieldEl.value.trim()); });
     // Variant b's email step trains "Enter advances" (see
     // renderScreen13EmailFirst's own emailInput keydown handler above) —
     // matching that here keeps the expectation consistent across both of
@@ -1422,12 +1457,13 @@
       var email = document.getElementById('fn-email').value.trim();
       var password = pwInput.value;
       errEl.textContent = '';
+      maybeTrackEmailEntered(email);
       // Format check (not just presence) — matches wizard.html's own
       // renderContact check on the equivalent field. Without this, a
       // malformed email used to reach both attemptSignup AND
       // startPendingGeneration before either could reject it server-side.
-      if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
-      if(!password){ errEl.textContent = 'Enter a password.'; return; }
+      if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; track('signup_error_shown', { reason: 'invalid_email', variant: signupVariant }); return; }
+      if(!password){ errEl.textContent = 'Enter a password.'; track('signup_error_shown', { reason: 'missing_password', variant: signupVariant }); return; }
 
       // Marks this click as the new current attempt -- see
       // signupAttemptToken's own comment above. Captured now, before the
@@ -1477,6 +1513,7 @@
             continueBtn.textContent = 'Continue';
             backBtn.disabled = false;
             errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+            track('signup_error_shown', { reason: 'already_registered', variant: signupVariant });
             return;
           }
           // Generate-during-signup: fired in parallel with attemptSignup
@@ -1517,6 +1554,12 @@
             continueBtn.textContent = 'Continue';
             backBtn.disabled = false;
             errEl.textContent = err;
+            // Generic bucket -- attemptSignup's own err string isn't
+            // classified into distinct reasons (network vs. server
+            // rejection vs. anything else), unlike the two client-side
+            // validation checks and the already-registered check above,
+            // which each know exactly why they failed.
+            track('signup_error_shown', { reason: 'signup_failed', variant: signupVariant });
             return;
           }
           flushStagedCharactersToStore();
@@ -1625,17 +1668,22 @@
       function tryAdvance(){
         var email = emailInput.value.trim();
         errEl.textContent = '';
+        maybeTrackEmailEntered(email);
         // Same format check as wireScreen13Fields' own continueBtn
         // handler (and wizard.html's renderContact) -- presence AND
         // shape, not just presence. The password step re-validates this
         // same field again via wireScreen13Fields, so a directly-edited
         // #fn-email (there isn't one in normal usage, but defense in
         // depth costs nothing here) can't skip the check either.
-        if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
+        if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; track('signup_error_shown', { reason: 'invalid_email', variant: signupVariant }); return; }
         renderPasswordStep(email);
       }
       nextBtn.addEventListener('click', tryAdvance);
       emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); tryAdvance(); } });
+      // Blur trigger -- same reasoning as wireScreen13Fields' own email
+      // blur listener above (catches a visitor who types then abandons
+      // without ever tapping Continue).
+      emailInput.addEventListener('blur', function(){ maybeTrackEmailEntered(emailInput.value.trim()); });
       emailInput.focus();
     }
 
