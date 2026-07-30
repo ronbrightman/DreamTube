@@ -1,15 +1,19 @@
 // test/start-pending-generation-audio-force.test.js
 //
-// Covers start-pending-generation.js's half of tracker item for-product-
-// cheap-generation-profile-for-yz2ina (Part B, SCOPED to audio-off-forcing
-// only): the same silent OWNER_EMAIL/Israel-geo generate_audio:false
-// override generate-video.js's own handler applies (see
-// genVideo.resolveGenerationProfile, reused here rather than
-// reimplemented) must also apply to this file's pre-signup submission
-// path — wizard.html/start.html traffic is real fal.ai cost too. Unlike
-// generate-video.js, this file has no client-facing audio toggle (Part A
-// is style.html-only) — the base "audio on unless the caption was
-// condensed" behavior is unchanged, this only adds the override on top.
+// Covers start-pending-generation.js's use of generate-video.js's shared
+// resolveGenerationProfile (tracker item
+// for-product-cheap-generation-profile-for-yz2ina, Part B). That function
+// USED TO silently force generate_audio:false for OWNER_EMAIL/Israel-geo
+// requests, but a founder directive (2026-07-29, "Regarding Sound for
+// Israel don't disable it just leave it the same for everyone, including
+// myself") retired the override — resolveGenerationProfile now always
+// returns forceAudioOff:false (see generate-video.js's own doc comment on
+// that function). This file has no client-facing audio toggle at all
+// (Part A is style.html-only), so with the override gone there is
+// nothing left to force audio off here for ANY requester — the base
+// "audio on unless the caption was condensed" behavior applies uniformly
+// regardless of OWNER_EMAIL or geo (tracker item
+// stale-test-start-pending-generation-audi-4xyswk).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -88,7 +92,7 @@ test('standard (non-owner, non-IL) request keeps the pre-existing "audio on unle
   assert.equal(calls[0].body.generate_audio, true);
 });
 
-test('OWNER_EMAIL match forces generate_audio:false, silently — response shape/status is unaffected', function () {
+test('OWNER_EMAIL match no longer forces generate_audio:false (retired 2026-07-29) — the owner gets the same audio-on default as anyone else', function () {
   return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({}));
@@ -96,15 +100,15 @@ test('OWNER_EMAIL match forces generate_audio:false, silently — response shape
     var data = JSON.parse(res.body);
     assert.ok(data.pendingId);
     assert.match(data.operationName, /^fal:/);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true);
   });
 });
 
-test('an Israel-geo request forces generate_audio:false for a non-owner email', function () {
+test('an Israel-geo request no longer forces generate_audio:false (retired 2026-07-29) — geo has no effect on this file\'s audio decision', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') } })).then(function (res) {
     assert.equal(res.statusCode, 200);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true);
   });
 });
 
