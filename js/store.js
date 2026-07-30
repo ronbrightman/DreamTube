@@ -194,6 +194,65 @@
     Realistic: 'linear-gradient(165deg,#7C8AAE,#2A2F4A)'
   };
 
+  // Deterministic per-username fallback avatar palette (tracker item
+  // for-product-ui-founder-directed-2026-07--djgjn0: the Explore feed-user-
+  // row's circle used to render permanently empty -- see explore.html's
+  // cardHTML/avatarHTML). When there's no real photo to show (no avatar
+  // thumbnail synced yet, or a legacy dream published before this feature
+  // shipped at all), every viewer's device must land on the exact SAME
+  // color + initial for a given username -- this is a pure function of the
+  // username alone (see hashString/avatarFallback below), never
+  // Math.random or anything else that could differ render to render or
+  // device to device. Order is significant (index picked by hash) --
+  // appending a new entry is safe (every existing username keeps its
+  // current color), but never reorder or remove one, or every existing
+  // user's fallback color would silently shift. Colors are drawn from
+  // this app's existing accent families (STYLE_GRADIENTS above,
+  // --gradient-ig/--accent-trust/--accent-value/--accent-growth in
+  // css/styles.css) so a fallback circle still reads as "on-brand", not an
+  // arbitrary rainbow.
+  var AVATAR_FALLBACK_PALETTE = [
+    'linear-gradient(135deg,#833AB4,#FD1D1D)',
+    'linear-gradient(135deg,#6C8CFF,#3E6E8E)',
+    'linear-gradient(135deg,#D9A653,#FFB199)',
+    'linear-gradient(135deg,#5FB88A,#1E3A2F)',
+    'linear-gradient(135deg,#FF8FCB,#9F8FFF)',
+    'linear-gradient(135deg,#FFD68A,#FF8FCB)',
+    'linear-gradient(135deg,#7C8AAE,#2A2F4A)',
+    'linear-gradient(135deg,#FCB045,#833AB4)'
+  ];
+
+  /**
+   * Small, deterministic (no Math.random) string hash — classic djb2. Same
+   * input always produces the same non-negative 32-bit output, which is
+   * exactly what avatarFallback below needs: a given username must render
+   * identically across every device and every render, not just within one
+   * session.
+   */
+  function hashString(str) {
+    var hash = 5381;
+    for (var i = 0; i < str.length; i++) {
+      hash = ((hash * 33) ^ str.charCodeAt(i)) >>> 0;
+    }
+    return hash;
+  }
+
+  /**
+   * Deterministic per-username fallback avatar: { gradient, initial }. Pure
+   * function of `handle` alone (the '@'-prefixed or bare username) — see
+   * AVATAR_FALLBACK_PALETTE's own doc comment for why this must never
+   * depend on anything else. `initial` is the first letter/digit of the
+   * display name (displayHandle-stripped), uppercased; '?' for an empty/
+   * non-string handle so this never renders truly blank either.
+   */
+  function avatarFallback(handle) {
+    var clean = (typeof handle === 'string' ? handle : '').replace(/^@/, '').trim();
+    var match = clean.match(/[a-z0-9]/i);
+    var initial = match ? match[0].toUpperCase() : '?';
+    var idx = clean ? (hashString(clean.toLowerCase()) % AVATAR_FALLBACK_PALETTE.length) : 0;
+    return { gradient: AVATAR_FALLBACK_PALETTE[idx], initial: initial };
+  }
+
   function seed() {
     return {
       user: null,
@@ -690,6 +749,55 @@
     return (state.pendingJob && myHandle && state.pendingJob.ownerHandle === myHandle) ? state.pendingJob : null;
   }
 
+  // Avatar thumbnail attached to a published dream (tracker item
+  // for-product-ui-founder-directed-2026-07--djgjn0): the Me character's
+  // photoDataUrl (profile.html/create.html's identity photo, already
+  // downscaled to 768px/0.82 quality for THIS device's own use) is only
+  // ever local — publish-dream.js's shared record had no avatar field at
+  // all, so another visitor's device had nothing to render for a
+  // published author's circle. That 768px photo is far too big to attach
+  // to every published dream, though: get-feed.js's single feed-index
+  // blob is downloaded whole by every visitor, and the SAME author's photo
+  // would otherwise be duplicated once per published dream. This resizes
+  // it down again, much further ("aggressively resized, few KB" per the
+  // tracker item), purely for this cross-device thumbnail — same
+  // canvas-based downscale technique as profile.html/create.html's own
+  // resizeImageFile, just operating on an already-decoded data URL (no
+  // FileReader step needed, there's no raw File here).
+  var AVATAR_THUMB_MAX_DIM = 48;
+  var AVATAR_THUMB_QUALITY = 0.55;
+  function resizeDataUrlForAvatarThumb(dataUrl) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onerror = function () { reject(new Error('decode_failed')); };
+      img.onload = function () {
+        var scale = Math.min(1, AVATAR_THUMB_MAX_DIM / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', AVATAR_THUMB_QUALITY));
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  /**
+   * Resolves to a tiny avatar thumbnail for whoever is CURRENTLY signed
+   * in's Me character, or null if there isn't one to send (no self
+   * character yet, a describe-only self character with no photo, or
+   * logged out). Never rejects — same "always resolves, callers chain a
+   * single .then()" shape as this file's generateAvatarFromDescription-
+   * style helpers, so a decode failure just degrades to "no avatar this
+   * sync" rather than blocking the publish sync itself.
+   */
+  function currentUserAvatarThumbnail() {
+    var self = state.user ? myCharacterList().filter(function (c) { return c.isSelf; })[0] : null;
+    if (!self || !self.photoDataUrl) return Promise.resolve(null);
+    return resizeDataUrlForAvatarThumb(self.photoDataUrl).catch(function () { return null; });
+  }
+
   /**
    * Fire-and-forget upsert into the shared feed-index blob. Local state is
    * always the source of truth for the owner's own view (Profile) — if this
@@ -722,33 +830,41 @@
    * means the shared feed doesn't get this particular update.
    */
   function syncPublishedDreamToFeed(dream) {
-    fetch('/.netlify/functions/publish-dream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
-        style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
-        imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video',
-        // Republish-license consent state (tracker item for-product-terms-
-        // republish-license-per--fhpcxk) — carried into the SHARED feed-
-        // index record (not just this browser's local copy) since that's
-        // the one place a real, cross-device auto-posting engine could
-        // ever actually read curation eligibility from. `undefined` here
-        // (a dream published before this shipped) intentionally comes
-        // through as `null` below — see publish-dream.js's own comment for
-        // why that's the correct "not licensed, needs fresh consent" state,
-        // not a bug to default away.
-        channelLicenseGrantedAt: dream.channelLicenseGrantedAt || null,
-        // Carried alongside channelLicenseGrantedAt for the same reason —
-        // unpublishDream/deleteDream's revocation stamp is only useful to a
-        // future "remove existing social posts on request" pass if it
-        // actually reaches the shared record those posts would be sourced
-        // from, not just this browser's local copy.
-        channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
-        okToFeatureOnChannels: dream.okToFeatureOnChannels !== false,
-        authToken: (state.user && state.user.authToken) || null
-      })
-    }).catch(function () { /* best-effort — see comment above */ });
+    // Avatar thumbnail generation is itself async (canvas decode) — resolve
+    // it first, then send the same upsert as before either way. See
+    // currentUserAvatarThumbnail's own doc comment for why this never
+    // rejects (a decode failure just means `avatar: null` goes out, same
+    // as having no Me photo at all).
+    currentUserAvatarThumbnail().then(function (avatar) {
+      fetch('/.netlify/functions/publish-dream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: dream.id, ownerHandle: dream.ownerHandle, caption: dream.caption,
+          style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
+          imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video',
+          avatar: avatar,
+          // Republish-license consent state (tracker item for-product-terms-
+          // republish-license-per--fhpcxk) — carried into the SHARED feed-
+          // index record (not just this browser's local copy) since that's
+          // the one place a real, cross-device auto-posting engine could
+          // ever actually read curation eligibility from. `undefined` here
+          // (a dream published before this shipped) intentionally comes
+          // through as `null` below — see publish-dream.js's own comment for
+          // why that's the correct "not licensed, needs fresh consent" state,
+          // not a bug to default away.
+          channelLicenseGrantedAt: dream.channelLicenseGrantedAt || null,
+          // Carried alongside channelLicenseGrantedAt for the same reason —
+          // unpublishDream/deleteDream's revocation stamp is only useful to a
+          // future "remove existing social posts on request" pass if it
+          // actually reaches the shared record those posts would be sourced
+          // from, not just this browser's local copy.
+          channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
+          okToFeatureOnChannels: dream.okToFeatureOnChannels !== false,
+          authToken: (state.user && state.user.authToken) || null
+        })
+      }).catch(function () { /* best-effort — see comment above */ });
+    });
   }
 
   /**
@@ -2105,6 +2221,31 @@
      */
     displayHandle: function (handle) {
       return (typeof handle === 'string') ? handle.replace(/^@/, '') : handle;
+    },
+
+    /**
+     * Deterministic per-username fallback avatar — { gradient, initial } —
+     * for when there's no real photo to render (see AVATAR_FALLBACK_PALETTE/
+     * avatarFallback's own doc comment above). Pure function of `handle`
+     * alone, so every device renders the exact same fallback for a given
+     * username, every time.
+     */
+    avatarFallback: avatarFallback,
+
+    /**
+     * This account's own Me-character photo, straight from local state —
+     * no network round trip. explore.html uses this to backfill the
+     * viewer's OWN published dreams with their real photo immediately
+     * (tracker item for-product-ui-founder-directed-2026-07--djgjn0's
+     * explicit ask), rather than waiting on the small server-synced
+     * `avatar` thumbnail (see syncPublishedDreamToFeed) to have round-
+     * tripped through get-feed.js — this device already has the freshest,
+     * full-quality copy of that photo. Returns null if logged out, or
+     * there's no Me character / it's describe-only (no photo).
+     */
+    getMeAvatarDataUrl: function () {
+      var self = state.user ? myCharacterList().filter(function (c) { return c.isSelf; })[0] : null;
+      return (self && self.photoDataUrl) || null;
     },
 
     /**

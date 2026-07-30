@@ -1,8 +1,8 @@
 // netlify/functions/publish-dream.js
 //
 // POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType,
-//        channelLicenseGrantedAt, channelLicenseRevokedAt, okToFeatureOnChannels,
-//        authToken }
+//        avatar, channelLicenseGrantedAt, channelLicenseRevokedAt,
+//        okToFeatureOnChannels, authToken }
 // -> upserts a dream into the shared feed-index blob (see get-feed.js).
 // Called both when a dream is first published, and again if an
 // already-published dream is later edited/regenerated (store.js's
@@ -46,6 +46,22 @@
 // `id` is public, anyone could forge a raw POST here and silently flip a
 // real owner's republish-license consent, with nothing server-side to
 // notice or stop it.
+//
+// avatar (tracker item for-product-ui-founder-directed-2026-07--djgjn0):
+// a small avatar thumbnail (see js/store.js's syncPublishedDreamToFeed —
+// resized client-side to a low-quality, ~48px JPEG data URL, "few KB" per
+// that item) carried alongside the rest of the record so OTHER visitors'
+// devices have something real to render for Explore's feed-user-row
+// circle, not just the always-empty div this fixes. This is the one field
+// on this endpoint that's genuinely attacker-controllable free-form data
+// (everything else is short strings/URLs/booleans) — validated the same
+// rigor as this file's other hardening (see validateAvatar below): must be
+// a real small image data URL or absent, never trusted blindly. Rejected
+// (E7) rather than silently dropped, matching this file's existing
+// reject-don't-silently-degrade posture for a request that fails its own
+// stated shape (see E3/E6) — a legitimate client (js/store.js) never sends
+// anything else, so this only ever fires against a forged/malformed
+// request.
 //
 // Fixed the same way block-user.js was (lib/account-auth-token.js's
 // verifyToken — see that file's own header comment for why this
@@ -98,6 +114,10 @@
 //                                   the E5 "business as usual" shape —
 //                                   this is a rejected identity claim, not
 //                                   a routine expired-token retry.
+//   E7 invalid_avatar           — `avatar` present but not a small,
+//                                   correctly-typed image data URL (wrong
+//                                   type, malformed, or over
+//                                   AVATAR_MAX_BYTES decoded size)
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var accountAuthToken = require('./lib/account-auth-token');
@@ -105,6 +125,32 @@ var accountAuthToken = require('./lib/account-auth-token');
 function stripAt(handle) {
   var s = (typeof handle === 'string' ? handle : '').trim();
   return s.charAt(0) === '@' ? s.slice(1) : s;
+}
+
+// Generous cap given js/store.js's own thumbnail target of ~1-3KB at
+// 48px/0.55-quality JPEG (see syncPublishedDreamToFeed) -- 20KB decoded
+// leaves real headroom for a legitimate client without letting a forged
+// request smuggle a full-size photo into the shared feed-index blob that
+// every visitor's device downloads whole (see get-feed.js).
+var AVATAR_MAX_BYTES = 20 * 1024;
+var AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+
+/**
+ * Validates an `avatar` payload field. Returns { ok:true, value } — value
+ * is the original data URL string, or null if the field was omitted/empty
+ * (a dream published with no Me photo set, or before this feature shipped
+ * — see explore.html's avatarFallback-driven rendering for how that's
+ * handled) — or { ok:false } if `avatar` was present but isn't a small,
+ * correctly-typed image data URL.
+ */
+function validateAvatar(avatar) {
+  if (avatar === undefined || avatar === null || avatar === '') return { ok: true, value: null };
+  if (typeof avatar !== 'string') return { ok: false };
+  var match = AVATAR_DATA_URL_RE.exec(avatar);
+  if (!match) return { ok: false };
+  var approxBytes = Math.floor(match[2].length * 3 / 4);
+  if (approxBytes > AVATAR_MAX_BYTES) return { ok: false };
+  return { ok: true, value: avatar };
 }
 
 exports.handler = async function (event) {
@@ -142,6 +188,12 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E4: auth_token_required' }) };
   }
 
+  var avatarCheck = validateAvatar(payload.avatar);
+  if (!avatarCheck.ok) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E7: invalid_avatar' }) };
+  }
+  var avatar = avatarCheck.value;
+
   var auth = await accountAuthToken.verifyToken(event, authToken);
   if (!auth.ok) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E5: invalid_or_expired_token' }) };
@@ -163,6 +215,7 @@ exports.handler = async function (event) {
     var record = {
       id: id, ownerHandle: ownerHandle, caption: caption, style: style, dur: dur,
       videoUrl: videoUrl, imageUrl: imageUrl, mediaType: mediaType,
+      avatar: avatar,
       likes: idx === -1 ? 0 : (feed[idx].likes || 0),
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
       channelLicenseGrantedAt: channelLicenseGrantedAt,

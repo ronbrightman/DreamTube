@@ -177,6 +177,33 @@
     }
   }
 
+  // Feed-user-row avatar circle (tracker item for-product-ui-founder-
+  // directed-2026-07--djgjn0): this circle used to render permanently
+  // empty ('<div class="feed-avatar"></div>', nothing ever populated it).
+  // Three-way fallback, in priority order:
+  //   1. `d.mine` (this viewer's OWN published dream, per getSharedFeed's
+  //      ownerHandle-vs-current-user check) -- backfill straight from this
+  //      device's local Me character photo, per the founder's explicit ask,
+  //      rather than waiting on the small server-synced `avatar` thumbnail
+  //      (see js/store.js's syncPublishedDreamToFeed) to have round-tripped
+  //      through get-feed.js. Always the freshest, full-quality copy this
+  //      device has, and works even for a dream published before the
+  //      avatar field existed at all.
+  //   2. `d.avatar` -- the small avatar thumbnail synced at publish time,
+  //      for every OTHER viewer whose device has no local copy of this
+  //      author's photo to fall back on.
+  //   3. Deterministic per-username colored fallback (DreamStore.
+  //      avatarFallback) -- covers both "this author never set a Me photo"
+  //      and "this dream was published before the avatar field existed"
+  //      (legacy records simply have no d.avatar at all). Never a blank/
+  //      empty circle, regardless of which case applies.
+  function avatarHTML(d){
+    var src = d.mine ? (DreamStore.getMeAvatarDataUrl() || d.avatar) : d.avatar;
+    if(src) return '<div class="feed-avatar"><img src="'+esc(src)+'" alt=""></div>';
+    var fb = DreamStore.avatarFallback(d.ownerHandle);
+    return '<div class="feed-avatar feed-avatar-fallback" style="background:'+esc(fb.gradient)+'">'+esc(fb.initial)+'</div>';
+  }
+
   // globalIndex is stamped onto the card as data-index (see the returned
   // markup below) purely so dehydrateSlot() can look the right dream back
   // up out of currentDreams if this card later scrolls far enough away to
@@ -253,7 +280,7 @@
       dowBadge +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
-        '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
+        '<div class="feed-user-row">'+avatarHTML(d)+'<div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
         '<div class="feed-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
         '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' + (d.dur ? '<span class="dot"></span><span>'+esc(d.dur)+'</span>' : '') + '</div>' +
       '</div>' +
