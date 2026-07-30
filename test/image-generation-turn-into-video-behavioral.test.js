@@ -14,6 +14,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -171,6 +172,7 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
 
     await page.waitForURL('**/result.html?id=dream-to-upgrade', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.equal(generateVideoCalls[0].sourceImageUrl, ORIGINAL_IMAGE_URL, 'generate-video.js must receive the original imageUrl as sourceImageUrl');
 

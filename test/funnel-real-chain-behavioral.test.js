@@ -70,6 +70,7 @@ try {
 var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 var { fakeEvent } = require('./helpers/fake-event');
+var settle = require('./helpers/settle').settle;
 
 var server = null;
 var browser = null;
@@ -255,6 +256,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     // actually exercised, now running for real against real handlers.
     await page.waitForURL(/result\.html\?id=/, { timeout: 20000 });
 
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must have fired exactly once, for the real funnel pendingId');
     assert.equal(claimCalls[0].email, FUNNEL_EMAIL);
     assert.ok(markCalls.length >= 1, 'processing.html must have called the REAL mark-generation-completed.js at least once');
@@ -264,6 +266,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     // must have genuinely been attempted, through the real job-owners
     // lookup, the real account-store lookup, and the real
     // first-dream-email-sender send -- not a mocked stand-in.
+    await settle(function () { return resendCalls.length >= 1; });
     assert.equal(resendCalls.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend send attempt for the funnel user');
     assert.deepEqual(resendCalls[0].body.to, [FUNNEL_EMAIL], 'the email must go to the funnel user\'s own real email');
   } finally {

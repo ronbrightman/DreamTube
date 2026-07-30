@@ -46,6 +46,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -175,6 +176,7 @@ test('processing.html: the wait-screen carousel does not eagerly autoplay every 
     // their own playback attempt too.
     await page.locator('#proc-preview-row').evaluate(function (row) { row.scrollLeft = row.scrollWidth; });
     await page.waitForTimeout(500);
+    await settle(function () { return requested.length >= 10; });
     assert.equal(requested.length, 10, 'scrolling to the end must eventually bring every tile into view and trigger its own (real) playback attempt -- got ' + requested.length + '/10 after scrolling');
   } finally {
     await context.close();

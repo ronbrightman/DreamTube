@@ -52,6 +52,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -429,6 +430,7 @@ test('clicking Save twice in quick succession only fires one request (the in-fli
       return t.classList.contains('show') && /Comment saved/.test(t.textContent);
     }, null, { timeout: 5000 });
 
+    await settle(function () { return requestCount >= 1; });
     assert.equal(requestCount, 1, 'a double-click on Save must only ever result in one update-tracker-item request');
   } finally {
     await context.close();

@@ -20,6 +20,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -161,6 +162,7 @@ test('profile.html: happy path — correct password + explicit confirm tap delet
 
     await page.waitForSelector('#account-deleted-overlay.open');
 
+    await settle(function () { return calls.length >= 1; });
     assert.equal(calls.length, 1, 'delete-account.js must have been called exactly once');
     assert.deepEqual(calls[0], { username: 'tester', password: 'realpassword1' }, 'must send the real username + the exact password the user typed');
 
@@ -307,6 +309,7 @@ test('profile.html: a WRONG password shows an inline error, never navigates away
     });
     assert.equal(await page.locator('#delete-account-error').textContent(), 'Incorrect password.');
 
+    await settle(function () { return calls.length >= 1; });
     assert.equal(calls.length, 1);
     // Modal stays open — the user can correct the password and retry,
     // rather than being bounced out of the flow entirely.

@@ -28,6 +28,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -202,6 +203,7 @@ test('style.html: picking Image and generating actually dispatches to the image 
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
     assert.equal(generateVideoCalls.length, 0, 'generate-video.js must never be called when Image is selected');
+    await settle(function () { return generateImageCalls.length >= 1; });
     assert.equal(generateImageCalls.length, 1);
     assert.equal(generateImageCalls[0].caption, 'A dream about a floating library');
     assert.equal(generateImageCalls[0].style, 'Anime');

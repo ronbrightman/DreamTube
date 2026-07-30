@@ -1,15 +1,20 @@
 // test/start-pending-generation-audio-force.test.js
 //
 // Covers start-pending-generation.js's half of tracker item for-product-
-// cheap-generation-profile-for-yz2ina (Part B, SCOPED to audio-off-forcing
-// only): the same silent OWNER_EMAIL/Israel-geo generate_audio:false
-// override generate-video.js's own handler applies (see
+// cheap-generation-profile-for-yz2ina (Part B): this path resolves the
+// same generation profile generate-video.js's own handler does (see
 // genVideo.resolveGenerationProfile, reused here rather than
-// reimplemented) must also apply to this file's pre-signup submission
-// path — wizard.html/start.html traffic is real fal.ai cost too. Unlike
-// generate-video.js, this file has no client-facing audio toggle (Part A
-// is style.html-only) — the base "audio on unless the caption was
-// condensed" behavior is unchanged, this only adds the override on top.
+// reimplemented) so the two submission paths can never drift apart.
+//
+// The profile's audio-off FORCING was retired by founder directive on
+// 2026-07-29 ("Regarding Sound for Israel don't disable it just leave it
+// the same for everyone, including myself") — resolveGenerationProfile
+// now always returns forceAudioOff:false and the profile label survives
+// for cost-attribution logging only. What this file pins today is
+// therefore the absence of any override: generate_audio is decided purely
+// by the pre-existing "audio on unless the caption was condensed" rule,
+// identically for owner, Israel-geo, and everyone else. (This file has no
+// client-facing audio toggle to combine with — Part A is style.html-only.)
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -19,6 +24,7 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var genVideo = require('../netlify/functions/generate-video');
 var handler = require('../netlify/functions/start-pending-generation').handler;
 
 var realFetch = global.fetch;
@@ -88,7 +94,21 @@ test('standard (non-owner, non-IL) request keeps the pre-existing "audio on unle
   assert.equal(calls[0].body.generate_audio, true);
 });
 
-test('OWNER_EMAIL match forces generate_audio:false, silently — response shape/status is unaffected', function () {
+// ----- The owner/IL audio force-off is RETIRED (founder directive
+// 2026-07-29: "Regarding Sound for Israel don't disable it just leave it
+// the same for everyone, including myself" — see
+// genVideo.resolveGenerationProfile, which now always returns
+// forceAudioOff:false). test/generate-video-audio-toggle.test.js was
+// updated to pin that new contract on generate-video.js's own path at the
+// time; THIS file was missed and kept asserting the removed behavior, so
+// these two tests have been failing deterministically on main ever since
+// — red on every full-suite run, in isolation too. Rewritten here to pin
+// the same contract this path actually has: audio is decided purely by
+// the "on unless the caption was condensed" rule, identically for owner,
+// Israel-geo, and everyone else; the profile label survives for
+// cost-attribution logging only.
+
+test('OWNER_EMAIL match no longer forces generate_audio:false — audio is unaffected, and the response shape/status is unchanged', function () {
   return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({}));
@@ -96,15 +116,23 @@ test('OWNER_EMAIL match forces generate_audio:false, silently — response shape
     var data = JSON.parse(res.body);
     assert.ok(data.pendingId);
     assert.match(data.operationName, /^fal:/);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true);
   });
 });
 
-test('an Israel-geo request forces generate_audio:false for a non-owner email', function () {
+test('resolveGenerationProfile still labels the owner for cost attribution on this path, without forcing audio off', function () {
+  return withEnv({ OWNER_EMAIL: '  WizardUser@Example.com  ' }, async function () {
+    var profile = genVideo.resolveGenerationProfile('wizarduser@example.com', fakeEvent({}));
+    assert.equal(profile.profile, 'cheap_owner');
+    assert.equal(profile.forceAudioOff, false);
+  });
+});
+
+test('an Israel-geo request keeps generate_audio:true, same as everyone else', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') } })).then(function (res) {
     assert.equal(res.statusCode, 200);
-    assert.equal(calls[0].body.generate_audio, false);
+    assert.equal(calls[0].body.generate_audio, true);
   });
 });
 

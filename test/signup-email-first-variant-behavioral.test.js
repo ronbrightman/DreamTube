@@ -31,6 +31,9 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settleMod = require('./helpers/settle');
+var settle = settleMod.settle;
+var gate = settleMod.gate;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -490,6 +493,7 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
     var page = await context.newPage();
     await blockThirdParty(page);
     var claimCalls = [];
+    var staleA = gate();
     var EMAIL_A = 'variant-b-race-a@example.com';
     var EMAIL_B = 'variant-b-race-b@example.com';
 
@@ -504,7 +508,7 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
         // The abandoned signup attempt -- held back well past the point
         // where the user has since moved on to a second, fresh screen 13
         // for a completely different submission.
-        await new Promise(function (r) { setTimeout(r, 900); });
+        await staleA.wait();
       }
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
@@ -546,7 +550,16 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
 
     // Sit idle right here -- deliberately not resubmitting -- while A's
     // held-back register-account response lands.
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // ONLY NOW release the held-back response, so it is guaranteed to
+    // land against the state this test exists to cover however slow
+    // getting here was (see helpers/settle.js's gate() header -- this was
+    // a fixed 900ms hold the setup sequence above had to out-run). The
+    // short wait after it settles the page's own continuation, measured
+    // from the release rather than raced against it.
+    assert.equal(staleA.released, false, 'sanity: the abandoned attempt must still have been in flight throughout the setup -- that is the race being tested');
+    staleA.open();
+    await settle(function () { return staleA.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-s13-email-continue')) return 'screen13-email-step';
@@ -566,6 +579,7 @@ test('variant "b": Signup Continue -> immediate Back before attemptSignup resolv
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
 
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (B) signup');
     assert.equal(claimCalls[0].pendingId, 'pd-b-sig-B', 'must claim B\'s pendingId, never the abandoned A attempt\'s');
   } finally {
@@ -582,6 +596,7 @@ test('variant "b": Signup Continue -> immediate "Change email" before attemptSig
     await blockThirdParty(page);
     var claimCalls = [];
     var registerCalls = [];
+    var staleChangeEmail = gate();
     var EMAIL_STALE = 'variant-b-changeemail-stale@example.com';
     var EMAIL_NEW = 'variant-b-changeemail-new@example.com';
 
@@ -594,7 +609,7 @@ test('variant "b": Signup Continue -> immediate "Change email" before attemptSig
       // Deliberately delayed -- held back well past the point where the
       // user has already clicked "Change email" and moved on, mirroring
       // the other tests' abandoned-attempt shape above.
-      await new Promise(function (r) { setTimeout(r, 900); });
+      await staleChangeEmail.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
     await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
@@ -636,7 +651,16 @@ test('variant "b": Signup Continue -> immediate "Change email" before attemptSig
     // Sit idle right here -- deliberately not resubmitting -- while the
     // stale, abandoned register-account response for EMAIL_STALE lands
     // (900ms artificial delay above).
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // ONLY NOW release the held-back response, so it is guaranteed to
+    // land against the state this test exists to cover however slow
+    // getting here was (see helpers/settle.js's gate() header -- this was
+    // a fixed 900ms hold the setup sequence above had to out-run). The
+    // short wait after it settles the page's own continuation, measured
+    // from the release rather than raced against it.
+    assert.equal(staleChangeEmail.released, false, 'sanity: the abandoned attempt must still have been in flight throughout the setup -- that is the race being tested');
+    staleChangeEmail.open();
+    await settle(function () { return staleChangeEmail.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-s13-email-continue')) return 'screen13-email-step';
@@ -677,6 +701,7 @@ test('variant "b": Signup Continue -> immediate "Change email" before attemptSig
     assert.ok(currentUserAfterReal, 'the real, resubmitted signup with the new email must have actually completed');
     var accountEmailAfterReal = await page.evaluate(function () { return window.DreamStore.getAccountEmail(); });
     assert.equal(accountEmailAfterReal, EMAIL_NEW, 'the account created must use the NEW email, never the stale one');
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (new-email) signup');
   } finally {
     await context.close();
@@ -734,6 +759,7 @@ test('variant "b": screen 13 submission with an email that already has an accoun
       return errEl && errEl.textContent.indexOf('already have an account') !== -1;
     }, null, { timeout: 5000 });
 
+    await settle(function () { return checkEmailCalls.length >= 1; });
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'variant-b-already-taken@example.com');
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
@@ -781,6 +807,7 @@ test('variant "b": check-email.js failing outright (rate-limited/5xx) fails OPEN
     await page.click('#fn-s13-continue');
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
     assert.equal(startPendingCalls[0].email, 'variant-b-legit-new-user@example.com');
   } finally {
@@ -808,6 +835,7 @@ test('signup_email_first_variant_shown fires once on reaching screen 13, and pos
     assert.deepEqual(captureCalls[0][2], { variant: 'a' });
 
     var registerCalls = calls.filter(function (entry) { return entry[0] === 'register'; });
+    await settle(function () { return registerCalls.length >= 1; });
     assert.equal(registerCalls.length, 1, 'expected exactly one posthog.register call');
     assert.deepEqual(registerCalls[0][1], { signup_email_first_variant: 'a' });
   } finally {
@@ -830,6 +858,7 @@ test('signup_email_first_variant_shown fires once on reaching screen 13, and pos
     assert.deepEqual(captureCalls[0][2], { variant: 'b' });
 
     var registerCalls = calls.filter(function (entry) { return entry[0] === 'register'; });
+    await settle(function () { return registerCalls.length >= 1; });
     assert.equal(registerCalls.length, 1, 'expected exactly one posthog.register call');
     assert.deepEqual(registerCalls[0][1], { signup_email_first_variant: 'b' });
 

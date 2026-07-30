@@ -29,6 +29,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -128,6 +129,7 @@ test('processing.html: a refund-eligible generation failure (tokensRefunded:true
     await safeGoto(page, baseUrl + '/processing.html');
     await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
 
+    await settle(function () { return videoStatusCalls.length >= 1; });
     assert.equal(videoStatusCalls.length, 1);
     assert.equal(videoStatusCalls[0].email, 'refundshown@example.com', 'video-status.js must receive the logged-in account\'s email so a refund can be credited to the right balance');
     assert.equal(videoStatusCalls[0].name, 'fal:fal-ai/veo3.1/fast:req-refundshown');
@@ -189,6 +191,7 @@ test('processing.html: the refund copy also works for the image path (image-stat
     await safeGoto(page, baseUrl + '/processing.html');
     await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
 
+    await settle(function () { return imageStatusCalls.length >= 1; });
     assert.equal(imageStatusCalls.length, 1);
     assert.equal(imageStatusCalls[0].email, 'refundimage@example.com');
     assert.equal(await page.locator('#proc-fail-refund').isVisible(), true);
