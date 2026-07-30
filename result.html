@@ -72,15 +72,25 @@
   <img class="result-image" id="result-image" alt="" style="display:none;">
   <div class="result-scrim"></div>
   <div class="play-badge result-play" id="result-play-badge"><div class="badge-circle"><span class="icon" id="result-play-icon"></span></div></div>
-  <!-- Topbar keeps only back + share (plus the unrelated title/token-chip/
-       mute controls) — the old Explore/Profile nav icons are gone from
-       here, replaced by the compact CTA pair inside .result-panel below.
-       See tracker.html's for-product-build-result-html-first-vide-mupiua. -->
+  <!-- Topbar: back + mute + share only.
+       INTERPRET-PRIMARY REDESIGN (founder-decided 2026-07-30, tracker item
+       for-product-build-founder-decided-2026-0-75fnlk, frozen mock
+       result-mock2-x7q4.html "D1 · Private"). The old page title ("Your
+       Dream") is CUT per the memo's section-6 declutter list — the
+       full-bleed video already says what this screen is, and the mock's
+       own topbar carries nothing but the two chip buttons. The old
+       Explore/Profile nav icons were already gone (moved to a compact CTA
+       pair in an earlier round); that CTA pair is now cut too — see
+       .result-panel below.
+       Token chip: still MOUNTED here (the balance chip is the fallback
+       entry point into the claim/purchase sheets), but pushed off-screen
+       by default and only revealed in the image-only state, whose "Turn
+       this into a video" hero must keep its token cost visible — see
+       render() below, which is the single place that toggles it. -->
   <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
     <a class="icon-btn" href="explore.html" id="result-back" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
-    <div id="result-topbar-title" style="font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">Your Dream</div>
     <div style="display:flex; align-items:center; gap:8px;">
-      <div id="topbar-token-chip-slot"></div>
+      <div id="topbar-token-chip-slot" style="display:none;"></div>
       <button class="icon-btn" id="mute-btn" title="Unmute" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
       <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
     </div>
@@ -90,8 +100,10 @@
          setupExpandableQuote() below. -->
     <div class="dream-quote" id="result-quote" dir="auto">""</div>
     <div class="quote-more-hint" id="result-quote-hint" style="display:none;">Show more</div>
+    <!-- Privacy tag only. The old "Style: X" tag is CUT (memo section 6,
+         founder-decided 2026-07-30) — the style is visible in the video
+         itself and never drove an action from here. -->
     <div class="result-tag-row">
-      <span class="feed-tag" id="result-style-tag">Style: —</span>
       <span class="feed-tag" id="result-privacy-tag">Private</span>
     </div>
     <!-- "Turn this into a video" upsell — shown only when this dream has an
@@ -107,45 +119,68 @@
       <span class="feed-tag">100 tokens</span>
     </button>
 
-    <!-- Dream interpretation — a slim pill ABOVE the CTA pair (absorbs the
-         already-approved interpretation-above-make-another cheap win, not a
-         separate change). Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
-         tracker item for-product-build-interpretation-wave-1--xuftyn): now
-         opens js/interpret-experience.js's full-screen "Interpreter's
-         Chamber" (InterpretExperience.open) instead of the old, now-removed
-         in-page bottom sheet — see this file's own script block below. -->
-    <button class="interp-pill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
-      <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> What might this dream mean?</span>
-      <span class="feed-tag" id="interp-private-pill">Private</span>
+    <!-- ===== THE HERO — interpretation entry =====
+         Founder decision 2026-07-30 (tracker item
+         for-product-build-founder-decided-2026-0-75fnlk), reaffirming the
+         07-26 call: the hero on this screen is NOT publish. New users need
+         confidence before they broadcast, and interpretation is the
+         product's depth direction — so the ONE emphasized action here is
+         the interpretation entry, and Publish drops to a quiet link in the
+         row below (its consent flow entirely unchanged).
+
+         Visual treatment is copied from the frozen founder-approved mock
+         result-mock2-x7q4.html's `.hero-cta` (full-width accent pill,
+         800-weight label, soft pulse) — see css/styles.css's
+         .result-hero-cta. Only the copy and the wiring differ: this opens
+         js/interpret-experience.js's "Interpreter's Chamber"
+         (InterpretExperience.open) for THIS dream, the exact same
+         experience home.html's Chamber card opens — one Chamber, two entry
+         points (see the click handler in this file's script block, and
+         tracker item for-product-chamber-dream-linkage-is-unc-00s2dr for
+         the home-entry half, which is deliberately NOT in this build's
+         scope).
+
+         The old slim `.interp-pill` treatment survives only as this
+         button's `.quiet` modifier, used in the image-only state alone
+         (see render() below); the "Private" reassurance that pill used to
+         carry as an inline chip is now the micro line directly beneath,
+         matching the mock's own `.micro` slot under its hero. -->
+    <button class="result-hero-cta" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
+      <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
     </button>
+    <div class="result-hero-micro" id="interp-hero-micro">Only you can see your reading.</div>
 
-    <!-- Compact CTA pair — replaces the old topbar Explore/Profile nav
-         icons. Deliberately SMALL (founder asked the whole CTA area
-         shrunk from what it was). -->
-    <div class="result-cta-row">
-      <a class="btn btn-primary result-cta" href="explore.html" id="result-cta-explore"><span class="icon" id="result-cta-explore-icon"></span>Explore dreams</a>
-      <a class="btn result-cta result-cta-secondary" href="profile.html" id="result-cta-profile"><span class="icon" id="result-cta-profile-icon"></span>My profile</a>
-    </div>
-
-    <!-- Quiet small-link row — Edit / Publish / Make another / Delete.
-         FINAL placement (founder, 4th iteration, 2026-07-28 — see
-         tracker.html's for-product-result-screen-quiet-row-fina-btv7nr).
-         History, so this doesn't loop a 5th time: (1) big bottom-bar
-         Delete — too prominent; (2) Edit-sheet red link — too buried
-         (no-delete-video-2rlysi); (3) overflow (⋯) menu — founder couldn't
-         find it, an unlabeled trigger hiding the one action that mattered.
-         This fix addresses both complaints at once: Save is removed
-         entirely (redundant — Share in the topbar covers sending/
-         downloading, and every dream self-saves to the profile), and
-         Delete takes the freed slot as an ordinary quiet link — same
-         muted styling as Edit/Publish/Make another, just its icon tinted
-         toward --danger so it's discoverable without reading as a
-         recommended action. See tracker.html's
+    <!-- Quiet small-link row — Publish / Edit / Make another / Delete.
+         Publish moved INTO this row by the 2026-07-30 interpret-primary
+         redesign above (it is a quiet link now, not the hero) — its modal,
+         consent copy, and publish/unpublish logic are untouched.
+         Placement history for the row itself, so this doesn't loop again:
+         (1) big bottom-bar Delete — too prominent; (2) Edit-sheet red link
+         — too buried (no-delete-video-2rlysi); (3) overflow (⋯) menu —
+         founder couldn't find it, an unlabeled trigger hiding the one
+         action that mattered; (4) this row, with Save removed entirely
+         (redundant — Share in the topbar covers sending/downloading, and
+         every dream self-saves to the profile) and Delete taking the freed
+         slot as an ordinary quiet link, same muted styling as its
+         neighbours with only its icon tinted toward --danger. See
+         tracker.html's for-product-result-screen-quiet-row-fina-btv7nr,
          for-product-result-screen-delete-is-too--6axxko and
-         no-delete-video-2rlysi for the earlier iterations. -->
+         no-delete-video-2rlysi.
+         NOTE for whoever picks up tracker item
+         for-product-result-quiet-row-v5-founder--4dnf5u (still open at the
+         time of this build): that item asks for the Delete icon's danger
+         tint to go away entirely and for "Make another" to be elevated.
+         Deliberately NOT pre-empted here — this build leaves the row's
+         styling exactly as `main` had it so v5 stays a single, reviewable
+         decision rather than being half-applied by a different change.
+         Edit still opens the existing Edit sheet below; the "new edit
+         mechanism" (ask-what-to-change + model rotation) is its own
+         separate, not-yet-built tracker item,
+         for-product-new-edit-mechanism-founder-i-qmsdgj — when that lands
+         it replaces this button's handler, not its place in this row. -->
     <div class="result-quiet-links">
-      <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
       <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+      <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
       <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
       <button class="result-quiet-link result-quiet-link-danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
@@ -326,14 +361,27 @@
   DreamStore.maintainSessionTransferUrl();
   // Install-to-home-screen nudge (tracker item for-product-build-stage-0-
   // pwa-web-push-f-jbutt5, absorbing home-screen-shortcut-a2hs-nudge-
-  // founder--yylzoq) -- 'session-transfer' only fires if THIS load just
-  // consumed a real transfer token above; 'repeat-visit' fires instead
-  // for a real-browser visitor's 2nd+ time on THIS page (see
-  // js/install-nudge.js's own doc comment). Whichever is eligible first
-  // renders the card; the other call is then a harmless no-op (the module
-  // never renders twice in one load).
+  // founder--yylzoq). ONLY the 'session-transfer' trigger lives here now:
+  // it fires exclusively when THIS load just consumed a real `?bt=`
+  // transfer token above (the "you just escaped the FB/IG webview into a
+  // real browser" moment), which is inseparable from this page and cannot
+  // move anywhere else.
+  //
+  // The 'repeat-visit' trigger this page also used to fire is CUT per the
+  // 2026-07-30 interpret-primary redesign's declutter list (tracker item
+  // for-product-build-founder-decided-2026-0-75fnlk: "repeat-visit install
+  // nudge moved to Home (session-transfer trigger stays)"). Home already
+  // owns repeat-visit install nudging, and owns it better: home.html's
+  // persistent #card-install journey card (tracker item for-product-a2hs-
+  // install-nudge-3-founder-vcofk7) shows on EVERY eligible visit and
+  // stays until a real DreamStore.getInstallVerified() signal, a strict
+  // superset of the small card's own "2nd+ visit, until dismissed once"
+  // moment. So this is a move of the RESPONSIBILITY, not a copy of the
+  // call — deliberately no InstallNudge.init({trigger:'repeat-visit'}) was
+  // added to home.html, because on home it could only ever render a second
+  // install card on top of the persistent one that's already there. See
+  // home.html's own installJourneyCard comment.
   InstallNudge.init({ trigger: 'session-transfer' });
-  InstallNudge.init({ trigger: 'repeat-visit', pageKey: 'result' });
 
   // A purchase sheet opened from THIS page always sends the checkout's
   // successUrl to processing.html (the one page that knows how to
@@ -384,8 +432,6 @@
   // than reusing the existing `share` entry (which is a different
   // paper-plane glyph, still used as-is by explore.html's feed action).
   document.getElementById('share-btn').innerHTML = Icons.shareIos;
-  document.getElementById('result-cta-explore-icon').innerHTML = Icons.compass;
-  document.getElementById('result-cta-profile-icon').innerHTML = Icons.person;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
@@ -782,7 +828,24 @@
     // now refuses to act on a dream that isn't this account's own (review
     // finding, second round), so the button must never even appear to
     // offer this for someone else's image-only dream.
-    document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl && isMyDream) ? 'flex' : 'none';
+    // "Image-only state": this dream has an image but no video yet, and
+    // it's this account's own. The single place that decides it — the
+    // Turn-into-video hero, the topbar token chip, and the interpretation
+    // entry's hero/quiet treatment all key off this one value rather than
+    // recomputing it three times.
+    var imageOnly = !!(dream.imageUrl && !dream.videoUrl && isMyDream);
+    document.getElementById('turn-video-btn').style.display = imageOnly ? 'flex' : 'none';
+    // Token chip: OFF-SCREEN by default, back only in the image-only
+    // state (memo section 6 / tracker item for-product-build-founder-
+    // decided-2026-0-75fnlk). It's cut from the ordinary result screen
+    // because nothing there spends tokens, but the image-only state's
+    // "Turn this into a video" hero does — founder-explicit 2026-07-26
+    // that its token cost must stay clearly visible — so the balance it
+    // is measured against comes back with it. The chip stays MOUNTED
+    // either way (see mountBalanceChip below); only this slot's own
+    // visibility changes, so every claim/refresh path keeps working
+    // untouched.
+    document.getElementById('topbar-token-chip-slot').style.display = imageOnly ? '' : 'none';
     // isMyDream: same reasoning -- js/interpret-experience.js's own
     // generate/regenerate calls (DreamStore.requestInterpretationQuestions/
     // generateInterpretationReading) are private, per-account writes that
@@ -793,6 +856,16 @@
     // that isn't this account's own in the first place, so the whole pill
     // is owner-only.
     document.getElementById('interp-cta-btn').style.display = isMyDream ? '' : 'none';
+    // The image-only state keeps its OWN untouched hero ("Turn this into a
+    // video", founder-explicit). Two full-size emphasized CTAs there would
+    // read as two heroes and defeat the "ONE hero" rule this redesign is
+    // built on — so in that ONE state the interpretation entry steps back
+    // down to the slim pill it already was on `main` (see .result-hero-cta
+    // .quiet in css/styles.css), and its reassurance micro line steps aside
+    // with it, leaving that state's density exactly as it was. Everywhere
+    // else the interpretation entry IS the hero.
+    document.getElementById('interp-cta-btn').classList.toggle('quiet', imageOnly);
+    document.getElementById('interp-hero-micro').style.display = (isMyDream && !imageOnly) ? '' : 'none';
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
@@ -803,7 +876,6 @@
     document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
     quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
     setupExpandableQuote();
-    document.getElementById('result-style-tag').textContent = 'Style: ' + dream.style;
     var privacyTag = document.getElementById('result-privacy-tag');
     privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
     privacyTag.classList.toggle('pub', !!dream.isPublished);
@@ -1009,7 +1081,37 @@
     DreamStore.clearDraft();
     location.href = 'create.html';
   });
+  // ===== Hero: the interpretation entry (founder-decided 2026-07-30) =====
+  // ONE Chamber, TWO entry points. This opens the exact same
+  // js/interpret-experience.js surface home.html's Chamber card opens —
+  // there is no second/parallel implementation here, and no query-param
+  // round trip either (home's older ?openInterp=1 deep link into this page
+  // is long gone; see this file's closing comment).
+  //
+  // The linked dream is unambiguous by construction: `dream` is resolved
+  // from this page's own `?id=` param at load, re-read from the store on
+  // every render(), and `dream.id` is passed straight into
+  // InterpretExperience.open(). Entering the Chamber from HERE therefore
+  // always operates on the dream this screen is showing — never "the
+  // latest dream", never an ambiguous default. That is the result-entry
+  // half of tracker item for-product-chamber-dream-linkage-is-unc-00s2dr;
+  // the home-entry half (home's Chamber card still defaults to the latest
+  // completed dream and needs its own picker for older ones) is
+  // deliberately out of this build's scope and untouched.
   document.getElementById('interp-cta-btn').addEventListener('click', function(){
+    // result_hero_interpret — the success metric for this whole redesign
+    // (interpretation-open rate FROM result, plus downstream Chamber
+    // completion via the existing interp_* events js/interpret-experience.js
+    // already fires). `first_video` distinguishes the high-stakes case
+    // (someone tapping this on their very first dream, the confidence
+    // moment the founder's decision is actually about) from a returning
+    // user's Nth dream. Reuses DreamStore.isOnlyCompletedDream — the same
+    // read-only "is this the account's only completed dream" query
+    // first_video_result_view above already uses — rather than a second
+    // definition of "first". See docs/EVENT_TAXONOMY.md.
+    var firstVideo = false;
+    try { firstVideo = !!DreamStore.isOnlyCompletedDream(dream.id); } catch(e){ /* analytics must never break the app */ }
+    track('result_hero_interpret', { first_video: firstVideo });
     InterpretExperience.open(dream.id);
   });
 
@@ -1067,19 +1169,18 @@
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
     PurchaseSheet.renderBalanceChip(topbarChip, status);
-    // Auto-open ONCE per day when claimable (tracker item
-    // for-product-build-the-daily-token-claim--fngrwd, item 4) — the chip
-    // itself stays the fallback entry point if dismissed. onClaimed
-    // refreshes tokenStatus/the chip off the server's real response, never
-    // optimistically.
-    PurchaseSheet.maybeAutoOpenClaimSheet(status, {
-      onClaimed: function(){
-        DreamStore.getTokenStatus().then(function(fresh){
-          tokenStatus = fresh;
-          PurchaseSheet.renderBalanceChip(topbarChip, fresh);
-        }).catch(function(){});
-      }
-    });
+    // NO daily-claim auto-open here. It used to fire on this page
+    // (PurchaseSheet.maybeAutoOpenClaimSheet, tracker item for-product-
+    // build-the-daily-token-claim--fngrwd item 4) and is REMOVED entirely
+    // by the 2026-07-30 interpret-primary redesign (tracker item
+    // for-product-build-founder-decided-2026-0-75fnlk: "daily-claim
+    // auto-open REMOVED from this page (Home owns it)"). A sheet popping
+    // itself open over the moment a user first sees their finished dream
+    // is exactly the interruption this redesign exists to remove. Home
+    // owns it — home.html's own refreshTokenStatus(true) auto-opens it,
+    // and its Today card carries the claim chip; the claim itself is
+    // unchanged and still reachable from every other surface (the balance
+    // chip, the Vault card, shop.html).
   }).catch(function(){ tokenStatus = null; });
 
   function tokensBlockGeneration(cost){
