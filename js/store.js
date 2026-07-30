@@ -2522,11 +2522,30 @@
      * A dream saved before the createdAt field existed (see finalizeDream's
      * own doc comment) simply never counts toward loggedToday/weekCount —
      * same "missing means don't count it, never fabricate" rule every
-     * other forward-only field in this file already follows.
+     * other forward-only field in this file already follows. hasEverLogged
+     * is the one deliberate exception: it only needs ownership, not a date,
+     * so a legacy pre-createdAt dream still counts there (see the fix
+     * below) — otherwise a real, active account with only legacy dreams
+     * would wrongly get the brand-new-user D1 hint forever.
      */
     getDreamLogStatus: function () {
       var myHandle = state.user ? state.user.handle : null;
       var mine = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle && typeof d.createdAt === 'number'; });
+      // hasEverLogged only needs "has this account logged ANYTHING, ever" --
+      // it must NOT require createdAt (unlike `mine` above, which genuinely
+      // needs it for date bucketing into loggedToday/weekCount). A dream
+      // saved before the createdAt field existed (see finalizeDream's own
+      // doc comment) still counts as having-logged even though it can't be
+      // date-bucketed -- same ownership-only match getMyDreams() already
+      // uses, just filtered here rather than calling that method directly
+      // (avoids a second full array scan for a value we already have `mine`
+      // half-computed for). Root cause of a real bug (tracker item
+      // for-product-home-screen-spec-drift-from--575djz, fix 4): an account
+      // with only legacy, pre-createdAt dreams was getting
+      // hasEverLogged:false, which wrongly showed the brand-new-user
+      // "New here?" hint (renderNextStrip in home.html) to an already-active
+      // account.
+      var myAny = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; });
       var key = state.user ? state.user.username.toLowerCase() : null;
       var account = key ? state.accounts[key] : null;
       var noRecallDates = (account && account.noRecallDates) || [];
@@ -2551,7 +2570,7 @@
         loggedYesterday: loggedYesterday,
         weekCount: weekDreamCount + weekNoRecallCount,
         weekTarget: WEEK_SUMMARY_TARGET,
-        hasEverLogged: mine.length > 0 || noRecallDates.length > 0
+        hasEverLogged: myAny.length > 0 || noRecallDates.length > 0
       };
     },
 
