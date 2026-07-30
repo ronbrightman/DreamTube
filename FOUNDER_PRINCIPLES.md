@@ -178,6 +178,21 @@ tight (curate, don't dump).
   same as this file's own "Cross-session working" section already
   establishes; this just makes explicit that urgency is opt-in, not
   default.
+- **STANDING RULE (founder said "always," 2026-07-30): copy proven
+  solutions, don't invent — for anything that isn't uniquely ours.**
+  Before building any feature, layout, design, or UX pattern that isn't
+  completely unique to this product, research how 2-3 successful
+  products solve it, pick the dominant pattern, and copy it faithfully —
+  don't invent our own. Reserve invention for the genuinely unique core
+  (dream-to-video itself), not the surrounding UI/UX scaffolding. Origin:
+  the webview-escape/install-nudge surface, where we invented UI instead
+  of researching and copying an existing, battle-tested pattern.
+  Practical bar for build/design agents: before building such a surface,
+  research 2-3 successful products' solutions, pick the dominant one,
+  copy it faithfully, and note the sources in the PR/brief. This
+  sharpens, not replaces, the research→design→build STANDING RULE above —
+  that rule says WHEN to research first; this one says WHAT the research
+  should produce.
 - **STANDING RULE (founder said "always," 2026-07-26): whenever he needs to
   see a design/visual before deciding, actually show it to him** — paste
   it directly in the reply or give him a real link (an Artifact, a live
