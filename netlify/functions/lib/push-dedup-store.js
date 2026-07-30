@@ -57,6 +57,18 @@ function store() {
   return getStore({ name: STORE_NAME });
 }
 
+// Caller-supplied keys can embed real PII (send-daily-claim-pushes.js's
+// own key literally contains an email address — see the module comment
+// above), and this store deliberately doesn't parse caller key structure
+// to know which part that is, so any log line touching a key logs this
+// hash instead of the raw value. Same "shape not content" reasoning as
+// blobs-retry.js's own describeRead, which this store's exhaustion log
+// used to leak around (a raw key, email included, in Netlify function
+// logs on every exhaustion).
+function hashKey(key) {
+  return crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 16);
+}
+
 /** True if `key` has already been recorded as sent. */
 async function hasSent(event, key) {
   if (!key) return true; // no valid key to check -- treat as "already sent" so nothing sends against it, same fail-closed posture as first-dream-email-store.js's hasSent
@@ -96,7 +108,7 @@ async function markSentOnce(event, key) {
   if (result.ok) return { ok: true, claimId: claimId };
   if (result.skipped) return { ok: false, alreadySent: true };
 
-  console.error('push-dedup-store: exhausted attempts claiming the send-once marker for ' + key + ' -- refusing to send rather than risk a duplicate push');
+  console.error('push-dedup-store: exhausted attempts claiming the send-once marker for key-hash ' + hashKey(key) + ' -- refusing to send rather than risk a duplicate push');
   return { ok: false, error: 'exhausted' };
 }
 
