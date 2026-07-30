@@ -25,7 +25,7 @@ h2{font-size:14px;font-weight:800;margin:26px 0 4px}
 .combo .t{font-size:12.5px;font-weight:800}
 .legend{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
 .lg{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--soft);font-weight:700}
-.lg i{width:10px;height:3px;border-radius:2px;display:inline-block}
+.lg{cursor:pointer;user-select:none}.lg.off{opacity:.35}.lg.off span{text-decoration:line-through}.lg i{width:10px;height:3px;border-radius:2px;display:inline-block}
 .combo svg{width:100%;height:150px;display:block}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .mini{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
@@ -104,48 +104,56 @@ function kpiCompare(){
   return '<div class="kpi"><div class="l">'+m[1]+'</div><div class="v">'+fmt(a,m[2])+'</div><div class="cmp">'+cmp+'</div></div>';
  }).join("");
 }
-var PAL=["var(--s1)","var(--s2)","var(--s3)","var(--s4)","var(--s5)"];
 var PALHEX=["#3987e5","#d95926","#199e70","#c98500","#d55181"];
-function comboChart(title,series,kind,note){
- // series: [{k or fn,label}]
+var COMBOS=[
+ {title:"Funnel — entrants \u2192 reached email (REE) \u2192 signups \u2192 returning members",kind:"c",
+  note:"\u201CEntered email\u201D (typed, between REE and signup) is not instrumented yet — routed to Product; it decides whether the leak is trust-at-first-glance or the password field. Tap a legend color to hide/show that line — the chart rescales.",
+  series:[{k:"funnel_entrants",label:"Funnel entrants"},{k:"ree",label:"Reached email (REE)"},{k:"signups",label:"Signups"},{k:"returning_members",label:"Returning members"}]},
+ {title:"Engagement — what signed-up users do",kind:"c",
+  note:"Tap legend colors to hide/show lines.",
+  series:[{k:"videos_total",label:"Videos"},{k:"published",label:"Published"},{k:"likes",label:"Likes"},{k:"interpretations",label:"Interpretations"},{k:"daily_claims",label:"Claims"}]},
+ {title:"Money — spend vs model cost (split) vs revenue",kind:"m",
+  note:"Cost split is an approximation on the shared fal account (creative pipeline costs subtracted) until the app gets its own key.",
+  series:[{k:"marketing_spend_usd",label:"Marketing spend"},{k:"model_cost_creative_usd",label:"Model cost \u00B7 creative"},{k:"model_cost_users_usd",label:"Model cost \u00B7 users"},{k:"revenue_usd",label:"Revenue"}]}
+];
+var comboHidden=COMBOS.map(function(){return {}});
+function comboChart(combo,ci){
+ var hidden=comboHidden[ci];
  var days=DAYS, W=680,H=150,PL=6,PB=16,n=days.length;
  var max=0;
- var vals=series.map(function(s){return days.map(function(d){var v=s.fn?s.fn(d):d[s.k];if(v!=null&&v>max)max=v;return v})});
+ var vals=combo.series.map(function(s,si){
+  return days.map(function(d){var v=d[s.k]; if(v!=null&&!hidden[si]&&v>max)max=v; return v});
+ });
  var xs=function(i){return PL+i*((W-2*PL)/(n-1))};
  var ys=function(v){return (H-PB)-(max? v/max*(H-PB-8):0)};
  var svg='<svg viewBox="0 0 '+W+' '+H+'">';
- // gridline at max
- svg+='<line x1="0" y1="'+ys(max)+'" x2="'+W+'" y2="'+ys(max)+'" stroke="rgba(255,255,255,.08)"/><text x="2" y="'+(ys(max)-3)+'" font-size="9" fill="#736e87">'+fmt(max,kind)+'</text>';
+ svg+='<line x1="0" y1="'+ys(max)+'" x2="'+W+'" y2="'+ys(max)+'" stroke="rgba(255,255,255,.08)"/><text x="2" y="'+(ys(max)-3)+'" font-size="9" fill="#736e87">'+fmt(max,combo.kind)+'</text>';
  vals.forEach(function(varr,si){
+  if(hidden[si])return;
   var path="",started=false;
   varr.forEach(function(v,i){ if(v==null){started=false;return} path+=(started?"L":"M")+xs(i).toFixed(1)+" "+ys(v).toFixed(1)+" ";started=true; });
   svg+='<path d="'+path+'" fill="none" stroke="'+PALHEX[si]+'" stroke-width="2"/>';
   varr.forEach(function(v,i){ if(v==null)return;
-   svg+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="6" fill="transparent" stroke="none" data-tip="'+days[i].date.slice(5)+' · '+series[si].label+': '+fmt(v,kind)+'"/>';
+   svg+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="6" fill="transparent" stroke="none" data-tip="'+days[i].date.slice(5)+' \u00B7 '+combo.series[si].label+': '+fmt(v,combo.kind)+'"/>';
    svg+='<circle cx="'+xs(i).toFixed(1)+'" cy="'+ys(v).toFixed(1)+'" r="2.2" fill="'+PALHEX[si]+'" stroke="#1b1823" stroke-width="1" pointer-events="none"/>';
   });
  });
  days.forEach(function(d,i){ if(i%3===0||i===n-1)svg+='<text x="'+xs(i)+'" y="'+(H-3)+'" font-size="8.5" fill="#736e87" text-anchor="middle">'+d.date.slice(5)+'</text>'});
  svg+='</svg>';
- var legend='<div class="legend">'+series.map(function(s,i){return '<span class="lg"><i style="background:'+PALHEX[i]+'"></i>'+s.label+'</span>'}).join("")+'</div>';
- return '<div class="combo"><div class="t">'+title+'</div>'+legend+svg+(note?'<div class="secnote" style="margin:2px 0 4px">'+note+'</div>':"")+'</div>';
+ var legend='<div class="legend">'+combo.series.map(function(s,i){
+  return '<span class="lg'+(hidden[i]?" off":"")+'" data-ci="'+ci+'" data-si="'+i+'"><i style="background:'+PALHEX[i]+'"></i><span>'+s.label+'</span></span>'}).join("")+'</div>';
+ return '<div class="combo" id="combo-'+ci+'"><div class="t">'+combo.title+'</div>'+legend+svg+(combo.note?'<div class="secnote" style="margin:2px 0 4px">'+combo.note+'</div>':"")+'</div>';
 }
 function renderCombos(){
- var c=document.getElementById("combos");
- c.innerHTML=
-  comboChart("Funnel — entrants → reached email (REE) → signups",[
-   {k:"funnel_entrants",label:"Funnel entrants"},{k:"ree",label:"Reached email (REE)"},{k:"signups",label:"Signups"}],"c",
-   "\u201CEntered email\u201D (typed, between REE and signup) is not instrumented yet — routed to Product; it decides whether the leak is trust-at-first-glance or the password field.")+
-  comboChart("Engagement — what signed-up users do",[
-   {k:"videos_total",label:"Videos"},{k:"published",label:"Published"},{k:"likes",label:"Likes"},{k:"interpretations",label:"Interpretations"},{k:"daily_claims",label:"Claims"}],"c","")+
-  comboChart("Money — spend vs model cost (split) vs revenue",[
-   {k:"marketing_spend_usd",label:"Marketing spend"},{k:"model_cost_creative_usd",label:"Model cost · creative"},{k:"model_cost_users_usd",label:"Model cost · users"},{k:"revenue_usd",label:"Revenue"}],"m",
-   "Cost split is an approximation on the shared fal account (creative pipeline costs subtracted) until the app gets its own key.")+
-  comboChart("Returning — visitors vs real members",[
-   {k:"returning_visitors",label:"Returning visitors (any repeat device)"},{k:"returning_members",label:"Returning members (real users back)"}],"c",
-   "Your instinct was right: the big number was repeat visitors incl. anonymous ad-clickers. Real returning members over the whole window: 4 people.");
+ document.getElementById("combos").innerHTML=COMBOS.map(function(cb,ci){return comboChart(cb,ci)}).join("");
 }
-var TOTALS=[["signups","Signups","c"],["new_users","New visitors","c"],["returning_members","Returning members","c"],["returning_visitors","Returning visitors","c"],["first_videos","First videos","c"],["videos_total","Videos made","c"],["images_total","Images made","c"],["published","Published","c"],["likes","Likes given","c"],["interpretations","Interpretations","c"],["daily_claims","Daily claims","c"],["second_day_claims","2nd-day claims","c"],["purchases","Purchases","c"],["revenue_usd","Revenue $","m"],["marketing_spend_usd","Marketing spend $","m"],["model_cost_users_usd","Model cost · users $","m"],["model_cost_creative_usd","Model cost · creative $","m"],["funnel_entrants","Funnel entrants","c"],["ree","Reached email (REE)","c"]];
+document.addEventListener("click",function(e){
+ var lg=e.target.closest(".lg"); if(!lg||lg.getAttribute("data-ci")==null)return;
+ var ci=+lg.getAttribute("data-ci"), si=+lg.getAttribute("data-si");
+ comboHidden[ci][si]=!comboHidden[ci][si];
+ renderCombos();
+});
+var TOTALS=[["signups","Signups","c"],["new_users","New visitors","c"],["returning_members","Returning members","c"],["first_videos","First videos","c"],["videos_total","Videos made","c"],["images_total","Images made","c"],["published","Published","c"],["likes","Likes given","c"],["interpretations","Interpretations","c"],["daily_claims","Daily claims","c"],["second_day_claims","2nd-day claims","c"],["purchases","Purchases","c"],["revenue_usd","Revenue $","m"],["marketing_spend_usd","Marketing spend $","m"],["model_cost_users_usd","Model cost · users $","m"],["model_cost_creative_usd","Model cost · creative $","m"],["funnel_entrants","Funnel entrants","c"],["ree","Reached email (REE)","c"]];
 function sum(days,k){var s=0,any=false;days.forEach(function(d){if(d[k]!=null){s+=d[k];any=true}});return any?s:null}
 var tfDays=0;
 function view(){ return tfDays? DAYS.slice(-tfDays) : DAYS; }
