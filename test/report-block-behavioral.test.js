@@ -156,7 +156,7 @@ test('explore.html: the "More" action only shows on a dream that is NOT the view
   }
 });
 
-test('explore.html: tapping "More" opens the report/block sheet with a dynamic "Block @handle" label', async function (t) {
+test('explore.html: tapping "More" opens the report/block sheet with a dynamic "Block handle" label (display drops the leading @ — tracker item for-product-ui-founder-directed-2026-07--w3mc4v)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -170,7 +170,8 @@ test('explore.html: tapping "More" opens the report/block sheet with a dynamic "
     await page.click('[data-more="d-other-1"]');
     await waitForSheetSettled(page);
     assert.match(await page.textContent('#report-opt-report'), /Report this dream/);
-    assert.match(await page.textContent('#report-opt-block'), /Block @other/);
+    assert.match(await page.textContent('#report-opt-block'), /Block other/);
+    assert.doesNotMatch(await page.textContent('#report-opt-block'), /@other/, 'display must not carry the stored handle\'s leading @');
   } finally {
     await context.close();
   }
@@ -314,7 +315,7 @@ test('block (logged in): tapping Block immediately hides every dream by that aut
     await page.click('#report-opt-block');
 
     await page.waitForSelector('.toast.show', { timeout: 5000 });
-    assert.match(await page.textContent('#toast'), /Blocked @other/);
+    assert.match(await page.textContent('#toast'), /Blocked other/);
     assert.equal(await page.locator('#report-sheet-overlay.open').count(), 0, 'the sheet must close once Block is tapped');
 
     // Every dream by @other must be gone from the rendered feed now,
@@ -435,11 +436,16 @@ test('profile.html Settings: a blocked handle appears in "Blocked accounts", and
     await page.waitForSelector('#sheet-account-overlay.open', { timeout: 5000 });
 
     await page.waitForSelector('#blocked-accounts-section:visible', { timeout: 5000 });
-    assert.match(await page.textContent('#blocked-accounts-list'), /@other/);
+    assert.match(await page.textContent('#blocked-accounts-list'), /other/);
+    assert.doesNotMatch(await page.textContent('#blocked-accounts-list'), /@other/, 'the blocked-accounts list must display the handle without its leading @ (the data-unblock attribute below still carries the real, @-prefixed stored value)');
 
+    // The data-unblock attribute is NOT a display surface -- it must keep
+    // carrying the real, @-prefixed stored handle unchanged, since it's
+    // what gets passed straight to DreamStore.unblockUser (an equality/
+    // lookup call, out of scope for this display-only change).
     await page.click('[data-unblock="@other"]');
     await page.waitForSelector('.toast.show', { timeout: 5000 });
-    assert.match(await page.textContent('#toast'), /Unblocked @other/);
+    assert.match(await page.textContent('#toast'), /Unblocked other/);
     assert.equal(await page.locator('#blocked-accounts-section').isVisible(), false, 'the section hides itself once the list is empty again');
 
     var stillBlocked = await page.evaluate(function () {

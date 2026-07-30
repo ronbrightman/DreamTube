@@ -244,7 +244,7 @@
     // deliberately untouched by this feature — no reason to grow it when
     // the existing field already carries the right value).
     var dowBadge = isDreamOfDay
-      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div></div>'
+      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div></div>'
       : '';
     return '<div class="feed-card" data-id="'+d.id+'" data-index="'+globalIndex+'">' +
       media +
@@ -253,7 +253,7 @@
       dowBadge +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
-        '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(d.ownerHandle)+'</div></div>' +
+        '<div class="feed-user-row"><div class="feed-avatar"></div><div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
         '<div class="feed-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
         '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' + (d.dur ? '<span class="dot"></span><span>'+esc(d.dur)+'</span>' : '') + '</div>' +
       '</div>' +
@@ -630,7 +630,7 @@
 
     if(filter){
       chip.style.display = 'flex';
-      chip.innerHTML = esc(filter.type === 'style' ? 'Style: ' + filter.value : filter.value) + ' <span class="fc-x">✕</span>';
+      chip.innerHTML = esc(filter.type === 'style' ? 'Style: ' + filter.value : DreamStore.displayHandle(filter.value)) + ' <span class="fc-x">✕</span>';
     } else {
       chip.style.display = 'none';
     }
