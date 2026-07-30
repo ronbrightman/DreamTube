@@ -155,7 +155,10 @@
 // which come from generate-video.js/video-status.js and already carry their
 // own codes by the time they reach here — those are passed through as-is).
 //   E301 generation_timeout       — gave up polling after MAX_POLL_MS
-//   E302 network error while polling video-status (e.g. connection dropped)
+//   E302 network error while polling video-status (e.g. connection dropped) —
+//        only surfaces after MAX_NETWORK_RETRIES consecutive transient
+//        fetch/network failures (see pollUntilDone); a single dropped poll
+//        is retried, not treated as this
 //   E303 network error submitting the initial generate-video request
 //   E399 server returned an error response with no error text at all (should be unreachable — every
 //        E1xx/E2xx path always sets one — but a code exists in case something upstream changes)
@@ -883,6 +886,26 @@
    */
   function pollUntilDone(operationName, startedAt, mediaType, email) {
     return new Promise(function (resolve, reject) {
+      // Tracker item startgeneration-clears-pendingjob-on-any-s7wr0b: a
+      // single dropped/transient fetch mid-poll used to reject this whole
+      // promise immediately (E302), and startGeneration's outer .catch then
+      // unconditionally clearPendingJob()'d — orphaning a real, still-
+      // in-flight job and forcing a fresh (double-charged) resubmission on
+      // the next attempt, over what was often just one momentary
+      // connectivity blip, not a real outage. networkFailureCount tracks
+      // CONSECUTIVE network/fetch-level failures only (a real server-
+      // reported data.error below is never affected by this, and still
+      // rejects immediately as before) — reset to 0 the moment any poll
+      // gets a real response back, incremented only in the .catch below.
+      // MAX_NETWORK_RETRIES bounds it: retried like the ordinary
+      // not-done-yet path (same POLL_INTERVAL_MS delay) up to that many
+      // consecutive misses (~3 * POLL_INTERVAL_MS = ~30s of sustained
+      // failure, a reasonable bar per that tracker item's own reasoning)
+      // before finally giving up and rejecting with E302 for real. The
+      // overall MAX_POLL_MS check below still bounds the absolute worst
+      // case regardless.
+      var MAX_NETWORK_RETRIES = 3;
+      var networkFailureCount = 0;
       function poll() {
         if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('E301: generation_timeout')); return; }
         var url = statusEndpointFor(mediaType) + '?name=' + encodeURIComponent(operationName)
@@ -890,6 +913,7 @@
         fetch(url)
           .then(function (res) { return res.json(); })
           .then(function (data) {
+            networkFailureCount = 0; // a real response came back -- any prior transient-failure streak no longer applies
             if (data.error) {
               // tokensRefunded (see video-status.js/image-status.js) rides
               // along on the Error object itself (not encodable in the
@@ -905,7 +929,17 @@
             if (data.done) { resolve(mediaType === 'image' ? data.imageUrl : data.videoUrl); return; }
             setTimeout(poll, POLL_INTERVAL_MS);
           })
-          .catch(function (err) { reject(new Error('E302: network_error_during_status_check' + (err && err.message ? ': ' + err.message : ''))); });
+          .catch(function (err) {
+            networkFailureCount += 1;
+            if (networkFailureCount > MAX_NETWORK_RETRIES) {
+              reject(new Error('E302: network_error_during_status_check' + (err && err.message ? ': ' + err.message : '')));
+              return;
+            }
+            // Transient network/fetch-level failure -- retry exactly like
+            // the ordinary not-done-yet path above instead of giving up on
+            // the very first miss (see doc comment above).
+            setTimeout(poll, POLL_INTERVAL_MS);
+          });
       }
       poll();
     });
