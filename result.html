@@ -360,12 +360,24 @@
   // referrer confirms that's genuinely where this page was opened from,
   // rather than guessing.
   (function(){
+    // Generalized (founder bug report 2026-07-30): return to wherever the
+    // visitor ACTUALLY came from, not only profile. Rules: (1) referrer
+    // from the generation flow (processing/create/style/wizard) keeps the
+    // explore.html default -- going "back" into a spent flow is wrong;
+    // (2) any other same-origin referrer (profile.html, home.html, the
+    // profile sheet hosted on home, explore itself) -> history.back(),
+    // which also preserves that page's scroll/sheet state; (3) absent or
+    // cross-origin referrer (direct link, share, webview stripping) ->
+    // explore.html default unchanged.
     try {
-      var refPath = document.referrer && new URL(document.referrer).pathname;
-      if(refPath && /\/profile\.html$/.test(refPath)) {
-        document.getElementById('result-back').href = 'profile.html';
+      var ref = document.referrer && new URL(document.referrer);
+      var sameOrigin = ref && ref.origin === location.origin;
+      var flowPage = ref && /\/(processing|create|style|wizard)\.html$/.test(ref.pathname);
+      if (sameOrigin && !flowPage) {
+        var btn = document.getElementById('result-back');
+        btn.addEventListener('click', function(ev){ ev.preventDefault(); history.back(); });
       }
-    } catch (e) { /* malformed/absent referrer -- keep the explore.html default */ }
+    } catch (e) { /* malformed referrer -- keep the explore.html default */ }
   })();
   // Standard iOS-style share icon (box + arrow escaping the top) — see
   // js/icons.js's shareIos doc comment for why this is a new icon rather
