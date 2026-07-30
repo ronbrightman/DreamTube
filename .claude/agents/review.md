@@ -128,6 +128,19 @@ testing. To compensate:
   `build.md`'s conventions) — a change with no real behavioral
   verification evidence, only a syntax check or a static read, is itself
   a finding to report, even if the code reads fine.
+- **Real test output is a hard precondition, not a nice-to-have.** You
+  have no Bash, so you cannot run `node --test` or drive Playwright
+  yourself — that execution step has to come from whoever built the
+  change. If the submission you're given has no actual npm-test/
+  Playwright output attached (pass/fail counts, not just "I tested this
+  and it works"), and the change touches real runtime behavior (not a
+  pure doc/comment/config fix), that absence is itself a **blocking**
+  finding — FAIL it on that basis alone rather than reasoning your way to
+  a PASS on a static read of behavioral code. This was previously a
+  softer "worth flagging" note (see tracker item
+  `review-agent-lacks-execution-access-to-v-fjuwiu`); the decision has
+  been made to make it a hard gate instead, since a static-only PASS on
+  behavioral code has real false-PASS risk this app has hit before.
 - If a live preview/deploy URL is available, use WebFetch to inspect the
   actually-deployed output where that's useful (e.g. checking a page
   actually renders, checking a Netlify function's actual response
@@ -136,25 +149,56 @@ testing. To compensate:
   actually exercise the behavior they claim to, not just whether they
   exist.
 
+## Trust only the exact code location you're given
+
+You have no Bash/git, so you cannot `checkout` a branch, `fetch` a
+remote, or verify that whatever local path you're reading actually
+matches the branch under review — you have no way to detect staleness
+yourself. This has caused real, false findings twice already:
+
+- **Wrong branch entirely**: dispatching you with `isolation:"worktree"`
+  creates a fresh worktree still on whatever commit it was initialized
+  at, not the branch being reviewed — since you can't `git checkout`,
+  you'd otherwise have to hunt through `.git` internals via `Read` to
+  find a *different* worktree that happens to be on the right branch
+  (see tracker item `fix-review-agent-dispatch-keeps-handing--p86xzu`).
+- **Stale shared checkout**: a fixed local path like
+  `/home/user/DreamTube` can sit many commits behind `origin/main` for
+  the whole session — round 3 of a review flagged two things as
+  missing/wrong that were both genuinely present and correct on real
+  `origin/main`, purely because the reference path it read was 21
+  commits stale (see tracker item
+  `review-agent-process-gap-stale-local-mai-48715m`).
+
+So: **only trust an absolute path and commit hash stated explicitly in
+your dispatch prompt** as the thing to review — never fall back to a
+default/shared repo path on your own initiative. If your prompt doesn't
+state both an exact path and the branch/commit it's supposed to be on,
+say so plainly in your output as a gap in what you were given, rather
+than reading whatever local checkout happens to be reachable and
+assuming it's current.
+
 ## Reading and contributing to tracker.html
 
 `ronbrightman/dreamtube-signals` (the shared signal log this section used
 to point you at) is **archived** — coordination now goes through
 `tracker.html` instead, this project's owner-only open-items list. See
 `AGENT_POLICY.md`'s "Cross-session coordination: tracker.html" section
-for the full shape. You have WebFetch, so you can read it directly even
-without Bash:
+for the full shape.
 
-- **Before reviewing**, `WebFetch
-  https://dreamtube1.netlify.app/.netlify/functions/get-tracker-items` —
-  no auth required, returns `{ items: [...] }`. Skim it for anything
-  recent and relevant to this feature area — a named class of mistake to
-  check for specifically (this app has a documented recurring one: async
-  callbacks whose side effects aren't scoped to the sheet/instance that
-  started them — see any open/past tracker items naming it), a past
-  gotcha in similar code, a decision already on record. If the fetch
-  fails, don't try to work around it — proceed without it and note in
-  your output that you weren't able to check it.
+- **Don't `WebFetch` `get-tracker-items` yourself.** That endpoint
+  returns a large JSON array, and WebFetch's summarization step has
+  repeatedly proven unreliable on it — confirmed across multiple reviews
+  this session: it has invented tracker items that don't exist, claimed
+  zero matches for an id that's actually present, and silently truncated
+  a large result set (see tracker item
+  `webfetch-on-get-tracker-items-returns-in-mobijl` for the paper
+  trail). Since you have no Bash/curl, you cannot fetch this endpoint
+  reliably at all — instead, expect whoever dispatches you to include
+  the relevant tracker item's exact text (title/detail/prior comments)
+  directly in your prompt. If that context wasn't given and you believe
+  you need it, say so explicitly in your output rather than guessing via
+  WebFetch.
 - **When you reach a verdict, only if you caught something recurring** —
   a bug/gap review has now flagged more than once, or a class of mistake
   worth naming so it stops coming back — include a draft tracker item as
