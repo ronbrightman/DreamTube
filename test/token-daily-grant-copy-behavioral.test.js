@@ -311,45 +311,18 @@ test('shop.html: a successful claim\'s toast shows the response\'s real amountCl
   }
 });
 
-test('profile.html: the token countdown reads the live dailyClaimAmount, not a hardcoded "+100 in"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    // Balance must be >= 100 (VIDEO_TOKEN_COST) or profile.html shows "Out
-    // of tokens" instead of the countdown; claimable:false or the
-    // claimable-state copy (tested separately below) would take priority.
-    await mockTokenStatus(page, { balance: 500, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
-    await seedLoggedInUserAt(page, 'dailygrantprofile', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.match(meta, new RegExp('\\+' + DISTINCTIVE_CLAIM_AMOUNT + ' in'));
-    assert.doesNotMatch(meta, /\+100 in/);
-  } finally {
-    await context.close();
-  }
-});
-
-test('profile.html: claimable state shows the live "Claim +N free" copy and the pulsing chip class', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 500, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 2 });
-    await seedLoggedInUserAt(page, 'dailygrantprofileclaimable', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.match(meta, new RegExp('Claim \\+' + DISTINCTIVE_CLAIM_AMOUNT + ' free'));
-
-    var isClaimable = await page.evaluate(function () {
-      return document.getElementById('profile-tokens').classList.contains('claimable');
-    });
-    assert.equal(isClaimable, true);
-  } finally {
-    await context.close();
-  }
-});
+// REMOVED (2026-07-30, tracker item
+// for-product-build-founder-approved-2026--to6ew2): the two profile.html
+// tests that used to sit here -- "the token countdown reads the live
+// dailyClaimAmount, not a hardcoded +100 in" and "claimable state shows the
+// live 'Claim +N free' copy and the pulsing chip class". profile.html has
+// no countdown, no claim copy, and no claimable chip state anymore: the
+// founder-approved night restyle replaced its chip with
+// js/purchase-sheet.js's PLAIN variant (balance + Shop link only), making
+// home.html the sole claim surface. There is no hardcoded daily amount left
+// on that page for this file's whole premise to catch -- there is no daily
+// amount rendered there at all. The four remaining copy sites this file
+// covers (style.html, result.html, shop.html's #shop-countdown and
+// #shop-cap-note) are unaffected and still tested above/below;
+// test/profile-night-restyle-behavioral.test.js asserts the absence on
+// Profile directly.

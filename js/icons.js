@@ -23,6 +23,15 @@
 
     home: svg('<path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z" fill="currentColor"/>'),
 
+    // Outline fill-variant of `home` above, added for the Profile night-dock
+    // bottom bar (tracker item for-product-build-founder-approved-2026--to6ew2,
+    // Part 3 / Part 5 "icon fill variants"): that bar draws the ACTIVE tab
+    // filled and every inactive tab as a line glyph, and `home` is filled —
+    // so an inactive Home tab needed its own outline pair. Matches the
+    // founder-approved mock's own Bar A house glyph (profile-mock-x7q4.html)
+    // and this file's 24x24/currentColor convention.
+    homeOutline: svg('<path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+
     search: svg('<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
 
     compass: svg('<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>'),

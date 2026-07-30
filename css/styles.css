@@ -241,6 +241,29 @@ body{
 .vcard-meta{ font-size:11px; color:var(--text-faint); margin-top:2px;}
 .grid-empty{ padding:30px 24px; text-align:center; color:var(--text-muted); font-size:13px; line-height:1.6;}
 
+/* ===== Upcoming-night placeholder slots (js/dream-cards.js) =====
+   Founder amendment on tracker item
+   for-product-build-founder-approved-2026--to6ew2: an empty library slot
+   stays a DIMMER placeholder square, and the dream journey shows through
+   it so the tile reads as a next step ("Night 3 · tomorrow") rather than a
+   blank gap. The first empty slot is slightly brighter, as "next".
+
+   READ-ONLY BY DESIGN — these are <div>s, not links or buttons, and
+   js/dream-cards.js attaches no handler to them. They mirror home.html's
+   dream-log state; they are never a second place to claim or log
+   anything. Same tall 9:14 footprint as a real .vcard-thumb, so the grid
+   rhythm never breaks between real tiles and placeholders. */
+.vcard-slot{ display:block; cursor:default;}
+.vcard-slot-thumb{
+  position:relative; aspect-ratio:9/14; border-radius:14px; overflow:hidden;
+  background:var(--surface); border:1px dashed var(--border);
+  display:flex; align-items:center; justify-content:center; opacity:.5;
+}
+.vcard-slot-mark{ font-size:20px; font-weight:300; line-height:1; color:var(--text-faint);}
+.vcard-slot-label{ font-size:11px; color:var(--text-faint); margin-top:8px; opacity:.65;}
+.vcard-slot.is-next .vcard-slot-thumb{ opacity:.8; border-style:solid; border-color:var(--border-strong);}
+.vcard-slot.is-next .vcard-slot-label{ opacity:1; color:var(--text-muted);}
+
 /* Home: single-column full-width feed cards (not a browse/search grid). */
 .home-feed{ padding:2px 18px 18px; display:flex; flex-direction:column; gap:14px;}
 .home-card{ position:relative; border-radius:16px; overflow:hidden; aspect-ratio:3/2; background:var(--surface); cursor:pointer; text-decoration:none; color:inherit; display:block;}
@@ -901,16 +924,36 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .toggle-switch.on::after{ transform:translateX(20px); background:#fff;}
 .toggle-switch.disabled{ opacity:.5; cursor:default; pointer-events:none;}
 
-/* ===== Token balance chip (profile.html) ===== */
-/* Reuses the app's existing "special" gradient (--gradient-ig, already
-   used by .profile-insight-card) rather than plain muted text, since a
-   flat-grey stat line reads as inert, not as an entry point into
-   somewhere worth tapping. Pill shape (border-radius:100px) reads as
-   tappable the same way .btn does. */
-.token-chip{ display:flex; align-items:center; gap:8px; margin-top:10px; padding:9px 16px; border-radius:100px; background:var(--gradient-ig); text-decoration:none; box-shadow:0 8px 20px -10px rgba(253,29,29,.4); max-width:max-content;}
-.token-chip-balance{ font-size:13px; font-weight:800; color:#fff; white-space:nowrap;}
-.token-chip-meta{ font-size:11px; font-weight:600; color:rgba(255,255,255,.82); white-space:nowrap;}
+/* ===== Token balance chip — shared base =====
+   Shape only. The pill (border-radius:100px) reads as tappable the same
+   way .btn does; each variant below owns its own fill.
+
+   This base used to carry the --gradient-ig fill + warm shadow of the
+   original full-size profile.html chip. profile.html moved to the plain
+   variant in the 2026-07-30 night restyle (tracker item
+   for-product-build-founder-approved-2026--to6ew2), leaving no consumer of
+   the bare class at all — so those declarations were removed rather than
+   left as an unreachable default that only looked like a live style. */
+.token-chip{ display:flex; align-items:center; gap:8px; padding:9px 16px; border-radius:100px; text-decoration:none; max-width:max-content;}
+.token-chip-balance{ font-size:13px; font-weight:800; color:var(--text-primary); white-space:nowrap;}
 .token-chip-cta{ font-size:11px; font-weight:800; color:#fff; white-space:nowrap; border-left:1px solid rgba(255,255,255,.35); padding-left:8px;}
+
+/* ===== Plain balance chip — js/purchase-sheet.js's mountBalanceChip
+   `plain:true` variant (tracker item
+   for-product-build-founder-approved-2026--to6ew2, Part 5).
+   A quiet outlined pill reading "✦ 240 · Shop", and nothing else.
+   Deliberately has NO claimable/low/healthy state rules at all: the
+   founder's Profile-restyle spec removed every claim mechanic from that
+   page (home.html is the sole claim/ritual surface now), so there is
+   nothing left here for a claim state to style. A page can re-skin the
+   colors in its own scoped <style> — profile.html does, for the night
+   palette — while the structural rules stay here with the module that
+   emits the markup, exactly as .token-chip-compact does. */
+.token-chip-plain{ padding:7px 14px; gap:6px; background:var(--surface-alt); border:1px solid var(--border-strong);}
+.token-chip-plain .token-chip-balance{ font-size:12.5px;}
+.token-chip-plain .token-chip-star{ font-size:12px; line-height:1;}
+.token-chip-plain .token-chip-sep{ font-size:12px; color:var(--text-faint); font-weight:400;}
+.token-chip-plain .token-chip-cta{ border-left:none; padding-left:0; color:var(--text-muted);}
 
 /* ===== Compact topbar balance chip (create.html/style.html/result.html) =====
    tracker item for-product-build-out-of-tokens-purchase-2y8hyw, item 3.
@@ -924,8 +967,8 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    currency" gold this codebase already uses for the shop's "Best value"
    pack) once it drops under 100. Includes the small circled-plus
    affordance the founder explicitly added to that mock on 2026-07-26. */
-.token-chip-compact{ margin-top:0; padding:5px 5px 5px 12px; gap:6px; background:var(--surface-alt); border:1px solid var(--border-strong); box-shadow:none;}
-.token-chip-compact .token-chip-balance{ font-size:12px; font-weight:800; color:var(--text-primary);}
+.token-chip-compact{ padding:5px 5px 5px 12px; gap:6px; background:var(--surface-alt); border:1px solid var(--border-strong);}
+.token-chip-compact .token-chip-balance{ font-size:12px;}
 .token-chip-compact.healthy{ border-color:rgba(95,184,138,.5);}
 .token-chip-compact.healthy .token-chip-balance{ color:#a8e0c2;}
 .token-chip-compact.low{ border-color:rgba(217,166,83,.6);}
@@ -955,18 +998,19 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 
 /* ===== Daily token claim (tracker item
    for-product-build-the-daily-token-claim--fngrwd) =====
-   (1) the balance chip's pulsing "+N claimable" state, mounted on both the
-   profile-page chip (.token-chip) and the compact topbar chip
+   (1) the compact topbar balance chip's pulsing "+N claimable" state
    (.token-chip-compact) — reuses the existing --accent-value gold this
    codebase already treats as its "premium currency"/reward color (see the
    shop's "Best value" pack badge) rather than introducing a new accent.
+   The profile-page chip used to carry this state too; it no longer can —
+   Profile's chip is the plain variant now and Home is the sole claim
+   surface (tracker item for-product-build-founder-approved-2026--to6ew2),
+   so those rules were removed rather than left as dead selectors.
    (2) the inline "Claim +N" button inside the out-of-tokens sheet
    (js/purchase-sheet.js's claimInline). (3) the dedicated claim sheet +
    its brief confetti burst. */
-.token-chip.claimable, .token-chip-compact.claimable{ animation:pulse 1.8s ease-in-out infinite; box-shadow:0 0 0 0 rgba(217,166,83,.5);}
-.token-chip-compact.claimable{ border-color:var(--accent-value);}
+.token-chip-compact.claimable{ animation:pulse 1.8s ease-in-out infinite; box-shadow:0 0 0 0 rgba(217,166,83,.5); border-color:var(--accent-value);}
 .token-chip-compact.claimable .token-chip-plus{ background:var(--accent-value); border-color:var(--accent-value); color:#1a1200;}
-.token-chip.claimable .token-chip-plus{ background:#fff; color:var(--accent-value);}
 
 .claim-inline-btn{
   width:100%; font-family:var(--font-body); font-weight:800; font-size:13.5px; border:1.5px solid var(--accent-value);

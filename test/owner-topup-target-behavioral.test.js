@@ -179,8 +179,8 @@ test('profile.html owner top-up: target field defaults blank, gifting a valid ta
     await page.waitForSelector('#sheet-account-overlay.open');
     await page.waitForSelector('#owner-topup-block', { state: 'visible' });
 
-    var ownBalanceBefore = await page.locator('#profile-tokens-balance').textContent();
-    assert.equal(ownBalanceBefore, '300 tokens', 'sanity: the owner\'s own balance is showing before the gifted top-up');
+    var ownBalanceBefore = await page.locator('#topbar-token-chip-balance').textContent();
+    assert.equal(ownBalanceBefore, '300', 'sanity: the owner\'s own balance is showing before the gifted top-up');
 
     await page.fill('#owner-topup-target', 'benbrightman14');
     await page.fill('#owner-topup-amount', '800');
@@ -196,8 +196,8 @@ test('profile.html owner top-up: target field defaults blank, gifting a valid ta
     // The critical regression this whole feature could introduce: crediting
     // someone ELSE's account must never overwrite what the page shows as
     // the SIGNED-IN OWNER'S OWN balance.
-    var ownBalanceAfter = await page.locator('#profile-tokens-balance').textContent();
-    assert.equal(ownBalanceAfter, '300 tokens', 'a gifted top-up must not clobber the owner\'s own displayed balance');
+    var ownBalanceAfter = await page.locator('#topbar-token-chip-balance').textContent();
+    assert.equal(ownBalanceAfter, '300', 'a gifted top-up must not clobber the owner\'s own displayed balance');
 
     // The target field clears after a successful gifted top-up.
     assert.equal(await page.locator('#owner-topup-target').inputValue(), '');
@@ -254,8 +254,8 @@ test('profile.html owner top-up: leaving the target field blank still self-tops-
     assert.equal(topup.calls.length, 1);
 
     // Self-top-up DOES redraw the owner's own displayed balance.
-    var ownBalanceAfter = await page.locator('#profile-tokens-balance').textContent();
-    assert.equal(ownBalanceAfter, '800 tokens', 'a genuine self-top-up must still update the displayed balance, same as before targetUsername existed');
+    var ownBalanceAfter = await page.locator('#topbar-token-chip-balance').textContent();
+    assert.equal(ownBalanceAfter, '800', 'a genuine self-top-up must still update the displayed balance, same as before targetUsername existed');
 
     var events = await page.evaluate(function () { return window.__capturedEvents; });
     var ownerTopupEvents = events.filter(function (e) { return e.name === 'owner_topup'; });
@@ -293,8 +293,8 @@ test('profile.html owner top-up: an unknown target username surfaces a clear err
     var toastText = await page.locator('#toast').textContent();
     assert.match(toastText, /No account found/i);
 
-    var ownBalanceAfter = await page.locator('#profile-tokens-balance').textContent();
-    assert.equal(ownBalanceAfter, '300 tokens', 'a rejected target lookup must not touch the owner\'s own displayed balance');
+    var ownBalanceAfter = await page.locator('#topbar-token-chip-balance').textContent();
+    assert.equal(ownBalanceAfter, '300', 'a rejected target lookup must not touch the owner\'s own displayed balance');
 
     var events = await page.evaluate(function () { return window.__capturedEvents; });
     var ownerTopupEvents = events.filter(function (e) { return e.name === 'owner_topup'; });

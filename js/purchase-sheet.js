@@ -506,10 +506,42 @@
   // ==========================================================================
   var LOW_BALANCE_THRESHOLD = 100;
 
-  function mountBalanceChip(slotEl) {
+  /**
+   * opts:
+   *   plain  — render the PLAIN variant: balance + a "Shop" affordance, and
+   *            nothing else. No low/healthy tinting, no pulsing claimable
+   *            state, no "+N" badge, and — most importantly — no
+   *            tap-to-open-the-claim-sheet handler at all. Added for
+   *            profile.html's night restyle (tracker item
+   *            for-product-build-founder-approved-2026--to6ew2), where the
+   *            founder's spec deletes every claim/ritual mechanic from
+   *            Profile: home.html is the sole claim surface now, and a
+   *            second, quieter one on Profile was the exact drift being
+   *            removed. The plain-ness is carried by the rendered element's
+   *            own `token-chip-plain` class rather than by module state, so
+   *            renderBalanceChip below cannot accidentally re-apply claim
+   *            styling to it later (a caller can't forget to pass the flag
+   *            a second time).
+   *   source — analytics/source tag appended to the shop.html link
+   *            (defaults to 'balance_chip', the pre-existing value).
+   */
+  function mountBalanceChip(slotEl, opts) {
     if (!slotEl) return null;
+    opts = opts || {};
+    var source = opts.source || 'balance_chip';
+    if (opts.plain) {
+      slotEl.innerHTML =
+        '<a class="token-chip token-chip-plain" id="topbar-token-chip" href="shop.html?source=' + encodeURIComponent(source) + '">' +
+        '<span class="token-chip-star" aria-hidden="true">✦</span>' +
+        '<span class="token-chip-balance" id="topbar-token-chip-balance">–</span>' +
+        '<span class="token-chip-sep" aria-hidden="true">·</span>' +
+        '<span class="token-chip-cta">Shop</span></a>';
+      // Deliberately no click listener: the plain chip is a plain link to
+      // the shop, in every token state.
+      return document.getElementById('topbar-token-chip');
+    }
     slotEl.innerHTML =
-      '<a class="token-chip token-chip-compact" id="topbar-token-chip" href="shop.html?source=balance_chip">' +
+      '<a class="token-chip token-chip-compact" id="topbar-token-chip" href="shop.html?source=' + encodeURIComponent(source) + '">' +
       '<span class="token-chip-balance" id="topbar-token-chip-balance">–</span>' +
       '<span class="token-chip-plus" aria-hidden="true">+</span></a>';
     var chipEl = document.getElementById('topbar-token-chip');
@@ -559,8 +591,25 @@
 
   function renderBalanceChip(chipEl, tokenStatus) {
     if (!chipEl || !tokenStatus) return;
-    lastChipTokenStatus = tokenStatus;
     var balEl = chipEl.querySelector('.token-chip-balance');
+    // Plain variant (see mountBalanceChip's `plain` option): the balance
+    // number and nothing else — no low/healthy tint, no claimable pulse,
+    // no "+N" badge, no data-claimable attribute for anything to key off.
+    // Gated on the element's own class so this stays correct no matter how
+    // many times, or from where, a caller re-renders it.
+    //
+    // Returns BEFORE touching `lastChipTokenStatus` on purpose: that
+    // module-level cache exists solely so a COMPACT chip's tap-to-claim
+    // handler can open the claim sheet with real streak/amount data. A
+    // plain chip has no such handler, so letting it write there would be
+    // shared state leaking across chip instances for no reader — exactly
+    // the cross-instance-state bug class this file has been fixed for
+    // repeatedly (see claimInline/runClaim's own review-finding notes).
+    if (chipEl.classList.contains('token-chip-plain')) {
+      if (balEl) balEl.textContent = tokenStatus.balance;
+      return;
+    }
+    lastChipTokenStatus = tokenStatus;
     var low = tokenStatus.balance < LOW_BALANCE_THRESHOLD;
     if (balEl) balEl.textContent = tokenStatus.balance + (low ? ' · Low' : '');
     chipEl.classList.toggle('low', low);

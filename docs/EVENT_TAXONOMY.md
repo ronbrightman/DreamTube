@@ -482,7 +482,7 @@ above are centralized rather than duplicated per call site.
 
 | | |
 |---|---|
-| **`daily_claim_shown`** | Fires whenever a claim surface actually becomes visible: the dedicated claim sheet opening (`{ source, surface: 'claim_sheet' }`, `source` one of `'balance_chip'` \| `'auto_open'` \| a page-specific auto-open source like `'profile_auto_open'`), or the out-of-tokens sheet's inline claim button appearing (`{ source, surface: 'out_of_tokens_sheet' }`). Never fires just because `tokenStatus.claimable` is true somewhere off-screen — only on an actual render |
+| **`daily_claim_shown`** | Fires whenever a claim surface actually becomes visible: the dedicated claim sheet opening (`{ source, surface: 'claim_sheet' }`, `source` one of `'balance_chip'` \| `'auto_open'` \| a page-specific auto-open source like `'home_today_card'`), or the out-of-tokens sheet's inline claim button appearing (`{ source, surface: 'out_of_tokens_sheet' }`). Never fires just because `tokenStatus.claimable` is true somewhere off-screen — only on an actual render |
 | **`daily_claim_completed`** | Fires ONLY once `DreamStore.claimDailyTokens()`/`POST claim-daily-tokens.js` resolves with a genuine `claimed: true` — never optimistically, never on tap alone. `{ source, streak, balance, surface }` (`surface` one of `'claim_sheet'` \| `'out_of_tokens_sheet'` \| `'shop_balance_card'`) |
 | **`daily_claim_dismissed`** | Fires when the dedicated claim sheet is closed (tap outside) without claiming. `{ source }`. Deliberately NOT fired for the out-of-tokens sheet's inline claim button (dismissing that whole sheet already fires `out_of_tokens_choice: 'dismiss'` above — a second, redundant dismiss event for the same tap would double-count) |
 
@@ -494,7 +494,7 @@ above are centralized rather than duplicated per call site.
 - `netlify/functions/claim-daily-tokens.js` — new, the claim endpoint (its own `claim-ip`/`claim-email` rate-limit bucket)
 - `netlify/functions/get-token-status.js` / `js/store.js` — updated to the new response shape; `js/store.js` gains `claimDailyTokens()`
 - `js/purchase-sheet.js` — `waitLineText` flips to claim-framed copy; `mountBalanceChip`/`renderBalanceChip` gain the pulsing claimable state + tap-to-claim; new `showClaimSheet`/`hideClaimSheet`/`maybeAutoOpenClaimSheet`; the out-of-tokens sheet gains the inline claim button
-- `create.html` / `style.html` / `result.html` / `profile.html` / `shop.html` — auto-open wiring + claim UI; `explore.html` — new topbar chip mount (previously the one page missing it)
+- `create.html` / `style.html` / `result.html` / `shop.html` / `home.html` — auto-open wiring + claim UI; `explore.html` — new topbar chip mount (previously the one page missing it). `profile.html` had this wiring too until 2026-07-30, when the founder-approved Profile night restyle (tracker item `for-product-build-founder-approved-2026--to6ew2`) deleted every claim mechanic from that page — no claim chip state, no tap-to-claim, no auto-open — leaving `home.html` as the sole ritual/claim surface. Profile now mounts `mountBalanceChip`'s `plain:true` variant, which fires no `daily_claim_*` events at all.
 - `css/styles.css` — pulsing chip state, inline claim button, claim sheet + confetti
 - `test/entitlements-daily-claim.test.js` / `test/claim-daily-tokens.test.js` — server-side claim/streak/cooldown/rate-limit coverage
 - `test/daily-claim-behavioral.test.js` — real-browser coverage of the chip, claim sheet, auto-open-once, explore.html's new mount, and the copy sweep

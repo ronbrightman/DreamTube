@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Profile — DreamTube</title>
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0c0a1a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="assets/logo-v2.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,28 +63,270 @@
     fbq('track', 'PageView');
   }
 </script>
+
+<!--
+  Profile night restyle + "Bar A" night dock (tracker item
+  for-product-build-founder-approved-2026--to6ew2, founder-approved
+  2026-07-30). Visual spec = profile-mock-x7q4.html (repo root) — this
+  block ports that mock's Part 2 (sky layers, identity anchor, plain
+  balance chip, likes night-card, kicker labels, tall 9:14 tiles) and its
+  Part 3 Direction A bar into the real page.
+
+  Page-scoped, exactly like home.html's own night block: everything here
+  only ever applies on profile.html and never touches css/styles.css's
+  shared dark theme that create/result/shop/explore still use. Every
+  effect stays CSS-only (radial-gradient star fields + two cheap
+  transform/opacity keyframes — no canvas, no video, no image payload for
+  the sky), per FOUNDER_PRINCIPLES.md's "light media over heavy on mobile".
+-->
+<style>
+:root{
+  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app reads this variable already */
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  /* The single source of truth for how much vertical space the OVERLAID
+     night dock occupies. The dock is absolutely positioned (content
+     scrolls behind it, per the mock), so nothing reserves this space
+     automatically — .scroll-area's bottom padding and the toast both read
+     this variable rather than each hardcoding their own copy of the bar's
+     height, which is exactly how a "content hidden behind the bar" bug
+     creeps back in after a later height tweak. */
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+}
+body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(--home-ink); }
+#app{ overflow:hidden; }
+
+/* ===== the living night sky (verbatim from home.html / the approved mock) ===== */
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora{ animation:none !important; }
+}
+
+/* ===== page chrome ===== */
+.profile-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.topbar-logo{ color:var(--home-ink); }
+.icon-btn{
+  background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4); color:var(--home-ink);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+.icon-btn:hover{ background:rgba(22,18,44,.75); border-color:var(--home-acc); }
+/* Content scrolls BEHIND the overlaid dock (per the mock) — this clearance
+   is the only thing keeping the last row of tiles reachable. */
+.scroll-area{ padding-bottom:calc(var(--nav-clearance) + 52px); }
+
+/* ===== identity anchor ===== */
+.profile-head{ padding:16px 20px 4px; }
+.profile-avatar-ring{ width:84px; height:84px; margin-bottom:0; box-shadow:0 0 28px -4px rgba(157,144,255,.45); }
+.profile-avatar{ background:#1d1834; border:3px solid #100d20; font-size:30px; font-weight:800; color:var(--home-ink); }
+.profile-avatar-edit-badge{
+  right:-3px; bottom:1px; width:26px; height:26px;
+  background:#1d1834; border-color:var(--home-line); color:var(--home-ink);
+}
+.profile-name{ font-size:16px; font-weight:800; color:var(--home-ink); margin-top:10px; }
+/* "This is you in your dreams" — the identity anchor's own line, the one
+   piece of copy the founder named explicitly in the spec. */
+.profile-caption{ font-size:11.5px; color:var(--home-soft); margin-top:2px; }
+.profile-stats{ font-size:12.5px; color:var(--home-soft); margin-top:7px; }
+.profile-stats b{ color:var(--home-ink); font-weight:800; }
+#profile-token-slot{ margin-top:12px; }
+/* Night skin over js/purchase-sheet.js's structural .token-chip-plain
+   rules (see css/styles.css) — colors only. */
+.token-chip-plain{
+  background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+.token-chip-plain .token-chip-balance{ color:var(--home-ink); }
+.token-chip-plain .token-chip-star{ color:var(--home-acc); }
+.token-chip-plain .token-chip-sep{ color:var(--home-soft); }
+.token-chip-plain .token-chip-cta{ color:#cfc8ff; }
+
+/* ===== night cards (likes banner, insight, milestones) ===== */
+.new-likes-banner{
+  margin:16px 14px 0; padding:14px 15px; border-radius:18px;
+  background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border-color:var(--home-line);
+}
+.new-likes-banner span:last-child{ font-size:13px; font-weight:600; color:var(--home-ink); }
+.profile-milestone-row{ padding:0 14px; margin:16px 0 0; }
+.profile-milestone-chip{
+  background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border-color:var(--home-line); border-radius:18px;
+}
+.profile-milestone-chip .pm-num{ color:var(--home-ink); }
+.profile-milestone-chip .pm-label{ color:var(--home-soft); }
+.profile-milestone-chip .pm-icon{ color:var(--home-acc); }
+.profile-insight-card{ margin:12px 14px 0; border-radius:18px; background:var(--home-line); }
+.profile-insight-card::before{ background:var(--home-raise2); opacity:1; }
+.profile-insight-card .pi-label{ color:var(--home-acc); }
+.profile-insight-card p{ color:var(--home-ink); }
+
+/* ===== library ===== */
+/* SHARED / PRIVATE kickers — the mock's .kicker treatment. */
+.section-label{
+  font-size:10.5px; letter-spacing:.09em; color:var(--home-acc);
+  font-weight:800; margin:20px 2px 9px;
+}
+.video-grid{ gap:12px; padding:0 14px 8px; }
+/* Tall 9:14 tiles come from css/styles.css's shared .vcard-thumb rule —
+   only the night skin is set here. */
+.vcard-thumb{ background:var(--home-raise2); border:1px solid rgba(255,255,255,.14); }
+.vcard-thumb::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(65% 42% at 50% 28%, rgba(255,255,255,.14), transparent 72%);
+}
+.vcard-title{ font-size:13px; font-weight:600; color:var(--home-ink); }
+.vcard-meta{ color:var(--home-soft); }
+.grid-empty{ color:var(--home-soft); font-size:12px; padding:4px 2px 0; text-align:left; }
+/* Upcoming-night placeholders (js/dream-cards.js) — night skin over the
+   shared .vcard-slot rules. Dimmest text tier for an upcoming night, the
+   first ("next") slot a step brighter, exactly as the founder's amendment
+   describes. Still purely decorative: nothing here is tappable. */
+.vcard-slot-thumb{ background:var(--home-raise2); border-color:var(--home-line); }
+.vcard-slot-mark{ color:var(--home-soft); }
+.vcard-slot-label{ color:#8f88b3; }
+.vcard-slot.is-next .vcard-slot-thumb{ border-color:rgba(157,144,255,.55); }
+.vcard-slot.is-next .vcard-slot-label{ color:var(--home-soft); }
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   Direction A of the founder-approved bottom-bar mock: a translucent,
+   blurred bar anchored to the bottom of #app that content scrolls BEHIND
+   (overlay positioning, not the sticky in-flow .bottom-nav every other
+   page still uses), with labels, an in-row 44px gradient "+" (not a
+   protruding one), and the account's own avatar standing in for the
+   Profile tab's icon.
+
+   SCOPED TO THIS PAGE ONLY, deliberately. The shared js/bottom-nav.js
+   renderer this is eventually meant to live on is not on origin/main yet
+   (it exists only on the unmerged fix-bottom-nav-order-drift branch), and
+   the open question that branch surfaced — whether explore.html should
+   gain a persistent Home tab — is still awaiting the founder's answer.
+   explore.html and home.html are untouched by this build. See this
+   commit's own notes for the reconciliation that should follow. */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+/* Blur is decorative, never load-bearing: without backdrop-filter support
+   the bar must still be opaque enough to read against scrolling content. */
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px; /* a real 44px tap target, not just the glyph */
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+/* Avatar-as-Profile-icon (the YouTube "You" treatment the spec asks for) —
+   the same Me-character photo/initial the identity anchor above shows,
+   rendered at nav size. */
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.night-dock-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
+.night-dock-item.active .night-dock-avatar{ border-color:var(--home-acc); }
+/* .nav-badge-dot needs no override — its ring already reads var(--bg-app),
+   which this block redefines to #0c0a1a above. */
+
+.toast{ bottom:calc(var(--nav-clearance) + 20px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); }
+</style>
 </head>
 <body>
 
 <div id="app" class="scroll-shell">
+  <!-- Sky layers — purely decorative, pointer-events:none, behind everything
+       (see the page-scoped <style> block above). -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <div class="profile-fg">
   <div class="topbar">
     <div class="topbar-logo" style="font-size:16px;">Profile</div>
     <div class="icon-btn" id="account-btn" title="Settings"></div>
   </div>
   <div class="scroll-area">
+    <!-- Identity anchor. No "+ Create dream" button here anymore: the
+         approved mock puts the single create affordance in the night dock's
+         in-row gradient "+" instead, so this block is identity + stats +
+         the plain balance chip, nothing else. -->
     <div class="profile-head">
       <div class="profile-avatar-ring" id="profile-avatar-edit" title="Edit your profile">
         <div class="profile-avatar" id="profile-avatar">🌙</div>
         <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
       </div>
       <div class="profile-name" id="profile-handle" title="Edit your profile">you</div>
+      <div class="profile-caption">This is you in your dreams</div>
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
-      <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
-      <a class="token-chip" id="profile-tokens" href="shop.html">
-        <span class="token-chip-balance" id="profile-tokens-balance">–</span>
-        <span class="token-chip-meta" id="profile-tokens-meta"></span>
-        <span class="token-chip-cta">Shop</span>
-      </a>
+      <!-- PLAIN balance chip — js/purchase-sheet.js's mountBalanceChip
+           `plain:true` variant. Balance + a link to the shop, and nothing
+           else: no claim state, no pulsing, no auto-opening claim sheet.
+           home.html is the sole claim/ritual surface (see the script block
+           below for the full note on what was deleted here). -->
+      <div id="profile-token-slot"></div>
     </div>
     <div id="profile-insights" style="display:none;">
       <div class="profile-milestone-row" id="milestone-row"></div>
@@ -100,26 +342,53 @@
          shown only when DreamStore.refreshNewLikesCount() (called on
          load, below) finds a nonzero total. Sits above the dream grid,
          right below the insight/milestone cards, same "hide entirely,
-         don't show an empty placeholder" convention those follow. -->
+         don't show an empty placeholder" convention those follow.
+         Restyled into the night "hcard" language by the block above; the
+         markup/behavior are unchanged. -->
     <div id="new-likes-banner" class="new-likes-banner" style="display:none;">
       <span class="icon" id="new-likes-banner-icon"></span>
       <span id="new-likes-banner-text"></span>
     </div>
-    <div id="profile-empty" class="grid-empty" style="display:none;">You haven't created a dream yet — tap "+ Create dream" to make your first one.</div>
+    <!-- Brand-new account: the copy plus a first run of upcoming-night
+         placeholders (Night 1 as "next"), so even an empty library shows
+         the journey rather than a bare sentence. Filled in by render(). -->
+    <div id="profile-empty" style="display:none;">
+      <div class="grid-empty" style="padding:10px 16px 14px;">You haven't captured a dream yet — tap + below to make your first one.</div>
+      <div class="video-grid" id="empty-slots-grid"></div>
+    </div>
     <div id="profile-lists">
-      <div class="section-label" style="padding:0 20px;">Shared</div>
+      <div class="section-label" style="padding:0 16px;">Shared</div>
       <div class="video-grid" id="shared-grid"></div>
-      <div class="section-label" style="padding:0 20px;">Private</div>
+      <div class="section-label" style="padding:0 16px;">Private</div>
+      <!-- Private is where a newly-created dream lands (private by default),
+           so the upcoming-night placeholders are appended to THIS grid —
+           they're literally the slots the next dreams will fill. -->
       <div class="video-grid" id="private-grid"></div>
     </div>
   </div>
-  <!-- cache-bust 2026-07-29T19:20Z: force fresh digest after Netlify dedup served stale content -->
-  <div class="bottom-nav">
-    <a class="nav-item" href="home.html"><div class="nav-icon icon"></div>Home</a>
-    <a class="nav-item" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
-    <a class="nav-create" href="create.html" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item active" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
   </div>
+
+  <!-- Bar A, the anchored night dock (Part 3 of the approved spec). Sits
+       OUTSIDE .profile-fg and is absolutely positioned, so page content
+       scrolls behind it; .scroll-area's --nav-clearance padding is what
+       keeps the last tile row reachable. Placed before the sheets/modals in
+       the DOM and at a lower z-index than .sheet-overlay, so an open sheet
+       always covers it. -->
+  <nav class="night-dock" aria-label="Main">
+    <a class="night-dock-item" href="home.html"><div class="nav-icon icon" id="dock-icon-home"></div><span class="night-dock-label">Home</span></a>
+    <a class="night-dock-item" href="explore.html"><div class="nav-icon icon" id="dock-icon-explore"></div><span class="night-dock-label">Explore</span></a>
+    <a class="night-dock-create" href="create.html" aria-label="Create"><span class="icon" id="dock-icon-create"></span></a>
+    <a class="night-dock-item active" href="profile.html" id="nav-profile" aria-current="page">
+      <!-- The avatar is aria-hidden: it's a decorative stand-in for the tab
+           icon (the YouTube "You" treatment), and the label below already
+           names the destination — without this, a screen reader announces
+           the account's initial as part of the tab name. -->
+      <div class="nav-icon-badge-wrap" aria-hidden="true">
+        <i class="night-dock-avatar" id="dock-avatar"></i>
+        <span class="nav-badge-dot" id="nav-profile-badge" hidden></span>
+      </div><span class="night-dock-label">Profile</span>
+    </a>
+  </nav>
 
   <div class="sheet-overlay" id="sheet-account-overlay">
     <div class="sheet">
@@ -483,6 +752,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/dream-cards.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
@@ -512,10 +782,17 @@
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
   document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
-  var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.home;
-  navIcons[1].innerHTML = Icons.compass;
-  navIcons[2].innerHTML = Icons.person;
+  // Night dock (Bar A) icons. The dock draws inactive tabs as LINE glyphs
+  // and the active one filled — and Profile is always the active tab here,
+  // drawn as the account's own avatar rather than a glyph at all (the
+  // YouTube "You" treatment; renderIdentity() below fills it). So Home and
+  // Explore are only ever inactive on this page: Explore's existing
+  // Icons.compass is already a line glyph, but Icons.home is filled (it's
+  // home.html's own ACTIVE tab), which is why js/icons.js gained
+  // Icons.homeOutline as its line-variant pair.
+  document.getElementById('dock-icon-home').innerHTML = Icons.homeOutline;
+  document.getElementById('dock-icon-explore').innerHTML = Icons.compass;
+  document.getElementById('dock-icon-create').innerHTML = Icons.plus;
   document.getElementById('feedback-cta-icon').innerHTML = Icons.megaphone;
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
@@ -541,64 +818,24 @@
     });
   });
 
-  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
-  function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
-
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — shared shape across every page with token UI (profile/style/result/processing/shop). Negative/zero reads as "now": claimable right now, see the daily-claim doc block in entitlements.js. */
-  function formatTokenCountdown(nextClaimAt){
-    if(nextClaimAt == null) return '';
-    var ms = nextClaimAt - Date.now();
-    if(ms <= 0) return 'now';
-    var totalMin = Math.ceil(ms / 60000);
-    var h = Math.floor(totalMin / 60);
-    var m = totalMin % 60;
-    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
-  }
+  // Tile markup, the upcoming-night placeholder slots, and the grid's
+  // video-preview observer all live in js/dream-cards.js now (tracker item
+  // for-product-build-founder-approved-2026--to6ew2, Part 5) — this page
+  // used to hand-roll all three inline, which is the same duplicate-markup
+  // drift this codebase has been bitten by repeatedly. esc() is taken from
+  // there too rather than keeping a second, weaker local copy (that one
+  // round-tripped through a detached div and so left quotes unescaped —
+  // this one is attribute-safe, which the Unblock rows below rely on).
+  var esc = DreamCards.esc;
 
   function vcardHTML(d){
     // Links to result.html (the owner detail/edit view, reads local state),
-    // never explore.html — that's the shared feed and won't have private dreams.
-    // No autoplay here — actual play/pause is driven by the
-    // IntersectionObserver below (see observeVideos), which is what
-    // actually renders a visible preview frame instead of a blank box:
-    // preload="metadata" alone doesn't guarantee a decoded frame to show
-    // until something has actually asked the video to play.
-    // Three-way: video -> image -> gradient fallback (was two-way) — see
-    // docs/IMAGE_GENERATION_SPEC.md §4.
-    var media = d.videoUrl
-      ? '<video class="vcard-video" src="'+esc(d.videoUrl)+'" muted loop playsinline preload="metadata"></video>'
-      : d.imageUrl
-        ? '<img class="vcard-image" src="'+esc(d.imageUrl)+'" alt="">'
-        : '<div class="vcard-thumb-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
-    return '<a class="vcard" href="result.html?id='+d.id+'">' +
-      '<div class="vcard-thumb">'+media+
-        '<div class="priv'+(d.isPublished?' pub':'')+'">'+(d.isPublished?'Public':'Private')+'</div>' +
-        '<div class="play-indicator icon">'+Icons.play+'</div>' + (d.dur ? '<div class="dur">'+d.dur+'</div>' : '') + '</div>' +
-      '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
-      '<div class="vcard-meta">'+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div>' +
-    '</a>';
-  }
-
-  // Plays a muted preview of whichever grid thumbnails are actually on
-  // screen (multiple can be visible at once, unlike Explore's one-at-a-time
-  // swipe feed) and pauses the rest — both fixes the blank-thumbnail issue
-  // (a <video> with only preload="metadata" often never renders a visible
-  // frame until it's asked to play) and avoids every thumbnail decoding
-  // and playing at once regardless of visibility.
-  var vcardVideoObserver = new IntersectionObserver(function(entries){
-    entries.forEach(function(entry){
-      var video = entry.target;
-      if(entry.isIntersecting){
-        if(video.paused) video.play().catch(function(){ /* autoplay can be blocked before any user gesture — muted should normally allow it regardless */ });
-      } else {
-        video.pause();
-      }
+    // never explore.html — that's the shared feed and won't have private
+    // dreams.
+    return DreamCards.tileHTML(d, {
+      gradient: DreamStore.gradientFor(d),
+      playIcon: Icons.play
     });
-  }, { threshold: 0.2 });
-
-  function observeVideos(){
-    vcardVideoObserver.disconnect();
-    Array.prototype.forEach.call(document.querySelectorAll('.vcard-video'), function(v){ vcardVideoObserver.observe(v); });
   }
 
   var user = DreamStore.getCurrentUser();
@@ -618,15 +855,24 @@
     var me = getMeCharacter();
     var nameEl = document.getElementById('profile-handle');
     var avatarEl = document.getElementById('profile-avatar');
-    if(me && me.name){
-      nameEl.textContent = me.name;
-    } else if(user){
-      nameEl.textContent = DreamStore.displayHandle(user.handle);
-    }
+    var displayName = (me && me.name) ? me.name : (user ? DreamStore.displayHandle(user.handle) : '');
+    if(displayName) nameEl.textContent = displayName;
     if(me && me.photoDataUrl){
-      avatarEl.innerHTML = '<img src="'+me.photoDataUrl+'" alt="">';
+      avatarEl.innerHTML = '<img src="'+esc(me.photoDataUrl)+'" alt="">';
     } else {
       avatarEl.textContent = '🌙';
+    }
+    // Avatar-as-Profile-icon in the night dock (Part 3 of the spec) — the
+    // SAME Me character, not a second identity source, so an edit made in
+    // the sheet below updates both the header and the nav in one call.
+    // Falls back to the first letter of the display name (the mock's own
+    // treatment), never to a placeholder glyph that would read as "not
+    // signed in".
+    var dockAvatar = document.getElementById('dock-avatar');
+    if(me && me.photoDataUrl){
+      dockAvatar.innerHTML = '<img src="'+esc(me.photoDataUrl)+'" alt="">';
+    } else {
+      dockAvatar.textContent = (displayName || '?').trim().charAt(0).toUpperCase();
     }
   }
   renderIdentity();
@@ -894,6 +1140,24 @@
     }
   }
 
+  // ===== Upcoming-night placeholder slots (founder amendment) =====
+  // A READ-ONLY mirror of home.html's dream-log state, never a second
+  // claim/log surface: DreamStore.getDreamLogStatus() is a pure local read
+  // (see its own doc comment in js/store.js) and nothing on this page ever
+  // writes a log entry, claims tokens, or opens a ritual sheet. All this
+  // decides is whether the first empty slot reads "tonight" (nothing logged
+  // yet today) or "tomorrow" (tonight already covered) — the sense in which
+  // the streak "shows through" the cards.
+  var UPCOMING_SLOT_COUNT = 2; // one grid row — deliberately small, per "keep it tasteful"
+
+  function upcomingSlotsHTML(dreamCount){
+    return DreamCards.slotsHTML({
+      dreamCount: dreamCount,
+      loggedToday: DreamStore.getDreamLogStatus().loggedToday,
+      count: UPCOMING_SLOT_COUNT
+    });
+  }
+
   function render(){
     var mine = DreamStore.getMyDreams();
     var shared = mine.filter(function(d){ return d.isPublished; });
@@ -906,18 +1170,22 @@
     if(!mine.length){
       document.getElementById('profile-empty').style.display = 'block';
       document.getElementById('profile-lists').style.display = 'none';
+      // Even a brand-new account sees the journey: Night 1 as "next".
+      document.getElementById('empty-slots-grid').innerHTML = upcomingSlotsHTML(0);
     } else {
       document.getElementById('profile-empty').style.display = 'none';
       document.getElementById('profile-lists').style.display = 'block';
       document.getElementById('shared-grid').innerHTML = shared.length
         ? shared.map(vcardHTML).join('')
         : '<div class="grid-empty">Nothing shared yet — publish a dream from its result page.</div>';
-      document.getElementById('private-grid').innerHTML = privateDreams.length
-        ? privateDreams.map(vcardHTML).join('')
-        : '<div class="grid-empty">No private dreams — everything you\'ve made is shared.</div>';
+      // The placeholders ARE the private grid's empty state — they say
+      // "here's what's next" where a flat "no private dreams" line used to
+      // say nothing useful, so there's no separate text note anymore.
+      document.getElementById('private-grid').innerHTML =
+        privateDreams.map(vcardHTML).join('') + upcomingSlotsHTML(mine.length);
     }
 
-    observeVideos();
+    DreamCards.observeVideos();
   }
   render();
 
@@ -943,100 +1211,37 @@
     }
   });
 
-  // ===== Token balance indicator =====
-  // Shown for every logged-in account with an email on file (every new
-  // signup has one — see js/store.js's signup(); a legacy no-email account
-  // resolves to balance:0 with no network call, see getTokenStatus's own
-  // doc comment) — unlike the old quota indicator this replaces, tokens
-  // apply to everyone from launch, not just an active subscriber, so there
-  // is no "hide when inactive" state here. Styled as a real "chip" (see
-  // .token-chip in css/styles.css, reusing the app's existing --gradient-ig
-  // "special" treatment) rather than a plain muted stat line — founder
-  // feedback was that the old plain-text version read as inert, not as an
-  // inviting entry point into the shop it's a plain <a href> to.
-  var tokenChip = document.getElementById('profile-tokens');
-  var tokenBalanceEl = document.getElementById('profile-tokens-balance');
-  var tokenMetaEl = document.getElementById('profile-tokens-meta');
-  var tokenStatus = null;
-  // Mirrors style.html's/result.html's/processing.html's own local
-  // IMAGE_TOKEN_COST/VIDEO_TOKEN_COST copies (no shared JS module in this
-  // codebase — see js/store.js's header comment) — needed below so "low
-  // balance" copy can actually tell whether the cheapest generation type
-  // (an image) is still affordable, not just whether a video is.
-  var IMAGE_TOKEN_COST = 10;
-  var VIDEO_TOKEN_COST = 100;
-  function renderTokenText(){
-    if(!tokenStatus) return;
-    tokenBalanceEl.textContent = tokenStatus.balance + ' tokens';
-    var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
-    // Claimable state takes priority over the balance-level copy below —
-    // it's the actionable fix for a low/empty balance, not just a status
-    // read-out (tracker item for-product-build-the-daily-token-claim--fngrwd,
-    // item 4: pulsing "+N claimable" state).
-    if(tokenStatus.claimable) tokenMetaEl.textContent = 'Claim +' + amount + ' free';
-    // Media-aware label (hardening fix, tracker item
-    // for-product-store-launch-copy-sweep-purc-m6xhkx): a flat "Out of
-    // tokens" below 100 was misleading a user who could still afford the
-    // 10-token image path — only actually zero-balance-for-everything
-    // (can't even afford an image) is "Out of tokens"; anything under a
-    // video's cost but still image-affordable is "Low" instead.
-    else if(tokenStatus.balance < IMAGE_TOKEN_COST) tokenMetaEl.textContent = 'Out of tokens';
-    else if(tokenStatus.balance < VIDEO_TOKEN_COST) tokenMetaEl.textContent = 'Low';
-    else if(tokenStatus.nextClaimAt) tokenMetaEl.textContent = '+' + amount + ' in ' + formatTokenCountdown(tokenStatus.nextClaimAt);
-    else tokenMetaEl.textContent = '';
-    tokenChip.classList.toggle('claimable', !!tokenStatus.claimable);
-    tokenChip.setAttribute('data-claimable', tokenStatus.claimable ? 'true' : 'false');
-  }
-  function renderTokens(autoOpen){
-    DreamStore.getTokenStatus().then(function(status){
-      tokenStatus = status;
-      renderTokenText();
-      // Auto-open ONCE per day when claimable (tracker item
-      // for-product-build-the-daily-token-claim--fngrwd, item 4) — the
-      // chip stays the fallback entry point if dismissed.
-      if(autoOpen){
-        PurchaseSheet.maybeAutoOpenClaimSheet(status, {
-          source: 'profile_auto_open',
-          onClaimed: function(){ renderTokens(false); }
-        });
-      }
-    }).catch(function(){ /* leave whatever was last rendered (or nothing) — never block the rest of the page on this */ });
-  }
-  renderTokens(true);
-  // Tapping the chip while claimable opens the claim sheet instead of
-  // navigating to shop.html (item 4 of the spec) — reads the live
-  // data-claimable attribute at click time, same pattern
-  // js/purchase-sheet.js's own mountBalanceChip uses for the compact
-  // topbar chip.
-  tokenChip.addEventListener('click', function(e){
-    if(tokenChip.getAttribute('data-claimable') !== 'true') return;
-    e.preventDefault();
-    PurchaseSheet.showClaimSheet({
-      source: 'profile_chip',
-      tokenStatus: tokenStatus,
-      onClaimed: function(){ renderTokens(false); }
-    });
+  // ===== Token balance indicator — PLAIN, no claim mechanics =====
+  //
+  // Founder-approved Profile restyle (tracker item
+  // for-product-build-founder-approved-2026--to6ew2): this page used to be
+  // a SECOND daily-claim surface — a pulsing "Claim +N free" chip, a
+  // tap-to-open claim sheet, a once-per-day auto-opening claim sheet on
+  // page load, and a 60s interval that re-fetched get-token-status just to
+  // keep a countdown honest. All of that is DELETED here on purpose:
+  // home.html is the sole ritual/claim owner now (its Today card's claim
+  // chip), and having a quieter duplicate of the same ritual on Profile was
+  // the exact drift being removed. Do not re-add any of it here — a claim
+  // affordance on this page is a regression, not a feature.
+  //
+  // What's left is a plain read: the balance, and a link to the shop, via
+  // js/purchase-sheet.js's mountBalanceChip `plain:true` variant (which,
+  // by construction, wires no claim handler and renders no claim state).
+  // One fetch on load, no polling — a plain balance number has nothing to
+  // count down to.
+  var tokenChip = PurchaseSheet.mountBalanceChip(document.getElementById('profile-token-slot'), {
+    plain: true,
+    source: 'profile_chip'
   });
-  // Countdown only needs to move visibly once a minute — no reason to
-  // re-fetch from the server that often in the common case, just
-  // re-render from the balance already cached in tokenStatus. BUT once
-  // the countdown reaches "now" (nextClaimAt has passed), the account has
-  // genuinely become claimable server-side — re-render-from-cache alone
-  // would leave the countdown stuck showing "now" without ever flipping
-  // the chip into its pulsing claimable state, since nothing else
-  // refreshes tokenStatus. Re-fetch in that case so `claimable` flips to
-  // true. Once ALREADY claimable, no need to keep re-fetching every tick —
-  // that state is genuinely stable until the user actually claims (no
-  // ceiling-style edge case here, unlike the old drip mechanism).
-  setInterval(function(){
-    if(tokenStatus && !tokenStatus.claimable && tokenStatus.nextClaimAt && tokenStatus.nextClaimAt <= Date.now()) renderTokens(true);
-    else renderTokenText();
-  }, 60000);
+  DreamStore.getTokenStatus().then(function(status){
+    PurchaseSheet.renderBalanceChip(tokenChip, status);
+  }).catch(function(){ /* leave the placeholder — never block the rest of the page on this */ });
 
   // ===== Blocked accounts (tracker item for-product-public-feed-safety-in-app-re-ppuw77) =====
-  // Reuses this file's existing esc() helper (defined above, function
-  // declarations are hoisted to the top of this script block regardless
-  // of source order).
+  // Reuses this file's `esc` (assigned near the top of this script block
+  // from DreamCards.esc — the attribute-safe one, which matters here
+  // specifically because the handle is interpolated into a data-unblock
+  // attribute below, not just into text).
   function renderBlockedAccounts(){
     var handles = DreamStore.getBlockedHandles();
     var section = document.getElementById('blocked-accounts-section');
@@ -1173,8 +1378,7 @@
         // which must never overwrite what this page shows for the
         // signed-in owner.
         if(!targetUsername){
-          tokenStatus = result.data;
-          renderTokenText();
+          PurchaseSheet.renderBalanceChip(tokenChip, result.data);
         }
         // owner_topup analytics event (tracker item
         // for-product-extend-owner-top-up-with-a-t-2hmopn) -- includes the

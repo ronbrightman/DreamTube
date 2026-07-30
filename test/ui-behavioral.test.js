@@ -2354,65 +2354,29 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
 
 /**
  * Bug report (profile-improvements-kwivqb): "+100 in now" (the token
- * countdown) never resets once it reaches "now" -- because profile.html's
- * 60s setInterval only re-rendered the SAME cached tokenStatus object, it
- * never re-fetched get-token-status.js, so once nextClaimAt passed, the
- * displayed balance/countdown froze there forever even though the account
- * had already become claimable server-side. Fix: once nextClaimAt has
- * passed, the interval callback re-fetches instead of just re-formatting.
- * Uses page.clock to fast-forward past both the claim-eligible time and the
- * 60s interval without a real wait, and a second get-token-status.js route
- * response (a distinctly different balance/claimable state) to prove a
- * genuine second fetch happened, not just a re-render of the first
- * response. 2026-07-28 daily-claim switch: this test's ORIGINAL "post-grant
- * balance" story doesn't apply anymore (nothing auto-grants on read) -- it
- * now proves the refetch correctly flips the UI into the claimable state
- * once nextClaimAt passes, which is exactly the same underlying re-fetch
- * mechanism, just observing a different outcome.
+ * countdown) never resets once it reaches "now" -- because the page's 60s
+ * setInterval only re-rendered the SAME cached tokenStatus object, it never
+ * re-fetched get-token-status.js, so once nextClaimAt passed, the displayed
+ * countdown froze there forever even though the account had already become
+ * claimable server-side. Fix: once nextClaimAt has passed, the interval
+ * callback re-fetches instead of just re-formatting. Uses page.clock to
+ * fast-forward past both the claim-eligible time and the 60s interval
+ * without a real wait, and a second get-token-status.js route response (a
+ * distinctly different claimable state) to prove a genuine second fetch
+ * happened, not just a re-render of the first response.
+ *
+ * This property was originally asserted on profile.html AND shop.html,
+ * since both carried a countdown. profile.html no longer has one at all:
+ * the founder-approved Profile night restyle (tracker item
+ * for-product-build-founder-approved-2026--to6ew2) replaced its chip with
+ * js/purchase-sheet.js's plain, claim-free variant and deleted the polling
+ * interval outright -- home.html is the sole claim/ritual surface now. The
+ * profile.html copies of this test and of the two claimable-state tests
+ * that followed it were removed alongside that behavior rather than left
+ * asserting something deleted on purpose; shop.html keeps every one of
+ * those properties, and test/profile-night-restyle-behavioral.test.js
+ * asserts the claim UI is genuinely gone from Profile.
  */
-test('profile.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now", flipping into the claimable state', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.clock.install({ time: Date.now() });
-
-    var callCount = 0;
-    await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      callCount++;
-      var body = callCount === 1
-        ? { balance: 90, claimable: false, nextClaimAt: Date.now() + 30000, dailyClaimAmount: 10, streak: 2 } // claimable in 30s
-        : { balance: 90, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 10, streak: 2 }; // now claimable
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
-
-    await seedLoggedInUserAt(page, baseUrl, 'countdownstuck', '/profile.html');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('profile-tokens-balance');
-      return el && el.textContent.indexOf('90') !== -1;
-    }, null, { timeout: 5000 });
-    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
-
-    // Advance past the 30s claim-eligible time, then past the 60s interval
-    // tick -- the interval callback should notice nextClaimAt already
-    // passed and re-fetch, landing on the second (claimable) mocked
-    // response.
-    await page.clock.fastForward(65000);
-    await page.waitForFunction(function () {
-      var el = document.getElementById('profile-tokens-meta');
-      return el && /claim/i.test(el.textContent);
-    }, null, { timeout: 5000 });
-
-    assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
-    var metaText = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(metaText, /in now/i, 'must not still read "in now" after the re-fetch');
-    assert.match(metaText, /Claim \+10 free/i, 'must reflect the newly-claimable state, not the stale countdown');
-  } finally {
-    await context.close();
-  }
-});
-
 test('shop.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now", revealing the claim button', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -2463,27 +2427,6 @@ test('shop.html: the token countdown re-fetches (not just re-renders stale data)
  * tick just because it's sitting in the (now perfectly stable, not
  * permanently-past) claimable state.
  */
-test('profile.html: a claimable balance shows honest "Claim +N free" copy, never "+N in now"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4 });
-    await seedLoggedInUserAt(page, baseUrl, 'foundermaxed', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var balance = await page.textContent('#profile-tokens-balance');
-    assert.match(balance, /1500 tokens/);
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(meta, /in now/i, 'must never render "+N in now" for a claimable account');
-    assert.match(meta, /Claim \+20 free/i, 'should show the honest, actionable claim copy');
-  } finally {
-    await context.close();
-  }
-});
-
 test('shop.html: a claimable balance shows the "Claim N free tokens" button, never "in now"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -2501,46 +2444,6 @@ test('shop.html: a claimable balance shows the "Claim N free tokens" button, nev
     assert.doesNotMatch(countdown, /in now/i, 'must never render "in now" for a claimable account');
     var claimLabel = await page.textContent('#shop-claim-label');
     assert.match(claimLabel, /Claim 20 free tokens/i);
-  } finally {
-    await context.close();
-  }
-});
-
-test('profile.html: a claimable account never re-fetches on the 60s countdown tick (it is a stable state until actually claimed, not a race against a stale countdown)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.clock.install({ time: Date.now() });
-
-    var callCount = 0;
-    await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      callCount++;
-      // Always the same claimable state -- nextClaimAt permanently in the
-      // past until the user actually taps claim, which this test never
-      // does.
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4
-      }) });
-    });
-
-    await seedLoggedInUserAt(page, baseUrl, 'ceilingnopoll', '/profile.html');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('profile-tokens-balance');
-      return el && el.textContent.indexOf('1500') !== -1;
-    }, null, { timeout: 5000 });
-    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
-
-    // Two full interval ticks -- a claimable account's nextClaimAt is
-    // always in the past until claimed, so a naive re-fetch check would
-    // hammer the endpoint on every tick.
-    await page.clock.fastForward(65000);
-    await page.clock.fastForward(65000);
-
-    assert.equal(callCount, 1, 'must not re-fetch on any tick while already claimable -- nextClaimAt never becomes "not passed" until an actual claim happens');
-    var metaText = await page.textContent('#profile-tokens-meta');
-    assert.match(metaText, /Claim/i, 'should still render the claimable copy after ticks with no re-fetch');
   } finally {
     await context.close();
   }
@@ -2580,66 +2483,21 @@ test('shop.html: a claimable account never re-fetches on the 60s countdown tick'
   }
 });
 
-test('profile.html: a NOT-yet-claimable balance still shows a normal live countdown, not the claim copy', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 199, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
-    await seedLoggedInUserAt(page, baseUrl, 'notyetmaxed', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(meta, /^Claim/i, 'a not-yet-claimable balance must show the real countdown, not the claim copy');
-    assert.match(meta, /\+20 in/, 'should show the normal live countdown');
-  } finally {
-    await context.close();
-  }
-});
-
 // ===========================================================================
-// Media-aware low-balance label (hardening fix, tracker item
-// for-product-store-launch-copy-sweep-purc-m6xhkx): profile.html used to
-// flatly label any balance under 100 (VIDEO_TOKEN_COST) as "Out of tokens",
-// even though a balance of, say, 50 can still afford the 10-token image
-// path -- literally false for that user. Fixed to distinguish "genuinely
-// can't afford anything" (< IMAGE_TOKEN_COST, 10) from "can't afford a
-// video but can still afford an image" (>= 10, < 100), which now reads
-// "Low" instead.
+// REMOVED (2026-07-30, tracker item
+// for-product-build-founder-approved-2026--to6ew2): three further
+// profile.html token-chip tests lived here -- "a NOT-yet-claimable balance
+// still shows a normal live countdown", plus the media-aware low-balance
+// label pair from tracker item for-product-store-launch-copy-sweep-purc-m6xhkx
+// ("Low" for a balance that can still afford a 10-token image, "Out of
+// tokens" only below that). None of those states exist on Profile anymore:
+// the founder-approved night restyle replaced its chip with
+// js/purchase-sheet.js's PLAIN variant, which renders the balance and a
+// Shop link and nothing else. That removes copy, never accuracy -- the
+// plain chip states no affordability claim at all, so the honesty bug
+// m6xhkx fixed cannot recur there. The compact topbar chip on
+// create/style/result keeps its own low-balance treatment, the shop keeps
+// the full countdown/claim coverage above, and
+// test/profile-night-restyle-behavioral.test.js pins the plain chip's
+// actual shape.
 // ===========================================================================
-
-test('profile.html: a balance that can still afford an image (e.g. 50) shows "Low", not "Out of tokens"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
-    await seedLoggedInUserAt(page, baseUrl, 'lowbalanceimageok', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(meta, /out of tokens/i, 'a balance that can still afford a 10-token image must not claim the user is entirely out of tokens');
-    assert.match(meta, /low/i, 'should read as "Low" instead');
-  } finally {
-    await context.close();
-  }
-});
-
-test('profile.html: a balance that can\'t even afford an image (e.g. 5) still shows "Out of tokens"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 5, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
-    await seedLoggedInUserAt(page, baseUrl, 'trulyoutoftokens', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var meta = await page.textContent('#profile-tokens-meta');
-    assert.match(meta, /out of tokens/i, 'a balance below even the cheapest generation type is genuinely out of tokens');
-  } finally {
-    await context.close();
-  }
-});

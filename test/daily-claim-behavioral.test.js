@@ -604,7 +604,14 @@ test('copy sweep: shop.html no longer promises tokens "refill" automatically or 
   }
 });
 
-test('copy sweep: profile.html FAQ + token meta never say tokens arrive "automatically"/"every day" in the daily-token context', async function (t) {
+// The token-meta half of this sweep went away with the meta line itself:
+// profile.html's chip is js/purchase-sheet.js's PLAIN variant now (balance
+// + Shop link, no daily-token copy of any kind), per the founder-approved
+// night restyle -- tracker item
+// for-product-build-founder-approved-2026--to6ew2. The FAQ half below is
+// unchanged and is the longest-lived piece of daily-token copy in the app,
+// so it stays exactly as it was.
+test('copy sweep: profile.html\'s FAQ never says tokens arrive "automatically"/"every day" in the daily-token context', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -612,10 +619,7 @@ test('copy sweep: profile.html FAQ + token meta never say tokens arrive "automat
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 500, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedLoggedInUserAt(page, 'profilecopysweep', '/profile.html');
-    await page.waitForSelector('#profile-tokens-meta:not(:empty)', { timeout: 5000 });
-
-    var metaText = await page.textContent('#profile-tokens-meta');
-    assert.doesNotMatch(metaText, /automatically/i);
+    await page.waitForSelector('#account-btn', { timeout: 5000 });
 
     await page.click('#account-btn');
     await page.waitForSelector('#sheet-account-overlay.open', { timeout: 5000 });
