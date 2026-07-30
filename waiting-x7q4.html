@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Waiting on Ron</title>
+<!--
+  Owner page (unlinked, obscure URL — same pattern as the other -x7q4 pages).
+  Live view of every open tracker item flagged waitingFor:"ron", grouped and
+  ranked. No baked data: it fetches get-tracker-items on load, so it is always
+  current as long as Manager keeps the waitingFor flags clean (standing rule,
+  2026-07-30). Maintained by the Manager session.
+-->
+<style>
+  html { background:#0d0d0f; }
+  body { font-family:'Manrope',system-ui,-apple-system,sans-serif; color:#e8e8e8; margin:0; padding:20px 14px 60px; max-width:740px; margin-inline:auto; font-size:14px; line-height:1.5; }
+  h1 { font-size:20px; font-weight:800; color:#fff; margin:4px 0 2px; }
+  .sub { color:#888; font-size:12px; margin-bottom:16px; }
+  h2 { font-size:14px; font-weight:800; margin:22px 0 8px; display:flex; align-items:center; gap:8px; }
+  h2 .cnt { background:rgba(255,255,255,.12); border-radius:100px; padding:1px 9px; font-size:12px; color:#ccc; }
+  .item { background:#161616; border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:11px 13px; margin-bottom:8px; cursor:pointer; }
+  .item.expanded { border-color:rgba(255,255,255,.25); }
+  .row1 { display:flex; align-items:flex-start; gap:8px; }
+  .prio { flex:none; margin-top:3px; width:8px; height:8px; border-radius:50%; }
+  .prio.high { background:#ff7080; } .prio.medium { background:#d9a653; } .prio.low { background:#5a5a5f; }
+  .title { font-weight:700; color:#fff; }
+  .age { color:#777; font-size:11.5px; margin-left:auto; flex:none; padding-left:8px; white-space:nowrap; }
+  .body { display:none; margin-top:9px; padding-top:9px; border-top:1px solid rgba(255,255,255,.08); color:#bdbdbd; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+  .item.expanded .body { display:block; }
+  .body b { color:#e8e8e8; }
+  .empty { color:#7ee2a8; font-weight:700; padding:14px 4px; }
+  .note { background:#14161c; border:1px solid rgba(108,140,255,.35); border-radius:12px; padding:11px 13px; font-size:13px; color:#aab4d4; margin-bottom:6px; }
+  .err { color:#ff8a96; padding:12px 4px; }
+  a { color:#9ab0ff; }
+  .refresh { background:none; border:1px solid rgba(255,255,255,.2); color:#ccc; border-radius:100px; padding:5px 14px; font-size:12px; cursor:pointer; margin-left:8px; }
+</style>
+</head>
+<body>
+<h1>⏳ Waiting on Ron</h1>
+<div class="sub">Live from the shared tracker — refreshed on every open<button class="refresh" onclick="load()">↻ Refresh</button></div>
+<div class="note">Manager keeps this list real: items appear the moment something anywhere (Product, Growth, Manager) blocks on you, and disappear the moment your part is done. Anything <b>urgent or one-word-quick</b> gets asked in chat directly — everything else just waits here quietly. Tap an item to expand.</div>
+<div id="out">Loading…</div>
+<script>
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function age(iso){
+  if(!iso) return '';
+  var days=Math.floor((Date.now()-new Date(iso).getTime())/86400000);
+  if(days<=0) return 'today';
+  if(days===1) return '1 day';
+  return days+' days';
+}
+function cleanTitle(t){return t.replace(/\[for (ron|product|growth|manager)\]\s*/ig,'').replace(/\[auto\]\s*/ig,'');}
+function load(){
+  var out=document.getElementById('out');
+  out.textContent='Loading…';
+  fetch('/.netlify/functions/get-tracker-items').then(function(r){return r.json();}).then(function(d){
+    var items=(d.items||[]).filter(function(i){return !i.done && i.waitingFor==='ron';});
+    var rank={high:0,medium:1,low:2};
+    items.sort(function(a,b){return (rank[a.priority]??1)-(rank[b.priority]??1);});
+    // Split: decisions/actions vs. phone-test confirmations (merged fixes awaiting founder QA)
+    var tests=[],main=[];
+    items.forEach(function(i){
+      var last=(i.comments&&i.comments.length)?i.comments[i.comments.length-1].text:'';
+      var blob=(i.detail+' '+last).toLowerCase();
+      var isTest=/merged to main|merged \(|confirmation before it closes|your confirmation|founder.{0,20}(test|confirm|verif)|qa gate is you|test link/.test(blob) && !/decide|decision needed|paste|rotate|buy|key\b/.test(i.title.toLowerCase());
+      (isTest?tests:main).push(i);
+    });
+    function render(list){
+      return list.map(function(i){
+        var last=(i.comments&&i.comments.length)?i.comments[i.comments.length-1]:null;
+        return '<div class="item" onclick="this.classList.toggle(\'expanded\')">'
+          +'<div class="row1"><span class="prio '+esc(i.priority||'medium')+'"></span>'
+          +'<span class="title">'+esc(cleanTitle(i.title))+'</span>'
+          +'<span class="age">'+esc(age(i.createdAt))+'</span></div>'
+          +'<div class="body"><b>Detail:</b> '+esc(i.detail||'—')
+          +(last?'\n\n<b>Latest ('+esc(last.author)+'):</b> '+esc(last.text):'')
+          +'</div></div>';
+      }).join('');
+    }
+    var html='';
+    html+='<h2>Decisions &amp; actions <span class="cnt">'+main.length+'</span></h2>';
+    html+= main.length?render(main):'<div class="empty">Nothing — all clear ✨</div>';
+    html+='<h2>Phone-test confirmations (shipped fixes awaiting your “works”) <span class="cnt">'+tests.length+'</span></h2>';
+    html+= tests.length?render(tests):'<div class="empty">Nothing to test 🎉</div>';
+    out.innerHTML=html;
+  }).catch(function(e){
+    out.innerHTML='<div class="err">Could not load the tracker ('+esc(e&&e.message)+'). Check connection and hit Refresh.</div>';
+  });
+}
+load();
+</script>
+</body>
+</html>
