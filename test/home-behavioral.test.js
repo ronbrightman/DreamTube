@@ -175,6 +175,27 @@ test('home.html: a brand-new (D1) account sees the D1 next-step strip, real entr
   }
 });
 
+test('home.html: an account with only a LEGACY dream (no createdAt field) is never shown the brand-new-user "New here?" hint -- getDreamLogStatus\'s hasEverLogged must not require createdAt (tracker item for-product-home-screen-spec-drift-from--575djz, fix 4)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 300, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 4 });
+    // makeDream's createdAt:undefined is dropped entirely by JSON.stringify
+    // in seedHomeUser -- same shape as a real dream saved before the
+    // createdAt field existed (see finalizeDream's own doc comment).
+    await seedHomeUser(page, { dreams: [makeDream('legacy-1', { createdAt: undefined })] });
+
+    await page.waitForSelector('#next-strip', { timeout: 5000 });
+    var stripText = await page.locator('#next-strip').textContent();
+    assert.doesNotMatch(stripText, /new here/i, 'an account with a real (if undated) logged dream must never see the D1 brand-new-user hint');
+    assert.match(stripText, /more this week/i, 'a returning-user strip shape should show instead -- the legacy dream just cannot be date-bucketed into this week\'s count');
+  } finally {
+    await context.close();
+  }
+});
+
 test('home.html: tapping "No recall" logs today without any token/claim call, flips the Today card to the logged state, and updates the next-step strip', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

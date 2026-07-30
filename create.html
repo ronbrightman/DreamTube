@@ -1869,6 +1869,14 @@
     textArea.value = draft.storyText || draft.caption;
     updateCharCount();
     DreamStore.setDraft({ restore: false });
+  } else if(new URLSearchParams(location.search).get('build') === '1'){
+    // home.html's Today-card "Wizard" entry point (tracker item
+    // for-product-home-screen-spec-drift-from--575djz) — jumps straight
+    // into the chip-first "Build it" wizard instead of the Build/Write/
+    // Record choice screen, same deep-link convention as ?write=1/
+    // ?record=1 below. Reuses the EXISTING #choice-build card's own click
+    // handler rather than duplicating what it does.
+    document.getElementById('choice-build').click();
   } else if(new URLSearchParams(location.search).get('write') === '1'){
     // home.html's Today-card "Write it" entry point (tracker item
     // for-product-build-homepage-wave-1-the-ri-xr8mir) — jumps straight
