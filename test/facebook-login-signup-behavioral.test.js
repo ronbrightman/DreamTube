@@ -8,11 +8,10 @@
 // What this file specifically exists to prove, beyond the server-side
 // unit coverage in test/facebook-oauth-callback.test.js:
 //   - the feature flag genuinely removes the button from the DOM (absent,
-//     not hidden) while js/facebook-config.js still holds its placeholder,
-//     on BOTH live A/B signup variants;
-//   - with a real App ID configured, the button appears on both variants
-//     and its click builds a correct OAuth dialog URL + first-party CSRF
-//     cookie, and invalidates any in-flight manual signup first;
+//     not hidden) while js/facebook-config.js still holds its placeholder;
+//   - with a real App ID configured, the button appears and its click
+//     builds a correct OAuth dialog URL + first-party CSRF cookie, and
+//     invalidates any in-flight manual signup first;
 //   - `staged` characters survive the redirect (persist -> restore ->
 //     key cleared), which is the spec's §2.5 "non-obvious requirement";
 //   - the return leg with a valid ?bt= skips screen 13 entirely and lands
@@ -37,6 +36,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var signupFlow = require('./helpers/signup-flow');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 var FAKE_APP_ID = '1234509876';
@@ -91,12 +91,6 @@ async function safeGoto(page, url) {
 /** Same base resume params the other funnel behavioral tests use. A caption with no first-person/people-indicating language skips the characters screen. */
 function resumeUrl(caption, extra) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption) + (extra || '');
-}
-
-function seedVariant(context, variant) {
-  return context.addInitScript(function (v) {
-    localStorage.setItem('dreamtube_signup_variant', v);
-  }, variant);
 }
 
 /**
@@ -166,58 +160,122 @@ function readPostHogCalls(page) {
 // exists (spec §2.4's "Flag OFF" row, §4).
 // ===========================================================================
 
-['a', 'b'].forEach(function (variant) {
-  test('feature flag OFF (placeholder App ID): variant "' + variant + '" renders NO Facebook button anywhere in the DOM', async function (t) {
+test('feature flag OFF (placeholder App ID): renders NO Facebook button anywhere in the DOM', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    assert.equal(await page.$('#fn-fb-continue'), null, 'the button element must not exist at all');
+    // Scoped to the funnel's own rendered screen (NOT document.body,
+    // which also contains this page's inline <script> source and would
+    // match on a code comment rather than real markup).
+    var anyFbMarkup = await page.evaluate(function () {
+      return document.getElementById('fnScreen').innerHTML.indexOf('Facebook') !== -1;
+    });
+    assert.equal(anyFbMarkup, false, 'no Facebook markup may be written into the screen while the flag is a placeholder');
+
+    // And the screen is otherwise exactly as before.
+    assert.ok(await page.$('#fn-email'), 'the email field is untouched');
+  } finally {
+    await context.close();
+  }
+});
+
+test('feature flag ON: renders the Facebook button above the email field, Meta-brand-compliant', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await configureFacebookApp(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    var btn = await page.$('#fn-fb-continue');
+    assert.ok(btn, 'the button must render once a real App ID is configured');
+    assert.equal((await btn.textContent()).trim(), 'Continue with Facebook', 'Meta requires this exact copy');
+    var bg = await btn.evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
+    assert.equal(bg, 'rgb(24, 119, 242)', 'Meta requires the approved #1877F2 blue');
+
+    // Direction Y placement: additive, ABOVE the existing email field,
+    // with nothing else restructured.
+    var buttonIsAboveEmail = await page.evaluate(function () {
+      var b = document.getElementById('fn-fb-continue').getBoundingClientRect();
+      var e = document.getElementById('fn-email').getBoundingClientRect();
+      return b.top < e.top;
+    });
+    assert.equal(buttonIsAboveEmail, true);
+    assert.ok(await page.$('#fn-email'), 'the email field still exists (Direction Y: nothing removed)');
+    assert.equal(await page.$('#fn-fb-divider'), null, 'Direction Y adds no divider');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Mobile-webview QA -- this traffic is FB/IG in-app-browser dominant (spec
+// §1). Real Instagram/Facebook in-app UA + a real FB/IG-webview-sized
+// viewport (same 390x844 convention test/record-mode-behavioral.test.js
+// uses), not just an assumption that the desktop-viewport coverage above
+// generalizes. Capability-detected (real UA), not guessed.
+// ===========================================================================
+
+var MOBILE_WEBVIEW_VIEWPORT = { width: 390, height: 844 };
+var IG_ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/119.0.0.0 Mobile Safari/537.36 Instagram 302.0.0.23.114 Android (33/13; 420dpi; 1080x2246; google/redfin/redfin:13; en_US; 538815920)';
+var FB_IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/400.0.0.0.100;FBBV/1;FBDV/iPhone14,2;FBMD/iPhone;FBSN/iOS;FBSV/16.0;FBSS/3;FBID/phone;FBLC/en_US]';
+
+[
+  { host: 'Instagram', userAgent: IG_ANDROID_UA },
+  { host: 'Facebook', userAgent: FB_IOS_UA }
+].forEach(function (scenario) {
+  test('mobile-webview QA (' + scenario.host + '): the Facebook button meets a real tap-target minimum, causes no horizontal overflow, and the password step\'s hardened input attributes are present, all inside a real ' + scenario.host + ' in-app-browser UA + viewport', async function (t) {
     if (unavailableReason) { t.skip(unavailableReason); return; }
-    var context = await browser.newContext();
+    var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT, userAgent: scenario.userAgent });
     try {
-      await seedVariant(context, variant);
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      await reachScreen13(page, 'Flying over the ocean at sunset');
-
-      assert.equal(await page.$('#fn-fb-continue'), null, 'the button element must not exist at all');
-      // Scoped to the funnel's own rendered screen (NOT document.body,
-      // which also contains this page's inline <script> source and would
-      // match on a code comment rather than real markup).
-      var anyFbMarkup = await page.evaluate(function () {
-        return document.getElementById('fnScreen').innerHTML.indexOf('Facebook') !== -1;
-      });
-      assert.equal(anyFbMarkup, false, 'no Facebook markup may be written into the screen while the flag is a placeholder');
-
-      // And the screen is otherwise exactly as before.
-      assert.ok(await page.$('#fn-email'), 'the email field is untouched');
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('feature flag ON: variant "' + variant + '" renders the Facebook button above the email field, Meta-brand-compliant', async function (t) {
-    if (unavailableReason) { t.skip(unavailableReason); return; }
-    var context = await browser.newContext();
-    try {
-      await seedVariant(context, variant);
       var page = await context.newPage();
       await blockThirdParty(page);
       await configureFacebookApp(page);
       await reachScreen13(page, 'Flying over the ocean at sunset');
 
-      var btn = await page.$('#fn-fb-continue');
-      assert.ok(btn, 'the button must render once a real App ID is configured');
-      assert.equal((await btn.textContent()).trim(), 'Continue with Facebook', 'Meta requires this exact copy');
-      var bg = await btn.evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
-      assert.equal(bg, 'rgb(24, 119, 242)', 'Meta requires the approved #1877F2 blue');
-
-      // Direction Y placement: additive, ABOVE the existing email field,
-      // with nothing else restructured.
-      var buttonIsAboveEmail = await page.evaluate(function () {
-        var b = document.getElementById('fn-fb-continue').getBoundingClientRect();
-        var e = document.getElementById('fn-email').getBoundingClientRect();
-        return b.top < e.top;
+      var btnBox = await page.evaluate(function () {
+        var r = document.getElementById('fn-fb-continue').getBoundingClientRect();
+        return { width: r.width, height: r.height };
       });
-      assert.equal(buttonIsAboveEmail, true);
-      assert.ok(await page.$('#fn-email'), 'the email field still exists (Direction Y: nothing removed)');
-      assert.equal(await page.$('#fn-fb-divider'), null, 'Direction Y adds no divider');
+      // 44px is the widely-cited minimum comfortable tap target (Apple HIG /
+      // Meta's own button spec both meet or exceed it) -- this app has a
+      // documented history of tap-target-sizing regressions (see CLAUDE.md),
+      // so this is checked directly rather than assumed from desktop layout.
+      assert.ok(btnBox.height >= 44, 'the Facebook button must meet a real tap-target minimum on a real mobile webview viewport, got height=' + btnBox.height);
+
+      var overflowsHorizontally = await page.evaluate(function () {
+        return document.documentElement.scrollWidth > document.documentElement.clientWidth;
+      });
+      assert.equal(overflowsHorizontally, false, 'the signup screen must not cause horizontal overflow at a real FB/IG in-app-browser viewport width (390px)');
+
+      // The password step, one interaction further in, must be reachable
+      // -- not just the email step's first paint -- and carry the silent
+      // webview-safe input attributes (see start.html's own WEBVIEW
+      // PASSWORD MITIGATION doc comment; deliberately no on-screen
+      // explainer text here, per FOUNDER_PRINCIPLES.md's "capability-
+      // detect and HIDE, don't handhold" lesson).
+      await page.fill('#fn-email', 'mobile-webview-qa@example.com');
+      await page.click('#fn-s13-email-continue');
+      await page.waitForSelector('#fn-password', { timeout: 5000 });
+
+      var overflowsAfterPasswordStep = await page.evaluate(function () {
+        return document.documentElement.scrollWidth > document.documentElement.clientWidth;
+      });
+      assert.equal(overflowsAfterPasswordStep, false, 'the password step must not cause horizontal overflow either');
+
+      var pwAttrs = await page.evaluate(function () {
+        var el = document.getElementById('fn-password');
+        return { autocapitalize: el.getAttribute('autocapitalize'), autocorrect: el.getAttribute('autocorrect'), spellcheck: el.getAttribute('spellcheck') };
+      });
+      assert.equal(pwAttrs.autocapitalize, 'off');
+      assert.equal(pwAttrs.autocorrect, 'off');
+      assert.equal(pwAttrs.spellcheck, 'false');
     } finally {
       await context.close();
     }
@@ -232,7 +290,6 @@ test('clicking the Facebook button sets a first-party CSRF cookie and navigates 
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -272,11 +329,10 @@ test('clicking the Facebook button sets a first-party CSRF cookie and navigates 
   }
 });
 
-test('tapping Facebook mid-manual-signup invalidates the in-flight attempt — a late-settling register-account response can no longer force-navigate or commit a session', async function (t) {
+test('tapping Facebook after backing out of a mid-manual-signup attempt (via "Change email") invalidates it a SECOND, independent time — a late-settling register-account response can no longer force-navigate or commit a session', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -306,7 +362,7 @@ test('tapping Facebook mid-manual-signup invalidates the in-flight attempt — a
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await page.fill('#fn-email', 'inflight@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'inflight@example.com');
     await page.fill('#fn-password', 'apassword1');
     await page.click('#fn-s13-continue');
     await page.waitForFunction(function () {
@@ -314,7 +370,30 @@ test('tapping Facebook mid-manual-signup invalidates the in-flight attempt — a
       return b && b.disabled;
     }, null, { timeout: 5000 });
 
-    await page.click('#fn-fb-continue');
+    // Direction Y placement means the Facebook button lives on the EMAIL
+    // step's markup only (facebookSignupButtonHtml() is called from
+    // renderEmailStep, never renderPasswordStep -- see that function's own
+    // comment) -- unlike the retired single-step control variant, where
+    // both the button and the password field sat on the same screen at
+    // once, there is no DOM state where #fn-fb-continue and an in-flight
+    // #fn-s13-continue submission coexist anymore. The reachable path to
+    // Facebook from mid-flight is via "Change email" first (already its
+    // own, separately-tested invalidation trigger -- see the money-leak/
+    // navigation-guard test files) -- this test's job is to prove
+    // Facebook's OWN invalidation call is a real, independent second layer
+    // on top of that, not a no-op that happens to pass only because
+    // Change-email already did the job.
+    await page.click('#fn-s13-change-email');
+    await page.waitForSelector('#fn-fb-continue', { timeout: 5000 });
+
+    var calls = await page.evaluate(function () {
+      window.__invalidateCalls = 0;
+      var original = DreamStore.invalidatePendingSignup;
+      DreamStore.invalidatePendingSignup = function () { window.__invalidateCalls++; return original.apply(DreamStore, arguments); };
+      document.getElementById('fn-fb-continue').click();
+      return window.__invalidateCalls;
+    });
+    assert.equal(calls, 1, 'the Facebook click must call DreamStore.invalidatePendingSignup itself, a real second layer on top of Change-email\'s own call');
     await page.waitForFunction(function () { return true; });
 
     // Now let the abandoned signup finally settle.
@@ -324,7 +403,7 @@ test('tapping Facebook mid-manual-signup invalidates the in-flight attempt — a
 
     assert.equal(await page.$('#fn-s14-continue'), null, 'an abandoned attempt must never force-navigate the visitor forward');
     var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
-    assert.equal(user, null, 'DreamStore.invalidatePendingSignup must have stopped the store-level commit too');
+    assert.equal(user, null, 'the store-level commit must have been stopped too');
   } finally {
     await context.close();
   }
@@ -334,7 +413,6 @@ test('the Facebook click calls DreamStore.invalidatePendingSignup (store-level g
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -363,7 +441,6 @@ test('staged characters are persisted to a scoped localStorage key before leavin
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -401,7 +478,6 @@ test('on the Facebook return leg, staged characters are restored into real Dream
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     // Simulate exactly what the pre-redirect persist wrote.
     await context.addInitScript(function () {
       localStorage.setItem('dreamtube_fb_staged_characters', JSON.stringify({
@@ -440,7 +516,6 @@ test('a stale staged snapshot from an abandoned round trip is discarded, not sil
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     await context.addInitScript(function () {
       localStorage.setItem('dreamtube_fb_staged_characters', JSON.stringify({
         savedAt: Date.now() - (2 * 60 * 60 * 1000), // two hours ago
@@ -489,7 +564,6 @@ test('returning with a valid ?bt= skips screen 13 entirely and lands on screen 1
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -518,7 +592,6 @@ test('returning with a valid ?bt= lands on screen 14 for a dream that ALSO has a
   // nothing) instead of screen 14.
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -538,7 +611,6 @@ test('the return leg fires the generate-during-signup kickoff with the now-known
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -574,7 +646,6 @@ test('the return leg fires CompleteRegistration with the signed-in email, exactl
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -607,7 +678,6 @@ test('a ?bt= that does not resolve fails closed to the ordinary signup screen wi
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -621,6 +691,10 @@ test('a ?bt= that does not resolve fails closed to the ordinary signup screen wi
     assert.ok(err.length > 0, 'an inline explanation is required');
     assert.ok(/facebook/i.test(err), 'the message must say what actually failed: ' + err);
     assert.equal(await page.isEnabled('#fn-email'), true);
+    assert.equal(await page.isEnabled('#fn-s13-email-continue'), true);
+    // The password step, one field further in, is reachable too — the
+    // fallback is fully usable end to end, not just its first field.
+    await signupFlow.advanceToPasswordStep(page, 'fallback-after-failed-bt@example.com');
     assert.equal(await page.isEnabled('#fn-password'), true);
     assert.equal(await page.isEnabled('#fn-s13-continue'), true);
     var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
@@ -640,28 +714,25 @@ test('a ?bt= that does not resolve fails closed to the ordinary signup screen wi
   { slug: 'exchange_failed', match: /went wrong/i },
   { slug: 'rate_limited', match: /too many/i }
 ].forEach(function (scenario) {
-  ['a', 'b'].forEach(function (variant) {
-    test('fb_error=' + scenario.slug + ' on variant "' + variant + '" renders an inline error while leaving the manual signup path fully usable', async function (t) {
-      if (unavailableReason) { t.skip(unavailableReason); return; }
-      var context = await browser.newContext();
-      try {
-        await seedVariant(context, variant);
-        var page = await context.newPage();
-        await blockThirdParty(page);
-        await configureFacebookApp(page);
-        await mockPostSignupRoutes(page);
+  test('fb_error=' + scenario.slug + ' renders an inline error while leaving the manual signup path fully usable', async function (t) {
+    if (unavailableReason) { t.skip(unavailableReason); return; }
+    var context = await browser.newContext();
+    try {
+      var page = await context.newPage();
+      await blockThirdParty(page);
+      await configureFacebookApp(page);
+      await mockPostSignupRoutes(page);
 
-        await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&fb_error=' + scenario.slug));
-        await page.waitForSelector('#fn-email', { timeout: 8000 });
+      await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&fb_error=' + scenario.slug));
+      await page.waitForSelector('#fn-email', { timeout: 8000 });
 
-        var err = (await page.textContent('#fn-signup-error')).trim();
-        assert.match(err, scenario.match);
-        assert.equal(await page.isEnabled('#fn-email'), true, 'the email field must remain usable as the fallback');
-        assert.ok(await page.$('#fn-fb-continue'), 'the Facebook button stays available to retry');
-      } finally {
-        await context.close();
-      }
-    });
+      var err = (await page.textContent('#fn-signup-error')).trim();
+      assert.match(err, scenario.match);
+      assert.equal(await page.isEnabled('#fn-email'), true, 'the email field must remain usable as the fallback');
+      assert.ok(await page.$('#fn-fb-continue'), 'the Facebook button stays available to retry');
+    } finally {
+      await context.close();
+    }
   });
 });
 
@@ -673,7 +744,6 @@ test('fb_needs_email renders one minimal extra email field (no password), and co
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -710,7 +780,6 @@ test('fb_needs_email: a server-refused (already-registered) email shows an inlin
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -729,9 +798,12 @@ test('fb_needs_email: a server-refused (already-registered) email shows an inlin
       return el && el.textContent.indexOf('already have an account') !== -1;
     }, null, { timeout: 5000 });
 
-    // The escape hatch drops back to the ordinary signup form.
+    // The escape hatch drops back to the ordinary signup form -- its email
+    // step first (the sole screen 13 entry point now), then the password
+    // step one interaction further in, same as any other fresh arrival.
     await page.click('#fn-fb-email-fallback');
-    await page.waitForSelector('#fn-password', { timeout: 5000 });
+    await page.waitForSelector('#fn-s13-email-continue', { timeout: 5000 });
+    await signupFlow.advanceToPasswordStep(page, 'ordinary-fallback@example.com');
     assert.ok(await page.$('#fn-s13-continue'), 'the normal signup form is reachable');
   } finally {
     await context.close();
@@ -746,7 +818,6 @@ test('every event on a Facebook-return load carries resumed_from_facebook_redire
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await configureFacebookApp(page);
@@ -775,7 +846,6 @@ test('a normal (non-Facebook) load is NOT tagged with resumed_from_facebook_redi
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await seedVariant(context, 'a');
     var page = await context.newPage();
     await blockThirdParty(page);
     await reachScreen13(page, 'Flying over the ocean at sunset');
@@ -790,48 +860,41 @@ test('a normal (non-Facebook) load is NOT tagged with resumed_from_facebook_redi
 });
 
 // ===========================================================================
-// No regression to the existing manual signup path (both variants).
+// No regression to the existing manual signup path.
 // ===========================================================================
 
-['a', 'b'].forEach(function (variant) {
-  test('manual email/password signup on variant "' + variant + '" still completes end-to-end through the refactored shared continuation', async function (t) {
-    if (unavailableReason) { t.skip(unavailableReason); return; }
-    var context = await browser.newContext();
-    try {
-      await seedVariant(context, variant);
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      await configureFacebookApp(page);
-      await mockPostSignupRoutes(page);
+test('manual email/password signup still completes end-to-end through the refactored shared continuation', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await configureFacebookApp(page);
+    await mockPostSignupRoutes(page);
 
-      var claimBodies = [];
-      await page.route('**/.netlify/functions/check-email', function (route) {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
-      });
-      await page.route('**/.netlify/functions/register-account', function (route) {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'manualuser', email: 'manual@example.com', authToken: 'auth-m' }) });
-      });
-      await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
-        claimBodies.push(JSON.parse(route.request().postData() || '{}'));
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
-      });
+    var claimBodies = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
+    });
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'manualuser', email: 'manual@example.com', authToken: 'auth-m' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimBodies.push(JSON.parse(route.request().postData() || '{}'));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
 
-      await reachScreen13(page, 'Flying over the ocean at sunset');
-      await page.fill('#fn-email', 'manual@example.com');
-      if (variant === 'b') {
-        await page.click('#fn-s13-email-continue');
-        await page.waitForSelector('#fn-password', { timeout: 5000 });
-      }
-      await page.fill('#fn-password', 'apassword1');
-      await page.click('#fn-s13-continue');
-      await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await signupFlow.advanceToPasswordStep(page, 'manual@example.com');
+    await page.fill('#fn-password', 'apassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
 
-      var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
-      assert.ok(user, 'a real session must exist after manual signup');
-      assert.equal(claimBodies.length, 1, 'the pending generation must still be claimed exactly once');
-      assert.equal(claimBodies[0].email, 'manual@example.com');
-    } finally {
-      await context.close();
-    }
-  });
+    var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
+    assert.ok(user, 'a real session must exist after manual signup');
+    assert.equal(claimBodies.length, 1, 'the pending generation must still be claimed exactly once');
+    assert.equal(claimBodies[0].email, 'manual@example.com');
+  } finally {
+    await context.close();
+  }
 });

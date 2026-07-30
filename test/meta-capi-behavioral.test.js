@@ -36,6 +36,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var signupFlow = require('./helpers/signup-flow');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -150,18 +151,10 @@ function stubPendingGenerationAsUnavailable(page) {
   });
 }
 
-/** Pins start.html's screen-13 signup_email_first_variant A/B test (see that file's SIGNUP_VARIANT_KEY doc comment) to the control variant ('a' -- email + password shown together, unchanged), so a single fill-both-fields-then-click-once interaction stays deterministic instead of a 50/50 chance of landing on the email-first treatment variant, which hides #fn-password until a valid email is confirmed. Must be called on the context before any page.goto(). */
-function pinSignupControlVariant(context) {
-  return context.addInitScript(function () {
-    localStorage.setItem('dreamtube_signup_variant', 'a');
-  });
-}
-
 test('start.html: completing funnel signup fires exactly one CompleteRegistration track-conversion call, sharing event_id with the fbq Pixel call', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var fbqCalls = await installFbqRecorder(context);
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -174,8 +167,7 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
     await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'signup-behavioral@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'signup-behavioral@example.com');
     await page.fill('#fn-password', 'longenoughpassword1'); // past DreamStore.signup's 3-char minimum
     await page.click('#fn-s13-continue');
     // Screen 14 (pricing) renders right after a successful signup -- its

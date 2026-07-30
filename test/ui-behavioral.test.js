@@ -46,6 +46,7 @@ var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
 var settle = require('./helpers/settle').settle;
+var signupFlow = require('./helpers/signup-flow');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -85,13 +86,6 @@ test.after(async function () {
 function blockThirdParty(page) {
   return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
     route.abort();
-  });
-}
-
-/** Pins start.html's screen-13 signup_email_first_variant A/B test (see that file's SIGNUP_VARIANT_KEY doc comment) to the control variant ('a' -- email + password shown together, unchanged), so a single fill-both-fields-then-click-once interaction (and any screen-13-copy assertion) stays deterministic instead of a 50/50 chance of landing on the email-first treatment variant, which hides #fn-password until a valid email is confirmed and shows different reassurance copy. Works on either a Page or a BrowserContext -- both expose addInitScript with the same signature. Must be called before any goto() on the same page/context. */
-function pinSignupControlVariant(pageOrContext) {
-  return pageOrContext.addInitScript(function () {
-    localStorage.setItem('dreamtube_signup_variant', 'a');
   });
 }
 
@@ -219,15 +213,13 @@ function stubPendingGenerationAsUnavailable(page) {
 
 /** Drives start.html's funnel tail (Advanced screens/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. Skipping on the first Advanced screen (characters) jumps straight past camera/scenery too -- see the "Skip on any of the 3 screens" test below -- so one skip click is enough to reach the transition screen from here. */
 async function goToPricingScreen(page, email) {
-  await pinSignupControlVariant(page);
   await stubPendingGenerationAsUnavailable(page);
   await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
   await page.click('#fn-adv-chars-skip');
   await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   await page.click('#fn-s11-continue');
-  await page.waitForSelector('#fn-email', { timeout: 5000 });
-  await page.fill('#fn-email', email);
+  await signupFlow.advanceToPasswordStep(page, email);
   // 20 chars -- comfortably past the 3-char minimum DreamStore.signup()
   // enforces, so this helper doesn't itself trip over the finding this
   // file is also verifying.
@@ -405,7 +397,6 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
@@ -1734,7 +1725,6 @@ test('pricing screen (14, now the token intro + confirmation): Continue complete
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     // Must be installed before goToPricingScreen's own page.goto() below --
     // see installPosthogCaptureRecorder's own comment for why a plain
     // in-page monkeypatch (this test's old approach) no longer survives
@@ -1769,7 +1759,6 @@ test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullet
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1825,7 +1814,6 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1861,7 +1849,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'start-pending-test@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'start-pending-test@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -1900,7 +1888,6 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1915,7 +1902,7 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'start-pending-fallback@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'start-pending-fallback@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -1934,7 +1921,6 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -1972,7 +1958,7 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'retry-same-email@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'retry-same-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -2009,7 +1995,6 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -2040,8 +2025,7 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
     await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'first-email@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'first-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
     await page.waitForFunction(function () {
@@ -2051,8 +2035,13 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
 
-    // Change to a genuinely different email and retry.
-    await page.fill('#fn-email', 'second-email@example.com');
+    // Change to a genuinely different email and retry -- via the "Change
+    // email" link (the password step's own #fn-email is readonly, so it
+    // can't be refilled directly), the same escape hatch a real visitor
+    // switching emails would use.
+    await page.click('#fn-s13-change-email');
+    await signupFlow.advanceToPasswordStep(page, 'second-email@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 
@@ -2070,7 +2059,6 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
@@ -2116,8 +2104,7 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
     await page.click('#fn-adv-chars-skip');
     await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
     await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    await page.fill('#fn-email', 'first-email@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'first-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
     // Signup for "first-email" is rejected quickly (a fast DB check) --
@@ -2130,7 +2117,10 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
 
     // Visitor corrects to a different email BEFORE the first call has
     // resolved at all -- exactly the trigger condition from the review.
-    await page.fill('#fn-email', 'second-email@example.com');
+    // Via the "Change email" link, same reasoning as the test above.
+    await page.click('#fn-s13-change-email');
+    await signupFlow.advanceToPasswordStep(page, 'second-email@example.com');
+    await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
     /** Polls a Node-side condition -- there's no in-app hook exposing these closure-private variables, so this is the only way to know each held-open route has actually arrived. */
@@ -2207,7 +2197,6 @@ test('email capture screen (13) shows the reassurance microcopy explaining why e
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
-    await pinSignupControlVariant(context);
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });

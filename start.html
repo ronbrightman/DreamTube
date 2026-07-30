@@ -386,28 +386,56 @@
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
-  // ===== Signup email-first A/B test (screen 13) — tracker item
-  // for-product-a-b-the-email-capture-signup-nri2fn =====
-  // Research (2026-07-27): the email_capture -> signup funnel step passes
+  // ===== Signup screen (screen 13) — unified design, A/B test concluded
+  // ===== tracker items for-product-a-b-the-email-capture-signup-nri2fn
+  // (the original A/B) and for-product-signup-screen-the-single-big-bkwhbe
+  // (2026-07-30 CRO rebuild, combined with Facebook Login per
+  // docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md) =====
+  // Research (2026-07-27): the email_capture -> signup funnel step passed
   // only ~36% (64% abandon) -- the single biggest deep-funnel leak,
-  // independent of ad spend/CPS. Test: email-first sequencing (collect
-  // email, THEN reveal the password field, instead of showing both at
-  // once -- see renderScreen13EmailFirst below), clearer "free to start,
-  // no card needed" framing, and a short social-proof line near the form.
-  // Same additive, local assignment shape as shop.html's own
-  // shop_palette_variant A/B test (see that file's "Shop palette A/B
-  // test" doc comment and docs/SHOP_PALETTE_REDESIGN_SPEC.md §8) --
-  // persisted in localStorage, sampled once via Math.random() < 0.5 the
-  // first time this page loads with no stored variant, and never
-  // reassigned after that; every later visit from this browser reads the
-  // same stored value. 'a' = control (current behavior, unchanged --
-  // email + password shown together). 'b' = treatment (email-first).
-  var SIGNUP_VARIANT_KEY = 'dreamtube_signup_variant';
-  var signupVariant = localStorage.getItem(SIGNUP_VARIANT_KEY);
-  if(signupVariant !== 'a' && signupVariant !== 'b'){
-    signupVariant = Math.random() < 0.5 ? 'a' : 'b';
-    localStorage.setItem(SIGNUP_VARIANT_KEY, signupVariant);
-  }
+  // independent of ad spend/CPS, and per the 2026-07-30 funnel-churn
+  // analysis STILL the single biggest leak in the business (98 -> 36,
+  // -63%) even after that first fix shipped. The live 50/50 experiment
+  // this comment used to describe (variant 'a': email+password shown
+  // together; variant 'b': email-first, password revealed after) is now
+  // CONCLUDED, not still running -- 'b' (email-first sequencing, clearer
+  // "free to start, no card needed" framing, a real social-proof line)
+  // is the permanent, sole design; 'a's markup has been deleted outright
+  // rather than kept as an unreachable dead branch (see CLAUDE.md's "no
+  // dead code left behind" rule) -- see renderScreen13EmailFirst below.
+  //
+  // Landed together with Facebook Login (spec §2.4/§6, Direction Y
+  // placement) as ONE coherent screen rather than two competing changes,
+  // per Manager's explicit instruction -- see facebookSignupButtonHtml
+  // below. The password-manager-autofill failure mode diagnosed as the
+  // real (not cosmetic) driver of the -63% drop -- native password
+  // managers/keyboard "use suggested password" affordances don't work
+  // inside the FB/IG in-app webview where this traffic overwhelmingly
+  // lands, so a password field there is raw manual entry with none of the
+  // usual friction-reducing assist -- is addressed two ways: (1) Facebook
+  // Login itself lets a webview visitor skip typing a password at all
+  // (inert until the flag is on, per spec §4); (2) email-first sequencing
+  // means a first-time visitor never even sees a password field until
+  // they've already committed by entering their email (foot-in-the-door),
+  // and the password field itself gets silent, webview-safe input
+  // attributes — see the hardened autocapitalize/autocorrect/spellcheck
+  // attributes on #fn-password in renderPasswordStep below, and that
+  // function's own WEBVIEW PASSWORD MITIGATION comment for why this is
+  // deliberately NOT a new on-screen explainer line.
+  //
+  // signupVariant is kept as a FIXED (not randomized) value -- same
+  // property name/shape shop.html's own shop_palette_variant A/B test
+  // uses between experiments, so every event that used to carry it
+  // (signup_email_first_variant_shown, signup_error_shown, etc.) keeps
+  // the exact same property, no schema change. Deliberately 'unified',
+  // NOT the old 'b' -- this population also sees the (flag-gated)
+  // Facebook button and the webview password hint neither old arm had,
+  // so relabeling it 'b' would silently conflate two different
+  // populations under one value in any historical query. The NEXT
+  // challenger (per tracker item bkwhbe's own "growth's ab-test-creator
+  // should get the A/B once a challenger exists" note) reads 'unified'
+  // as its control arm's value.
+  var signupVariant = 'unified';
 
   // ===== Real social-proof count for screen 14 (pricing) =====
   // Replaces a hardcoded "12,400+ dreams brought to life this month" with
@@ -1343,7 +1371,7 @@
   // click on this screen (below), so a genuinely new, competing attempt
   // always supersedes an older one still in flight; (2) every Back
   // click (see the navigation engine's backBtn listener, further down
-  // this file); and (3) variant B's own "Change email" link (see
+  // this file); and (3) the password step's own "Change email" link (see
   // renderPasswordStep's own click handler above, tracker item
   // start-html-variant-b-s-change-email-link-1kc3vs) -- simply
   // navigating away from this screen by any of these three paths,
@@ -1370,7 +1398,7 @@
   // trust-at-first-glance (nobody types anything) or the password field
   // (people type an email fine, then bail once password is asked for).
   // Fires at most ONCE per real arrival at screen 13 (reset in
-  // renderScreen13 below, NOT on variant b's own internal email->password
+  // renderScreen13 below, NOT on the screen's own internal email->password
   // DOM swap, which is the same visit, not a fresh one) -- on whichever
   // comes first, blur-with-content or a submit attempt, matching the
   // item's own "first non-empty email field blur or submit attempt"
@@ -1501,8 +1529,8 @@
   // a divider) and Direction Y (Facebook purely additive, nothing else
   // restructured). This build deliberately implements Direction Y's
   // minimal placement — ONE button inserted above the existing email
-  // field on both A/B variants, no divider, no "or" separator, no change
-  // to anything else on the screen — as the safe interim default.
+  // field, no divider, no "or" separator, no change to anything else on
+  // the screen — as the safe interim default.
   //
   // Everything below is written so that switching to Direction X later is
   // a CSS/markup-only follow-up: the button's DOM position, its visual
@@ -1535,8 +1563,8 @@
    * popup — see the spec's §1: popups are unreliable/blocked in the exact
    * FB/IG in-app webview this feature exists for).
    *
-   * The invalidation pair at the top is the same discipline variant B's
-   * "Change email" link already applies, and for the same reason: this
+   * The invalidation pair at the top is the same discipline the password
+   * step's "Change email" link already applies, and for the same reason: this
    * button is NOT disabled while a manual attempt is in flight (a user
    * must be able to change their mind mid-signup), so without it, an
    * abandoned attemptSignup could still settle and silently create the
@@ -1583,7 +1611,7 @@
     return 'Something went wrong signing in with Facebook — try again, or continue with email below.';
   }
 
-  /** Paints (once) whatever Facebook error this load arrived with into the just-rendered screen-13 error slot. Called at the end of both variants' render. */
+  /** Paints (once) whatever Facebook error this load arrived with into the just-rendered screen-13 error slot. Called at the end of both the email step's and the password step's render. */
   function applyPendingFacebookError(){
     if(!pendingFacebookErrorSlug) return;
     var errEl = document.getElementById('fn-signup-error');
@@ -1596,18 +1624,16 @@
   function renderScreen13(el){
     // Facebook confirmed who this visitor is but gave us no email (spec
     // §2.4 / §3 step 3) — ask for exactly one field instead of the normal
-    // signup form. Deliberately a separate renderer rather than a
-    // conditional woven through the two A/B variants: it shares none of
-    // their password/validation/A-B logic, and keeping it separate means
-    // it can't perturb either arm of the live experiment.
+    // signup form. Deliberately a separate renderer: it shares none of the
+    // email-first flow's own password/validation logic.
     if(facebookNeedsEmailToken){
       renderScreen13FacebookEmail(el);
       return;
     }
     // Reset per fresh arrival at this screen (goToStep/render calling in
-    // here) -- NOT reset by variant b's own internal email->password DOM
-    // swap inside renderScreen13EmailFirst, which never re-enters this
-    // function; see emailEnteredTracked's own doc comment above.
+    // here) -- NOT reset by renderScreen13EmailFirst's own internal
+    // email->password DOM swap, which never re-enters this function; see
+    // emailEnteredTracked's own doc comment above.
     emailEnteredTracked = false;
     // Record-mode-aware (bug fix, tracker item
     // for-product-bug-founder-high-record-it-f-8ng0nf): the default
@@ -1620,87 +1646,33 @@
     // mode's copy says so instead of implying a dream is already in
     // progress.
     var headline = isRecordMode ? 'Almost set — where should we send you?' : 'Where should we send your first dream?';
-    var reassurance = isRecordMode
-      ? "Free to start — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready."
-      : "Free to start — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.";
 
-    // Signup email-first A/B test -- see SIGNUP_VARIANT_KEY's own doc
-    // comment above. Registered + tracked once per actual arrival at this
-    // screen: renderScreen13 runs exactly once per navigation here (see
-    // render()/goToStep() below), even though the treatment variant's
-    // renderScreen13EmailFirst then does its own internal, non-navigating
-    // DOM swap from the email step to the password step -- that swap must
-    // NOT re-fire this. Fires for BOTH variants (not just 'b'), so
-    // PostHog has real impression counts for each arm to read the test
-    // out against. Same adjacent posthog.register()+track() shape as
-    // shop.html's own shop_palette_variant A/B test.
+    // Fired once per actual arrival at this screen: renderScreen13 runs
+    // exactly once per navigation here (see render()/goToStep() below),
+    // even though renderScreen13EmailFirst then does its own internal,
+    // non-navigating DOM swap from the email step to the password step --
+    // that swap must NOT re-fire this. signupVariant is now a fixed
+    // 'unified' value (see its own doc comment above), kept on this event
+    // so existing PostHog dashboards/queries built on this property keep
+    // working, and so the next real A/B challenger has a stable 'variant'
+    // property to extend rather than a schema change to make.
     if(window.posthog && typeof window.posthog.register === 'function'){
       try{ posthog.register({ signup_email_first_variant: signupVariant }); }catch(e){ /* analytics must never break the funnel */ }
     }
     track('signup_email_first_variant_shown', { variant: signupVariant });
 
-    if(signupVariant === 'b'){
-      renderScreen13EmailFirst(el, headline);
-      return;
-    }
-
-    el.innerHTML =
-      '<div class="fn-headline">' + headline + '</div>' +
-      // Direction Y placement — see the LAYOUT NOTE above
-      // facebookSignupButtonHtml. Absent entirely (empty string) while the
-      // feature flag is a placeholder, which is why nothing below it needs
-      // a "flag off" spacing adjustment.
-      facebookSignupButtonHtml() +
-      '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;">' +
-      // Reassurance microcopy directly under the email field — a real user's
-      // session replay showed a drop-off right at this exact ask (dream text
-      // + character screens completed, then abandoned here). The theory:
-      // handing over an email feels like a real cost with no visible payoff.
-      // This states WHY (so we can deliver the video) and WHAT happens next
-      // (it gets emailed once ready), reusing the funnel's existing
-      // (previously unused) .fn-price-note treatment left-aligned instead of
-      // its default centered layout. Per founder feedback this used to run
-      // alongside a separate "200 tokens on signup" body-copy line above the
-      // field -- two different messages competing for attention right where
-      // the funnel most needs a single, clear reason to hand over an email.
-      // That line is gone; this is now the ONLY message here, and still
-      // mentions "free" so nothing about cost is lost.
-      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + reassurance + '</div>' +
-      '<div class="fn-field-pw-wrap">' +
-        '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
-        '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
-      '</div>' +
-      '<div class="fn-err-text" id="fn-signup-error"></div>' +
-      '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
-      // Signup small-print (tracker.html's
-      // for-product-create-a-real-privacy-policy-o3g56s item) — real
-      // account-creation step for variant A (control). Same treatment as
-      // renderScreen13EmailFirst's own password step below, wizard.html's
-      // renderSignup, and login.html's signup mode — no terms/privacy
-      // link existed anywhere near a signup action before this.
-      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
-      '<div class="fn-spacer"></div>';
-
-    wireScreen13Fields();
-    wireFacebookSignupButton();
-    applyPendingFacebookError();
+    renderScreen13EmailFirst(el, headline);
   }
 
   /**
-   * Shared submit wiring for screen 13's password step, used by BOTH
-   * variants -- the control markup above and the email-first treatment's
-   * renderScreen13EmailFirst's own password step below. Extracted so the
+   * Shared submit wiring for screen 13's password step. Extracted so the
    * token-guard-protected submission logic (signupAttemptToken bump,
    * backBtn/continueBtn disable, attemptSignup call, both layers of the
-   * pendingPromise staleness re-check) exists in exactly ONE place
-   * regardless of which variant's markup led here -- this is a rendering/
-   * sequencing change between variants, not a second copy of the guarded
-   * logic itself. Assumes the DOM currently in `el` already contains
-   * #fn-pw-toggle, #fn-password (inside .fn-field-pw-wrap), #fn-email,
-   * #fn-signup-error, and #fn-s13-continue -- exactly what both the
-   * control variant's single-pass markup above and the treatment
-   * variant's own password-step markup render. Body unchanged from this
-   * screen's original single-variant implementation.
+   * pendingPromise staleness re-check) exists in exactly ONE place.
+   * Assumes the DOM currently in `el` already contains #fn-pw-toggle,
+   * #fn-password (inside .fn-field-pw-wrap), #fn-email, #fn-signup-error,
+   * and #fn-s13-continue -- exactly what renderScreen13EmailFirst's
+   * password-step markup below renders.
    */
   function wireScreen13Fields(){
     var pwToggle = document.getElementById('fn-pw-toggle');
@@ -1724,11 +1696,9 @@
     // already tracked from the earlier email step, and the flag is
     // already set by then anyway).
     emailFieldEl.addEventListener('blur', function(){ maybeTrackEmailEntered(emailFieldEl.value.trim()); });
-    // Variant b's email step trains "Enter advances" (see
-    // renderScreen13EmailFirst's own emailInput keydown handler above) —
-    // matching that here keeps the expectation consistent across both of
-    // its steps. Harmless, unrequested-but-natural addition for variant a
-    // too, which never had Enter-to-submit before.
+    // The email step trains "Enter advances" (see renderScreen13EmailFirst's
+    // own emailInput keydown handler above) — matching that here keeps the
+    // expectation consistent across both of this screen's steps.
     pwInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); continueBtn.click(); } });
     continueBtn.addEventListener('click', function(){
       var email = document.getElementById('fn-email').value.trim();
@@ -1870,7 +1840,7 @@
   }
 
   // ===================================================================
-  // Screen 13 treatment (signupVariant === 'b') — email-first sequencing.
+  // Screen 13 — the unified signup screen (email-first sequencing).
   // Only the email field + a "Continue" affordance are shown first; once
   // a valid email is entered, the password field is revealed in place
   // via an internal, non-navigating DOM swap (renderEmailStep <->
@@ -1892,11 +1862,42 @@
   // The actual submission — email + password together, attemptSignup,
   // both token-guard layers — is completely unchanged: this only changes
   // WHEN the password field appears, not how signup itself is validated
-  // or submitted. wireScreen13Fields() (above) is the exact same
-  // function the control variant's markup calls, so that logic exists in
-  // exactly one place regardless of which variant rendered the DOM it
-  // wires up.
+  // or submitted. wireScreen13Fields() (above) wires the password step's
+  // fields.
+  //
+  // WEBVIEW PASSWORD MITIGATION (2026-07-30 CRO rebuild): password
+  // managers/keyboard "use suggested password" affordances generally
+  // don't work inside an embedded webview -- the FB/IG in-app browser
+  // this traffic overwhelmingly lands in is exactly that kind of webview
+  // (same root cause the spec's §1 cites for why Google's OAuth is
+  // hard-blocked there: an embedded WebView doesn't get the OS/browser-
+  // chrome integration a real browser tab does). A password field there
+  // is raw manual entry with none of the usual autofill assist, at
+  // exactly the point of highest intent -- diagnosed as the real driver
+  // of the 98->36 (-63%) signup-screen leak, not a cosmetic copy problem.
+  // Three mitigations, all silent (no added on-screen text):
+  //   1. Email-first sequencing itself (this whole screen) -- a visitor
+  //      commits via email before ever seeing a password field at all.
+  //   2. autocapitalize/autocorrect/spellcheck disabled on #fn-password
+  //      below -- some mobile webviews autocorrect or auto-capitalize the
+  //      first character of a text-like input absent these, silently
+  //      corrupting what the visitor typed.
+  //   3. Facebook Login itself (facebookSignupButtonHtml above) is the
+  //      real structural fix once the flag is on -- it lets a webview
+  //      visitor skip typing a password at all, rather than explaining
+  //      the missing autofill assist to them.
+  // Deliberately NOT a new on-screen explainer line about password
+  // managers -- per FOUNDER_PRINCIPLES.md's "capability-detect and HIDE,
+  // don't handhold" lesson (the Record-it fix: hiding a broken option
+  // beats explaining it) and this exact screen's own store-launch-copy-
+  // sweep precedent (screen 14's "too much text"/"scary" founder
+  // feedback, right next door) -- an explainer paragraph right at the
+  // funnel's single highest-leverage screen risks adding exactly the kind
+  // of friction this whole rebuild exists to remove. The real fix for a
+  // webview visitor is Facebook Login (skip the password entirely), not a
+  // longer password field.
   // ===================================================================
+
   function renderScreen13EmailFirst(el, headline){
     var treatmentReassurance = isRecordMode
       ? 'Free to start, no card needed — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready.'
@@ -1922,10 +1923,9 @@
         '<div class="fn-headline">' + headline + '</div>' +
         computeProofStripHtml() +
         '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
-        // Direction Y placement, identical to variant A's — see the
-        // LAYOUT NOTE above facebookSignupButtonHtml. Added to BOTH arms
-        // deliberately (spec §6): giving only one arm the button would
-        // contaminate the in-flight signup CRO experiment's read-out.
+        // Direction Y placement — see the LAYOUT NOTE above
+        // facebookSignupButtonHtml. Absent entirely (empty string) while
+        // the feature flag is a placeholder.
         facebookSignupButtonHtml() +
         '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;" value="' + esc(prefillEmail || '') + '">' +
         '<div class="fn-err-text" id="fn-signup-error"></div>' +
@@ -1982,13 +1982,16 @@
         '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
         '<button type="button" class="fn-small-link" id="fn-s13-change-email" style="margin:-6px 0 12px;">Change email</button>' +
         '<div class="fn-field-pw-wrap">' +
-          '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
+          // autocapitalize/autocorrect/spellcheck disabled -- see this
+          // function's own WEBVIEW PASSWORD MITIGATION doc comment above.
+          // autocomplete="new-password" is kept (harmless, and still the
+          // correct hint for the real browsers where it DOES work).
+          '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">' +
           '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
         '</div>' +
         '<div class="fn-err-text" id="fn-signup-error"></div>' +
         '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
-        // Signup small-print — variant B (email-first treatment)'s own
-        // password step. See renderScreen13's own copy of this comment.
+        // Signup small-print — this screen's password step.
         '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
         '<div class="fn-spacer"></div>';
 

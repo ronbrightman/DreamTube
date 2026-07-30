@@ -41,6 +41,7 @@ var staticServer = require('./helpers/static-server');
 var settleMod = require('./helpers/settle');
 var settle = settleMod.settle;
 var gate = settleMod.gate;
+var signupFlow = require('./helpers/signup-flow');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -96,26 +97,7 @@ function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
-/**
- * Pins start.html's screen-13 signup_email_first_variant A/B test (see
- * that file's SIGNUP_VARIANT_KEY doc comment) to the control variant
- * ('a' -- email + password shown together, unchanged) via
- * page.addInitScript, so this file deterministically exercises the exact
- * flow it was written for (single fill-both-fields-then-click-once
- * interaction) instead of a 50/50 coin flip landing it on the email-first
- * treatment variant, which hides #fn-password until a valid email is
- * confirmed. See test/signup-email-first-variant-behavioral.test.js for
- * the treatment variant's own equivalent token-guard coverage. Must be
- * called before any page.goto().
- */
-function pinSignupControlVariant(page) {
-  return page.addInitScript(function () {
-    localStorage.setItem('dreamtube_signup_variant', 'a');
-  });
-}
-
 async function reachScreen13(page, caption) {
-  await pinSignupControlVariant(page);
   await safeGoto(page, resumeUrl(caption));
   await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
   await page.click('#fn-s11-continue');
@@ -142,7 +124,7 @@ test('start.html: the topbar Back button is disabled for the duration of an in-f
     var backDisabledBefore = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
     assert.equal(backDisabledBefore, false, 'Back should not start out disabled on a fresh screen 13');
 
-    await page.fill('#fn-email', 'signup-backdisable-test@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'signup-backdisable-test@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -201,7 +183,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
 
     // Attempt A -- Continue clicked, real signup call fired and
     // (deliberately) held back.
-    await page.fill('#fn-email', EMAIL_A);
+    await signupFlow.advanceToPasswordStep(page, EMAIL_A);
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -256,7 +238,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
 
     // Finish signup for real with B's own content -- must still work
     // normally and claim B's job, never A's.
-    await page.fill('#fn-email', EMAIL_B);
+    await signupFlow.advanceToPasswordStep(page, EMAIL_B);
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -313,7 +295,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
     // so the OUTER check passes almost immediately, landing inside
     // pendingPromise.then(...) while A's own start-pending-generation call
     // is still the 900ms delay away from settling.
-    await page.fill('#fn-email', EMAIL_A);
+    await signupFlow.advanceToPasswordStep(page, EMAIL_A);
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -401,7 +383,7 @@ test('start.html: screen 13 submission with an email that already has an account
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await page.fill('#fn-email', 'already-taken@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'already-taken@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -449,7 +431,7 @@ test('start.html: check-email.js failing outright (rate-limited/5xx) fails OPEN 
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await page.fill('#fn-email', 'legit-new-user@example.com');
+    await signupFlow.advanceToPasswordStep(page, 'legit-new-user@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -506,7 +488,7 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await page.fill('#fn-email', ABANDONED_EMAIL);
+    await signupFlow.advanceToPasswordStep(page, ABANDONED_EMAIL);
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
@@ -569,7 +551,7 @@ test('start.html: control case -- a NORMAL, non-abandoned signup (Back never cli
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await page.fill('#fn-email', COMPLETED_EMAIL);
+    await signupFlow.advanceToPasswordStep(page, COMPLETED_EMAIL);
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
