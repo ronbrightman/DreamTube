@@ -676,44 +676,83 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .dream-quote.clamped{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;}
 .quote-more-hint{ font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:8px; cursor:pointer;}
 .result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;}
-.result-tag-row .feed-tag, .interp-pill .feed-tag, .turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
+.result-tag-row .feed-tag, .turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
 .result-tag-row .feed-tag.pub{ background:rgba(255,255,255,.92); color:#000;}
 
-/* "Turn this into a video" upsell CTA — the one emphasized action on an
+/* "Turn this into a video" upsell CTA — the emphasized action on an
    image-type dream's result screen (see docs/IMAGE_GENERATION_SPEC.md §6).
-   Deliberately UNCHANGED/full-size by the redesign below — founder-explicit
-   2026-07-26 night decision: every other CTA on this screen shrinks, this
-   one keeps its clearly visible "100 tokens" cost pill and warm-button
-   prominence. Same layout shape as .interp-pill below (label left, cost
-   pill right). */
+   Deliberately UNCHANGED/full-size — founder-explicit 2026-07-26 night
+   decision, restated in the 2026-07-30 interpret-primary redesign's own
+   cut list: this one CTA keeps its clearly visible "100 tokens" cost pill
+   and warm-button prominence (label left, cost pill right). */
 .turn-video-cta{ width:100%; justify-content:space-between; margin:10px 0 8px;}
-
-/* "What this dream might mean" — now a slim pill sitting ABOVE the compact
-   CTA pair (absorbs the already-approved interpretation-above-make-another
-   cheap win). Tap behavior is unchanged — opens the same bottom sheet. */
-.interp-pill{
-  width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
-  border:1px solid rgba(255,255,255,.18); border-radius:100px; padding:8px 14px;
-  background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
-  font-family:var(--font-body); font-size:12px; color:#eee; cursor:pointer;
-  margin:2px 0 10px; -webkit-tap-highlight-color:transparent;
-}
 .interp-cta-label{ display:flex; align-items:center; gap:6px;}
+
+/* ===== The result screen's ONE hero: the interpretation entry =====
+   Founder-decided 2026-07-30 (tracker item for-product-build-founder-
+   decided-2026-0-75fnlk); geometry, weight and motion copied from the
+   frozen approved mock result-mock2-x7q4.html's `.hero-cta` — full-width
+   pill, 99px radius, ~15px vertical padding, 800-weight ~15.5px centred
+   label, soft pulse, press-scale.
+
+   ONE deliberate adaptation from that mock: the fill. The mock was a
+   standalone file that declared home.html's night-sky tokens locally and
+   painted this button with home's periwinkle --home-acc (#9d90ff). This
+   page — and the Interpreter's Chamber it opens (.itp-* below) — run on
+   this stylesheet's monochrome system, where an emphasized CTA is white-
+   on-black (--accent / .btn-primary / .btn-warm). Using the mock's literal
+   hue here would make this the only purple control anywhere on the
+   result -> Chamber path. So the mock's hierarchy is copied exactly and
+   only the palette is mapped onto the real design system. If the founder
+   wants the mock's literal periwinkle, it is this one `background`/`color`
+   pair plus the pulse's glow colour — nothing else. */
+.result-hero-cta{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin:10px 0 0; padding:15px 18px;
+  border:none; border-radius:100px; cursor:pointer;
+  background:var(--accent); color:#000;
+  font-family:var(--font-body); font-size:15.5px; font-weight:800; letter-spacing:.01em; text-align:center;
+  box-shadow:0 4px 14px -6px rgba(0,0,0,.5);
+  animation:resultHeroPulse 2.6s ease-in-out infinite;
+  transition:transform .12s ease, opacity .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.result-hero-cta:active{ transform:scale(.97);}
+/* The image-only state keeps its OWN hero ("Turn this into a video",
+   founder-explicit, untouched). Two full-size white pills there would read
+   as two heroes and defeat the "ONE hero" rule this redesign is built on,
+   so in that one state the interpretation entry steps down to the slim
+   translucent pill it already was on `main` (the previous, founder-seen
+   .interp-pill treatment — same values, reused verbatim rather than a new
+   invention). Everywhere else the interpretation entry IS the hero. */
+.result-hero-cta.quiet{
+  padding:8px 14px; margin-top:2px;
+  border:1px solid rgba(255,255,255,.18); border-radius:100px;
+  background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
+  color:#eee; font-size:12px; font-weight:600;
+  box-shadow:none; animation:none;
+}
+@keyframes resultHeroPulse{
+  0%,100%{ box-shadow:0 4px 14px -6px rgba(0,0,0,.5), 0 0 5px rgba(255,255,255,.28);}
+  50%{ box-shadow:0 4px 14px -6px rgba(0,0,0,.5), 0 0 15px rgba(255,255,255,.6);}
+}
+@media (prefers-reduced-motion:reduce){ .result-hero-cta{ animation:none;} }
+/* The hero's label is one sentence and reads far better on one line. At
+   the narrowest realistic phone widths (320px — iPhone SE 1st gen / older
+   Android) 15.5px/800 wraps it in two, so the label steps down just enough
+   to stay single-line there. Size/fill/motion are otherwise unchanged. */
+@media (max-width:359px){ .result-hero-cta{ font-size:13.5px; padding:14px 12px; gap:5px;} }
+/* The mock's `.micro` slot under the hero — carries the privacy
+   reassurance the old slim interpretation pill used to hold as an inline
+   "Private" chip. */
+.result-hero-micro{ margin:9px 0 4px; text-align:center; font-size:11.5px; line-height:1.45; color:var(--text-muted); text-shadow:0 1px 4px rgba(0,0,0,.6);}
 .interp-sparkle{ font-size:15px; line-height:1;}
 
-/* Compact CTA pair (Explore dreams / My profile) — replaces the old
-   topbar Explore/Profile nav icons; deliberately SMALL, founder asked the
-   whole CTA area shrunk from what it was. */
-.result-cta-row{ display:flex; gap:8px; margin:0 0 10px;}
-.result-cta{ flex:1; padding:9px 10px; font-size:12.5px; gap:5px;}
-.result-cta .icon{ width:14px; height:14px;}
-.result-cta-secondary{ background:rgba(36,36,36,.7); color:#fff; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(4px);}
-.result-cta-secondary:hover{ background:rgba(50,50,50,.7);}
-
-/* Quiet small-link row — Edit / Publish / Make another / Delete. FINAL
-   placement (founder, 4th iteration, 2026-07-28) -- Delete is an ordinary
-   quiet link here now, same muted styling as the other three, just with
-   its icon (only) tinted toward --danger via .result-quiet-link-danger so
+/* Quiet small-link row — Publish / Edit / Make another / Delete. Publish
+   joined this row in the 2026-07-30 interpret-primary redesign (it is no
+   longer the hero; its modal/consent flow is unchanged). Delete is an
+   ordinary quiet link here now, same muted styling as the other three,
+   just with its icon (only) tinted toward --danger via .result-quiet-link-danger so
    it's discoverable without reading as a recommended action. Two earlier
    placements (a big bottom-bar button, then an overflow "⋯" menu) were
    both tried and rejected -- see tracker.html's

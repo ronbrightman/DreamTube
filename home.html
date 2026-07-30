@@ -710,7 +710,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // THIS persistent card — see install-nudge.js's own doc comment on
   // why the two are factored apart) plus DreamStore.getInstallVerified()
   // (js/pwa.js's real standalone-launch/appinstalled signal) as the one
-  // and only thing that makes this card go away. =====
+  // and only thing that makes this card go away.
+  //
+  // As of 2026-07-30 this card is also HOME'S OWNERSHIP of repeat-visit
+  // install nudging outright: result.html's own
+  // InstallNudge.init({trigger:'repeat-visit', pageKey:'result'}) call was
+  // removed by the interpret-primary result redesign (tracker item
+  // for-product-build-founder-decided-2026-0-75fnlk, cut list: "repeat-
+  // visit install nudge moved to Home"). No equivalent init() call was
+  // added here on purpose — THIS card already covers a strict superset of
+  // that trigger's moment (every eligible visit, not just the 2nd+; until
+  // genuinely verified installed, not until dismissed once), so adding one
+  // could only ever render a second, weaker install card on top of this
+  // one. js/install-nudge.js's repeat-visit trigger itself is untouched
+  // and still used by profile.html. =====
   (function installJourneyCard(){
     var card = document.getElementById('card-install');
     var overlay = document.getElementById('install-sheet-overlay');

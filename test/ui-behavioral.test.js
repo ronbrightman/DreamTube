@@ -485,7 +485,7 @@ test('result.html: Save is gone entirely (founder feedback 2026-07-28 -- redunda
   }
 });
 
-test('result.html redesign: topbar keeps only back + share (plus title/mute/token-chip) -- the old Explore/Profile nav icons are gone from the topbar, replaced by the compact CTA pair in the panel', async function (t) {
+test('result.html redesign: topbar keeps only back + mute + share -- the old Explore/Profile nav icons and the page title are both gone', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -533,72 +533,313 @@ test('result.html redesign: topbar keeps only back + share (plus title/mute/toke
   }
 });
 
-test('result.html redesign: the compact CTA pair (Explore dreams / My profile) in the panel has working links, sits above the quiet small-link row, and is visually small (a real shrink from the old full-size buttons)', async function (t) {
+// ===== Interpret-primary result-screen redesign (founder-decided
+// 2026-07-30, tracker item for-product-build-founder-decided-2026-0-75fnlk,
+// frozen mock result-mock2-x7q4.html) =====
+// The hero on result.html is the INTERPRETATION entry, not publish; publish
+// drops to a quiet link. The memo's section-6 declutter list also cuts the
+// Explore/Profile CTA pair, the topbar title, the style tag, the always-on
+// token chip, the daily-claim auto-open, and this page's repeat-visit
+// install nudge. The tests below cover the hero, the cuts, and the
+// analytics event together, since they were one decision.
+
+test('result.html redesign: the section-6 cuts are genuinely CUT -- no Explore/Profile CTA pair, no topbar title, no style tag anywhere on the page', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var dreamId = 'd-cta-test';
+    var dreamId = 'd-cuts-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#result-cta-explore', { timeout: 5000 });
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    var exploreHref = await page.$eval('#result-cta-explore', function (el) { return el.getAttribute('href'); });
-    var profileHref = await page.$eval('#result-cta-profile', function (el) { return el.getAttribute('href'); });
-    assert.equal(exploreHref, 'explore.html');
-    assert.equal(profileHref, 'profile.html');
+    // Gone entirely (not merely hidden) -- the no-dead-code rule applies to
+    // markup too, and a hidden-but-present CTA would come back the moment
+    // someone flipped a display toggle.
+    assert.equal(await page.locator('#result-cta-explore').count(), 0, 'the Explore CTA button must not exist anywhere on the page');
+    assert.equal(await page.locator('#result-cta-profile').count(), 0, 'the My-profile CTA button must not exist anywhere on the page');
+    assert.equal(await page.locator('.result-cta-row').count(), 0, 'the compact CTA row must not exist anywhere on the page');
+    assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar page title must not exist anywhere on the page');
+    assert.equal(await page.locator('#result-style-tag').count(), 0, 'the "Style: X" tag must not exist anywhere on the page');
 
-    // Deliberately small: the founder explicitly asked for the whole CTA
-    // area to be shrunk -- a real regression check, not just presence.
-    // The app's normal full-size .btn is ~15px vertical padding / ~14.5px
-    // font (see css/styles.css's .btn rule); these must read meaningfully
-    // smaller than that.
-    var ctaBox = await page.$eval('#result-cta-explore', function (el) {
-      var cs = getComputedStyle(el);
-      var r = el.getBoundingClientRect();
-      return { height: r.height, fontSize: parseFloat(cs.fontSize) };
-    });
-    assert.ok(ctaBox.height < 40, 'the compact CTA pair should be visibly smaller than the app\'s normal full-size buttons (got height ' + ctaBox.height + 'px)');
-    assert.ok(ctaBox.fontSize <= 13, 'the compact CTA pair\'s label should use a small font (got ' + ctaBox.fontSize + 'px)');
+    // Nothing on the visible screen still says "Style:" or "Your Dream"
+    // through some other element -- the cut is about what the user sees,
+    // not just about these specific ids.
+    var panelText = await page.$eval('.result-panel', function (el) { return el.innerText; });
+    assert.ok(panelText.indexOf('Style:') === -1, 'the panel should no longer render a "Style:" label (got: ' + panelText + ')');
+    var topbarText = await page.$eval('.topbar', function (el) { return el.innerText.trim(); });
+    assert.equal(topbarText, '', 'the topbar should carry icon buttons only, no text title (got: ' + JSON.stringify(topbarText) + ')');
 
-    // The CTA pair must sit above the quiet small-link row (Edit/Publish/
-    // Make another/...), matching the approved mock's vertical order.
-    var ctaRowBottom = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().bottom; });
-    var quietLinksTop = await page.$eval('.result-quiet-links', function (el) { return el.getBoundingClientRect().top; });
-    assert.ok(ctaRowBottom <= quietLinksTop + 1, 'the CTA pair should sit above (or flush with) the quiet small-link row, not below it');
-
-    // Clicking through actually navigates.
-    await page.click('#result-cta-explore');
-    await page.waitForURL(/explore\.html/, { timeout: 5000 });
-    assert.match(page.url(), /explore\.html/);
+    // The privacy tag SURVIVES the cut -- only the style tag went.
+    assert.ok(await page.locator('#result-privacy-tag').isVisible(), 'the Private/Public tag must still be there');
+    assert.equal((await page.textContent('#result-privacy-tag')).trim(), 'Private');
   } finally {
     await context.close();
   }
 });
 
-test('result.html redesign: the dream-interpretation pill renders ABOVE the compact CTA pair, and opens the Interpreter\'s Chamber (js/interpret-experience.js) on tap', async function (t) {
+test('result.html redesign: the ONE hero is the interpretation entry -- a full-width emphasized pill above the quiet row that opens the Interpreter\'s Chamber for THIS dream', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var dreamId = 'd-interp-pill-test';
+    var dreamId = 'd-hero-interpret-test';
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
 
-    var interpBottom = await page.$eval('#interp-cta-btn', function (el) { return el.getBoundingClientRect().bottom; });
-    var ctaRowTop = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().top; });
-    assert.ok(interpBottom <= ctaRowTop + 1, 'the interpretation pill must render above the CTA pair (absorbs the interpretation-above-make-another cheap win)');
+    // Copy, per the founder's own suggestion in the tracker item.
+    var heroText = (await page.textContent('#interp-cta-btn')).replace(/\s+/g, ' ').trim();
+    assert.match(heroText, /What does this dream mean\?/, 'the hero should carry the founder-specified copy (got: ' + heroText + ')');
 
-    // Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md): tapping
-    // now opens js/interpret-experience.js's full-screen picker, not the
-    // old bottom sheet -- the picker itself needs no network at all
-    // (spec §3.1), so aborting every Netlify Function here still proves
-    // the surface opens on tap alone.
+    // It reads as the HERO, not the old slim pill: full-panel width, a
+    // real full-size tap target, and a heavy label. (The old .interp-pill
+    // was 12px/8px-padding; the app's normal full-size .btn is ~14.5px.)
+    var hero = await page.$eval('#interp-cta-btn', function (el) {
+      var cs = getComputedStyle(el);
+      var r = el.getBoundingClientRect();
+      var panel = document.querySelector('.result-panel').getBoundingClientRect();
+      var panelCS = getComputedStyle(document.querySelector('.result-panel'));
+      var innerWidth = panel.width - parseFloat(panelCS.paddingLeft) - parseFloat(panelCS.paddingRight);
+      return {
+        height: r.height,
+        fontSize: parseFloat(cs.fontSize),
+        fontWeight: parseInt(cs.fontWeight, 10),
+        width: r.width,
+        innerWidth: innerWidth
+      };
+    });
+    assert.ok(Math.abs(hero.width - hero.innerWidth) < 2, 'the hero should span the panel\'s full inner width (got ' + hero.width + ' vs ' + hero.innerWidth + ')');
+    assert.ok(hero.height >= 44, 'the hero must be a real full-size tap target, >= the 44px mobile minimum (got ' + hero.height + 'px)');
+    assert.ok(hero.fontSize >= 15, 'the hero label should be full-size, not the old slim pill\'s 12px (got ' + hero.fontSize + 'px)');
+    assert.ok(hero.fontWeight >= 700, 'the hero label should be heavy (got ' + hero.fontWeight + ')');
+
+    // It is the LAST thing above the quiet row -- publish/edit/make-another/
+    // delete all sit below it, per the mock's vertical order.
+    var heroBottom = await page.$eval('#interp-cta-btn', function (el) { return el.getBoundingClientRect().bottom; });
+    var quietTop = await page.$eval('.result-quiet-links', function (el) { return el.getBoundingClientRect().top; });
+    assert.ok(heroBottom <= quietTop + 1, 'the hero must sit above the quiet small-link row');
+
+    // And it is the ONLY emphasized full-width CTA on a normal (video)
+    // dream -- the image-only Turn-into-video hero is hidden here.
+    assert.equal(await page.locator('#turn-video-btn').isVisible(), false, 'the Turn-into-video hero must stay hidden for a video dream');
+
+    // Tapping opens the SAME Interpreter's Chamber home.html's Chamber card
+    // opens (js/interpret-experience.js) -- the picker needs no network at
+    // all (docs/INTERPRETATION_WAVE1_SPEC.md §3.1), so aborting every
+    // Netlify Function still proves the surface opens on tap alone.
     await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
     await page.click('#interp-cta-btn');
     await page.waitForSelector('#itp-root.open', { timeout: 5000 });
     await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the hero opens the Chamber linked to THIS dream -- not the latest dream, not an ambiguous default -- when the account has several dreams', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // The result-entry half of tracker item
+  // for-product-chamber-dream-linkage-is-unc-00s2dr. home.html's Chamber
+  // card always opens the LATEST completed dream; entering from result must
+  // instead operate on whichever dream this screen is showing. Seeds three
+  // dreams and opens the OLDEST, so "latest" and "this one" genuinely
+  // differ -- the whole point of the assertion.
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@tester', username: 'tester' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+      state.dreams = [
+        { id: 'd-oldest', ownerHandle: '@tester', caption: 'The oldest dream, about a glass staircase', style: 'Cinematic', videoUrl: 'https://example.com/a.mp4', isPublished: false, createdAt: '2026-07-01T00:00:00.000Z' },
+        { id: 'd-middle', ownerHandle: '@tester', caption: 'The middle dream, about a red horse', style: 'Anime', videoUrl: 'https://example.com/b.mp4', isPublished: false, createdAt: '2026-07-10T00:00:00.000Z' },
+        { id: 'd-latest', ownerHandle: '@tester', caption: 'The newest dream, about an empty city', style: 'Realistic', videoUrl: 'https://example.com/c.mp4', isPublished: false, createdAt: '2026-07-28T00:00:00.000Z' }
+      ];
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=d-oldest', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
+
+    // Record which dreamId InterpretExperience.open() is actually called
+    // with, without stubbing away the real experience -- the real open()
+    // still runs, so this also proves the call is well-formed.
+    await page.evaluate(function () {
+      window.__openedWith = [];
+      var realOpen = window.InterpretExperience.open;
+      window.InterpretExperience.open = function (dreamId) {
+        window.__openedWith.push(dreamId);
+        return realOpen.apply(this, arguments);
+      };
+    });
+    await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-root.open', { timeout: 5000 });
+
+    var openedWith = await page.evaluate(function () { return window.__openedWith; });
+    assert.deepEqual(openedWith, ['d-oldest'], 'the Chamber must be opened for the dream result.html is showing (d-oldest), not the account\'s latest dream');
+  } finally {
+    await context.close();
+  }
+});
+
+/** Reads every posthog.capture(...) call recorded so far. blockThirdParty() aborts PostHog's real asset, so the snippet in each page's <head> leaves window.posthog as its own queueing array — entries are ['capture', eventName, props]. Same convention as test/interp-analytics-behavioral.test.js / test/shop-purchase-conversion-behavioral.test.js. */
+function readPostHogCalls(page) {
+  return page.evaluate(function () {
+    return (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+  });
+}
+
+test('result.html redesign: tapping the hero fires result_hero_interpret with first_video:true on the account\'s only video, and first_video:false once it has more', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  for (var i = 0; i < 2; i++) {
+    var onlyDream = i === 0;
+    var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+    try {
+      var page = await context.newPage();
+      await blockThirdParty(page);
+      await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+      await page.evaluate(function (single) {
+        var raw = localStorage.getItem('dreamtube_state_v1');
+        var state = raw ? JSON.parse(raw) : {};
+        state.user = { handle: '@tester', username: 'tester' };
+        if (!state.accounts) state.accounts = {};
+        state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+        state.dreams = [
+          { id: 'd-event-target', ownerHandle: '@tester', caption: 'A dream about a golden city', style: 'Cinematic', videoUrl: 'https://example.com/a.mp4', isPublished: false, createdAt: '2026-07-20T00:00:00.000Z' }
+        ];
+        if (!single) {
+          state.dreams.push({ id: 'd-event-other', ownerHandle: '@tester', caption: 'An earlier dream', style: 'Anime', videoUrl: 'https://example.com/b.mp4', isPublished: false, createdAt: '2026-07-10T00:00:00.000Z' });
+        }
+        localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+      }, onlyDream);
+      await page.goto(baseUrl + '/result.html?id=d-event-target', { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
+
+      await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
+      await page.click('#interp-cta-btn');
+      await page.waitForSelector('#itp-root.open', { timeout: 5000 });
+
+      var calls = await readPostHogCalls(page);
+      var events = calls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'result_hero_interpret'; });
+      assert.equal(events.length, 1, 'exactly one result_hero_interpret should fire per hero tap (only-dream: ' + onlyDream + ')');
+      var props = events[0][2] || {};
+      assert.equal(
+        props.first_video,
+        onlyDream,
+        'first_video should be ' + onlyDream + ' when this ' + (onlyDream ? 'is' : 'is not') + ' the account\'s only completed video'
+      );
+      assert.equal(typeof props.first_video, 'boolean', 'first_video must be a real boolean, not a truthy value');
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+test('result.html redesign: the token chip is off-screen on an ordinary result, and comes back only in the image-only state whose Turn-into-video hero is untouched', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    function measureInterp(pg) {
+      return pg.$eval('#interp-cta-btn', function (el) {
+        var cs = getComputedStyle(el);
+        return { fontSize: parseFloat(cs.fontSize), height: el.getBoundingClientRect().height, quiet: el.classList.contains('quiet') };
+      });
+    }
+
+    // (a) Video dream -- chip hidden, interpretation entry IS the hero.
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedResultPage(page, baseUrl, 'd-chip-video-test');
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+    assert.equal(await page.locator('#topbar-token-chip-slot').isVisible(), false, 'the token chip must be off-screen on an ordinary video result');
+    var videoInterp = await measureInterp(page);
+    assert.equal(videoInterp.quiet, false, 'the interpretation entry must be the full hero when it is the only hero on screen');
+    assert.ok(await page.locator('#interp-hero-micro').isVisible(), 'the hero\'s reassurance micro line shows alongside the hero');
+
+    // (b) Image-only dream -- chip back, Turn-into-video hero present with
+    //     its token-cost pill intact (founder-explicit: untouched).
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      state.dreams.push({
+        id: 'd-chip-image-test', ownerHandle: '@tester', caption: 'An image-only dream', style: 'Cinematic',
+        imageUrl: 'https://example.com/fake-image.jpg', isPublished: false, createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=d-chip-image-test', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#turn-video-btn', { timeout: 5000 });
+    assert.ok(await page.locator('#turn-video-btn').isVisible(), 'the Turn-into-video hero must show for an image-only dream');
+    assert.match(await page.textContent('#turn-video-btn'), /100 tokens/, 'the Turn-into-video hero must keep its visible token cost (founder-explicit, unchanged)');
+    assert.ok(await page.locator('#topbar-token-chip-slot').isVisible(), 'the token chip must come back in the image-only state');
+    // Two full-size emphasized CTAs would defeat "ONE hero" -- in this ONE
+    // state the interpretation entry steps back down to the slim pill it
+    // was on `main`, leaving Turn-into-video unambiguously the hero.
+    var imageInterp = await measureInterp(page);
+    assert.equal(imageInterp.quiet, true, 'the interpretation entry must step down to its quiet treatment while the Turn-into-video hero is on screen');
+    assert.ok(imageInterp.fontSize < videoInterp.fontSize, 'the quiet treatment should use a smaller label than the hero (got ' + imageInterp.fontSize + ' vs ' + videoInterp.fontSize + ')');
+    assert.ok(imageInterp.height < videoInterp.height, 'the quiet treatment should be shorter than the hero (got ' + imageInterp.height + ' vs ' + videoInterp.height + ')');
+    var turnVideoHeight = await page.$eval('#turn-video-btn', function (el) { return el.getBoundingClientRect().height; });
+    assert.ok(turnVideoHeight > imageInterp.height, 'the Turn-into-video hero must stay the largest CTA in the image-only state');
+    assert.equal(await page.locator('#interp-hero-micro').isVisible(), false, 'the hero micro line steps aside with the hero in the image-only state');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html redesign: the daily-claim sheet no longer auto-opens on this page (Home owns it) and this page no longer fires the repeat-visit install nudge', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Make the claim genuinely CLAIMABLE, so the only reason the sheet
+    // stays shut is that this page no longer asks it to open. Stubs the
+    // token-status endpoint rather than the client, so DreamStore's real
+    // getTokenStatus path runs.
+    await page.route('**/.netlify/functions/token-status*', function (route) {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ balance: 40, claimable: true, claimAmount: 100, nextClaimAt: null, streak: 1 })
+      });
+    });
+    var dreamId = 'd-no-autoclaim-test';
+    // Second visit to result.html in this browser -- the exact condition
+    // the removed repeat-visit install nudge used to fire on.
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+    // Give both the token-status promise and the nudge every chance to fire.
+    await page.waitForTimeout(1200);
+
+    var claimSheetOpen = await page.evaluate(function () {
+      var open = document.querySelectorAll('.sheet-overlay.open, .modal-overlay.open');
+      return Array.prototype.map.call(open, function (el) { return el.id; });
+    });
+    assert.deepEqual(claimSheetOpen, [], 'nothing should auto-open over the result screen -- the daily-claim auto-open is removed from this page (got: ' + JSON.stringify(claimSheetOpen) + ')');
+    assert.equal(await page.locator('#install-nudge-card').count(), 0, 'the repeat-visit install nudge must no longer render on this page (Home owns it)');
+
+    // Guard the source itself: neither call may come back by accident.
+    // Comments are stripped first -- result.html documents BOTH removals at
+    // length in prose right where they used to live (deliberately, so the
+    // next person doesn't re-add them), and a naive substring scan would
+    // trip over that documentation.
+    var src = await page.evaluate(function () {
+      var raw = Array.prototype.map.call(document.querySelectorAll('script:not([src])'), function (s) { return s.textContent; }).join('\n');
+      return raw
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')  // block comments
+        .replace(/^[ \t]*\/\/.*$/gm, ' ');  // whole-line // comments
+    });
+    assert.ok(src.indexOf('maybeAutoOpenClaimSheet') === -1, 'result.html must not call PurchaseSheet.maybeAutoOpenClaimSheet at all');
+    assert.ok(src.indexOf("'repeat-visit'") === -1, 'result.html must not init the repeat-visit install nudge trigger at all');
+    assert.ok(src.indexOf("'session-transfer'") !== -1, 'the session-transfer install-nudge trigger must STAY on this page');
   } finally {
     await context.close();
   }
@@ -714,6 +955,15 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     }
     var quietLinkCount = await page.locator('.result-quiet-links button').count();
     assert.equal(quietLinkCount, 4, 'the quiet-link row should have exactly 4 buttons, no more, no 5th overflow-trigger sibling');
+
+    // Order is Publish / Edit / Make another / Delete, per the 2026-07-30
+    // interpret-primary redesign (tracker item for-product-build-founder-
+    // decided-2026-0-75fnlk names the row in exactly that order) -- Publish
+    // leads the row now that it is no longer the hero.
+    var order = await page.$$eval('.result-quiet-links button', function (els) {
+      return els.map(function (el) { return el.id; });
+    });
+    assert.deepEqual(order, ['publish-btn', 'open-edit-sheet', 'make-another-btn', 'delete-btn'], 'quiet-row order should be Publish / Edit / Make another / Delete');
 
     // The overflow trigger + menu from the 3rd iteration must be fully
     // gone, not just hidden -- founder feedback that an unlabeled kebab
@@ -845,68 +1095,31 @@ test('result.html redesign: the top Share icon still keeps its publishes-if-priv
   }
 });
 
-test('result.html topbar title stays on one line and does not overlap the back button or icon cluster at 320px', async function (t) {
+test('result.html: the topbar (back + mute + share, no title) lays out cleanly with no overlap at 320px', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   // 320px is the narrowest realistic phone viewport (e.g. iPhone SE 1st
-  // gen / older Android) -- the tightest width the three-icon-button
-  // topbar (back + mute + share) has to share with the "Your Dream" title
-  // (Explore/Profile moved out of the topbar entirely -- see the redesign
-  // test above). The 375px test above doesn't include the title element in
-  // its layout assertions at all, so it could not have caught the title
-  // wrapping to two lines at this narrower width.
+  // gen / older Android). This test used to guard the "Your Dream" topbar
+  // title against wrapping to two lines at this width; that title is CUT
+  // by the 2026-07-30 interpret-primary redesign (memo section 6), so the
+  // wrap regression it protected against no longer exists. What still
+  // matters at this width -- and is what this test now guards -- is that
+  // the remaining three icon buttons lay out without collapsing or
+  // colliding, and that the title really is gone rather than merely
+  // emptied.
   var context = await browser.newContext({ viewport: { width: 320, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     var dreamId = 'd-nav-320-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#result-topbar-title', { timeout: 5000 });
+    await page.waitForSelector('#result-back', { timeout: 5000 });
 
-    // Single-line check via Range.getClientRects(): the title <div> is a
-    // block box, so its own bounding rect is always a single rect whether
-    // or not the text inside it wraps -- that's why the 375px test's
-    // per-element overlap check alone can't catch a wrap regression. A
-    // Range over the text content yields one client rect per visual
-    // *fragment* -- note this is fragments, not strictly lines: an
-    // overflow:hidden + text-overflow:ellipsis element legitimately
-    // produces more than one rect for genuinely single-line text (a rect
-    // for the visible portion and one for the clipped remainder), so
-    // rect *count* alone can't distinguish "single line, ellipsis-clipped"
-    // from "wrapped to two lines" -- confirmed by hand against this exact
-    // element. What does distinguish them is vertical position: a real
-    // line-wrap puts fragments at different `top` offsets, while
-    // same-line ellipsis fragments all share one `top`.
-    var lineInfo = await page.$eval('#result-topbar-title', function (el) {
-      var range = document.createRange();
-      range.selectNodeContents(el);
-      var rects = Array.from(range.getClientRects());
-      var tops = rects.map(function (r) { return Math.round(r.top); });
-      var distinctLines = tops.filter(function (t, i) { return tops.indexOf(t) === i; }).length;
-      return { distinctLines: distinctLines, text: el.textContent };
-    });
-    assert.equal(lineInfo.text, 'Your Dream', 'title text should render un-truncated at 320px since "Your Dream" is short enough to fit');
-    assert.equal(lineInfo.distinctLines, 1, 'title text should render on a single visual line (one distinct top offset among its rects), not wrap to two lines');
+    assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar title element must be gone entirely at 320px too, not just visually hidden');
+    var topbarText = await page.$eval('.topbar', function (el) { return el.innerText.trim(); });
+    assert.equal(topbarText, '', 'the topbar should render no text at all (got: ' + JSON.stringify(topbarText) + ')');
 
-    // Redundant height-based check for the same regression: a wrapped
-    // two-line title would roughly double the box's height past one
-    // line-height; this stays comfortably under that even allowing for
-    // rounding/font-metric slop.
-    var heightInfo = await page.$eval('#result-topbar-title', function (el) {
-      var cs = getComputedStyle(el);
-      var lineHeight = parseFloat(cs.lineHeight);
-      if (isNaN(lineHeight)) lineHeight = parseFloat(cs.fontSize) * 1.2;
-      return { height: el.getBoundingClientRect().height, lineHeight: lineHeight };
-    });
-    assert.ok(
-      heightInfo.height <= heightInfo.lineHeight * 1.5,
-      'title box height (' + heightInfo.height + 'px) should stay at single-line height (~' + heightInfo.lineHeight + 'px), not double from wrapping'
-    );
-
-    // Full overlap sweep including the title this time -- guards against
-    // both the wrap itself and any future crowding that makes the title
-    // physically collide with the back button or the icon-button cluster.
     var boxes = await page.$$eval(
-      '.topbar #result-back, .topbar #result-topbar-title, .topbar #mute-btn, .topbar #share-btn',
+      '.topbar #result-back, .topbar #mute-btn, .topbar #share-btn',
       function (els) {
         return els.map(function (el) {
           var r = el.getBoundingClientRect();
@@ -914,9 +1127,10 @@ test('result.html topbar title stays on one line and does not overlap the back b
         });
       }
     );
-    assert.equal(boxes.length, 4, 'expected back + title + mute + share, and nothing else');
+    assert.equal(boxes.length, 3, 'expected back + mute + share, and nothing else');
     boxes.forEach(function (b) {
-      assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
+      assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at 320px');
+      assert.ok(b.width >= 32 && b.height >= 32, b.id + ' should stay a real tap target at 320px (got ' + b.width + 'x' + b.height + ')');
     });
     for (var i = 0; i < boxes.length; i++) {
       for (var j = i + 1; j < boxes.length; j++) {
@@ -926,6 +1140,11 @@ test('result.html topbar title stays on one line and does not overlap the back b
         assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
       }
     }
+
+    // The topbar must still sit entirely above the panel at this width.
+    var panelTop = await page.$eval('.result-panel', function (el) { return el.getBoundingClientRect().top; });
+    var navBottom = Math.max.apply(null, boxes.map(function (b) { return b.bottom; }));
+    assert.ok(navBottom < panelTop, 'topbar must sit entirely above the result-panel at 320px');
   } finally {
     await context.close();
   }

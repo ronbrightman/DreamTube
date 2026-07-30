@@ -553,3 +553,30 @@ work from the same tracker item, see `docs/PWA_PUSH_SETUP.md`),
 `maybeSendVideoReadyPush`), `netlify.toml` (schedule declaration). See
 `docs/PWA_PUSH_SETUP.md` for the human setup step (`VAPID_PRIVATE_KEY`)
 this feature needs before any push actually delivers.
+
+### result_hero_interpret
+
+The success metric for the interpret-primary result-screen redesign
+(founder-decided 2026-07-30, tracker item
+`for-product-build-founder-decided-2026-0-75fnlk`). That decision made the
+interpretation entry the ONE hero on `result.html` — displacing publish,
+which dropped to a quiet link — on the reasoning that new users need
+confidence before they broadcast, and interpretation is the product's
+depth direction. This event is how that bet gets read: **interpretation-open
+rate from result**, with downstream Chamber completion coming from the
+existing `interp_*` events `js/interpret-experience.js` already fires.
+
+PostHog only — this is product instrumentation, not an ad-optimization
+conversion event, so no Meta Pixel/CAPI leg.
+
+| | |
+|---|---|
+| **Fires** | On tap of `result.html`'s hero pill (`#interp-cta-btn`, "✨ What does this dream mean?"), immediately before `InterpretExperience.open(dream.id)`. Every tap, no once-per-session/once-per-dream guard — the metric is a rate, so repeat taps are real signal, not noise |
+| **Props** | `{ first_video: boolean }` — true when this dream is the account's only completed video, i.e. the user is tapping this on their very first dream (the confidence moment the founder's decision is actually about), false on a returning user's Nth dream. Computed from `DreamStore.isOnlyCompletedDream(dream.id)`, the same read-only query `first_video_result_view` above already uses — deliberately not a second definition of "first" |
+| **Does NOT fire for** | home.html's Chamber card, which opens the same Interpreter's Chamber from the other entry point. That path is intentionally uninstrumented by this event — the whole point is measuring the RESULT-screen entry specifically. Compare against the `interp_*` events (fired inside the Chamber regardless of entry point) to see the split |
+
+**Files touched:** `result.html` (hero markup, click handler, and the
+section-6 declutter cuts that go with it), `css/styles.css`
+(`.result-hero-cta`/`.result-hero-micro`), `test/ui-behavioral.test.js`
+(real-browser coverage of the event firing with the correct `first_video`
+value in both states).
