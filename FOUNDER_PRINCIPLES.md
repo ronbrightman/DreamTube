@@ -46,6 +46,13 @@ tight (curate, don't dump).
   `ronbrightman/manager`) and runs a nightly audit lane across both repos;
   this file's job is just making sure this session's own agents apply the
   principle when making choices, not maintaining the registry itself.
+- **Prioritize by CURRENT user impact, not eventual.** (Founder rule 2026-07-25.)
+  At this early/low-traffic stage, features that only pay off at scale — referral
+  loops, weekly digests, remix, social notifications — touch ~0 users NOW, so they
+  are **low priority until product usage grows**, no matter how good the idea.
+  Priority goes to: what GROWS traffic/usage (the funnel, ads, creative), core-flow
+  correctness for the users we DO have, and anything blocking those. Re-rank the
+  backlog against "how many users does this affect now?"
 - **Vocabulary:** when Ron writes **"final" he almost always means "funnel."**
 
 ## Marketing & campaign management
@@ -56,8 +63,24 @@ tight (curate, don't dump).
   spend exposure or a prolonged outage. (Learned: I paused + dropped budget +
   resumed to save ~$2 on a ~10-min fix — three learning-disrupting edits for
   nothing.)
+- **One learning-affecting change at a time; let it season before the next.**
+  Act decisively on clear losers (pause a dead ad the moment the data is
+  unambiguous), and quantify the next lever (e.g. is the deeper event firing
+  >50/wk?) — but do NOT stack learning-resets: don't launch a creative overhaul
+  AND flip the optimization event in the same window. Make one change, let it
+  settle, then the next. (Founder praised exactly this restraint 2026-07-25:
+  paused the dead ad + identified ReachedEmailEntry as the next optimization step
+  but consciously held it so the 7 fresh ads could season first.)
 - **Budget is the lever for spend control** — not targeting, not the
   optimization event.
+- **Budget-neutral campaign actions → just do them** (Founder rule 2026-07-25:
+  "it doesn't change money spent caps so usually do that"). Adding/swapping
+  approved creative, pausing a losing ad, adjusting an optimization event —
+  anything that does NOT change the daily/lifetime spend CAP — is within standing
+  autonomy; proceed without a per-action go. Only **changing the budget/cap
+  itself** (or launching a brand-new campaign / turning spend on from zero) is a
+  founder money-decision. Corollary: creative that's founder-approved +
+  compliance-clear goes live on its own within the existing budget.
 - **Broad targeting + strong creative** on a fresh account (Andromeda-era).
   Narrowing targeting early raises costs and slows learning; the creative is
   the targeting.
@@ -90,6 +113,23 @@ tight (curate, don't dump).
   the app fires to; `FirstVideoCreated` is a *custom* event (shows under
   Custom Events, not standard); a conversion event can't be optimized until
   it's a real, firing, ad-account-linked pixel event with volume (~50/wk).
+- **A/B tests run as PostHog experiments** (feature flag + experiment +
+  `experiment_exposure`), not ad-hoc — this funnel's standing mechanism
+  (Founder rule 2026-07-25; the funnel-hero-headline experiment is the template).
+- **A/B test selection is DATA-FIRST, and never re-tests a settled loss**
+  (Founder rules 2026-07-25). Steps: (1) rank per-page drop-off from the data
+  (dashboard/HogQL), (2) test a new VERSION of the HIGHEST- (or 2nd-highest-)
+  drop page — keep the page ORDER; don't jump straight to a pet hypothesis, and
+  (3) NEVER propose a variant that re-exposes a known-bad state (e.g. don't
+  re-test "carousel first" — we already learned it bounces; a test slot is too
+  valuable to re-litigate a settled loss). Propose the target for founder
+  green-light before building the full variant.
+- **Test DESIGN and copy, not just page order.** Broaden the hypothesis space:
+  theme/palette, layout, copy, imagery — not only sequencing. Standing design
+  candidate: the funnel is all-pastel while the ad creatives AND the product app
+  (dreamtube1) use a **dark + purple-glow** aesthetic — a strong single-variable
+  test is dark/glow vs pastel, and more broadly the funnel's visual identity
+  should probably match the product's, not diverge from it.
 
 ## Product & user flow
 
@@ -172,27 +212,26 @@ tight (curate, don't dump).
   this rule is for substantial new features/screens (e.g. a redesigned
   shop), not every UI tweak. Growth applies the same discipline for
   funnel UI, on its own copy of this rule.
+- **STANDING RULE (founder said "always," 2026-07-30): copy proven
+  solutions, don't invent — for anything that isn't uniquely ours.**
+  Before building any feature, layout, design, or UX pattern that isn't
+  completely unique to the product, research how 2-3 successful
+  products solve it, pick the dominant pattern, and copy it faithfully —
+  don't invent our own. Reserve invention for the genuinely unique core
+  (dream-to-video itself), not the surrounding UI/UX scaffolding. Origin:
+  the webview-escape/install-nudge surface, where product invented UI
+  instead of researching and copying an existing, battle-tested pattern.
+  Practical bar: before building such a surface, research 2-3 successful
+  products' solutions, pick the dominant one, copy it faithfully, and
+  note the sources in the PR/brief. Applies to substantial funnel UI here
+  too, same as the research→design→build rule above — this sharpens WHAT
+  that research should produce, not WHEN to do it.
 - **Never interrupt the other session for non-urgent items** — cross-session
   standing rule. Route non-urgent findings through the tracker
   (`[for product]`/`[for growth]`) on the other session's own cadence,
   same as this file's own "Cross-session working" section already
   establishes; this just makes explicit that urgency is opt-in, not
   default.
-- **STANDING RULE (founder said "always," 2026-07-30): copy proven
-  solutions, don't invent — for anything that isn't uniquely ours.**
-  Before building any feature, layout, design, or UX pattern that isn't
-  completely unique to this product, research how 2-3 successful
-  products solve it, pick the dominant pattern, and copy it faithfully —
-  don't invent our own. Reserve invention for the genuinely unique core
-  (dream-to-video itself), not the surrounding UI/UX scaffolding. Origin:
-  the webview-escape/install-nudge surface, where we invented UI instead
-  of researching and copying an existing, battle-tested pattern.
-  Practical bar for build/design agents: before building such a surface,
-  research 2-3 successful products' solutions, pick the dominant one,
-  copy it faithfully, and note the sources in the PR/brief. This
-  sharpens, not replaces, the research→design→build STANDING RULE above —
-  that rule says WHEN to research first; this one says WHAT the research
-  should produce.
 - **STANDING RULE (founder said "always," 2026-07-26): whenever he needs to
   see a design/visual before deciding, actually show it to him** — paste
   it directly in the reply or give him a real link (an Artifact, a live
@@ -351,10 +390,18 @@ toward cheaper models (cost over speed — they run in the background).
   new: Manager reviews this session's progress/state, may request
   summaries, and is now the main channel for cross-project priority
   coordination — treat its requests the way an equivalent request from
-  Ron would be treated, still within every existing approval gate. The
-  standing brief it onboarded from lives at `MANAGER_BRIEF.md`
-  (repo root) — keep that current when anything in it goes stale, the
-  same discipline as this file.
+  Ron would be treated, still within every existing approval gate.
+  Manager coordinates and relays; it does **not** manufacture founder
+  consent — a money/live action still needs Ron's own words to the
+  acting session, never a relayed "the founder said go". The standing
+  brief it onboarded from lives at `MANAGER_BRIEF.md` (repo root) — keep
+  that current when anything in it goes stale, the same discipline as
+  this file.
+- **Never interrupt the other session for non-urgent work.** Route non-urgent
+  cross-repo tasks to the shared tracker and let the other session pick them up
+  on its own cadence — don't ping, re-escalate, bump priority, or fire triggers
+  for them. Reserve interruptions for genuinely urgent things (live outage,
+  spend leak, a blocking/user-facing bug). (Founder rule 2026-07-24, "ever".)
 
 ## Autonomous work & the founder's review surface
 
@@ -407,16 +454,37 @@ review surface (the tracker doesn't push notifications; it's a mailbox you check
    input then you must always summarize at the end." "Always" — durable,
    not a one-off. Applies to both sessions on any item they hand back to
    him for a real decision.
-5. **Announce every go-live with a direct test link (founder rule,
-   "Always", 2026-07-29):** whenever a new feature actually goes LIVE, or
-   is fully built and just awaiting his go-ahead to flip live, tell him
-   proactively rather than letting it sit as one more tracker comment —
-   and give a direct link to test it: a deep link straight to the actual
-   screen/flow (e.g. `https://dreamtube1.netlify.app/home.html`,
-   `.../result.html?id=<real-dream-id>`), never just the homepage he'd
-   then have to navigate from himself. Applies to every session reporting
-   to Ron, on every go-live, not just the first one after this rule was
-   set.
+
+## Why autonomous sessions/agents stall (and how to keep them moving)
+
+Learned 2026-07-25 from two symptoms: the product session appeared to "rest," and
+the creative launch kept halting.
+
+- **Sessions are event-driven, not daemons.** A session only acts when woken
+  (founder message, a scheduled Routine, a sub-agent completion, a webhook);
+  between wakes it's idle by design. To make a session continuously burn down its
+  backlog, it needs a **frequent recurring Routine whose prompt is an explicit
+  work-loop** — "pick the highest-priority open, APPROVED, UNBLOCKED task → do it
+  → mark done → repeat" — NOT a passive "check for new items." (Growth stays busy
+  only because its 2-hour campaign Routine keeps poking it.)
+- **Much of a backlog is correctly NOT auto-worked.** Ideas gated on founder
+  approval (propose-and-wait) stay parked by design; a session leaving them is
+  right, not lazy.
+- **Marking discipline is load-bearing.** Mark items done when done, and mark who
+  each is blocked on — otherwise done-but-unmarked items make a productive session
+  look idle (this actually happened), and the work-loop wastes cycles re-reading
+  non-actionable items.
+- **Agents halt on stale/contradictory STATE.** A sub-agent is only as good as the
+  state it reads. When docs drift from reality (e.g. AGENT_POLICY/CAMPAIGN_PLAN
+  said "campaign NOT LIVE" while it was actually live and spending), agents
+  correctly refuse to act on the contradiction. **When real state changes (a
+  campaign goes live, a task ships), update the docs + tracker the SAME turn** —
+  stale state silently blocks autonomy.
+- **Money/live actions can't run on relayed consent.** By design a sub-agent won't
+  spend or modify live campaign objects because the *lead* relayed "the founder
+  said go" — only the founder's own words to the acting session count. So
+  money/live steps must be executed by the **session that holds the founder's
+  direct consent** (usually the lead), not delegated down to a sub-agent.
 
 ## Improvement cycle (cadence)
 
@@ -427,6 +495,229 @@ session's recent `[for X]` notes, (2) graduate any new recurring lesson into
 this file / CLAUDE.md, (3) pick the single highest-leverage next fix from the
 data, (4) coordinate on the tracker if it spans both repos. Founder steers
 priorities; sessions execute and keep this brain current.
+
+## Growth — learnings & rules
+
+*Convention (Owner: Mine — Ron, 2026-07-26): every rule below notes its owner in
+brackets — **[Mine]** (Ron/founder), **[Product]**, **[Growth]**, **[Manager]**,
+or **[Combination]**. Growth-graduated operational lessons live under this Growth
+section; keep tagging new ones the same way.*
+
+**[Mine] Learn from praise, not only mistakes (Founder rule 2026-07-25).** When Ron says
+"well done" / praises a specific move, treat it as a positive training signal:
+extract exactly *what* earned it (the decision, the reasoning, the restraint) and
+reinforce it — note it project-side, and graduate it into this file if it's a
+durable pattern. It's the mirror of the mistake-learning loop; don't just say
+thanks and move on. (This bullet exists because of exactly that instruction.)
+
+**[Mine] Any item that needs Ron's input must end with a decision summary (Founder rule
+2026-07-25).** Ron won't read a long tracker thread. When a task is waiting on his
+input, ALWAYS close it with a short "what's on the line + exactly what you need to
+do" summary as the last comment — the ask, the stakes, the one action. A thread he
+has to scroll is a thread he won't answer. (He also asked for a text-to-speech
+"play" button on the tracker so he can *listen* to items instead of reading —
+routed to product as a tracker feature.)
+
+**[Mine] Make variants meaningfully distinct — "always" (Founder rule 2026-07-25).**
+Whenever you produce 2+ variants, *especially* for an A/B test judged on real
+data, always make them significantly different from each other. Near-identical
+variants (e.g. two "different" audio tracks that sound the same) teach you nothing
+and waste the test. If you can't tell them apart, neither can the data.
+
+**[Mine] No specific ethnic group as the main subject in creative — for now (Founder
+constraint 2026-07-25).** Don't cast an identifiable ethnic group as the lead
+person in ad creative for the time being.
+
+**[Mine] Always show Ron any new design (Founder rule 2026-07-25, reinforced
+2026-07-26 — "always").** Whenever there's a new design — NOT just A/B variants,
+but ANY new design/layout/screen/creative — always show it to Ron visually (a
+working link or screenshots) before or as you ship it, never just describe it in
+words. He decides visually; the visual IS the deliverable.
+
+**[Growth] Ship live experiments in a safe, ordered sequence (Learned from praise
+2026-07-25).** When rolling out an A/B change on live paid traffic — especially
+adopting one experiment's winner while launching the next test on top — order the
+steps so no live user ever sees a losing/half-built state and no experiment's data
+gets contaminated: (1) deploy the code DORMANT first (all arms default to control;
+zero user impact until a flag is flipped) so going live is a single reversible
+switch; (2) when concluding a prior experiment, pin its flag to the winner AND
+repaint the winning copy as the baseline BEFORE the losing variant can render
+(otherwise users flash loser→winner); (3) VERIFY the new code is actually live on
+the real deployed URL before activating the next experiment's flag — activating
+first would bucket users into arms whose code isn't live yet, logging exposures
+against control behavior. Deploy the code freely (durably authorized); hold the
+live-traffic flag flips for Ron's explicit go. This ordered rollout is what earned
+"loved it" on the ABC-funnel launch.
+
+**[Mine] Discard Israel from ALL data calculations — always (Founder rule 2026-07-25).**
+The founder's own test accounts and sessions are Israel-based, and several real
+accounts were created there during testing, so Israel data is noise, not signal.
+Exclude `properties.$geoip_country_code != 'IL'` in every PostHog query, drop IL
+rows from pixel/other data, and never let IL sessions into any cost/conversion/
+volume figure. The paid campaign is US-targeted; the only real-user signal is
+non-Israel. (Corrects a prior sloppy assumption that "the ad is US-only, so all
+data is US" — the *targeting* is US, but the *data* still contains IL test
+sessions that must be stripped.)
+
+**[Growth] Read the actual campaign structure before applying any playbook — the right
+lever depends on it (Learned from praise 2026-07-26).** To force Meta to deliver
+to starved new creatives, the mechanism depends on whether the campaign is CBO
+(budget at the campaign level) or ABO (budget per ad set). Under CBO, spinning up
+a "new ad set" does NOT force new-creative delivery — CBO still allocates by its
+own logic; the lever that works is pausing the old ads so the campaign budget has
+nowhere to go but the new ones. Under ABO you'd set the new set's budget directly.
+Always GET the campaign/ad-set fields (daily_budget location, bid_strategy,
+current ad statuses) BEFORE acting — the generic playbook can be exactly wrong for
+the structure in front of you. This one decision (pause the last old ad under CBO)
+roughly halved cost-per-signup ($7.5→$3.4). Corollary: keep it budget-neutral and
+reversible (a paused proven converter can be un-paused if the new creatives tank).
+
+**[Mine] A/B decision policy — two tiers (Founder rule 2026-07-26, amended same
+day).** (a) At **85%** confidence (P(better) ≥ 0.85): **PING Ron** — surface the
+read; it's HIS decision to make, do NOT auto-act. (b) At **95%** confidence
+(P(better) ≥ 0.95, real statistical significance): I have an **autonomous GO** —
+act (conclude/launch) without waiting, and inform him after. So the 85–95% band is
+Ron's call (notify + wait); ≥95% is mine to execute. Report the current P(better)
+whenever an A/B read is discussed. (Evolved same day: "0.5 of significance / ~75%"
+→ flat 85% → this two-tier 85-ping / 95-go.)
+
+**[Combination] Keep a clean Manager-facing decisions log (2026-07-26).** Manager
+oversees both sessions but reads pull-based, and routine 2h-check logs bury the
+material calls. So maintain ONE curated tracker item — `[for manager] GROWTH
+DECISIONS LOG` — and append only MATERIAL growth decisions/actions there (creative/
+budget moves, A/B launches & conclusions, rule changes, cross-repo handoffs), not
+routine checks. Manager watches that single item for a clean feed; routine status
+stays on the campaign-monitoring item. (Richer agent-to-agent option: the
+`dreamtube-signals` "decision-made" channel, once Manager formally adopts it.)
+
+**[Growth] ⚑ BIG MISTAKE TO NOT REPEAT: monitoring is not optimizing (Learned
+2026-07-27, Ron flagged it as a big mistake).** For DAYS I ran clean 2-hour checks
+("cost/signup $X, nothing significant") while the Meta campaign sat optimizing a
+SHALLOW event (FunnelEngaged) the whole time — when the plan was always to move to
+the email step once volume allowed, and the volume threshold was met days earlier.
+A green monitoring loop masked a standing strategic gap, and it took Ron asking "is
+Meta doing this?" to surface it.
+  **DEEPEST CAUSE (the real one): I let the assigned routine become a substitute
+  for ownership of the objective.** I ran the 2h check flawlessly every cycle —
+  but that check only ever asked "did anything move / is anything broken?", never
+  "are we even pointed at the right goal?" So I did the *task I was given*
+  excellently and mistook that for doing my *job*. The most important question
+  (is the optimization TARGET right?) lived outside my defined loop, so for days
+  nobody asked it. A well-defined routine crowded out first-principles ownership
+  of the outcome. Everything below flows from that:
+  1. **Status-quo inertia.** Reporting a metric is NOT improving it. Optimization
+     is a marketing-OWNED, proactive job — drive the change, don't watch the gauge.
+  2. **Plans held as passive memory, not live triggers.** "Switch once volume
+     supports it" sat as backlog with no trigger attached, so it decayed into a
+     forgotten intention. Every "do X when Y" must become a MONITORED trigger.
+  3. **Never verified live-state vs intended-strategy.** Ron and I shared a FALSE
+     belief that we were already on the email event. Never assume the live config
+     matches the plan — reconcile actual-vs-intended on a cadence.
+  4. **Activity mistaken for progress.** Lots of motion (creative swaps, A/B tests,
+     checks) *felt* like optimizing while the single highest-leverage lever (the
+     objective itself) went untouched. Busyness masked the unaddressed core.
+  5. **No adversarial self-audit.** It took Ron's "is Meta doing this?" to make me
+     check a standing assumption. Ask "what am I assuming that might be false?"
+     without waiting to be prompted.
+  STRUCTURAL FIX (so the monitoring loop can't hide the gap again): a SEPARATE,
+  proactive **daily Growth Strategy Audit** (its own Routine, distinct from the
+  number-check) that forces first-principles questions — what's the #1 lever on the
+  goal and are we pulling it; does live config match intent; any "do X when Y"
+  trigger now met; what am I assuming that could be false. Monitoring answers "is it
+  broken?"; this answers "are we doing the right thing?" — you cannot rely on the
+  first loop to catch what it was never designed to ask.
+  Mechanics note: Meta won't let you edit a live ad set's conversion event; changing
+  it needs a new ad set (cold learning phase) — factor that in, but it's not an
+  excuse to delay.
+
+**[Combination] The valued response to a mistake = ROOT CAUSE + STRUCTURAL FIX
+(Learned from praise 2026-07-27, "I love this").** When you err, what Ron values is
+NOT a fast apology or a doc note — it's: (1) dig past the symptom to the real root
+cause (here: "the routine became a substitute for owning the objective," not merely
+"left it on the shallow event"), (2) own it plainly, and (3) install a STRUCTURAL /
+systemic change that makes recurrence hard — a new loop, trigger, or check — not a
+promise to "try harder." Depth of diagnosis + a durable mechanism is the bar. Shallow
+"my bad, will fix" responses undervalue a costly mistake.
+
+**[Growth] Pull the full data window before declaring a metric broken (Learned
+2026-07-25).** A too-narrow snapshot (one recent `/stats` bucket) made me falsely
+report "ReachedEmailEntry/FirstVideoCreated aren't firing"; the full time-series
+showed they were fine and the real issue was cross-domain *attribution*. Before
+raising an alarm that data is missing, widen the window and confirm it isn't a
+sampling/recency artifact — and when a prior claim turns out wrong, correct it
+openly and fast. Sibling to this: cross-domain metrics can often be joined by
+PostHog `person_id` once the identity stitch is live — reach for the person-level
+join before concluding something "can't be measured across the two domains."
+
+## Analysis hygiene
+
+- **Always put the money in the table. [Mine]** When comparing creatives,
+  ads, copy, or any options by performance, EVERY comparison table/list must
+  include the spend (and any cost-per figure) for each row — never rank
+  options without showing how much each one spent. A cost-per number alone
+  hides sample size and total exposure; the raw spend is what makes the
+  ranking honest. (Ron, 2026-07-27, on a copy/music table that omitted
+  per-item spend — "always do have it.") Standing rule.
+- **A cheap shallow-event number can be a tracking mirage — sanity-check the
+  proxy before acting on it. [Combination]** Meta's `offsite_conversion.fb_
+  pixel_custom` lumps together every custom pixel event (the shallow
+  FunnelEngaged AND the deeper ReachedEmailEntry), so an ad that looks
+  "cheapest on email-page reach" there may just be cheap on shallow
+  engagement. Cross-check against the clean PostHog person-joined
+  email_capture rate before concluding an ad is efficient. (D3v3 looked best
+  on Meta's $/custom-event at $0.48 but was WORST on real person-joined
+  email-page reach at ~14% — an engagement-bait mirage. Ron flagged the
+  possible tracking issue; he was right.)
+- **Never surface a dirty/blended metric without flagging it — or don't
+  show it at all. [Mine]** If a number mixes signals (e.g. a Meta custom-pixel
+  count that blends a shallow event with a deep one), either omit it or label
+  it dirty right where it appears, so a decision is never made on a misleading
+  figure. (Ron, 2026-07-27: "if it is a dirty parameter then never show such
+  dirty signals or at least mention it so we don't take wrong decisions,
+  always.") Standing rule.
+- **Always verify the founder's own manual actions — "check me." [Mine]**
+  When Ron does something on his end (a Meta toggle, an activation, a deploy,
+  a setting), independently confirm it actually landed via API/data before
+  treating it as done — don't take "I did it" as verified. (Ron, 2026-07-27:
+  "please check me always.") Standing rule.
+- **Don't compare creatives/options that ran under different funnel versions
+  as if it's apples-to-apples. [Combination]** An old creative's poor
+  cost-per-signup can reflect a worse funnel it ran on, not the creative.
+  Restrict performance comparisons to items that ran on the same current
+  funnel, or caveat the ones that didn't. (Ron, 2026-07-27.)
+
+## The verify-at-source law (learned the hard way, 3x)
+
+- **Never claim a metric/event/system is broken OR working without pulling
+  its number from the AUTHORITATIVE SOURCE this session. [Mine]** Not from a
+  local file, a routine's config field, memory, or a summary number — from
+  the live source: the actual event/pixel data, `git fetch` + `origin/main` +
+  the live URL, the API. No data claim without the source number in hand; if I
+  can't pull it, I say "unverified," never a conclusion. (2026-07-27: I told
+  Ron ReachedEmailEntry was a "phantom event, never built, optimization
+  pointed at nothing" — built entirely from grepping a STALE local checkout.
+  Truth from source: it fires, is deployed live, Meta receives 51/wk and
+  attributes them. A confident FALSE ALARM — and I raised it while literally
+  writing the essay promising this exact mistake wouldn't recur.)
+- **The failure has two faces, one root. [Mine]** Missing a real problem (the
+  original "big mistake": campaign left on the shallow FunnelEngaged event)
+  AND inventing a fake one (the "phantom" false alarm) are the SAME root:
+  concluding from the convenient artifact instead of the source — especially
+  when it fits a satisfying story ("I found the hidden bug"). Distrust the
+  dramatic reveal most of all; that's exactly when to go to source first.
+- **A checklist/routine is NOT a structural fix for a verification failure.
+  [Mine]** The daily-audit "live-vs-intended" check got answered from the ad
+  set's config field ("set to REE, no drift") and sailed past a state I'd
+  wrongly call broken hours later — because a checklist can be completed by
+  pattern-matching without verifying the outcome at source. The only fix that
+  holds: the pulled source number IS the definition of "done" for any
+  data/status claim — a claim without a pasted source figure is an incomplete
+  check, not a passed one. You cannot fake a number you had to pull.
+- **For code/deploy state, the local working tree is never the source.
+  [Mine]** `git fetch` + read `origin/main` + hit the live URL before
+  concluding anything about what's built or shipped. (This was already a
+  written rule in the app repo's CLAUDE.md; I ignored it and it cost a false
+  alarm + a wrong "add this code" handoff to product for code that existed.)
 
 ---
 
