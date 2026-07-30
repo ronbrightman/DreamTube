@@ -2089,6 +2089,25 @@
     getCurrentUser: function () { return state.user; },
 
     /**
+     * Display-only helper: strips a leading '@' off a handle for rendering
+     * (tracker item for-product-ui-founder-directed-2026-07--w3mc4v — drop
+     * the '@' prefix from every place a username/handle is shown to the
+     * user). Every handle is stored/compared WITH its '@' (state.user.handle,
+     * d.ownerHandle, etc. — see signup/login/getSharedFeed and this file's
+     * own header doc) because that's the format every equality check,
+     * lookup, and the getSharedFeed data-filter-user filter already relies
+     * on; changing the stored/matching format itself is explicitly out of
+     * scope. This is the ONE place that ever strips it, so every render
+     * site should call this instead of inlining its own `.replace(/^@/, '')`
+     * — used at every DOM render site across profile.html, home.html,
+     * explore.html and js/report-sheet.js. Safe on already-bare handles,
+     * null/undefined, and non-string values (returns them unchanged).
+     */
+    displayHandle: function (handle) {
+      return (typeof handle === 'string') ? handle.replace(/^@/, '') : handle;
+    },
+
+    /**
      * Public entry point for linkPreSignupIdentity above — see that
      * function's own doc comment for the full identity-merge story (tracker
      * item for-product-data-bug-posthog-identity-br-vytqwy). Called by

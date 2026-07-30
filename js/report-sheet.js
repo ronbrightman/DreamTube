@@ -139,7 +139,7 @@
     currentGen++;
     document.getElementById('report-reason-input').value = '';
     document.getElementById('report-sheet-error').textContent = '';
-    document.getElementById('report-opt-block-label').textContent = 'Block ' + ((opts.dream && opts.dream.ownerHandle) || 'user');
+    document.getElementById('report-opt-block-label').textContent = 'Block ' + (DreamStore.displayHandle(opts.dream && opts.dream.ownerHandle) || 'user');
     resetSubmitButton();
     showView('report-sheet-menu');
     document.getElementById(SHEET_ID).classList.add('open');
@@ -210,7 +210,7 @@
       DreamStore.blockUser(handle);
     }
     if (typeof opts.onBlocked === 'function') opts.onBlocked(handle);
-    if (typeof opts.onToast === 'function') opts.onToast("Blocked " + handle + " — you won't see their dreams anymore");
+    if (typeof opts.onToast === 'function') opts.onToast("Blocked " + DreamStore.displayHandle(handle) + " — you won't see their dreams anymore");
   }
 
   var ReportSheet = { show: show, hide: hide };

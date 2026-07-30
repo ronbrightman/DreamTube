@@ -77,7 +77,7 @@
         <div class="profile-avatar" id="profile-avatar">🌙</div>
         <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
       </div>
-      <div class="profile-name" id="profile-handle" title="Edit your profile">@you</div>
+      <div class="profile-name" id="profile-handle" title="Edit your profile">you</div>
       <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
       <a class="btn btn-primary" href="create.html" style="margin-top:14px; padding:12px 22px;">+ Create dream</a>
       <a class="token-chip" id="profile-tokens" href="shop.html">
@@ -575,7 +575,7 @@
         '<div class="priv'+(d.isPublished?' pub':'')+'">'+(d.isPublished?'Public':'Private')+'</div>' +
         '<div class="play-indicator icon">'+Icons.play+'</div>' + (d.dur ? '<div class="dur">'+d.dur+'</div>' : '') + '</div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
-      '<div class="vcard-meta">'+d.ownerHandle+' · '+formatCount(d.likes)+' likes</div>' +
+      '<div class="vcard-meta">'+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
   }
 
@@ -621,7 +621,7 @@
     if(me && me.name){
       nameEl.textContent = me.name;
     } else if(user){
-      nameEl.textContent = user.handle;
+      nameEl.textContent = DreamStore.displayHandle(user.handle);
     }
     if(me && me.photoDataUrl){
       avatarEl.innerHTML = '<img src="'+me.photoDataUrl+'" alt="">';
@@ -1049,7 +1049,7 @@
     section.style.display = 'block';
     list.innerHTML = handles.map(function(handle){
       return '<div class="settings-row" style="cursor:default;">' +
-        '<div class="settings-row-text"><div class="settings-row-title">'+esc(handle)+'</div></div>' +
+        '<div class="settings-row-text"><div class="settings-row-title">'+esc(DreamStore.displayHandle(handle))+'</div></div>' +
         '<span class="link-text" data-unblock="'+esc(handle)+'" style="cursor:pointer; flex:none;">Unblock</span>' +
       '</div>';
     }).join('');
@@ -1060,7 +1060,7 @@
     var handle = btn.dataset.unblock;
     DreamStore.unblockUser(handle).then(function(){
       renderBlockedAccounts();
-      showToast('Unblocked ' + handle);
+      showToast('Unblocked ' + DreamStore.displayHandle(handle));
     });
   });
 

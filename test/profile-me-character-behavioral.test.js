@@ -153,7 +153,7 @@ test('profile.html: editing name + photo creates/updates the Me character, visib
     await safeGoto(page, baseUrl + '/profile.html');
 
     // Before any edit: falls back to the handle + placeholder emoji, no Me character yet.
-    assert.equal(await page.locator('#profile-handle').textContent(), '@tester');
+    assert.equal(await page.locator('#profile-handle').textContent(), 'tester');
     assert.equal(await page.locator('#profile-avatar').textContent(), '🌙');
 
     await page.click('#profile-avatar-edit');
@@ -395,7 +395,7 @@ test('profile.html: a Me character created via create.html\'s actual "Add yourse
     // The exact regression: profile.html's identity display must fall back
     // to the account handle here, not show the literal string "Me".
     await safeGoto(page, baseUrl + '/profile.html');
-    assert.equal(await page.locator('#profile-handle').textContent(), '@tester');
+    assert.equal(await page.locator('#profile-handle').textContent(), 'tester');
   } finally {
     await page.close();
   }
