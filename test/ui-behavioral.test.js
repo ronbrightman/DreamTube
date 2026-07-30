@@ -45,6 +45,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -1867,9 +1868,11 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     // Must reach screen 14 -- proves signup succeeded AND the pending call
     // was awaited (both settle before Continue advances the funnel).
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'start-pending-generation must be called exactly once, from screen 13\'s Continue');
     assert.equal(startPendingCalls[0].email, 'start-pending-test@example.com');
     assert.equal(startPendingCalls[0].caption, 'I had a dream about flying');
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, right after signup succeeds');
     assert.equal(claimCalls[0].pendingId, 'pd-start-test-1');
 
@@ -1885,6 +1888,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     // separate screen to click through anymore.
     await page.click('#fn-s14-continue');
     await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
     assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');
   } finally {
@@ -1978,6 +1982,7 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
       var el = document.getElementById('fn-signup-error');
       return !!(el && el.textContent.trim().length);
     }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'start-pending-generation should have fired exactly once so far');
 
     // Retry with the SAME email -- an entirely normal thing to do after a
@@ -1986,7 +1991,9 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
     await page.click('#fn-s13-continue');
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'REGRESSION GUARD: start-pending-generation must still have fired only once -- reusing the already-succeeded pending job on retry, never re-submitting a second real generation for the same email');
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, using the already-started pending job');
     assert.equal(claimCalls[0].pendingId, 'pd-retry-test-1');
 
@@ -2041,6 +2048,7 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
       var el = document.getElementById('fn-signup-error');
       return !!(el && el.textContent.trim().length);
     }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
 
     // Change to a genuinely different email and retry.
@@ -2048,6 +2056,7 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
     await page.click('#fn-s13-continue');
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
 
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuinely different email must get its own fresh pending-generation call, not reuse the first email\'s');
     assert.equal(startPendingCalls[1].email, 'second-email@example.com');
     var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
@@ -2166,6 +2175,7 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
     var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
     assert.ok(pendingJob, 'a pending job must have been adopted');
     assert.equal(pendingJob.operationName, 'fal:fake-model:req-second-real', 'REGRESSION GUARD: the adopted job must be the SECOND (current) email\'s, never the first, abandoned email\'s -- even though the abandoned response arrived last, right before signup succeeded');
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (second) pending job');
     assert.equal(claimCalls[0].pendingId, 'pd-second-real');
     assert.equal(claimCalls[0].email, 'second-email@example.com');
@@ -2399,11 +2409,13 @@ test('shop.html: the token countdown re-fetches (not just re-renders stale data)
       var el = document.getElementById('shop-balance');
       return el && el.textContent.indexOf('90') !== -1;
     }, null, { timeout: 5000 });
+    await settle(function () { return callCount >= 1; });
     assert.equal(callCount, 1);
 
     await page.clock.fastForward(65000);
     await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
 
+    await settle(function () { return callCount >= 2; });
     assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
     var countdownText = await page.textContent('#shop-countdown');
     assert.doesNotMatch(countdownText, /in now/i, 'must not still read "in now" after the re-fetch');
@@ -2470,11 +2482,13 @@ test('shop.html: a claimable account never re-fetches on the 60s countdown tick'
       var el = document.getElementById('shop-balance');
       return el && el.textContent.indexOf('1500') !== -1;
     }, null, { timeout: 5000 });
+    await settle(function () { return callCount >= 1; });
     assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
 
     await page.clock.fastForward(65000);
     await page.clock.fastForward(65000);
 
+    await settle(function () { return callCount >= 1; });
     assert.equal(callCount, 1, 'must not re-fetch on any tick while already claimable');
     var claimBtnVisible = await page.isVisible('#shop-claim-btn');
     assert.equal(claimBtnVisible, true, 'should still show the claim button after ticks with no re-fetch');

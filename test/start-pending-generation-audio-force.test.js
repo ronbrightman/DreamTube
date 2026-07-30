@@ -1,19 +1,20 @@
 // test/start-pending-generation-audio-force.test.js
 //
-// Covers start-pending-generation.js's use of generate-video.js's shared
-// resolveGenerationProfile (tracker item
-// for-product-cheap-generation-profile-for-yz2ina, Part B). That function
-// USED TO silently force generate_audio:false for OWNER_EMAIL/Israel-geo
-// requests, but a founder directive (2026-07-29, "Regarding Sound for
-// Israel don't disable it just leave it the same for everyone, including
-// myself") retired the override — resolveGenerationProfile now always
-// returns forceAudioOff:false (see generate-video.js's own doc comment on
-// that function). This file has no client-facing audio toggle at all
-// (Part A is style.html-only), so with the override gone there is
-// nothing left to force audio off here for ANY requester — the base
-// "audio on unless the caption was condensed" behavior applies uniformly
-// regardless of OWNER_EMAIL or geo (tracker item
-// stale-test-start-pending-generation-audi-4xyswk).
+// Covers start-pending-generation.js's half of tracker item for-product-
+// cheap-generation-profile-for-yz2ina (Part B): this path resolves the
+// same generation profile generate-video.js's own handler does (see
+// genVideo.resolveGenerationProfile, reused here rather than
+// reimplemented) so the two submission paths can never drift apart.
+//
+// The profile's audio-off FORCING was retired by founder directive on
+// 2026-07-29 ("Regarding Sound for Israel don't disable it just leave it
+// the same for everyone, including myself") — resolveGenerationProfile
+// now always returns forceAudioOff:false and the profile label survives
+// for cost-attribution logging only. What this file pins today is
+// therefore the absence of any override: generate_audio is decided purely
+// by the pre-existing "audio on unless the caption was condensed" rule,
+// identically for owner, Israel-geo, and everyone else. (This file has no
+// client-facing audio toggle to combine with — Part A is style.html-only.)
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -23,6 +24,7 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
+var genVideo = require('../netlify/functions/generate-video');
 var handler = require('../netlify/functions/start-pending-generation').handler;
 
 var realFetch = global.fetch;
@@ -92,7 +94,21 @@ test('standard (non-owner, non-IL) request keeps the pre-existing "audio on unle
   assert.equal(calls[0].body.generate_audio, true);
 });
 
-test('OWNER_EMAIL match no longer forces generate_audio:false (retired 2026-07-29) — the owner gets the same audio-on default as anyone else', function () {
+// ----- The owner/IL audio force-off is RETIRED (founder directive
+// 2026-07-29: "Regarding Sound for Israel don't disable it just leave it
+// the same for everyone, including myself" — see
+// genVideo.resolveGenerationProfile, which now always returns
+// forceAudioOff:false). test/generate-video-audio-toggle.test.js was
+// updated to pin that new contract on generate-video.js's own path at the
+// time; THIS file was missed and kept asserting the removed behavior, so
+// these two tests have been failing deterministically on main ever since
+// — red on every full-suite run, in isolation too. Rewritten here to pin
+// the same contract this path actually has: audio is decided purely by
+// the "on unless the caption was condensed" rule, identically for owner,
+// Israel-geo, and everyone else; the profile label survives for
+// cost-attribution logging only.
+
+test('OWNER_EMAIL match no longer forces generate_audio:false — audio is unaffected, and the response shape/status is unchanged', function () {
   return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({}));
@@ -104,7 +120,15 @@ test('OWNER_EMAIL match no longer forces generate_audio:false (retired 2026-07-2
   });
 });
 
-test('an Israel-geo request no longer forces generate_audio:false (retired 2026-07-29) — geo has no effect on this file\'s audio decision', function () {
+test('resolveGenerationProfile still labels the owner for cost attribution on this path, without forcing audio off', function () {
+  return withEnv({ OWNER_EMAIL: '  WizardUser@Example.com  ' }, async function () {
+    var profile = genVideo.resolveGenerationProfile('wizarduser@example.com', fakeEvent({}));
+    assert.equal(profile.profile, 'cheap_owner');
+    assert.equal(profile.forceAudioOff, false);
+  });
+});
+
+test('an Israel-geo request keeps generate_audio:true, same as everyone else', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') } })).then(function (res) {
     assert.equal(res.statusCode, 200);

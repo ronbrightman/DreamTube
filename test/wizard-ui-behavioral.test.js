@@ -25,6 +25,9 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settleMod = require('./helpers/settle');
+var settle = settleMod.settle;
+var gate = settleMod.gate;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -183,6 +186,7 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
     // The pending-generation call must have fired the MOMENT contact
     // capture completed -- i.e. BEFORE signup exists at all.
     await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'start-pending-generation must be called exactly once, from contact capture');
     assert.equal(startPendingCalls[0].email, 'wizard-test@example.com');
     assert.equal(claimCalls.length, 0, 'claim must not fire until signup actually succeeds');
@@ -198,7 +202,9 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
     // redirect) WITHOUT ever calling start-pending-generation a second
     // time.
     await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, right after signup succeeds');
     assert.equal(claimCalls[0].pendingId, 'pd-test-1');
     assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');
@@ -242,6 +248,7 @@ test('wizard.html: the Contact step never renders the parked WhatsApp toggle/fie
     await page.click('#fn-contact-continue');
 
     await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].email, 'no-whatsapp-test@example.com');
     assert.equal(startPendingCalls[0].whatsapp, null, 'with no WhatsApp field to capture from, the payload must always send whatsapp: null');
@@ -295,6 +302,7 @@ test('wizard.html: Contact-capture with an email that already has an account nev
       return errEl && errEl.textContent.indexOf('already have an account') !== -1;
     }, null, { timeout: 5000 });
 
+    await settle(function () { return checkEmailCalls.length >= 1; });
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'already-taken@example.com');
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
@@ -345,6 +353,7 @@ test('wizard.html: check-email.js failing outright (network error / 5xx / rate-l
 
     // Must still reach Signup despite check-email itself failing.
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
     assert.equal(startPendingCalls[0].email, 'legit-new-user@example.com');
   } finally {
@@ -381,6 +390,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
 
     // Reached signup -- exactly one pending-generation call so far.
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'first Continue from contact capture must start exactly one pending generation');
 
     // Navigate Back to contact-capture (same step the bug report
@@ -396,6 +406,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
     // round-trip -- give it a moment either way, then assert on the
     // call count, not just the navigation.
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'Back + Continue with unchanged inputs must not re-POST start-pending-generation -- would double-charge fal.ai and double-spend tokens against the same email');
 
     // Sanity: changing the email on the second pass (a real edit) SHOULD
@@ -406,6 +417,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
     await page.fill('#contact-email', 'dup-submit-test-changed@example.com');
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuinely changed email must still be allowed to start a new pending generation');
     assert.equal(startPendingCalls[1].email, 'dup-submit-test-changed@example.com');
   } finally {
@@ -452,6 +464,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.fill('#contact-email', ORIGINAL_EMAIL);
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'first submission (content A) must fire');
     assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
 
@@ -465,6 +478,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.fill('#contact-email', CHANGED_EMAIL);
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuine content change must resubmit even though it will fail');
     assert.equal(startPendingCalls[1].email, CHANGED_EMAIL);
 
@@ -477,6 +491,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.fill('#contact-email', ORIGINAL_EMAIL);
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'reverting to a previously-succeeded submission must NOT re-POST, even after an unrelated failed resubmission in between -- exactly 2 real calls total across all 3 attempts');
   } finally {
     await page.close();
@@ -511,6 +526,7 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
     await page.fill('#contact-email', 'Casing-Test@Example.com');
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
 
     // Back, retype the SAME address with different casing (a real user
@@ -521,6 +537,7 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
     await page.fill('#contact-email', 'casing-test@example.com');
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'retyping the same email with different casing must not be treated as a changed submission');
   } finally {
     await page.close();
@@ -539,11 +556,13 @@ test('wizard.html: Contact-capture Continue advances to Signup as soon as check-
     await page.route('**/.netlify/functions/check-email', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
     });
+    // Held until THIS TEST releases it, rather than for a fixed 800ms the
+    // assertion below then had to out-race on a loaded machine (see
+    // helpers/settle.js's gate() header for why every such stopwatch is a
+    // race by construction).
+    var slowStart = gate();
     await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
-      // Held back well past the assertion window below -- if navigation
-      // were still gated on THIS settling, the short-timeout
-      // waitForSelector below would time out.
-      await new Promise(function (r) { setTimeout(r, 800); });
+      await slowStart.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-sync-1', operationName: 'fal:fake-model:req-sync-1' }) });
     });
 
@@ -561,11 +580,15 @@ test('wizard.html: Contact-capture Continue advances to Signup as soon as check-
     await page.fill('#contact-email', 'sync-nav-test@example.com');
     await page.click('#fn-contact-continue');
 
-    // Signup must already be showing well before the mocked
-    // start-pending-generation route's 800ms delay elapses -- proves
-    // next() fired once check-email (fast) resolved, not once the real
-    // generation call (slow) settled.
-    await page.waitForSelector('#fn-username', { timeout: 300 });
+    // Signup must show while start-pending-generation is still genuinely
+    // outstanding -- it is held open indefinitely above and only released
+    // after this wait returns, so reaching Signup here can ONLY mean
+    // next() fired on check-email (fast) rather than on the real
+    // generation call (slow). The timeout is generous on purpose: what
+    // proves the point is the gate still being shut, not the clock.
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    assert.equal(slowStart.released, false, 'sanity: start-pending-generation must still be in flight at the moment Signup showed');
+    slowStart.open();
   } finally {
     await page.close();
   }
@@ -577,13 +600,15 @@ test('wizard.html: clicking Continue then immediately clicking Back before check
   await blockThirdParty(page);
   try {
     var startPendingCalls = [];
+    // Held until this test releases it, once Back has genuinely been
+    // clicked -- proves Back's pendingGenerationToken bump (added
+    // specifically for this async gate) discards the belated response
+    // rather than letting it advance to Signup / fire a real generation
+    // for an attempt the user has already navigated away from. Previously
+    // a fixed 500ms the "click Back in time" sequence below had to beat.
+    var slowCheckEmail = gate();
     await page.route('**/.netlify/functions/check-email', async function (route) {
-      // Held back well past the assertion window below -- proves Back's
-      // pendingGenerationToken bump (added specifically for this new
-      // async gate) discards this belated response rather than letting
-      // it advance to Signup / fire a real generation for an attempt the
-      // user has already navigated away from.
-      await new Promise(function (r) { setTimeout(r, 500); });
+      await slowCheckEmail.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true }) });
     });
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
@@ -624,10 +649,16 @@ test('wizard.html: clicking Continue then immediately clicking Back before check
     var screenAfterBack = await currentScreen();
     assert.equal(screenAfterBack, 'freetext', 'Continue must NOT have advanced anywhere yet (still awaiting check-email.js) when Back was clicked, so Back lands one step behind Contact, on Free Text');
 
-    // Wait well past check-email's 500ms delay -- its belated response
-    // lands while the user is sitting on Free Text, having clicked
-    // nothing further at all.
-    await new Promise(function (r) { setTimeout(r, 700); });
+    // ONLY NOW release check-email's belated response, so it is
+    // guaranteed to land while the user is sitting on Free Text, having
+    // clicked nothing further at all -- the state this test exists to
+    // cover, reached deterministically instead of by out-running a 500ms
+    // stopwatch. The short wait after it is a settle for the page's own
+    // continuation to run, not a race: it starts from the release, which
+    // has already happened.
+    slowCheckEmail.open();
+    await settle(function () { return slowCheckEmail.released; });
+    await page.waitForTimeout(300);
 
     var screenAfterWait = await currentScreen();
     assert.equal(screenAfterWait, screenAfterBack, 'the abandoned attempt\'s belated check-email response must never navigate on its own, regardless of which screen the user was already on when it landed');
@@ -646,15 +677,19 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     var claimCalls = [];
     var ORIGINAL_EMAIL = 'race-test@example.com';
     var SLOW_EMAIL = 'race-test-slow@example.com';
+    var slowB = gate();
 
     await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
       var body = JSON.parse(route.request().postData());
       startPendingCalls.push(body);
       if (body.email === SLOW_EMAIL) {
         // Held back deliberately -- this is the abandoned edit's request.
-        // It must not settle until well after the user has reverted to
-        // the original content and moved on with ITS pendingId.
-        await new Promise(function (r) { setTimeout(r, 500); });
+        // It must not settle until after the user has reverted to the
+        // original content and moved on with ITS pendingId, so the test
+        // releases it at exactly that point rather than betting that
+        // three Back/Continue round trips finish inside a 500ms
+        // stopwatch (they routinely don't under full-suite load).
+        await slowB.wait();
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-race-B', operationName: 'fal:fake-model:req-race-B' }) });
         return;
       }
@@ -690,6 +725,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.click('#fn-contact-continue');
     await responseA;
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
 
@@ -702,6 +738,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.fill('#contact-email', SLOW_EMAIL);
     await page.click('#fn-contact-continue');
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2);
     assert.equal(startPendingCalls[1].email, SLOW_EMAIL);
 
@@ -716,17 +753,22 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     // re-POSTing and advances to Signup immediately, WITHOUT waiting for
     // the still-in-flight slow (B) request.
     await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'reverting to A must not fire a third real POST');
 
-    // Deliberately wait out B's full artificial delay (500ms) here,
-    // BEFORE completing signup -- this is what actually forces the
-    // race: B's abandoned response must land while the wizard is
-    // sitting idle on Signup, so its settlement handler runs well
-    // before signup reads pendingId. Without this explicit wait the
-    // test would pass even against a broken token guard purely by lucky
-    // timing (B's response not having arrived yet) -- exactly the kind
-    // of false-confidence gap systematic debugging exists to catch.
-    await new Promise(function (r) { setTimeout(r, 700); });
+    // Release B's abandoned response HERE, BEFORE completing signup --
+    // this is what actually forces the race: it must land while the
+    // wizard is sitting idle on Signup, so its settlement handler runs
+    // well before signup reads pendingId. Without this the test would
+    // pass even against a broken token guard purely by lucky timing (B's
+    // response not having arrived yet) -- exactly the false-confidence
+    // gap systematic debugging exists to catch. Releasing it explicitly,
+    // rather than waiting out a fixed delay, is what makes that
+    // guarantee hold on a loaded machine too.
+    assert.equal(slowB.released, false, 'sanity: B must still have been in flight throughout the revert -- that is the race being tested');
+    slowB.open();
+    await settle(function () { return slowB.released; });
+    await page.waitForTimeout(300);
 
     // Finish signup now -- pendingId must still be A's at this point.
     await page.fill('#fn-username', 'racetester');
@@ -734,6 +776,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.click('#fn-signup-continue');
 
     await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once');
     assert.equal(claimCalls[0].pendingId, 'pd-race-A', 'must claim A\'s pendingId, not the abandoned B request\'s -- B\'s belated settlement must have been discarded as stale, not applied');
   } finally {
@@ -773,8 +816,15 @@ test('wizard.html: if the pre-signup generation call fails, signup still complet
     // No pendingJob was ever adopted -- confirm the draft still has a
     // real caption/style so processing.html's own fresh-generation path
     // (unmodified) has something to work with instead of dead-ending.
+    // Wait for DreamStore to actually be defined on the NEW document, not
+    // merely for the URL to have changed: location.pathname flips as soon
+    // as the navigation commits, which is before processing.html's own
+    // <script src="js/store.js"> has necessarily executed. On an idle
+    // machine the gap is invisible; under full-suite load the evaluate
+    // below could land in it and throw "Cannot read properties of
+    // undefined (reading 'getDraft')".
     await page.waitForFunction(function () {
-      return window.location.pathname.indexOf('processing.html') !== -1;
+      return window.location.pathname.indexOf('processing.html') !== -1 && !!window.DreamStore;
     }, null, { timeout: 10000 });
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
     var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
@@ -817,7 +867,18 @@ test('wizard.html: the topbar Back button is disabled for the duration of an in-
     // A genuine (non-"username taken") server-side rejection -- attemptSignup
     // does not retry this one, so cb(false, ...) fires straight away and the
     // failure path (continueBtn/backBtn re-enable) is what's under test.
-    await page.route('**/.netlify/functions/register-account', function (route) {
+    //
+    // Gated rather than instant (see helpers/settle.js's gate() header):
+    // this test has to OBSERVE the mid-flight disabled state, and when the
+    // response resolves immediately, disable -> re-enable can complete
+    // inside a single polling interval on a loaded machine, so the
+    // waitForFunction below never catches it and times out. Holding the
+    // response until the test has actually seen the disabled state makes
+    // that state stable for as long as observing it takes -- the same
+    // assertion, without the "must poll faster than the round trip" bet.
+    var signupResponse = gate();
+    await page.route('**/.netlify/functions/register-account', async function (route) {
+      await signupResponse.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'rate_limited' }) });
     });
 
@@ -843,14 +904,17 @@ test('wizard.html: the topbar Back button is disabled for the duration of an in-
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
-    // Mid-flight -- Back must now be disabled.
+    // Mid-flight -- Back must now be disabled. The signup response is
+    // still held open at this point, so this state persists until we
+    // release it below.
     await page.waitForFunction(function () {
       var b = document.getElementById('fnBack');
       return !!(b && b.disabled);
     }, null, { timeout: 5000 });
 
-    // The mocked rejection resolves quickly (no artificial delay) -- both
-    // controls must come back once it lands, so the visitor isn't stuck.
+    // Now let the mocked rejection land -- both controls must come back
+    // once it does, so the visitor isn't stuck.
+    signupResponse.open();
     await page.waitForFunction(function () {
       var errEl = document.getElementById('fn-signup-error');
       return errEl && errEl.textContent.indexOf('Too many signups') !== -1;
@@ -872,6 +936,7 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     var claimCalls = [];
     var EMAIL_A = 'signup-race-a@example.com';
     var EMAIL_B = 'signup-race-b@example.com';
+    var staleA = gate();
 
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
       var body = JSON.parse(route.request().postData());
@@ -881,10 +946,15 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     await page.route('**/.netlify/functions/register-account', async function (route) {
       var body = JSON.parse(route.request().postData());
       if (body.email === EMAIL_A) {
-        // The abandoned signup attempt -- held back well past the point
-        // where the user has since moved on to a second, fresh Signup
-        // screen for a completely different submission.
-        await new Promise(function (r) { setTimeout(r, 900); });
+        // The abandoned signup attempt -- held until the user has
+        // genuinely moved on to a second, fresh Signup screen for a
+        // completely different submission, and this test says so. Was a
+        // fixed 900ms that the Back + full attempt-B sequence below had
+        // to finish inside; on a loaded machine it often didn't, and A's
+        // response then landed mid-setup -- either failing a later
+        // waitForSelector outright or, worse, passing without ever
+        // reaching the state under test.
+        await staleA.wait();
       }
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
@@ -938,9 +1008,13 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     });
     assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale response lands');
 
-    // Sit idle right here while A's held-back register-account response
-    // lands (900ms artificial delay above).
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // Sit idle right here and ONLY NOW let A's held-back register-account
+    // response land -- guaranteeing it settles against the second, fresh
+    // Signup screen, however slow the machine was getting here.
+    assert.equal(staleA.released, false, 'sanity: A must still have been in flight while attempt B ran -- that is the race being tested');
+    staleA.open();
+    await settle(function () { return staleA.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-username')) return 'signup';
@@ -960,6 +1034,7 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
       return window.location.pathname.indexOf('processing.html') !== -1;
     }, null, { timeout: 10000 });
 
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (B) signup');
     assert.equal(claimCalls[0].pendingId, 'pd-sig-B', 'must claim B\'s pendingId, never the abandoned A attempt\'s');
   } finally {
@@ -975,6 +1050,7 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     var claimCalls = [];
     var EMAIL_A = 'signup-inner-race-a@example.com';
     var EMAIL_B = 'signup-inner-race-b@example.com';
+    var staleInnerA = gate();
 
     // Unlike the outer-check test above (which held back register-account),
     // this test holds back start-pending-generation for A -- the fetch the
@@ -986,7 +1062,12 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
       var body = JSON.parse(route.request().postData());
       if (body.email === EMAIL_A) {
-        await new Promise(function (r) { setTimeout(r, 900); });
+        // Held until this test releases it (was a fixed 900ms the Back +
+        // attempt-B sequence below had to beat -- the exact stopwatch
+        // that made this test fail intermittently under full-suite load,
+        // by letting A settle and navigate away mid-setup so the next
+        // waitForSelector('#contact-email') timed out after 30s).
+        await staleInnerA.wait();
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-inner-A', operationName: 'fal:fake-model:req-inner-A' }) });
         return;
       }
@@ -1053,9 +1134,14 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     });
     assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale inner settlement lands');
 
-    // Sit idle here while A's held-back start-pending-generation response
-    // lands and its pendingGenerationPromise.then(...) continuation runs.
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // Sit idle here and ONLY NOW let A's held-back start-pending-
+    // generation response land, so its pendingGenerationPromise.then(...)
+    // continuation is guaranteed to run against the second, fresh Signup
+    // screen rather than whenever a 900ms stopwatch happened to expire.
+    assert.equal(staleInnerA.released, false, 'sanity: A\'s inner promise must still have been unsettled while attempt B ran -- that is the race being tested');
+    staleInnerA.open();
+    await settle(function () { return staleInnerA.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-username')) return 'signup';
@@ -1170,6 +1256,11 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     await page.click('#build-freetext-skip');
 
     await page.waitForURL(/style\.html/, { timeout: 5000 });
+    // waitForURL only guarantees the navigation committed -- style.html's
+    // own js/store.js may not have executed yet, so wait for DreamStore
+    // itself before reading it (see wizard-ui-behavioral.test.js's own
+    // note on this hazard).
+    await page.waitForFunction(function () { return !!window.DreamStore; }, null, { timeout: 5000 });
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
     assert.ok(draft.caption.length > 0);
     assert.doesNotMatch(draft.caption, /Cinematic style/, 'the real style choice belongs to style.html, not baked in early');

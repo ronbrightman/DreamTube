@@ -38,6 +38,9 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settleMod = require('./helpers/settle');
+var settle = settleMod.settle;
+var gate = settleMod.gate;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -170,6 +173,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
   await blockThirdParty(page);
   try {
     var claimCalls = [];
+    var staleA = gate();
     var EMAIL_A = 'start-signup-race-a@example.com';
     var EMAIL_B = 'start-signup-race-b@example.com';
 
@@ -184,7 +188,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
         // The abandoned signup attempt -- held back well past the point
         // where the user has since moved on to a second, fresh screen 13
         // for a completely different submission.
-        await new Promise(function (r) { setTimeout(r, 900); });
+        await staleA.wait();
       }
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
@@ -233,7 +237,14 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
     // missed: bumping the token only on Continue clicks left an
     // abandoned attempt "current" for as long as nothing NEW was
     // submitted, even though the visitor had already navigated away.
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // ONLY NOW release the held-back response, guaranteeing it lands
+    // against the state this test exists to cover however slow getting
+    // here was. The short wait after it is a settle for the page's own
+    // continuation, measured from the release -- not a race against it.
+    assert.equal(staleA.released, false, 'sanity: the abandoned attempt must still have been in flight throughout the setup -- that is the race being tested');
+    staleA.open();
+    await settle(function () { return staleA.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-email')) return 'screen13';
@@ -251,6 +262,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
 
+    await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, for the real (B) signup');
     assert.equal(claimCalls[0].pendingId, 'pd-start-sig-B', 'must claim B\'s pendingId, never the abandoned A attempt\'s');
   } finally {
@@ -264,6 +276,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
   await blockThirdParty(page);
   try {
     var claimCalls = [];
+    var staleInnerA = gate();
     var EMAIL_A = 'start-signup-inner-race-a@example.com';
     var EMAIL_B = 'start-signup-inner-race-b@example.com';
 
@@ -279,7 +292,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
     await page.route('**/.netlify/functions/start-pending-generation', async function (route) {
       var body = JSON.parse(route.request().postData());
       if (body.email === EMAIL_A) {
-        await new Promise(function (r) { setTimeout(r, 900); });
+        await staleInnerA.wait();
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-start-inner-A', operationName: 'fal:fake-model:req-start-inner-A' }) });
         return;
       }
@@ -336,7 +349,14 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
 
     // Sit idle here while A's held-back start-pending-generation response
     // lands and its pendingPromise.then(...) continuation runs.
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // ONLY NOW release the held-back response, guaranteeing it lands
+    // against the state this test exists to cover however slow getting
+    // here was. The short wait after it is a settle for the page's own
+    // continuation, measured from the release -- not a race against it.
+    assert.equal(staleInnerA.released, false, 'sanity: the abandoned attempt must still have been in flight throughout the setup -- that is the race being tested');
+    staleInnerA.open();
+    await settle(function () { return staleInnerA.released; });
+    await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-email')) return 'screen13';
@@ -390,6 +410,7 @@ test('start.html: screen 13 submission with an email that already has an account
       return errEl && errEl.textContent.indexOf('already have an account') !== -1;
     }, null, { timeout: 5000 });
 
+    await settle(function () { return checkEmailCalls.length >= 1; });
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'already-taken@example.com');
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
@@ -433,6 +454,7 @@ test('start.html: check-email.js failing outright (rate-limited/5xx) fails OPEN 
     await page.click('#fn-s13-continue');
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
     assert.equal(startPendingCalls[0].email, 'legit-new-user@example.com');
   } finally {
@@ -464,6 +486,7 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
+    var abandoned = gate();
     var ABANDONED_EMAIL = 'start-signup-abandon@example.com';
 
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
@@ -474,7 +497,7 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
       // funnel -- the exact repro: Continue is clicked, then Back is
       // clicked before this ever resolves, and the visitor never comes
       // back to resubmit.
-      await new Promise(function (r) { setTimeout(r, 900); });
+      await abandoned.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
     await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
@@ -502,7 +525,14 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
     // Abandon the funnel entirely from here -- deliberately never
     // resubmit, never start a second signup() call. Just sit idle while
     // the delayed register-account response (900ms above) lands.
-    await new Promise(function (r) { setTimeout(r, 1100); });
+    // ONLY NOW release the held-back response, guaranteeing it lands
+    // against the state this test exists to cover however slow getting
+    // here was. The short wait after it is a settle for the page's own
+    // continuation, measured from the release -- not a race against it.
+    assert.equal(abandoned.released, false, 'sanity: the abandoned attempt must still have been in flight throughout the setup -- that is the race being tested');
+    abandoned.open();
+    await settle(function () { return abandoned.released; });
+    await page.waitForTimeout(400);
 
     var state = await page.evaluate(function () {
       var accounts = JSON.parse(localStorage.getItem('dreamtube_state_v1') || '{}').accounts || {};

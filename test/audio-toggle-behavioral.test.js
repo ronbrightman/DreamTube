@@ -27,6 +27,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -200,6 +201,7 @@ test('end to end: generating with audio ON sends { audioOn: true, musicStyle } t
 
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.equal(generateVideoCalls[0].audioOn, true);
     assert.equal(generateVideoCalls[0].musicStyle, 'upbeat');
@@ -236,6 +238,7 @@ test('end to end: the untouched default (audio never toggled) sends { audioOn: f
 
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.equal(generateVideoCalls[0].audioOn, false);
     assert.equal(generateVideoCalls[0].musicStyle, undefined, 'musicStyle should not even be sent when audio was never turned on');

@@ -42,6 +42,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -213,6 +214,7 @@ test('chips-only (no free text): style.html preview shows a human story (never p
       var el = document.getElementById('style-recap-text');
       return el && el.textContent === expected;
     }, MOCK_LLM_STORY, { timeout: 3000 });
+    await settle(function () { return rewriteCalls.length >= 1; });
     assert.equal(rewriteCalls.length, 1);
     // The rewrite call's OWN input must be the engineered prompt (camera
     // direction included) -- never a raw chip dump missing that context.
@@ -225,6 +227,7 @@ test('chips-only (no free text): style.html preview shows a human story (never p
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
     // ----- (c) generate-video.js's actual POST body still carries the full engineered prompt -----
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.match(generateVideoCalls[0].caption, /of a stranger,/, 'the wire caption sent to generation must still be the engineered promptText');
     assert.match(generateVideoCalls[0].caption, /mysterious mood/);
@@ -245,6 +248,7 @@ test('chips-only (no free text): style.html preview shows a human story (never p
     await page.click('#interp-cta-btn');
     await page.click('.itp-persona-card[data-key="jung"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    await settle(function () { return interpretReadingCalls.length >= 1; });
     assert.equal(interpretReadingCalls.length, 1);
     assert.equal(interpretReadingCalls[0].caption, MOCK_LLM_STORY);
   } finally {
@@ -277,6 +281,7 @@ test('chips-only (no free text), LLM rewrite fails: falls back to the determinis
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
 
     var dream = await page.evaluate(function () {
@@ -321,6 +326,7 @@ test('chips WITH free text: the user\'s own words are preserved byte-for-byte as
     await page.click('#generate-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     // promptText: chip context + the free text appended, unchanged shape from before this fix.
     assert.match(generateVideoCalls[0].caption, /of a stranger,/);
@@ -372,6 +378,7 @@ test('Write-it: unchanged/no-op -- storyText === promptText === the user\'s own 
     await page.click('#generate-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.equal(generateVideoCalls[0].caption, WRITE_TEXT, 'Write-it\'s generation prompt is exactly the typed text, unchanged from before this feature');
 
@@ -412,6 +419,7 @@ test('result.html "Edit Dream" -> "Generate Again", with ZERO edits, resubmits t
     await page.click('#generate-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     var originalPrompt = generateVideoCalls[0].caption;
     assert.match(originalPrompt, /of a stranger,/, 'sanity check: the original generation prompt has the engineered camera-direction language');
@@ -429,6 +437,7 @@ test('result.html "Edit Dream" -> "Generate Again", with ZERO edits, resubmits t
 
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 2; });
     assert.equal(generateVideoCalls.length, 2, 'Generate Again must actually resubmit');
     assert.equal(generateVideoCalls[1].caption, originalPrompt, 'an UNEDITED Generate Again must resend the exact original engineered prompt, camera/lighting/style language intact -- not silently rebuild it from the plain story text');
 
@@ -461,6 +470,7 @@ test('result.html "Edit Dream" -> "Generate Again", WITH a real edit, sends the 
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
 
     var EDITED_TEXT = 'I was flying over a golden city, feeling joyful.';
@@ -470,6 +480,7 @@ test('result.html "Edit Dream" -> "Generate Again", WITH a real edit, sends the 
     await page.click('#edit-generate-again');
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 2; });
     assert.equal(generateVideoCalls.length, 2);
     assert.equal(generateVideoCalls[1].caption, EDITED_TEXT, 'a REAL edit becomes the new promptText verbatim, no chip re-enrichment');
 
@@ -542,6 +553,7 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
       var el = document.getElementById('fn-story-recap-text');
       return el && el.textContent === expected;
     }, MOCK_LLM_STORY, { timeout: 3000 });
+    await settle(function () { return rewriteCalls.length >= 1; });
     assert.equal(rewriteCalls.length, 1);
     assert.match(rewriteCalls[0].promptText, /of a stranger,/, 'the rewrite call\'s own input must be the engineered prompt, camera direction included');
 
@@ -551,6 +563,7 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     // start-pending-generation.js's own payload must carry BOTH: the full
     // engineered prompt as `caption`, and the human story as `storyText`.
     await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.match(startPendingCalls[0].caption, /of a stranger,/, 'the wire caption sent to start-pending-generation must still be the engineered promptText');
     assert.equal(startPendingCalls[0].storyText, MOCK_LLM_STORY);
@@ -613,6 +626,7 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     // the Node-side array from inside the page (waitForFunction's
     // predicate runs IN the browser, which can't see startPendingCalls).
     await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].storyText, FREE_TEXT);
     assert.match(startPendingCalls[0].caption, new RegExp(FREE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), 'promptText keeps the chip context + free text appended, unchanged shape');

@@ -18,6 +18,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -170,7 +171,12 @@ test('start.html: the persisted fbc/fbp cookies actually reach a real conversion
     await page.waitForFunction(function () {
       return document.getElementById('fn-s14-continue') !== null;
     }, { timeout: 8000 });
-    await page.waitForTimeout(300);
+    // Checking the SPECIFIC event, not just "any conversion call landed"
+    // -- an earlier funnel step could plausibly have already POSTed a
+    // different conversion event before CompleteRegistration fires.
+    await settle(function () {
+      return conversionCalls.filter(function (b) { return b && b.event_name === 'CompleteRegistration'; }).length >= 1;
+    });
 
     var registrationCalls = conversionCalls.filter(function (b) { return b && b.event_name === 'CompleteRegistration'; });
     assert.ok(registrationCalls.length >= 1, 'expected at least one CompleteRegistration CAPI call');

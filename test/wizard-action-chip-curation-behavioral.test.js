@@ -321,6 +321,11 @@ test('create.html "Build it": Action step shows the same curated default view + 
     await page.click('#build-freetext-skip');
 
     await page.waitForURL(/style\.html/, { timeout: 5000 });
+    // waitForURL only guarantees the navigation committed -- style.html's
+    // own js/store.js may not have executed yet, so wait for DreamStore
+    // itself before reading it (see wizard-ui-behavioral.test.js's own
+    // note on this hazard).
+    await page.waitForFunction(function () { return !!window.DreamStore; }, null, { timeout: 5000 });
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
     assert.match(draft.caption, /sitting in a calm, still moment/, 'the hidden "calm" chip\'s exact phrase must still reach the assembled caption unchanged');
   } finally {

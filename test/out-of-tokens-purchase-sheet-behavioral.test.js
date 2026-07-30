@@ -29,6 +29,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -463,6 +464,7 @@ test('processing.html: a mocked successful checkout return auto-resumes the exac
 
     await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'the blocked generation must have been re-fired exactly once');
     assert.equal(generateVideoCalls[0].caption, 'A dream about flying whales over the ocean');
     assert.equal(generateVideoCalls[0].style, 'Cinematic');
@@ -526,6 +528,7 @@ test('processing.html: when the token credit is still lagging past the poll wind
     });
     await page.click('#proc-payment-manual-btn');
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'the manual "Generate" tap must re-run the exact same resume');
   } finally {
     await context.close();
@@ -672,6 +675,7 @@ test('processing.html: checkout=success with the pending-purchase marker missing
     creditLanded = true;
 
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'once the credit lands within the grace period, the blocked generation must still auto-resume even without marker data');
     assert.equal(page.url().indexOf('checkout=success'), -1, 'the ?checkout=success param must still be stripped on the missing-marker path too');
   } finally {
@@ -741,6 +745,7 @@ test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA
       return body && /You have\s*<b>60/.test(body.innerHTML);
     }, { timeout: 3000 });
 
+    await settle(function () { return claimCalls >= 1; });
     assert.equal(claimCalls, 1, 'the real claim-daily-tokens endpoint was called exactly once');
     var claimBtnVisibleAfter = await page.isVisible('#ps-claim-btn');
     assert.equal(claimBtnVisibleAfter, false, 'the claim button hides itself once claimed -- nothing left to claim this cooldown');
@@ -826,6 +831,7 @@ test('style.html: dismissing the out-of-tokens sheet (tap outside) while an inli
     // (now-dismissed-sheet) callback.
     await page.waitForTimeout(700);
 
+    await settle(function () { return claimCalls >= 1; });
     assert.equal(claimCalls, 1, 'the real claim-daily-tokens endpoint was actually called');
     assert.equal(pageErrors.length, 0, 'no uncaught error from the claim response resolving after the sheet was dismissed -- ' + pageErrors.map(function (e) { return e.message; }).join('; '));
   } finally {
