@@ -14,26 +14,38 @@
 // twice in different places — see FOUNDER_PRINCIPLES.md), so every sheet
 // gets coverage here:
 //
-//   FULL five-point suite (the two sheets the founder named directly,
-//   and the only two with real content long enough to exercise the
-//   scroll-vs-drag gate meaningfully):
-//     1. result.html — "What this dream might mean" interpretation sheet
-//     2. profile.html — Settings (account) sheet
+//   FULL five-point suite (originally the two sheets the founder named
+//   directly, and the only two with real content long enough to exercise
+//   the scroll-vs-drag gate meaningfully — now just the one; see the
+//   removal note below):
+//     1. profile.html — Settings (account) sheet
 //
 //   tap-outside / Close-Cancel-button regression / drag-dismiss /
 //   drag-snap-back (their content is too short to meaningfully exercise
 //   the mid-scroll gate, so that 5th check is skipped for these — there's
 //   nothing to scroll):
-//     3. profile.html — Edit profile (identity) sheet
-//     4. result.html — Edit dream sheet
-//     5. result.html — Add/edit character sheet (the one with an
+//     2. profile.html — Edit profile (identity) sheet
+//     3. result.html — Edit dream sheet
+//     4. result.html — Add/edit character sheet (the one with an
 //        overlay-level z-index override, sheet-character-overlay)
-//     6. create.html — Add/edit character sheet
-//     7. create.html — "Build it" character sheet (build-sheet-character-overlay)
-//     8. wizard.html — Subject (character) sheet
-//     9. start.html — Advanced > Characters sheet
-//    10. js/purchase-sheet.js — out-of-tokens purchase sheet
-//    11. js/purchase-sheet.js — daily-claim sheet
+//     5. create.html — Add/edit character sheet
+//     6. create.html — "Build it" character sheet (build-sheet-character-overlay)
+//     7. wizard.html — Subject (character) sheet
+//     8. start.html — Advanced > Characters sheet
+//     9. js/purchase-sheet.js — out-of-tokens purchase sheet
+//    10. js/purchase-sheet.js — daily-claim sheet
+//
+// REMOVED (not replaced): result.html's old "What this dream might mean"
+// interpretation sheet, one of the two originally-named FULL-suite
+// entries above — Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
+// tracker item for-product-build-interpretation-wave-1--xuftyn) rebuilt it
+// entirely as js/interpret-experience.js's full-screen `.itp-overlay`
+// takeover, which is NOT a `.sheet-overlay`/`.sheet` at all (no
+// SheetDismiss.wire call, no drag-to-dismiss, no "tap outside" surface to
+// speak of — it fills the whole viewport by design, spec §8). This
+// module's app-wide inventory promise now correctly has nothing left to
+// cover for that surface; its own dismissal behavior (topbar Close button,
+// back button) is covered instead by test/interp-analytics-behavioral.test.js.
 //
 // Touch drag is simulated via test/helpers/touch-drag.js's dragSheet()
 // (synthetic touchstart/touchmove*/touchend dispatch — see that file's
@@ -99,35 +111,6 @@ async function newMobileContext() {
   return browser.newContext({ viewport: MOBILE_VIEWPORT, hasTouch: true });
 }
 
-/** Seeds a logged-in user (+account) with one owned dream carrying a long, already-saved interpretationText — DreamStore.getInterpretation() returns it with no network round trip, per js/store.js's own doc comment. dreamId deliberately avoids the /^d[0-5]$/ legacy-mock-id pattern js/store.js's migrateLegacyState silently filters out. */
-async function seedResultPageWithInterpretation(page) {
-  await safeGoto(page, baseUrl + '/login.html');
-  await page.evaluate(function () {
-    var raw = localStorage.getItem('dreamtube_state_v1');
-    var state = raw ? JSON.parse(raw) : {};
-    state.user = { handle: '@tester', username: 'tester' };
-    if (!state.accounts) state.accounts = {};
-    state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
-    if (!state.dreams) state.dreams = [];
-    state.dreams.push({
-      id: 'd-sheet-dismiss-interp-1',
-      ownerHandle: '@tester',
-      caption: 'A test dream about flying over mountains',
-      style: 'Cinematic',
-      videoUrl: 'https://example.com/fake-video.mp4',
-      isPublished: false,
-      createdAt: new Date().toISOString(),
-      // Long enough that the sheet hits its 88dvh max-height cap and
-      // scrolls internally — the exact real-world shape of the founder's
-      // report, not a synthetic display-state toggle.
-      interpretationText: 'This dream reflects a deep sense of freedom and perspective. '.repeat(60),
-      interpretationAt: Date.now()
-    });
-    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-  });
-  await safeGoto(page, baseUrl + '/result.html?id=d-sheet-dismiss-interp-1');
-}
-
 async function seedLoggedInProfilePage(page) {
   await safeGoto(page, baseUrl + '/login.html');
   await page.evaluate(function () {
@@ -139,6 +122,30 @@ async function seedLoggedInProfilePage(page) {
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   });
   await safeGoto(page, baseUrl + '/profile.html');
+}
+
+/** Seeds a logged-in user (+account) with one owned dream and lands on its result.html -- used below by the Edit-dream and character-sheet tests, neither of which cares about interpretation state (that surface is covered separately, see this file's own header comment). dreamId deliberately avoids the /^d[0-5]$/ legacy-mock-id pattern js/store.js's migrateLegacyState silently filters out. */
+async function seedResultPageWithDream(page) {
+  await safeGoto(page, baseUrl + '/login.html');
+  await page.evaluate(function () {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    var state = raw ? JSON.parse(raw) : {};
+    state.user = { handle: '@tester', username: 'tester' };
+    if (!state.accounts) state.accounts = {};
+    state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+    if (!state.dreams) state.dreams = [];
+    state.dreams.push({
+      id: 'd-sheet-dismiss-dream-1',
+      ownerHandle: '@tester',
+      caption: 'A test dream about flying over mountains',
+      style: 'Cinematic',
+      videoUrl: 'https://example.com/fake-video.mp4',
+      isPublished: false,
+      createdAt: new Date().toISOString()
+    });
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  });
+  await safeGoto(page, baseUrl + '/result.html?id=d-sheet-dismiss-dream-1');
 }
 
 /**
@@ -219,114 +226,7 @@ async function assertDragUnderThresholdSnapsBack(page, overlaySelector, open) {
 }
 
 // ============================================================================
-// 1. result.html — interpretation sheet (FULL five-point suite)
-// ============================================================================
-
-test('result.html interpretation sheet: tap outside the sheet (in the tappable gap the 88dvh cap guarantees) closes it', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
-    await assertTapOutsideCloses(page, '#sheet-interp-overlay', async function () {
-      await page.click('#interp-cta-btn');
-    });
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html interpretation sheet: a drag-down past ~30% of the sheet\'s height dismisses it', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
-    await assertDragPastThresholdDismisses(page, '#sheet-interp-overlay', async function () {
-      await page.click('#interp-cta-btn');
-    });
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html interpretation sheet: a drag-down that does NOT cross the dismiss threshold snaps back open', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
-    await assertDragUnderThresholdSnapsBack(page, '#sheet-interp-overlay', async function () {
-      await page.click('#interp-cta-btn');
-    });
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html interpretation sheet: the existing Close link still works (regression)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
-    await page.click('#interp-cta-btn');
-    await page.waitForSelector('#sheet-interp-overlay.open');
-    await page.click('#interp-close-btn');
-    await page.waitForSelector('#sheet-interp-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
-
-test('result.html interpretation sheet: scrolling its long content to the bottom and back to the top does not accidentally trigger a dismiss mid-scroll', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
-    await page.click('#interp-cta-btn');
-    await waitForSheetSettled(page, '#sheet-interp-overlay');
-
-    var sheetSel = '#sheet-interp-overlay .sheet';
-    // Scroll the sheet's own content down first (mirrors the user reading
-    // a long reflection before scrolling back up) — asserts there's
-    // actually real overflow to scroll, otherwise this test would prove
-    // nothing.
-    var scrolled = await page.locator(sheetSel).evaluate(function (el) {
-      el.scrollTop = 200;
-      return el.scrollTop;
-    });
-    assert.ok(scrolled > 0, 'the long interpretation text must make the sheet genuinely scrollable for this test to mean anything');
-
-    // A big downward drag while still scrolled away from the top must be
-    // treated as "scroll the content", never "drag the sheet" — rule (c):
-    // drag only engages once scrollTop is back at 0.
-    var box = await page.locator(sheetSel).boundingBox();
-    await dragSheet(page, sheetSel, { startY: box.y + 20, deltaY: box.height * 0.7, steps: 20 });
-    await page.waitForTimeout(300);
-    assert.equal(await page.locator('#sheet-interp-overlay.open').count(), 1, 'a downward drag while scrolled mid-content must not dismiss the sheet');
-    var transformWhileScrolled = await page.locator(sheetSel).evaluate(function (el) { return el.style.transform; });
-    assert.equal(transformWhileScrolled, '', 'the drag must never have engaged at all while scrollTop > 0');
-
-    // Scroll back to the top, THEN the same drag must dismiss normally.
-    await page.locator(sheetSel).evaluate(function (el) { el.scrollTop = 0; });
-    await page.waitForTimeout(50);
-    box = await page.locator(sheetSel).boundingBox();
-    await dragSheet(page, sheetSel, { startY: box.y + 20, deltaY: box.height * 0.6, steps: 20 });
-    await page.waitForSelector('#sheet-interp-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
-
-// ============================================================================
-// 2. profile.html — Settings (account) sheet (FULL five-point suite)
+// 1. profile.html — Settings (account) sheet (FULL five-point suite)
 // ============================================================================
 
 test('profile.html Settings sheet: tap outside the sheet closes it (founder-reported: this previously did nothing)', async function (t) {
@@ -423,7 +323,7 @@ test('profile.html Settings sheet: scrolling its long content (Account/FAQ/Legal
 });
 
 // ============================================================================
-// 3. profile.html — Edit profile (identity) sheet
+// 2. profile.html — Edit profile (identity) sheet
 // ============================================================================
 
 test('profile.html Edit-profile sheet: tap-outside closes, drag-dismiss/snap-back both work, and the Close link still works', async function (t) {
@@ -457,7 +357,7 @@ test('profile.html Edit-profile sheet: tap-outside closes, drag-dismiss/snap-bac
 });
 
 // ============================================================================
-// 4. result.html — Edit dream sheet
+// 3. result.html — Edit dream sheet
 // ============================================================================
 
 test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
@@ -466,7 +366,7 @@ test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back b
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
+    await seedResultPageWithDream(page);
 
     await assertTapOutsideCloses(page, '#sheet-edit-overlay', async function () {
       await page.click('#open-edit-sheet');
@@ -489,7 +389,7 @@ test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back b
 });
 
 // ============================================================================
-// 5. result.html — Add/edit character sheet (z-index-overridden overlay)
+// 4. result.html — Add/edit character sheet (z-index-overridden overlay)
 // ============================================================================
 
 test('result.html character sheet (nested inside the Edit-dream sheet, z-index:12 override): tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
@@ -498,7 +398,7 @@ test('result.html character sheet (nested inside the Edit-dream sheet, z-index:1
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedResultPageWithInterpretation(page);
+    await seedResultPageWithDream(page);
     await page.click('#open-edit-sheet');
     await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#adv-toggle');
@@ -521,7 +421,7 @@ test('result.html character sheet (nested inside the Edit-dream sheet, z-index:1
 });
 
 // ============================================================================
-// 6/7. create.html — Add/edit character sheet + "Build it" character sheet
+// 5/6. create.html — Add/edit character sheet + "Build it" character sheet
 // ============================================================================
 
 test('create.html character sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
@@ -621,7 +521,7 @@ test('create.html "Build it" character sheet: tap-outside closes, drag-dismiss/s
 });
 
 // ============================================================================
-// 8. wizard.html — Subject (character) sheet
+// 7. wizard.html — Subject (character) sheet
 // ============================================================================
 
 test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
@@ -651,7 +551,7 @@ test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
 });
 
 // ============================================================================
-// 9. start.html — Advanced > Characters sheet
+// 8. start.html — Advanced > Characters sheet
 // ============================================================================
 
 function startResumeUrlWithPeople(caption) {
@@ -685,7 +585,7 @@ test('start.html character sheet: tap-outside closes, drag-dismiss/snap-back bot
 });
 
 // ============================================================================
-// 10. js/purchase-sheet.js — out-of-tokens purchase sheet
+// 9. js/purchase-sheet.js — out-of-tokens purchase sheet
 // ============================================================================
 
 function mockTokenStatus(page, status) {
@@ -733,7 +633,7 @@ test('out-of-tokens purchase sheet (js/purchase-sheet.js): tap-outside closes, d
 });
 
 // ============================================================================
-// 11. js/purchase-sheet.js — daily-claim sheet
+// 10. js/purchase-sheet.js — daily-claim sheet
 // ============================================================================
 
 test('daily-claim sheet (js/purchase-sheet.js): tap-outside closes, drag-dismiss/snap-back both work, on shop.html -- its real, everyday call site', async function (t) {

@@ -1312,4 +1312,185 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .faq-chevron{ width:15px; height:15px; color:var(--text-faint); flex:none; transition:transform .2s ease;}
 .faq-item.open .faq-chevron{ transform:rotate(180deg);}
 .faq-answer{ display:none; padding:0 14px 14px; font-size:12.5px; color:var(--text-muted); line-height:1.5;}
+
+/* ===== Interpretation Wave 1 — "The Interpreter's Chamber" (Direction B) =====
+   docs/INTERPRETATION_WAVE1_SPEC.md, tracker item
+   for-product-build-interpretation-wave-1--xuftyn. A full-screen
+   conversational takeover (js/interpret-experience.js), NOT a bottom
+   sheet — deliberately its own `.itp-*` prefix rather than reusing
+   `.sheet`/`.sheet-overlay` (this is a fixed full-viewport surface, not an
+   anchored-to-bottom panel), but it reuses this app's other established
+   visual language throughout: `.style-card`'s portrait-fills-card/bottom-
+   gradient-scrim grammar for the persona picker cards, `.opt-chip`'s pill
+   shape for answer chips, and `.interp-text`/`.interp-disclosure`/
+   `.auth-trust` verbatim for the reading card's body/disclaimer/trust line
+   (imported by class name, not restyled).
+
+   Mounted into `#app` (or document.body, same fallback
+   js/purchase-sheet.js's ensureMounted already uses) as a single root
+   `#itp-root.itp-overlay` — position:fixed so it truly takes over the
+   viewport regardless of which host page's own #app it's appended into,
+   independent of that page's own scroll position. */
+.itp-overlay{
+  position:fixed; inset:0; z-index:80; background:#050505;
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+  display:flex; flex-direction:column;
+  font-family:var(--font-body); color:var(--text-primary);
+}
+.itp-overlay.open{ opacity:1; pointer-events:auto;}
+/* Same reasoning as #app's own min(860px,92dvh)/32px-radius desktop
+   treatment above — a full-bleed fixed overlay would otherwise stretch
+   edge-to-edge on a wide viewport, which reads wrong next to every other
+   page's centered "phone" card. */
+@media (min-width:560px){
+  .itp-overlay{ max-width:480px; left:50%; transform:translateX(-50%); border-radius:20px; overflow:hidden; box-shadow:0 40px 90px -24px rgba(0,0,0,.65);}
+}
+
+.itp-topbar{
+  flex:none; display:flex; align-items:center; gap:10px;
+  padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 10px;
+}
+.itp-topbar-btn{
+  width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);
+  display:flex; align-items:center; justify-content:center; color:#fff; cursor:pointer; flex:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.itp-topbar-btn .icon{ width:16px; height:16px;}
+.itp-topbar-persona{ display:flex; align-items:center; gap:9px; min-width:0; flex:1;}
+.itp-topbar-persona-name{ font-size:13.5px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.itp-topbar-persona-sub{ font-size:10.5px; color:var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+/* Portrait — real illustration OR the documented accent-gradient+initial
+   fallback (spec §12: "ship with a graceful fallback... so the branch
+   never blocks on asset approval"). js/interpret-experience.js sets the
+   fallback's background via inline style (persona.accent-derived
+   gradient) since the color is per-persona DATA, not something a fixed
+   CSS rule can express; this class only supplies layout/shape. The <img>
+   and the fallback <div> are siblings — the img's own onerror (wired in
+   JS) hides itself so the fallback beneath shows through, rather than
+   this CSS trying to detect a broken image itself (no such selector
+   exists). */
+.itp-portrait{ position:relative; border-radius:50%; overflow:hidden; flex:none; background:var(--surface-alt);}
+.itp-portrait img{ width:100%; height:100%; object-fit:cover; display:block;}
+.itp-portrait-fallback{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-weight:800; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.35);
+}
+.itp-topbar .itp-portrait{ width:32px; height:32px;}
+.itp-topbar .itp-portrait-fallback{ font-size:13px;}
+
+.itp-body{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:4px 20px calc(20px + env(safe-area-inset-bottom,0px));}
+
+/* ----- Picker phase ----- */
+.itp-picker-title{ font-size:19px; font-weight:800; margin:6px 0 4px;}
+.itp-picker-sub{ font-size:12.5px; color:var(--text-muted); margin-bottom:16px; line-height:1.4;}
+.itp-carousel{
+  display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+  padding:2px 2px 10px; margin:0 -2px;
+}
+.itp-carousel::-webkit-scrollbar{ display:none;}
+/* Same portrait-fills-card/bottom-gradient-scrim grammar as .style-card,
+   just wider (this is the picker's own showcase, not a small style
+   swatch) and with an accent-tinted border ring instead of .style-card's
+   plain white selected-ring (nothing here is ever "selected" mid-scroll —
+   tapping a card advances immediately, spec §3.1). */
+.itp-persona-card{
+  position:relative; flex:none; width:72vw; max-width:300px; height:220px; border-radius:20px; overflow:hidden;
+  scroll-snap-align:center; cursor:pointer; border:2px solid transparent; transition:border-color .15s ease;
+  background:var(--surface-alt);
+}
+/* Fallback layer sits BELOW the real portrait image (spec §12: accent-
+   gradient + initial, "so the branch never blocks on asset approval") —
+   painted first, then the real `background-image` div stacks on top and
+   simply shows nothing (transparent) when its own image 404s, letting
+   this fallback show through untouched. No JS onerror/detection needed
+   for the CARD background specifically (unlike the smaller circular
+   .itp-portrait elsewhere, which DOES need a JS onerror since an <img>
+   tag has no CSS equivalent of "fall through to what's underneath" the
+   way a failed background-image naturally does). */
+.itp-persona-card .itp-persona-card-fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:64px; font-weight:800; color:rgba(255,255,255,.32);}
+.itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center top;}
+.itp-persona-card .itp-persona-card-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.15) 55%, rgba(0,0,0,.35));}
+.itp-persona-card .itp-persona-card-content{ position:absolute; left:14px; right:14px; bottom:14px; z-index:2;}
+.itp-persona-card .itp-persona-card-name{ font-weight:800; font-size:15.5px; color:#fff;}
+.itp-persona-card .itp-persona-card-inspired{ font-size:10.5px; color:rgba(255,255,255,.6); margin-top:1px;}
+.itp-persona-card .itp-persona-card-tagline{ font-size:11.5px; color:rgba(255,255,255,.88); margin-top:7px; line-height:1.35;}
+/* Already-read badge (spec §3.1: personas the user already got a reading
+   from on THIS dream show a small ✓ badge). */
+.itp-persona-card-badge{
+  position:absolute; top:10px; right:10px; z-index:3; width:22px; height:22px; border-radius:50%;
+  background:#fff; color:#000; display:none; align-items:center; justify-content:center;
+}
+.itp-persona-card-badge .icon{ width:12px; height:12px;}
+.itp-persona-card.read .itp-persona-card-badge{ display:flex;}
+.itp-carousel-dots{ display:flex; justify-content:center; gap:6px; margin:2px 0 14px;}
+.itp-carousel-dot{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.22); transition:background-color .15s ease, transform .15s ease;}
+.itp-carousel-dot.active{ background:#fff; transform:scale(1.3);}
+.itp-picker-footer{ font-size:11.5px; color:var(--text-faint); text-align:center; line-height:1.4; margin:2px 0 14px;}
+
+/* ----- Loading phases (q_loading / r_loading) ----- */
+.itp-loading-wrap{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:60px 10px; text-align:center;}
+.itp-loading-wrap .itp-portrait{ width:64px; height:64px;}
+.itp-loading-wrap .itp-portrait-fallback{ font-size:22px;}
+.itp-loading-line{ display:flex; align-items:center; gap:9px; color:var(--text-muted); font-size:13.5px;}
+
+/* ----- Questions phase — chat transcript ----- */
+.itp-transcript{ display:flex; flex-direction:column; gap:12px; padding:6px 0 16px;}
+.itp-bubble-row{ display:flex;}
+.itp-bubble-row.mine{ justify-content:flex-end;}
+.itp-bubble{
+  max-width:82%; padding:11px 14px; border-radius:16px; font-size:13.5px; line-height:1.5;
+}
+.itp-bubble.persona{ background:var(--surface-alt); border:1px solid var(--border); border-bottom-left-radius:5px;}
+.itp-bubble.mine{ background:#fff; color:#000; border-bottom-right-radius:5px; font-weight:600;}
+.itp-typing-dots{ display:inline-flex; gap:3px; padding:2px 0;}
+.itp-typing-dots i{ width:5px; height:5px; border-radius:50%; background:var(--text-faint); animation:itpTyping 1.1s ease-in-out infinite;}
+.itp-typing-dots i:nth-child(2){ animation-delay:.15s;}
+.itp-typing-dots i:nth-child(3){ animation-delay:.3s;}
+@keyframes itpTyping{ 0%,60%,100%{ opacity:.3; transform:translateY(0);} 30%{ opacity:1; transform:translateY(-2px);} }
+
+.itp-progress-dots{ display:flex; justify-content:center; gap:5px; margin:2px 0 10px;}
+.itp-progress-dot{ width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.18);}
+.itp-progress-dot.done{ background:rgba(255,255,255,.5);}
+.itp-progress-dot.current{ background:#fff;}
+
+.itp-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 10px;}
+.itp-chip{ padding:8px 14px; border-radius:100px; background:var(--surface); border:1px solid var(--border); color:var(--text-primary); cursor:pointer; font-size:12.5px; font-weight:600; transition:background .15s ease, border-color .15s ease;}
+.itp-chip:hover{ border-color:var(--text-faint);}
+.itp-chip:active{ transform:scale(.96);}
+
+.itp-composer{ flex:none; display:flex; align-items:center; gap:8px; padding:8px 20px calc(10px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border);}
+.itp-composer-field{
+  flex:1; background:var(--surface); border:1px solid var(--border); border-radius:100px; padding:11px 16px;
+  font-family:var(--font-body); color:var(--text-primary); font-size:13.5px; min-width:0;
+}
+.itp-composer-field::placeholder{ color:var(--text-faint);}
+.itp-composer-field:focus{ outline:2px solid var(--accent); border-color:transparent;}
+.itp-composer-send{
+  width:38px; height:38px; border-radius:50%; background:#fff; color:#000; border:none; flex:none; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;
+}
+.itp-composer-send:disabled{ opacity:.35; cursor:not-allowed;}
+.itp-composer-send .icon{ width:15px; height:15px; transform:rotate(-90deg);}
+
+.itp-skip-row{ display:flex; justify-content:center; padding:2px 0 8px;}
+
+/* Persistent "Just interpret it →" escape (spec §3.3, non-negotiable) —
+   own class rather than reusing .link-text so it can carry the persona
+   accent color (set inline per-persona in JS) without a specificity
+   fight against .link-text's fixed --text-muted color. */
+.itp-escape-link{ font-size:12.5px; font-weight:700; text-align:center; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:6px 0;}
+
+/* ----- Reading phase ----- */
+.itp-reading-card{
+  border:1px solid var(--border-strong); border-radius:18px; padding:18px 16px 14px; margin:6px 0 16px;
+  background:var(--surface-alt); border-left-width:3px; /* left border-color set inline per-persona accent */
+}
+.itp-reading-persona-line{ display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+.itp-reading-persona-name{ font-size:12.5px; font-weight:800;}
+/* .interp-text (reused verbatim) supplies the reading body's own
+   typography — no .itp-reading-card override needed beyond spacing. */
+.itp-reading-actions{ display:flex; flex-direction:column; gap:10px; align-items:center; margin-top:4px;}
+
+.itp-error-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; margin:16px 0; text-align:center;}
 .faq-item.open .faq-answer{ display:block;}

@@ -179,10 +179,21 @@ test('chips-only (no free text): style.html preview shows a human story (never p
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: MOCK_LLM_STORY }) });
     });
     var generateVideoCalls = mockGenerateAndPoll(page);
-    var interpretCalls = [];
+    // Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md): interpret-
+    // dream.js now takes { caption, personaKey, mode }, not the old plain
+    // { caption, style } shape -- only the mode:"reading" calls are what
+    // this test cares about (whether the human storyText, never
+    // promptText, reaches the LLM); mode:"questions" gets a trivial empty
+    // response so js/interpret-experience.js's own silent-fallback
+    // (spec §3.2) skips straight past it.
+    var interpretReadingCalls = [];
     await page.route('**/.netlify/functions/interpret-dream', function (route) {
       var body = JSON.parse(route.request().postData() || '{}');
-      interpretCalls.push(body);
+      if (body.mode === 'questions') {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ questions: [] }) });
+        return;
+      }
+      interpretReadingCalls.push(body);
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: 'A reflection at least forty characters long, easily.' }) });
     });
 
@@ -232,9 +243,10 @@ test('chips-only (no free text): style.html preview shows a human story (never p
 
     // ----- (d) interpretation is called with the story text, never the prompt -----
     await page.click('#interp-cta-btn');
-    await page.waitForSelector('#interp-ready:not([style*="display: none"])', { timeout: 5000 });
-    assert.equal(interpretCalls.length, 1);
-    assert.equal(interpretCalls[0].caption, MOCK_LLM_STORY);
+    await page.click('.itp-persona-card[data-key="jung"]');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    assert.equal(interpretReadingCalls.length, 1);
+    assert.equal(interpretReadingCalls[0].caption, MOCK_LLM_STORY);
   } finally {
     await context.close();
   }

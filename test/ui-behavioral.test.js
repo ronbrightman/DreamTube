@@ -576,7 +576,7 @@ test('result.html redesign: the compact CTA pair (Explore dreams / My profile) i
   }
 });
 
-test('result.html redesign: the dream-interpretation pill renders ABOVE the compact CTA pair, and still opens the same reflection sheet on tap', async function (t) {
+test('result.html redesign: the dream-interpretation pill renders ABOVE the compact CTA pair, and opens the Interpreter\'s Chamber (js/interpret-experience.js) on tap', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -590,10 +590,15 @@ test('result.html redesign: the dream-interpretation pill renders ABOVE the comp
     var ctaRowTop = await page.$eval('.result-cta-row', function (el) { return el.getBoundingClientRect().top; });
     assert.ok(interpBottom <= ctaRowTop + 1, 'the interpretation pill must render above the CTA pair (absorbs the interpretation-above-make-another cheap win)');
 
-    // Behavior unchanged: tapping still opens the reflection bottom sheet.
+    // Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md): tapping
+    // now opens js/interpret-experience.js's full-screen picker, not the
+    // old bottom sheet -- the picker itself needs no network at all
+    // (spec §3.1), so aborting every Netlify Function here still proves
+    // the surface opens on tap alone.
     await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
     await page.click('#interp-cta-btn');
-    await page.waitForSelector('#sheet-interp-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#itp-root.open', { timeout: 5000 });
+    await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
   } finally {
     await context.close();
   }

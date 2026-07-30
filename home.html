@@ -353,6 +353,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/interpreter-personas.js"></script>
+<script src="js/interpret-experience.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
@@ -586,36 +588,49 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }).join('');
   })();
 
-  // ===== Chamber card — routes to the EXISTING interpretation entry point
-  // (result.html's "What might this dream mean?" pill) per this wave's
-  // explicit scope cut: no new InterpretExperience component yet. =====
+  // ===== Chamber card — Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
+  // tracker item for-product-build-interpretation-wave-1--xuftyn) =====
+  // Now opens js/interpret-experience.js's "Interpreter's Chamber"
+  // (InterpretExperience.open) directly ON THIS PAGE for a completed
+  // dream, superseding the old stopgap routing to
+  // result.html?id=...&openInterp=1 (which just synthesized a click on
+  // result.html's own interpretation pill). This also resolves/absorbs
+  // tracker item for-product-bug-founder-new-home-tapping-yuspxa
+  // ("tapping Chamber card lands in the store") — that item shipped
+  // diagnostics-only because no root cause was ever found in the OLD
+  // result.html-deep-link routing; now that Chamber routes straight into
+  // this self-contained experience instead of through result.html at all,
+  // whatever was going on with that old path is moot regardless of root
+  // cause.
+  //
+  // `href` is still set to a real result.html link (no ?openInterp=1
+  // param anymore — that whole mechanism is gone, see result.html's own
+  // comment) purely as an honest fallback destination (right-click/open-
+  // in-new-tab, or a click that somehow bypasses the JS handler below) —
+  // the click handler is what actually drives the real Chamber
+  // experience, same "real href + preventDefault + JS override" pattern
+  // js/purchase-sheet.js's own mountBalanceChip already uses for its
+  // claimable-state tap-through.
   (function renderChamberCard(){
     var chamber = document.getElementById('card-chamber');
     var completed = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
     if(completed){
-      chamber.href = 'result.html?id=' + encodeURIComponent(completed.id) + '&openInterp=1';
+      chamber.href = 'result.html?id=' + encodeURIComponent(completed.id);
+      chamber.addEventListener('click', function(e){
+        e.preventDefault();
+        if(window.InterpretExperience) InterpretExperience.open(completed.id);
+      });
       document.getElementById('chamber-sub').textContent = 'awaits · your reading';
     } else {
       chamber.href = 'create.html';
       document.getElementById('chamber-sub').textContent = 'make your first dream to begin';
     }
     // Diagnostic-only (tracker item for-product-bug-founder-new-home-
-    // tapping-yuspxa: founder tapped Chamber and landed in the store
-    // instead). Every hypothesis traced statically (openInterp -> a
-    // PurchaseSheet call, myDreams account-scoping, a CSS hit-area bleed
-    // into #card-vault) came back unsupported by the code as written, and
-    // a computed-geometry probe across several real mobile viewports found
-    // no overlap between #card-chamber and #card-vault either -- so
-    // nothing here was reproducible from a static/computed read alone.
-    // Fired at HREF-COMPUTE time, deliberately not gated on the click
-    // itself: the bug is about where a real tap actually LANDS, not
-    // whether a navigation happened at all (a click-time event on this
-    // same card would just double up with the existing home_card_tapped
-    // delegate below and normal page-view analytics, without adding any
-    // new signal). If this recurs, comparing this event's resolved href
-    // against whatever page load / home_card_tapped follows it next is
-    // the concrete thing that would tell a real story from PostHog
-    // instead of another guess.
+    // tapping-yuspxa), kept since it's still useful signal independent of
+    // the mechanism change above — fired at HREF-COMPUTE time,
+    // deliberately not gated on the click itself: the original bug was
+    // about where a real tap actually LANDS, not whether a navigation
+    // happened at all.
     track('home_chamber_href_computed', {
       branch: completed ? 'completed_dream' : 'no_completed_dream',
       href: chamber.getAttribute('href'),

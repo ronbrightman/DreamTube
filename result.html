@@ -109,9 +109,12 @@
 
     <!-- Dream interpretation — a slim pill ABOVE the CTA pair (absorbs the
          already-approved interpretation-above-make-another cheap win, not a
-         separate change). Tap behavior is unchanged from the old
-         interp-cta-btn — opens the same #sheet-interp-overlay. -->
-    <button class="interp-pill" id="interp-cta-btn" title="See an AI reflection on what this dream might mean">
+         separate change). Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
+         tracker item for-product-build-interpretation-wave-1--xuftyn): now
+         opens js/interpret-experience.js's full-screen "Interpreter's
+         Chamber" (InterpretExperience.open) instead of the old, now-removed
+         in-page bottom sheet — see this file's own script block below. -->
+    <button class="interp-pill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
       <span class="interp-cta-label"><span class="interp-sparkle" aria-hidden="true">✨</span> What might this dream mean?</span>
       <span class="feed-tag" id="interp-private-pill">Private</span>
     </button>
@@ -145,35 +148,6 @@
       <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
       <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
       <button class="result-quiet-link result-quiet-link-danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
-    </div>
-  </div>
-
-  <div class="sheet-overlay" id="sheet-interp-overlay">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-title">Your reflection</div>
-
-      <div id="interp-loading">
-        <div class="interp-loading-row"><span class="spinner-inline"></span><span>Reflecting on your dream…</span></div>
-      </div>
-
-      <div id="interp-ready" style="display:none;">
-        <div class="interp-text" id="interp-text-body" dir="auto"></div>
-        <div class="auth-trust">
-          <span class="icon" id="interp-lock-icon"></span>
-          <span>Private to you. This reflection is never shown on Explore or shared — even when this dream itself is public.</span>
-        </div>
-        <div class="interp-disclosure">A reflective, symbol-aware take — not professional advice.</div>
-        <span class="link-text" id="interp-regenerate-btn">Regenerate</span>
-      </div>
-
-      <div id="interp-error" style="display:none;">
-        <div class="interp-error-copy">Couldn't put this into words right now.</div>
-        <button class="btn btn-primary btn-block" id="interp-retry-btn">Retry</button>
-      </div>
-
-      <div style="height:10px;"></div>
-      <span class="link-text" id="interp-close-btn">Close</span>
     </div>
   </div>
 
@@ -328,6 +302,8 @@
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/interpreter-personas.js"></script>
+<script src="js/interpret-experience.js"></script>
 <script>
   // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
   // doc comment on consumeSessionTransferTokenFromUrlSync) BEFORE the
@@ -402,7 +378,6 @@
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
   document.getElementById('turn-video-icon').innerHTML = Icons.video;
-  document.getElementById('interp-lock-icon').innerHTML = Icons.lock;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-check'), function(el){ el.innerHTML = Icons.check; });
@@ -684,8 +659,8 @@
   // this page missed these two) — must never even appear to work for a
   // dream that isn't this account's own — js/store.js's publishDream/
   // unpublishDream/setOkToFeatureOnChannels/deleteDream/turnImageIntoVideo/
-  // generateInterpretation all already refuse to mutate (or, for
-  // generateInterpretation, generate/overwrite) a dream whose ownerHandle
+  // getInterpretations/requestInterpretationQuestions/generateInterpretationReading
+  // all already refuse to read/mutate a dream whose ownerHandle
   // doesn't match, so leaving these controls visible would just mean
   // silent no-ops (or a rejected promise) behind a button that looks like
   // it worked. Same `ownerHandle === handle` check js/store.js's own
@@ -796,11 +771,12 @@
     // finding, second round), so the button must never even appear to
     // offer this for someone else's image-only dream.
     document.getElementById('turn-video-btn').style.display = (dream.imageUrl && !dream.videoUrl && isMyDream) ? 'flex' : 'none';
-    // isMyDream: same reasoning -- the interpretation pill's own generate/
-    // regenerate path (DreamStore.generateInterpretation) is a private,
-    // per-account write that now refuses a dream that isn't this
-    // account's own (review finding, second round). Reading an already-
-    // saved interpretation (DreamStore.getInterpretation) is harmless, but
+    // isMyDream: same reasoning -- js/interpret-experience.js's own
+    // generate/regenerate calls (DreamStore.requestInterpretationQuestions/
+    // generateInterpretationReading) are private, per-account writes that
+    // refuse a dream that isn't this account's own (same ownership guard
+    // as generateInterpretation always had). Reading an already-saved
+    // interpretation (DreamStore.getInterpretations) is harmless, but
     // there's never a legitimate saved interpretation to show for a dream
     // that isn't this account's own in the first place, so the whole pill
     // is owner-only.
@@ -1003,46 +979,17 @@
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }
   function closeSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.remove('open'); }
 
-  // ===== "What this dream might mean" — Direction B (bottom sheet reveal) =====
-  // Always opt-in: nothing here ever fires except from a direct tap on the
-  // CTA or the sheet's own Regenerate/Retry affordances — never on page
-  // load, never automatically. See js/store.js's getInterpretation/
-  // generateInterpretation and the design spec for the full rationale.
+  // ===== "What this dream might mean" — Interpretation Wave 1 =====
+  // docs/INTERPRETATION_WAVE1_SPEC.md, tracker item
+  // for-product-build-interpretation-wave-1--xuftyn. Replaces the old
+  // single blended in-page bottom sheet entirely: the pill now just opens
+  // js/interpret-experience.js's self-contained full-screen surface
+  // (InterpretExperience.open/.close, matching js/purchase-sheet.js's own
+  // established precedent for a complex shared component) — every phase,
+  // network call, error/fallback state, and interp_* analytics event this
+  // used to own here now lives in that one file instead, so this page has
+  // no more interpretation-specific state or DOM to keep in sync itself.
   //
-  // PostHog instrumentation (tracker item for-product-instrument-the-
-  // existing-inte-wbkgkx — this pill had ZERO events before this, and it's
-  // the Reach input for the whole upcoming interpretation-flagship
-  // roadmap): interp_opened/interp_completed/interp_regenerated/
-  // interp_closed, deliberately NEUTRAL names, never anything health/
-  // therapy-flavored — this codebase's ad-pixel domain is the SAME web
-  // property Meta's health-classifier scans, and a therapy-adjacent event
-  // name here would be exactly the kind of signal that trips it (a
-  // standing firewall, not a one-off caution — see this item's own detail
-  // text). `interp_closed` carries `read_time_ms` (open-to-close
-  // duration) — the one property this item's own spec calls for that
-  // didn't have an obvious existing event to attach to.
-  var interpOpenedAt = null;
-  function showInterpState(state){
-    document.getElementById('interp-loading').style.display = state === 'loading' ? 'block' : 'none';
-    document.getElementById('interp-ready').style.display = state === 'ready' ? 'block' : 'none';
-    document.getElementById('interp-error').style.display = state === 'error' ? 'block' : 'none';
-  }
-  function renderInterpReady(text){
-    document.getElementById('interp-text-body').textContent = text;
-    showInterpState('ready');
-    track('interp_completed', {});
-  }
-  // Always hits the network — used for a first-ever generation and for the
-  // sheet's own Regenerate/Retry. The CTA tap handler below is what decides
-  // whether to call this at all, or just show the already-saved text.
-  function requestInterpretation(){
-    showInterpState('loading');
-    DreamStore.generateInterpretation(dream.id).then(function(result){
-      renderInterpReady(result.interpretationText);
-    }).catch(function(){
-      showInterpState('error');
-    });
-  }
   // Starts a genuinely blank draft (not a regeneration of this dream) —
   // deliberately does not reuse the sourceDreamId pattern from the Edit
   // sheet's "Generate Again" handler below.
@@ -1051,37 +998,8 @@
     location.href = 'create.html';
   });
   document.getElementById('interp-cta-btn').addEventListener('click', function(){
-    openSheet('interp');
-    interpOpenedAt = Date.now();
-    track('interp_opened', {});
-    var existing = DreamStore.getInterpretation(dream.id);
-    if(existing && existing.interpretationText){
-      // Revisit case — tapping re-expands the already-saved text, no new
-      // network call (per the design spec's explicit state machine).
-      renderInterpReady(existing.interpretationText);
-    } else {
-      requestInterpretation();
-    }
+    InterpretExperience.open(dream.id);
   });
-  document.getElementById('interp-retry-btn').addEventListener('click', requestInterpretation);
-  document.getElementById('interp-regenerate-btn').addEventListener('click', function(){
-    track('interp_regenerated', {});
-    requestInterpretation();
-  });
-  // Shared close path — the sheet can also be dismissed by drag-down/tap-
-  // outside (SheetDismiss.wire below), NOT just this explicit Close link,
-  // so read_time_ms tracking lives here rather than only on the button's
-  // own click handler, or the far more common swipe-to-dismiss gesture
-  // would silently never report a read time at all.
-  function closeInterpSheet(){
-    closeSheet('interp');
-    if(interpOpenedAt){
-      track('interp_closed', { read_time_ms: Date.now() - interpOpenedAt });
-      interpOpenedAt = null;
-    }
-  }
-  document.getElementById('interp-close-btn').addEventListener('click', closeInterpSheet);
-  SheetDismiss.wire(document.getElementById('sheet-interp-overlay'), closeInterpSheet);
 
   // Whenever the dream text refers to the dreamer in first person, make sure
   // the saved "Me" character (if one exists) is actually included, rather
@@ -1386,20 +1304,15 @@
   // (tracker item for-product-build-share-mini-sheet-share-r42tc4), which
   // doShare()/share-btn above now opens instead of sharing a link directly.
 
-  // home.html's Chamber card deep-link (tracker item for-product-build-
-  // homepage-wave-1-the-ri-xr8mir) -- wave 1 routes Chamber taps to this
-  // EXISTING interpretation entry point rather than a new component, per
-  // that item's own explicit scope cut ("mount InterpretExperience when
-  // wave ships -- until then routes to existing interpretation"). A
-  // genuine synthetic click on the already-wired pill (not a separate
-  // code path) opens the same sheet a direct tap would -- same opt-in
-  // "never fires on page load itself" contract the pill's own click
-  // handler comment documents, just triggered by a query param instead of
-  // a finger, matching create.html's existing ?record=1 deep-link
-  // convention for the equivalent "land straight in the flow" case.
-  if(getParam('openInterp') === '1'){
-    document.getElementById('interp-cta-btn').click();
-  }
+  // home.html's Chamber card deep-link via ?openInterp=1 (tracker item
+  // for-product-build-homepage-wave-1-the-ri-xr8mir) is GONE — superseded
+  // by Interpretation Wave 1 (tracker item
+  // for-product-build-interpretation-wave-1--xuftyn): home.html's Chamber
+  // card now calls InterpretExperience.open() directly on ITSELF (see that
+  // file's own renderChamberCard comment) instead of navigating here with
+  // a query param this page then had to notice and act on. No dead code
+  // left behind — the old `getParam('openInterp')` handling is removed
+  // entirely, not left around unreachable.
 </script>
 </body>
 </html>

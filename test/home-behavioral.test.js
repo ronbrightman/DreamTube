@@ -271,7 +271,7 @@ test('home.html: My Dreams gallery renders real thumbnails linking to result.htm
   }
 });
 
-test('home.html: Chamber card routes to the EXISTING interpretation entry point for a completed dream, and to create.html when there is nothing to interpret yet', async function (t) {
+test('home.html: Chamber card\'s fallback href points at result.html for a completed dream (no ?openInterp=1 -- that mechanism is gone), and at create.html when there is nothing to interpret yet', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -282,12 +282,50 @@ test('home.html: Chamber card routes to the EXISTING interpretation entry point 
     await seedHomeUser(page, { dreams: [makeDream('ch-1')] });
     await page.waitForSelector('#card-chamber', { timeout: 5000 });
     var href = await page.locator('#card-chamber').getAttribute('href');
-    assert.equal(href, 'result.html?id=ch-1&openInterp=1');
+    assert.equal(href, 'result.html?id=ch-1');
 
     await seedHomeUser(page, { username: 'nodreamsyet', dreams: [] });
     await page.waitForSelector('#card-chamber', { timeout: 5000 });
     var href2 = await page.locator('#card-chamber').getAttribute('href');
     assert.equal(href2, 'create.html');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: Chamber card, with a completed dream, opens InterpretExperience directly ON THIS PAGE (no navigation away) -- Interpretation Wave 1, tracker item for-product-build-interpretation-wave-1--xuftyn', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page, { dreams: [makeDream('ch-itp-1')] });
+
+    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    await page.click('#card-chamber');
+    await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
+    assert.equal(page.url(), baseUrl + '/home.html', 'must open the overlay in place, never navigate to result.html');
+
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'interp_surface_opened').length, 1);
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: Chamber card, with NO completed dream, still navigates to create.html normally (a real link, not intercepted)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page, { username: 'chambernodream', dreams: [] });
+
+    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    await page.click('#card-chamber');
+    await page.waitForURL(/create\.html/, { timeout: 5000, waitUntil: 'domcontentloaded' });
   } finally {
     await context.close();
   }
@@ -310,7 +348,7 @@ test('home.html: home_chamber_href_computed fires at render time (not gated on a
     var calls1 = await readPostHogCalls(page);
     var fired1 = captures(calls1, 'home_chamber_href_computed');
     assert.equal(fired1.length, 1, 'expected exactly one home_chamber_href_computed capture on load');
-    assert.deepEqual(fired1[0][2], { branch: 'completed_dream', href: 'result.html?id=ch-2&openInterp=1', dream_id: 'ch-2' });
+    assert.deepEqual(fired1[0][2], { branch: 'completed_dream', href: 'result.html?id=ch-2', dream_id: 'ch-2' });
 
     // No-completed-dream branch.
     await seedHomeUser(page, { username: 'nodreamsyet2', dreams: [] });
@@ -541,35 +579,12 @@ test('create.html: ?write=1 deep-link jumps straight into Write mode (mirrors th
   }
 });
 
-test('result.html: ?openInterp=1 deep-link (Chamber card\'s wiring) opens the interpretation sheet automatically and still fires interp_opened', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.route('**/.netlify/functions/interpret-dream', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: 'A reflection.' }) });
-    });
-    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
-    await page.evaluate(function (id) {
-      var raw = localStorage.getItem('dreamtube_state_v1');
-      var state = raw ? JSON.parse(raw) : {};
-      state.user = { handle: '@tester', username: 'tester' };
-      if (!state.accounts) state.accounts = {};
-      state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
-      if (!state.dreams) state.dreams = [];
-      state.dreams.push({ id: id, ownerHandle: '@tester', caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/x.mp4', isPublished: false });
-      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-    }, 'd-openinterp');
-    await page.goto(baseUrl + '/result.html?id=d-openinterp&openInterp=1', { waitUntil: 'domcontentloaded' });
-
-    await page.waitForSelector('#interp-ready', { state: 'visible', timeout: 5000 });
-    var phCalls = await readPostHogCalls(page);
-    assert.equal(captures(phCalls, 'interp_opened').length, 1);
-  } finally {
-    await context.close();
-  }
-});
+// The old ?openInterp=1 deep-link mechanism (result.html noticing a query
+// param and synthesizing a click on its own pill) is GONE entirely --
+// superseded by Interpretation Wave 1's "Chamber card opens
+// InterpretExperience directly on home.html" tests above, and the surface
+// itself is covered end-to-end by test/interp-analytics-behavioral.test.js.
+// No dead code/dead test left behind for a mechanism that no longer exists.
 
 test('login.html: a successful login now lands on home.html by default (was explore.html) -- an explicit ?next= override still wins', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
