@@ -59,6 +59,110 @@
 // result) when the calling request's own success must never depend on
 // PostHog being reachable — see dodo-webhook.js for the pattern.
 
+// ── TEST-ENVIRONMENT GUARD (tracker.html's
+//    for-product-bug-founder-affects-all-funn-0efe7t item, round 4) ──
+//
+// POSTHOG_KEY below is require()'d from a CHECKED-IN file, not read from an
+// environment variable (see the header comment above for why that was a
+// deliberate choice). The unintended consequence: this module fires REAL
+// events into the founder's REAL production PostHog project from ANY
+// process that require()s it and has network access — including a plain
+// local `npm test` run. That is not hypothetical. Measured on this branch,
+// before this guard, every single `npm test` run POSTed 10 real events to
+// us.i.posthog.com:
+//   - 5 x first_dream_email_skipped { reason:'no_job_owner_record',
+//     auto:true, distinct_id:'unknown' }, from
+//     test/generation-completion-marker.test.js driving the real
+//     mark-generation-completed handler with no job-owners record seeded;
+//   - 5 x push_sent to the fixture usernames alice/frank/grace/henry, from
+//     test/send-daily-claim-pushes.test.js (which mocks web-push, but had
+//     nothing mocking this).
+//
+// Those two signatures are EXACTLY the production "anomalies" that drove
+// three rounds of misdiagnosis on this tracker item: the reported
+// "machine-generated skip storm — 1,002 first_dream_email_skipped events in
+// metronomic 5-10/min bursts, something is hammering
+// mark-generation-completed", the founder-QA trace's "two bursts of ~5 rapid
+// no_job_owner_record events, distinct_id=unknown", and "395 push_sent in
+// 16h to 4 test-fixture accounts (alice/frank/grace/henry) — dedup store not
+// working". None of those were production traffic. They were this repo's own
+// test suite, run over and over by the build/review rounds themselves, and
+// they are indistinguishable in PostHog from real user events.
+//
+// So this is not merely tidiness — analytics contamination is a correctness
+// bug in the one instrument this feature is being debugged with. Guarded
+// here, in the one module every server-side fire goes through, rather than
+// only in the two offending test files (those are fixed too, but a
+// per-test-file fix silently rots the moment someone adds a new test that
+// exercises a new server path — the recurring "new store forgets the shared
+// pattern" shape this codebase has already been bitten by, see
+// lib/blobs-retry.js's header comment).
+//
+// Deliberately FAIL-SAFE for production: the guard only ever triggers on a
+// positive, unambiguous signal that this is a local test process. There is
+// no signal a deployed Netlify Function could plausibly present:
+//   - NODE_TEST_CONTEXT is set (to 'child-v8'/'child-tap') by Node's own
+//     `node --test` runner in the child process it runs each test file in —
+//     verified directly against this repo's `npm test` invocation. Nothing
+//     sets it in a Lambda runtime.
+//   - process.argv[1] ending in `.test.js` catches running a single test
+//     file directly (`node test/foo.test.js`), which the runner var misses.
+//   - DREAMTUBE_DISABLE_SERVER_ANALYTICS=1 is an explicit manual override
+//     for any other non-production context (a scratch script, a staging
+//     replay) where firing real events would pollute the same project.
+// Absent all three, behavior is byte-for-byte what it was before, so a real
+// deploy cannot accidentally silence itself. The inverse design (fire ONLY
+// when some NETLIFY/AWS_LAMBDA_* var is present) was rejected for exactly
+// that reason: getting that variable wrong would silently kill ALL
+// server-side analytics in production, an invisible, far worse failure than
+// the one being fixed, and it can't be verified from this sandbox.
+//
+// DREAMTUBE_ALLOW_SERVER_ANALYTICS=1 forces fires back on even under the
+// above, for the one legitimate case: a deliberate staged/end-to-end run
+// that genuinely wants to see its events land in PostHog.
+function isNonProductionRun() {
+  if (process.env.DREAMTUBE_ALLOW_SERVER_ANALYTICS === '1') return false;
+  if (process.env.DREAMTUBE_DISABLE_SERVER_ANALYTICS === '1') return true;
+  if (process.env.NODE_TEST_CONTEXT) return true;
+  var entry = process.argv && process.argv[1];
+  if (typeof entry === 'string' && /\.test\.js$/.test(entry)) return true;
+  return false;
+}
+
+// Suppression below is deliberately scoped to "a test process that is about
+// to make a genuinely REAL outbound request", not "a test process" flatly.
+// Several tests in this suite legitimately assert that a given event fires,
+// and they do it the way this codebase has always done it: by replacing
+// global.fetch with a recording double and inspecting what it received (see
+// test/automatic-first-dream-email.test.js, test/dodo-webhook.test.js,
+// test/video-status-refund.test.js, test/image-status-refund.test.js,
+// test/video-ready-push.test.js). Those tests are not the problem — nothing
+// leaves the process — and they must keep working. The leak was always the
+// opposite case: a server path firing analytics while global.fetch is still
+// the REAL one, so the request genuinely goes out.
+//
+// Those two cases are told apart by an explicit marker the recording double
+// sets on itself (`fetch.__dreamtubeTestDouble = true`), rather than by
+// comparing against whatever `globalThis.fetch` happened to be when this
+// module first loaded. That comparison was tried first and is genuinely
+// unsound: several test files install their double BEFORE the require() that
+// first pulls this module in, so the "native" reference captured here would
+// be the double itself, and every fire would then be wrongly suppressed.
+// Load order is not something a shared lib can reason about.
+//
+// The marker is fail-safe in the direction that matters: FORGETTING it means
+// a fire is suppressed, and the forgetful test's own assertion fails loudly
+// and locally. There is no way to forget it into a silent production-data
+// leak, which is the failure this whole guard exists to make impossible.
+var TEST_DOUBLE_MARKER = '__dreamtubeTestDouble';
+
+/** True when firing right now would put a real request on the wire from a non-production process. */
+function wouldEscapeToRealNetwork() {
+  if (!isNonProductionRun()) return false;
+  var f = typeof globalThis !== 'undefined' ? globalThis.fetch : undefined;
+  return !(f && f[TEST_DOUBLE_MARKER] === true);
+}
+
 var POSTHOG_KEY = require('../../../js/analytics-config').POSTHOG_KEY;
 var POSTHOG_HOST = require('../../../js/analytics-config').POSTHOG_HOST;
 
@@ -80,6 +184,13 @@ async function captureEvent(params) {
 
   if (!POSTHOG_KEY) {
     return { ok: false, error: 'missing_posthog_key' };
+  }
+  // See "TEST-ENVIRONMENT GUARD" above. Returned as a normal { ok:false,
+  // error } value, exactly like every other non-fire branch here, so no
+  // caller's control flow changes — every one of them already treats this
+  // as fire-and-forget/best-effort.
+  if (wouldEscapeToRealNetwork()) {
+    return { ok: false, error: 'suppressed_non_production_run' };
   }
   if (!params.event || !params.distinct_id) {
     return { ok: false, error: 'event_and_distinct_id_required' };
@@ -112,4 +223,11 @@ async function captureEvent(params) {
   }
 }
 
-module.exports = { captureEvent: captureEvent };
+// isNonProductionRun/wouldEscapeToRealNetwork are exported purely so
+// test/server-analytics-containment.test.js can assert the guard's own signal
+// handling directly, rather than only observing its effect through a spy.
+module.exports = {
+  captureEvent: captureEvent,
+  isNonProductionRun: isNonProductionRun,
+  wouldEscapeToRealNetwork: wouldEscapeToRealNetwork
+};

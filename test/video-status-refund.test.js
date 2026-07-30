@@ -25,6 +25,9 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's test-process guard lets its analytics fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var jobOwners = require('../netlify/functions/lib/job-owners');
 var handler = require('../netlify/functions/video-status').handler;
@@ -68,6 +71,7 @@ function stubFalAndPosthog(statusBody, resultBody, resultOk) {
     }
     return { ok: resultOk !== false, status: resultOk === false ? 422 : 200, text: async function () { return JSON.stringify(resultBody); } };
   };
+  markInstalledFetchAsTestDouble();
   return posthogCalls;
 }
 
@@ -144,6 +148,7 @@ test('E204 (fal status endpoint non-OK) is NOT refund-eligible -- no refund, no 
     if (String(url).indexOf('/capture/') !== -1) { posthogCalls.push({}); return { ok: true, status: 200, json: async function () { return {}; }, text: async function () { return 'ok'; } }; }
     return { ok: false, status: 500, text: async function () { return JSON.stringify({ error: 'boom' }); } };
   };
+  markInstalledFetchAsTestDouble();
 
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast:req3', email));
   var body = JSON.parse(res.body);

@@ -37,6 +37,9 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
+// See test/helpers/fetch-double.js -- marks this file's own fetch double so
+// lib/posthog-capture.js's test-process guard lets its analytics fires reach it.
+var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 
 var realFetch = global.fetch;
 
@@ -87,6 +90,7 @@ function installFetchSpy(jwksKeyPair) {
     }
     throw new Error('unexpected fetch to ' + urlStr);
   };
+  markInstalledFetchAsTestDouble();
   return { resendCalls: resendCalls, posthogCalls: posthogCalls };
 }
 
