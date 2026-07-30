@@ -35,6 +35,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -179,9 +180,19 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     await markPendingPurchase(page, { pack: 'pack700', tokens: 1400, price: 14.99, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
-    // fireMetaConversion's CAPI POST is fire-and-forget -- give it a moment
-    // to land on the intercepted route before asserting on conversionCalls.
-    await page.waitForTimeout(300);
+    // fireMetaConversion's CAPI POST is fire-and-forget -- wait for the
+    // actual Purchase arrival on both intercepted routes (settle.js)
+    // rather than a fixed guess, same fix as the wizard/signup suites'
+    // cross-file flakiness (tracker item
+    // full-test-suite-has-broader-nondetermini-6fbmcb). Checking the
+    // SPECIFIC event, not just "any call landed" -- every page fires an
+    // earlier fbq('track','PageView') on load that would otherwise
+    // satisfy a generic length check before the real Purchase call ever
+    // arrives.
+    await settle(function () {
+      return fbqTrackCalls(fbqCalls, 'Purchase').length >= 1 &&
+        conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length >= 1;
+    });
 
     var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
     assert.equal(fbqPurchaseCalls.length, 1, 'expected exactly one fbq track Purchase call');
@@ -290,7 +301,7 @@ test('a reload after a successful first fire does not re-fire (marker already co
     await markPendingPurchase(page, { pack: 'pack100', tokens: 200, price: 2.99 });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(300);
+    await settle(function () { return fbqTrackCalls(fbqCalls, 'Purchase').length >= 1; });
     assert.equal(fbqTrackCalls(fbqCalls, 'Purchase').length, 1, 'sanity check: the first load fired once');
 
     // history.replaceState already cleared ?checkout=success from the URL
@@ -339,7 +350,10 @@ test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries cre
 
     await page.click('#shop-buy-pack100');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
-    await page.waitForTimeout(300);
+    await settle(function () {
+      return fbqTrackCalls(fbqCalls, 'Purchase').length >= 1 &&
+        conversionCalls.filter(function (b) { return b && b.event_name === 'Purchase'; }).length >= 1;
+    });
 
     var fbqPurchaseCalls = fbqTrackCalls(fbqCalls, 'Purchase');
     assert.equal(fbqPurchaseCalls.length, 1);

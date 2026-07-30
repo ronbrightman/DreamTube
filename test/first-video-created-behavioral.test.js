@@ -61,6 +61,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -219,9 +220,17 @@ test('result.html: a brand-new account\'s first-ever completed dream, opened fre
 
     await page.goto(baseUrl + '/result.html?id=dream-first-1', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget (js/analytics-config.js
-    // never awaits it) -- give it a moment to actually land on the intercepted
-    // route before asserting on conversionCalls below.
-    await page.waitForTimeout(300);
+    // never awaits it) -- wait for the SPECIFIC FirstVideoCreated arrival
+    // on both intercepted routes (settle.js) rather than a fixed guess,
+    // same fix as the wizard/signup suites' cross-file flakiness (tracker
+    // item full-test-suite-has-broader-nondetermini-6fbmcb). Checking the
+    // specific event, not just "any call landed" -- result.html fires an
+    // earlier fbq('track','PageView') on load that would otherwise
+    // satisfy a generic length check before FirstVideoCreated ever fires.
+    await settle(function () {
+      return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1 &&
+        conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length >= 1;
+    });
 
     var trackCustomCalls = fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated');
     assert.equal(trackCustomCalls.length, 1, 'expected exactly one fbq trackCustom FirstVideoCreated call');
@@ -371,7 +380,15 @@ test('result.html: fires the first_video_result_view PostHog sanity-check event 
     await mockConsumeMarker(page, 'op-for-dream-sanity-1');
 
     await page.goto(baseUrl + '/result.html?id=dream-sanity-1', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(300);
+    // fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated') is the
+    // network-observed proxy for "the synchronous track()+
+    // fireMetaConversion() burst has landed" -- posthog.capture() fires
+    // first in that same burst (see result.html's own handler), so
+    // settling on the SPECIFIC event's network arrival is sufficient
+    // here too. Checking the specific event, not fbqCalls.length alone,
+    // since result.html's earlier fbq('track','PageView') on load would
+    // otherwise satisfy a generic length check too early.
+    await settle(function () { return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1; });
 
     var phCalls = await readPostHogCaptureCalls(page);
     var viewCalls = phCalls.filter(function (c) { return c.name === 'first_video_result_view'; });
@@ -516,7 +533,10 @@ test('end-to-end: a brand-new account\'s real processing.html -> result.html red
     await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
 
     await page.waitForURL(/result\.html\?id=/, { timeout: 8000 });
-    await page.waitForTimeout(400);
+    await settle(function () {
+      return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1 &&
+        conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length >= 1;
+    });
 
     assert.ok(markerState.markedOperationName, 'processing.html should have POSTed the completed generation\'s operationName to mark-generation-completed before redirecting');
     assert.match(page.url(), /result\.html\?id=/, 'should have redirected to result.html for the freshly-completed dream');

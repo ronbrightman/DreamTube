@@ -49,6 +49,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var settle = require('./helpers/settle').settle;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -240,10 +241,16 @@ test('explore.html: a brand-new account whose ONLY pending job completes via the
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
     // resumePendingJob() polls video-status once (mocked to resolve
     // 'done' immediately) then runs finalizeDream + the toast + the
-    // analytics call -- give the promise chain a moment to settle before
-    // asserting, same margin test/first-video-created-behavioral.test.js
-    // gives fireMetaConversion's fire-and-forget CAPI POST.
-    await page.waitForTimeout(500);
+    // analytics call -- wait for the SPECIFIC FirstVideoCreated arrival
+    // on both intercepted routes (settle.js) rather than a fixed guess,
+    // same fix as test/first-video-created-behavioral.test.js's
+    // identical race. Checking the specific event, not fbqCalls.length
+    // alone, since explore.html's earlier fbq('track','PageView') on
+    // load would otherwise satisfy a generic length check too early.
+    await settle(function () {
+      return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1 &&
+        conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length >= 1;
+    });
 
     var trackCustomCalls = fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated');
     assert.equal(trackCustomCalls.length, 1, 'expected exactly one fbq trackCustom FirstVideoCreated call from the resume-completion path');
@@ -327,7 +334,7 @@ test('cross-path: an account whose first video completes via explore.html\'s res
     // (same assertion as the first test above, kept lighter here since
     // the full shape is already covered there).
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(500);
+    await settle(function () { return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1; });
     assert.equal(fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length, 1, 'leg 1 (explore.html resume) should have fired FirstVideoCreated once');
 
     // Find the dream explore.html's resume just created, so leg 2 can

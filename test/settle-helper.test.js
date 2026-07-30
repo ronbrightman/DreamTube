@@ -51,9 +51,15 @@ test('gives up after the timeout and returns false, so a genuinely-never-called 
 });
 
 test('a condition that goes true and then false again still resolves (it latches on the first satisfied poll)', async function () {
+  // Wide window between the flip-true and flip-false marks (not the
+  // narrow ~5ms this test used to use) -- under heavy CPU contention
+  // (many concurrent full-suite runs, exactly the load this helper
+  // exists to survive) a too-tight window can let the poll miss the
+  // true state entirely before it flips back, which is a fragile TEST
+  // margin, not a bug in settle() itself.
   var flipped = false;
-  setTimeout(function () { flipped = true; }, 20);
-  setTimeout(function () { flipped = false; }, 25);
-  var result = await settle(function () { return flipped; }, { timeout: 500, interval: 1 });
+  setTimeout(function () { flipped = true; }, 30);
+  setTimeout(function () { flipped = false; }, 300);
+  var result = await settle(function () { return flipped; }, { timeout: 1000, interval: 5 });
   assert.equal(result, true);
 });
