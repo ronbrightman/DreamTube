@@ -575,7 +575,7 @@
         '<div class="priv'+(d.isPublished?' pub':'')+'">'+(d.isPublished?'Public':'Private')+'</div>' +
         '<div class="play-indicator icon">'+Icons.play+'</div>' + (d.dur ? '<div class="dur">'+d.dur+'</div>' : '') + '</div>' +
       '<div class="vcard-title" dir="auto">'+esc(d.caption)+'</div>' +
-      '<div class="vcard-meta">'+DreamStore.displayHandle(d.ownerHandle)+' · '+formatCount(d.likes)+' likes</div>' +
+      '<div class="vcard-meta">'+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div>' +
     '</a>';
   }
 

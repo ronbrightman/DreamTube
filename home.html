@@ -411,7 +411,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   (function renderGreeting(){
     var hour = new Date().getHours();
     var part = hour < 12 ? 'morning' : (hour < 18 ? 'afternoon' : 'evening');
-    var name = (user && user.handle ? user.handle : '@you').replace(/^@/, '');
+    var name = DreamStore.displayHandle(user && user.handle ? user.handle : '@you');
     document.getElementById('home-greet-line').textContent = 'Good ' + part + ', ' + name;
     var dateStr = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
     document.getElementById('home-greet-sub').textContent = dateStr;
