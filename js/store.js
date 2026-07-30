@@ -2505,10 +2505,12 @@
       // date-bucketed -- same ownership-only match getMyDreams() already
       // uses, just filtered here rather than calling that method directly
       // (avoids a second full array scan for a value we already have `mine`
-      // half-computed for). Root cause of a real bug: an account with only
-      // legacy, pre-createdAt dreams was getting hasEverLogged:false, which
-      // wrongly showed the brand-new-user "New here?" hint (renderNextStrip
-      // in home.html) to an already-active account.
+      // half-computed for). Root cause of a real bug (tracker item
+      // for-product-home-screen-spec-drift-from--575djz, fix 4): an account
+      // with only legacy, pre-createdAt dreams was getting
+      // hasEverLogged:false, which wrongly showed the brand-new-user
+      // "New here?" hint (renderNextStrip in home.html) to an already-active
+      // account.
       var myAny = state.dreams.filter(function (d) { return !!myHandle && d.ownerHandle === myHandle; });
       var key = state.user ? state.user.username.toLowerCase() : null;
       var account = key ? state.accounts[key] : null;

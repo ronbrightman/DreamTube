@@ -292,6 +292,67 @@ test('home.html: My Dreams gallery renders real thumbnails linking to result.htm
   }
 });
 
+// Regression coverage for the My Dreams carousel blank/black video-tile bug
+// (tracker item for-product-home-screen-spec-drift-from--575djz, fix 5).
+// Follows test/processing-preview-video-blank-tile-fallback-behavioral.
+// test.js's pattern of stalling the video's own network request (so no
+// loadeddata/playing/error can ever fire -- the exact real-world shape of
+// a slow network or blocked autoplay) rather than just asserting on
+// markup, but adapted to what home.html's fix actually IS: unlike
+// processing.html, home.html has no load-timeout fallback (out of scope
+// for this round -- see the tracker item's review notes) -- its fix is
+// preload="metadata" (never fetches zero bytes, unlike the old
+// preload="none") plus thumbVideoObserver actually calling play() once a
+// thumb scrolls into view. So this asserts the mechanism of the fix
+// directly: the attribute regression class (preload="none" reintroduced)
+// and the behavioral regression class (no observer/no play() call ever
+// wired up) would each independently be caught here.
+function stallHomeThumbVideoRequest(page) {
+  return page.route('**/mock-home-thumb-video.mp4', function () { /* deliberately never fulfilled -- stalled network, matching the real bug's shape */ });
+}
+
+test('home.html: My Dreams carousel video thumb uses preload="metadata" (never "none") and its IntersectionObserver actually calls play() once the thumb is visible -- regression coverage for the blank/black tile bug', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await stallHomeThumbVideoRequest(page);
+    // Installed before any page script runs (Playwright guarantee for
+    // addInitScript), so this wraps HTMLMediaElement.prototype.play before
+    // home.html's own thumbVideoObserver ever gets a chance to call it --
+    // records real invocations rather than inferring them from a decoded
+    // frame that a stalled request can never produce.
+    await page.addInitScript(function () {
+      window.__thumbPlayCalls = 0;
+      var origPlay = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        if (this.classList && this.classList.contains('thumb-video')) window.__thumbPlayCalls++;
+        return origPlay.apply(this, arguments);
+      };
+    });
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page, { dreams: [makeDream('vid-1', { videoUrl: baseUrl + '/mock-home-thumb-video.mp4' })] });
+
+    await page.waitForSelector('#mydreams-thumbs video.thumb-video', { timeout: 5000 });
+
+    // Attribute regression guard: the original bug was preload="none",
+    // which never fetches enough to decode a frame at all.
+    var preload = await page.locator('#mydreams-thumbs video.thumb-video').getAttribute('preload');
+    assert.equal(preload, 'metadata', 'must never regress back to preload="none" -- that alone caused the blank/black tile');
+
+    // Behavioral regression guard: force the intersection (scrolled fully
+    // into view) and confirm the observer's callback really did invoke
+    // play() on this exact element -- the request is still stalled at this
+    // point, so this would NOT pass merely because the video happened to
+    // have decoded a frame on its own.
+    await page.locator('#mydreams-thumbs video.thumb-video').scrollIntoViewIfNeeded();
+    await page.waitForFunction(function () { return window.__thumbPlayCalls > 0; }, null, { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
 test('home.html: Chamber card\'s fallback href points at result.html for a completed dream (no ?openInterp=1 -- that mechanism is gone), and at create.html when there is nothing to interpret yet', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -438,6 +499,45 @@ test('home.html: Write it / Speak it reuse create.html\'s EXISTING entry points 
     await page.click('#btn-write');
     await page.waitForURL(/create\.html\?write=1/, { timeout: 5000, waitUntil: 'domcontentloaded' });
     assert.equal(await page.locator('#create-write').isVisible(), true, '?write=1 must land directly in Write mode');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: Wizard is the first, primary entry button and reuses create.html\'s EXISTING chip-first "Build it" wizard via a ?build=1 deep-link (tracker item for-product-home-screen-spec-drift-from--575djz, fix 2 -- the founder-requested Wizard entry point that has a history of not surviving from mock into the live build)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page, { dreams: [] });
+
+    await page.waitForSelector('#btn-wizard', { timeout: 5000 });
+    assert.equal(await page.locator('#btn-wizard').isVisible(), true);
+    assert.equal(await page.locator('#btn-wizard').getAttribute('class'), 'ebtn p', 'Wizard must carry the primary (.ebtn.p) treatment, same as the frozen spec\'s other primary actions');
+
+    // DOM order: Wizard, Write, Speak, No recall -- Wizard leads as the
+    // guided, primary path ahead of the three already-shipped manual entry
+    // points (same #today-entrybtns row the D1/entry-button tests above
+    // already assert on for visibility, but not yet on order).
+    var entryIds = await page.locator('#today-entrybtns > *').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
+    assert.deepEqual(entryIds, ['btn-wizard', 'btn-write', 'btn-speak', 'btn-norecall']);
+
+    await page.click('#btn-wizard');
+    await page.waitForURL(/create\.html\?build=1/, { timeout: 5000, waitUntil: 'domcontentloaded' });
+
+    // Not just a URL check -- confirm the actual chip-first wizard UI is
+    // what's showing, same rigor as the ?write=1 test above confirming
+    // #create-write. #choice-build's own click handler swaps the
+    // Build/Write/Record choice screen (#create-select) out for the
+    // chip-first build flow (#create-build); step 1 of 5 (subject chips)
+    // is the first thing rendered into it.
+    await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#create-select').isVisible(), false, 'the Build/Write/Record choice screen should be skipped entirely');
+    var stepBodyText = await page.locator('#build-step-body').textContent();
+    assert.match(stepBodyText, /step 1 of 5/i, 'must land showing the chip-first wizard\'s first step, not just an empty/generic build screen');
+    assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the chip row itself -- not just the step heading -- must be visible');
   } finally {
     await context.close();
   }
