@@ -66,6 +66,60 @@ test('daily-claim-available keys are scoped per availability window -- a new nex
   assert.equal(windowOneAgain.alreadySent, true);
 });
 
+// ===== the SKIP branch's own self-clobber check (round 5) =====
+//
+// Identical hazard, identical fix as lib/first-dream-email-store.js's own
+// markSentOnce (tracker item for-product-bug-founder-affects-all-funn-0efe7t):
+// blobs-retry's SKIP fires on ANY existing record, including this same call's
+// own just-landed write from a previous attempt whose verify-read lagged
+// behind it. Reporting that as alreadySent suppresses a push nobody actually
+// sent. The plain in-memory mock is perfectly consistent and can't produce
+// this on its own -- setReadOverride simulates the lagging read.
+
+test('markSentOnce: a SKIP caused by OUR OWN previous attempt\'s just-landed write is a WIN, not alreadySent', async function () {
+  // Call 1 = attempt 1's read (sees nothing), call 2 = attempt 1's own
+  // verify-read (lags, sees nothing) -> retry; call 3 = attempt 2's read,
+  // which falls through and now sees attempt 1's OWN record -> SKIP.
+  mockBlobs.setReadOverride(pushDedupStore.STORE_NAME, function (key, callIndex) {
+    if (callIndex <= 2) return { value: undefined };
+    return null;
+  });
+
+  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:selfskip');
+
+  assert.equal(result.ok, true, 'nobody else claimed this key -- THIS call\'s own write is the one sitting there, so the push must go out');
+  assert.ok(result.claimId);
+  assert.equal(result.alreadySent, undefined);
+
+  mockBlobs.clearReadOverride(pushDedupStore.STORE_NAME);
+  var { getStore } = require('@netlify/blobs');
+  var persisted = await getStore({ name: pushDedupStore.STORE_NAME }).get('video-ready:mock:1:selfskip', { type: 'json' });
+  assert.equal(persisted.claimId, result.claimId);
+});
+
+test('markSentOnce: a SKIP caused by a genuinely DIFFERENT caller\'s record still reports alreadySent', async function () {
+  mockBlobs.seed(pushDedupStore.STORE_NAME, 'video-ready:mock:1:contended', {
+    key: 'video-ready:mock:1:contended', sentAt: Date.now(), claimId: 'a-different-callers-claim'
+  });
+
+  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:contended');
+
+  assert.equal(result.ok, false, 'this must NOT overcorrect into treating every skip as ours');
+  assert.equal(result.alreadySent, true);
+  assert.equal(result.error, undefined);
+});
+
+test('markSentOnce: a SKIP caused by a legacy record with NO claimId at all reports alreadySent, never a win', async function () {
+  mockBlobs.seed(pushDedupStore.STORE_NAME, 'video-ready:mock:1:legacy', {
+    key: 'video-ready:mock:1:legacy', sentAt: Date.now()
+  });
+
+  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:legacy');
+
+  assert.equal(result.ok, false, 'an undefined claimId on both sides must never read as "this is mine"');
+  assert.equal(result.alreadySent, true);
+});
+
 test('markSentOnce rejects an empty/falsy key', async function () {
   var result = await pushDedupStore.markSentOnce(fakeEvent({}), '');
   assert.equal(result.ok, false);
@@ -97,7 +151,14 @@ test('the exhaustion log never contains the raw key -- send-daily-claim-pushes.j
     console.error = originalError;
   }
 
-  assert.equal(logged.length, 1, 'exhaustion must log exactly once');
-  assert.ok(!logged[0].includes(email), 'exhaustion log must never contain the raw email address: ' + logged[0]);
-  assert.ok(!logged[0].includes(key), 'exhaustion log must never contain the raw key at all: ' + logged[0]);
+  // blobs-retry.js's own shared exhaustion trace (store name + per-attempt
+  // read/verify shapes, no key or value) now also logs on this path, on top
+  // of this store's own message -- so this no longer asserts an exact count,
+  // only the actual invariant: nothing logged anywhere on this path may ever
+  // contain the raw key or email, regardless of how many lines there are.
+  assert.ok(logged.length >= 1, 'exhaustion must log at least once');
+  logged.forEach(function (line) {
+    assert.ok(!line.includes(email), 'no exhaustion log line may ever contain the raw email address: ' + line);
+    assert.ok(!line.includes(key), 'no exhaustion log line may ever contain the raw key at all: ' + line);
+  });
 });
