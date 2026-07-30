@@ -76,3 +76,28 @@ test('hasSent fails closed (treats a missing key as "already sent") for a falsy 
   var sent = await pushDedupStore.hasSent(fakeEvent({}), '');
   assert.equal(sent, true);
 });
+
+test('the exhaustion log never contains the raw key -- send-daily-claim-pushes.js keys literally embed an email address', async function () {
+  // Forces every verify-read to miss (see blobs-retry.js's retryingWrite:
+  // both the initial read and the post-write verify-read go through this
+  // same override), so markSentOnce exhausts maxAttempts and hits its
+  // console.error branch -- the one this test is pinning.
+  mockBlobs.setReadOverride(pushDedupStore.STORE_NAME, function () { return { value: undefined }; });
+
+  var email = 'alice@example.com';
+  var key = 'daily-claim-available:' + email + ':1000';
+  var originalError = console.error;
+  var logged = [];
+  console.error = function () { logged.push(Array.prototype.join.call(arguments, ' ')); };
+  try {
+    var result = await pushDedupStore.markSentOnce(fakeEvent({}), key);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'exhausted');
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(logged.length, 1, 'exhaustion must log exactly once');
+  assert.ok(!logged[0].includes(email), 'exhaustion log must never contain the raw email address: ' + logged[0]);
+  assert.ok(!logged[0].includes(key), 'exhaustion log must never contain the raw key at all: ' + logged[0]);
+});
