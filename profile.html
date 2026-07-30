@@ -782,12 +782,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
   document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
-  // Night dock (Bar A) icons. Inactive tabs draw the LINE variant, the
-  // active tab the filled one — hence Icons.homeOutline, added alongside
-  // the existing filled Icons.home for exactly this pair (see js/icons.js).
-  // Profile is always the active tab on this page and uses the account's
-  // own avatar instead of a glyph (the YouTube "You" treatment), so no
-  // filled variant is rendered here — renderIdentity() below fills it.
+  // Night dock (Bar A) icons. The dock draws inactive tabs as LINE glyphs
+  // and the active one filled — and Profile is always the active tab here,
+  // drawn as the account's own avatar rather than a glyph at all (the
+  // YouTube "You" treatment; renderIdentity() below fills it). So Home and
+  // Explore are only ever inactive on this page: Explore's existing
+  // Icons.compass is already a line glyph, but Icons.home is filled (it's
+  // home.html's own ACTIVE tab), which is why js/icons.js gained
+  // Icons.homeOutline as its line-variant pair.
   document.getElementById('dock-icon-home').innerHTML = Icons.homeOutline;
   document.getElementById('dock-icon-explore').innerHTML = Icons.compass;
   document.getElementById('dock-icon-create').innerHTML = Icons.plus;
