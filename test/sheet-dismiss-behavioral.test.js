@@ -552,37 +552,14 @@ test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
 
 // ============================================================================
 // 8. start.html — Advanced > Characters sheet
+// REMOVED (not replaced): start.html's Advanced > Characters screen and its
+// character sheet were removed outright 2026-07-31 (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp) — founder ruling that
+// character setup belongs only in create.html's own Advanced section, not
+// mid-funnel. start.html no longer has a character sheet (or any other
+// .sheet-overlay) to cover here; create.html's own character sheet (item 5
+// above) still gets full coverage.
 // ============================================================================
-
-function startResumeUrlWithPeople(caption) {
-  return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
-}
-
-test('start.html character sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, startResumeUrlWithPeople('I was walking through a forest with my mother.'));
-    await page.waitForSelector('#char-chip-row');
-    await page.waitForSelector('#char-add-other');
-
-    async function openCharSheet() { await page.click('#char-add-other'); }
-
-    await assertTapOutsideCloses(page, '#sheet-character-overlay', openCharSheet);
-    await assertDragPastThresholdDismisses(page, '#sheet-character-overlay', openCharSheet);
-    await assertDragUnderThresholdSnapsBack(page, '#sheet-character-overlay', openCharSheet);
-
-    // Already open from the snap-back above -- go straight to the
-    // Cancel-button regression check.
-    await page.waitForSelector('#sheet-character-overlay.open');
-    await page.click('#char-cancel');
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
 
 // ============================================================================
 // 9. js/purchase-sheet.js — out-of-tokens purchase sheet
@@ -905,29 +882,11 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
   }
 });
 
-test('start.html character sheet: #app stays capped and the sheet still has a correct on-screen position/tappable backdrop even when #fnScreen\'s own content is deliberately made much taller than one viewport (same round-1 review finding as wizard.html)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, startResumeUrlWithPeople('I was walking through a forest with my mother.'));
-    await page.waitForSelector('#char-chip-row');
-
-    await inflateContentTallerThanViewport(page, '#fnScreen');
-    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
-    assert.ok(appHeight <= 844, '#app.funnel-app must stay capped at the real viewport even once #fnScreen\'s content is deliberately inflated, got ' + appHeight);
-
-    await page.click('#char-add-other');
-    await waitForSheetSettled(page, '#sheet-character-overlay');
-    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
-    assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
-    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
+// start.html's own copy of this regression test was removed along with its
+// Advanced > Characters sheet 2026-07-31 (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp) -- see item 8's own
+// removal note above; wizard.html's identical case just above still covers
+// the shared underlying fix.
 
 test('processing.html: #app stays capped and the out-of-tokens purchase sheet has a correct on-screen position even when this page\'s own content is deliberately made much taller than one viewport', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }

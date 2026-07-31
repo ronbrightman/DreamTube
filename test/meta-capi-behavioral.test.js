@@ -163,10 +163,6 @@ test('start.html: completing funnel signup fires exactly one CompleteRegistratio
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
     await signupFlow.advanceToPasswordStep(page, 'signup-behavioral@example.com');
     await page.fill('#fn-password', 'longenoughpassword1'); // past DreamStore.signup's 3-char minimum
     await page.click('#fn-s13-continue');
@@ -206,10 +202,6 @@ test('start.html: reaching the email-entry screen (13) fires exactly one Reached
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
     // This lands on screen 13 (email_capture) WITHOUT submitting the
     // signup form -- confirms ReachedEmailEntry fires on reaching the
     // screen, independent of and prior to CompleteRegistration.

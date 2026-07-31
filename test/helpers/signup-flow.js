@@ -46,18 +46,18 @@ async function fillAndSubmitSignup(page, email, password) {
 }
 
 /**
- * Reaches screen 13 (the email step) starting from a fresh ?resume=1 load
- * that lands on renderScreen11 ("preparing") first — the same fast route
- * every one of this repo's screen-13 test files already uses (a caption
- * with no first-person/people-indicating language skips the characters
- * screen). `gotoFn` is the caller's own safeGoto-style wrapper (each file
- * already has one, with its own tolerance for this sandbox's transient
+ * Reaches screen 13 (the email step) starting from a fresh ?resume=1 load.
+ * As of 2026-07-31 (tracker item
+ * for-product-urgent-founder-screenshots-i-g64gjp), the funnel's former
+ * characters screen and "preparing" transition screen (renderScreen11)
+ * were both removed outright, so a fresh ?resume=1 load now lands directly
+ * on screen 13 — there is no intermediate screen left to click through.
+ * `gotoFn` is the caller's own safeGoto-style wrapper (each file already
+ * has one, with its own tolerance for this sandbox's transient
  * outbound-network quirk — see CLAUDE.md).
  */
 async function reachScreen13(page, gotoFn, resumeUrl, caption) {
   await gotoFn(page, resumeUrl(caption));
-  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
 }
 

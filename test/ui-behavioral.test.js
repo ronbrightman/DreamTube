@@ -215,10 +215,10 @@ function stubPendingGenerationAsUnavailable(page) {
 async function goToPricingScreen(page, email) {
   await stubPendingGenerationAsUnavailable(page);
   await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-  await page.click('#fn-adv-chars-skip');
-  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  await page.click('#fn-s11-continue');
+  // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+  // g64gjp), start.html's former characters and "preparing" transition
+  // screens were removed outright -- a fresh ?resume=1 load lands directly
+  // on screen 13.
   await signupFlow.advanceToPasswordStep(page, email);
   // 20 chars -- comfortably past the 3-char minimum DreamStore.signup()
   // enforces, so this helper doesn't itself trip over the finding this
@@ -400,10 +400,10 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
     var bodyText = await page.textContent('#app');
@@ -1212,145 +1212,48 @@ test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/
 
 // ===========================================================================
 // Advanced screen (9) / pricing screen (14) fixes -- commit ae7da62.
+//
+// REMOVED (not replaced): start.html's Advanced > Characters screen
+// (renderScreenAdvChars) and its caption-based "does this dream involve
+// people?" heuristic (captionSuggestsPeople) were removed outright
+// 2026-07-31 -- founder ruling (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp) enforcing the same
+// "too many options, no mid-funnel customizing" call already made
+// 2026-07-29 about this exact class of mid-funnel step: character setup
+// belongs only in create.html's own Advanced section now. Everything that
+// used to have dedicated coverage here -- the "dawn" light-phase rendering,
+// the 4-dot vs 3-dot progress bar depending on caption wording, the dynamic
+// PREPARING_STEP lookup across a variable-length SCREEN_RENDERERS, the
+// character add/select/edit interactions writing into `staged`, and the
+// "Me" chip auto-select bug fix -- no longer applies; there is no longer a
+// caption-dependent screen to show, hide, or index around. The
+// chip-edit-area tap-target fix is still real (shared CSS/markup with
+// create.html's own Advanced accordion), so it's kept, ported to
+// create.html just below. The camera/scenery screens PARKED alongside the
+// old characters screen (founder decision 2026-07-24, tracker item
+// for-product-two-post-handoff-app-pages-p-atr0r7) are UNAFFECTED by this
+// removal and still get their own (now simplified) check.
 // ===========================================================================
 
-test('Advanced screen (characters): renders the light "dawn" phase -- light background, dark readable ink text -- never the removed dark-mode special case (camera/scenery screens are parked as of the 2026-07-24 founder decision, see tracker item for-product-two-post-handoff-app-pages-p-atr0r7, so only the characters screen remains in this family)', async function (t) {
+test('parked camera/scenery screens never render in start.html\'s funnel tail, and the removed characters screen never renders either, regardless of caption wording', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-
-    var appClasses = await page.$eval('#app', function (el) { return el.className; });
-    assert.match(appClasses, /\bfunnel-app\b/);
-    assert.ok(!/\bfn-dark-mode\b/.test(appClasses), 'the removed dark-mode special case must never apply to an Advanced screen');
-
-    // #FBEFEA (the dawn gradient's first stop, same value as the base
-    // --dawn-1 token) as rgb -- confirms the real light gradient is
-    // applied via applyPhase(), not just "isn't black".
-    var bgImage = await page.$eval('#app', function (el) { return getComputedStyle(el).backgroundImage; });
-    assert.match(bgImage, /251,\s*239,\s*234/, 'expected the dawn gradient (#FBEFEA) as the background');
-
-    // #3A3350 / rgb(58, 51, 80) -- the light-phase --fn-ink color. Must
-    // NOT be the real app's white --text-primary (the old fn-dark-mode
-    // headline override), which combined with the light background here
-    // would be a near-invisible white-on-white regression.
-    var headlineColor = await page.$eval('.fn-headline', function (el) { return getComputedStyle(el).color; });
-    assert.equal(headlineColor, 'rgb(58, 51, 80)', 'expected the dawn-phase --fn-ink color');
-    assert.notEqual(headlineColor, 'rgb(255, 255, 255)', 'must not still be the removed dark-mode --text-primary override');
-  } finally {
-    await context.close();
-  }
-});
-
-test('Advanced screen (characters) + transition: 4-dot progress bar, and Continue on the characters screen advances straight into the transition screen -- camera/scenery are parked (2026-07-24 founder decision) and no longer sit in between', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying with my sister'), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    assert.equal(await page.$('#fn-adv-chars-continue'), null, 'the removed characters screen must never render');
+    assert.equal(await page.$('#fn-adv-camera-continue'), null, 'the parked camera screen must never render');
+    assert.equal(await page.$('#fn-adv-scenery-continue'), null, 'the parked scenery screen must never render');
 
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 4, 'expected 4 progress dots -- characters + transition + email + pricing/confirmation (camera/scenery parked, and the former standalone confirmation screen 15 is folded into the pricing screen -- tracker item for-product-funnel-handoff-screens-theme-5ttymn)');
-
-    await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var cameraScreenRendered = await page.$('#fn-adv-camera-continue');
-    var sceneryScreenRendered = await page.$('#fn-adv-scenery-continue');
-    assert.equal(cameraScreenRendered, null, 'the parked camera screen must never render in between');
-    assert.equal(sceneryScreenRendered, null, 'the parked scenery screen must never render in between');
-  } finally {
-    await context.close();
-  }
-});
-
-test('Advanced screen (characters): Skip jumps straight to the transition screen (regression check for the dynamic PREPARING_STEP lookup now that camera/scenery are parked and removed from SCREEN_RENDERERS)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  } finally {
-    await context.close();
-  }
-});
-
-test('Advanced screen (characters): the character add/select/edit interactions still write into staged state exactly as before (camera/scenery interactions are no longer reachable through the live flow -- see the parked-screens tests below)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-
-    // --- Characters: add a character via the sheet, confirm it's rendered
-    // selected by default, then toggle it off by clicking the chip itself
-    // (not its nested edit area, which opens the sheet instead). ---
-    await page.click('#char-add-other');
-    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
-    await page.fill('#char-name-input', 'Buddy');
-    await page.fill('#char-desc-input', 'A friendly golden retriever');
-    await page.click('#char-save-btn');
-    await page.waitForSelector('.char-chip:has-text("Buddy")', { timeout: 5000 });
-    var buddySelectedAfterAdd = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(buddySelectedAfterAdd, true, 'a newly added non-self character should be auto-selected');
-    await page.click('.char-chip:has-text("Buddy") .chip-check');
-    var buddySelectedAfterToggle = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(buddySelectedAfterToggle, false, 'clicking the chip (outside the edit area) should toggle its selection off');
-
-    await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  } finally {
-    await context.close();
-  }
-});
-
-// ===========================================================================
-// Camera/scenery screens PARKED (founder decision 2026-07-24, tracker item
-// for-product-two-post-handoff-app-pages-p-atr0r7): every real visitor
-// reaching start.html's funnel tail arrives via ?resume=1 (a bare visit
-// redirects to the marketing funnel before ever reaching these screens --
-// see start.html's Entry guard), and the marketing funnel already folds
-// camera/scenery info into the assembled caption text, so these two
-// screens were pure redundant clicks. They're intentionally left in the
-// file (parked, not deleted) for a later pass that folds them into the
-// wizard, but must never appear in the live funnel tail.
-// ===========================================================================
-
-test('parked camera/scenery screens: the funnel tail never renders "Pick a camera view" or "Set the scene" for a caption WITH people-indicating language -- goes characters -> transition -> email directly', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-camera-continue'), null);
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
-
-    await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-camera-continue'), null);
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
-
-    await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-camera-continue'), null);
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
+    assert.equal(dotCount, 2, 'expected exactly 2 progress dots -- email + pricing/confirmation, the only two screens left in the funnel tail');
 
     // cameraView/sceneryTime/sceneryPlace are never set for a funnel-resumed
-    // visitor now (their collection screens are parked) -- confirms the
-    // draft is left at its default null shape rather than something
-    // downstream (start-pending-generation.js's POST body) would choke on.
+    // visitor (their collection screens are parked) -- confirms the draft
+    // is left at its default null shape rather than something downstream
+    // (start-pending-generation.js's POST body) would choke on.
     var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
     assert.equal(draft.cameraView, null);
     assert.equal(draft.sceneryTime, null);
@@ -1360,161 +1263,28 @@ test('parked camera/scenery screens: the funnel tail never renders "Pick a camer
   }
 });
 
-test('parked camera/scenery screens: the funnel tail never renders "Pick a camera view" or "Set the scene" for a caption with NO people-indicating language -- goes straight from load to the transition screen', async function (t) {
+test('create.html: Advanced accordion chip-edit-area padding is comfortably close to the ~44px mobile tap-target guideline, not the old ~32px version (ported from start.html\'s own copy of this fix, since removed along with start.html\'s Advanced > Characters screen -- tracker item for-product-urgent-founder-screenshots-i-g64gjp)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-chars-continue'), null, 'no people-indicating language -- characters screen must not render');
-    assert.equal(await page.$('#fn-adv-camera-continue'), null, 'camera screen is parked -- must never render');
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null, 'scenery screen is parked -- must never render');
 
-    await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-camera-continue'), null);
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null);
-  } finally {
-    await context.close();
-  }
-});
+    // Real signup via the UI, so create.html's own "must be logged in" guard
+    // passes -- same pattern as the "Advanced accordion chips render..."
+    // test just below.
+    await page.goto(baseUrl + '/login.html?mode=signup', { waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'chipedgetester');
+    await page.fill('#login-email', 'chipedgetester@example.com');
+    await page.fill('#login-password', 'longenoughpassword1');
+    await page.click('#login-submit');
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
 
-// ===========================================================================
-// Founder mobile-test fix (2026-07-24), item (4): the "Add the people in
-// your dream" characters screen. (a) only shows when the caption plausibly
-// involves people; (c) the "Me" chip bug (saved but not auto-selected);
-// (d) the pencil edit tap target.
-// ===========================================================================
+    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
+    await page.click('#choice-write');
+    await page.click('#adv-toggle');
+    await page.waitForSelector('.adv-section.open', { timeout: 5000 });
 
-test('character screen (fix 1a): a caption with no people-indicating language skips the "Add the people in your dream" screen entirely, landing straight on the transition screen with 3 (not 4) progress dots (camera/scenery are parked as of the 2026-07-24 founder decision, so there is no longer a camera screen to land on)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var charScreenEverRendered = await page.$('#fn-adv-chars-continue');
-    assert.equal(charScreenEverRendered, null, 'the characters screen must not have rendered when the caption has no people-indicating language');
-    var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 3, 'expected 3 progress dots -- transition + email + pricing/confirmation, characters/camera/scenery all skipped and the former standalone confirmation screen 15 folded into the pricing screen (tracker item for-product-funnel-handoff-screens-theme-5ttymn)');
-  } finally {
-    await context.close();
-  }
-});
-
-test('character screen (fix 1a): a caption WITH people-indicating language still shows the characters screen with all 4 progress dots, and Skip from it still lands on the correct transition screen when the characters screen was NOT skipped (regression test for the dynamic PREPARING_STEP lookup, now that camera/scenery are permanently absent from SCREEN_RENDERERS)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var contextA = await browser.newContext();
-  try {
-    var pageA = await contextA.newPage();
-    await blockThirdParty(pageA);
-    await pageA.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
-    await pageA.waitForSelector('#fn-adv-chars-continue', { timeout: 5000 });
-    var dotCount = await pageA.$$eval('.fn-progress i', function (els) { return els.length; });
-    assert.equal(dotCount, 4, 'expected all 4 progress dots when the characters screen is shown ("we" is people-indicating)');
-
-    // PREPARING_STEP must resolve to index 1 here (characters screen is
-    // index 0) -- Skip must land on the transition screen, not accidentally
-    // skip past it to email capture. This is exactly the bug a hardcoded
-    // goToStep(N) would reintroduce once the characters screen's presence
-    // shifts every later index by one.
-    await pageA.click('#fn-adv-chars-skip');
-    await pageA.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var onEmailScreenAlready = await pageA.$('#fn-email');
-    assert.equal(onEmailScreenAlready, null, 'must land on the transition screen, not skip straight past it to email capture');
-  } finally {
-    await contextA.close();
-  }
-
-  // When the characters screen IS skipped (no people-indicating language),
-  // PREPARING_STEP must resolve to index 0 -- the transition screen is now
-  // the very first screen rendered, with no Advanced screen before it at
-  // all (camera/scenery are parked, so nothing sits between "page load" and
-  // the transition screen for this caption shape).
-  var contextB = await browser.newContext();
-  try {
-    var pageB = await contextB.newPage();
-    await blockThirdParty(pageB);
-    await pageB.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('A sunset fading over calm ocean waves'), { waitUntil: 'domcontentloaded' });
-    await pageB.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var onEmailScreenAlready = await pageB.$('#fn-email');
-    assert.equal(onEmailScreenAlready, null, 'must land on the transition screen, not skip straight past it to email capture');
-  } finally {
-    await contextB.close();
-  }
-});
-
-test('character screen (fix 1c): saving "Me" for the first time auto-selects its chip immediately, even when the caption has no literal "I"/"me" word (the original bug)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    // "We" triggers the people heuristic (so this screen renders) but does
-    // NOT literally contain "I" or "me" -- exactly the caption shape that
-    // exposed the original bug (the old code only auto-selected "Me" when
-    // the caption literally contained the word "I" or "me").
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#char-add-self', { timeout: 5000 });
-    await page.click('#char-add-self');
-    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
-    await page.fill('#char-desc-input', 'A tall woman with curly brown hair');
-    await page.click('#char-save-btn');
-    await page.waitForSelector('.char-chip:has-text("Me")', { timeout: 5000 });
-    var meSelected = await page.$eval('.char-chip:has-text("Me")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(meSelected, true, 'the Me chip must be selected right after its first save, regardless of caption wording');
-  } finally {
-    await context.close();
-  }
-});
-
-test('character screen (fix 1c): re-saving an existing character after deliberately deselecting it does NOT silently re-select it', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#char-add-other', { timeout: 5000 });
-    await page.click('#char-add-other');
-    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
-    await page.fill('#char-name-input', 'Buddy');
-    await page.fill('#char-desc-input', 'A friendly golden retriever');
-    await page.click('#char-save-btn');
-    await page.waitForSelector('.char-chip:has-text("Buddy")', { timeout: 5000 });
-    var selectedAfterAdd = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(selectedAfterAdd, true, 'sanity check: a brand-new character is auto-selected on its first save');
-
-    // Deliberately deselect it by tapping the chip itself (not the edit area).
-    await page.click('.char-chip:has-text("Buddy") .chip-check');
-    var deselected = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(deselected, false);
-
-    // Reopen it to edit (via the chip-edit-area, which opens the sheet) and
-    // save again with no real change.
-    await page.click('.char-chip:has-text("Buddy") .chip-edit-area');
-    await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
-    await page.click('#char-save-btn');
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: 5000 });
-
-    var selectedAfterReSave = await page.$eval('.char-chip:has-text("Buddy")', function (el) { return el.classList.contains('selected'); });
-    assert.equal(selectedAfterReSave, false, 'editing and re-saving an already-deselected character must not silently re-select it');
-  } finally {
-    await context.close();
-  }
-});
-
-test('character chip edit tap target (fix 1d): .chip-edit-area\'s padding is comfortably close to the ~44px mobile tap-target guideline, not the old ~32px version', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('We are walking through a quiet forest at dusk'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#char-add-other', { timeout: 5000 });
     await page.click('#char-add-other');
     await page.waitForSelector('#sheet-character-overlay.open', { timeout: 5000 });
     await page.fill('#char-name-input', 'Buddy');
@@ -1844,10 +1614,10 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await signupFlow.advanceToPasswordStep(page, 'start-pending-test@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
@@ -1897,10 +1667,10 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await signupFlow.advanceToPasswordStep(page, 'start-pending-fallback@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
@@ -1953,10 +1723,10 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await signupFlow.advanceToPasswordStep(page, 'retry-same-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
@@ -2021,10 +1791,10 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await signupFlow.advanceToPasswordStep(page, 'first-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
@@ -2100,10 +1870,10 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await signupFlow.advanceToPasswordStep(page, 'first-email@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
@@ -2200,10 +1970,10 @@ test('email capture screen (13) shows the reassurance microcopy explaining why e
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fn-adv-chars-skip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-skip');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
+    // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), start.html's former characters and "preparing" transition
+    // screens were removed outright -- a fresh ?resume=1 load lands directly
+    // on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
     var bodyText = await page.textContent('#app');

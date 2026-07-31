@@ -99,12 +99,10 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
       { waitUntil: 'domcontentloaded' }
     );
 
-    // captionText is empty, so captionSuggestsPeople(captionText) is false
-    // and the characters screen is skipped -- the funnel tail starts
-    // directly on renderScreen11 ("preparing").
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
-
+    // As of 2026-07-31 (tracker item
+    // for-product-urgent-founder-screenshots-i-g64gjp), the funnel's former
+    // characters screen and "preparing" transition screen have both been
+    // removed outright -- the funnel tail starts directly on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await signupFlow.advanceToPasswordStep(page, 'record-mode-behavioral@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
@@ -138,18 +136,15 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
     await blockThirdParty(page);
     var pendingGenerationCalls = await trackPendingGenerationCalls(page);
 
-    // A caption with no first-person/people-indicating language, so this
-    // also skips straight to renderScreen11 like the mode=record case
-    // above -- isolates the assertions to the mode=record branch instead
-    // of the (unrelated, untouched) characters-screen heuristic.
     await page.goto(
       baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
       { waitUntil: 'domcontentloaded' }
     );
 
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
-
+    // As of 2026-07-31 (tracker item
+    // for-product-urgent-founder-screenshots-i-g64gjp), the funnel's former
+    // characters screen and "preparing" transition screen have both been
+    // removed outright -- the funnel tail starts directly on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     await signupFlow.advanceToPasswordStep(page, 'normal-mode-behavioral@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
@@ -271,7 +266,10 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
 // together", "we'll email you your dream the moment it's ready", "Building
 // your first dream now") when, in record mode, nothing has been recorded
 // yet at that point — recording only happens after this, app-side on
-// create.html. Fixed by making that copy record-mode-aware.
+// create.html. Fixed by making that copy record-mode-aware. (Screen 11
+// itself was later removed outright, 2026-07-31, tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp -- the copy assertions
+// below now only cover screens 13/14, which are still live.)
 //
 // This covers the FULL chain end to end in one test (funnel handoff ->
 // start.html signup in record mode -> create.html?record=1 -> the record
@@ -301,14 +299,13 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
       { waitUntil: 'domcontentloaded' }
     );
 
-    // Screen 11 ("preparing" transition) must not claim a dream is already
-    // coming together -- nothing has been recorded yet in record mode.
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var screen11Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
-    assert.doesNotMatch(screen11Text, /dream is coming together/i, 'record mode must not claim a dream is already coming together -- nothing has been recorded yet');
-    assert.match(screen11Text, /you.?ll record your dream/i, 'record mode\'s screen 11 must tell the visitor they will record their dream next');
-    await page.click('#fn-s11-continue');
-
+    // The former screen 11 ("preparing" transition) -- which used to need
+    // record-mode-aware copy here so it didn't falsely claim a dream was
+    // already coming together -- was removed outright 2026-07-31 (tracker
+    // item for-product-urgent-founder-screenshots-i-g64gjp), so there is no
+    // longer any such copy to assert on; the funnel tail lands directly on
+    // screen 13.
+    //
     // Screen 13 (email capture) must not claim a dream already exists /
     // is just waiting to be emailed -- it must say recording comes next.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
@@ -350,7 +347,7 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
   }
 });
 
-test('start.html: a normal (no mode=record) visitor still sees the original screen 11/13/14 copy unchanged, on the same mobile webview viewport', async function (t) {
+test('start.html: a normal (no mode=record) visitor still sees the original screen 13/14 copy unchanged, on the same mobile webview viewport', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
   try {
@@ -362,11 +359,9 @@ test('start.html: a normal (no mode=record) visitor still sees the original scre
       { waitUntil: 'domcontentloaded' }
     );
 
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    var screen11Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
-    assert.match(screen11Text, /dream is coming together/i, 'a normal (non-record) visitor must still see the original screen 11 copy, unchanged');
-    await page.click('#fn-s11-continue');
-
+    // The former screen 11 ("preparing" transition) was removed outright
+    // 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp) -- the funnel tail now lands directly on screen 13.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     var screen13Text = await page.evaluate(function () { return document.getElementById('fnScreen').textContent; });
     assert.match(screen13Text, /where should we send your first dream/i, 'a normal (non-record) visitor must still see the original screen 13 headline, unchanged');

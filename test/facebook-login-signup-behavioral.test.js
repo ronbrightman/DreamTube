@@ -88,7 +88,7 @@ async function safeGoto(page, url) {
   }
 }
 
-/** Same base resume params the other funnel behavioral tests use. A caption with no first-person/people-indicating language skips the characters screen. */
+/** Same base resume params the other funnel behavioral tests use. */
 function resumeUrl(caption, extra) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption) + (extra || '');
 }
@@ -142,10 +142,9 @@ function mockPostSignupRoutes(page) {
   ]);
 }
 
+/** As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-g64gjp), start.html's former characters and "preparing" transition screens were removed outright -- a fresh ?resume=1 load lands directly on screen 13. */
 async function reachScreen13(page, caption, extra) {
   await safeGoto(page, resumeUrl(caption, extra));
-  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
 }
 
@@ -435,44 +434,25 @@ test('the Facebook click calls DreamStore.invalidatePendingSignup (store-level g
 
 // ===========================================================================
 // staged characters must survive the redirect (spec §2.5).
+//
+// REMOVED (not replaced): the test that used to prove persistence -- reach
+// start.html's Advanced > Characters screen via the real UI, stage a
+// character, then click "Continue with Facebook" and check the persisted
+// localStorage snapshot -- is gone. That screen (renderScreenAdvChars) was
+// removed outright 2026-07-31 (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp), and `staged` is a
+// private closure variable inside start.html's own script (never exposed on
+// window), so there is no longer any way -- real UI or test-only injection
+// -- to get non-empty staged character data into this page before a
+// Facebook click. persistStagedForFacebookRedirect() itself is untouched
+// and still fires on every real Facebook click (see start.html's own
+// comment on that function), it just now always serializes an empty
+// `staged` -- functionally identical to any caption that never triggered
+// the old screen in the first place. The RESTORE half below still gets
+// full, real coverage: it seeds the post-redirect localStorage snapshot
+// directly (never depends on the removed screen), so it keeps proving
+// restoreStagedFromFacebookRedirect's own correctness on real, live code.
 // ===========================================================================
-
-test('staged characters are persisted to a scoped localStorage key before leaving for Facebook', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await configureFacebookApp(page);
-    await page.route('https://www.facebook.com/**', function (route) { route.abort(); });
-
-    // A caption with first-person language brings up the characters screen.
-    await safeGoto(page, resumeUrl('I was flying over the ocean with my sister'));
-    await page.waitForSelector('#char-add-other', { timeout: 5000 });
-    await page.click('#char-add-other');
-    await page.fill('#char-name-input', 'Sister');
-    await page.fill('#char-desc-input', 'long dark hair, red coat');
-    await page.click('#char-save-btn');
-    await page.waitForSelector('#char-chip-row .char-chip', { timeout: 5000 });
-    await page.click('#fn-adv-chars-continue');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
-    await page.waitForSelector('#fn-fb-continue', { timeout: 5000 });
-
-    var stored = await page.evaluate(function () {
-      document.getElementById('fn-fb-continue').click();
-      return localStorage.getItem('dreamtube_fb_staged_characters');
-    });
-    assert.ok(stored, 'staged characters must be persisted before the redirect');
-    var parsed = JSON.parse(stored);
-    assert.equal(parsed.staged.characters.length, 1);
-    assert.equal(parsed.staged.characters[0].name, 'Sister');
-    assert.equal(parsed.staged.selectedIds.length, 1);
-    assert.ok(parsed.savedAt > 0, 'a savedAt stamp bounds how long the snapshot can linger');
-  } finally {
-    await context.close();
-  }
-});
 
 test('on the Facebook return leg, staged characters are restored into real DreamStore characters and the localStorage key is cleared', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
@@ -548,7 +528,7 @@ test('a normal (non-Facebook) load clears any orphaned staged snapshot rather th
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
     var leftover = await page.evaluate(function () { return localStorage.getItem('dreamtube_fb_staged_characters'); });
     assert.equal(leftover, null);
   } finally {
@@ -584,28 +564,17 @@ test('returning with a valid ?bt= skips screen 13 entirely and lands on screen 1
   }
 });
 
-test('returning with a valid ?bt= lands on screen 14 for a dream that ALSO has a characters screen — the skip is index-based, not hardcoded', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  // A caption with first-person/people language adds renderScreenAdvChars
-  // to the screen list, shifting screen 13's index by one. An off-by-one
-  // in the skip would land this visitor back on the signup screen (or on
-  // nothing) instead of screen 14.
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await configureFacebookApp(page);
-    await mockPostSignupRoutes(page);
-    await mockSessionTransfer(page, { ok: true, username: 'charsuser', email: 'charsuser@example.com', authToken: 'auth-8' });
-
-    await safeGoto(page, resumeUrl('I was flying over the ocean with my sister', '&bt=transfer-token-8'));
-    await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
-    assert.equal(await page.$('#fn-email'), null);
-    assert.equal(await page.$('#char-chip-row'), null, 'the characters screen is behind them, not re-rendered');
-  } finally {
-    await context.close();
-  }
-});
+// REMOVED (not replaced): the test that used to prove the ?bt= skip was
+// index-based rather than hardcoded -- by reaching screen 14 for a dream
+// whose caption also brought up the (conditionally included)
+// characters screen, shifting screen 13/SIGNUP_STEP's index by one -- no
+// longer applies. The characters screen (renderScreenAdvChars) was removed
+// outright 2026-07-31 (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp) and is never
+// conditionally included anymore, so SIGNUP_STEP is now always trivially 0
+// -- there is no longer a variable-index case to guard against here. The
+// test just above this one (a plain, no-characters dream) still covers the
+// ?bt= skip itself.
 
 test('the return leg fires the generate-during-signup kickoff with the now-known email, and adopts the pending generation', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }

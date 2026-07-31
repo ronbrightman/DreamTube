@@ -154,8 +154,6 @@ test('start.html: the persisted fbc/fbp cookies actually reach a real conversion
 
     await page.goto(baseUrl + '/start.html?' + BASE_RESUME_PARAMS + '&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean') + '&fbc=fb.1.1700000000000.attributed&fbp=fb.1.1700000000000.browserid', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-    await page.click('#fn-s11-continue');
     await signupFlow.advanceToPasswordStep(page, 'attribution-test@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
