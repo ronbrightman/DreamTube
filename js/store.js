@@ -39,6 +39,23 @@
 //       for-product-public-feed-safety-in-app-re-ppuw77)
 //   syncBlockedHandlesFromServer() -> best-effort GET /.netlify/functions/block-user,
 //       merges a signed-in account's durable server-side block list into this device
+//   Private dreams (never-published, or unpublished-again) also get a
+//   durable per-account server-side copy now (tracker item
+//   for-product-build-p0-server-side-dream-p-zl3rb2, lib/dream-store.js /
+//   dream-sync.js) — reconcilePrivateDreamsFromServer() merges this
+//   account's local dreams with that server copy right after every real
+//   login()/signup() success (never clobbering a newer local edit),
+//   syncPrivateDreamBestEffort()/deletePrivateDreamBestEffort() fire on
+//   every local create/edit/unpublish/delete. All three are internal (not
+//   exposed on the DreamStore object below) and fully best-effort, reusing
+//   the SAME state.user.authToken block-user's own sync above already
+//   mints/threads — see their own doc comments just above them for the
+//   full merge logic and the PRIVATE_DREAM_SYNC_ENABLED staged-rollout
+//   flag. Deliberately triggered eagerly at login/signup (unlike
+//   syncBlockedHandlesFromServer's own lazy explore.html-page-load trigger)
+//   — a brand-new-to-this-device login is exactly what webview-storage-wipe
+//   recovery looks like, so restoring dreams as early as possible matters
+//   more here than it does for a blocklist.
 //   getMyDreams()               -> GET  /api/users/me/dreams
 //   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
 //   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
@@ -186,6 +203,20 @@
   // still completing successfully on fal's side moments later. 10 minutes
   // gives real headroom while still not leaving a truly stuck job hanging.
   var MAX_POLL_MS = 10 * 60 * 1000;
+
+  // Single on/off point for the whole private-dream server-sync feature
+  // (tracker item for-product-build-p0-server-side-dream-p-zl3rb2) — the
+  // "staged, reversible rollout" the tracker item explicitly asks for.
+  // Flipping this to `false` and redeploying fully disables every sync
+  // call site below (syncPrivateDreamBestEffort/deletePrivateDreamBestEffort/
+  // reconcilePrivateDreamsFromServer all check it first and no-op) without
+  // touching any other code or reverting this branch — every one of those
+  // functions already degrades to a silent no-op on a missing authToken
+  // (see commitLocalSignup's own doc comment for exactly which sign-in
+  // paths mint a real one vs. leave it null), so this flag is purely
+  // an extra manual override on top of that, for a fast kill switch if
+  // something unexpected turns up in production after merge.
+  var PRIVATE_DREAM_SYNC_ENABLED = true;
 
   var STYLE_GRADIENTS = {
     Cartoon:   'linear-gradient(165deg,#FFD68A,#FFB199)',
@@ -883,6 +914,194 @@
     }).catch(function () { /* best-effort — see comment above */ });
   }
 
+  // ---------------------------------------------------------------------
+  // Private-dream server sync (tracker item
+  // for-product-build-p0-server-side-dream-p-zl3rb2) — dream-sync.js +
+  // lib/dream-store.js. Closes the gap this file's OWN header comment used
+  // to document as explicitly deferred: a PRIVATE (never-published, or
+  // unpublished-again) dream previously lived ONLY in this browser's
+  // localStorage — permanently lost the moment that storage is
+  // cleared/evicted, which happens routinely for real users opening this
+  // app inside Facebook/Instagram's in-app webview (this app's biggest
+  // acquisition channel — see the webview-detection code elsewhere in this
+  // file). PUBLISHED dreams already have a durable server-side copy (the
+  // shared feed-index, see syncPublishedDreamToFeed above) and are
+  // deliberately NOT duplicated here — see dream-sync.js's own header
+  // comment.
+  //
+  // Reuses the SAME `state.user.authToken` block-user's own sync above
+  // already mints/threads through login()/signup() — this is deliberately
+  // NOT a second token/identity mechanism, since lib/account-auth-token.js
+  // is already a general-purpose "verified identity, not a bare
+  // client-claimed username" primitive (see that file's own "NOT a general
+  // session-replacement... expand its use deliberately" header comment) —
+  // dream-sync.js is simply its second consumer.
+  //
+  // Same "local effect always applies immediately, server sync is
+  // fire-and-forget/best-effort, degrades gracefully if it fails" contract
+  // every call site in this section follows (mirrors blockUser/unblockUser/
+  // syncBlockedHandlesFromServer's own contract exactly) — none of these
+  // ever throw, block, or surface an error to the caller; a failure just
+  // means this device's private-dream server copy is one sync behind, same
+  // as a failed syncPublishedDreamToFeed call leaves the shared feed one
+  // sync behind. Every entry point also no-ops silently — before ever
+  // touching the network — when either PRIVATE_DREAM_SYNC_ENABLED is off
+  // (the staged-rollout kill switch, see that flag's own comment) or
+  // `state.user.authToken` isn't on file (not signed in via a real
+  // server-verified login/signup this session — see commitLocalSignup's
+  // own doc comment for exactly which flows mint a real token and which
+  // deliberately don't).
+
+  /**
+   * Fire-and-forget upsert of one PRIVATE dream into this account's
+   * server-side dream-sync record. Called from every local mutation site
+   * that creates/changes a dream while it's NOT currently published
+   * (finalizeDream, saveClaimedDream, unpublishDream, generateInterpretation
+   * — see each call site's own comment). Never called for a published
+   * dream — its durable copy is the shared feed instead (see header
+   * comment above), and dream-sync.js's own server-side sanitization would
+   * force isPublished back to false regardless, so calling this for one
+   * would be actively misleading about what's actually being persisted.
+   */
+  function syncPrivateDreamBestEffort(dream) {
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
+    if (!state.user || !state.user.authToken) return;
+    if (!dream || dream.isPublished) return;
+    fetch('/.netlify/functions/dream-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authToken: state.user.authToken,
+        action: 'upsert',
+        dream: {
+          id: dream.id, ownerHandle: dream.ownerHandle,
+          caption: dream.caption, promptText: dream.promptText || null, storyText: dream.storyText || null,
+          style: dream.style, mediaType: dream.mediaType || 'video',
+          videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
+          sourceOperationName: dream.sourceOperationName || null,
+          interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
+          updatedAt: dream.updatedAt || Date.now()
+        }
+      })
+    }).catch(function () { /* best-effort — see section comment above */ });
+  }
+
+  /**
+   * Fire-and-forget removal of one dream from this account's server-side
+   * dream-sync record. Called both when a private dream is actually
+   * DELETED (deleteDream), and when one is PUBLISHED (publishDream) — a
+   * published dream's durable copy is the shared feed from that point on,
+   * so it no longer belongs in this store either (see header comment
+   * above). Safe/idempotent to call for a dream that was never synced
+   * here in the first place — dream-sync.js's own removePrivateDream is a
+   * no-op in that case, not an error.
+   */
+  function deletePrivateDreamBestEffort(dreamId) {
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
+    if (!state.user || !state.user.authToken) return;
+    fetch('/.netlify/functions/dream-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authToken: state.user.authToken, action: 'delete', dreamId: dreamId })
+    }).catch(function () { /* best-effort — see section comment above */ });
+  }
+
+  /**
+   * Reconciles this account's LOCAL private dreams with its server-side
+   * dream-sync record — called once right after every real server-verified
+   * login/signup (see each call site's own comment). Fire-and-forget: a
+   * failure here (offline, functions runtime unreachable) leaves this
+   * device's local dreams exactly as they already were — never worse off,
+   * just not yet caught up with whatever another device may have synced.
+   *
+   * MERGE, NOT CLOBBER (tracker item's own explicit instruction — a device
+   * with newer local edits must not lose them to a stale server copy, and
+   * vice versa) — per dream id, scoped to this account's own dreams only:
+   *   - Missing locally entirely: this device lost it (webview wipe) or
+   *     never had it (a different device created/synced it first) —
+   *     restore it from the server copy. This is the actual data-loss fix
+   *     this whole feature exists for.
+   *   - Present locally AND already published: left alone completely,
+   *     regardless of what the server-side dream-sync record says — a
+   *     published dream's durable copy is the shared feed (see header
+   *     comment above), and this device's local isPublished:true is
+   *     already the authoritative truth; a stale dream-sync record here
+   *     (e.g. publishDream's own best-effort delete-from-dream-sync call
+   *     failed on a flaky connection) must never un-publish anything by
+   *     silently overwriting it.
+   *   - Present locally, NOT published, and the server's `updatedAt` is
+   *     newer: the server has a newer edit (made from a different
+   *     device) — take it.
+   *   - Present locally, NOT published, and THIS device's `updatedAt` is
+   *     newer (or the server's copy is missing `updatedAt` at all, i.e.
+   *     older than this field existed): this device's edit hasn't reached
+   *     the server yet (e.g. made while offline) — re-push it, rather
+   *     than silently leaving the server-side copy stale.
+   *
+   * Deliberately NEVER deletes a local dream just because the server
+   * doesn't have a copy of it — there is no delete-tombstone mechanism
+   * here (this store has no concept of "deleted at", only "present" or
+   * "absent"), so treating "absent server-side" as "delete it locally"
+   * would risk destroying a dream a user still wants the moment they log
+   * in on a second device that simply hasn't synced it yet. The accepted
+   * tradeoff (see this feature's own build report): a dream deleted on
+   * device A does not automatically vanish from device B's local cache
+   * until B also explicitly deletes it — a known, narrow limitation, far
+   * preferable to the alternative of a merge that can silently destroy
+   * data. Any local-only private dream the server doesn't know about yet
+   * (e.g. created entirely offline) is pushed up as a catch-up sync,
+   * exactly like the newer-locally branch above.
+   */
+  function reconcilePrivateDreamsFromServer() {
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
+    if (!state.user || !state.user.authToken) return;
+    var myHandle = state.user.handle;
+    var authToken = state.user.authToken;
+    fetch('/.netlify/functions/dream-sync?authToken=' + encodeURIComponent(authToken))
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data || data.ok !== true || !Array.isArray(data.dreams)) return;
+
+        var localById = {};
+        state.dreams.forEach(function (d) {
+          if (d.ownerHandle === myHandle) localById[d.id] = d;
+        });
+
+        var changed = false;
+        var serverIds = {};
+        data.dreams.forEach(function (serverDream) {
+          serverIds[serverDream.id] = true;
+          var local = localById[serverDream.id];
+          if (!local) {
+            state.dreams.push(serverDream);
+            localById[serverDream.id] = serverDream;
+            changed = true;
+            return;
+          }
+          if (local.isPublished) return; // local already authoritative — see doc comment
+          var localUpdatedAt = local.updatedAt || 0;
+          var serverUpdatedAt = serverDream.updatedAt || 0;
+          if (serverUpdatedAt > localUpdatedAt) {
+            Object.assign(local, serverDream);
+            changed = true;
+          } else if (localUpdatedAt > serverUpdatedAt) {
+            syncPrivateDreamBestEffort(local);
+          }
+        });
+
+        // Catch-up: any private dream this device has that the server
+        // doesn't know about at all yet (e.g. created while offline).
+        state.dreams.forEach(function (d) {
+          if (d.ownerHandle === myHandle && !d.isPublished && !serverIds[d.id]) {
+            syncPrivateDreamBestEffort(d);
+          }
+        });
+
+        if (changed) persist();
+      })
+      .catch(function () { /* best-effort — local state already fully usable, see section comment above */ });
+  }
+
   // One-time catch-up for browsers that published dreams before the shared
   // feed existed — those dreams were marked isPublished locally but never
   // pushed to the Blobs-backed feed-index, since that sync didn't exist
@@ -1189,7 +1408,11 @@
       var patch = {
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
         style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null,
-        interpretations: null, sourceOperationName: operationName || null
+        interpretations: null, sourceOperationName: operationName || null,
+        // updatedAt (tracker item for-product-build-p0-server-side-dream-p-
+        // zl3rb2): stamped on every mutation so reconcilePrivateDreamsFromServer
+        // can tell which of two devices' copies of this dream is newer.
+        updatedAt: Date.now()
       };
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
@@ -1214,7 +1437,8 @@
         // existed simply has no createdAt, and every reader here treats a
         // missing createdAt as "don't count this for a date-based check"
         // rather than fabricating one.
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        updatedAt: Date.now()
       };
       // Images never set a duration — there's no clip length concept for a
       // still image (see explore.html/profile.html's guarded d.dur render).
@@ -1225,7 +1449,16 @@
     persist();
     // Edit Dream / Change Style can regenerate a dream that's already
     // published — keep the shared feed's copy from going stale.
-    if (dream.isPublished) syncPublishedDreamToFeed(dream);
+    if (dream.isPublished) {
+      syncPublishedDreamToFeed(dream);
+      // Defensive — a published dream shouldn't be in the private-dream
+      // store at all (publishDream's own best-effort delete already
+      // handles the normal case), but a regenerate is a convenient extra
+      // chance to self-heal if that earlier delete ever silently failed.
+      deletePrivateDreamBestEffort(dream.id);
+    } else {
+      syncPrivateDreamBestEffort(dream);
+    }
     // 'video_created' — fires on EVERY completed generation (fresh,
     // resumed, or a regenerate/"Try Again"/"Turn this into a video"), not
     // just the account's first ever (see markFirstVideoCreatedIfEligible/
@@ -1791,6 +2024,11 @@
     state.user = { handle: '@' + username, username: username, authToken: authToken || null };
     persist();
     identifyForAnalytics(username);
+    // Fire-and-forget — see reconcilePrivateDreamsFromServer's own doc
+    // comment. No-ops silently when authToken is null (the offline-
+    // fallback branch, or a brand-new account with nothing to reconcile
+    // yet either way).
+    reconcilePrivateDreamsFromServer();
     // 'signed_up' — a dedicated PostHog event distinct from the identify()
     // call above, so PostHog funnels/dashboards can query "an account was
     // actually created" directly rather than inferring it from identify()
@@ -2384,11 +2622,15 @@
             // Brand-new-to-this-device account — materialize a local
             // placeholder so the rest of this app's local-storage-
             // dependent logic (character/dream filtering by username,
-            // etc.) doesn't break from a missing accounts entry. Dreams/
-            // characters for this username are deliberately left empty —
-            // syncing those is out of scope, see
-            // tracker.html's sync-private-dreams-videos-later item. The
-            // ONE hardcoded exception is migrateLegacyThrowawayAccountData
+            // etc.) doesn't break from a missing accounts entry. Characters
+            // still have no server-side copy at all (out of scope), so
+            // charactersByUser stays empty here — but private dreams DO
+            // now get backfilled from the server, via
+            // reconcilePrivateDreamsFromServer() below (tracker item
+            // for-product-build-p0-server-side-dream-p-zl3rb2), which is
+            // exactly the case this matters most for: a brand-new-to-this-
+            // device login is precisely what happens after a webview wipe.
+            // The ONE hardcoded exception is migrateLegacyThrowawayAccountData
             // below, for the one-off ronbrightman rename specifically —
             // see that function's own doc comment.
             state.accounts[serverUsername] = { password: password, email: (data.email || '').toLowerCase() };
@@ -2414,6 +2656,12 @@
           state.user = { handle: '@' + displayUsername, username: displayUsername, authToken: data.authToken || null };
           persist();
           identifyForAnalytics(displayUsername);
+          // Fire-and-forget — see reconcilePrivateDreamsFromServer's own
+          // doc comment. This is the single most important call site for
+          // it: a brand-new-to-this-device login (see the comment just
+          // above) is exactly what a webview-storage-wipe recovery looks
+          // like.
+          reconcilePrivateDreamsFromServer();
           return { ok: true, user: state.user };
         }
         if (data && data.ok === false && data.error && data.error.indexOf('incorrect_password') !== -1) {
@@ -3040,12 +3288,19 @@
         ownerHandle: state.user.handle,
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText, style: style, mediaType: 'video',
         likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
-        videoUrl: videoUrl
+        videoUrl: videoUrl,
+        updatedAt: Date.now()
       };
       state.dreams.unshift(dream);
       persist();
+      syncPrivateDreamBestEffort(dream);
       probeVideoDuration(videoUrl).then(function (dur) {
-        if (dur) { dream.dur = dur; persist(); }
+        if (dur) {
+          dream.dur = dur;
+          dream.updatedAt = Date.now();
+          persist();
+          syncPrivateDreamBestEffort(dream);
+        }
       });
       return dream;
     },
@@ -3117,6 +3372,13 @@
         }
         persist();
         syncPublishedDreamToFeed(d);
+        // A published dream's durable copy is now the shared feed above —
+        // it no longer belongs in the private-dream store (tracker item
+        // for-product-build-p0-server-side-dream-p-zl3rb2). Best-effort,
+        // safe to call even if it was never synced there in the first
+        // place (see lib/dream-store.js's own removePrivateDream doc
+        // comment).
+        deletePrivateDreamBestEffort(d.id);
         if (isNewPublish) trackAnalytics('video_published', { style: d.style, mediaType: d.mediaType });
       }
       return d;
@@ -3135,8 +3397,14 @@
         // posts on request" pass would read; building that removal
         // mechanism itself is explicitly out of scope here.
         if (d.channelLicenseGrantedAt) d.channelLicenseRevokedAt = Date.now();
+        d.updatedAt = Date.now();
         persist();
         removePublishedDreamFromFeed(id);
+        // This dream is private again as of right now — give it a fresh
+        // durable server-side copy (tracker item
+        // for-product-build-p0-server-side-dream-p-zl3rb2), same reasoning
+        // as every other private-dream mutation in this file.
+        syncPrivateDreamBestEffort(d);
       }
       return d;
     },
@@ -3155,6 +3423,14 @@
       state.dreams = state.dreams.filter(function (dream) { return dream.id !== id; });
       persist();
       if (wasPublished) removePublishedDreamFromFeed(id);
+      // Unconditional (not just the !wasPublished case) — tracker item
+      // for-product-build-p0-server-side-dream-p-zl3rb2. Safe/idempotent
+      // either way (see lib/dream-store.js's own removePrivateDream doc
+      // comment): a published dream should never have had a private-store
+      // copy in the first place, but this is cheap insurance against that
+      // ever having drifted (e.g. a prior best-effort delete on publish
+      // silently failing).
+      deletePrivateDreamBestEffort(id);
       return true;
     },
 
@@ -3320,7 +3596,14 @@
           if (dream) {
             var map = ensureInterpretationsMigrated(dream);
             map[personaKey] = { text: data.interpretation, at: at, qa: qa || [] };
+            dream.updatedAt = at;
             persist();
+            // Only for a still-private dream — a published dream's durable
+            // copy is the shared feed, which never carries
+            // interpretationText at all (see syncPublishedDreamToFeed's own
+            // payload) — see this file's private-dream-sync section header
+            // comment for the full "why".
+            if (!dream.isPublished) syncPrivateDreamBestEffort(dream);
           }
           return { text: data.interpretation, at: dream ? at : null };
         });
