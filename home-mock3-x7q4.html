@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-31) — unlinked, delete after decision.
+
+  Home screen redesign, round 2 — built precisely from
+  Manager/research/2026-07-31-home-round2-redesign.md:
+
+  · §2 three-class grammar: exactly two glowing ACTION cards (Tonight +
+    Chamber), flat boxless GLANCE strips, muted QUIET links/media. Type
+    scale 22/19/17/15/12px, nothing interactive under 16px, #8f88b3
+    retired from text.
+  · §3 screen + final copy verbatim (~45 words steady-state vs ~97 live).
+  · §4 removals: kickers, greeting date, claim chip (merged into the
+    topbar token chip), freeze note (moves to the claim sheet), This Week
+    card (now the glance strip), Vault/install cards (now quiet links).
+  · Single-pulse rule: exactly one homePulse element per state — Tonight's
+    pill while unlogged; after logging it migrates to the Chamber's Enter
+    pill (or the Option-B portal band). Net FEWER animations than the
+    production home: one pulse instead of two, Chamber breathing glow
+    reuses the existing homeTwinkle keyframe — no new effect types.
+
+  Mock chrome (top, dashed): STATE switcher for §3's four states
+  (Day 1 / Unlogged / Logged ✓ / Week earned) + CHAMBER switcher for the
+  §5 fork (A · card vs B · portal). Token chip demonstrates the merged
+  claim: "+20 ✦" while claimable, tap → mock claim sheet → balance.
+
+  Static, self-contained: no app JS; thumbnails are dream-gradient
+  placeholders. Night tokens verbatim from home.html; bottom bar is
+  profile.html's shipped Bar-A night dock, ported verbatim, Home active.
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Home mock 3 — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  /* §2 type scale */
+  --t-display:22px;
+  --t-title:19px;
+  --t-action:17px;
+  --t-body:15px;
+  --t-tag:12px;
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ===== phone shell (same as the approved result mock) ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:100dvh;
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim tokens from home.html) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 16px rgba(157,144,255,.9); } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.card-chamber::after,.portal::after{ animation:none !important; }
+}
+
+/* ===== mock chrome — the two fixed compact switchers. Deliberately
+   dev-looking (dashed hairline, tiny type) so it can't be mistaken for
+   product UI. ===== */
+.mockbar{
+  position:absolute; left:0; right:0; top:0; z-index:40;
+  padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 7px;
+  background:rgba(6,5,18,.88);
+  border-bottom:1px dashed rgba(157,144,255,.4);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  display:flex; flex-direction:column; gap:4px;
+}
+.mockrow{ display:flex; align-items:center; gap:5px; }
+.mocklab{
+  flex:0 0 58px; font:800 8.5px var(--font-body); letter-spacing:.12em;
+  text-transform:uppercase; color:#6f6894;
+}
+.mockseg{ display:flex; gap:4px; flex:1; }
+.mockbtn{
+  flex:1; padding:4px 2px; border-radius:7px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22);
+  color:#8f88b3; font:700 10.5px var(--font-body); white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.mockbtn.on{ background:rgba(157,144,255,.22); border-color:rgba(157,144,255,.6); color:var(--home-ink); }
+
+/* ===== page chrome ===== */
+.home-fg{
+  position:relative; z-index:1; display:flex; flex-direction:column;
+  height:100%; min-height:0;
+  padding-top:calc(env(safe-area-inset-top,0px) + 62px); /* clears the mock chrome only */
+}
+.home-topbar{ display:flex; align-items:center; justify-content:space-between; padding:8px 18px 0; flex:none; }
+.home-logo{ font-weight:800; font-size:16px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:20px; height:20px; flex:0 0 20px; margin-right:6px; background:url(data:image/png;base64,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)) center/contain no-repeat; }
+.home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* Token chip — §3.1: THE claim surface now. 15px text; when claimable it
+   shows +20 ✦ with a static glow (never a pulse — Tonight's pill owns
+   the screen's single pulse in that state). */
+.chip{
+  display:inline-flex; align-items:center; gap:5px; padding:7px 13px; border-radius:99px;
+  background:rgba(12,10,26,.62); border:1px solid rgba(157,144,255,.4);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  color:var(--home-ink); font:700 15px var(--font-body); cursor:pointer;
+  min-height:36px; -webkit-tap-highlight-color:transparent;
+}
+.chip:active{ transform:scale(.96); }
+.chip.claimable{
+  background:rgba(157,144,255,.2); border-color:rgba(157,144,255,.7); color:#dcd6ff;
+  box-shadow:0 0 12px -2px rgba(157,144,255,.55);
+}
+
+/* Greeting — one 22px line, nothing under it (§3.2). */
+.home-greet{ padding:10px 18px 4px; flex:none; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.01em; }
+
+.home-scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:10px 14px calc(var(--nav-clearance) + 24px);
+  display:flex; flex-direction:column; gap:14px;
+}
+
+/* ===== Class A — action cards (the only boxes on screen) ===== */
+.hcard{
+  position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid rgba(157,144,255,.55); border-radius:18px; padding:16px;
+  overflow:hidden; color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(157,144,255,.3);
+}
+.hcard-title{ font-size:var(--t-title); font-weight:800; display:block; letter-spacing:-.01em; }
+.hcard-body{ font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+
+/* the pill — one per card, min 52px, 17px/800 */
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:52px; margin-top:13px; padding:12px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
+
+/* Tonight's three quiet entry links, one row */
+.entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:5px; }
+.entryrow .dot{ color:#6f6894; font-size:13px; }
+.entrylink{
+  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
+  color:var(--home-soft); font:600 16px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.entrylink:active{ opacity:.7; }
+
+/* the optional single progress line (§3.3) */
+.progline{ margin-top:9px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); text-align:center; }
+.progline b{ color:var(--home-ink); font-weight:700; }
+
+/* logged-today transform — title flips, one clamped quote line, ok tint */
+.hcard.logged{ border-color:rgba(75,211,155,.5); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 18px -4px rgba(75,211,155,.22); }
+.hcard.logged .hcard-title{ color:#bdf0d8; }
+.loggedquote{
+  margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft);
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+}
+
+/* Chamber action card — violet art gradient + breathing glow (homeTwinkle
+   reuse, zero new effect types) + the ONE surviving eyebrow tag */
+.card-chamber{
+  min-height:130px; display:flex; flex-direction:column; justify-content:flex-end;
+  background:
+    radial-gradient(90% 120% at 82% -10%, rgba(131,58,180,.5), transparent 60%),
+    linear-gradient(160deg, rgba(107,79,181,.5), transparent 65%),
+    linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+}
+.card-chamber::after{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(75% 85% at 76% 18%, rgba(157,144,255,.3), transparent 65%);
+  animation:homeTwinkle 6s ease-in-out infinite;
+}
+.card-chamber > *{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-tag); letter-spacing:.14em; text-transform:uppercase;
+  color:var(--home-acc); font-weight:800; margin-bottom:8px;
+}
+.card-chamber .hcard-body{ margin-top:3px; }
+
+/* ===== §5 Option B — the greeting-fused Chamber portal band ===== */
+.portal{
+  position:relative; display:flex; align-items:center; gap:11px; width:100%;
+  padding:13px 15px; border-radius:16px; overflow:hidden; cursor:pointer;
+  background:
+    radial-gradient(120% 160% at 85% -20%, rgba(131,58,180,.55), transparent 65%),
+    linear-gradient(120deg, rgba(107,79,181,.55), rgba(30,24,58,.92) 70%);
+  border:1px solid rgba(157,144,255,.55);
+  color:var(--home-ink); font:700 16px var(--font-body); text-align:left;
+  box-shadow:0 4px 18px -6px rgba(0,0,0,.5), 0 0 18px -4px rgba(157,144,255,.3);
+  -webkit-tap-highlight-color:transparent;
+}
+.portal::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(70% 120% at 78% 20%, rgba(157,144,255,.3), transparent 65%);
+  animation:homeTwinkle 6s ease-in-out infinite;
+}
+.portal:active{ transform:scale(.99); }
+.portal .orb{
+  flex:0 0 34px; width:34px; height:34px; border-radius:50%;
+  background:radial-gradient(circle at 34% 30%, rgba(207,200,255,.9), rgba(157,144,255,.45) 45%, rgba(83,60,160,.7));
+  border:1px solid rgba(207,200,255,.5);
+  display:flex; align-items:center; justify-content:center; font-size:15px;
+}
+.portal .ptxt{ flex:1; position:relative; z-index:1; line-height:1.35; }
+.portal .ptxt i{ font-style:normal; font-weight:500; color:#cfc8ff; }
+
+/* ===== Class B — the glance strip: flat on the sky, no box, no chrome ===== */
+.glance{ display:flex; align-items:center; gap:8px; padding:0 4px; }
+.glance .gtxt{ flex:1; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.glance.warm .gtxt{ color:#ecd8ac; }
+.constel{ flex:0 0 56px; height:32px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; }
+
+/* ===== Class C — quiet links & bare media ===== */
+.mdhdr{ display:flex; align-items:baseline; padding:0 6px; }
+.mdhdr b{ font-size:16px; font-weight:700; color:var(--home-ink); }
+.alllink{
+  margin-left:auto; background:none; border:none; cursor:pointer;
+  color:var(--home-soft); font:600 16px var(--font-body); padding:8px 2px 8px 12px;
+  -webkit-tap-highlight-color:transparent;
+}
+.alllink:active{ opacity:.7; }
+.mydreams{ display:flex; flex-direction:column; gap:2px; }
+.thumbs{ display:flex; gap:8px; }
+.thumb{
+  flex:1; height:72px; border-radius:12px; position:relative; overflow:hidden;
+  border:1px solid rgba(255,255,255,.14); cursor:pointer; display:block;
+}
+.thumb::before{ /* faint stars so placeholders read as dream footage */
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 32%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 62% 18%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.1px 1.1px at 82% 62%, rgba(207,200,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 38% 74%, rgba(255,255,255,.5), transparent 60%);
+}
+.thumb::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.thumb.t1{ background:radial-gradient(45% 55% at 74% 26%, rgba(255,226,166,.8), transparent 70%), linear-gradient(160deg,#2b1a5e,#6b2fa0 55%,#141040); }
+.thumb.t2{ background:radial-gradient(60% 70% at 24% 72%, rgba(83,140,255,.55), transparent 70%), linear-gradient(160deg,#122150,#1e4a7a 55%,#0e1338); }
+.thumb.t3{ background:radial-gradient(55% 60% at 70% 70%, rgba(224,120,190,.5), transparent 70%), linear-gradient(160deg,#3a1650,#8a2f68 60%,#1a0f33); }
+
+.quietrow{ display:flex; align-items:center; justify-content:space-around; padding:0 2px; }
+.quietlink{
+  display:flex; align-items:center; gap:6px;
+  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
+  color:var(--home-soft); font:600 16px var(--font-body); text-decoration:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.quietlink:active{ opacity:.7; }
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   Ported verbatim from production profile.html; Home tab active. */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.nav-icon-badge-wrap{ position:relative; display:inline-flex; }
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+/* ===== mock claim sheet (token chip tap while claimable) ===== */
+.sheet-overlay{
+  position:absolute; inset:0; z-index:50; background:rgba(6,5,18,.55);
+  opacity:0; pointer-events:none; transition:opacity .22s ease;
+}
+.sheet-overlay.open{ opacity:1; pointer-events:auto; }
+.sheet{
+  position:absolute; left:0; right:0; bottom:0;
+  background:linear-gradient(180deg,#221b45,#171232);
+  border:1px solid var(--home-line); border-bottom:none;
+  border-radius:22px 22px 0 0;
+  padding:12px 20px calc(env(safe-area-inset-bottom,0px) + 20px);
+  transform:translateY(100%); transition:transform .26s cubic-bezier(.32,.72,.35,1);
+  text-align:center;
+}
+.sheet-overlay.open .sheet{ transform:translateY(0); }
+.sheet-handle{ width:38px; height:4px; border-radius:99px; background:rgba(255,255,255,.22); margin:0 auto 16px; }
+.claim-amt{ font-size:34px; font-weight:800; color:#dcd6ff; letter-spacing:-.01em; }
+.claim-amt i{ font-style:normal; color:var(--home-acc); }
+.claim-sub{ margin-top:4px; font-size:var(--t-body); font-weight:500; color:var(--home-soft); }
+.claim-btn{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:52px; margin-top:18px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a; font:800 var(--t-action) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.claim-btn:active{ transform:scale(.98); }
+
+/* ===== toast ===== */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sky layers — decorative, behind everything -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <!-- MOCK CHROME — state + chamber-variant switchers, not product UI -->
+  <div class="mockbar">
+    <div class="mockrow">
+      <span class="mocklab">Mock · state</span>
+      <div class="mockseg" id="seg-state">
+        <button type="button" class="mockbtn" data-state="d1">Day 1</button>
+        <button type="button" class="mockbtn on" data-state="unlogged">Unlogged</button>
+        <button type="button" class="mockbtn" data-state="logged">Logged ✓</button>
+        <button type="button" class="mockbtn" data-state="week">Week earned</button>
+      </div>
+    </div>
+    <div class="mockrow">
+      <span class="mocklab">Chamber</span>
+      <div class="mockseg" id="seg-chamber">
+        <button type="button" class="mockbtn on" data-chamber="a">A · card</button>
+        <button type="button" class="mockbtn" data-chamber="b">B · portal</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-fg">
+    <div class="home-topbar">
+      <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      <button type="button" class="chip" id="token-chip">✦ 120</button>
+    </div>
+    <div class="home-greet">
+      <div class="home-greet-line">Good evening, Ron.</div>
+    </div>
+
+    <div class="home-scroll">
+
+      <!-- §5 Option B — slim Chamber portal fused under the greeting
+           (visible only in Chamber-B mode; replaces the card below) -->
+      <button type="button" class="portal" id="portal" hidden>
+        <span class="orb">✦</span>
+        <span class="ptxt">The Chamber<br><i id="portal-sub">your reading awaits →</i></span>
+      </button>
+
+      <!-- A. ACTION CARD — Tonight -->
+      <div class="hcard" id="card-tonight">
+        <span class="hcard-title" id="tonight-title">What did you dream?</span>
+        <div id="tonight-entry">
+          <button type="button" class="pill" id="tonight-pill">✨ Tell your dream</button>
+          <div class="entryrow">
+            <button type="button" class="entrylink">Write</button><span class="dot">·</span>
+            <button type="button" class="entrylink">Speak</button><span class="dot">·</span>
+            <button type="button" class="entrylink">No recall</button>
+          </div>
+          <div class="progline" id="tonight-progline" hidden></div>
+        </div>
+        <p class="loggedquote" id="tonight-quote" hidden>&ldquo;I was flying over a golden city at night, toward a moon close enough to touch.&rdquo;</p>
+      </div>
+
+      <!-- A. ACTION CARD — The Chamber (promoted, position 2) -->
+      <div class="hcard card-chamber" id="card-chamber">
+        <div class="eyebrow">The Depth Analyst</div>
+        <span class="hcard-title">The Chamber</span>
+        <span class="hcard-body" id="chamber-body">Your reading awaits.</span>
+        <button type="button" class="pill" id="chamber-pill">Enter</button>
+      </div>
+
+      <!-- B. GLANCE STRIP — flat on the sky, pure information -->
+      <div class="glance" id="glance">
+        <div class="gtxt" id="glance-txt"></div>
+        <svg class="constel" id="constel" viewBox="0 0 84 46" aria-hidden="true"></svg>
+      </div>
+
+      <!-- C. My dreams — bare media -->
+      <div class="mydreams" id="mydreams">
+        <div class="mdhdr">
+          <b>My dreams</b>
+          <button type="button" class="alllink">All →</button>
+        </div>
+        <div class="thumbs">
+          <span class="thumb t1"></span>
+          <span class="thumb t2"></span>
+          <span class="thumb t3"></span>
+        </div>
+      </div>
+
+      <!-- C. quiet-link row -->
+      <div class="quietrow">
+        <button type="button" class="quietlink">✦ Vault</button>
+        <button type="button" class="quietlink" id="link-install">📲 Add to phone</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bar A, the anchored night dock (verbatim from production profile.html;
+       Home tab active) -->
+  <nav class="night-dock" aria-label="Main">
+    <a class="night-dock-item active" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+    <a class="night-dock-item" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+    <a class="night-dock-create" href="#" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+    <a class="night-dock-item" href="#">
+      <div class="nav-icon-badge-wrap" aria-hidden="true">
+        <i class="night-dock-avatar">R</i>
+      </div><span class="night-dock-label">Profile</span>
+    </a>
+  </nav>
+
+  <!-- mock claim sheet — the topbar chip is the one claim surface now -->
+  <div class="sheet-overlay" id="claim-overlay">
+    <div class="sheet" role="dialog" aria-label="Claim tonight's tokens">
+      <div class="sheet-handle"></div>
+      <div class="claim-amt">+20 <i>✦</i></div>
+      <div class="claim-sub">Tonight&rsquo;s tokens are ready.</div>
+      <button type="button" class="claim-btn" id="claim-btn">Claim</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1800);
+  }
+
+  function constellation(lit){
+    lit = Math.max(0, Math.min(3, lit));
+    var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
+    var line1 = lit >= 2 ? 'lit' : '', line2 = lit >= 3 ? 'lit' : '';
+    return '<line class="' + line1 + '" x1="12" y1="34" x2="42" y2="12"/>' +
+      '<line class="' + line2 + '" x1="42" y1="12" x2="72" y2="28"/>' +
+      '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
+      '<path class="st' + l2 + '" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>' +
+      '<path class="st' + l3 + '" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>';
+  }
+
+  // ===== the four §3 states + the §5 chamber fork =====
+  // Each state names ONE pulse owner — the whole single-pulse rule in data.
+  var STATES = {
+    d1: {
+      chip: { text: '✦ 60', claimable: false },
+      tonight: { logged: false, progline: 'First night — any entry counts.' },
+      chamber: { body: 'Make your first dream to begin.', pill: 'Begin' },
+      glance: { text: 'Start your streak tonight', lit: 0, warm: false },
+      mydreams: false,
+      pulse: 'tonight'
+    },
+    unlogged: {
+      chip: { text: '+20 ✦', claimable: true },
+      tonight: { logged: false, progline: '<b>2 more this week</b> → your summary.' },
+      chamber: { body: 'Your reading awaits.', pill: 'Enter' },
+      glance: { text: '🔥 3-day streak · 2 of 3 this week', lit: 2, warm: false },
+      mydreams: true,
+      pulse: 'tonight'
+    },
+    logged: {
+      chip: { text: '✦ 140', claimable: false },
+      tonight: { logged: true },
+      chamber: { body: 'Your reading awaits.', pill: 'Enter' },
+      glance: { text: '🔥 4-day streak · 2 of 3 this week', lit: 2, warm: false },
+      mydreams: true,
+      pulse: 'chamber'
+    },
+    week: {
+      chip: { text: '✦ 140', claimable: false },
+      tonight: { logged: false, progline: null },
+      chamber: { body: 'Your reading awaits.', pill: 'Enter' },
+      glance: { text: '✨ 3 dreams this week · mostly Cinematic', lit: 3, warm: true },
+      mydreams: true,
+      pulse: 'tonight'
+    }
+  };
+
+  var state = 'unlogged';
+  var chamberMode = 'a';
+  var claimed = false; // per-state demo flag, reset on state switch
+
+  var chip = document.getElementById('token-chip');
+  var cardTonight = document.getElementById('card-tonight');
+  var tonightTitle = document.getElementById('tonight-title');
+  var tonightEntry = document.getElementById('tonight-entry');
+  var tonightPill = document.getElementById('tonight-pill');
+  var tonightProg = document.getElementById('tonight-progline');
+  var tonightQuote = document.getElementById('tonight-quote');
+  var cardChamber = document.getElementById('card-chamber');
+  var chamberBody = document.getElementById('chamber-body');
+  var chamberPill = document.getElementById('chamber-pill');
+  var portal = document.getElementById('portal');
+  var portalSub = document.getElementById('portal-sub');
+  var glance = document.getElementById('glance');
+  var glanceTxt = document.getElementById('glance-txt');
+  var constel = document.getElementById('constel');
+  var mydreams = document.getElementById('mydreams');
+
+  function render(){
+    var s = STATES[state];
+
+    // topbar chip — the one claim surface
+    if(s.chip.claimable && !claimed){
+      chip.textContent = '+20 ✦';
+      chip.classList.add('claimable');
+    } else if(s.chip.claimable && claimed){
+      chip.textContent = '✦ 140';
+      chip.classList.remove('claimable');
+    } else {
+      chip.textContent = s.chip.text;
+      chip.classList.remove('claimable');
+    }
+
+    // Tonight card — transforms IN PLACE when logged
+    if(s.tonight.logged){
+      cardTonight.classList.add('logged');
+      tonightTitle.textContent = 'Logged tonight ✓';
+      tonightEntry.hidden = true;
+      tonightQuote.hidden = false;
+    } else {
+      cardTonight.classList.remove('logged');
+      tonightTitle.textContent = 'What did you dream?';
+      tonightEntry.hidden = false;
+      tonightQuote.hidden = true;
+      if(s.tonight.progline){
+        tonightProg.hidden = false;
+        tonightProg.innerHTML = s.tonight.progline;
+      } else {
+        tonightProg.hidden = true;
+      }
+    }
+
+    // Chamber — card (A) or greeting-fused portal band (B)
+    var isPortal = chamberMode === 'b';
+    cardChamber.hidden = isPortal;
+    portal.hidden = !isPortal;
+    chamberBody.textContent = s.chamber.body;
+    chamberPill.textContent = s.chamber.pill;
+    portalSub.textContent = state === 'd1' ? 'make your first dream →' : 'your reading awaits →';
+
+    // glance strip
+    glanceTxt.textContent = s.glance.text;
+    glance.classList.toggle('warm', s.glance.warm);
+    constel.innerHTML = constellation(s.glance.lit);
+
+    // my dreams row — hidden on Day 1
+    mydreams.hidden = !s.mydreams;
+
+    // ===== the single pulse — exactly one homePulse element per state =====
+    tonightPill.classList.remove('pulse');
+    chamberPill.classList.remove('pulse');
+    portal.classList.remove('pulse');
+    if(s.pulse === 'tonight' && !s.tonight.logged){
+      tonightPill.classList.add('pulse');
+    } else if(s.pulse === 'chamber'){
+      (isPortal ? portal : chamberPill).classList.add('pulse');
+    }
+  }
+
+  // switchers
+  document.getElementById('seg-state').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-state]');
+    if(!btn) return;
+    state = btn.dataset.state;
+    claimed = false;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.toggle('on', b === btn); });
+    render();
+  });
+  document.getElementById('seg-chamber').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-chamber]');
+    if(!btn) return;
+    chamberMode = btn.dataset.chamber;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.toggle('on', b === btn); });
+    render();
+  });
+
+  // token chip → claim sheet while claimable, Vault otherwise
+  var claimOverlay = document.getElementById('claim-overlay');
+  chip.addEventListener('click', function(){
+    if(chip.classList.contains('claimable')){
+      claimOverlay.classList.add('open');
+    } else {
+      toast('Vault opens here');
+    }
+  });
+  document.getElementById('claim-btn').addEventListener('click', function(){
+    claimed = true;
+    claimOverlay.classList.remove('open');
+    toast('+20 ✦ claimed');
+    render();
+  });
+  claimOverlay.addEventListener('click', function(e){
+    if(e.target === claimOverlay) claimOverlay.classList.remove('open');
+  });
+
+  // light mock feedback on the rest
+  document.getElementById('tonight-pill').addEventListener('click', function(){ toast('Dream wizard opens here'); });
+  document.getElementById('chamber-pill').addEventListener('click', function(){ toast('Opening the Chamber…'); });
+  portal.addEventListener('click', function(){ toast('Opening the Chamber…'); });
+  document.getElementById('link-install').addEventListener('click', function(){ toast('Install sheet opens here'); });
+
+  render();
+</script>
+</body>
+</html>
