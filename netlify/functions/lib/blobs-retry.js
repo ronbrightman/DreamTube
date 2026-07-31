@@ -90,6 +90,54 @@
 // principle. Every real call site's own doc comment already carries this
 // same honest caveat; this extraction doesn't change the underlying
 // guarantee, only where the mechanism lives.
+//
+// ── WHAT WAS RE-CHECKED 2026-07-30, AND WHAT IT RULED IN/OUT ──
+// (tracker.html's for-product-bug-founder-affects-all-funn-0efe7t item,
+// round 4, investigating whether this loop is structurally the wrong tool)
+//
+// 1. STRONG CONSISTENCY IS STILL GENUINELY UNAVAILABLE on this deploy path,
+//    confirming entitlements.js's older incident note rather than
+//    superseding it — and, importantly, upgrading the SDK would NOT change
+//    that. Read directly out of the SDK source, in BOTH the installed
+//    @netlify/blobs 8.2.0 and the current 10.7.11: `connectLambda(event)`
+//    builds its environment context from exactly four fields (deployID,
+//    edgeURL, siteID, token) and NEVER populates `uncachedEdgeURL`; and
+//    `Client.getFinalRequest` throws `BlobsConsistencyError` whenever
+//    `consistency: 'strong'` is requested while `edgeURL` is set and
+//    `uncachedEdgeURL` isn't. Every store in this codebase reaches Blobs
+//    through connectLambda, so `consistency: 'strong'` throws for all of
+//    them, on both versions. Not a lever available here.
+//
+// 2. RETRY-WIDENING CANNOT FIX THIS CLASS on its own, and the ceiling is
+//    arithmetic, not judgment. Netlify documents Blobs propagation as
+//    guaranteed to all edge locations only "within 60 seconds". A Netlify
+//    synchronous function's default execution limit is 10 seconds total —
+//    and mark-generation-completed.js, the busiest caller of this path,
+//    already spends part of that on a fal status round trip plus half a
+//    dozen other Blobs round trips before it ever reaches the marker claim.
+//    So the entire attainable retry budget is a small fraction of the
+//    documented worst case; buying a few hundred more milliseconds trades a
+//    real timeout risk for no guarantee. The defaults are deliberately left
+//    alone, and callers that need to distinguish "our write landed but the
+//    read hasn't caught up" from "our write never landed" should do what
+//    entitlements.js's claimDailyTokens and first-dream-email-store.js's
+//    markSentOnce now both do: one final confirming read that checks for
+//    their OWN attempt/claim id.
+//
+// 3. THERE IS NOW A REAL CAS PRIMITIVE, but only in a much newer SDK.
+//    @netlify/blobs 10.x adds genuine conditional writes —
+//    `set(key, value, { onlyIfNew: true })` and `{ onlyIfMatch: etag }`,
+//    returning `{ modified: boolean }` and implemented server-side via
+//    if-none-match/if-match — which is exactly the compare-and-swap
+//    primitive this file's header says doesn't exist, and would let every
+//    single-key dedup-marker call site (first-dream-email-store.js,
+//    push-dedup-store.js, entitlements.js's payment/refund markers) drop
+//    the read/verify race entirely. The installed 8.2.0 has none of it.
+//    Deliberately NOT taken here: that is a two-major-version dependency
+//    bump touching every Blobs-backed store including the money paths, its
+//    behavior against this specific deploy environment cannot be verified
+//    from a sandbox, and it needs its own reviewed change — see this
+//    tracker item's round-4 write-up.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -130,6 +178,38 @@ function delay(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
+// ── PER-ATTEMPT DIAGNOSTICS (tracker.html's
+//    for-product-bug-founder-affects-all-funn-0efe7t item, round 4) ──
+//
+// Until this, an exhausted loop was a total black box: the only thing any
+// caller could say afterwards was "ok:false, not skipped", with no way to
+// tell apart the three genuinely different failure shapes that all land
+// there — (a) our own write landing but every verify-read lagging behind it
+// (Blobs' documented eventual consistency: Netlify guarantees propagation to
+// all edge locations only "within 60 seconds", against this loop's total
+// wall-clock budget of maxAttempts-1 delays ≈ 400ms by default), (b) a real,
+// repeated clobber by a genuinely concurrent writer, or (c) a write that
+// isn't landing at all. Those need completely different fixes, and there was
+// no evidence in production logs to choose between them — which is exactly
+// how this tracker item burned three rounds. This turns the NEXT occurrence,
+// for ANY of the four call sites documented at the top of this file, into
+// something readable straight out of Netlify's function logs.
+//
+// Shape-only, deliberately: `describeRead` records whether a read produced
+// null / undefined / an actual value, and NEVER the value itself or the key.
+// Every current caller's records carry real PII (first-dream-email-store.js
+// keys on a username; entitlements.js keys on an email and stores balances) —
+// a raw-email log line written during round 3 of this same item had to be
+// pulled back out before merge, and this shared lib must not reintroduce
+// that surface for all four callers at once. Callers that want a domain
+// identifier in the log already log their own (see first-dream-email-store.js's
+// markSentOnce), where the PII decision is theirs to make.
+function describeRead(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  return 'value';
+}
+
 // Sentinel `mutate(current)` can return to abort the whole operation
 // immediately without writing or retrying — see the doc block above.
 // A unique Symbol so it can never collide with a real value a caller
@@ -167,32 +247,63 @@ async function retryingWrite(event, storeName, key, options) {
   var lastMutated;
   var lastCurrent;
 
+  // See "PER-ATTEMPT DIAGNOSTICS" above. Returned on every exit path (as
+  // `attempts`) so a caller can fold it into its own domain-specific log or
+  // assert on it in a test, and logged here in one structured line on the
+  // exhaustion path — the one outcome that is genuinely unexplained without
+  // it. Never logged on ok/skip: both are ordinary, high-frequency outcomes
+  // (claimDailyTokens runs this on every daily claim), and a line per call
+  // would bury the signal this exists to surface.
+  var startedAt = Date.now();
+  var attempts = [];
+
   for (var attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0 && retryDelayMs > 0) {
       await delay(retryDelayMs);
     }
+    var record = { attempt: attempt + 1, startedAtMs: Date.now() - startedAt };
+    attempts.push(record);
+
     var current = await read(event);
     lastCurrent = current;
+    record.read = describeRead(current);
+    record.readAtMs = Date.now() - startedAt;
 
     var mutated = mutate(current);
     if (mutated === SKIP) {
-      return { ok: false, skipped: true, value: undefined, current: current };
+      record.outcome = 'skip';
+      return { ok: false, skipped: true, value: undefined, current: current, attempts: attempts };
     }
     lastMutated = mutated;
 
     connectLambda(event);
     await getStore({ name: storeName }).setJSON(key, mutated);
+    record.wroteAtMs = Date.now() - startedAt;
 
     connectLambda(event);
     var verifyRead = await getStore({ name: storeName }).get(key, { type: 'json' });
+    record.verifyRead = describeRead(verifyRead);
+    record.verifyReadAtMs = Date.now() - startedAt;
+
     if (verify(verifyRead)) {
-      return { ok: true, skipped: false, value: mutated, current: current };
+      record.outcome = 'verified';
+      return { ok: true, skipped: false, value: mutated, current: current, attempts: attempts };
     }
+    record.outcome = 'verify_failed';
     // Someone else's write is the one actually visible (or ours hasn't
     // propagated to this read yet) — loop back to a fresh read.
   }
 
-  return { ok: false, skipped: false, value: lastMutated, current: lastCurrent };
+  // Store name (not the key — see describeRead's own comment on why) plus
+  // the full per-attempt trace: attempt number, ms elapsed since the loop
+  // started at each step, what each read and verify-read actually saw
+  // (null/undefined/value), and which step each attempt died at.
+  console.error('blobs-retry: exhausted ' + maxAttempts + ' attempts on store=' + storeName
+    + ' retryDelayMs=' + retryDelayMs
+    + ' totalElapsedMs=' + (Date.now() - startedAt)
+    + ' trace=' + JSON.stringify(attempts));
+
+  return { ok: false, skipped: false, value: lastMutated, current: lastCurrent, attempts: attempts };
 }
 
 module.exports = { retryingWrite, SKIP, DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_DELAY_MS };

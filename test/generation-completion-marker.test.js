@@ -70,8 +70,35 @@ function installFalStatusSpy(status) {
   };
 }
 
+/**
+ * Baseline fetch stub installed before EVERY test in this file (tracker.html's
+ * for-product-bug-founder-affects-all-funn-0efe7t item, round 4).
+ *
+ * These tests drive the REAL mark-generation-completed handler, which runs
+ * maybeSendAutomaticFirstDreamEmail -> reportAutoSkip ->
+ * lib/posthog-capture.js for every genuinely-verified operationName. That
+ * helper's POSTHOG_KEY comes from a checked-in file, not an env var, so
+ * before this stub existed these tests POSTed 5 REAL
+ * `first_dream_email_skipped { reason:'no_job_owner_record',
+ * distinct_id:'unknown' }` events into the founder's REAL production PostHog
+ * project on every `npm test` run -- indistinguishable in PostHog from real
+ * users failing, and the direct cause of a reported production "skip storm"
+ * that rounds of this tracker item were spent chasing.
+ *
+ * lib/posthog-capture.js now refuses to fire under a test runner at all (its
+ * own TEST-ENVIRONMENT GUARD), which is the durable fix; this is the belt to
+ * that lib's braces, and keeps this file honest about the fact that its
+ * subject makes outbound calls. installFalStatusSpy below still replaces it
+ * wholesale for the fal-verification tests -- fine, and unchanged.
+ */
+function installBlockAllFetch() {
+  global.fetch = async function (url) {
+    throw new Error('unexpected real network call in a test: ' + String(url));
+  };
+}
+
 test.beforeEach(function () {
-  global.fetch = realFetch;
+  installBlockAllFetch();
   mockBlobs.reset();
   delete require.cache[require.resolve('../netlify/functions/mark-generation-completed')];
   delete require.cache[require.resolve('../netlify/functions/consume-generation-marker')];

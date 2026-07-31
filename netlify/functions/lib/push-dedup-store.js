@@ -106,7 +106,39 @@ async function markSentOnce(event, key) {
   });
 
   if (result.ok) return { ok: true, claimId: claimId };
-  if (result.skipped) return { ok: false, alreadySent: true };
+
+  // ── IS THIS SKIP OUR OWN WRITE? (tracker.html's
+  //    for-product-bug-founder-affects-all-funn-0efe7t item, round 5) ──
+  //
+  // Same hazard, same guard, same reasoning as lib/first-dream-email-store.js's
+  // own markSentOnce -- see that function's fuller comment on this branch, and
+  // lib/entitlements.js's claimDailyTokens for the in-codebase precedent. In
+  // short: blobs-retry reports `skipped` whenever an attempt's fresh read saw
+  // an existing record, and that record may be THIS call's own write from an
+  // earlier attempt whose verify-read raced it under Blobs' eventual
+  // consistency. Reporting that as alreadySent suppresses a push that nobody
+  // ever actually sent, and permanently -- the dedup marker stays written.
+  //
+  // Fails CLOSED in every ambiguous case: `claimId` is truthy only if this
+  // call's own `mutate` actually built and wrote a record, so a call that
+  // skipped on its very first read can never match, and a legacy record with
+  // no claimId at all can never read as ours.
+  if (result.skipped) {
+    if (claimId && result.current && result.current.claimId === claimId) {
+      // Deliberately does NOT include `key`: unlike first-dream-email-store's
+      // normalized username, a key here is caller-built and can carry raw PII
+      // (send-daily-claim-pushes.js builds 'daily-claim-available:' + EMAIL +
+      // ':' + nextClaimAt) -- see blobs-retry.js's describeRead comment on the
+      // raw-email log line that had to be pulled back out before merge during
+      // round 3 of this same tracker item. The line below is still enough to
+      // spot the pattern in logs; the existing exhaustion log further down
+      // predates that rule and is left alone here as out of this fix's scope.
+      console.error('push-dedup-store: retry loop skipped, but the record it skipped on'
+        + ' carries OUR OWN claim -- treating the claim as won');
+      return { ok: true, claimId: claimId };
+    }
+    return { ok: false, alreadySent: true };
+  }
 
   console.error('push-dedup-store: exhausted attempts claiming the send-once marker for key-hash ' + hashKey(key) + ' -- refusing to send rather than risk a duplicate push');
   return { ok: false, error: 'exhausted' };
