@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Explore — DreamTube</title>
 <meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DreamTube">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="assets/logo-v2.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -75,12 +79,11 @@
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
   <!-- cache-bust 2026-07-29T19:20Z: force fresh digest after Netlify dedup served stale content -->
-  <div class="bottom-nav">
-    <a class="nav-item" href="home.html"><div class="nav-icon icon"></div>Home</a>
-    <a class="nav-item active" href="explore.html"><div class="nav-icon icon"></div>Explore</a>
-    <a class="nav-create" href="create.html" id="nav-create" title="Turn Your Dream Into a Video">+</a>
-    <a class="nav-item" href="profile.html" id="nav-profile"><div class="nav-icon-badge-wrap"><div class="nav-icon icon"></div><span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>
-  </div>
+  <!-- Rendered by js/bottom-nav.js (tracker item
+       for-product-bug-design-pass-find-bottom--g0m6ck) -- order here was
+       already correct (Home/Explore/+/Profile); factored to a shared
+       renderer alongside home.html so it can't drift again. -->
+  <div class="bottom-nav" id="bottom-nav-slot"></div>
 
   <div class="modal-overlay" id="modal-signup-nudge">
     <div class="modal-card">
@@ -96,6 +99,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/share-sheet.js"></script>
@@ -110,18 +114,15 @@
   // (those pages' own login gates would just bounce to a bare login screen
   // with no context), so intercept those taps here with a proper pitch for
   // signing up instead of a silent, unexplained redirect.
-  var navIcons = document.querySelectorAll('.nav-icon');
-  navIcons[0].innerHTML = Icons.home;
-  navIcons[1].innerHTML = Icons.compass;
-  navIcons[2].innerHTML = Icons.person;
-  // New-likes badge dot (tracker item idea-notify-likes) — a synchronous,
-  // no-network read of whatever profile.html's own page-load fetch last
-  // computed; see DreamStore.getCachedNewLikesCount's doc block in
-  // js/store.js for why this page never fetches the feed itself. Safe to
-  // call logged-out too — it's just a plain localStorage read, and a
-  // logged-out visitor never had anything written there in the first
-  // place (only profile.html, which requires login, ever writes it).
-  document.getElementById('nav-profile-badge').hidden = !(DreamStore.getCachedNewLikesCount() > 0);
+  // Renders the shared nav markup + icons + the new-likes badge dot (a
+  // synchronous, no-network read of whatever profile.html's own
+  // page-load fetch last computed; see DreamStore.getCachedNewLikesCount's
+  // doc block in js/store.js for why this page never fetches the feed
+  // itself. Safe to call logged-out too — it's just a plain localStorage
+  // read, and a logged-out visitor never had anything written there in
+  // the first place, only profile.html, which requires login, ever writes
+  // it). See js/bottom-nav.js for what this renders.
+  BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'explore' });
 
   var signupNudge = document.getElementById('modal-signup-nudge');
   var signupCta = document.getElementById('signup-nudge-cta');
@@ -135,6 +136,7 @@
       signupNudge.classList.add('open');
     });
   }
+  gateNavLink('nav-home', 'home.html');
   gateNavLink('nav-create', 'create.html');
   gateNavLink('nav-profile', 'profile.html');
 

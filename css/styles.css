@@ -647,8 +647,14 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .install-nudge-toolbar-back{ flex:0 0 auto; width:18px; height:18px; color:#8e8e93; display:flex; align-items:center; justify-content:center; }
 .install-nudge-toolbar-back svg{ width:14px; height:14px; }
 .install-nudge-toolbar-url{ flex:1; min-width:0; background:#e2e2e6; border-radius:8px; padding:6px 10px; font-size:10.5px; color:#48484f; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.install-nudge-toolbar-more{ flex:0 0 auto; width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid var(--accent-trust); color:#0a63d6; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 4px rgba(20,120,230,.16); }
-.install-nudge-toolbar-more svg{ width:15px; height:15px; }
+/* .install-nudge-toolbar-more (Safari's real "•••" More button, bottom-
+   right) and .install-nudge-toolbar-highlight (Chrome's real Share icon,
+   right of its address bar -- tracker item for-product-bug-research-
+   founder-high-ad-vnda9t's browser-aware guidance) are visually identical
+   highlighted circles, just pointing at two different real buttons in two
+   different real browsers -- one shared rule, two class names. */
+.install-nudge-toolbar-more, .install-nudge-toolbar-highlight{ flex:0 0 auto; width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid var(--accent-trust); color:#0a63d6; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 4px rgba(20,120,230,.16); }
+.install-nudge-toolbar-more svg, .install-nudge-toolbar-highlight svg{ width:15px; height:15px; }
 .install-nudge-toolbar-arrow{ font-size:10.5px; font-weight:800; letter-spacing:.03em; color:var(--accent-trust); text-align:center; }
 .install-nudge-menurow{ margin:8px auto 0; }
 .install-nudge-note{ font-size:10.5px; color:var(--text-faint); margin-top:7px; line-height:1.4; }
