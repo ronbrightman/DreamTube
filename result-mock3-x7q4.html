@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-31) — unlinked, delete after decision.
+
+  Result-screen redesign proposal #3: Direction 2 "Ritual completion card"
+  (Manager/research/2026-07-30-result-screen-redesign.md §5) evolved per the
+  founder's 2026-07-31 constraints — new-home night look and feel, hero action
+  is INTERPRETATION (not publish), the shared Bar-A night dock present so the
+  screen is never a dead end, and much fewer things than the live result.html.
+
+  Two review states via the fixed switcher: "Fresh dream" (tag [Private],
+  quiet Publish link) and "Published" (tag [Public ✓], quiet "Live on
+  Explore →" link). Hero is unchanged between states.
+
+  Static, self-contained: no app JS; the "video" is a CSS gradient
+  placeholder. Visual tokens copied from home.html; the bottom bar is
+  profile.html's shipped Bar-A night dock, markup/CSS ported verbatim
+  (origin/main, 2026-07-31).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Result mock 3 — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  /* Same single source of truth profile.html uses for the overlaid dock's
+     vertical footprint — the scroll area's bottom padding and the toast
+     both read this. */
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+  --mockbar-h:44px;
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+  padding-top:calc(env(safe-area-inset-top,0px) + var(--mockbar-h));
+}
+
+/* ===== mock-review switcher (not part of the product screen) ===== */
+.mockbar{
+  position:fixed; top:0; left:0; right:0; z-index:50;
+  display:flex; justify-content:center; align-items:center;
+  height:calc(env(safe-area-inset-top,0px) + var(--mockbar-h));
+  padding-top:env(safe-area-inset-top,0px);
+  background:rgba(6,5,16,.92); border-bottom:1px solid rgba(157,144,255,.18);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+}
+.seg{ display:flex; gap:2px; background:rgba(255,255,255,.06); border:1px solid rgba(157,144,255,.3); border-radius:99px; padding:3px; }
+.seg button{
+  border:none; background:transparent; color:#8f88b3; font:700 11px var(--font-body);
+  padding:6px 14px; border-radius:99px; cursor:pointer; white-space:nowrap; letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.seg button.on{ background:rgba(157,144,255,.25); color:var(--home-ink); }
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:calc(100dvh - env(safe-area-inset-top,0px) - var(--mockbar-h));
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim tokens from home.html) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 14px rgba(157,144,255,.85); } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.heropill{ animation:none !important; }
+}
+
+/* ===== page chrome ===== */
+.result-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 8px; flex:none;
+}
+.icon-btn{
+  width:38px; height:38px; border-radius:50%; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; font-size:19px;
+  background:rgba(12,10,26,.62); border:1px solid rgba(157,144,255,.4); color:var(--home-ink);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+.icon-btn:active{ transform:scale(.94); }
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+/* Content scrolls BEHIND the overlaid dock — this clearance keeps the last
+   element reachable (same rule as profile.html's .scroll-area). */
+.scroll-area{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:2px 14px calc(var(--nav-clearance) + 28px);
+}
+
+/* ===== the ritual completion card (Direction 2, evolved) ===== */
+.hcard{
+  position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid var(--home-line); border-radius:18px; padding:15px; overflow:hidden;
+  color:var(--home-ink);
+}
+.hcard.hero{
+  border-color:rgba(157,144,255,.55);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+}
+.hcard-dt{
+  font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--home-acc); font-weight:800; margin-bottom:10px;
+}
+
+/* the "video" — 16:9 rounded, rich dream-gradient placeholder */
+.dreamvideo{
+  position:relative; width:100%; aspect-ratio:16/9; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.14); cursor:pointer;
+  background:
+    radial-gradient(30% 42% at 76% 24%, rgba(255,226,166,.85), rgba(255,214,150,.25) 55%, transparent 75%),
+    radial-gradient(90% 90% at 14% 86%, rgba(83,140,255,.4), transparent 60%),
+    radial-gradient(120% 110% at 46% 46%, rgba(163,90,255,.42), transparent 72%),
+    radial-gradient(60% 55% at 84% 82%, rgba(224,120,190,.3), transparent 65%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 48%,#141040);
+}
+.dreamvideo::before{ /* tiny stars inside the frame */
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 30%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 30% 14%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.3px 1.3px at 55% 24%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 55%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 68% 78%, rgba(207,200,255,.55), transparent 60%);
+}
+.dreamvideo::after{ /* gentle bottom scrim so the frame feels like footage */
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.45));
+}
+.playbadge{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:1;
+  width:52px; height:52px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center;
+}
+.playbadge svg{ width:20px; height:20px; margin-left:3px; }
+
+.dreamquote{
+  margin-top:12px; font-size:14px; line-height:1.5; color:var(--home-ink); font-weight:500;
+}
+.dreamquote.clamped{
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.showmore{
+  display:inline-block; margin-top:4px; background:none; border:none; cursor:pointer;
+  color:#cfc8ff; font:700 12px var(--font-body); padding:0;
+  -webkit-tap-highlight-color:transparent;
+}
+
+.tagrow{ display:flex; align-items:center; gap:8px; margin-top:10px; }
+.statetag{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+  padding:4px 10px; border-radius:99px;
+  background:rgba(12,10,26,.5); border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+}
+.statetag.public{
+  border-color:rgba(75,211,155,.55); color:var(--home-ok); background:rgba(75,211,155,.1);
+}
+.statetag .icon{ font-size:12px; }
+
+/* the ONE hero action — interpretation */
+.heropill{
+  display:block; width:100%; margin-top:14px;
+  border:none; border-radius:99px; padding:14px 12px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 14.5px var(--font-body); letter-spacing:.01em; text-align:center;
+  animation:homePulse 2.6s ease-in-out infinite;
+  -webkit-tap-highlight-color:transparent;
+}
+.heropill:active{ transform:scale(.98); }
+
+/* ===== quiet row — everything else, one muted line ===== */
+.quietrow{
+  display:flex; align-items:center; justify-content:space-around;
+  margin:16px 2px 0; padding:0 2px;
+}
+.quietlink{
+  display:flex; align-items:center; gap:5px;
+  background:none; border:none; cursor:pointer; padding:8px 4px; min-height:40px;
+  color:var(--home-soft); font:600 12px var(--font-body); text-decoration:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.quietlink .icon{ font-size:15px; opacity:.9; }
+.quietlink:active{ opacity:.7; }
+.quietlink.livelink{ color:#a9e8cd; }
+/* delete: danger-tint on the ICON only, label stays muted (v5 rules) */
+.quietlink.danger .icon{ color:#e8697d; }
+
+/* ===== slim next-step strip (home.html's .nextstrip language) ===== */
+.nextstrip{
+  margin:16px 2px 0;
+  background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4);
+  border-radius:12px; padding:9px 11px; font-size:11.5px; color:#cfc8ff; line-height:1.45;
+}
+.nextstrip b{ color:var(--home-ink); }
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   Ported verbatim from production profile.html so the mock's bar matches
+   what already shipped. Content scrolls behind it. */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.nav-icon-badge-wrap{ position:relative; display:inline-flex; }
+
+/* ===== toast ===== */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+</style>
+</head>
+<body>
+
+<div class="mockbar">
+  <div class="seg" role="tablist" aria-label="Mock state">
+    <button type="button" id="seg-fresh" class="on">Fresh dream</button>
+    <button type="button" id="seg-published">Published</button>
+  </div>
+</div>
+
+<div id="app">
+  <!-- Sky layers — decorative, behind everything -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <div class="result-fg">
+    <!-- Topbar: back + mute, nothing else -->
+    <div class="topbar">
+      <div class="icon-btn" title="Back" role="button" aria-label="Back">
+        <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+      </div>
+      <div class="icon-btn" title="Sound" role="button" aria-label="Unmute">
+        <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+      </div>
+    </div>
+
+    <div class="scroll-area">
+      <!-- The ritual completion card -->
+      <div class="hcard hero">
+        <div class="hcard-dt">Tonight's dream</div>
+
+        <div class="dreamvideo" role="button" aria-label="Play your dream video">
+          <div class="playbadge">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>
+          </div>
+        </div>
+
+        <p class="dreamquote clamped" id="dream-quote">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn't scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.&rdquo;</p>
+        <button type="button" class="showmore" id="showmore-btn">Show more</button>
+
+        <div class="tagrow">
+          <span class="statetag" id="state-tag"></span>
+        </div>
+
+        <button type="button" class="heropill" id="hero-pill">✨ What does this dream mean?</button>
+      </div>
+
+      <!-- Quiet row — everything else, one muted line -->
+      <div class="quietrow">
+        <button type="button" class="quietlink" id="quiet-publish">
+          <span class="icon" id="quiet-publish-icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 19V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M6 11l6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+          <span id="quiet-publish-label">Publish</span>
+        </button>
+        <button type="button" class="quietlink">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19l-4 1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></span>
+          <span>Edit</span>
+        </button>
+        <button type="button" class="quietlink">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span>Make another</span>
+        </button>
+        <button type="button" class="quietlink danger">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M5 7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M7 7l1 13h8l1-13" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></span>
+          <span>Delete</span>
+        </button>
+      </div>
+
+      <!-- Slim next-step strip — small, not competing -->
+      <div class="nextstrip">✦ <b>Tomorrow:</b> log your next dream — your bonus is waiting.</div>
+    </div>
+  </div>
+
+  <!-- Bar A, the anchored night dock (verbatim from production profile.html;
+       no tab is active on the result screen) -->
+  <nav class="night-dock" aria-label="Main">
+    <a class="night-dock-item" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+    <a class="night-dock-item" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+    <a class="night-dock-create" href="#" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+    <a class="night-dock-item" href="#">
+      <div class="nav-icon-badge-wrap" aria-hidden="true">
+        <i class="night-dock-avatar">Y</i>
+      </div><span class="night-dock-label">Profile</span>
+    </a>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1800);
+  }
+
+  // Hero action → mock Chamber handoff
+  document.getElementById('hero-pill').addEventListener('click', function(){
+    toast('Opening the Chamber…');
+  });
+
+  // Quote clamp toggle
+  var quote = document.getElementById('dream-quote');
+  var showmore = document.getElementById('showmore-btn');
+  showmore.addEventListener('click', function(){
+    var clamped = quote.classList.toggle('clamped');
+    showmore.textContent = clamped ? 'Show more' : 'Show less';
+  });
+
+  // Fresh / Published state switcher
+  var segFresh = document.getElementById('seg-fresh');
+  var segPub = document.getElementById('seg-published');
+  var stateTag = document.getElementById('state-tag');
+  var quietPublish = document.getElementById('quiet-publish');
+  var quietPublishLabel = document.getElementById('quiet-publish-label');
+  var quietPublishIcon = document.getElementById('quiet-publish-icon');
+  var ICON_PUBLISH = quietPublishIcon.innerHTML;
+  var ICON_LIVE = '<svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>';
+  var ICON_LOCK = '<span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="1.8" fill="none"/></svg></span>';
+
+  function setState(published){
+    segFresh.classList.toggle('on', !published);
+    segPub.classList.toggle('on', published);
+    if(published){
+      stateTag.textContent = 'Public ✓';
+      stateTag.classList.add('public');
+      quietPublish.classList.add('livelink');
+      quietPublishIcon.innerHTML = ICON_LIVE;
+      quietPublishLabel.textContent = 'Live on Explore →';
+    } else {
+      stateTag.innerHTML = ICON_LOCK + 'Private';
+      stateTag.classList.remove('public');
+      quietPublish.classList.remove('livelink');
+      quietPublishIcon.innerHTML = ICON_PUBLISH;
+      quietPublishLabel.textContent = 'Publish';
+    }
+  }
+  setState(false);
+  segFresh.addEventListener('click', function(){ setState(false); });
+  segPub.addEventListener('click', function(){ setState(true); });
+</script>
+</body>
+</html>
