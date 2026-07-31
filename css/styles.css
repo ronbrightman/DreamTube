@@ -744,128 +744,52 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-fail-reason{ font-size:13px; color:var(--text-primary); line-height:1.5; max-width:280px; background:var(--surface); border-radius:12px; padding:12px 16px; margin-top:-4px;}
 .proc-fail-code{ font-size:10px; font-family:ui-monospace, 'SF Mono', Menlo, Consolas, monospace; color:var(--text-faint); word-break:break-word; margin-top:-8px;}
 
-/* ===== Result ===== */
-.result-bg{ position:absolute; inset:0; background:var(--surface);}
-.result-video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; cursor:pointer;}
-.result-image{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
-/* Translucent gradient overlay, not a solid slab — the video/image stays
-   visible behind the panel (result.html redesign, tracker.html's
-   for-product-build-result-html-first-vide-mupiua, founder-approved
-   2026-07-26 "now it's perfect"). Caps out at rgba(0,0,0,.72) at the very
-   bottom (vs. the old .95 near-opaque slab) and fades to fully transparent
-   well before the topbar, instead of the old gradient's harsh 68% stop. */
-.result-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.72) 0%, rgba(0,0,0,.48) 45%, rgba(0,0,0,.16) 72%, transparent 100%); pointer-events:none;}
+/* ===== Result =====
+   The ritual-card rebuild (2026-07-31, tracker item for-product-build-
+   founder-approved-mock--azvcea) moved this screen's own visual system
+   entirely into result.html's own page-scoped <style> block (same
+   per-page-override convention home.html/profile.html already use for
+   their night themes) — .hcard/.dreamvideo/.playbadge/.watchpill/
+   .tagrow/.statetag/.heropill/.quietrow/.player-overlay and friends all
+   live there now, not here. What's left below is the handful of classes
+   result.html keeps dual-classed onto its new markup so existing
+   test/*.js coverage of them (test/ui-behavioral.test.js and others)
+   didn't need a wholesale ID/class rewrite alongside the visual one —
+   .play-badge/.badge-circle also stay because explore.html's own feed
+   still uses them, unrelated to this page. */
 .play-badge{ display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:1; transition:opacity .2s ease;}
 .play-badge .badge-circle{ width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.35); backdrop-filter:blur(4px); color:#fff; display:flex; align-items:center; justify-content:center;}
 .play-badge .badge-circle .icon{ width:22px; height:22px;}
 .play-badge.hidden{ opacity:0; pointer-events:none;}
-.result-play{ position:absolute; top:34%; left:50%; transform:translate(-50%,-50%); z-index:1;}
-/* Bottom padding reserves the night dock's own height (tracker item
-   for-product-hotfix-now-founder-urgent-re-w743iy) so the quiet-links row
-   (Publish/Edit/Make another/Delete) never sits underneath the new
-   overlaid nav — the dock floats over the VIDEO (full-bleed, unaffected),
-   never over this row's real tap targets. */
-.result-panel{ position:absolute; left:0; right:0; bottom:0; padding:14px 20px calc(var(--nav-clearance) + 20px); z-index:2;}
-/* Small font, clamped to 2 lines with tap-to-expand/collapse (was 18px/
-   3-line-clamp — shrunk as part of the same redesign above). */
-.dream-quote{ font-size:13px; font-weight:600; margin-bottom:4px; line-height:1.45; cursor:pointer; text-shadow:0 1px 6px rgba(0,0,0,.7);}
+/* Small font, clamped to 2 lines with tap-to-expand/collapse. */
+.dream-quote{ font-size:13px; font-weight:600; margin-bottom:4px; line-height:1.45; cursor:pointer;}
 .dream-quote.clamped{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;}
 .quote-more-hint{ font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:8px; cursor:pointer;}
-.result-tag-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:2px;}
-.result-tag-row .feed-tag, .turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
-.result-tag-row .feed-tag.pub{ background:rgba(255,255,255,.92); color:#000;}
 
-/* "Turn this into a video" upsell CTA — the emphasized action on an
-   image-type dream's result screen (see docs/IMAGE_GENERATION_SPEC.md §6).
-   Deliberately UNCHANGED/full-size — founder-explicit 2026-07-26 night
-   decision, restated in the 2026-07-30 interpret-primary redesign's own
-   cut list: this one CTA keeps its clearly visible "100 tokens" cost pill
-   and warm-button prominence (label left, cost pill right). */
-.turn-video-cta{ width:100%; justify-content:space-between; margin:10px 0 8px;}
-.interp-cta-label{ display:flex; align-items:center; gap:6px;}
+/* "Turn this into a video" upsell CTA's inner cost pill — the outer
+   .turn-video-cta layout itself is defined in result.html's own <style>
+   now, but this compound selector styles the "100 tokens" child pill
+   specifically and has no equivalent there yet. Deliberately UNCHANGED/
+   full-size — founder-explicit: this one CTA keeps its clearly visible
+   token cost, never restyled into a slim/subtle pill. */
+.turn-video-cta .feed-tag{ background:rgba(255,255,255,.14); backdrop-filter:blur(4px); padding:4px 11px; border-radius:100px; font-size:11.5px; font-weight:700;}
 
-/* ===== The result screen's ONE hero: the interpretation entry =====
-   Founder-decided 2026-07-30 (tracker item for-product-build-founder-
-   decided-2026-0-75fnlk); geometry, weight and motion copied from the
-   frozen approved mock result-mock2-x7q4.html's `.hero-cta` — full-width
-   pill, 99px radius, ~15px vertical padding, 800-weight ~15.5px centred
-   label, soft pulse, press-scale.
-
-   ONE deliberate adaptation from that mock: the fill. The mock was a
-   standalone file that declared home.html's night-sky tokens locally and
-   painted this button with home's periwinkle --home-acc (#9d90ff). This
-   page — and the Interpreter's Chamber it opens (.itp-* below) — run on
-   this stylesheet's monochrome system, where an emphasized CTA is white-
-   on-black (--accent / .btn-primary / .btn-warm). Using the mock's literal
-   hue here would make this the only purple control anywhere on the
-   result -> Chamber path. So the mock's hierarchy is copied exactly and
-   only the palette is mapped onto the real design system. If the founder
-   wants the mock's literal periwinkle, it is this one `background`/`color`
-   pair plus the pulse's glow colour — nothing else. */
-.result-hero-cta{
-  display:flex; align-items:center; justify-content:center; gap:7px;
-  width:100%; margin:10px 0 0; padding:15px 18px;
-  border:none; border-radius:100px; cursor:pointer;
-  background:var(--accent); color:#000;
-  font-family:var(--font-body); font-size:15.5px; font-weight:800; letter-spacing:.01em; text-align:center;
-  box-shadow:0 4px 14px -6px rgba(0,0,0,.5);
-  animation:resultHeroPulse 2.6s ease-in-out infinite;
-  transition:transform .12s ease, opacity .15s ease;
-  -webkit-tap-highlight-color:transparent;
-}
-.result-hero-cta:active{ transform:scale(.97);}
-/* The image-only state keeps its OWN hero ("Turn this into a video",
-   founder-explicit, untouched). Two full-size white pills there would read
-   as two heroes and defeat the "ONE hero" rule this redesign is built on,
-   so in that one state the interpretation entry steps down to the slim
-   translucent pill it already was on `main` (the previous, founder-seen
-   .interp-pill treatment — same values, reused verbatim rather than a new
-   invention). Everywhere else the interpretation entry IS the hero. */
-.result-hero-cta.quiet{
-  padding:8px 14px; margin-top:2px;
-  border:1px solid rgba(255,255,255,.18); border-radius:100px;
-  background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
-  color:#eee; font-size:12px; font-weight:600;
-  box-shadow:none; animation:none;
-}
-@keyframes resultHeroPulse{
-  0%,100%{ box-shadow:0 4px 14px -6px rgba(0,0,0,.5), 0 0 5px rgba(255,255,255,.28);}
-  50%{ box-shadow:0 4px 14px -6px rgba(0,0,0,.5), 0 0 15px rgba(255,255,255,.6);}
-}
-@media (prefers-reduced-motion:reduce){ .result-hero-cta{ animation:none;} }
-/* The hero's label is one sentence and reads far better on one line. At
-   the narrowest realistic phone widths (320px — iPhone SE 1st gen / older
-   Android) 15.5px/800 wraps it in two, so the label steps down just enough
-   to stay single-line there. Size/fill/motion are otherwise unchanged. */
-@media (max-width:359px){ .result-hero-cta{ font-size:13.5px; padding:14px 12px; gap:5px;} }
-/* The mock's `.micro` slot under the hero — carries the privacy
-   reassurance the old slim interpretation pill used to hold as an inline
-   "Private" chip. */
-.result-hero-micro{ margin:9px 0 4px; text-align:center; font-size:11.5px; line-height:1.45; color:var(--text-muted); text-shadow:0 1px 4px rgba(0,0,0,.6);}
-.interp-sparkle{ font-size:15px; line-height:1;}
-
-/* Quiet small-link row — Publish / Edit / Make another / Delete. Publish
-   joined this row in the 2026-07-30 interpret-primary redesign (it is no
-   longer the hero; its modal/consent flow is unchanged). Delete is an
-   ordinary quiet link here now, same muted styling as the other three,
-   just with its icon (only) tinted toward --danger via .result-quiet-link-danger so
-   it's discoverable without reading as a recommended action. Two earlier
-   placements (a big bottom-bar button, then an overflow "⋯" menu) were
-   both tried and rejected -- see tracker.html's
-   for-product-result-screen-quiet-row-fina-btv7nr,
-   for-product-result-screen-delete-is-too--6axxko, and
-   no-delete-video-2rlysi. Save was removed entirely in this same pass
-   (redundant with topbar Share). */
+/* Quiet small-link row — Publish / Make another / Edit / Delete (order per
+   the founder's final 2026-07-31 amendment — Edit moved next to Delete).
+   Layout/typography stay here (dual-classed with result.html's own
+   .quietrow/.quietlink so this doesn't regress); danger-tinting the
+   Delete icon (only, never the label) now lives in result.html's own
+   `.quietlink.danger` rule alongside its other quiet-row rules -- see
+   tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u. */
 .result-quiet-links{ display:flex; justify-content:center; align-items:center; gap:9px; flex-wrap:wrap; padding-top:2px;}
 .result-quiet-link{
   display:flex; align-items:center; gap:4px; font-family:var(--font-body); font-size:11px; font-weight:600;
   color:rgba(255,255,255,.75); background:none; border:none; cursor:pointer; padding:4px 2px; margin:0;
-  text-decoration:none; text-shadow:0 1px 4px rgba(0,0,0,.6); -webkit-tap-highlight-color:transparent;
+  text-decoration:none; -webkit-tap-highlight-color:transparent;
 }
 .result-quiet-link:hover{ color:#fff;}
 .result-quiet-link:disabled{ opacity:.4; cursor:not-allowed;}
 .result-quiet-link .icon{ width:13px; height:13px;}
-.result-quiet-link-danger .icon{ color:var(--danger);}
 .interp-loading-row{ display:flex; align-items:center; gap:10px; padding:8px 0 20px; color:var(--text-muted); font-size:14px;}
 .interp-text{ font-size:14.5px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
 .interp-disclosure{ font-size:12px; color:var(--text-faint); line-height:1.4; margin:10px 0 16px;}

@@ -575,8 +575,9 @@ conversion event, so no Meta Pixel/CAPI leg.
 | **Props** | `{ first_video: boolean }` — true when this dream is the account's only completed video, i.e. the user is tapping this on their very first dream (the confidence moment the founder's decision is actually about), false on a returning user's Nth dream. Computed from `DreamStore.isOnlyCompletedDream(dream.id)`, the same read-only query `first_video_result_view` above already uses — deliberately not a second definition of "first" |
 | **Does NOT fire for** | home.html's Chamber card, which opens the same Interpreter's Chamber from the other entry point. That path is intentionally uninstrumented by this event — the whole point is measuring the RESULT-screen entry specifically. Compare against the `interp_*` events (fired inside the Chamber regardless of entry point) to see the split |
 
-**Files touched:** `result.html` (hero markup, click handler, and the
-section-6 declutter cuts that go with it), `css/styles.css`
-(`.result-hero-cta`/`.result-hero-micro`), `test/ui-behavioral.test.js`
+**Files touched:** `result.html` (hero markup/styling now lives entirely in
+this page's own `<style>` block — `.heropill`/`.result-hero-micro` — as
+part of the 2026-07-31 ritual-card rebuild; the click handler and
+`first_video` computation are unchanged), `test/ui-behavioral.test.js`
 (real-browser coverage of the event firing with the correct `first_video`
 value in both states).

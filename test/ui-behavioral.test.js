@@ -456,7 +456,7 @@ test('pricing screen omits the stat line entirely (never a fake number) when get
   }
 });
 
-test('result.html: Save is gone entirely (founder feedback 2026-07-28 -- redundant with topbar Share) -- no #save-video-btn anywhere, and Delete has taken its slot as an ordinary quiet link', async function (t) {
+test('result.html: Save is gone entirely (redundant with Share) -- no #save-video-btn anywhere, and Delete is an ordinary quiet link', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -471,13 +471,13 @@ test('result.html: Save is gone entirely (founder feedback 2026-07-28 -- redunda
     var deleteBtn = page.locator('#delete-btn');
     assert.ok(await deleteBtn.isVisible(), '#delete-btn should be visible as an ordinary quiet link');
     assert.ok(await page.locator('.result-quiet-links #delete-btn').count() > 0, '#delete-btn must live inside .result-quiet-links, same row as Edit/Publish/Make another');
-    assert.ok(await deleteBtn.evaluate(function (el) { return el.classList.contains('result-quiet-link-danger'); }), '#delete-btn should carry the danger-tint modifier class on its icon, not full red/emphasized styling');
+    assert.ok(await deleteBtn.evaluate(function (el) { return el.classList.contains('danger'); }), '#delete-btn should carry the danger-tint modifier class on its icon, not full red/emphasized styling');
   } finally {
     await context.close();
   }
 });
 
-test('result.html redesign: topbar keeps only back + mute + share -- the old Explore/Profile nav icons and the page title are both gone', async function (t) {
+test('result.html ritual-card rebuild: no topbar at all -- back/share/mute all live as chips over the video, and the old Explore/Profile nav icons and page title stay gone', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -487,22 +487,22 @@ test('result.html redesign: topbar keeps only back + mute + share -- the old Exp
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('#result-back', { timeout: 5000 });
 
-    // The old #result-nav-explore/#result-nav-profile topbar links no
-    // longer exist at all -- tracker.html's
-    // for-product-build-result-html-first-vide-mupiua spec item 2.
+    // The .topbar element itself is gone entirely now (this screen has no
+    // topbar at all per the founder-approved mock) -- not just emptied.
+    assert.equal(await page.locator('.topbar').count(), 0, 'the .topbar element must not exist anywhere on the page');
     assert.equal(await page.locator('#result-nav-explore').count(), 0, 'the old topbar Explore nav icon must be gone');
     assert.equal(await page.locator('#result-nav-profile').count(), 0, 'the old topbar Profile nav icon must be gone');
-    assert.equal(await page.locator('.topbar #result-nav-explore, .topbar #result-nav-profile').count(), 0);
+    assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar page title must not exist anywhere on the page');
 
-    // Layout sanity: every remaining topbar element must have a real box
-    // (not collapsed/hidden), and none of them may overlap each other.
-    var boxes = await page.$$eval('.topbar #result-back, .topbar #mute-btn, .topbar #share-btn', function (els) {
+    // Back/share/mute all sit over the video frame's corners -- every one
+    // has a real box, and none overlap each other.
+    var boxes = await page.$$eval('#dreamvideo-frame #result-back, #dreamvideo-frame #share-btn, #dreamvideo-frame #mute-btn', function (els) {
       return els.map(function (el) {
         var r = el.getBoundingClientRect();
         return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
       });
     });
-    assert.equal(boxes.length, 3, 'expected back + mute + share, and nothing else, in the topbar icon cluster');
+    assert.equal(boxes.length, 3, 'expected back + share + mute, and nothing else, over the video');
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
     });
@@ -514,28 +514,12 @@ test('result.html redesign: topbar keeps only back + mute + share -- the old Exp
         assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
       }
     }
-
-    // Nav links must not collide with the result-panel (Edit/Save/Publish/
-    // Delete etc.) sitting at the bottom of this immersive full-bleed page.
-    var panelTop = await page.$eval('.result-panel', function (el) { return el.getBoundingClientRect().top; });
-    var navBottom = Math.max.apply(null, boxes.map(function (b) { return b.bottom; }));
-    assert.ok(navBottom < panelTop, 'topbar nav must sit entirely above the result-panel');
   } finally {
     await context.close();
   }
 });
 
-// ===== Interpret-primary result-screen redesign (founder-decided
-// 2026-07-30, tracker item for-product-build-founder-decided-2026-0-75fnlk,
-// frozen mock result-mock2-x7q4.html) =====
-// The hero on result.html is the INTERPRETATION entry, not publish; publish
-// drops to a quiet link. The memo's section-6 declutter list also cuts the
-// Explore/Profile CTA pair, the topbar title, the style tag, the always-on
-// token chip, the daily-claim auto-open, and this page's repeat-visit
-// install nudge. The tests below cover the hero, the cuts, and the
-// analytics event together, since they were one decision.
-
-test('result.html redesign: the section-6 cuts are genuinely CUT -- no Explore/Profile CTA pair, no topbar title, no style tag anywhere on the page', async function (t) {
+test('result.html ritual-card rebuild: the section-6 cuts are still cut -- no Explore/Profile CTA pair, no style tag anywhere on the page, and the "Tomorrow: log your next dream" strip is removed entirely', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -545,22 +529,18 @@ test('result.html redesign: the section-6 cuts are genuinely CUT -- no Explore/P
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Gone entirely (not merely hidden) -- the no-dead-code rule applies to
-    // markup too, and a hidden-but-present CTA would come back the moment
-    // someone flipped a display toggle.
     assert.equal(await page.locator('#result-cta-explore').count(), 0, 'the Explore CTA button must not exist anywhere on the page');
     assert.equal(await page.locator('#result-cta-profile').count(), 0, 'the My-profile CTA button must not exist anywhere on the page');
     assert.equal(await page.locator('.result-cta-row').count(), 0, 'the compact CTA row must not exist anywhere on the page');
-    assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar page title must not exist anywhere on the page');
     assert.equal(await page.locator('#result-style-tag').count(), 0, 'the "Style: X" tag must not exist anywhere on the page');
 
-    // Nothing on the visible screen still says "Style:" or "Your Dream"
-    // through some other element -- the cut is about what the user sees,
-    // not just about these specific ids.
-    var panelText = await page.$eval('.result-panel', function (el) { return el.innerText; });
-    assert.ok(panelText.indexOf('Style:') === -1, 'the panel should no longer render a "Style:" label (got: ' + panelText + ')');
-    var topbarText = await page.$eval('.topbar', function (el) { return el.innerText.trim(); });
-    assert.equal(topbarText, '', 'the topbar should carry icon buttons only, no text title (got: ' + JSON.stringify(topbarText) + ')');
+    // Founder amendment (2026-07-31, round 2 of this build): the "Tomorrow:
+    // log your next dream" strip the earlier round-3 mock still showed is
+    // REMOVED entirely, not just restyled -- no .nextstrip markup, no
+    // "Tomorrow" text anywhere on the page.
+    assert.equal(await page.locator('.nextstrip').count(), 0, 'the "Tomorrow: log your next dream" strip must not exist anywhere on the page');
+    var appText = await page.$eval('#app', function (el) { return el.innerText; });
+    assert.ok(appText.indexOf('Tomorrow') === -1, 'no "Tomorrow" copy should render anywhere on the page (got: ' + JSON.stringify(appText.slice(0, 400)) + ')');
 
     // The privacy tag SURVIVES the cut -- only the style tag went.
     assert.ok(await page.locator('#result-privacy-tag').isVisible(), 'the Private/Public tag must still be there');
@@ -570,7 +550,7 @@ test('result.html redesign: the section-6 cuts are genuinely CUT -- no Explore/P
   }
 });
 
-test('result.html redesign: the ONE hero is the interpretation entry -- a full-width emphasized pill above the quiet row that opens the Interpreter\'s Chamber for THIS dream', async function (t) {
+test('result.html ritual-card rebuild: the ONE hero is the interpretation entry -- a full-width emphasized pill above the quiet row that opens the Interpreter\'s Chamber for THIS dream', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -580,19 +560,21 @@ test('result.html redesign: the ONE hero is the interpretation entry -- a full-w
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
 
-    // Copy, per the founder's own suggestion in the tracker item.
     var heroText = (await page.textContent('#interp-cta-btn')).replace(/\s+/g, ' ').trim();
     assert.match(heroText, /What does this dream mean\?/, 'the hero should carry the founder-specified copy (got: ' + heroText + ')');
 
-    // It reads as the HERO, not the old slim pill: full-panel width, a
-    // real full-size tap target, and a heavy label. (The old .interp-pill
-    // was 12px/8px-padding; the app's normal full-size .btn is ~14.5px.)
+    // It reads as the HERO: spans the ritual card's full inner width, a
+    // real full-size tap target, and a heavy label.
     var hero = await page.$eval('#interp-cta-btn', function (el) {
       var cs = getComputedStyle(el);
       var r = el.getBoundingClientRect();
-      var panel = document.querySelector('.result-panel').getBoundingClientRect();
-      var panelCS = getComputedStyle(document.querySelector('.result-panel'));
-      var innerWidth = panel.width - parseFloat(panelCS.paddingLeft) - parseFloat(panelCS.paddingRight);
+      var card = document.querySelector('.hcard.hero').getBoundingClientRect();
+      var cardCS = getComputedStyle(document.querySelector('.hcard.hero'));
+      // border-box sizing (this codebase's global `*{box-sizing:border-box}`
+      // reset): getBoundingClientRect().width includes the 1px border on
+      // each side, so the content box the hero actually sits in is
+      // narrower than that by the border width too, not just the padding.
+      var innerWidth = card.width - parseFloat(cardCS.paddingLeft) - parseFloat(cardCS.paddingRight) - parseFloat(cardCS.borderLeftWidth) - parseFloat(cardCS.borderRightWidth);
       return {
         height: r.height,
         fontSize: parseFloat(cs.fontSize),
@@ -601,13 +583,12 @@ test('result.html redesign: the ONE hero is the interpretation entry -- a full-w
         innerWidth: innerWidth
       };
     });
-    assert.ok(Math.abs(hero.width - hero.innerWidth) < 2, 'the hero should span the panel\'s full inner width (got ' + hero.width + ' vs ' + hero.innerWidth + ')');
+    assert.ok(Math.abs(hero.width - hero.innerWidth) < 2, 'the hero should span the card\'s full inner width (got ' + hero.width + ' vs ' + hero.innerWidth + ')');
     assert.ok(hero.height >= 44, 'the hero must be a real full-size tap target, >= the 44px mobile minimum (got ' + hero.height + 'px)');
-    assert.ok(hero.fontSize >= 15, 'the hero label should be full-size, not the old slim pill\'s 12px (got ' + hero.fontSize + 'px)');
+    assert.ok(hero.fontSize >= 13, 'the hero label should be a real, readable size (got ' + hero.fontSize + 'px)');
     assert.ok(hero.fontWeight >= 700, 'the hero label should be heavy (got ' + hero.fontWeight + ')');
 
-    // It is the LAST thing above the quiet row -- publish/edit/make-another/
-    // delete all sit below it, per the mock's vertical order.
+    // It is the LAST thing above the quiet row.
     var heroBottom = await page.$eval('#interp-cta-btn', function (el) { return el.getBoundingClientRect().bottom; });
     var quietTop = await page.$eval('.result-quiet-links', function (el) { return el.getBoundingClientRect().top; });
     assert.ok(heroBottom <= quietTop + 1, 'the hero must sit above the quiet small-link row');
@@ -617,9 +598,7 @@ test('result.html redesign: the ONE hero is the interpretation entry -- a full-w
     assert.equal(await page.locator('#turn-video-btn').isVisible(), false, 'the Turn-into-video hero must stay hidden for a video dream');
 
     // Tapping opens the SAME Interpreter's Chamber home.html's Chamber card
-    // opens (js/interpret-experience.js) -- the picker needs no network at
-    // all (docs/INTERPRETATION_WAVE1_SPEC.md §3.1), so aborting every
-    // Netlify Function still proves the surface opens on tap alone.
+    // opens (js/interpret-experience.js).
     await page.route('**/.netlify/functions/*', function (route) { route.abort(); });
     await page.click('#interp-cta-btn');
     await page.waitForSelector('#itp-root.open', { timeout: 5000 });
@@ -629,14 +608,12 @@ test('result.html redesign: the ONE hero is the interpretation entry -- a full-w
   }
 });
 
-test('result.html redesign: the hero opens the Chamber linked to THIS dream -- not the latest dream, not an ambiguous default -- when the account has several dreams', async function (t) {
+test('result.html ritual-card rebuild: the hero opens the Chamber linked to THIS dream -- not the latest dream, not an ambiguous default -- when the account has several dreams', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   // The result-entry half of tracker item
   // for-product-chamber-dream-linkage-is-unc-00s2dr. home.html's Chamber
   // card always opens the LATEST completed dream; entering from result must
-  // instead operate on whichever dream this screen is showing. Seeds three
-  // dreams and opens the OLDEST, so "latest" and "this one" genuinely
-  // differ -- the whole point of the assertion.
+  // instead operate on whichever dream this screen is showing.
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
@@ -658,9 +635,6 @@ test('result.html redesign: the hero opens the Chamber linked to THIS dream -- n
     await page.goto(baseUrl + '/result.html?id=d-oldest', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#interp-cta-btn', { timeout: 5000 });
 
-    // Record which dreamId InterpretExperience.open() is actually called
-    // with, without stubbing away the real experience -- the real open()
-    // still runs, so this also proves the call is well-formed.
     await page.evaluate(function () {
       window.__openedWith = [];
       var realOpen = window.InterpretExperience.open;
@@ -680,14 +654,14 @@ test('result.html redesign: the hero opens the Chamber linked to THIS dream -- n
   }
 });
 
-/** Reads every posthog.capture(...) call recorded so far. blockThirdParty() aborts PostHog's real asset, so the snippet in each page's <head> leaves window.posthog as its own queueing array — entries are ['capture', eventName, props]. Same convention as test/interp-analytics-behavioral.test.js / test/shop-purchase-conversion-behavioral.test.js. */
+/** Reads every posthog.capture(...) call recorded so far. blockThirdParty() aborts PostHog's real asset, so the snippet in each page's <head> leaves window.posthog as its own queueing array — entries are ['capture', eventName, props]. */
 function readPostHogCalls(page) {
   return page.evaluate(function () {
     return (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
   });
 }
 
-test('result.html redesign: tapping the hero fires result_hero_interpret with first_video:true on the account\'s only video, and first_video:false once it has more', async function (t) {
+test('result.html ritual-card rebuild: tapping the hero fires result_hero_interpret with first_video:true on the account\'s only video, and first_video:false once it has more', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   for (var i = 0; i < 2; i++) {
     var onlyDream = i === 0;
@@ -733,7 +707,7 @@ test('result.html redesign: tapping the hero fires result_hero_interpret with fi
   }
 });
 
-test('result.html redesign: the token chip is off-screen on an ordinary result, and comes back only in the image-only state whose Turn-into-video hero is untouched', async function (t) {
+test('result.html ritual-card rebuild: the token chip is off-screen on an ordinary result, and comes back only in the image-only state whose Turn-into-video hero is untouched', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -749,7 +723,7 @@ test('result.html redesign: the token chip is off-screen on an ordinary result, 
     await blockThirdParty(page);
     await seedResultPage(page, baseUrl, 'd-chip-video-test');
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
-    assert.equal(await page.locator('#topbar-token-chip-slot').isVisible(), false, 'the token chip must be off-screen on an ordinary video result');
+    assert.equal(await page.locator('#result-token-chip-slot').isVisible(), false, 'the token chip must be off-screen on an ordinary video result');
     var videoInterp = await measureInterp(page);
     assert.equal(videoInterp.quiet, false, 'the interpretation entry must be the full hero when it is the only hero on screen');
     assert.ok(await page.locator('#interp-hero-micro').isVisible(), 'the hero\'s reassurance micro line shows alongside the hero');
@@ -769,10 +743,7 @@ test('result.html redesign: the token chip is off-screen on an ordinary result, 
     await page.waitForSelector('#turn-video-btn', { timeout: 5000 });
     assert.ok(await page.locator('#turn-video-btn').isVisible(), 'the Turn-into-video hero must show for an image-only dream');
     assert.match(await page.textContent('#turn-video-btn'), /100 tokens/, 'the Turn-into-video hero must keep its visible token cost (founder-explicit, unchanged)');
-    assert.ok(await page.locator('#topbar-token-chip-slot').isVisible(), 'the token chip must come back in the image-only state');
-    // Two full-size emphasized CTAs would defeat "ONE hero" -- in this ONE
-    // state the interpretation entry steps back down to the slim pill it
-    // was on `main`, leaving Turn-into-video unambiguously the hero.
+    assert.ok(await page.locator('#result-token-chip-slot').isVisible(), 'the token chip must come back in the image-only state');
     var imageInterp = await measureInterp(page);
     assert.equal(imageInterp.quiet, true, 'the interpretation entry must step down to its quiet treatment while the Turn-into-video hero is on screen');
     assert.ok(imageInterp.fontSize < videoInterp.fontSize, 'the quiet treatment should use a smaller label than the hero (got ' + imageInterp.fontSize + ' vs ' + videoInterp.fontSize + ')');
@@ -785,16 +756,12 @@ test('result.html redesign: the token chip is off-screen on an ordinary result, 
   }
 });
 
-test('result.html redesign: the daily-claim sheet no longer auto-opens on this page (Home owns it) and this page no longer fires the repeat-visit install nudge', async function (t) {
+test('result.html ritual-card rebuild: the daily-claim sheet no longer auto-opens on this page (Home owns it) and this page no longer fires the repeat-visit install nudge', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Make the claim genuinely CLAIMABLE, so the only reason the sheet
-    // stays shut is that this page no longer asks it to open. Stubs the
-    // token-status endpoint rather than the client, so DreamStore's real
-    // getTokenStatus path runs.
     await page.route('**/.netlify/functions/token-status*', function (route) {
       route.fulfill({
         status: 200,
@@ -803,12 +770,9 @@ test('result.html redesign: the daily-claim sheet no longer auto-opens on this p
       });
     });
     var dreamId = 'd-no-autoclaim-test';
-    // Second visit to result.html in this browser -- the exact condition
-    // the removed repeat-visit install nudge used to fire on.
     await seedResultPage(page, baseUrl, dreamId);
     await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
-    // Give both the token-status promise and the nudge every chance to fire.
     await page.waitForTimeout(1200);
 
     var claimSheetOpen = await page.evaluate(function () {
@@ -818,11 +782,6 @@ test('result.html redesign: the daily-claim sheet no longer auto-opens on this p
     assert.deepEqual(claimSheetOpen, [], 'nothing should auto-open over the result screen -- the daily-claim auto-open is removed from this page (got: ' + JSON.stringify(claimSheetOpen) + ')');
     assert.equal(await page.locator('#install-nudge-card').count(), 0, 'the repeat-visit install nudge must no longer render on this page (Home owns it)');
 
-    // Guard the source itself: neither call may come back by accident.
-    // Comments are stripped first -- result.html documents BOTH removals at
-    // length in prose right where they used to live (deliberately, so the
-    // next person doesn't re-add them), and a naive substring scan would
-    // trip over that documentation.
     var src = await page.evaluate(function () {
       var raw = Array.prototype.map.call(document.querySelectorAll('script:not([src])'), function (s) { return s.textContent; }).join('\n');
       return raw
@@ -837,7 +796,7 @@ test('result.html redesign: the daily-claim sheet no longer auto-opens on this p
   }
 });
 
-test('result.html redesign: the prompt/caption clamps to 2 lines by default and expands/collapses on click', async function (t) {
+test('result.html ritual-card rebuild: the prompt/caption clamps to 2 lines by default and expands/collapses on click', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -867,20 +826,15 @@ test('result.html redesign: the prompt/caption clamps to 2 lines by default and 
     await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#result-quote', { timeout: 5000 });
 
-    // Font must actually be small, per spec.
     var fontSize = await page.$eval('#result-quote', function (el) { return parseFloat(getComputedStyle(el).fontSize); });
     assert.ok(fontSize <= 14, 'the caption should render in a small font (got ' + fontSize + 'px)');
 
-    // Clamped to 2 lines by default -- with text this long, the full
-    // (unclamped) height must be noticeably taller than the clamped box.
     var clampedHeight = await page.$eval('#result-quote', function (el) { return el.getBoundingClientRect().height; });
     var isClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
     assert.ok(isClamped, 'the caption should start clamped');
     await page.waitForSelector('#result-quote-hint', { state: 'visible', timeout: 5000 });
     assert.match(await page.textContent('#result-quote-hint'), /Show more/);
 
-    // Click to expand -- clamp class comes off, hint flips to "Show less",
-    // and the box grows to fit the full text.
     await page.click('#result-quote');
     var expandedIsClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
     assert.equal(expandedIsClamped, false, 'clicking the caption should remove the clamp');
@@ -888,7 +842,6 @@ test('result.html redesign: the prompt/caption clamps to 2 lines by default and 
     var expandedHeight = await page.$eval('#result-quote', function (el) { return el.getBoundingClientRect().height; });
     assert.ok(expandedHeight > clampedHeight, 'expanding should grow the box past its clamped height');
 
-    // Click again to collapse back.
     await page.click('#result-quote');
     var recollapsedIsClamped = await page.$eval('#result-quote', function (el) { return el.classList.contains('clamped'); });
     assert.ok(recollapsedIsClamped, 'clicking again should re-clamp the caption');
@@ -898,35 +851,82 @@ test('result.html redesign: the prompt/caption clamps to 2 lines by default and 
   }
 });
 
-test('result.html redesign: the bottom panel is a translucent gradient, not a solid black slab -- the video stays visible behind it', async function (t) {
+test('result.html ritual-card rebuild: Fresh (Private) vs Published visual states -- the state tag flips label/style, and tapping it while published reverts to private', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var dreamId = 'd-scrim-test';
+    var dreamId = 'd-statetag-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('.result-scrim', { timeout: 5000 });
+    await page.waitForSelector('#result-privacy-tag', { timeout: 5000 });
 
-    var bg = await page.$eval('.result-scrim', function (el) { return getComputedStyle(el).backgroundImage; });
-    // Must be a gradient (not a flat solid fill), and its darkest stop must
-    // not exceed the spec's ~0.72 ceiling (the old design peaked at 0.95).
-    assert.match(bg, /gradient/, 'the scrim should be a gradient, not a flat fill');
-    var alphaMatches = bg.match(/rgba?\([^)]*\)/g) || [];
-    var maxAlpha = 0;
-    alphaMatches.forEach(function (rgba) {
-      var parts = rgba.replace(/rgba?\(|\)/g, '').split(',').map(function (s) { return parseFloat(s); });
-      var alpha = parts.length === 4 ? parts[3] : 1;
-      if (alpha > maxAlpha) maxAlpha = alpha;
-    });
-    assert.ok(maxAlpha <= 0.75, 'the scrim\'s darkest stop should not exceed ~0.72 (got ' + maxAlpha + '), no solid black slab');
-    assert.ok(maxAlpha > 0, 'the scrim should still darken toward the bottom for text legibility');
+    // Fresh state.
+    assert.equal((await page.textContent('#result-privacy-tag')).trim(), 'Private');
+    assert.equal(await page.locator('#result-privacy-tag.pub').count(), 0, 'the tag must not carry the .pub class while private');
+
+    // Publish it.
+    await page.click('#publish-btn');
+    await page.waitForSelector('#modal-publish.open', { timeout: 5000 });
+    await page.click('#publish-confirm');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('result-privacy-tag');
+      return el && el.classList.contains('pub');
+    }, null, { timeout: 5000 });
+    assert.match(await page.textContent('#result-privacy-tag'), /Public/);
+
+    // Publish quiet-link becomes a navigational "Live on Explore" once
+    // published -- unpublishing moves to the state tag tap instead (the
+    // approved mock's own interaction model).
+    assert.match(await page.textContent('#publish-btn'), /Live on Explore/);
+
+    // Tapping the state tag while published reverts to private.
+    await page.click('#result-privacy-tag');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('result-privacy-tag');
+      return el && !el.classList.contains('pub');
+    }, null, { timeout: 5000 });
+    assert.equal((await page.textContent('#result-privacy-tag')).trim(), 'Private');
+    assert.match(await page.textContent('#publish-btn'), /Publish/);
+
+    // Tapping the tag while already private is a no-op (nothing to revert).
+    var dreamsAfter = await page.evaluate(function (id) {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      return state.dreams.find(function (d) { return d.id === id; });
+    }, dreamId);
+    assert.equal(dreamsAfter.isPublished, false);
   } finally {
     await context.close();
   }
 });
 
-test('result.html FINAL placement (4th iteration): Edit / Publish / Make another / Delete are the exactly-4 quiet links, Save is gone, Delete is a genuinely ordinary link (not the overflow menu, not red/emphasized) and still runs the exact same confirm-then-delete flow', async function (t) {
+test('result.html ritual-card rebuild: Publish still opens the publish confirmation modal, and once published it navigates to Explore instead of re-toggling', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var dreamId = 'd-publish-nav-test';
+    await seedResultPage(page, baseUrl, dreamId);
+    await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
+
+    await page.click('#publish-btn');
+    await page.waitForSelector('#modal-publish.open', { timeout: 5000 });
+    await page.click('#publish-confirm');
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t.classList.contains('show') && t.textContent === 'Published to Explore';
+    }, null, { timeout: 5000 });
+
+    await page.click('#publish-btn'); // now "Live on Explore" -- navigates
+    await page.waitForURL(/explore\.html/, { timeout: 5000 });
+    assert.match(page.url(), /explore\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html FINAL placement (founder\'s 2026-07-31 amendment): Publish / Make another / Edit / Delete are the exactly-4 quiet links in that order, and Delete still runs the exact same confirm-then-delete flow', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -936,38 +936,31 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('.result-quiet-links', { timeout: 5000 });
 
-    // Exactly these four must be present in the quiet-link row and visible,
-    // per the FINAL placement (tracker.html's
-    // for-product-result-screen-quiet-row-fina-btv7nr) -- Save is gone,
-    // Delete has taken its slot.
-    var ids = ['open-edit-sheet', 'publish-btn', 'make-another-btn', 'delete-btn'];
+    var ids = ['publish-btn', 'make-another-btn', 'open-edit-sheet', 'delete-btn'];
     for (var i = 0; i < ids.length; i++) {
       var visible = await page.locator('.result-quiet-links #' + ids[i]).isVisible();
       assert.ok(visible, '#' + ids[i] + ' should be visible inside .result-quiet-links');
     }
     var quietLinkCount = await page.locator('.result-quiet-links button').count();
-    assert.equal(quietLinkCount, 4, 'the quiet-link row should have exactly 4 buttons, no more, no 5th overflow-trigger sibling');
+    assert.equal(quietLinkCount, 4, 'the quiet-link row should have exactly 4 buttons, no more, no overflow-trigger sibling');
 
-    // Order is Publish / Edit / Make another / Delete, per the 2026-07-30
-    // interpret-primary redesign (tracker item for-product-build-founder-
-    // decided-2026-0-75fnlk names the row in exactly that order) -- Publish
-    // leads the row now that it is no longer the hero.
+    // Order is Publish / Make another / Edit / Delete -- the founder's
+    // final 2026-07-31 amendment on top of the approved mock (Edit moved
+    // to sit next to Delete).
     var order = await page.$$eval('.result-quiet-links button', function (els) {
       return els.map(function (el) { return el.id; });
     });
-    assert.deepEqual(order, ['publish-btn', 'open-edit-sheet', 'make-another-btn', 'delete-btn'], 'quiet-row order should be Publish / Edit / Make another / Delete');
+    assert.deepEqual(order, ['publish-btn', 'make-another-btn', 'open-edit-sheet', 'delete-btn'], 'quiet-row order should be Publish / Make another / Edit / Delete');
 
-    // The overflow trigger + menu from the 3rd iteration must be fully
-    // gone, not just hidden -- founder feedback that an unlabeled kebab
-    // hiding the one action that mattered was itself the bug.
+    // No stale overflow-menu/old-placement ids anywhere.
     assert.equal(await page.locator('#result-more-btn').count(), 0, '#result-more-btn (the old overflow trigger) must not exist anywhere on the page');
     assert.equal(await page.locator('#result-more-menu').count(), 0, '#result-more-menu must not exist anywhere on the page');
     assert.equal(await page.locator('#overflow-delete-link').count(), 0, '#overflow-delete-link must not exist anywhere on the page');
-    assert.equal(await page.locator('#edit-delete-link').count(), 0, '#edit-delete-link (the 2nd-iteration Edit-sheet placement) must not exist anywhere on the page');
+    assert.equal(await page.locator('#edit-delete-link').count(), 0, '#edit-delete-link (the Edit-sheet placement) must not exist anywhere on the page');
 
     // Delete reads as an ORDINARY quiet link, not emphasized/red overall --
-    // only its icon carries a danger tint, per the founder's explicit "not
-    // red, not emphasized" instruction (the whole point of this 4th fix).
+    // only its icon carries a danger tint (tracker.html's
+    // for-product-result-quiet-row-v5-founder--4dnf5u).
     var deleteBtn = page.locator('#delete-btn');
     var deleteBtnColor = await deleteBtn.evaluate(function (el) { return getComputedStyle(el).color; });
     var editBtnColor = await page.locator('#open-edit-sheet').evaluate(function (el) { return getComputedStyle(el).color; });
@@ -982,16 +975,6 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
       return el && !el.classList.contains('open');
     }, null, { timeout: 5000 });
 
-    // Publish still opens the publish confirmation modal (unchanged
-    // publish/unpublish behavior).
-    await page.click('#publish-btn');
-    await page.waitForSelector('#modal-publish.open', { timeout: 5000 });
-    await page.click('#publish-confirm');
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t.classList.contains('show') && t.textContent === 'Published to Explore';
-    }, null, { timeout: 5000 });
-
     // Delete -- clicking it opens the SAME confirmation modal, same copy,
     // same Cancel/Delete buttons, and the real deletion mechanics
     // (DreamStore.deleteDream + navigation to profile.html) are untouched.
@@ -999,7 +982,6 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     assert.match(await page.textContent('#delete-modal-body'), /can't be undone/);
 
-    // Cancel backs out without deleting anything.
     await page.click('#delete-cancel');
     await page.waitForFunction(function () {
       var el = document.getElementById('modal-delete');
@@ -1011,7 +993,6 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
     }, dreamId);
     assert.ok(stillThereAfterCancel, 'cancelling should not delete the dream');
 
-    // Go through the flow again and actually confirm.
     await page.click('#delete-btn');
     await page.waitForSelector('#modal-delete.open', { timeout: 5000 });
     await page.click('#delete-confirm');
@@ -1027,7 +1008,7 @@ test('result.html FINAL placement (4th iteration): Edit / Publish / Make another
   }
 });
 
-test('result.html: Make another still clears the draft and navigates to create.html (unchanged behavior, still present as the 3rd of the 4 quiet links)', async function (t) {
+test('result.html: Make another still clears the draft and navigates to create.html (unchanged behavior)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -1068,7 +1049,7 @@ test('result.html: deleting a published dream still shows the extended Explore-r
   }
 });
 
-test('result.html redesign: the top Share icon still keeps its publishes-if-private behavior, now rendered as the standard iOS-style share icon', async function (t) {
+test('result.html ritual-card rebuild: the Share chip (over the video) still keeps its publishes-if-private behavior', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -1087,17 +1068,8 @@ test('result.html redesign: the top Share icon still keeps its publishes-if-priv
   }
 });
 
-test('result.html: the topbar (back + mute + share, no title) lays out cleanly with no overlap at 320px', async function (t) {
+test('result.html: back/share/mute chips lay out cleanly with no overlap at 320px, and stay real >=32px tap targets', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  // 320px is the narrowest realistic phone viewport (e.g. iPhone SE 1st
-  // gen / older Android). This test used to guard the "Your Dream" topbar
-  // title against wrapping to two lines at this width; that title is CUT
-  // by the 2026-07-30 interpret-primary redesign (memo section 6), so the
-  // wrap regression it protected against no longer exists. What still
-  // matters at this width -- and is what this test now guards -- is that
-  // the remaining three icon buttons lay out without collapsing or
-  // colliding, and that the title really is gone rather than merely
-  // emptied.
   var context = await browser.newContext({ viewport: { width: 320, height: 800 } });
   try {
     var page = await context.newPage();
@@ -1106,12 +1078,10 @@ test('result.html: the topbar (back + mute + share, no title) lays out cleanly w
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('#result-back', { timeout: 5000 });
 
-    assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar title element must be gone entirely at 320px too, not just visually hidden');
-    var topbarText = await page.$eval('.topbar', function (el) { return el.innerText.trim(); });
-    assert.equal(topbarText, '', 'the topbar should render no text at all (got: ' + JSON.stringify(topbarText) + ')');
+    assert.equal(await page.locator('.topbar').count(), 0, 'the .topbar element must be gone entirely at 320px too');
 
     var boxes = await page.$$eval(
-      '.topbar #result-back, .topbar #mute-btn, .topbar #share-btn',
+      '#dreamvideo-frame #result-back, #dreamvideo-frame #share-btn, #dreamvideo-frame #mute-btn',
       function (els) {
         return els.map(function (el) {
           var r = el.getBoundingClientRect();
@@ -1119,7 +1089,7 @@ test('result.html: the topbar (back + mute + share, no title) lays out cleanly w
         });
       }
     );
-    assert.equal(boxes.length, 3, 'expected back + mute + share, and nothing else');
+    assert.equal(boxes.length, 3, 'expected back + share + mute, and nothing else');
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at 320px');
       assert.ok(b.width >= 32 && b.height >= 32, b.id + ' should stay a real tap target at 320px (got ' + b.width + 'x' + b.height + ')');
@@ -1132,22 +1102,13 @@ test('result.html: the topbar (back + mute + share, no title) lays out cleanly w
         assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
       }
     }
-
-    // The topbar must still sit entirely above the panel at this width.
-    var panelTop = await page.$eval('.result-panel', function (el) { return el.getBoundingClientRect().top; });
-    var navBottom = Math.max.apply(null, boxes.map(function (b) { return b.bottom; }));
-    assert.ok(navBottom < panelTop, 'topbar must sit entirely above the result-panel at 320px');
   } finally {
     await context.close();
   }
 });
 
-test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/Delete) fit on a single row at 375px and 320px, including for an image-type dream where the Turn-into-video CTA is also present', async function (t) {
+test('result.html FINAL placement: all 4 quiet links fit on a single row at 375px and 320px, including for an image-type dream where the Turn-into-video CTA is also present', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  // Founder spec for this iteration explicitly calls out testing at a
-  // mobile-width viewport that 4 links fit one row, including image-type
-  // dreams (Turn-into-video present) -- tracker.html's
-  // for-product-result-screen-quiet-row-fina-btv7nr.
   for (var i = 0; i < 2; i++) {
     var width = i === 0 ? 375 : 320;
     for (var j = 0; j < 2; j++) {
@@ -1191,12 +1152,9 @@ test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/
         boxes.forEach(function (b) {
           assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at ' + width + 'px');
         });
-        // All 4 on one row: every box shares (roughly) the same vertical
-        // center -- a wrapped 2nd row would show a materially different top.
         var tops = boxes.map(function (b) { return b.top; });
         var maxTopDelta = Math.max.apply(null, tops) - Math.min.apply(null, tops);
         assert.ok(maxTopDelta < 4, 'all 4 quiet links should sit on a single row at ' + width + 'px (image dream: ' + isImageDream + '), got a ' + maxTopDelta + 'px top spread');
-        // No pairwise horizontal overlap between any two links.
         for (var a = 0; a < boxes.length; a++) {
           for (var b2 = a + 1; b2 < boxes.length; b2++) {
             var overlaps = boxes[a].left < boxes[b2].right && boxes[b2].left < boxes[a].right;
@@ -1209,6 +1167,147 @@ test('result.html FINAL placement: all 4 quiet links (Edit/Publish/Make another/
     }
   }
 });
+
+// ===== Fullscreen dream playback (founder amendment, 2026-07-31) =====
+// Tapping the video/play-badge/watch-pill opens the SAME <video> element
+// full-bleed -- native fullscreen where available/allowed, an in-app
+// full-viewport overlay fallback (with this page's own existing mute +
+// tap-to-toggle controls) where it isn't (the FB/IG in-app-webview case the
+// founder specifically flagged). document.fullscreenEnabled is the real,
+// feature-detected signal for "is native fullscreen allowed here" -- these
+// tests drive both branches by stubbing that signal directly, exactly the
+// mechanism result.html's own code reads, rather than guessing at a UA
+// string.
+test('result.html fullscreen playback: tapping the video calls the native Fullscreen API when the embedding context allows it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await context.addInitScript(function () {
+      window.__fullscreenCalls = [];
+      HTMLMediaElement.prototype.requestFullscreen = function () {
+        window.__fullscreenCalls.push('requestFullscreen');
+        return Promise.resolve();
+      };
+      Object.defineProperty(document, 'fullscreenEnabled', { get: function () { return true; }, configurable: true });
+    });
+    await seedResultPage(page, baseUrl, 'd-fullscreen-native-test');
+    await page.waitForSelector('#dreamvideo-frame', { timeout: 5000 });
+
+    await page.click('#dreamvideo-frame');
+    await page.waitForFunction(function () { return window.__fullscreenCalls && window.__fullscreenCalls.length > 0; }, null, { timeout: 5000 });
+    var calls = await page.evaluate(function () { return window.__fullscreenCalls; });
+    assert.deepEqual(calls, ['requestFullscreen']);
+    assert.equal(await page.locator('.player-overlay.open').count(), 0, 'the in-app overlay fallback must not open when native fullscreen succeeds');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html fullscreen playback: falls back to the in-app full-viewport overlay (with its own mute + tap-to-toggle controls) when native fullscreen is disabled -- the FB/IG in-app-webview case', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Simulate the FB/IG in-app-webview restriction: no iOS-specific API,
+    // and the standard Fullscreen API reports itself as disabled -- exactly
+    // what a webview that's turned off native fullscreen via
+    // Permissions-Policy looks like from script.
+    await context.addInitScript(function () {
+      delete HTMLVideoElement.prototype.webkitEnterFullscreen;
+      Object.defineProperty(document, 'fullscreenEnabled', { get: function () { return false; }, configurable: true });
+      Object.defineProperty(document, 'webkitFullscreenEnabled', { get: function () { return false; }, configurable: true });
+    });
+    await seedResultPage(page, baseUrl, 'd-fullscreen-fallback-test');
+    await page.waitForSelector('#dreamvideo-frame', { timeout: 5000 });
+
+    await page.click('#dreamvideo-frame');
+    await page.waitForSelector('.player-overlay.open', { timeout: 5000 });
+    // The SAME <video> element must now live inside the overlay, not a
+    // second copy.
+    var videoInOverlay = await page.locator('.player-overlay #result-video').count();
+    assert.equal(videoInOverlay, 1, 'the same #result-video element must be reparented into the overlay, not duplicated');
+
+    // The overlay's own mute control works and is synced with the in-card
+    // one.
+    var mutedBefore = await page.$eval('#result-video', function (v) { return v.muted; });
+    await page.click('#player-mute-btn');
+    var mutedAfter = await page.$eval('#result-video', function (v) { return v.muted; });
+    assert.notEqual(mutedBefore, mutedAfter, 'the overlay\'s mute chip must actually toggle the real video\'s muted state');
+
+    // Closing restores the video to the card.
+    await page.click('#player-close-btn');
+    await page.waitForFunction(function () {
+      var overlay = document.getElementById('player-overlay');
+      return overlay && !overlay.classList.contains('open');
+    }, null, { timeout: 5000 });
+    var videoBackInCard = await page.locator('#dreamvideo-frame #result-video').count();
+    assert.equal(videoBackInCard, 1, 'closing the overlay must move the video back into the card, not leave it stranded');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html fullscreen playback: the external "Watch your dream" pill opens the same fullscreen player as tapping the video itself', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await context.addInitScript(function () {
+      delete HTMLVideoElement.prototype.webkitEnterFullscreen;
+      Object.defineProperty(document, 'fullscreenEnabled', { get: function () { return false; }, configurable: true });
+      Object.defineProperty(document, 'webkitFullscreenEnabled', { get: function () { return false; }, configurable: true });
+    });
+    await seedResultPage(page, baseUrl, 'd-watchpill-test');
+    await page.waitForSelector('#watch-pill', { timeout: 5000 });
+
+    // The pill is a real, visible affordance OUTSIDE the video itself --
+    // not just an in-video badge (founder amendment 2).
+    assert.ok(await page.locator('#watch-pill').isVisible(), '#watch-pill must be a real, visible control outside the video');
+    var pillBox = await page.$eval('#watch-pill', function (el) { return el.getBoundingClientRect(); });
+    var videoBox = await page.$eval('#dreamvideo-frame', function (el) { return el.getBoundingClientRect(); });
+    assert.ok(pillBox.top >= videoBox.bottom - 1, 'the watch pill must sit outside (below) the video frame, not inside it');
+
+    await page.click('#watch-pill');
+    await page.waitForSelector('.player-overlay.open', { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html fullscreen playback: the watch pill and play badge are both hidden for an image-only dream -- there is nothing to "watch"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@tester', username: 'tester' };
+      if (!state.accounts) state.accounts = {};
+      state.accounts.tester = { password: 'testpass1', email: 'tester@example.com' };
+      if (!state.dreams) state.dreams = [];
+      state.dreams.push({
+        id: 'd-watchpill-image-test', ownerHandle: '@tester', caption: 'An image-only dream', style: 'Cinematic',
+        imageUrl: 'https://example.com/fake-image.jpg', isPublished: false, createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/result.html?id=d-watchpill-image-test', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#result-image', { timeout: 5000 });
+
+    assert.equal(await page.locator('#watch-pill').isVisible(), false, 'the watch pill must be hidden for an image-only dream');
+    assert.equal(await page.locator('#result-play-badge').isVisible(), false, 'the in-video play badge must be hidden for an image-only dream');
+  } finally {
+    await context.close();
+  }
+});
+
 
 // ===========================================================================
 // Advanced screen (9) / pricing screen (14) fixes -- commit ae7da62.

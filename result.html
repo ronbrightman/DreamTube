@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Your Dream — DreamTube</title>
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#0c0a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="DreamTube">
@@ -67,142 +67,384 @@
     fbq('track', 'PageView');
   }
 </script>
+
+<!--
+  Ritual completion card rebuild (founder-approved 2026-07-31, "I love it",
+  mock = result-mock3-x7q4.html round 3, tracker item
+  for-product-build-founder-approved-mock--azvcea) — supersedes the
+  2026-07-30 interpret-primary redesign (for-product-build-founder-decided-
+  2026-0-75fnlk) entirely. Night-sky tokens/keyframes below are ported
+  verbatim from home.html's own "Night Shelf" `:root`/`.home-bg`/
+  `.home-stars-*`/`.home-aurora` block (same values, not re-derived) so this
+  screen reads as the same app as Home, not a different visual system —
+  same duplication-per-page convention home.html/profile.html already use
+  for these tokens (see css/styles.css's own comment on why `--home-*`
+  isn't global).
+
+  Two adaptations from the static mock, both deliberate:
+  (1) the mock's placeholder "video" card used a 16:9 box (fine for a CSS
+      gradient stand-in) — every real dream video/image this app generates
+      is 9:16 (generate-video.js's aspect_ratio, generate-image.js's own
+      comment) so the card here is 9:16, or a 16:9 crop would throw away
+      most of the frame.
+  (2) the mock had no back/share affordance at all ("no topbar... back is
+      covered by the bottom dock"), but this app's REAL back-button referrer
+      logic and Share (ShareSheet, publishes-if-private) are both real,
+      tested, working features (test/ui-behavioral.test.js,
+      test/share-sheet-behavioral.test.js, test/session-transfer-
+      behavioral.test.js) the mock's author likely wasn't tracking when
+      sketching the visual. Rather than silently deleting tested
+      functionality, back/share stay as small icon-btn chips floating over
+      the video's top corners — same "lives over the video, not in a
+      topbar" placement language the mock already established for mute,
+      just extended to these two. Flagged for the founder in this build's
+      handoff notes.
+
+  Founder amendments layered on top of the base mock (2026-07-31,
+  tracker.html comments c-ms8q43op-w9q5tv / c-ms8r2c83-7pxdz6): (a)
+  fullscreen dream playback (tap video/play-badge/watch-pill -> native
+  fullscreen, in-app overlay fallback when the embedding webview disables
+  native fullscreen -- see the IIFE near the bottom of this file's script);
+  (b) the "Tomorrow: log your next dream" strip is REMOVED entirely, not
+  merely restyled -- no `.nextstrip` markup exists anywhere below; (c)
+  quiet-row order is Publish / Make another / Edit / Delete (Edit moved
+  next to Delete).
+-->
+<style>
+:root{
+  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app/.night-dock both read this variable already */
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-ok:#4bd39b;
+}
+body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+#app{ overflow:hidden; }
+
+/* ===== the living night sky — CSS-only, no image/video/canvas payload;
+   ported verbatim from home.html's own tokens/keyframes ===== */
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 14px rgba(157,144,255,.85); } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.heropill{ animation:none !important; }
+}
+
+/* ===== page chrome — no topbar (founder round 3): the sky runs to the top
+   safe-area and the ritual card sits right under it; back/mute/share all
+   live as small chips over the video itself instead. ===== */
+.result-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.scroll-area{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 16px) 14px calc(var(--nav-clearance) + 26px);
+}
+
+/* ===== the ritual completion card ===== */
+.hcard{
+  position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid var(--home-line); border-radius:18px; padding:15px; overflow:hidden;
+  color:var(--home-ink);
+}
+.hcard.hero{
+  border-color:rgba(157,144,255,.55);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+}
+.hcard-dt{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--home-acc); font-weight:800; margin-bottom:10px; }
+
+/* the video/image frame — 9:16 (this app's real generated media aspect,
+   see docs comment above), rounded, dark gradient fallback underneath.
+   Height-driven (not width-driven) sizing, capped well under the
+   viewport: a width-driven 9:16 box at typical mobile widths (~330px)
+   would run ~590px tall, tall enough that the WHOLE card + quiet row
+   below it no longer clears the overlaid night dock without scrolling
+   (a real regression on the exact stranding bug tracker item
+   for-product-hotfix-now-founder-urgent-re-w743iy fixed) -- capping the
+   height instead keeps the ritual card comfortably on one screen. */
+.dreamvideo{
+  position:relative; height:min(42vh, 340px); width:auto; max-width:100%; margin:0 auto; aspect-ratio:9/16;
+  border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.14); cursor:pointer;
+  background:var(--surface);
+}
+.dv-media{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.dreamvideo::after{ /* gentle bottom scrim so corner chips stay legible over bright footage */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, rgba(0,0,0,.32) 0%, transparent 18%, transparent 78%, rgba(0,0,0,.34) 100%);
+}
+.playbadge{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:1;
+  width:52px; height:52px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center; color:#fff;
+  transition:opacity .2s ease;
+}
+.playbadge .icon{ width:20px; height:20px; margin-left:3px; }
+/* Back / share / mute — small chips OVER the video's corners, z-index above
+   the frame's own click-to-fullscreen handler (each stops propagation so
+   tapping one never also opens the player). */
+.dv-chip{
+  position:absolute; z-index:2; width:32px; height:32px; font-size:15px;
+  background:rgba(12,10,26,.55); border-color:rgba(255,255,255,.3);
+}
+.dv-chip.back{ left:8px; top:8px; }
+.dv-chip.share{ right:8px; top:8px; }
+.dv-chip.mute{ right:8px; bottom:8px; }
+
+/* ghost play affordance OUTSIDE the video — an explicit, always-visible
+   "this is playable" cue even if the in-video badge is missed (founder
+   amendment). Hidden entirely for an image-only dream — there is nothing
+   to "watch". */
+.watchpill{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin-top:10px;
+  background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+  border-radius:99px; padding:10px 6px; cursor:pointer;
+  font:700 12.5px var(--font-body); -webkit-tap-highlight-color:transparent;
+}
+.watchpill .icon{ width:13px; height:13px; }
+.watchpill:active{ opacity:.75; }
+
+.dreamquote{
+  margin-top:12px; font-size:13px; line-height:1.5; color:var(--home-ink); font-weight:500;
+  cursor:pointer;
+}
+.dreamquote.clamped{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.showmore{
+  display:inline-block; margin-top:4px; background:none; border:none; cursor:pointer;
+  color:#cfc8ff; font:700 12px var(--font-body); padding:0; -webkit-tap-highlight-color:transparent;
+}
+
+.tagrow{ display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.statetag{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+  padding:4px 10px; border-radius:99px;
+  background:rgba(12,10,26,.5); border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+}
+.statetag.pub{
+  border-color:rgba(75,211,155,.55); color:var(--home-ok); background:rgba(75,211,155,.1);
+  cursor:pointer; /* tappable — reverts to private */
+}
+.statetag .icon{ width:12px; height:12px; }
+
+/* "Turn this into a video" upsell — shown only when this dream has an
+   image but no video yet, still the one CTA on this screen that keeps its
+   full-size warm styling and visible "100 tokens" cost (founder-explicit,
+   unchanged by this redesign). */
+.turn-video-cta{ width:100%; justify-content:space-between; margin:12px 0 0; }
+.interp-cta-label{ display:flex; align-items:center; gap:6px; }
+/* Token balance chip — off-screen by default, only shown alongside the
+   Turn-into-video hero above (image-only state) so its cost has a visible
+   balance to weigh against; same PurchaseSheet.mountBalanceChip markup
+   every other page uses, just a translucent tint over the night sky
+   instead of the default opaque box. */
+#result-token-chip-slot{ margin:10px 0 0; display:none; }
+#result-token-chip-slot .token-chip-compact{ background:rgba(12,10,26,.55); border-color:rgba(157,144,255,.4); backdrop-filter:blur(4px); }
+#result-token-chip-slot .token-chip-balance{ color:var(--home-ink); }
+
+/* the ONE hero action — interpretation, into the Chamber for THIS dream */
+.heropill{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin-top:14px; border:none; border-radius:99px; padding:14px 12px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font-family:var(--font-body); font-size:14.5px; font-weight:800; letter-spacing:.01em; text-align:center;
+  animation:homePulse 2.6s ease-in-out infinite;
+  transition:transform .12s ease; -webkit-tap-highlight-color:transparent;
+}
+.heropill:active{ transform:scale(.98); }
+/* Image-only state: two full-size emphasized CTAs would read as two heroes
+   — Turn-into-video stays the hero there, and this steps down to the slim
+   quiet pill it was before this redesign (same values, reused verbatim). */
+.heropill.quiet{
+  padding:8px 14px; margin-top:10px;
+  border:1px solid rgba(255,255,255,.18); border-radius:100px;
+  background:rgba(20,20,20,.55); backdrop-filter:blur(4px);
+  color:#eee; font-size:12px; font-weight:600;
+  box-shadow:none; animation:none;
+}
+.interp-sparkle{ font-size:15px; line-height:1; }
+.result-hero-micro{ margin:9px 2px 0; text-align:center; font-size:11.5px; line-height:1.45; color:var(--home-soft); }
+
+/* ===== quiet row — Publish / Make another / Edit / Delete (founder's
+   final amendment order — Edit moved next to Delete) ===== */
+.quietrow{
+  display:flex; align-items:center; justify-content:space-between;
+  margin:16px 0 0; padding:0;
+}
+.quietlink{
+  display:flex; align-items:center; gap:4px;
+  background:none; border:none; cursor:pointer; padding:8px 3px; min-height:40px;
+  color:var(--home-soft); font:600 11.5px var(--font-body); text-decoration:none;
+  white-space:nowrap; -webkit-tap-highlight-color:transparent;
+}
+.quietlink .icon{ width:13px; height:13px; opacity:.9; flex:none; }
+/* At the narrowest realistic phone widths (320px -- iPhone SE 1st gen /
+   older Android), 4 labelled links (Publish/Make another/Edit/Delete)
+   need every spare pixel to stay on one row -- found the same class of
+   wrap bug the v4 quiet-row iteration already fixed once (tracker.html's
+   for-product-result-screen-quiet-row-fina-btv7nr), reproduced here
+   because "Make another" is a genuinely wider label than that row's
+   originally-tuned set. */
+@media (max-width:359px){
+  .quietlink{ gap:3px; padding:8px 1px; font-size:10.5px; }
+  .quietlink .icon{ width:12px; height:12px; }
+}
+.quietlink:hover{ color:var(--home-ink); }
+.quietlink:disabled{ opacity:.4; cursor:not-allowed; }
+.quietlink:active{ opacity:.7; }
+.quietlink.livelink{ color:#a9e8cd; }
+/* Delete: danger-tint on the ICON only (v5-rules precedent, tracker.html's
+   for-product-result-quiet-row-v5-founder--4dnf5u) — the label itself stays
+   muted like its neighbours, never red/emphasized. */
+.quietlink.danger .icon{ color:var(--danger); }
+
+/* ===================== fullscreen player overlay =====================
+   In-app full-viewport fallback for environments where native fullscreen
+   video isn't available/allowed (the FB/IG in-app-webview case the founder
+   flagged) — the SAME <video> element is reparented in here (no second
+   copy, no re-fetch), keeping its current playback position/mute state. */
+.player-overlay{
+  position:fixed; inset:0; z-index:60; background:#000;
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.player-overlay.open{ opacity:1; pointer-events:auto; }
+.player-video-slot{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.player-video-slot video{ width:100%; height:100%; object-fit:contain; background:#000; }
+.player-chips{
+  position:absolute; top:calc(env(safe-area-inset-top,0px) + 12px); right:14px; z-index:2;
+  display:flex; gap:10px;
+}
+</style>
 </head>
 <body>
-<!-- cache-bust 2026-07-31T09:20Z: stranding hotfix, Bar A dock added (for-product-hotfix-now-founder-urgent-re-w743iy) -->
+
 <div id="app" class="fill" style="position:relative;">
-  <div class="result-bg" id="result-bg"></div>
-  <video class="result-video" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
-  <img class="result-image" id="result-image" alt="" style="display:none;">
-  <div class="result-scrim"></div>
-  <div class="play-badge result-play" id="result-play-badge"><div class="badge-circle"><span class="icon" id="result-play-icon"></span></div></div>
-  <!-- Topbar: back + mute + share only.
-       INTERPRET-PRIMARY REDESIGN (founder-decided 2026-07-30, tracker item
-       for-product-build-founder-decided-2026-0-75fnlk, frozen mock
-       result-mock2-x7q4.html "D1 · Private"). The old page title ("Your
-       Dream") is CUT per the memo's section-6 declutter list — the
-       full-bleed video already says what this screen is, and the mock's
-       own topbar carries nothing but the two chip buttons. The old
-       Explore/Profile nav icons were already gone (moved to a compact CTA
-       pair in an earlier round); that CTA pair is now cut too — see
-       .result-panel below.
-       Token chip: still MOUNTED here (the balance chip is the fallback
-       entry point into the claim/purchase sheets), but pushed off-screen
-       by default and only revealed in the image-only state, whose "Turn
-       this into a video" hero must keep its token cost visible — see
-       render() below, which is the single place that toggles it. -->
-  <div class="topbar" style="position:absolute; top:0; left:0; right:0; z-index:3;">
-    <a class="icon-btn" href="explore.html" id="result-back" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></a>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <div id="topbar-token-chip-slot" style="display:none;"></div>
-      <button class="icon-btn" id="mute-btn" title="Unmute" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
-      <button class="icon-btn" id="share-btn" style="background:rgba(0,0,0,.5); border-color:rgba(255,255,255,.14);"></button>
-    </div>
-  </div>
-  <div class="result-panel">
-    <!-- Small font, clamped to 2 lines with tap-to-expand/collapse — see
-         setupExpandableQuote() below. -->
-    <div class="dream-quote" id="result-quote" dir="auto">""</div>
-    <div class="quote-more-hint" id="result-quote-hint" style="display:none;">Show more</div>
-    <!-- Privacy tag only. The old "Style: X" tag is CUT (memo section 6,
-         founder-decided 2026-07-30) — the style is visible in the video
-         itself and never drove an action from here. -->
-    <div class="result-tag-row">
-      <span class="feed-tag" id="result-privacy-tag">Private</span>
-    </div>
-    <!-- "Turn this into a video" upsell — shown only when this dream has an
-         image but no video yet (dream.imageUrl && !dream.videoUrl), the
-         single most prominent action on the screen at that point. See
-         docs/IMAGE_GENERATION_SPEC.md §6 and js/store.js's
-         turnImageIntoVideo. Deliberately kept full-size/warm here — the
-         one CTA on this screen that does NOT shrink with the rest (founder-
-         explicit 2026-07-26 night: the token cost must stay clearly
-         visible, never restyled into a slim/subtle pill). -->
-    <button class="btn btn-warm btn-block turn-video-cta" id="turn-video-btn" style="display:none;" title="Turn this into a video">
-      <span class="interp-cta-label"><span class="icon" id="turn-video-icon"></span>Turn this into a video</span>
-      <span class="feed-tag">100 tokens</span>
-    </button>
+  <!-- Sky layers — decorative, behind everything -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
 
-    <!-- ===== THE HERO — interpretation entry =====
-         Founder decision 2026-07-30 (tracker item
-         for-product-build-founder-decided-2026-0-75fnlk), reaffirming the
-         07-26 call: the hero on this screen is NOT publish. New users need
-         confidence before they broadcast, and interpretation is the
-         product's depth direction — so the ONE emphasized action here is
-         the interpretation entry, and Publish drops to a quiet link in the
-         row below (its consent flow entirely unchanged).
+  <div class="result-fg">
+    <div class="scroll-area">
+      <!-- The ritual completion card -->
+      <div class="hcard hero">
+        <div class="hcard-dt">Tonight's dream</div>
 
-         Visual treatment is copied from the frozen founder-approved mock
-         result-mock2-x7q4.html's `.hero-cta` (full-width accent pill,
-         800-weight label, soft pulse) — see css/styles.css's
-         .result-hero-cta. Only the copy and the wiring differ: this opens
-         js/interpret-experience.js's "Interpreter's Chamber"
-         (InterpretExperience.open) for THIS dream, the exact same
-         experience home.html's Chamber card opens — one Chamber, two entry
-         points (see the click handler in this file's script block, and
-         tracker item for-product-chamber-dream-linkage-is-unc-00s2dr for
-         the home-entry half, which is deliberately NOT in this build's
-         scope).
+        <div class="dreamvideo" id="dreamvideo-frame" role="button" aria-label="Play your dream video">
+          <div class="dv-fallback" id="result-bg" style="position:absolute; inset:0;"></div>
+          <video class="dv-media" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
+          <img class="dv-media" id="result-image" alt="" style="display:none;">
+          <div class="playbadge" id="result-play-badge"><span class="icon" id="result-play-icon"></span></div>
+          <a class="icon-btn dv-chip back" href="explore.html" id="result-back" aria-label="Back"></a>
+          <button class="icon-btn dv-chip share" id="share-btn" aria-label="Share"></button>
+          <button class="icon-btn dv-chip mute" id="mute-btn" title="Sound" aria-label="Unmute"></button>
+        </div>
 
-         The old slim `.interp-pill` treatment survives only as this
-         button's `.quiet` modifier, used in the image-only state alone
-         (see render() below); the "Private" reassurance that pill used to
-         carry as an inline chip is now the micro line directly beneath,
-         matching the mock's own `.micro` slot under its hero. -->
-    <button class="result-hero-cta" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
-      <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
-    </button>
-    <div class="result-hero-micro" id="interp-hero-micro">Only you can see your reading.</div>
+        <button type="button" class="watchpill" id="watch-pill">
+          <span class="icon" id="watch-pill-icon"></span>
+          Watch your dream
+        </button>
 
-    <!-- Quiet small-link row — Publish / Edit / Make another / Delete.
-         Publish moved INTO this row by the 2026-07-30 interpret-primary
-         redesign above (it is a quiet link now, not the hero) — its modal,
-         consent copy, and publish/unpublish logic are untouched.
-         Placement history for the row itself, so this doesn't loop again:
-         (1) big bottom-bar Delete — too prominent; (2) Edit-sheet red link
-         — too buried (no-delete-video-2rlysi); (3) overflow (⋯) menu —
-         founder couldn't find it, an unlabeled trigger hiding the one
-         action that mattered; (4) this row, with Save removed entirely
-         (redundant — Share in the topbar covers sending/downloading, and
-         every dream self-saves to the profile) and Delete taking the freed
-         slot as an ordinary quiet link, same muted styling as its
-         neighbours with only its icon tinted toward --danger. See
-         tracker.html's for-product-result-screen-quiet-row-fina-btv7nr,
-         for-product-result-screen-delete-is-too--6axxko and
-         no-delete-video-2rlysi.
-         NOTE for whoever picks up tracker item
-         for-product-result-quiet-row-v5-founder--4dnf5u (still open at the
-         time of this build): that item asks for the Delete icon's danger
-         tint to go away entirely and for "Make another" to be elevated.
-         Deliberately NOT pre-empted here — this build leaves the row's
-         styling exactly as `main` had it so v5 stays a single, reviewable
-         decision rather than being half-applied by a different change.
-         Edit still opens the existing Edit sheet below; the "new edit
-         mechanism" (ask-what-to-change + model rotation) is its own
-         separate, not-yet-built tracker item,
-         for-product-new-edit-mechanism-founder-i-qmsdgj — when that lands
-         it replaces this button's handler, not its place in this row. -->
-    <div class="result-quiet-links">
-      <button class="result-quiet-link" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
-      <button class="result-quiet-link" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
-      <button class="result-quiet-link" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
-      <button class="result-quiet-link result-quiet-link-danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
+        <!-- Small font, clamped to 2 lines with tap-to-expand/collapse — see
+             setupExpandableQuote() below. -->
+        <div class="dream-quote dreamquote" id="result-quote" dir="auto"></div>
+        <div class="quote-more-hint showmore" id="result-quote-hint" style="display:none;">Show more</div>
+
+        <div class="tagrow">
+          <span class="statetag" id="result-privacy-tag" title="Private">Private</span>
+        </div>
+
+        <!-- "Turn this into a video" upsell — shown only when this dream has an
+             image but no video yet (dream.imageUrl && !dream.videoUrl), the
+             single most prominent action on the screen at that point. See
+             docs/IMAGE_GENERATION_SPEC.md §6 and js/store.js's
+             turnImageIntoVideo. Deliberately kept full-size/warm — the one
+             CTA on this screen that does NOT shrink with the rest (founder-
+             explicit: the token cost must stay clearly visible, never
+             restyled into a slim/subtle pill). -->
+        <div id="result-token-chip-slot"></div>
+        <button class="btn btn-warm btn-block turn-video-cta" id="turn-video-btn" style="display:none;" title="Turn this into a video">
+          <span class="interp-cta-label"><span class="icon" id="turn-video-icon"></span>Turn this into a video</span>
+          <span class="feed-tag">100 tokens</span>
+        </button>
+
+        <!-- ===== THE HERO — interpretation entry into the Chamber =====
+             ONE Chamber, entered from here or from home.html's own Chamber
+             card — both call js/interpret-experience.js's
+             InterpretExperience.open(dreamId) directly (see the click
+             handler in this file's script block). The dream this hero opens
+             is unambiguous by construction: `dream` is resolved from this
+             page's own `?id=` param and re-read on every render(), and
+             dream.id is what gets passed to InterpretExperience.open() —
+             never "the latest dream", never an ambiguous default. -->
+        <button type="button" class="heropill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
+          <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
+        </button>
+        <div class="result-hero-micro" id="interp-hero-micro">Only you can see your reading.</div>
+      </div>
+
+      <!-- Quiet row — Publish / Make another / Edit / Delete (founder's
+           final amendment order, 2026-07-31: Edit moved to sit next to
+           Delete). Placement/order history so this doesn't loop again: (1)
+           big bottom-bar Delete — too prominent; (2) Edit-sheet red link —
+           too buried; (3) overflow (⋯) menu — founder couldn't find it; (4)
+           Edit/Publish/Make another/Delete, Save removed entirely
+           (redundant with Share); (5) THIS order — Publish/Make
+           another/Edit/Delete — per the founder's final word on this build.
+           Delete's icon carries a subtle danger tint only, per
+           tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u —
+           never red/emphasized label text. -->
+      <div class="result-quiet-links quietrow">
+        <button class="result-quiet-link quietlink" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+        <button class="result-quiet-link quietlink" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
+        <button class="result-quiet-link quietlink" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
+        <button class="result-quiet-link quietlink danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
+      </div>
     </div>
   </div>
 
-  <!-- HOTFIX (tracker item for-product-hotfix-now-founder-urgent-re-w743iy):
-       the interpret-primary redesign cut the old Explore/Profile nav
-       icons and left a first-time user with no way forward at all. Bar A,
-       the SAME shared night dock every other page now uses (rendered by
-       js/bottom-nav.js) -- overlaid over the video, translucent, same as
-       everywhere else; .result-panel's own bottom padding above (see
-       css/styles.css) already reserves --nav-clearance so this never
-       overlaps the Publish/Edit/Make another/Delete row. No tab is
-       "active" here -- this screen isn't Home/Explore/Profile itself,
-       same treatment create.html/style.html would get if they had a nav.
-       Placed before the sheet overlays, at a lower z-index, so an open
-       sheet always covers it -- same placement convention as every other
-       page's dock. -->
+  <!-- Bar A, the shared night dock (js/bottom-nav.js) — no tab is "active"
+       here, this screen isn't Home/Explore/Profile itself, it just needs a
+       real way back to all three. -->
   <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
   <div class="sheet-overlay" id="sheet-edit-overlay">
@@ -273,13 +515,10 @@
       <button class="btn btn-primary btn-block" id="edit-generate-again">Generate Again</button>
       <div style="height:10px;"></div>
       <span class="link-text" id="edit-cancel" style="cursor:pointer;">Cancel</span>
-      <!-- Delete does not live here -- it's the 4th quiet link on the main
-           result screen (#delete-btn), same row as Edit/Publish/Make
-           another. See tracker.html's
-           for-product-result-screen-quiet-row-fina-btv7nr for why (this
-           Edit-sheet placement and an overflow-menu placement were both
-           tried and rejected first -- for-product-result-screen-delete-
-           is-too--6axxko, no-delete-video-2rlysi). -->
+      <!-- Delete does not live here -- it's a quiet link on the main result
+           screen (#delete-btn), same row as Edit/Publish/Make another. See
+           tracker.html's for-product-result-screen-quiet-row-fina-btv7nr /
+           for-product-result-quiet-row-v5-founder--4dnf5u for why. -->
     </div>
   </div>
 
@@ -330,7 +569,7 @@
            per-publish opt-in design (tracker item for-product-terms-
            republish-license-per--fhpcxk). The real, discoverable opt-OUT
            lives in the Edit sheet's "Feature on DreamTube's channels"
-           toggle instead -- see #feature-toggle-row below. -->
+           toggle instead -- see #feature-toggle-row above. -->
       <div class="modal-fine" id="modal-publish-fine">Publishing makes your dream public and may feature it on DreamTube's channels.</div>
     </div>
   </div>
@@ -347,6 +586,18 @@
   </div>
 
   <div class="toast" id="toast"></div>
+</div>
+
+<!-- Fullscreen fallback player — the SAME #result-video element gets
+     reparented in here (never a second <video>/re-fetch) when native
+     fullscreen isn't available/allowed. See the IIFE near the end of this
+     file's script for the full native-then-fallback logic. -->
+<div class="player-overlay" id="player-overlay" role="dialog" aria-label="Dream playback" aria-hidden="true">
+  <div class="player-video-slot" id="player-video-slot"></div>
+  <div class="player-chips">
+    <button class="icon-btn" id="player-mute-btn" title="Sound" aria-label="Unmute"></button>
+    <button class="icon-btn" id="player-close-btn" title="Close" aria-label="Close player"></button>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -372,8 +623,7 @@
   DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
 
-  // Bar A dock (tracker item for-product-hotfix-now-founder-urgent-re-
-  // w743iy) -- no tab is active; this screen isn't Home/Explore/Profile
+  // Bar A dock -- no tab is active; this screen isn't Home/Explore/Profile
   // itself, it just needs a real way back to all three.
   BottomNav.mount(document.getElementById('bottom-nav-slot'), {});
 
@@ -386,27 +636,11 @@
   // token up).
   DreamStore.maintainSessionTransferUrl();
   // Install-to-home-screen nudge (tracker item for-product-build-stage-0-
-  // pwa-web-push-f-jbutt5, absorbing home-screen-shortcut-a2hs-nudge-
-  // founder--yylzoq). ONLY the 'session-transfer' trigger lives here now:
+  // pwa-web-push-f-jbutt5). ONLY the 'session-transfer' trigger lives here:
   // it fires exclusively when THIS load just consumed a real `?bt=`
-  // transfer token above (the "you just escaped the FB/IG webview into a
-  // real browser" moment), which is inseparable from this page and cannot
-  // move anywhere else.
-  //
-  // The 'repeat-visit' trigger this page also used to fire is CUT per the
-  // 2026-07-30 interpret-primary redesign's declutter list (tracker item
-  // for-product-build-founder-decided-2026-0-75fnlk: "repeat-visit install
-  // nudge moved to Home (session-transfer trigger stays)"). Home already
-  // owns repeat-visit install nudging, and owns it better: home.html's
-  // persistent #card-install journey card (tracker item for-product-a2hs-
-  // install-nudge-3-founder-vcofk7) shows on EVERY eligible visit and
-  // stays until a real DreamStore.getInstallVerified() signal, a strict
-  // superset of the small card's own "2nd+ visit, until dismissed once"
-  // moment. So this is a move of the RESPONSIBILITY, not a copy of the
-  // call — deliberately no InstallNudge.init({trigger:'repeat-visit'}) was
-  // added to home.html, because on home it could only ever render a second
-  // install card on top of the persistent one that's already there. See
-  // home.html's own installJourneyCard comment.
+  // transfer token above. The 'repeat-visit' trigger stays cut (Home owns
+  // it) — see the 2026-07-30 interpret-primary redesign's own decision,
+  // unchanged by this rebuild.
   InstallNudge.init({ trigger: 'session-transfer' });
 
   // A purchase sheet opened from THIS page always sends the checkout's
@@ -430,39 +664,43 @@
   // to). But Profile also links into this same page for each of a user's
   // own dreams -- and from there, "back" landing on Explore instead of
   // Profile is a real regression from where the visitor actually came
-  // from. Redirect the button to profile.html specifically when the
-  // referrer confirms that's genuinely where this page was opened from,
-  // rather than guessing.
+  // from. Generalized further (founder bug report 2026-07-30): return to
+  // wherever the visitor ACTUALLY came from, not only profile. Rules: (1)
+  // referrer from the generation flow (processing/create/style/wizard)
+  // keeps the explore.html default -- going "back" into a spent flow is
+  // wrong; (2) any other same-origin referrer (profile.html, home.html,
+  // explore itself) -> history.back(), which also preserves that page's
+  // scroll/sheet state; (3) absent or cross-origin referrer (direct link,
+  // share, webview stripping) -> explore.html default unchanged. Now lives
+  // as a small chip over the video's top-left corner rather than in a
+  // topbar strip -- same logic, new home.
   (function(){
-    // Generalized (founder bug report 2026-07-30): return to wherever the
-    // visitor ACTUALLY came from, not only profile. Rules: (1) referrer
-    // from the generation flow (processing/create/style/wizard) keeps the
-    // explore.html default -- going "back" into a spent flow is wrong;
-    // (2) any other same-origin referrer (profile.html, home.html, the
-    // profile sheet hosted on home, explore itself) -> history.back(),
-    // which also preserves that page's scroll/sheet state; (3) absent or
-    // cross-origin referrer (direct link, share, webview stripping) ->
-    // explore.html default unchanged.
     try {
       var ref = document.referrer && new URL(document.referrer);
       var sameOrigin = ref && ref.origin === location.origin;
       var flowPage = ref && /\/(processing|create|style|wizard)\.html$/.test(ref.pathname);
       if (sameOrigin && !flowPage) {
         var btn = document.getElementById('result-back');
-        btn.addEventListener('click', function(ev){ ev.preventDefault(); history.back(); });
+        btn.addEventListener('click', function(ev){ ev.stopPropagation(); ev.preventDefault(); history.back(); });
+      } else {
+        document.getElementById('result-back').addEventListener('click', function(ev){ ev.stopPropagation(); });
       }
-    } catch (e) { /* malformed referrer -- keep the explore.html default */ }
+    } catch (e) {
+      // malformed/absent referrer -- keep the explore.html default, but
+      // still stop the click from also bubbling into the frame's
+      // open-fullscreen handler below.
+      document.getElementById('result-back').addEventListener('click', function(ev){ ev.stopPropagation(); });
+    }
   })();
-  // Standard iOS-style share icon (box + arrow escaping the top) — see
-  // js/icons.js's shareIos doc comment for why this is a new icon rather
-  // than reusing the existing `share` entry (which is a different
-  // paper-plane glyph, still used as-is by explore.html's feed action).
+  // Standard iOS-style share icon (box + arrow escaping the top).
   document.getElementById('share-btn').innerHTML = Icons.shareIos;
+  document.getElementById('watch-pill-icon').innerHTML = Icons.play;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
   document.getElementById('delete-icon').innerHTML = Icons.trash;
   document.getElementById('turn-video-icon').innerHTML = Icons.video;
   document.getElementById('adv-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('player-close-btn').innerHTML = Icons.close;
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-icon'), function(el){ el.innerHTML = Icons.palette; });
   Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .sc-check'), function(el){ el.innerHTML = Icons.check; });
 
@@ -738,21 +976,15 @@
   // view, and locking it down is a separate, pre-existing concern outside
   // this fix's scope). But the owner-only controls below — Publish, Edit,
   // the "Feature on DreamTube's channels" opt-out, Delete, "Turn this into
-  // a video", and the "What might this dream mean?" interpretation pill
-  // (added in this fix's second review round — the first round's audit of
-  // this page missed these two) — must never even appear to work for a
-  // dream that isn't this account's own — js/store.js's publishDream/
+  // a video", and the interpretation hero — must never even appear to work
+  // for a dream that isn't this account's own — js/store.js's publishDream/
   // unpublishDream/setOkToFeatureOnChannels/deleteDream/turnImageIntoVideo/
   // getInterpretations/requestInterpretationQuestions/generateInterpretationReading
   // all already refuse to read/mutate a dream whose ownerHandle
   // doesn't match, so leaving these controls visible would just mean
   // silent no-ops (or a rejected promise) behind a button that looks like
   // it worked. Same `ownerHandle === handle` check js/store.js's own
-  // getMyDreams/getDreamInsight/getDreamMilestone use. This comment is the
-  // one place enumerating every owner-only control on this page —
-  // deliberately kept in sync each time one is added, since a previous
-  // version of this same comment understated the list and a reviewer
-  // caught it.
+  // getMyDreams/getDreamInsight/getDreamMilestone use.
   var currentUser = DreamStore.getCurrentUser();
   var isMyDream = !!(dream && currentUser && dream.ownerHandle === currentUser.handle);
 
@@ -788,12 +1020,8 @@
     showToast(newValue ? 'OK to feature on our channels' : 'Won\'t feature this on our channels');
   });
 
-  // A long dream caption used to grow this panel unbounded (it's an
-  // absolutely-positioned overlay anchored to the bottom, so nothing
-  // capped its height) -- long enough text could push it up over the
-  // topbar and hide the entire screen. Now it clamps to 2 lines (small
-  // font, per the result.html redesign) by default with a tap-to-expand
-  // affordance, only shown when the text actually overflows.
+  // A long dream caption clamps to 2 lines by default, small font, with a
+  // tap-to-expand affordance, only shown when the text actually overflows.
   var quoteExpanded = false;
   function setupExpandableQuote(){
     var quote = document.getElementById('result-quote');
@@ -818,11 +1046,14 @@
     var video = document.getElementById('result-video');
     var image = document.getElementById('result-image');
     var playBadge = document.getElementById('result-play-badge');
+    var watchPill = document.getElementById('watch-pill');
     var muteBtn = document.getElementById('mute-btn');
-    // Three-way: video (existing <video>) -> image (new <img>, same panel
+    // Three-way: video (existing <video>) -> image (new <img>, same frame
     // position) -> gradient fallback (unchanged) — see
     // docs/IMAGE_GENERATION_SPEC.md §6. video always takes rendering
-    // priority once a dream has both (post "Turn this into a video").
+    // priority once a dream has both (post "Turn this into a video"). Only
+    // a video dream gets the play badge/watch pill/mute chip — there's
+    // nothing to "watch" or mute on a plain image.
     if(dream.videoUrl){
       video.src = dream.videoUrl;
       delete video.dataset.retried; // new src — the one-retry-on-error budget resets
@@ -830,6 +1061,7 @@
       image.removeAttribute('src');
       image.style.display = 'none';
       playBadge.style.display = 'flex';
+      watchPill.style.display = 'flex';
       muteBtn.style.display = 'flex';
       document.getElementById('result-bg').style.background = 'transparent';
     } else if(dream.imageUrl){
@@ -838,6 +1070,7 @@
       image.src = dream.imageUrl;
       image.style.display = 'block';
       playBadge.style.display = 'none';
+      watchPill.style.display = 'none';
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = 'transparent';
     } else {
@@ -846,52 +1079,43 @@
       image.removeAttribute('src');
       image.style.display = 'none';
       playBadge.style.display = 'none';
+      watchPill.style.display = 'none';
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
     // isMyDream: see the ownership-gate comment above -- "Turn this into a
     // video" spends tokens and calls DreamStore.turnImageIntoVideo, which
-    // now refuses to act on a dream that isn't this account's own (review
-    // finding, second round), so the button must never even appear to
-    // offer this for someone else's image-only dream.
+    // refuses to act on a dream that isn't this account's own, so the
+    // button must never even appear to offer this for someone else's
+    // image-only dream.
     // "Image-only state": this dream has an image but no video yet, and
     // it's this account's own. The single place that decides it — the
-    // Turn-into-video hero, the topbar token chip, and the interpretation
-    // entry's hero/quiet treatment all key off this one value rather than
-    // recomputing it three times.
+    // Turn-into-video hero, the token chip, and the interpretation hero's
+    // own hero/quiet treatment all key off this one value.
     var imageOnly = !!(dream.imageUrl && !dream.videoUrl && isMyDream);
     document.getElementById('turn-video-btn').style.display = imageOnly ? 'flex' : 'none';
-    // Token chip: OFF-SCREEN by default, back only in the image-only
-    // state (memo section 6 / tracker item for-product-build-founder-
-    // decided-2026-0-75fnlk). It's cut from the ordinary result screen
-    // because nothing there spends tokens, but the image-only state's
-    // "Turn this into a video" hero does — founder-explicit 2026-07-26
-    // that its token cost must stay clearly visible — so the balance it
-    // is measured against comes back with it. The chip stays MOUNTED
+    // Token chip: hidden by default, back only in the image-only state --
+    // nothing else on this screen spends tokens, but Turn-into-video does
+    // (founder-explicit: its cost must stay clearly visible), so the
+    // balance it's measured against comes back with it. Stays MOUNTED
     // either way (see mountBalanceChip below); only this slot's own
-    // visibility changes, so every claim/refresh path keeps working
-    // untouched.
-    document.getElementById('topbar-token-chip-slot').style.display = imageOnly ? '' : 'none';
+    // visibility changes.
+    document.getElementById('result-token-chip-slot').style.display = imageOnly ? 'block' : 'none';
     // isMyDream: same reasoning -- js/interpret-experience.js's own
-    // generate/regenerate calls (DreamStore.requestInterpretationQuestions/
-    // generateInterpretationReading) are private, per-account writes that
-    // refuse a dream that isn't this account's own (same ownership guard
-    // as generateInterpretation always had). Reading an already-saved
-    // interpretation (DreamStore.getInterpretations) is harmless, but
-    // there's never a legitimate saved interpretation to show for a dream
-    // that isn't this account's own in the first place, so the whole pill
-    // is owner-only.
-    document.getElementById('interp-cta-btn').style.display = isMyDream ? '' : 'none';
+    // generate/regenerate calls are private, per-account writes that
+    // refuse a dream that isn't this account's own. Reading an
+    // already-saved interpretation is harmless, but there's never a
+    // legitimate saved interpretation to show for a dream that isn't this
+    // account's own in the first place, so the whole hero is owner-only.
+    document.getElementById('interp-cta-btn').style.display = isMyDream ? 'flex' : 'none';
     // The image-only state keeps its OWN untouched hero ("Turn this into a
     // video", founder-explicit). Two full-size emphasized CTAs there would
-    // read as two heroes and defeat the "ONE hero" rule this redesign is
-    // built on — so in that ONE state the interpretation entry steps back
-    // down to the slim pill it already was on `main` (see .result-hero-cta
-    // .quiet in css/styles.css), and its reassurance micro line steps aside
-    // with it, leaving that state's density exactly as it was. Everywhere
-    // else the interpretation entry IS the hero.
+    // read as two heroes -- so in that ONE state the interpretation hero
+    // steps back down to the quiet pill it was before this redesign, and
+    // its reassurance micro line steps aside with it. Everywhere else the
+    // interpretation entry IS the hero.
     document.getElementById('interp-cta-btn').classList.toggle('quiet', imageOnly);
-    document.getElementById('interp-hero-micro').style.display = (isMyDream && !imageOnly) ? '' : 'none';
+    document.getElementById('interp-hero-micro').style.display = (isMyDream && !imageOnly) ? 'block' : 'none';
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
@@ -902,25 +1126,49 @@
     document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
     quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
     setupExpandableQuote();
+    // Fresh (private) vs Published visual states -- the state tag itself
+    // is the one thing that changes between them; tapping it while
+    // published reverts to private (see the click handler further below).
     var privacyTag = document.getElementById('result-privacy-tag');
-    privacyTag.textContent = dream.isPublished ? 'Public' : 'Private';
-    privacyTag.classList.toggle('pub', !!dream.isPublished);
+    if(dream.isPublished){
+      privacyTag.innerHTML = '<span class="icon">' + Icons.check + '</span>Public';
+      privacyTag.classList.add('pub');
+      privacyTag.title = 'Tap to make private';
+    } else {
+      privacyTag.textContent = 'Private';
+      privacyTag.classList.remove('pub');
+      privacyTag.title = 'Private';
+    }
     document.getElementById('edit-text').value = dream.storyText || dream.caption;
     Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
+    // Quiet-row Publish link: unpublished -> opens the confirm modal
+    // (unchanged); published -> becomes "Live on Explore" and navigates
+    // there instead of re-toggling -- unpublishing now lives on the state
+    // tag above (matches the founder-approved mock's own interaction: the
+    // tag is what reverts to private, Publish is a one-way action plus a
+    // way back to Explore once it's done its job).
     var pubBtn = document.getElementById('publish-btn');
-    if(dream.isPublished){ pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Published'; pubBtn.disabled = false; pubBtn.title = 'Click to make private'; }
-    else { pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish'; pubBtn.disabled = false; pubBtn.title = 'Publish to Explore'; }
+    if(dream.isPublished){
+      pubBtn.innerHTML = '<span class="icon">' + Icons.check + '</span>Live on Explore';
+      pubBtn.classList.add('livelink');
+      pubBtn.title = 'View on Explore';
+    } else {
+      pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish';
+      pubBtn.classList.remove('livelink');
+      pubBtn.title = 'Publish to Explore';
+    }
+    pubBtn.disabled = false;
     // Owner-only actions (see the isMyDream ownership-gate comment above) --
     // hidden rather than disabled, since a dream that isn't this account's
     // own has no legitimate reason to show controls that only ever no-op.
     // "Make another" is deliberately excluded -- it doesn't touch this
     // dream at all, just starts a brand-new one, so it stays visible for
     // everyone.
-    document.getElementById('open-edit-sheet').style.display = isMyDream ? '' : 'none';
-    pubBtn.style.display = isMyDream ? '' : 'none';
-    document.getElementById('delete-btn').style.display = isMyDream ? '' : 'none';
+    document.getElementById('open-edit-sheet').style.display = isMyDream ? 'flex' : 'none';
+    pubBtn.style.display = isMyDream ? 'flex' : 'none';
+    document.getElementById('delete-btn').style.display = isMyDream ? 'flex' : 'none';
     updateFeatureToggleUI();
   }
   render();
@@ -941,46 +1189,26 @@
   // same page, and not on their 2nd+ video. Two independent guards must
   // both pass:
   //   1. DreamStore.wasOperationJustCompleted(dream.sourceOperationName) --
-  //      a durable, server-side marker (tracker.html's
-  //      result-htmls-firstvideocreated-still-dep-qfg48t item,
-  //      founder-approved 2026-07-27) set by processing.html right before
+  //      a durable, server-side marker set by processing.html right before
   //      this redirect and consumed here exactly once -- confirms this
   //      page load is the actual moment generation just finished, not a
-  //      later visit to an old result. Replaces the old sessionStorage
-  //      `dreamtube_just_generated_id` marker, which didn't reliably
-  //      survive some FB/IG in-app-browser webview redirects (exactly
-  //      where this app's paid ad traffic lands) -- same semantics, a
-  //      durable carrier. Keyed by the job's own server-issued
-  //      operationName, NOT dream.id (a review finding: dream ids are
-  //      client-invented and already public elsewhere in this app --
-  //      explore.html/profile.html/watch.html links -- so keying on them
-  //      would let anyone who knows/guesses a dream id plant a marker for
-  //      it; operationName is server-issued, never shown in any UI/URL,
-  //      and independently re-verified server-side before a marker is
-  //      ever honored). See js/store.js's wasOperationJustCompleted and
-  //      finalizeDream doc comments, and
-  //      netlify/functions/lib/generation-completion-store.js, for the
-  //      full mechanics.
+  //      later visit to an old result. Keyed by the job's own server-issued
+  //      operationName, NOT dream.id (dream ids are client-invented and
+  //      already public elsewhere in this app -- keying on them would let
+  //      anyone who knows/guesses a dream id plant a marker for it).
   //   2. DreamStore.markFirstVideoCreatedIfEligible(dream.id) -- confirms
   //      this is chronologically this account's first-ever completed
   //      dream, and atomically marks the account's one-time flag so it
-  //      can never fire again after this. Unchanged by this fix -- dream
-  //      ownership/count data is local-only, with no server-side
-  //      equivalent to move this guard to.
+  //      can never fire again after this.
   // See js/analytics-config.js's fireMetaConversion (custom=true branch)
-  // for the client+CAPI firing mechanics (one call fires both, sharing one
-  // event_id); docs/EVENT_TAXONOMY.md documents this event alongside every
-  // other one this codebase fires. Fire-and-forget: must never throw or
-  // block rendering.
+  // for the client+CAPI firing mechanics; docs/EVENT_TAXONOMY.md documents
+  // this event alongside every other one this codebase fires.
+  // Fire-and-forget: must never throw or block rendering.
   (function(){
     // PostHog sanity-check signal, independent of the guards below --
     // fires on every render where this looks like the account's only
-    // completed video (same eligibility computation as guard #2 above,
-    // minus its one-time flag), so a PostHog query comparing this event's
-    // count against first_video_created's own count reveals whether the
-    // durable-marker fix above actually closes the undercount. See
-    // js/store.js's isOnlyCompletedDream doc comment and
-    // docs/EVENT_TAXONOMY.md.
+    // completed video, so a PostHog query comparing this event's count
+    // against first_video_created's own count reveals any undercount.
     try {
       if (DreamStore.isOnlyCompletedDream(dream.id)) {
         track('first_video_result_view', { style: dream.style });
@@ -995,51 +1223,27 @@
         track('first_video_created', { style: dream.style });
         fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
         // Retention email ("your dream is ready") -- see js/store.js's
-        // sendFirstDreamEmailBestEffort doc comment and
-        // send-first-dream-email.js's header comment. Same choke point as
-        // the KPI event just above, deliberately -- both gated on the same
-        // markFirstVideoCreatedIfEligible(dream.id) call already having
-        // returned true.
+        // sendFirstDreamEmailBestEffort doc comment. Same choke point as
+        // the KPI event just above.
         DreamStore.sendFirstDreamEmailBestEffort(dream);
       } catch (e) { /* analytics must never break the app */ }
     }).catch(function () { /* analytics must never break the app -- network failure here is a no-op */ });
   })();
 
-  // The video autoplays (muted) as soon as it has a src, so the badge only
-  // needs to show a real ▶ affordance while paused — it hides itself once
-  // playback is running and toggles play/pause on click, instead of sitting
-  // there as a non-functional decoration.
+  // ===== In-card ambient preview: error retry + tab-visibility pause =====
+  // The video autoplays muted/looped as soon as it has a src, purely as an
+  // ambient preview inside the card -- tapping it (or the play badge, or
+  // the ghost "Watch your dream" pill) opens the REAL fullscreen player
+  // instead of toggling this inline loop (see the fullscreen IIFE below).
   (function(){
     var video = document.getElementById('result-video');
-    var playBadge = document.getElementById('result-play-badge');
     var playIcon = document.getElementById('result-play-icon');
     playIcon.innerHTML = Icons.play;
-    function toggle(){ if(!dream.videoUrl) return; if(video.paused) video.play(); else video.pause(); }
-    // 'play' fires the instant .play() is CALLED, not once playback has
-    // actually started -- a video that's still buffering, or about to fail
-    // with a network/decode error, fires 'play' immediately, and then
-    // never fires a matching 'pause' (the silent internal reset inside
-    // load() after an error doesn't dispatch one). Syncing off 'play' hid
-    // the play badge -- the only recovery affordance -- at exactly the
-    // moment playback had actually stalled or failed, leaving the video
-    // frozen with nothing on screen to tap. 'playing' only fires once
-    // real playback has begun; 'error' explicitly un-hides the badge too,
-    // rather than relying on an event that may never come.
-    video.addEventListener('playing', function(){ playBadge.classList.add('hidden'); });
-    video.addEventListener('pause', function(){ playBadge.classList.remove('hidden'); });
-    video.addEventListener('error', function(){ playBadge.classList.remove('hidden'); });
-    video.addEventListener('click', toggle);
-    playBadge.addEventListener('click', toggle);
-    // A transient network/decode error leaves the element stuck — the play
-    // badge above still gives a manual way to retry, but reload the source
-    // once on error too, so a flaky connection can self-heal instead of
+
+    // A transient network/decode error leaves the element stuck -- reload
+    // the source once on error so a flaky connection can self-heal without
     // needing a tap. Only once: a permanently broken URL would otherwise
     // re-fire 'error' immediately on every retry and loop forever.
-    //
-    // Explicit play() after load(), not just relying on the autoplay
-    // attribute to retrigger on its own -- it should per spec, but making
-    // it explicit here removes any dependence on that being implemented
-    // consistently everywhere.
     video.addEventListener('error', function(){
       if(video.dataset.retried) return;
       video.dataset.retried = '1';
@@ -1048,11 +1252,10 @@
     });
 
     // Switching to a different tab/app doesn't pause anything on its own —
-    // left alone, the video (and its audio, if unmuted via the mute
-    // button below) just kept playing in the background tab, unlike e.g.
-    // YouTube pausing when you tab away. Only resume automatically if the
-    // tab itself is what paused it — not if the visitor had already
-    // manually paused before switching away, which this shouldn't undo.
+    // left alone, the ambient preview just kept playing in the background
+    // tab. Only resume automatically if the tab itself is what paused it —
+    // not if the visitor had already manually paused (e.g. inside the
+    // fullscreen overlay) before switching away.
     var pausedByVisibility = false;
     document.addEventListener('visibilitychange', function(){
       if(document.hidden){
@@ -1064,41 +1267,135 @@
     });
   })();
 
-  // Videos generate WITH audio (Veo 3.1 renders a soundtrack), but every
-  // <video> in the app starts muted — browsers block un-muted autoplay, and
-  // that's the only way playback starts automatically on page load. That
-  // just means a real mute *toggle* has to exist, which was missing
-  // entirely (this was previously a dead end: audio existed in the file,
-  // there was no UI to ever turn it on). Sound preference persists across
-  // pages via localStorage, matching the standard feed-app pattern (TikTok/
-  // Reels remember your last mute choice rather than re-muting every video).
+  // ===== Fullscreen dream playback (founder amendment, 2026-07-31) =====
+  // Tapping the video card, the in-video play badge, or the external
+  // "Watch your dream" pill all open the SAME real <video> element
+  // full-bleed:
+  //   1. iOS Safari's dedicated video-fullscreen API (webkitEnterFullscreen)
+  //      first -- the single most reliable path on iOS, and unaffected by
+  //      document.fullscreenEnabled (which some iOS webviews report false
+  //      for even though this specific method still works there).
+  //   2. The standard Fullscreen API next -- but ONLY when the embedding
+  //      context actually allows it. document.fullscreenEnabled (or its
+  //      webkit-prefixed twin) is false inside a webview/iframe that has
+  //      disabled it via Permissions-Policy -- exactly the FB/IG in-app-
+  //      browser restriction the founder flagged, detected here by real
+  //      feature/permission capability, never by guessing the UA string.
+  //   3. Falling back to an in-app full-viewport overlay player
+  //      (.player-overlay) with this page's own EXISTING controls --
+  //      mute (persisted via DreamStore.setSoundPref, same as the in-card
+  //      chip) and tap-to-toggle play/pause -- when neither native path is
+  //      available/allowed. The overlay reparents the SAME <video> element
+  //      (no second copy, no re-fetch, no lost playback position) and
+  //      restores it to the card on close.
   (function(){
     var video = document.getElementById('result-video');
+    var frame = document.getElementById('dreamvideo-frame');
+    var watchPill = document.getElementById('watch-pill');
     var muteBtn = document.getElementById('mute-btn');
-    function syncIcon(){ muteBtn.innerHTML = Icons[video.muted ? 'volumeMuted' : 'volumeOn']; muteBtn.title = video.muted ? 'Unmute' : 'Mute'; }
+    var playerOverlay = document.getElementById('player-overlay');
+    var playerSlot = document.getElementById('player-video-slot');
+    var playerMuteBtn = document.getElementById('player-mute-btn');
+    var playerCloseBtn = document.getElementById('player-close-btn');
+    var videoHomeParent = null;
+    var videoHomeNext = null;
+
+    function syncMuteIcon(btn){
+      if(!btn) return;
+      btn.innerHTML = Icons[video.muted ? 'volumeMuted' : 'volumeOn'];
+      btn.title = video.muted ? 'Unmute' : 'Mute';
+      btn.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
+    }
     video.muted = !DreamStore.getSoundPref();
-    syncIcon();
-    muteBtn.addEventListener('click', function(e){
-      e.stopPropagation(); // don't also trigger the play/pause toggle on the video underneath
+    syncMuteIcon(muteBtn);
+    syncMuteIcon(playerMuteBtn);
+
+    function toggleMute(e){
+      if(e) e.stopPropagation(); // never also open the fullscreen player
       video.muted = !video.muted;
       DreamStore.setSoundPref(!video.muted);
-      syncIcon();
+      syncMuteIcon(muteBtn);
+      syncMuteIcon(playerMuteBtn);
+    }
+    muteBtn.addEventListener('click', toggleMute);
+    playerMuteBtn.addEventListener('click', toggleMute);
+
+    function openOverlayPlayer(){
+      if(playerOverlay.classList.contains('open')) return; // already open
+      videoHomeParent = video.parentNode;
+      videoHomeNext = video.nextSibling;
+      playerSlot.appendChild(video);
+      video.style.display = 'block';
+      playerOverlay.classList.add('open');
+      playerOverlay.setAttribute('aria-hidden', 'false');
+      video.play().catch(function(){});
+    }
+    function closeOverlayPlayer(){
+      playerOverlay.classList.remove('open');
+      playerOverlay.setAttribute('aria-hidden', 'true');
+      if(videoHomeParent){
+        videoHomeParent.insertBefore(video, videoHomeNext);
+        videoHomeParent = null;
+        videoHomeNext = null;
+      }
+    }
+    playerCloseBtn.addEventListener('click', function(e){ e.stopPropagation(); closeOverlayPlayer(); });
+    playerOverlay.addEventListener('click', function(e){
+      if(e.target === playerOverlay || e.target === playerSlot || e.target === video){
+        if(video.paused) video.play(); else video.pause();
+      }
     });
+
+    // The overlay only ever reparents the video for the NON-native
+    // fallback path -- native fullscreen (either API below) leaves the
+    // element exactly where it already is in the DOM, so there's nothing
+    // to restore when that's how playback opened.
+    document.addEventListener('fullscreenchange', function(){
+      if(document.fullscreenElement === video){ video.controls = true; }
+      else if(!document.fullscreenElement){ video.controls = false; }
+    });
+
+    function openFullscreenVideo(){
+      if(!dream.videoUrl) return;
+
+      // 1) iOS Safari's own native fullscreen-video API.
+      if(typeof video.webkitEnterFullscreen === 'function'){
+        try { video.webkitEnterFullscreen(); return; } catch (e) { /* fall through */ }
+      }
+
+      // 2) Standard Fullscreen API -- only when actually allowed here.
+      var fsEnabled = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+      var requestFs = video.requestFullscreen || video.webkitRequestFullscreen;
+      if(fsEnabled && typeof requestFs === 'function'){
+        try {
+          var p = requestFs.call(video);
+          if(p && typeof p.catch === 'function'){ p.catch(openOverlayPlayer); }
+          return;
+        } catch (e) { /* fall through to the overlay below */ }
+      }
+
+      // 3) In-app full-viewport overlay fallback.
+      openOverlayPlayer();
+    }
+
+    frame.addEventListener('click', function(e){
+      // The back/share/mute chips over this frame's corners each stop
+      // their own click from bubbling here (toggleMute above; back/share
+      // handlers elsewhere in this file) -- anything that reaches this
+      // handler is a genuine tap on the video/play-badge itself.
+      openFullscreenVideo();
+    });
+    watchPill.addEventListener('click', openFullscreenVideo);
   })();
 
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }
   function closeSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.remove('open'); }
 
-  // ===== "What this dream might mean" — Interpretation Wave 1 =====
-  // docs/INTERPRETATION_WAVE1_SPEC.md, tracker item
-  // for-product-build-interpretation-wave-1--xuftyn. Replaces the old
-  // single blended in-page bottom sheet entirely: the pill now just opens
-  // js/interpret-experience.js's self-contained full-screen surface
-  // (InterpretExperience.open/.close, matching js/purchase-sheet.js's own
-  // established precedent for a complex shared component) — every phase,
-  // network call, error/fallback state, and interp_* analytics event this
-  // used to own here now lives in that one file instead, so this page has
-  // no more interpretation-specific state or DOM to keep in sync itself.
+  // ===== "What this dream might mean" — the Interpreter's Chamber =====
+  // The hero pill opens js/interpret-experience.js's self-contained
+  // full-screen surface (InterpretExperience.open/.close) -- every phase,
+  // network call, error/fallback state, and interp_* analytics event lives
+  // in that one file, not here.
   //
   // Starts a genuinely blank draft (not a regeneration of this dream) —
   // deliberately does not reuse the sourceDreamId pattern from the Edit
@@ -1107,34 +1404,20 @@
     DreamStore.clearDraft();
     location.href = 'create.html';
   });
-  // ===== Hero: the interpretation entry (founder-decided 2026-07-30) =====
-  // ONE Chamber, TWO entry points. This opens the exact same
-  // js/interpret-experience.js surface home.html's Chamber card opens —
-  // there is no second/parallel implementation here, and no query-param
-  // round trip either (home's older ?openInterp=1 deep link into this page
-  // is long gone; see this file's closing comment).
-  //
-  // The linked dream is unambiguous by construction: `dream` is resolved
-  // from this page's own `?id=` param at load, re-read from the store on
-  // every render(), and `dream.id` is passed straight into
-  // InterpretExperience.open(). Entering the Chamber from HERE therefore
-  // always operates on the dream this screen is showing — never "the
-  // latest dream", never an ambiguous default. That is the result-entry
-  // half of tracker item for-product-chamber-dream-linkage-is-unc-00s2dr;
-  // the home-entry half (home's Chamber card still defaults to the latest
-  // completed dream and needs its own picker for older ones) is
-  // deliberately out of this build's scope and untouched.
+  // ===== Hero: the interpretation entry =====
+  // ONE Chamber, TWO entry points (this pill, and home.html's own Chamber
+  // card) -- both call InterpretExperience.open() directly, no query-param
+  // round trip. The linked dream is unambiguous by construction: `dream` is
+  // resolved from this page's own `?id=` param at load, re-read on every
+  // render(), and dream.id is passed straight into
+  // InterpretExperience.open() -- entering the Chamber from HERE always
+  // operates on the dream this screen is showing.
   document.getElementById('interp-cta-btn').addEventListener('click', function(){
-    // result_hero_interpret — the success metric for this whole redesign
-    // (interpretation-open rate FROM result, plus downstream Chamber
-    // completion via the existing interp_* events js/interpret-experience.js
-    // already fires). `first_video` distinguishes the high-stakes case
-    // (someone tapping this on their very first dream, the confidence
-    // moment the founder's decision is actually about) from a returning
-    // user's Nth dream. Reuses DreamStore.isOnlyCompletedDream — the same
-    // read-only "is this the account's only completed dream" query
-    // first_video_result_view above already uses — rather than a second
-    // definition of "first". See docs/EVENT_TAXONOMY.md.
+    // result_hero_interpret — the success metric for this hero (interpretation-
+    // open rate FROM result, plus downstream Chamber completion via the
+    // existing interp_* events js/interpret-experience.js already fires).
+    // `first_video` distinguishes someone tapping this on their very first
+    // dream from a returning user's Nth dream.
     var firstVideo = false;
     try { firstVideo = !!DreamStore.isOnlyCompletedDream(dream.id); } catch(e){ /* analytics must never break the app */ }
     track('result_hero_interpret', { first_video: firstVideo });
@@ -1191,22 +1474,15 @@
   var IMAGE_TOKEN_COST = 10;
   var VIDEO_TOKEN_COST = 100;
   var tokenStatus = null;
-  var topbarChip = PurchaseSheet.mountBalanceChip(document.getElementById('topbar-token-chip-slot'));
+  var tokenChip = PurchaseSheet.mountBalanceChip(document.getElementById('result-token-chip-slot'));
   DreamStore.getTokenStatus().then(function(status){
     tokenStatus = status;
-    PurchaseSheet.renderBalanceChip(topbarChip, status);
-    // NO daily-claim auto-open here. It used to fire on this page
-    // (PurchaseSheet.maybeAutoOpenClaimSheet, tracker item for-product-
-    // build-the-daily-token-claim--fngrwd item 4) and is REMOVED entirely
-    // by the 2026-07-30 interpret-primary redesign (tracker item
-    // for-product-build-founder-decided-2026-0-75fnlk: "daily-claim
-    // auto-open REMOVED from this page (Home owns it)"). A sheet popping
-    // itself open over the moment a user first sees their finished dream
-    // is exactly the interruption this redesign exists to remove. Home
-    // owns it — home.html's own refreshTokenStatus(true) auto-opens it,
-    // and its Today card carries the claim chip; the claim itself is
-    // unchanged and still reachable from every other surface (the balance
-    // chip, the Vault card, shop.html).
+    PurchaseSheet.renderBalanceChip(tokenChip, status);
+    // NO daily-claim auto-open on this page (Home owns it) -- a sheet
+    // popping itself open over the moment a user first sees their finished
+    // dream is exactly the interruption this redesign exists to remove.
+    // The claim itself is unchanged and still reachable from every other
+    // surface (Home's own claim chip, the Vault card, shop.html).
   }).catch(function(){ tokenStatus = null; });
 
   function tokensBlockGeneration(cost){
@@ -1274,11 +1550,7 @@
 
   // ===== Out-of-tokens purchase sheet =====
   // Founder directive 2026-07-26: "the store must come up whenever a user
-  // tries any action without enough tokens" — replaces the old
-  // #modal-quota this screen used to share between "Generate Again" and
-  // "Turn this into a video" (a plain "wait or visit the shop" dialog with
-  // no arithmetic, no one-tap purchase, and — the audit-found bug — no
-  // draft persistence at all before either redirect).
+  // tries any action without enough tokens".
   document.getElementById('edit-generate-again').addEventListener('click', function(){
     var cost = regenerateAgainCost();
     if(tokensBlockGeneration(cost)){
@@ -1289,14 +1561,10 @@
         tokenStatus: tokenStatus,
         source: 'blocked_action',
         persistDraft: persistGenerateAgainDraft,
-        // Review finding, round 4: without this, a claim made via the
-        // sheet's own inline "Claim +N" button left this page's cached
-        // tokenStatus/topbar chip stale -- same refresh already wired
-        // into maybeAutoOpenClaimSheet above.
         onClaimed: function(){
           DreamStore.getTokenStatus().then(function(fresh){
             tokenStatus = fresh;
-            PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+            PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
         }
       });
@@ -1309,11 +1577,7 @@
   // Always a video regenerate (100 tokens), regardless of the source
   // dream's own mediaType (it's always an image being turned INTO a
   // video). DreamStore.turnImageIntoVideo already sets the full draft
-  // (caption/style/sourceDreamId/sourceImageUrl/mediaType) in one call —
-  // using it directly as persistDraft fixes the audit-found bug here too:
-  // previously it was only ever called on the UNBLOCKED path, so a
-  // blocked "Turn this into a video" tap left no draft to resume from at
-  // all.
+  // (caption/style/sourceDreamId/sourceImageUrl/mediaType) in one call.
   document.getElementById('turn-video-btn').addEventListener('click', function(){
     if(tokensBlockGeneration(VIDEO_TOKEN_COST)){
       PurchaseSheet.show({
@@ -1326,7 +1590,7 @@
         onClaimed: function(){
           DreamStore.getTokenStatus().then(function(fresh){
             tokenStatus = fresh;
-            PurchaseSheet.renderBalanceChip(topbarChip, fresh);
+            PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
         }
       });
@@ -1351,15 +1615,9 @@
   // (Publish button) or publish-then-share (Share button).
   var shareAfterPublish = false;
 
-  // Opens the share mini-sheet (js/share-sheet.js) — tracker item
-  // for-product-build-share-mini-sheet-share-r42tc4. Its "Share link"
-  // option is EXACTLY this page's old single-tap doShare() behavior
-  // (navigator.share/clipboard-copy/unsupported-toast), just centralized
-  // there and pointed at the new share-dream.js preview-card endpoint
-  // instead of a bare explore.html?id= URL. shareText preserves this
-  // page's own "my dream" wording (the owner's own perspective — the
-  // explore.html feed card's copy says "this dream" instead, since
-  // there the viewer isn't necessarily the dream's owner).
+  // Opens the share mini-sheet (js/share-sheet.js) — its "Share link"
+  // option is this page's own single-tap doShare() behavior
+  // (navigator.share/clipboard-copy/unsupported-toast).
   function doShare(){
     ShareSheet.show({
       dream: dream,
@@ -1368,11 +1626,13 @@
     });
   }
 
+  // Quiet-row Publish: unpublished -> the confirm modal (unchanged);
+  // published -> "Live on Explore", navigates there instead of toggling
+  // back to private -- see render() above. Unpublishing now lives on the
+  // state tag tap below, matching the approved mock's own interaction.
   document.getElementById('publish-btn').addEventListener('click', function(){
     if(dream.isPublished){
-      DreamStore.unpublishDream(dream.id);
-      render();
-      showToast('Made private');
+      location.href = 'explore.html';
       return;
     }
     shareAfterPublish = false;
@@ -1393,17 +1653,17 @@
       showToast('Published to Explore');
     }
   });
+  // State-tag tap: reverts a published dream to private -- the mock's own
+  // interaction (tapping the [Public] tag reverts, rather than the quiet
+  // Publish link re-toggling once it's become "Live on Explore").
+  document.getElementById('result-privacy-tag').addEventListener('click', function(){
+    if(!dream.isPublished) return;
+    DreamStore.unpublishDream(dream.id);
+    render();
+    showToast('Made private');
+  });
 
-  // ===== Delete (4th quiet link) =====
-  // FINAL placement (4th iteration, founder 2026-07-28) -- Delete is now
-  // an ordinary quiet link (#delete-btn) on the main result screen, same
-  // row and tap-target size as Edit/Publish/Make another. Earlier
-  // placements (big bottom-bar button, Edit-sheet red link, overflow menu)
-  // are all superseded -- see tracker.html's
-  // for-product-result-screen-quiet-row-fina-btv7nr for why each one
-  // failed. The confirmation modal, its copy, and DreamStore.deleteDream +
-  // navigate-to-profile.html below are unchanged from every prior
-  // iteration -- only the entry point moved.
+  // ===== Delete =====
   document.getElementById('delete-btn').addEventListener('click', function(){
     // Deleting a published dream also unpublishes it (DreamStore.deleteDream
     // calls removePublishedDreamFromFeed) -- that's real, existing behavior,
@@ -1423,7 +1683,8 @@
     location.href = 'profile.html';
   });
 
-  document.getElementById('share-btn').addEventListener('click', function(){
+  document.getElementById('share-btn').addEventListener('click', function(e){
+    e.stopPropagation(); // don't also open the fullscreen player
     if(!dream.isPublished){
       shareAfterPublish = true;
       document.getElementById('modal-publish').classList.add('open');
@@ -1431,27 +1692,6 @@
     }
     doShare();
   });
-
-  // Save (video-file download) was removed entirely from this screen --
-  // founder feedback 2026-07-28: redundant with Share (topbar, covers
-  // sending/downloading) and every dream self-saves to the profile anyway.
-  // See tracker.html's for-product-result-screen-quiet-row-fina-btv7nr.
-  // The old per-page download mechanism (fetch->Blob, <a download>,
-  // filename sanitizing) stayed gone per the no-dead-code rule -- it did
-  // NOT come back as a duplicate copy here. A real "Save to device" file
-  // download is back, but centralized in js/share-sheet.js's mini-sheet
-  // (tracker item for-product-build-share-mini-sheet-share-r42tc4), which
-  // doShare()/share-btn above now opens instead of sharing a link directly.
-
-  // home.html's Chamber card deep-link via ?openInterp=1 (tracker item
-  // for-product-build-homepage-wave-1-the-ri-xr8mir) is GONE — superseded
-  // by Interpretation Wave 1 (tracker item
-  // for-product-build-interpretation-wave-1--xuftyn): home.html's Chamber
-  // card now calls InterpretExperience.open() directly on ITSELF (see that
-  // file's own renderChamberCard comment) instead of navigating here with
-  // a query param this page then had to notice and act on. No dead code
-  // left behind — the old `getParam('openInterp')` handling is removed
-  // entirely, not left around unreachable.
 </script>
 </body>
 </html>
