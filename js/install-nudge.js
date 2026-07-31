@@ -129,6 +129,19 @@ window.InstallNudge = (function () {
   }
 
   /**
+   * The mock Safari/Chrome toolbar visuals below display a URL-bar pill —
+   * this reads the real current host (location.host, e.g. includes a
+   * non-default port if present) rather than a hardcoded domain literal,
+   * so the mock stays accurate across environments (local dev, any future
+   * custom domain) with zero code change needed at cutover time. Falls
+   * back to the current production host only in the (practically never
+   * hit in a real browser) case location.host is somehow empty.
+   */
+  function currentHostForToolbarMock() {
+    return (window.location && window.location.host) || 'dreamtube1.netlify.app';
+  }
+
+  /**
    * True only when there's something real and actionable to show:
    * Android/Chrome with a captured beforeinstallprompt (a genuine native
    * install dialog), or iOS Safari-family (manual Share -> Add to Home
@@ -195,7 +208,7 @@ window.InstallNudge = (function () {
       '<div class="install-nudge-visual" aria-hidden="true">' +
         '<div class="install-nudge-toolbar">' +
           '<span class="install-nudge-toolbar-back">' + backIcon + '</span>' +
-          '<span class="install-nudge-toolbar-url">dreamtube1.netlify.app</span>' +
+          '<span class="install-nudge-toolbar-url">' + currentHostForToolbarMock() + '</span>' +
           '<span class="install-nudge-toolbar-more">' + moreIcon + '</span>' +
         '</div>' +
         '<div class="install-nudge-toolbar-arrow">▲ Tap here (bottom-right)</div>' +
@@ -235,7 +248,7 @@ window.InstallNudge = (function () {
       '<div class="install-nudge-visual" aria-hidden="true">' +
         '<div class="install-nudge-toolbar">' +
           '<span class="install-nudge-toolbar-back">' + backIcon + '</span>' +
-          '<span class="install-nudge-toolbar-url">dreamtube1.netlify.app</span>' +
+          '<span class="install-nudge-toolbar-url">' + currentHostForToolbarMock() + '</span>' +
           '<span class="install-nudge-toolbar-highlight">' + shareIcon + '</span>' +
         '</div>' +
         '<div class="install-nudge-toolbar-arrow">▲ Tap here</div>' +
