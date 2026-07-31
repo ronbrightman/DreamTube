@@ -635,13 +635,15 @@ test('Signup Continue -> immediate "Change email" before attemptSignup resolves 
 
 // ===========================================================================
 // Money-leak fix (tracker item for-product-money-leak-blocked-signups-e-
-// v2g1vi). checkEmailAvailable() lives inside wireScreen13Fields'
-// #fn-s13-continue handler, which only exists once the email step has been
-// confirmed and the password step has rendered -- so these tests drive the
-// full two-step interaction.
+// v2g1vi), now checked at the EMAIL step itself (tracker item
+// for-product-signup-email-micro-step-foun-ns8uve's "verify -> capture ->
+// reveal" ordering moved the check-email.js gate BEFORE the password field
+// is ever revealed, not just before submission) -- a blocked email now
+// shows its inline error right on the email step, and the password field
+// never appears at all.
 // ===========================================================================
 
-test('screen 13 submission with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline, and stays on the password step', async function (t) {
+test('screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline, and never reveals the password field', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -652,7 +654,7 @@ test('screen 13 submission with an email that already has an account never fires
     var checkEmailCalls = [];
     await page.route('**/.netlify/functions/check-email', function (route) {
       checkEmailCalls.push(JSON.parse(route.request().postData()));
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
     });
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
       startPendingCalls.push(JSON.parse(route.request().postData()));
@@ -665,9 +667,8 @@ test('screen 13 submission with an email that already has an account never fires
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await signupFlow.advanceToPasswordStep(page, 'variant-b-already-taken@example.com');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-s13-continue');
+    await page.fill('#fn-email', 'variant-b-already-taken@example.com');
+    await page.click('#fn-s13-email-continue');
 
     await page.waitForFunction(function () {
       var errEl = document.getElementById('fn-signup-error');
@@ -679,13 +680,11 @@ test('screen 13 submission with an email that already has an account never fires
     assert.equal(checkEmailCalls[0].email, 'variant-b-already-taken@example.com');
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
     assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must not even attempt a signup already known to be rejected');
-    assert.equal(await page.locator('#fn-password').count(), 1, 'must still be sitting on the password step');
+    assert.equal(await page.locator('#fn-password').count(), 0, 'the password field must never have been revealed for a blocked email');
     assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14');
 
-    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-continue').disabled; });
-    var backDisabled = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
-    assert.equal(continueDisabled, false, 'Continue must be re-enabled after the blocked-email response, not left stuck disabled');
-    assert.equal(backDisabled, false, 'Back must be re-enabled after the blocked-email response');
+    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-email-continue').disabled; });
+    assert.equal(continueDisabled, false, 'the email step\'s Continue must be re-enabled after the blocked-email response, not left stuck disabled');
 
     var loginLinkHref = await page.locator('#fn-signup-error a').getAttribute('href');
     assert.equal(loginLinkHref, 'login.html');
@@ -902,20 +901,19 @@ test('signup_error_shown: fires with reason missing_password when the password f
   }
 });
 
-test('signup_error_shown: fires with reason already_registered when check-email.js reports the address is taken', async function (t) {
+test('signup_error_shown: fires with reason already_registered when check-email.js reports the address is taken, at the email step itself', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await page.route('**/.netlify/functions/check-email', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
     });
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
-    await signupFlow.advanceToPasswordStep(page, 'error-shown-taken@example.com');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-s13-continue');
+    await page.fill('#fn-email', 'error-shown-taken@example.com');
+    await page.click('#fn-s13-email-continue');
     await page.waitForFunction(function () {
       var errEl = document.getElementById('fn-signup-error');
       return errEl && errEl.textContent.indexOf('already have an account') !== -1;
@@ -925,6 +923,63 @@ test('signup_error_shown: fires with reason already_registered when check-email.
     var errors = captureNamed(calls, 'signup_error_shown');
     assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
     assert.deepEqual(errors[0][2], { reason: 'already_registered', variant: 'unified' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('signup_error_shown: fires with reason email_undeliverable when check-email.js reports the domain has no MX/A/AAAA records, at the email step', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: false }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'typo@gmial-typo-domain-xyz.invalid');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.indexOf('check for a typo') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(await page.locator('#fn-password').count(), 0, 'an undeliverable email must never reveal the password field');
+
+    var calls = await readPostHogCalls(page);
+    var errors = captureNamed(calls, 'signup_error_shown');
+    assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
+    assert.deepEqual(errors[0][2], { reason: 'email_undeliverable', variant: 'unified' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('screen 13 email step: a deliverable, available email captures (fires start-pending-generation) BEFORE the password field is revealed, not just at final submission', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-capture-early-1', operationName: 'fal:fake-model:req-capture-early-1' }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'capture-before-password@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-password', { timeout: 5000 });
+
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.equal(startPendingCalls.length, 1, 'the real, billed pending-generation call must fire the moment the email is verified -- before the password field appears, not just at final submission');
+    assert.equal(startPendingCalls[0].email, 'capture-before-password@example.com');
   } finally {
     await context.close();
   }

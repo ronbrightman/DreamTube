@@ -903,24 +903,31 @@
   }
 
   /**
-   * check-email.js availability check (tracker item
-   * for-product-money-leak-blocked-signups-e-v2g1vi) — fired BEFORE
+   * check-email.js availability + deliverability check (tracker items
+   * for-product-money-leak-blocked-signups-e-v2g1vi and
+   * for-product-signup-email-micro-step-foun-ns8uve) — fired BEFORE
    * getOrStartPendingGeneration/attemptSignup, so a signup that's
    * guaranteed to be rejected (register-account.js's own E8 email_taken)
-   * never gets a real, billed fal.ai generation started for it. Resolves
-   * to a plain boolean, never rejects: `true` means "proceed exactly as
-   * before" (either genuinely available, or the check itself couldn't be
-   * completed at all) and `false` means "definitely already registered,
-   * block." Resilient fallback on any failure of THIS check — fail OPEN
-   * to the existing behavior rather than newly blocking a real user's
-   * funnel over an ancillary check's own infrastructure hiccup, same
-   * philosophy as startPendingGeneration's own resilient-fallback
-   * reasoning above (and check-email.js's own header comment). This is
-   * an additional, early UX nicety — register-account.js's own E8 check
-   * downstream (via attemptSignup) is still the authoritative one
-   * regardless of what this reports. Same shape as wizard.html's own
-   * copy of this function — duplicated, not shared, per this codebase's
-   * page-local-script convention (no bundler/ES modules, see CLAUDE.md).
+   * never gets a real, billed fal.ai generation started for it, AND
+   * before the password field is ever revealed (see renderEmailStep's own
+   * tryAdvance below), so an obvious typo'd domain is caught inline
+   * instead of only surfacing after a real signup attempt.
+   *
+   * Resolves to { available, deliverable }, never rejects. Resilient
+   * fallback on any failure of THIS check — fail OPEN to the existing
+   * behavior (both true) rather than newly blocking a real user's funnel
+   * over an ancillary check's own infrastructure hiccup, same philosophy
+   * as startPendingGeneration's own resilient-fallback reasoning above
+   * (and check-email.js's own header comment). This is an additional,
+   * early UX nicety — register-account.js's own E8 check downstream (via
+   * attemptSignup) is still the authoritative one regardless of what this
+   * reports. `deliverable` is treated as true unless the server EXPLICITLY
+   * says false — an older/mocked response with no `deliverable` key at
+   * all (this codebase's own pre-existing test routes, or a future
+   * partial rollout) is "unknown," not "bad," same resilient posture.
+   * Same shape as wizard.html's own copy of this function — duplicated,
+   * not shared, per this codebase's page-local-script convention (no
+   * bundler/ES modules, see CLAUDE.md).
    */
   function checkEmailAvailable(email){
     return fetch('/.netlify/functions/check-email', {
@@ -931,11 +938,11 @@
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
       if(result.ok && result.data && result.data.ok !== false && typeof result.data.available === 'boolean'){
-        return result.data.available;
+        return { available: result.data.available, deliverable: result.data.deliverable !== false };
       }
-      return true; // resilient fallback -- see this function's own doc comment
+      return { available: true, deliverable: true }; // resilient fallback -- see this function's own doc comment
     }).catch(function(){
-      return true; // resilient fallback -- see this function's own doc comment
+      return { available: true, deliverable: true }; // resilient fallback -- see this function's own doc comment
     });
   }
 
@@ -1339,12 +1346,27 @@
       // no artificial minimum-delay to simulate on top of the real network
       // latency this now already has.
       setTimeout(function(){
-        // check-email.js FIRST (tracker item
-        // for-product-money-leak-blocked-signups-e-v2g1vi) -- gates BOTH
+        // check-email.js AGAIN (tracker items
+        // for-product-money-leak-blocked-signups-e-v2g1vi and
+        // for-product-signup-email-micro-step-foun-ns8uve) -- gates BOTH
         // getOrStartPendingGeneration (the real, billed fal.ai call) AND
         // attemptSignup (which is cheap, but there's no point firing a
         // signup we already know will be rejected, and firing it anyway
         // would surface a second, redundant "already taken" message).
+        //
+        // This is now a SECOND check, not the first: renderEmailStep's own
+        // tryAdvance (above) already ran this exact check before ever
+        // revealing this password step, and already fired
+        // getOrStartPendingGeneration for this email at that point (the
+        // capture-before-password-reveal this screen exists for — see that
+        // function's own doc comment). Kept here too as defense-in-depth,
+        // same posture as this screen's duplicated email-format check
+        // (renderEmailStep's tryAdvance vs. this handler) — costs nothing
+        // (getOrStartPendingGeneration's own reuse guard means this
+        // doesn't re-fire a second real generation for an unchanged email)
+        // and still protects the narrow edge case where the email became
+        // taken in the gap between the two checks.
+        //
         // Reuses the EXISTING signupAttemptToken/mySignupToken guard
         // below rather than introducing a second token -- screen 13 is
         // already ONE combined Contact+Signup step/attempt here (unlike
@@ -1357,9 +1379,17 @@
         // the navigation engine's backBtn listener further down this
         // file) -- both already cover the "user navigates away before
         // this resolves" case with no changes needed there.
-        checkEmailAvailable(email).then(function(available){
+        checkEmailAvailable(email).then(function(checkResult){
           if(mySignupToken !== signupAttemptToken) return; // stale -- same guard as attemptSignup's own callback below
-          if(!available){
+          if(!checkResult.deliverable){
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue';
+            backBtn.disabled = false;
+            errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+            track('signup_error_shown', { reason: 'email_undeliverable', variant: signupVariant });
+            return;
+          }
+          if(!checkResult.available){
             continueBtn.disabled = false;
             continueBtn.textContent = 'Continue';
             backBtn.disabled = false;
@@ -1539,6 +1569,29 @@
       var emailInput = document.getElementById('fn-email');
       var errEl = document.getElementById('fn-signup-error');
       var nextBtn = document.getElementById('fn-s13-email-continue');
+      // Verify -> capture -> reveal (tracker item
+      // for-product-signup-email-micro-step-foun-ns8uve): before the
+      // password field ever appears, (1) VERIFY the email — format
+      // (below, unchanged) then check-email.js's deliverability check
+      // (MX/A/AAAA-level, see lib/email-domain-check.js) — inline error on
+      // either failure; (2) CAPTURE it server-side by kicking off
+      // getOrStartPendingGeneration (the same real, billed pending-dream
+      // record start-pending-generation.js already creates), so an
+      // abandoner who never reaches the password field is still tied to a
+      // pending dream the existing abandoned-signup retention email
+      // (dream-webhook.js) can reach; (3) only THEN reveal the password
+      // field. Mirrors wizard.html's own Contact step, which already
+      // captures before its separate Signup screen appears — this brings
+      // start.html's combined email/password screen in line with that
+      // same shape.
+      //
+      // Token-guarded against a Back click (or the "Change email" link,
+      // once the password step exists) settling this async gate late:
+      // the topbar Back handler already bumps signupAttemptToken
+      // unconditionally on every click, screen-agnostic (see its own
+      // comment further down this file) — reused here as-is rather than
+      // introducing a dedicated token, same reasoning wireScreen13Fields'
+      // own reuse of this token gives.
       function tryAdvance(){
         var email = emailInput.value.trim();
         errEl.textContent = '';
@@ -1550,7 +1603,41 @@
         // #fn-email (there isn't one in normal usage, but defense in
         // depth costs nothing here) can't skip the check either.
         if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; track('signup_error_shown', { reason: 'invalid_email', variant: signupVariant }); return; }
-        renderPasswordStep(email);
+
+        nextBtn.disabled = true;
+        nextBtn.textContent = 'Checking…';
+        var myEmailStepToken = signupAttemptToken;
+        checkEmailAvailable(email).then(function(checkResult){
+          if(myEmailStepToken !== signupAttemptToken) return; // stale -- navigated away (Back) while this was in flight
+          if(!checkResult.deliverable){
+            nextBtn.disabled = false;
+            nextBtn.textContent = 'Continue';
+            errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+            track('signup_error_shown', { reason: 'email_undeliverable', variant: signupVariant });
+            return;
+          }
+          if(!checkResult.available){
+            nextBtn.disabled = false;
+            nextBtn.textContent = 'Continue';
+            errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+            track('signup_error_shown', { reason: 'already_registered', variant: signupVariant });
+            return;
+          }
+          // Capture — fires the real, billed pending-generation call (or
+          // reuses an already-in-flight/succeeded one for this exact
+          // email, see getOrStartPendingGeneration's own doc comment)
+          // BEFORE the password field ever appears. Deliberately NOT
+          // awaited: this runs in parallel with the rest of signup, same
+          // as it always has — only the call site moved earlier, not the
+          // "wait for it" behavior (still awaited via
+          // completeSignupAndAdvance's pendingPromise once the visitor
+          // actually submits). Record-it (isRecordMode) skips this
+          // entirely — no real dream text exists yet, see this same
+          // isRecordMode check further down this file for the identical
+          // reasoning.
+          if(!isRecordMode) getOrStartPendingGeneration(email);
+          renderPasswordStep(email);
+        });
       }
       nextBtn.addEventListener('click', tryAdvance);
       emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); tryAdvance(); } });

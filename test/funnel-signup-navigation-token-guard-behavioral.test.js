@@ -369,13 +369,17 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
 
 // ===========================================================================
 // Money-leak fix (tracker item for-product-money-leak-blocked-signups-e-
-// v2g1vi): check-email.js is called BEFORE getOrStartPendingGeneration/
-// attemptSignup fire, so a screen-13 submission for an email that already
-// has an account never burns a real, billed fal.ai generation (and never
-// even attempts a signup already known to be rejected).
+// v2g1vi), checked at the EMAIL step (tracker item
+// for-product-signup-email-micro-step-foun-ns8uve moved the "verify then
+// capture then reveal password" sequence earlier -- check-email.js is now
+// called BEFORE the password field is ever revealed, not just before
+// getOrStartPendingGeneration/attemptSignup fire at final submission), so a
+// screen-13 email step for an email that already has an account never
+// burns a real, billed fal.ai generation (and never even attempts a signup
+// already known to be rejected).
 // ===========================================================================
 
-test('start.html: screen 13 submission with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline, and stays on screen 13', async function (t) {
+test('start.html: screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline at the email step, and never reveals the password field', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -385,7 +389,7 @@ test('start.html: screen 13 submission with an email that already has an account
     var checkEmailCalls = [];
     await page.route('**/.netlify/functions/check-email', function (route) {
       checkEmailCalls.push(JSON.parse(route.request().postData()));
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
     });
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
       startPendingCalls.push(JSON.parse(route.request().postData()));
@@ -398,9 +402,8 @@ test('start.html: screen 13 submission with an email that already has an account
 
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    await signupFlow.advanceToPasswordStep(page, 'already-taken@example.com');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-s13-continue');
+    await page.fill('#fn-email', 'already-taken@example.com');
+    await page.click('#fn-s13-email-continue');
 
     await page.waitForFunction(function () {
       var errEl = document.getElementById('fn-signup-error');
@@ -413,11 +416,12 @@ test('start.html: screen 13 submission with an email that already has an account
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
     assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must not even attempt a signup already known to be rejected');
     assert.equal(await page.locator('#fn-email').count(), 1, 'must still be sitting on screen 13');
+    assert.equal(await page.locator('#fn-password').count(), 0, 'the password field must never have been revealed for a blocked email');
     assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14');
 
-    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-continue').disabled; });
+    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-email-continue').disabled; });
     var backDisabled = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
-    assert.equal(continueDisabled, false, 'Continue must be re-enabled after the blocked-email response, not left stuck disabled');
+    assert.equal(continueDisabled, false, 'the email step\'s Continue must be re-enabled after the blocked-email response, not left stuck disabled');
     assert.equal(backDisabled, false, 'Back must be re-enabled after the blocked-email response');
 
     var loginLinkHref = await page.locator('#fn-signup-error a').getAttribute('href');

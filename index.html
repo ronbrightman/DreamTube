@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>DreamTube — Your dreams come alive</title>
 <meta name="description" content="Your dreams come alive. Turn your dreams into videos with DreamTube.">
-<meta name="theme-color" content="#FBEFEA">
+<meta name="theme-color" content="#0c0a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="DreamTube">
@@ -17,52 +17,55 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 <style>
-  /* Welcome screen: page-scoped light "dawn" theme, matching the marketing
-     funnel (start.html's Advanced/pricing screens, and the separate
-     dreamtube-growth repo's funnel) that "Get Started" below hands off to.
-     Founder feedback: this screen was black and clashed with that light
-     pastel funnel one tap later. Token values are copied verbatim from
-     start.html's #app.funnel-app --dawn-1/2/3 / --fn-* variables (search
-     "--dawn-1" there) so the two screens match exactly. This is scoped to
-     this one file only — css/styles.css's shared dark theme (--void,
-     --bg-app, --text-primary, etc.) used by every other page is untouched. */
+  /* Welcome screen: page-scoped dark "night" theme (tracker item
+     for-product-realign-index-html-organic-w-lzbmfu, founder 07-31).
+     This file used to carry its OWN light "dawn" theme (see git history)
+     deliberately matched to the marketing funnel's THEN-light Advanced/
+     pricing screens — the founder had already killed exactly this kind of
+     light/dark whiplash once before (index.html was originally black,
+     clashing with that light funnel one tap later). Since then the
+     founder directed the whole app (Home, and separately the ad funnel's
+     own screens) to the same dark "night" language, which made this
+     file's light override the NEW inverted version of the same whiplash:
+     a light welcome screen handing off to a dark app. Fixed by reusing
+     Home's own night palette values verbatim (home.html's --home-ink/
+     --home-soft/--home-acc and its body background gradient — see that
+     file's own head-of-file comment) under this file's own --idx-* names
+     (same per-page-scoped-token convention as --dawn- and --fn- elsewhere
+     in this codebase) instead of inventing a third palette, so every entry
+     point (this screen, the funnel, Home) now reads as one continuous dark
+     product.
+
+     Deliberately NOT home.html's animated star field/aurora layers —
+     those are cheap (CSS-only, no JS/canvas) but this screen's whole job
+     is to be the fastest possible first paint for a brand-new visitor,
+     often on a worse connection than an already-installed user reopening
+     the app, so it stays limited to a single static gradient (one paint,
+     zero animation loop) per FOUNDER_PRINCIPLES.md's "light media over
+     heavy on mobile" principle. This is scoped to this one file only —
+     css/styles.css's shared dark theme (--void, --bg-app, --text-primary,
+     etc.) used by every other page is untouched. */
   :root{
-    --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
-    --fn-ink:#3A3350; --fn-ink-soft:#6E6480;
-    --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
-    --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+    --idx-ink:#eae7fb; --idx-soft:#a49dc4; --idx-acc:#9d90ff;
   }
-  body{ background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3)); }
+  body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   #app{ background:transparent; }
-  /* Headline uses the funnel's serif display font (like .fn-headline in
-     start.html); subline stays on the app's regular sans-serif body font
-     (like .fn-body-copy), just recolored for the light background.
-     Scoped under .welcome-body (not bare .wm-copy/.wm-subcopy) so this
+  /* Scoped under .welcome-body (not bare .wm-copy/.wm-subcopy) so this
      rule is always more specific than the base .wm-copy/.wm-subcopy
      rules in css/styles.css, regardless of <head> cascade order. */
-  .welcome-body .wm-copy{ font-family:var(--fn-font-display); color:var(--fn-ink); }
-  .welcome-body .wm-subcopy{ color:var(--fn-ink-soft); }
-  /* logo-v2.png has an opaque black background baked into the PNG itself
-     (it was designed for the old all-black theme). On this light dawn
-     background that black rounded square would otherwise look like a
-     broken leftover from the old theme, so it's framed as a deliberate
-     "badge" — a light card behind it with generous padding and its own
-     shadow, the same way an app icon keeps its own background color
-     regardless of the home-screen wallpaper behind it. The image itself
-     (size/border-radius) is untouched; only this wrapper is new. */
-  .welcome-body .wm-badge{
-    display:flex; align-items:center; justify-content:center;
-    margin:18px auto; padding:24px;
-    background:#FFFFFF; border-radius:48px;
-    box-shadow:0 16px 40px -14px rgba(58,51,80,.32);
-  }
-  .welcome-body .wm-badge .wm-visual{ margin:0; }
-  /* Matches the funnel's own .fn-btn-primary treatment exactly, so the
-     button looks the same one tap before and one tap after this screen. */
-  .welcome-body .btn-primary{ background:var(--fn-accent-grad); color:#fff; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); }
-  .welcome-body .btn-primary:hover{ filter:brightness(1.04); }
-  .welcome-body .btn-primary:active{ filter:brightness(0.96); }
-  .welcome-body .link-text{ color:var(--fn-ink-soft); }
+  .welcome-body .wm-copy{ color:var(--idx-ink); }
+  .welcome-body .wm-subcopy{ color:var(--idx-soft); }
+  /* logo-v2.png has an opaque black background baked into the PNG itself.
+     The old light "dawn" theme needed a white "badge" card behind it so
+     that black square didn't look like a broken leftover — on THIS dark
+     background it blends in naturally (same as it does on every other
+     page's plain black theme), so no special wrapper is needed here
+     anymore; .wm-visual renders exactly like login.html's own logo. */
+  .welcome-body .btn-primary{ background:var(--idx-acc); color:#fff; box-shadow:0 12px 26px -10px rgba(157,144,255,.45); }
+  .welcome-body .btn-primary:hover{ filter:brightness(1.08); }
+  .welcome-body .btn-primary:active{ filter:brightness(0.92); }
+  .welcome-body .link-text{ color:var(--idx-soft); }
+  .welcome-body .link-text a{ color:var(--idx-ink); }
 </style>
 
 <!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
@@ -121,7 +124,7 @@
 
 <div id="app">
   <div class="welcome-body">
-    <div class="wm-badge"><img class="wm-visual" src="assets/logo-v2.png" alt="DreamTube logo"></div>
+    <img class="wm-visual" src="assets/logo-v2.png" alt="DreamTube logo">
     <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
     <div class="wm-subcopy">Turn your dreams into videos.</div>
     <div class="wm-foot">
@@ -133,7 +136,11 @@
            confirmed "build the dream first, sign up after" seam. This is
            routing-only — wizard.html itself is unchanged, and does not
            read any URL params, so it works identically whether reached
-           from here or hit directly.
+           from here or hit directly. wizard.html's own Contact/Signup
+           steps then hand off into the SAME processing.html/start.html
+           post-signup tail the paid ad funnel uses (see
+           docs/JOURNEY_MANIFEST.md for the full, reconciled screen-by-
+           screen walkthrough of both entries).
 
            The PAID growth-funnel handoff is completely untouched by this:
            paid/ad traffic never passes through this button at all — ads
@@ -149,7 +156,7 @@
            tracker item for the earlier, held-back proposal of this exact
            change. -->
       <a class="btn btn-primary btn-block" href="wizard.html">Get Started</a>
-      <span class="link-text">Already have an account? <a href="login.html" style="color:var(--fn-ink); text-decoration:underline;">Log in</a></span>
+      <span class="link-text">Already have an account? <a href="login.html">Log in</a></span>
     </div>
   </div>
 </div>

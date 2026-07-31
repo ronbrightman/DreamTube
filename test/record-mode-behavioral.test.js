@@ -74,7 +74,26 @@ function blockThirdParty(page) {
   });
 }
 
-/** Records every POST to start-pending-generation (the generate-during-signup call) without letting it hang -- fulfills as a definitive failure (no pendingId) since these tests care about whether the call fires at all, not the generate-during-signup mechanism itself (see test/ui-behavioral.test.js for that coverage). */
+/**
+ * Records every POST to start-pending-generation (the generate-during-signup
+ * call) without letting it hang -- fulfills as a definitive failure (no
+ * pendingId) since these tests care about whether the call fires at all, not
+ * the generate-during-signup mechanism itself (see test/ui-behavioral.test.js
+ * for that coverage).
+ *
+ * Because this always fails, and getOrStartPendingGeneration's own reuse
+ * guard deliberately allows retrying a definitively-failed attempt (see that
+ * function's doc comment in start.html/wizard.html -- "nothing was spent on
+ * a failed attempt... retrying a failure is safe/correct, not a
+ * double-spend risk"), a normal (non-record-mode) run through this helper
+ * can legitimately fire TWO calls, not one: once when screen 13's email step
+ * captures (tracker item for-product-signup-email-micro-step-foun-ns8uve),
+ * and again on the password step's own submit, since the email-step attempt
+ * "definitively failed" and is therefore eligible for exactly this kind of
+ * retry. Record mode (isRecordMode) skips the call entirely at BOTH points,
+ * so it's unaffected -- see this helper's mode=record callers below, which
+ * assert a hard zero, not a range.
+ */
 function trackPendingGenerationCalls(page) {
   var calls = [];
   return page.route('**/.netlify/functions/start-pending-generation', function (route) {
@@ -151,7 +170,7 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
     await page.click('#fn-s13-continue');
 
     await page.waitForSelector('#fn-s14-continue', { timeout: 5000 });
-    assert.equal(pendingGenerationCalls.length, 1, 'a normal Build/Write signup must still fire exactly one start-pending-generation call');
+    assert.ok(pendingGenerationCalls.length >= 1, 'a normal Build/Write signup must still fire at least one start-pending-generation call (this helper always fails the call, so the email-step capture + password-step retry can legitimately both fire -- see trackPendingGenerationCalls\' own doc comment)');
 
     // Screen 14's Continue now completes the funnel directly -- see the
     // matching comment in the mode=record test above.

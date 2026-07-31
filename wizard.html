@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Build your dream — DreamTube</title>
-<meta name="theme-color" content="#FBEFEA">
+<meta name="theme-color" content="#0A0912">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="DreamTube">
@@ -101,19 +101,30 @@
 </div>
 
 <style>
-  /* Same "dawn" light funnel shell as start.html, copied verbatim (see
-     that file's own header comment for the full rationale) so this new
-     pre-signup flow looks and feels like one continuous piece of product
-     with the screens it hands off to, not a bolted-on new visual system. */
+  /* Dark "night" funnel shell (tracker item
+     for-product-realign-index-html-organic-w-lzbmfu, founder 07-31) —
+     this used to be a verbatim copy of start.html's OWN former light
+     "dawn" shell, back when start.html's Advanced/pricing screens were
+     still light. start.html's own funnel tail moved to a dark 'night'
+     phase for its remaining screens (tracker item
+     for-product-funnel-handoff-screens-theme-5ttymn) but this file was
+     never updated to match, leaving it the one light-themed screen on the
+     organic path — a real, felt "different pages" experience the founder
+     hit directly walking index.html -> wizard.html right after the
+     (already-dark) ad funnel. Values below are start.html's own resolved
+     'night' phase colors (see that file's PHASES.night constant and
+     applyPhase, ~start.html:1958) ported here directly as this file's
+     single, permanent theme — wizard.html never needs start.html's
+     multi-phase switching machinery (it only ever had ONE look to begin
+     with), so these are hardcoded, not phase-swapped. */
   #app.funnel-app{
-    --dawn-1:#FBEFEA; --dawn-2:#E9EAF5; --dawn-3:#E3E9F7;
-    --fn-ink:#3A3350; --fn-ink-soft:#6E6480; --fn-ink-faint:#9C93AC;
-    --fn-card:#FFFFFF; --fn-line:rgba(58,51,80,0.10);
+    --fn-ink:#FFFFFF; --fn-ink-soft:#C9C4DA; --fn-ink-faint:#8A84A0;
+    --fn-card:rgba(255,255,255,0.08); --fn-line:rgba(255,255,255,0.14);
     --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
     --fn-accent-solid:#7C82C4;
     --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
     --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
-    background:linear-gradient(160deg,var(--dawn-1),var(--dawn-2) 55%,var(--dawn-3));
+    background:linear-gradient(160deg,#211B33,#14121F 55%,#0A0912);
     font-family:var(--fn-font-body);
     /* #app's own base rule (css/styles.css) only sets min-height:100dvh
        -- a floor, not a cap. .sheet-overlay is position:absolute;inset:0
@@ -151,7 +162,7 @@
   .fn-spacer{ flex:1;}
 
   .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
-  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink); cursor:pointer; -webkit-tap-highlight-color:transparent;}
   .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
 
   /* "+N more" / "Show less" expander chip (Action step curation — tracker
@@ -163,9 +174,10 @@
   .fn-chip-more:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
 
   /* Character chips (Subject step) reuse create.html/start.html's exact
-     .char-chip/.char-chip-add classes, light-themed to match this shell —
-     see start.html's own identical override block for the same reasoning. */
-  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); color:#2C2846;}
+     .char-chip/.char-chip-add classes, dark-themed to match this shell —
+     see start.html's own identical override block (its 'night' phase) for
+     the same reasoning. */
+  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); color:var(--fn-ink);}
   #app.funnel-app .char-chip .chip-check{ border-color:var(--fn-ink-faint);}
   #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
   #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
@@ -174,22 +186,24 @@
   #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
   #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--fn-line); color:var(--fn-ink-soft);}
   #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
-  #app.funnel-app .sheet{ background:var(--fn-card); color:#2C2846; border-top-color:var(--fn-line); box-shadow:0 -20px 50px rgba(58,51,80,.18);}
-  #app.funnel-app .sheet-handle{ background:var(--fn-line);}
-  #app.funnel-app .sheet-title{ color:#2C2846;}
-  #app.funnel-app .char-mode-row .char-mode-btn{ background:#F3F1FA; border-color:var(--fn-line); color:var(--fn-ink-soft);}
+  /* .sheet/.sheet-handle/.sheet-title are DELIBERATELY not overridden here
+     anymore (unlike the old light "dawn" theme, which needed a light
+     override) -- css/styles.css's own base .sheet rules already resolve
+     dark (var(--bg-app), var(--border-strong), inherited white text) —
+     exactly this shell's own night look, with no override needed. */
+  #app.funnel-app .char-mode-row .char-mode-btn{ background:rgba(255,255,255,.05); border-color:var(--fn-line); color:var(--fn-ink-soft);}
   #app.funnel-app .char-mode-row .char-mode-btn.active{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-  #app.funnel-app .char-photo-preview{ background:#F3F1FA; border-color:var(--fn-line);}
+  #app.funnel-app .char-photo-preview{ background:rgba(255,255,255,.05); border-color:var(--fn-line);}
   #app.funnel-app .char-photo-empty{ color:var(--fn-ink-faint);}
   #app.funnel-app .char-photo-hint{ color:var(--fn-ink-soft);}
   #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
-  #app.funnel-app .btn-secondary:hover{ background:#F3F1FA; border-color:var(--fn-ink-faint);}
+  #app.funnel-app .btn-secondary:hover{ background:rgba(255,255,255,.05); border-color:var(--fn-ink-faint);}
 
   /* Style step (Step 5) reuses style.html's real .style-card/.sc-* classes
      from css/styles.css verbatim — same grid, same preview images. */
   #app.funnel-app .style-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
 
-  textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:#2C2846; font-size:15px; width:100%; margin-bottom:12px; display:block;}
+  textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--fn-ink); font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
   textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
   textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
@@ -201,11 +215,16 @@
 
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
 
-  .fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
+  /* Flat white CTA instead of the pastel --fn-accent-grad -- reads as
+     intentional/high-contrast against this shell's near-black background,
+     same treatment start.html's own 'night' phase gives .fn-btn-primary
+     (~start.html:220), ported here as the permanent default since this
+     shell has no light phase to fall back to anymore. */
+  .fn-btn-primary{ background:#fff; color:#221d2c; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:none; cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
   .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
   .fn-small-link{ background:none; border:none; color:var(--fn-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
 
-  .fn-price-note{ font-size:12px; color:#6E6480; text-align:center; margin:2px 0 0;}
+  .fn-price-note{ font-size:12px; color:var(--fn-ink-soft); text-align:center; margin:2px 0 0;}
 
   /* "+ Something else" progressive-disclosure reveal (per the spec: a
      collapsed tap that reveals a small text input, not an always-visible
@@ -216,7 +235,7 @@
   /* POV toggle (Action step) — a plain accessible checkbox styled as a
      switch, off by default per the spec. */
   .fn-toggle-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fn-card); border:1px solid var(--fn-line); margin-bottom:18px;}
-  .fn-toggle-row span{ font-size:13.5px; font-weight:700; color:#2C2846;}
+  .fn-toggle-row span{ font-size:13.5px; font-weight:700; color:var(--fn-ink);}
   .fn-switch{ position:relative; width:42px; height:24px; flex:none;}
   .fn-switch input{ opacity:0; width:0; height:0;}
   .fn-switch .fn-switch-track{ position:absolute; inset:0; background:var(--fn-line); border-radius:100px; transition:.15s; cursor:pointer;}
@@ -1066,23 +1085,26 @@
   }
 
   /**
-   * check-email.js availability check (tracker item
-   * for-product-money-leak-blocked-signups-e-v2g1vi) — fired BEFORE
+   * check-email.js availability + deliverability check (tracker items
+   * for-product-money-leak-blocked-signups-e-v2g1vi and
+   * for-product-signup-email-micro-step-foun-ns8uve) — fired BEFORE
    * startPendingGeneration, so a signup that's guaranteed to be rejected
    * (register-account.js's own E8 email_taken) never gets a real, billed
-   * fal.ai generation started for it in the first place. Resolves to a
-   * plain boolean, never rejects: `true` means "proceed exactly as
-   * before" (either genuinely available, or the check itself couldn't be
-   * completed — malformed response, rate-limited, network error) and
-   * `false` means "definitely already registered, block." Resilient
-   * fallback on any failure of THIS check — fail OPEN to the existing
-   * behavior rather than newly blocking a real user's funnel over an
+   * fal.ai generation started for it in the first place, and an obviously
+   * mistyped domain is caught inline before this Contact step ever
+   * advances to the separate Signup screen. Resolves to
+   * { available, deliverable }, never rejects. Resilient fallback on any
+   * failure of THIS check — fail OPEN to the existing behavior (both
+   * true) rather than newly blocking a real user's funnel over an
    * ancillary check's own infrastructure hiccup, same philosophy as
    * startPendingGeneration's own resilient-fallback comment above (and
    * check-email.js's own header comment on the same tradeoff). This
    * endpoint is an additional, early UX nicety — register-account.js's
    * own E8 check downstream is still the authoritative one regardless of
-   * what this reports.
+   * what this reports. `deliverable` is treated as true unless the server
+   * EXPLICITLY says false — an older/mocked response with no
+   * `deliverable` key at all is "unknown," not "bad," same resilient
+   * posture.
    */
   function checkEmailAvailable(email){
     return fetch('/.netlify/functions/check-email', {
@@ -1093,11 +1115,11 @@
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
       if(result.ok && result.data && result.data.ok !== false && typeof result.data.available === 'boolean'){
-        return result.data.available;
+        return { available: result.data.available, deliverable: result.data.deliverable !== false };
       }
-      return true; // resilient fallback -- see this function's own doc comment
+      return { available: true, deliverable: true }; // resilient fallback -- see this function's own doc comment
     }).catch(function(){
-      return true; // resilient fallback -- see this function's own doc comment
+      return { available: true, deliverable: true }; // resilient fallback -- see this function's own doc comment
     });
   }
 
@@ -1256,9 +1278,20 @@
       // also bumps this token (see the topbar Back handler below) since
       // Continue no longer advances synchronously, so there's now a real
       // window where Back can be clicked before this resolves.
-      pendingGenerationPromise = checkEmailAvailable(contactEmail).then(function(available){
+      pendingGenerationPromise = checkEmailAvailable(contactEmail).then(function(checkResult){
         if(myToken !== pendingGenerationToken) return; // stale -- a newer attempt (or a Back navigation) has since superseded this
-        if(!available){
+        // deliverable (tracker item for-product-signup-email-micro-step-
+        // foun-ns8uve) -- checked before available, matching start.html's
+        // own screen-13 email step: an obviously mistyped domain is worth
+        // surfacing on its own terms, not lumped in with "someone else's
+        // account already uses this."
+        if(!checkResult.deliverable){
+          continueBtn.disabled = false;
+          continueBtn.textContent = 'Continue';
+          errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+          return;
+        }
+        if(!checkResult.available){
           continueBtn.disabled = false;
           continueBtn.textContent = 'Continue';
           errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';

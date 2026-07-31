@@ -156,7 +156,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
   process.env.RESEND_API_KEY = 'test-resend-key';
   ['start-pending-generation', 'register-account', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
     'check-email', 'lib/job-owners', 'lib/pending-dreams', 'lib/account-store', 'lib/first-dream-email-store',
-    'lib/first-dream-email-sender', 'lib/generation-completion-store', 'lib/rate-limit'
+    'lib/first-dream-email-sender', 'lib/generation-completion-store', 'lib/rate-limit', 'lib/email-domain-check'
   ].forEach(function (mod) {
     var resolved = require.resolve('../netlify/functions/' + mod);
     delete require.cache[resolved];
@@ -168,6 +168,14 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
   var videoStatusHandler = require('../netlify/functions/video-status').handler;
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
   var checkEmailHandler = require('../netlify/functions/check-email').handler;
+  // check-email.js's deliverability check is a real DNS lookup (see
+  // lib/email-domain-check.js) -- mocked here so this real-server-handler
+  // chain never depends on real network/DNS resolution (same reasoning as
+  // the resend/fal-webhook fetch stub above and the swapped-out mock video
+  // URL below). FUNNEL_EMAIL's domain is a real one either way, but this
+  // keeps the test deterministic and fast regardless of this sandbox's own
+  // outbound-network reliability.
+  require('../netlify/functions/lib/email-domain-check').isDomainDeliverable = function () { return Promise.resolve(true); };
 
   var resendCalls = [];
   global.fetch = async function (url, opts) {

@@ -361,6 +361,53 @@ test('wizard.html: check-email.js failing outright (network error / 5xx / rate-l
   }
 });
 
+// ===========================================================================
+// Deliverability check (tracker item for-product-signup-email-micro-step-
+// foun-ns8uve): check-email.js's lightweight MX/A/AAAA existence check,
+// wired into Contact capture alongside the availability check above.
+// ===========================================================================
+
+test('wizard.html: Contact-capture with an email whose domain has no MX/A/AAAA records never fires start-pending-generation, shows an inline typo-check message, and never advances to Signup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: false }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-undeliverable-1', operationName: 'fal:fake-model:req-undeliverable-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'typo@gmial-typo-domain-xyz.invalid');
+    await page.click('#fn-contact-continue');
+
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('contact-error');
+      return errEl && errEl.textContent.indexOf('check for a typo') !== -1;
+    }, null, { timeout: 5000 });
+
+    assert.equal(startPendingCalls.length, 0, 'an undeliverable email must never trigger a real, billed start-pending-generation call');
+    assert.equal(await page.locator('#fn-username').count(), 0, 'must never have advanced to the Signup step for an undeliverable email');
+    assert.equal(await page.locator('#fn-contact-continue').isDisabled(), false, 'Continue must be re-enabled after the undeliverable-email response');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: Back from Signup to contact-capture then Continue again does NOT re-submit start-pending-generation (no double fal.ai charge/token spend) -- see tracker item wizard-html-no-guard-against-resubmittin-n5b5k2', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

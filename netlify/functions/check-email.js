@@ -1,10 +1,10 @@
 // netlify/functions/check-email.js
 //
-// POST { email } -> { ok:true, available:true|false }
+// POST { email } -> { ok:true, available:true|false, deliverable:true|false }
 //
-// Cheap, read-only "does an account already exist under this email"
-// check — added to close the money-leak in wizard.html's/start.html's
-// "generate during signup" funnel (tracker item
+// Cheap, read-only "does an account already exist under this email" check
+// — added to close the money-leak in wizard.html's/start.html's "generate
+// during signup" funnel (tracker item
 // for-product-money-leak-blocked-signups-e-v2g1vi): both funnels used to
 // fire start-pending-generation.js (a real, billed fal.ai submission) the
 // moment an email was captured, fully in parallel with the signup step —
@@ -21,16 +21,33 @@
 // canonical, defense-in-depth-checked way to answer "does this email
 // resolve to a real account").
 //
-// Enumeration-safe by design: the response is ONLY { ok, available } —
-// never a username, never any other account field, regardless of which
-// account (if any) the email resolves to. Still, "does this email have an
-// account" is itself a real user-enumeration surface (an attacker could
-// script through a wordlist of addresses), so this is rate-limited
-// per-IP, same shape/convention as register-account.js's own E9 (a single
-// daily per-IP cap via lib/rate-limit.js — no per-identifier/per-email
-// bucket, for the same reasoning register-account.js's own header comment
-// gives: the thing under contention here is which addresses exist, not a
-// single identifier worth bucketing separately).
+// `deliverable` (tracker item for-product-signup-email-micro-step-foun-
+// ns8uve): a lightweight, no-vendor MX/A/AAAA existence check on the
+// email's domain — see lib/email-domain-check.js's own header comment for
+// the full reasoning (fail-open by design; only a domain with NEITHER an
+// MX NOR an A/AAAA record reports false). Bundled into this SAME round
+// trip (run in parallel with the account-availability lookup below via
+// Promise.all, not a second request) rather than a separate endpoint,
+// since both callers (start.html's screen-13 email step, wizard.html's
+// Contact step) need both answers at the exact same "should we advance
+// past the email field" decision point, and there is no reason to make a
+// visitor wait on two sequential network round trips for one decision.
+// A malformed address with no extractable domain (should already be
+// caught client-side by the format check both callers run first, but
+// checked here too as defense-in-depth) skips the DNS lookup entirely and
+// reports deliverable:false directly.
+//
+// Enumeration-safe by design: the response is ONLY { ok, available,
+// deliverable } — never a username, never any other account field,
+// regardless of which account (if any) the email resolves to. Still,
+// "does this email have an account" is itself a real user-enumeration
+// surface (an attacker could script through a wordlist of addresses), so
+// this is rate-limited per-IP, same shape/convention as
+// register-account.js's own E9 (a single daily per-IP cap via
+// lib/rate-limit.js — no per-identifier/per-email bucket, for the same
+// reasoning register-account.js's own header comment gives: the thing
+// under contention here is which addresses exist, not a single
+// identifier worth bucketing separately).
 //
 // Error codes (local to this function, small-number scheme like
 // generate-avatar.js/request-magic-link.js):
@@ -50,6 +67,7 @@
 
 var accountStore = require('./lib/account-store');
 var rateLimit = require('./lib/rate-limit');
+var emailDomainCheck = require('./lib/email-domain-check');
 
 // 2x register-account.js's own MAX_REGISTRATIONS_PER_IP_PER_DAY default
 // (20) rather than an unreviewed round number — this endpoint is cheaper
@@ -93,6 +111,23 @@ exports.handler = async function (event) {
   // applies its own defense-in-depth "record.email must still match"
   // check before ever handing back a hit — see account-store.js's header
   // comment. Reused as-is, not reimplemented.
-  var existing = await accountStore.getByEmail(event, email);
-  return { statusCode: 200, body: JSON.stringify({ ok: true, available: !existing }) };
+  //
+  // Domain extraction for the deliverability check: a malformed address
+  // with no '@' or an empty domain portion (the client-side format check
+  // in start.html/wizard.html should already have caught this before ever
+  // calling here — this is defense-in-depth, same posture as this
+  // codebase's other duplicated format checks) skips the DNS lookup
+  // outright and reports deliverable:false directly, same end result as
+  // a lookup that resolved to "no records".
+  var atIndex = email.indexOf('@');
+  var domain = atIndex > -1 ? email.slice(atIndex + 1).trim() : '';
+  var domainLooksValid = !!domain && domain.indexOf('.') > 0;
+
+  var results = await Promise.all([
+    accountStore.getByEmail(event, email),
+    domainLooksValid ? emailDomainCheck.isDomainDeliverable(domain) : Promise.resolve(false)
+  ]);
+  var existing = results[0];
+  var deliverable = results[1];
+  return { statusCode: 200, body: JSON.stringify({ ok: true, available: !existing, deliverable: deliverable }) };
 };
