@@ -101,6 +101,26 @@ test('the fal submission URL carries a fal_webhook query param pointing at dream
   assert.equal(decoded, 'https://my-real-host.netlify.app/.netlify/functions/dream-webhook?pendingId=' + data.pendingId);
 });
 
+// ----- Routing-intentionality check (tracker item for-product-cost-me-
+// photo-dreams-run-on--o3h0vo) — same selfPhoto truthy-photoDataUrl check
+// as generate-video.js's own handler (this file requires genVideo.callFal/
+// callFalReferenceToVideo directly, never reimplements the routing), so
+// this wizard entry point gets the identical regression lock. -----
+
+test('a "Me" character with a description but NO photoDataUrl does NOT take the reference-to-video path from the wizard entry point either', async function () {
+  var capturedUrl = null;
+  global.fetch = async function (url) {
+    capturedUrl = url;
+    return { ok: true, status: 200, json: async function () { return { request_id: 'req-no-photo' }; } };
+  };
+  var res = await handler(genEvent({
+    body: { email: 'wizard-no-photo@example.com', characters: [{ name: 'Me', isSelf: true, description: 'tall with short dark hair' }] }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.ok(capturedUrl);
+  assert.doesNotMatch(capturedUrl, /reference-to-video/, 'no photo was attached — this must not hit the expensive reference-to-video endpoint');
+});
+
 test('balance under 100 -> E7, fal never called, pending record still created but never gets an operationName', async function () {
   var calls = 0;
   global.fetch = async function () { calls++; return { ok: true, status: 200, json: async function () { return {}; } }; };
