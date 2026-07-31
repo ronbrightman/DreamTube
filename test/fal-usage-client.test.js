@@ -49,6 +49,35 @@ function installFetchSpy(responses) {
   return calls;
 }
 
+// ===== the test-environment guard itself (isolation test, same house
+// pattern as test/server-analytics-containment.test.js lines ~85-98 for
+// posthog-capture.js's byte-identical guard) =====
+//
+// Every other test in this file calls installFetchSpy() first, which marks
+// the fetch double BEFORE fetchUsage() runs -- so none of them prove the
+// guard actually suppresses anything absent that marker. This test
+// installs an UNMARKED recorder (deliberately not calling
+// markInstalledFetchAsTestDouble) so it stands in for the real wire: if the
+// guard were broken, this is the request that would carry a real
+// FAL_ADMIN_KEY out to api.fal.ai.
+test('fetchUsage: absent a marked test double, wouldEscapeToRealNetwork() is true and fetchUsage() short-circuits to suppressed_non_production_run with ZERO real fetch calls', async function () {
+  var calls = [];
+  global.fetch = async function (url, opts) {
+    calls.push({ url: url, opts: opts });
+    return { ok: true, status: 200, json: async function () { return { time_series: [], has_more: false }; }, text: async function () { return 'ok'; } };
+  };
+  // Deliberately NOT calling markInstalledFetchAsTestDouble() here.
+
+  assert.equal(falUsageClient.isNonProductionRun(), true, 'this assertion runs under `node --test`, so the guard must be active right now');
+  assert.equal(falUsageClient.wouldEscapeToRealNetwork(), true, 'no marked test double is installed, so firing right now would escape to the real network');
+
+  var res = await falUsageClient.fetchUsage('2026-07-30', '2026-07-30');
+
+  assert.equal(res.ok, false);
+  assert.equal(res.error, 'suppressed_non_production_run');
+  assert.equal(calls.length, 0, 'no outbound request at all -- FAL_ADMIN_KEY must never hit the wire from a test process');
+});
+
 test('fetchUsage: FAL_ADMIN_KEY missing -> { ok:false, error: missing_fal_admin_key }, never calls fetch', async function () {
   delete process.env.FAL_ADMIN_KEY;
   var calls = installFetchSpy([{ body: { time_series: [], has_more: false } }]);

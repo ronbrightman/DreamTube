@@ -183,6 +183,56 @@ test('reconcileDate: the fal API call throwing (network failure) -> ok:false, do
   assert.match(result.error, /fal_usage_network_failure/);
 });
 
+test('reconcileDate: Blobs write failing -- ok:false with blobs_write_failed, does not crash', async function () {
+  installFetchSpy({ falBody: usageBody([{ endpoint_id: 'fal-ai/veo3.1/lite', quantity: 8, unit_price: 0.03, cost_total: 0.24 }]) });
+  mockBlobs.setWriteOverride(reconcile.STORE_NAME, function () { return new Error('quota exceeded'); });
+
+  var result = await reconcile.reconcileDate(fakeEvent({}), '2026-07-30');
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /^blobs_write_failed/);
+  assert.match(result.error, /quota exceeded/);
+});
+
+test('reconcileDate: PostHog fire failing/throwing -- reconciliation itself still returns its normal ok:true success result (fire-and-forget)', async function () {
+  installFetchSpy({
+    falBody: usageBody([{ endpoint_id: 'fal-ai/veo3.1/lite', quantity: 8, unit_price: 0.03, cost_total: 0.24 }]),
+    posthogStatus: 500
+  });
+
+  var result = await reconcile.reconcileDate(fakeEvent({}), '2026-07-30');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.date, '2026-07-30');
+  assert.equal(result.totalUsd, 0.24);
+
+  var store = require('@netlify/blobs').getStore({ name: reconcile.STORE_NAME });
+  var persisted = await store.get('reconciled:2026-07-30');
+  assert.equal(persisted.totalUsd, 0.24, 'the Blobs write must still have happened despite the PostHog failure');
+});
+
+test('reconcileDate: PostHog fire throwing outright (network failure) -- reconciliation itself is unaffected', async function () {
+  var falCalls = [];
+  global.fetch = async function (url) {
+    if (typeof url === 'string' && url.indexOf('api.fal.ai') !== -1) {
+      falCalls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async function () { return usageBody([{ endpoint_id: 'fal-ai/veo3.1/lite', quantity: 8, unit_price: 0.03, cost_total: 0.24 }]); }
+      };
+    }
+    throw new Error('ECONNRESET talking to PostHog');
+  };
+  markInstalledFetchAsTestDouble();
+
+  var result = await reconcile.reconcileDate(fakeEvent({}), '2026-07-30');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.totalUsd, 0.24);
+  assert.equal(falCalls.length, 1);
+});
+
 test('reconcileDate: rerunning the same date is idempotent -- overwrites with the freshly recomputed total rather than accumulating', async function () {
   installFetchSpy({ falBody: usageBody([{ endpoint_id: 'fal-ai/veo3.1/lite', quantity: 8, unit_price: 0.03, cost_total: 0.24 }]) });
   var first = await reconcile.reconcileDate(fakeEvent({}), '2026-07-30');

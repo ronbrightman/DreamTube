@@ -23,7 +23,7 @@ test('categorizeEndpoint: every known app-image endpoint classifies as app-image
 
 test('categorizeEndpoint: the app\'s non-video/non-image fal calls (LLM, Whisper) classify as app-other, not creative', function () {
   assert.equal(categorizeEndpoint('fal-ai/whisper'), CATEGORIES.APP_OTHER);
-  assert.equal(categorizeEndpoint('fal-ai/openrouter/router/openai/v1/chat/completions'), CATEGORIES.APP_OTHER);
+  assert.equal(categorizeEndpoint('openrouter/router/openai/v1/chat/completions'), CATEGORIES.APP_OTHER);
 });
 
 test('categorizeEndpoint: an endpoint this app never calls classifies as creative (elimination-based split)', function () {

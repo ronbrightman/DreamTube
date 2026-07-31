@@ -17,9 +17,21 @@
 //   image: generate-image.js — fal-ai/flux/dev; generate-avatar.js —
 //     fal-ai/flux/schnell
 //   other (real app cost, but neither video nor image generation):
-//     interpret-dream.js/rewrite-dream-story.js — fal's openrouter LLM
-//     passthrough (fal-ai/openrouter/...); transcribe-audio.js —
-//     fal-ai/whisper
+//     interpret-dream.js/rewrite-dream-story.js call
+//     https://fal.run/openrouter/router/openai/v1/chat/completions (see
+//     both files' own header comments) — that URL has NO 'fal-ai/' segment
+//     at all; 'openrouter/router' is fal's own distinct provider namespace
+//     for its OpenRouter passthrough, confirmed against fal's public model
+//     catalog page (fal.ai/models/openrouter/router/openai/v1/chat/
+//     completions/api — page title and JS-client usage both show
+//     fal.subscribe("openrouter/router/openai/v1/chat/completions"), with
+//     sibling models under the same namespace at openrouter/router/openai/
+//     v1/responses, openrouter/router/openai/v1/embeddings, and
+//     openrouter/router/vision). An earlier version of this file guessed
+//     'fal-ai/openrouter/' here, which never matches the real endpoint_id
+//     fal reports for these calls — silently misclassifying real
+//     interpret-dream/rewrite-dream-story spend as 'creative' instead of
+//     'app-other'. transcribe-audio.js — fal-ai/whisper
 //
 // CREATIVE (growth's ad-creative generation): everything that does NOT
 // match a known app prefix above. This is an ELIMINATION-based split, not
@@ -39,7 +51,7 @@
 
 var APP_VIDEO_PREFIXES = ['fal-ai/veo3.1', 'fal-ai/wan/'];
 var APP_IMAGE_PREFIXES = ['fal-ai/flux/'];
-var APP_OTHER_PREFIXES = ['fal-ai/whisper', 'fal-ai/openrouter/'];
+var APP_OTHER_PREFIXES = ['fal-ai/whisper', 'openrouter/router/'];
 
 var CATEGORIES = {
   APP_VIDEO: 'app-video',
