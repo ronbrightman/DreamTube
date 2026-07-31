@@ -151,7 +151,19 @@ test('a NEW claim (fresh lastClaimAt) after an earlier push gets its own fresh p
   assert.equal(mockWebPush.getSentCalls().length, 1);
 
   // Grace claims again (a new, later lastClaimAt), and THAT cooldown also elapses.
-  var secondLastClaimAt = Date.now() - entitlements.CLAIM_COOLDOWN_MS - (1000);
+  // Forced to be strictly greater than firstLastClaimAt rather than a bare
+  // second Date.now() read -- tracker item for-product-pre-existing-red-
+  // test-on-mai-hxtm53: on a fast enough run (mocked Blobs/web-push, no
+  // real I/O latency), both Date.now() calls in this test can land in the
+  // SAME millisecond, making firstLastClaimAt === secondLastClaimAt. Since
+  // send-daily-claim-pushes.js's dedup key is 'daily-claim-available:' +
+  // email + ':' + (lastClaimAt + CLAIM_COOLDOWN_MS), an identical
+  // lastClaimAt collapses onto the SAME dedup key as the first claim, and
+  // the (working-as-designed) dedup guard correctly refuses to send a
+  // second push for what it sees as the same availability window -- a
+  // real deterministic test-timing bug, not a product bug in the dedup
+  // logic itself.
+  var secondLastClaimAt = Math.max(Date.now() - entitlements.CLAIM_COOLDOWN_MS - 1000, firstLastClaimAt + 1);
   await entitlements.setEntitlement(event, 'grace@example.com', { tokens: { balance: 70, lastClaimAt: secondLastClaimAt, streak: 2 } });
   await sendDailyClaimPushes.scanAndSend(fakeEvent({}));
 
