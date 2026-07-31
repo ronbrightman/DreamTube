@@ -92,15 +92,12 @@
   --home-soft:#a49dc4;
   --home-line:rgba(157,144,255,.32);
   --home-acc:#9d90ff;
-  /* The single source of truth for how much vertical space the OVERLAID
-     night dock occupies. The dock is absolutely positioned (content
-     scrolls behind it, per the mock), so nothing reserves this space
-     automatically — .scroll-area's bottom padding and the toast both read
-     this variable rather than each hardcoding their own copy of the bar's
-     height, which is exactly how a "content hidden behind the bar" bug
-     creeps back in after a later height tweak. */
-  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
 }
+/* --nav-clearance now lives in the shared css/styles.css :root (moved
+   there when the Bar A night dock became the shared bottom nav on every
+   page, not just this one — tracker item
+   for-product-urgent-founder-roll-the-new--8pyek3). .scroll-area's
+   bottom padding below and .toast still read the same shared variable. */
 body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(--home-ink); }
 #app{ overflow:hidden; }
 
@@ -246,74 +243,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .vcard-slot.is-next .vcard-slot-thumb{ border-color:rgba(157,144,255,.55); }
 .vcard-slot.is-next .vcard-slot-label{ color:var(--home-soft); }
 
-/* ===================== Bar A — the anchored "night dock" =====================
-   Direction A of the founder-approved bottom-bar mock: a translucent,
-   blurred bar anchored to the bottom of #app that content scrolls BEHIND
-   (overlay positioning, not the sticky in-flow .bottom-nav every other
-   page still uses), with labels, an in-row 44px gradient "+" (not a
-   protruding one), and the account's own avatar standing in for the
-   Profile tab's icon.
-
-   SCOPED TO THIS PAGE ONLY, deliberately -- a separate, newer visual
-   language (Bar A) from the plain .bottom-nav home.html/explore.html
-   share via js/bottom-nav.js (see that file's own header comment).
-   Home/Explore/+/Profile everywhere is the founder-approved end state
-   (Ron, 2026-07-29 + his Bar A mock approval); unifying these two
-   visual systems into one shared renderer is a real, separate restyle
-   question, not yet decided. */
-.night-dock{
-  position:absolute; left:0; right:0; bottom:0; z-index:9;
-  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
-  display:flex; align-items:center; justify-content:space-around;
-  background:rgba(12,10,26,.72);
-  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
-  border-top:1px solid rgba(157,144,255,.22);
-}
-/* Blur is decorative, never load-bearing: without backdrop-filter support
-   the bar must still be opaque enough to read against scrolling content. */
-@supports not (backdrop-filter:blur(1px)){
-  .night-dock{ background:rgba(12,10,26,.95); }
-}
-.night-dock-item{
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-  width:64px; min-height:44px; /* a real 44px tap target, not just the glyph */
-  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
-  text-decoration:none; cursor:pointer; transition:color .15s ease;
-  -webkit-tap-highlight-color:transparent;
-}
-.night-dock-item .nav-icon{ font-size:22px; display:block; }
-.night-dock-item.active{ color:var(--home-ink); }
-.night-dock-item:active{ transform:scale(.92); }
-.night-dock-create{
-  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
-  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
-  display:flex; align-items:center; justify-content:center;
-  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
-  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
-  -webkit-tap-highlight-color:transparent;
-}
-.night-dock-create .icon{ font-size:24px; }
-.night-dock-create:hover{ filter:brightness(1.06); }
-.night-dock-create:active{ transform:scale(.94); }
-/* Avatar-as-Profile-icon (the YouTube "You" treatment the spec asks for) —
-   the same Me-character photo/initial the identity anchor above shows,
-   rendered at nav size. */
-.night-dock-avatar{
-  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
-  border:1.5px solid var(--home-line);
-  display:flex; align-items:center; justify-content:center;
-  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
-}
-.night-dock-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
-.night-dock-item.active .night-dock-avatar{ border-color:var(--home-acc); }
-/* .nav-badge-dot needs no override — its ring already reads var(--bg-app),
-   which this block redefines to #0c0a1a above. */
+/* Bar A / the "night dock" bottom nav (.night-dock*) now lives in the
+   shared css/styles.css — rendered here (and on home.html/explore.html/
+   result.html) by js/bottom-nav.js. See that file's own header comment
+   and css/styles.css's own comment above .night-dock for the full story
+   of why this moved out of being scoped to this page only. */
 
 .toast{ bottom:calc(var(--nav-clearance) + 20px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); }
 </style>
 </head>
 <body>
-
+<!-- cache-bust 2026-07-31T09:20Z: Bar A dock now shared via js/bottom-nav.js (for-product-urgent-founder-roll-the-new--8pyek3) -->
 <div id="app" class="scroll-shell">
   <!-- Sky layers — purely decorative, pointer-events:none, behind everything
        (see the page-scoped <style> block above). -->
@@ -387,27 +327,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   </div>
   </div>
 
-  <!-- Bar A, the anchored night dock (Part 3 of the approved spec). Sits
-       OUTSIDE .profile-fg and is absolutely positioned, so page content
-       scrolls behind it; .scroll-area's --nav-clearance padding is what
-       keeps the last tile row reachable. Placed before the sheets/modals in
-       the DOM and at a lower z-index than .sheet-overlay, so an open sheet
-       always covers it. -->
-  <nav class="night-dock" aria-label="Main">
-    <a class="night-dock-item" href="home.html"><div class="nav-icon icon" id="dock-icon-home"></div><span class="night-dock-label">Home</span></a>
-    <a class="night-dock-item" href="explore.html"><div class="nav-icon icon" id="dock-icon-explore"></div><span class="night-dock-label">Explore</span></a>
-    <a class="night-dock-create" href="create.html" aria-label="Create"><span class="icon" id="dock-icon-create"></span></a>
-    <a class="night-dock-item active" href="profile.html" id="nav-profile" aria-current="page">
-      <!-- The avatar is aria-hidden: it's a decorative stand-in for the tab
-           icon (the YouTube "You" treatment), and the label below already
-           names the destination — without this, a screen reader announces
-           the account's initial as part of the tab name. -->
-      <div class="nav-icon-badge-wrap" aria-hidden="true">
-        <i class="night-dock-avatar" id="dock-avatar"></i>
-        <span class="nav-badge-dot" id="nav-profile-badge" hidden></span>
-      </div><span class="night-dock-label">Profile</span>
-    </a>
-  </nav>
+  <!-- Bar A, the anchored night dock, rendered by the shared
+       js/bottom-nav.js (BottomNav.mount() call below) -- same renderer as
+       home.html/explore.html/result.html now (tracker item
+       for-product-urgent-founder-roll-the-new--8pyek3). Sits OUTSIDE
+       .profile-fg and is absolutely positioned, so page content scrolls
+       behind it; .scroll-area's --nav-clearance padding is what keeps the
+       last tile row reachable. Placed before the sheets/modals in the DOM
+       and at a lower z-index than .sheet-overlay, so an open sheet always
+       covers it. -->
+  <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
   <div class="sheet-overlay" id="sheet-account-overlay">
     <div class="sheet">
@@ -772,6 +701,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/dream-cards.js"></script>
+<script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
@@ -801,17 +731,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 
   document.getElementById('account-btn').innerHTML = Icons.settings;
   document.getElementById('profile-avatar-edit-badge').innerHTML = Icons.pencil;
-  // Night dock (Bar A) icons. The dock draws inactive tabs as LINE glyphs
-  // and the active one filled — and Profile is always the active tab here,
-  // drawn as the account's own avatar rather than a glyph at all (the
-  // YouTube "You" treatment; renderIdentity() below fills it). So Home and
-  // Explore are only ever inactive on this page: Explore's existing
-  // Icons.compass is already a line glyph, but Icons.home is filled (it's
-  // home.html's own ACTIVE tab), which is why js/icons.js gained
-  // Icons.homeOutline as its line-variant pair.
-  document.getElementById('dock-icon-home').innerHTML = Icons.homeOutline;
-  document.getElementById('dock-icon-explore').innerHTML = Icons.compass;
-  document.getElementById('dock-icon-create').innerHTML = Icons.plus;
   document.getElementById('feedback-cta-icon').innerHTML = Icons.megaphone;
   document.getElementById('feedback-cta-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('support-row-icon').innerHTML = Icons.messageCircle;
@@ -881,18 +800,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     } else {
       avatarEl.textContent = '🌙';
     }
-    // Avatar-as-Profile-icon in the night dock (Part 3 of the spec) — the
-    // SAME Me character, not a second identity source, so an edit made in
-    // the sheet below updates both the header and the nav in one call.
-    // Falls back to the first letter of the display name (the mock's own
-    // treatment), never to a placeholder glyph that would read as "not
-    // signed in".
-    var dockAvatar = document.getElementById('dock-avatar');
-    if(me && me.photoDataUrl){
-      dockAvatar.innerHTML = '<img src="'+esc(me.photoDataUrl)+'" alt="">';
-    } else {
-      dockAvatar.textContent = (displayName || '?').trim().charAt(0).toUpperCase();
-    }
+    // Bar A dock (shared js/bottom-nav.js renderer) — re-mount so its
+    // avatar-as-Profile-icon reflects the SAME Me character as the header
+    // above on every call, including right after an identity-edit save.
+    // BottomNav computes that avatar itself straight from DreamStore, so
+    // this is the one call that keeps both renders in sync.
+    BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'profile' });
   }
   renderIdentity();
 

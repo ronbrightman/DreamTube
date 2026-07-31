@@ -548,7 +548,7 @@ test('profile.html: the dock overlays the content, and --nav-clearance keeps the
   }
 });
 
-test('explore.html is untouched by this build — it keeps its existing .bottom-nav and gains no night dock', async function (t) {
+test('explore.html now shares the exact same Bar A night dock as profile.html — tracker item for-product-urgent-founder-roll-the-new--8pyek3', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
   try {
@@ -558,16 +558,40 @@ test('explore.html is untouched by this build — it keeps its existing .bottom-
     await mockTokenStatus(page, {});
     await seedUser(page, { dreams: [] });
     await safeGoto(page, baseUrl + '/explore.html');
-    await page.waitForSelector('.bottom-nav', { timeout: 5000 });
+    await page.waitForSelector('.night-dock', { timeout: 5000 });
 
-    assert.equal(await page.locator('.night-dock').count(), 0, 'the Profile-scoped night dock must not leak onto Explore');
-    // Its own tab set is exactly what it was -- this build resolves nothing
-    // about the still-open Home-tab question on tracker item
-    // for-product-bug-design-pass-find-bottom--g0m6ck.
-    var hrefs = await page.locator('.bottom-nav a').evaluateAll(function (els) {
+    // The old sticky in-flow .bottom-nav is retired everywhere -- one
+    // shared renderer, one visual system, for real this time.
+    assert.equal(await page.locator('.bottom-nav').count(), 0, 'the old .bottom-nav system must be fully gone');
+
+    var hrefs = await page.locator('.night-dock a').evaluateAll(function (els) {
       return els.map(function (el) { return el.getAttribute('href'); });
     });
     assert.deepEqual(hrefs, ['home.html', 'explore.html', 'create.html', 'profile.html']);
+
+    // Overlaid over the feed, exactly like on profile.html -- not sticky/
+    // in-flow (which would visibly shrink the video area vs. profile.html).
+    var dockPosition = await page.locator('.night-dock').evaluate(function (el) { return getComputedStyle(el).position; });
+    assert.equal(dockPosition, 'absolute');
+  } finally {
+    await context.close();
+  }
+});
+
+test('explore.html: a logged-out visitor still gets the signup nudge tapping Home/+Create/Profile on the new dock (regression -- the old #nav-home/#nav-create/#nav-profile gate)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockFeed(page);
+    await mockTokenStatus(page, {});
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.night-dock', { timeout: 5000 });
+
+    assert.equal(await page.locator('#modal-signup-nudge.open').count(), 0);
+    await page.click('#nav-profile');
+    await page.waitForSelector('#modal-signup-nudge.open', { timeout: 5000 });
   } finally {
     await context.close();
   }

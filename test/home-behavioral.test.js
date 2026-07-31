@@ -464,7 +464,7 @@ test('home.html: Vault card shows the real token balance and links into shop.htm
   }
 });
 
-test('home.html: bottom nav is Home (active) / Explore / +Create / Profile, matching explore.html/profile.html -- tracker item for-product-bug-design-pass-find-bottom--g0m6ck', async function (t) {
+test('home.html: the Bar A night dock is Home (active) / Explore / +Create / Profile, matching explore.html/profile.html -- tracker item for-product-urgent-founder-roll-the-new--8pyek3', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -473,17 +473,26 @@ test('home.html: bottom nav is Home (active) / Explore / +Create / Profile, matc
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedHomeUser(page, { dreams: [] });
 
-    await page.waitForSelector('.bottom-nav', { timeout: 5000 });
-    var labels = await page.locator('.bottom-nav > *').evaluateAll(function (els) {
-      return els.map(function (e) { return (e.textContent || '').trim() || (e.classList.contains('nav-create') ? '+' : ''); });
+    await page.waitForSelector('.night-dock', { timeout: 5000 });
+    // The old sticky in-flow .bottom-nav is retired everywhere now.
+    assert.equal(await page.locator('.bottom-nav').count(), 0);
+
+    // Read each item's own .night-dock-label (not the item's whole
+    // textContent) -- the Profile tab also contains the avatar-as-icon's
+    // fallback-initial text ("T" for @tester here), which would otherwise
+    // get concatenated onto the label ("TProfile").
+    var labels = await page.locator('.night-dock > *').evaluateAll(function (els) {
+      return els.map(function (e) {
+        if (e.classList.contains('night-dock-create')) return '+';
+        var label = e.querySelector('.night-dock-label');
+        return label ? label.textContent.trim() : '';
+      });
     });
-    // Was Home/+/Explore/Profile (the drift bug) -- now matches
-    // explore.html's and profile.html's Home/Explore/+/Profile order, the
-    // founder-approved order, so the + button no longer jumps position
-    // tabbing between Home and Explore.
+    // Home/Explore/+/Profile everywhere -- founder-approved order, one
+    // shared renderer (js/bottom-nav.js), so it can't drift again.
     assert.deepEqual(labels, ['Home', 'Explore', '+', 'Profile']);
-    assert.equal(await page.locator('.bottom-nav .nav-item.active').textContent(), 'Home');
-    var exploreHref = await page.locator('.bottom-nav a[href="explore.html"]').getAttribute('href');
+    assert.equal(await page.locator('.night-dock .night-dock-item.active .night-dock-label').textContent(), 'Home');
+    var exploreHref = await page.locator('.night-dock a[href="explore.html"]').getAttribute('href');
     assert.equal(exploreHref, 'explore.html');
   } finally {
     await context.close();

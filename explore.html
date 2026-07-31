@@ -78,12 +78,21 @@
   <div class="explore-token-chip-slot" id="explore-token-chip-slot"></div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
-  <!-- cache-bust 2026-07-29T19:20Z: force fresh digest after Netlify dedup served stale content -->
-  <!-- Rendered by js/bottom-nav.js (tracker item
-       for-product-bug-design-pass-find-bottom--g0m6ck) -- order here was
-       already correct (Home/Explore/+/Profile); factored to a shared
-       renderer alongside home.html so it can't drift again. -->
-  <div class="bottom-nav" id="bottom-nav-slot"></div>
+  <!-- cache-bust 2026-07-31T09:20Z: Bar A dock rolled out here (for-product-urgent-founder-roll-the-new--8pyek3) -->
+  <!-- Bar A, the anchored night dock, rendered by the shared
+       js/bottom-nav.js (tracker item
+       for-product-urgent-founder-roll-the-new--8pyek3) -- same renderer
+       and markup as home.html/profile.html/result.html now. Absolutely
+       positioned (see css/styles.css's .night-dock), overlaid on top of
+       the video feed. .feed-scroll itself needs no clearance padding
+       (it's meant to play full-bleed behind the dock), but each card's
+       OWN overlay content that sits near the bottom edge --
+       .feed-info/.feed-actions/.feed-swipe-hint -- does: those bottom
+       offsets are built on --nav-clearance (see css/styles.css) so the
+       More/Like/Share buttons are never physically underneath the
+       dock's (higher z-index) footprint. Caught the hard way by
+       report-block-behavioral.test.js after this rollout landed. -->
+  <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
   <div class="modal-overlay" id="modal-signup-nudge">
     <div class="modal-card">

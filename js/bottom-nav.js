@@ -1,50 +1,96 @@
 // js/bottom-nav.js
 //
-// Shared renderer for the OLD .bottom-nav visual system that home.html
-// and explore.html still use -- tracker item
-// for-product-bug-design-pass-find-bottom--g0m6ck. Factored out because
-// three hand-copied navs (home.html/explore.html/profile.html) had
-// already drifted out of sync once (home.html shipped Home/+/Explore/
-// Profile while profile.html/explore.html shipped Home/Explore/+/
-// Profile -- the same DOM order flex `space-around` renders as visual
-// order, so the + button visibly jumped position when tabbing between
-// Home and Explore). One renderer means that class of drift can't
-// recur for these two pages again.
+// Shared renderer for Bar A, the anchored "night dock" bottom nav —
+// tracker item for-product-urgent-founder-roll-the-new--8pyek3,
+// founder verbatim: "The bottom nav bar is not the same across screens
+// so make it like it is in the profile screen — in the homepage and in
+// explore." This is now THE one shared renderer for every page with a
+// bottom nav (home.html, explore.html, profile.html, result.html) —
+// same markup, same CSS (.night-dock*, css/styles.css), same
+// avatar-in-Profile-tab treatment everywhere.
+//
+// History: this module used to render the OLDER, separate `.bottom-nav`
+// in-flow visual system shared only by home.html/explore.html, while
+// profile.html had its own bespoke, newer `.night-dock` overlay bar
+// (Bar A) hand-copied into that one page only — two competing systems by
+// design at the time (tracker items g0m6ck / bb6224b). This item is the
+// founder-decided reconciliation: retire the old `.bottom-nav` system
+// entirely, and have every page render Bar A through this one module.
+// result.html gets it for the first time here too — it previously had NO
+// bottom nav at all, which stranded a first-time user with no way back
+// to Home/Explore/Profile (tracker item
+// for-product-hotfix-now-founder-urgent-re-w743iy).
 //
 // Tab order is Home / Explore / + / Profile everywhere -- founder-
 // approved twice over (Ron, 2026-07-29: "Must add a way to get to
 // homepage from profile and explore"; and his separate approval of the
-// Bar A / night-dock mock, whose spec is this exact order). See this
-// tracker item's own comment thread for the full decision trail.
-//
-// Deliberately does NOT touch profile.html's `.night-dock` system --
-// that's a separate, newer, founder-approved visual language (Bar A),
-// explicitly scoped to that page only by its own commit's header
-// comment. This module is for the old-style `.bottom-nav` pages only.
-// Unifying the old-style pages onto the new night-dock visual language
-// is a real, undecided restyle question -- out of scope here.
+// Bar A / night-dock mock, whose spec is this exact order). See
+// g0m6ck's tracker comment thread for the full decision trail.
 //
 // Same self-contained-module pattern as js/purchase-sheet.js: plain
 // script (no ES modules -- see CLAUDE.md), attaches window.BottomNav.
-// Icons and the new-likes badge are always identical on every page that
-// uses this, so they're baked in here. Anything genuinely page-specific
-// stays in that page's own inline script, wired against the stable ids
-// this module renders (#nav-home/#nav-explore/#nav-create/#nav-profile)
-// -- e.g. explore.html's logged-out signup-nudge gate on +Create/
-// Profile (it has no login gate of its own, unlike every other page),
-// or home.html's own top-of-script login redirect. Rendering is
-// synchronous plain innerHTML (same as purchase-sheet.js's
-// mountBalanceChip), so a caller's very next line can already
+// Icons, the avatar-as-Profile-icon, and the new-likes badge are always
+// identical on every page that uses this, so they're baked in here.
+// Anything genuinely page-specific stays in that page's own inline
+// script, wired against the stable ids this module renders
+// (#nav-home/#nav-explore/#nav-create/#nav-profile) -- e.g. explore.html's
+// logged-out signup-nudge gate on +Create/Home/Profile (it has no login
+// gate of its own, unlike every other page). Rendering is synchronous
+// plain innerHTML, so a caller's very next line can already
 // getElementById() anything rendered here.
+//
+// Call mount() again any time the signed-in "Me" character's name/photo
+// changes (see profile.html's renderIdentity()) -- it's cheap and
+// idempotent, and is how the SAME identity source stays in sync between
+// a page's own header and the dock's Profile tab in one call.
 
 (function () {
   'use strict';
 
   /**
-   * @param {Element} container - emptied and filled with the nav markup.
-   *   Pass the page's existing `.bottom-nav` element itself so its
-   *   existing CSS/layout (position:sticky, safe-area padding, etc. --
-   *   see css/styles.css) applies unchanged.
+   * Minimal attribute-safe HTML escape -- kept local (not borrowed from
+   * js/dream-cards.js's DreamCards.esc) so this module has no load-order
+   * dependency on that file; not every page that needs a bottom nav also
+   * loads dream-cards.js (e.g. explore.html, result.html).
+   */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /**
+   * The signed-in account's own "Me" character -- the SAME identity
+   * source profile.html's own header reads/writes
+   * (DreamStore.saveCharacter({isSelf:true, ...})), not a second copy.
+   */
+  function getMeCharacter() {
+    if (typeof DreamStore === 'undefined' || !DreamStore.getCharacters) return null;
+    return DreamStore.getCharacters().filter(function (c) { return c.isSelf; })[0] || null;
+  }
+
+  /**
+   * Avatar-as-Profile-icon markup (the YouTube "You" treatment): the Me
+   * character's photo if one exists, else the first letter of their
+   * display name, never a placeholder glyph that would read as "not
+   * signed in". Works logged-out too (explore.html) -- getCurrentUser()
+   * is null there, displayName falls back to '', and '?' is used.
+   */
+  function avatarInnerHTML() {
+    var user = (typeof DreamStore !== 'undefined' && DreamStore.getCurrentUser) ? DreamStore.getCurrentUser() : null;
+    var me = getMeCharacter();
+    var displayName = (me && me.name) ? me.name : (user ? DreamStore.displayHandle(user.handle) : '');
+    if (me && me.photoDataUrl) {
+      return '<img src="' + esc(me.photoDataUrl) + '" alt="">';
+    }
+    return esc((displayName || '?').trim().charAt(0).toUpperCase());
+  }
+
+  /**
+   * @param {Element} container - filled with the night-dock markup.
+   *   Pass the page's own `<nav class="night-dock" id="...">` element
+   *   (see css/styles.css's `.night-dock` -- absolutely positioned,
+   *   anchored to the bottom of #app, content scrolls/plays BEHIND it).
    * @param {Object} opts
    * @param {'home'|'explore'|'profile'} opts.active - which tab gets the
    *   `.active` class + `aria-current="page"`.
@@ -55,7 +101,7 @@
     var active = opts.active;
 
     function itemClass(tab) {
-      return 'nav-item' + (tab === active ? ' active' : '');
+      return 'night-dock-item' + (tab === active ? ' active' : '');
     }
     function ariaCurrent(tab) {
       return tab === active ? ' aria-current="page"' : '';
@@ -63,24 +109,35 @@
 
     container.innerHTML =
       '<a class="' + itemClass('home') + '" href="home.html" id="nav-home"' + ariaCurrent('home') + '>' +
-        '<div class="nav-icon icon" id="nav-icon-home"></div>Home</a>' +
+        '<div class="nav-icon icon" id="dock-icon-home"></div><span class="night-dock-label">Home</span></a>' +
       '<a class="' + itemClass('explore') + '" href="explore.html" id="nav-explore"' + ariaCurrent('explore') + '>' +
-        '<div class="nav-icon icon" id="nav-icon-explore"></div>Explore</a>' +
-      '<a class="nav-create" href="create.html" id="nav-create" title="Turn Your Dream Into a Video">+</a>' +
+        '<div class="nav-icon icon" id="dock-icon-explore"></div><span class="night-dock-label">Explore</span></a>' +
+      '<a class="night-dock-create" href="create.html" id="nav-create" aria-label="Create">' +
+        '<span class="icon" id="dock-icon-create"></span></a>' +
       '<a class="' + itemClass('profile') + '" href="profile.html" id="nav-profile"' + ariaCurrent('profile') + '>' +
-        '<div class="nav-icon-badge-wrap"><div class="nav-icon icon" id="nav-icon-profile"></div>' +
-        '<span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div>Profile</a>';
+        // The avatar is aria-hidden: it's a decorative stand-in for the
+        // tab icon, and the label already names the destination --
+        // without this a screen reader would announce the account's
+        // initial as part of the tab name.
+        '<div class="nav-icon-badge-wrap" aria-hidden="true"><i class="night-dock-avatar" id="dock-avatar">' + avatarInnerHTML() + '</i>' +
+        '<span class="nav-badge-dot" id="nav-profile-badge" hidden></span></div><span class="night-dock-label">Profile</span>' +
+      '</a>';
 
-    document.getElementById('nav-icon-home').innerHTML = Icons.home;
-    document.getElementById('nav-icon-explore').innerHTML = Icons.compass;
-    document.getElementById('nav-icon-profile').innerHTML = Icons.person;
+    // Inactive tabs draw LINE glyphs; whichever tab is active draws
+    // filled (or, for Profile, the avatar rather than a glyph at all --
+    // see avatarInnerHTML() above). Icons.compass is already a line
+    // glyph; Icons.home is filled, so Icons.homeOutline is its
+    // line-variant pair for whichever page isn't Home.
+    document.getElementById('dock-icon-home').innerHTML = (active === 'home') ? Icons.home : Icons.homeOutline;
+    document.getElementById('dock-icon-explore').innerHTML = Icons.compass;
+    document.getElementById('dock-icon-create').innerHTML = Icons.plus;
 
     // New-likes badge dot (tracker item idea-notify-likes) -- the same
     // synchronous, no-network read every bottom-nav page has always done.
     // See js/store.js's getCachedNewLikesCount doc block for why this
     // never fetches anything itself.
     document.getElementById('nav-profile-badge').hidden =
-      !(DreamStore.getCachedNewLikesCount() > 0);
+      !(typeof DreamStore !== 'undefined' && DreamStore.getCachedNewLikesCount() > 0);
   }
 
   var BottomNav = {

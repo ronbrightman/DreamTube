@@ -162,7 +162,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .home-greet-line{ font-size:15px; font-weight:800; color:var(--home-ink); }
 .home-greet-sub{ font-size:11.5px; color:var(--home-soft); margin-top:2px; }
 
-.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 14px calc(20px + env(safe-area-inset-bottom,0px)); }
+/* Bottom padding reserves the overlaid night dock's own height
+   (--nav-clearance, shared css/styles.css) now that the nav is
+   absolutely positioned rather than sticky/in-flow -- otherwise the
+   Vault/My dreams cards at the end of the grid would end up hidden
+   behind the bar. */
+.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 14px calc(var(--nav-clearance) + 20px); }
 .home-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
 .hcard{ position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2)); border:1px solid var(--home-line); border-radius:18px; padding:14px 15px; overflow:hidden; color:var(--home-ink); }
@@ -250,7 +255,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 </style>
 </head>
 <body>
-
+<!-- cache-bust 2026-07-31T09:20Z: Bar A dock rolled out here (for-product-urgent-founder-roll-the-new--8pyek3) -->
 <div id="app" class="scroll-shell">
   <div class="home-bg"></div>
   <div class="home-stars-a"></div>
@@ -348,14 +353,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
       </div>
     </div>
-
-    <!-- Rendered by js/bottom-nav.js (tracker item
-         for-product-bug-design-pass-find-bottom--g0m6ck) -- was previously
-         hand-copied here as Home/+/Explore/Profile, which had drifted out
-         of order vs. explore.html's Home/Explore/+/Profile. See that
-         file's header comment for the full story. -->
-    <div class="bottom-nav" id="bottom-nav-slot"></div>
   </div>
+
+  <!-- Bar A, the anchored night dock, rendered by the shared
+       js/bottom-nav.js (tracker item
+       for-product-urgent-founder-roll-the-new--8pyek3 -- "make it like it
+       is in the profile screen", superseding g0m6ck's old-.bottom-nav
+       order-drift fix). Sits OUTSIDE .home-fg and is absolutely
+       positioned (see css/styles.css's .night-dock), so page content
+       scrolls behind it; .home-scroll's --nav-clearance padding below is
+       what keeps the last card row reachable. Placed before the sheet
+       overlay in the DOM and at a lower z-index than .sheet-overlay, so
+       an open sheet always covers it -- same placement as profile.html. -->
+  <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
   <!-- "Add to home screen" guidance sheet — opened by the #card-install
        journey card above. Standard .sheet-overlay/.sheet/.sheet-handle

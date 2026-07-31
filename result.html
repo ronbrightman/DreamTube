@@ -69,7 +69,7 @@
 </script>
 </head>
 <body>
-
+<!-- cache-bust 2026-07-31T09:20Z: stranding hotfix, Bar A dock added (for-product-hotfix-now-founder-urgent-re-w743iy) -->
 <div id="app" class="fill" style="position:relative;">
   <div class="result-bg" id="result-bg"></div>
   <video class="result-video" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
@@ -189,6 +189,21 @@
       <button class="result-quiet-link result-quiet-link-danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
     </div>
   </div>
+
+  <!-- HOTFIX (tracker item for-product-hotfix-now-founder-urgent-re-w743iy):
+       the interpret-primary redesign cut the old Explore/Profile nav
+       icons and left a first-time user with no way forward at all. Bar A,
+       the SAME shared night dock every other page now uses (rendered by
+       js/bottom-nav.js) -- overlaid over the video, translucent, same as
+       everywhere else; .result-panel's own bottom padding above (see
+       css/styles.css) already reserves --nav-clearance so this never
+       overlaps the Publish/Edit/Make another/Delete row. No tab is
+       "active" here -- this screen isn't Home/Explore/Profile itself,
+       same treatment create.html/style.html would get if they had a nav.
+       Placed before the sheet overlays, at a lower z-index, so an open
+       sheet always covers it -- same placement convention as every other
+       page's dock. -->
+  <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
   <div class="sheet-overlay" id="sheet-edit-overlay">
     <div class="sheet">
@@ -336,6 +351,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
@@ -355,6 +371,12 @@
   // page parses further down.
   DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+
+  // Bar A dock (tracker item for-product-hotfix-now-founder-urgent-re-
+  // w743iy) -- no tab is active; this screen isn't Home/Explore/Profile
+  // itself, it just needs a real way back to all three.
+  BottomNav.mount(document.getElementById('bottom-nav-slot'), {});
+
   // Keeps this page's own URL carrying a fresh transfer token for as long
   // as it stays open, signed in, and inside a detected FB/IG webview —
   // see that function's own doc comment for the full "why" and the

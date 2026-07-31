@@ -49,6 +49,13 @@
      references it) but pointed it at the same sans-serif body font. */
   --font-body:'Manrope', sans-serif;
   --font-display:var(--font-body);
+  /* Bar A / the "night dock" bottom nav (see .night-dock below) --
+     how much bottom clearance a page's own scrolling content must
+     reserve so the overlaid, translucent bar never hides real content
+     or tap targets underneath it. Shared here (was previously defined
+     page-scoped on profile.html only) now that every page with a
+     bottom nav uses the same renderer -- see js/bottom-nav.js. */
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
 }
 *{box-sizing:border-box; margin:0; padding:0;}
 html,body{height:100%;}
@@ -184,40 +191,95 @@ body{
 .gen-banner{ display:flex; align-items:center; gap:10px; margin:14px 20px 0; padding:12px 14px; background:var(--surface); border-radius:14px;}
 .gen-banner-text{ font-size:13px; color:var(--text-muted);}
 .scroll-area{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;}
-.bottom-nav{
-  position:sticky; bottom:0; flex:none; height:calc(72px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   THE one shared bottom-nav visual system, rendered by js/bottom-nav.js on
+   every page that has a bottom nav (home.html, explore.html, profile.html,
+   result.html — tracker item
+   for-product-urgent-founder-roll-the-new--8pyek3, "roll the NEW Profile
+   bottom bar to home + explore", closing the open question left by
+   for-product-bug-design-pass-find-bottom--g0m6ck). Originally shipped
+   scoped to profile.html only (commit bb6224b) as one of two competing
+   nav systems (the OLD in-flow `.bottom-nav`/`.nav-item`/`.nav-create` this
+   replaces); moved here, unmodified, once the founder ordered the same
+   bar rolled out everywhere and the OLD system retired for good.
+
+   A translucent, blurred bar anchored to the bottom of #app that content
+   scrolls/plays BEHIND (overlay positioning — position:absolute, not
+   sticky/in-flow), with labels, an in-row 44px gradient "+" (not a
+   protruding one), and the signed-in account's own avatar standing in for
+   the Profile tab's icon (the YouTube "You" treatment). Home/Explore/+/
+   Profile is the tab order everywhere (founder-approved, see
+   js/bottom-nav.js's own header comment for the full decision trail). */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
   display:flex; align-items:center; justify-content:space-around;
-  background:var(--bg-app); border-top:1px solid var(--border); z-index:5;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
 }
-.nav-item{ display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-faint); font-size:10.5px; font-weight:700; cursor:pointer; width:64px; text-decoration:none;}
-.nav-item.active{ color:var(--text-primary);}
-.nav-item .nav-icon{ font-size:21px;}
+/* Blur is decorative, never load-bearing: without backdrop-filter support
+   the bar must still be opaque enough to read against scrolling content. */
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px; /* a real 44px tap target, not just the glyph */
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+/* Hardcoded, not read from the page's own --home-ink/--home-line/--home-acc
+   night-theme tokens (those only exist on home.html/profile.html's own
+   page-scoped :root, not explore.html/result.html's) -- the dock is a
+   fixed, page-agnostic visual system now, and must render byte-for-byte
+   identically on all four pages regardless of which page-level theme
+   variables happen to be defined. Values match profile.html's original
+   theme exactly (#eae7fb/rgba(157,144,255,.32)/#9d90ff). */
+.night-dock-item.active{ color:#eae7fb; }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+/* Avatar-as-Profile-icon (the YouTube "You" treatment) — the same Me
+   character photo/initial the page's own identity header shows (where
+   one exists), rendered at nav size. Computed by js/bottom-nav.js itself
+   straight from DreamStore, so every page gets it, not just Profile. */
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid rgba(157,144,255,.32);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:#eae7fb;
+}
+.night-dock-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
+.night-dock-item.active .night-dock-avatar{ border-color:#9d90ff; }
 /* New-likes badge dot (tracker item idea-notify-likes) — a plain dot on
    the Profile tab's icon, no count digit (stays legible at this size).
    DreamStore.getCachedNewLikesCount() drives its visibility on every
    page with a bottom nav (see js/store.js's own doc block for when this
    goes back to hidden). The wrap is a separate sibling element (not the
-   .nav-icon div itself) because every page's own script replaces
-   .nav-icon's innerHTML wholesale with an Icons.* SVG string — a badge
-   nested inside it would get wiped out the moment that runs.
+   .nav-icon/.night-dock-avatar element itself) because js/bottom-nav.js
+   replaces those wholesale on every mount — a badge nested inside would
+   get wiped out the moment that runs.
    [hidden] rather than an inline display:none so toggling it is a single
-   attribute flip from each page's own script. */
+   attribute flip from js/bottom-nav.js's own mount(). */
 .nav-icon-badge-wrap{ position:relative; display:inline-flex;}
 .nav-badge-dot{
   position:absolute; top:-2px; right:-4px; width:9px; height:9px; border-radius:50%;
   background:var(--danger); border:1.5px solid var(--bg-app);
 }
 .nav-badge-dot[hidden]{ display:none;}
-/* The Instagram-style gradient's second (and last) appearance. */
-.nav-create{
-  width:52px; height:52px; border-radius:50%; flex:none; cursor:pointer; margin-top:-30px;
-  background:var(--gradient-ig); color:#fff; font-size:26px; font-weight:900;
-  display:flex; align-items:center; justify-content:center; line-height:1; text-decoration:none;
-  box-shadow:0 10px 22px -6px rgba(253,29,29,.45), 0 0 0 6px var(--bg-app);
-  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
-}
-.nav-create:hover{ filter:brightness(1.06);}
-.nav-create:active{ transform:scale(.94);}
 
 .video-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px 12px; padding:2px 20px 20px;}
 .vcard{ cursor:pointer; text-decoration:none; color:inherit; display:block;}
@@ -698,7 +760,12 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .play-badge .badge-circle .icon{ width:22px; height:22px;}
 .play-badge.hidden{ opacity:0; pointer-events:none;}
 .result-play{ position:absolute; top:34%; left:50%; transform:translate(-50%,-50%); z-index:1;}
-.result-panel{ position:absolute; left:0; right:0; bottom:0; padding:14px 20px calc(20px + env(safe-area-inset-bottom,0px)); z-index:2;}
+/* Bottom padding reserves the night dock's own height (tracker item
+   for-product-hotfix-now-founder-urgent-re-w743iy) so the quiet-links row
+   (Publish/Edit/Make another/Delete) never sits underneath the new
+   overlaid nav — the dock floats over the VIDEO (full-bleed, unaffected),
+   never over this row's real tap targets. */
+.result-panel{ position:absolute; left:0; right:0; bottom:0; padding:14px 20px calc(var(--nav-clearance) + 20px); z-index:2;}
 /* Small font, clamped to 2 lines with tap-to-expand/collapse (was 18px/
    3-line-clamp — shrunk as part of the same redesign above). */
 .dream-quote{ font-size:13px; font-weight:600; margin-bottom:4px; line-height:1.45; cursor:pointer; text-shadow:0 1px 6px rgba(0,0,0,.7);}
@@ -849,7 +916,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   display:flex; align-items:center; justify-content:center; color:#fff; text-decoration:none;
 }
 .feed-back svg{ width:20px; height:20px;}
-.feed-info{ position:absolute; left:18px; bottom:calc(30px + env(safe-area-inset-bottom,0px)); right:80px; z-index:4;}
+/* Bottom offsets below (.feed-info/.feed-actions/.feed-swipe-hint) clear
+   the overlaid night dock's own footprint (--nav-clearance) -- the dock
+   sits ON TOP of the full-bleed video (z-index:9 beats these), so
+   anything positioned near the card's bottom edge at the OLD safe-area-
+   only offset ends up literally underneath it: unclickable (More/Like/
+   Share) and, for feed-swipe-hint, invisible. Caught by
+   report-block-behavioral.test.js after the Bar A rollout (tracker item
+   for-product-urgent-founder-roll-the-new--8pyek3) started overlaying
+   explore.html too -- .feed-scroll filling #app's full height doesn't by
+   itself keep per-item overlay content out of the dock's footprint. */
+.feed-info{ position:absolute; left:18px; bottom:calc(var(--nav-clearance) + 30px); right:80px; z-index:4;}
 .feed-user-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px;}
 /* Tracker item for-product-ui-founder-directed-2026-07--djgjn0: this circle
    used to render permanently empty (background:var(--surface-alt) with no
@@ -868,12 +945,12 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .feed-tag-row{ display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:#e2e2e2;}
 .feed-tag-row .dot{ width:4px; height:4px; border-radius:50%; background:#888;}
 .feed-tag-row [data-filter-style]{ cursor:pointer;}
-.feed-actions{ position:absolute; right:14px; bottom:calc(36px + env(safe-area-inset-bottom,0px)); z-index:6; display:flex; flex-direction:column; align-items:center; gap:19px; color:#fff;}
+.feed-actions{ position:absolute; right:14px; bottom:calc(var(--nav-clearance) + 36px); z-index:6; display:flex; flex-direction:column; align-items:center; gap:19px; color:#fff;}
 .feed-action{ display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;}
 .feed-action .icon{ width:27px; height:27px;}
 .feed-action span{ font-size:12px; font-weight:600;}
 .feed-action.liked .icon{ color:var(--danger);}
-.feed-swipe-hint{ position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,.5); z-index:5; letter-spacing:.05em;}
+.feed-swipe-hint{ position:absolute; bottom:calc(var(--nav-clearance) + 8px); left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,.5); z-index:5; letter-spacing:.05em;}
 /* Recovery affordance for when autoplay silently fails to start (or the
    video errors out mid-load) — without this, a card with a stuck video had
    no way at all to get it going, since the feed otherwise only auto-plays/
