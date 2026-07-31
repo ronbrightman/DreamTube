@@ -20,11 +20,15 @@
 // reasoning on each).
 //
 // Depends on (must be loaded first by the host page): js/icons.js,
-// js/store.js, js/interpreter-personas.js. Mountable from ANY page that
-// loads those three scripts plus this one and css/styles.css's `.itp-*`
-// block — wave 1 wires it from home.html's Chamber card and result.html's
-// interpretation pill (see those files' own comments), but nothing here
-// assumes either host.
+// js/store.js, js/interpreter-personas.js, and (since the dream-picker
+// strip below, tracker item for-product-chamber-dream-linkage-is-unc-
+// 00s2dr) js/dream-cards.js. Mountable from ANY page that loads those
+// four scripts plus this one and css/styles.css's `.itp-*` block — wave 1
+// wires it from home.html's Chamber card and result.html's interpretation
+// pill (see those files' own comments), but nothing here assumes either
+// host. home.html already loaded js/dream-cards.js for its own My Dreams
+// row before this strip existed; result.html gained the script tag
+// specifically for this.
 //
 // ── State machine (spec §3) ──
 // picker -> q_loading -> questions -> r_loading -> reading, plus:
@@ -111,9 +115,94 @@
     root.className = 'itp-overlay';
     root.innerHTML =
       '<div class="itp-topbar" id="itp-topbar"></div>' +
+      '<div class="itp-dream-strip" id="itp-dream-strip"></div>' +
       '<div class="itp-body" id="itp-body"></div>' +
       '<div class="itp-composer" id="itp-composer" style="display:none;"></div>';
     host.appendChild(root);
+  }
+
+  // ==========================================================================
+  // Dream-picker strip (tracker item for-product-chamber-dream-linkage-is-
+  // unc-00s2dr, founder verdict 2026-07-31 evening, overriding both
+  // directions docs/CHAMBER_DREAM_LINKAGE_SPEC.md had proposed): "the
+  // Chamber's dream picker is the EXACT same videos-preview area as the
+  // homepage's My-dreams row - the horizontal thumbnail swipe strip -
+  // shown at the top of the Chamber; user slides and taps a dream, the
+  // reading targets it." Reuses js/dream-cards.js's shared
+  // dreamRowTileHTML verbatim (same tile look/markup as home.html's own
+  // My Dreams row), present above .itp-body in every phase.
+  //
+  // "Completed" uses the exact same `d.videoUrl || d.imageUrl` definition
+  // home.html's own renderChamberHero() computes its `completedDream`
+  // with — not a new definition. DreamStore.getMyDreams() is already
+  // most-recent-first (dreams are unshifted on create), so "current/last
+  // dream preselected" falls out of that ordering for the common path
+  // (home.html's Chamber card always opens the latest completed dream)
+  // with no extra sort needed here.
+  //
+  // Edge case beyond the founder's literal instruction: open()'s own
+  // contract (see its doc comment below) only requires story/caption
+  // text, not a finished video/image — result.html's own hero button
+  // isn't gated on completion either. So the dream the Chamber was
+  // opened for is not strictly guaranteed to be in the "completed" list.
+  // Rather than silently failing to preselect/ring a tile for it (a
+  // worse regression than the ambiguity this whole feature exists to
+  // fix), that dream is stitched to the front of the list even when not
+  // yet "completed" — defensive fallback only; neither of this app's two
+  // real entry points (home.html's Chamber card, result.html's hero)
+  // ever reach the Chamber for an incomplete dream today.
+  //
+  // Rendered once per open()/switch (called from open() itself) —
+  // deliberately NOT wired into the phase-dispatch render() below, which
+  // reruns on every question/answer step; rebuilding this strip's markup
+  // that often would restart every thumbnail's video decode and reset
+  // scroll position for no reason.
+  function renderDreamStrip() {
+    var strip = document.getElementById('itp-dream-strip');
+    if (!session || !window.DreamStore || !window.DreamCards) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+    var selectedId = session.dreamId;
+    var dreams = window.DreamStore.getMyDreams().filter(function (d) { return d.videoUrl || d.imageUrl; });
+    var hasSelected = dreams.some(function (d) { return d.id === selectedId; });
+    if (!hasSelected) {
+      var selectedDream = window.DreamStore.getDream(selectedId);
+      if (selectedDream) dreams = [selectedDream].concat(dreams);
+    }
+    if (!dreams.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+    strip.style.display = 'flex';
+    strip.innerHTML = dreams.map(function (d) {
+      return window.DreamCards.dreamRowTileHTML(d, {
+        gradient: window.DreamStore.gradientFor(d),
+        selected: d.id === selectedId,
+        asButton: true
+      });
+    }).join('');
+    Array.prototype.forEach.call(strip.querySelectorAll('.dream-row-tile'), function (tile) {
+      tile.addEventListener('click', function () { switchDream(tile.getAttribute('data-dream-id')); });
+    });
+    window.DreamCards.observeVideos();
+    var selectedTile = strip.querySelector('.dream-row-tile.is-selected');
+    if (selectedTile && typeof selectedTile.scrollIntoView === 'function') {
+      selectedTile.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  /**
+   * Tapping a different tile in the strip switches the Chamber's active
+   * dream. Per the founder's own instruction ("the reading targets it")
+   * and this codebase's "no second, parallel code path" discipline: this
+   * re-runs open() for the new dream — the exact same function every
+   * other entry point uses — rather than mutating `session` in place, so
+   * switching gets open()'s full, already-correct behavior for free
+   * (existing-reading revisit vs. fresh picker, dream validation, gen
+   * bump for async staleness, analytics) instead of a second
+   * reimplementation of that logic. A tap on the already-selected tile is
+   * a no-op — it must never discard in-progress questions/answers for
+   * the dream that's already open.
+   */
+  function switchDream(newDreamId) {
+    if (!session || !newDreamId || newDreamId === session.dreamId) return;
+    trackLocal('interp_dream_switched', { from_dream_id: session.dreamId, to_dream_id: newDreamId });
+    open(newDreamId);
   }
 
   /**
@@ -582,6 +671,7 @@
 
     document.getElementById(ROOT_ID).classList.add('open');
     document.body.style.overflow = 'hidden'; // matches this app's other full-screen overlays' scroll-lock intent
+    renderDreamStrip();
     render();
   }
 

@@ -1481,6 +1481,47 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 
 .itp-body{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:4px 20px calc(20px + env(safe-area-inset-bottom,0px));}
 
+/* ----- Dream-picker strip (tracker item for-product-chamber-dream-
+   linkage-is-unc-00s2dr, founder verdict 2026-07-31 evening, overriding
+   both directions docs/CHAMBER_DREAM_LINKAGE_SPEC.md had proposed): the
+   Chamber's own dream picker is "the EXACT same videos-preview area as
+   the homepage's My-dreams row" -- reuses js/dream-cards.js's shared
+   dreamRowTileHTML markup/class names verbatim (js/interpret-
+   experience.js's renderDreamStrip), present in every phase, above
+   .itp-body.
+
+   Scoped with the #itp-dream-strip ID (rather than styling the bare
+   .dream-row-tile/.is-selected class names dreamRowTileHTML emits) so
+   this looks identical regardless of which host page the overlay
+   happens to be mounted from. home.html ALSO defines its own page-
+   scoped `.dream-row-tile{...}` rule (150x100, its own dark-theme
+   colors) in its own inline <style> block, at the same class-only
+   specificity as anything added here — since that inline block loads
+   after this shared stylesheet, a same-specificity rule here would lose
+   to it there. An ID-anchored selector always outranks a class-only one
+   regardless of source order, so the Chamber's own strip never
+   accidentally inherits home.html's sizing when opened from that page,
+   while home.html's own My Dreams row (which doesn't live under
+   #itp-dream-strip) is completely untouched by any of this. */
+.itp-dream-strip{
+  flex:none; display:flex; gap:10px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory; scrollbar-width:none;
+  padding:0 16px 14px; margin-top:-4px;
+}
+.itp-dream-strip::-webkit-scrollbar{ display:none;}
+#itp-dream-strip .dream-row-tile{
+  flex:0 0 84px; width:84px; height:84px; border-radius:14px; padding:0;
+  border:2px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; background:var(--surface-alt);
+  cursor:pointer; -webkit-tap-highlight-color:transparent; display:block;
+}
+#itp-dream-strip .dream-row-tile::after{ /* same footage scrim home.html's own row uses */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, transparent 55%, rgba(0,0,0,.4));
+}
+#itp-dream-strip .dream-row-tile.is-selected{ border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.55);}
+#itp-dream-strip .dream-row-tile:active{ transform:scale(.96);}
+
 /* ----- Picker phase ----- */
 .itp-picker-title{ font-size:19px; font-weight:800; margin:6px 0 4px;}
 .itp-picker-sub{ font-size:12.5px; color:var(--text-muted); margin-bottom:16px; line-height:1.4;}
