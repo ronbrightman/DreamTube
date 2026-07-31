@@ -32,6 +32,15 @@ var stores = {};
 // function's own behavior does.
 var readOverrides = {};
 
+// Per-store write overrides — the write-side counterpart to readOverrides
+// above, for tests simulating a Blobs write failure (e.g. a quota error, a
+// transient storage-layer fault) that the plain synchronous in-memory Map
+// can't otherwise reproduce. Keyed by storeName -> { fn, callCount }, same
+// closure-scoped-not-on-exports reasoning as readOverrides (see that
+// variable's own comment) — every lib/*.js module already has its own
+// bound reference to fakeGetStore by the time a test installs an override.
+var writeOverrides = {};
+
 function storeFor(name) {
   if (!stores[name]) stores[name] = new Map();
   return stores[name];
@@ -58,6 +67,16 @@ function fakeGetStore(opts) {
       return map.has(key) ? map.get(key) : undefined;
     },
     setJSON: async function (key, value) {
+      var override = writeOverrides[name];
+      if (override) {
+        override.callCount++;
+        // `fn` returning a truthy Error (or any truthy value) means "throw
+        // this instead of writing" — mirrors real @netlify/blobs' setJSON
+        // rejecting on a storage-layer failure. A falsy return falls
+        // through to a normal write, same shape as setReadOverride's `fn`.
+        var err = override.fn(key, value, override.callCount);
+        if (err) throw (err instanceof Error ? err : new Error(String(err)));
+      }
       map.set(key, value);
     },
     delete: async function (key) {
@@ -109,6 +128,24 @@ function clearReadOverride(storeName) {
   delete readOverrides[storeName];
 }
 
+/**
+ * Installs a temporary override on every setJSON() call against
+ * `storeName`: `fn(key, value, callIndex)` (callIndex starts at 1) is
+ * called on every write; returning a truthy value (an Error, or any
+ * truthy value) makes setJSON reject with that Error instead of writing,
+ * simulating a real Blobs write failure (quota, transient storage fault).
+ * Returning a falsy value performs a normal write. Call clearWriteOverride
+ * (or reset(), which clears all overrides too) when done.
+ */
+function setWriteOverride(storeName, fn) {
+  writeOverrides[storeName] = { fn: fn, callCount: 0 };
+}
+
+/** Removes a single store's write override, if any. */
+function clearWriteOverride(storeName) {
+  delete writeOverrides[storeName];
+}
+
 function fakeConnectLambda() {
   // Real @netlify/blobs uses this to pull Blobs credentials out of the
   // Lambda-compatible event/context. Nothing to do in the fake — getStore
@@ -120,10 +157,11 @@ function seed(storeName, key, value) {
   storeFor(storeName).set(key, value);
 }
 
-/** Clears all fake store state, including any read overrides. Call between tests. */
+/** Clears all fake store state, including any read/write overrides. Call between tests. */
 function reset() {
   stores = {};
   readOverrides = {};
+  writeOverrides = {};
 }
 
 /** Installs the fake in place of the real @netlify/blobs for the rest of this process. Call once, before requiring any module that (transitively) requires('@netlify/blobs'). */
@@ -137,4 +175,4 @@ function install() {
   };
 }
 
-module.exports = { install, reset, seed, setReadOverride, clearReadOverride };
+module.exports = { install, reset, seed, setReadOverride, clearReadOverride, setWriteOverride, clearWriteOverride };

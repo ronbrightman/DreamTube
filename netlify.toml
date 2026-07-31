@@ -16,3 +16,11 @@
 # from getting its push.
 [functions."send-daily-claim-pushes"]
   schedule = "@hourly"
+
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# tracker item for-product-real-per-job-fal-cost-loggin-360bxy (daily fal.ai
+# usage-vs-spend reconciliation). @daily runs once after UTC midnight; the
+# function itself reconciles the PREVIOUS UTC day (see
+# reconcile-fal-cost.js's own header comment for why).
+[functions."reconcile-fal-cost"]
+  schedule = "@daily"
