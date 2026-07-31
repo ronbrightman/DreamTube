@@ -60,14 +60,9 @@ function store() {
 // Caller-supplied keys can embed real PII (send-daily-claim-pushes.js's
 // own key literally contains an email address — see the module comment
 // above), and this store deliberately doesn't parse caller key structure
-// to know which part that is, so any log line touching a key logs this
-// hash instead of the raw value. Same "shape not content" reasoning as
-// blobs-retry.js's own describeRead, which this store's exhaustion log
-// used to leak around (a raw key, email included, in Netlify function
-// logs on every exhaustion).
-function hashKey(key) {
-  return crypto.createHash('sha256').update(String(key)).digest('hex').slice(0, 16);
-}
+// to know which part that is, so NO log line in this file may touch a key
+// at all. The one exhaustion log lives in blobs-retry.js (store name +
+// per-attempt trace, key-free by design); pinned by push-dedup-store.test.js.
 
 /** True if `key` has already been recorded as sent. */
 async function hasSent(event, key) {
@@ -140,7 +135,11 @@ async function markSentOnce(event, key) {
     return { ok: false, alreadySent: true };
   }
 
-  console.error('push-dedup-store: exhausted attempts claiming the send-once marker for key-hash ' + hashKey(key) + ' -- refusing to send rather than risk a duplicate push');
+  // No log line here: blobs-retry.js's retryingWrite already emits the one
+  // canonical exhaustion log for this failure (store name + full per-attempt
+  // trace, deliberately key-free — see its describeRead comment), and the
+  // exhaustion path must log exactly once with no raw key (the key embeds an
+  // email address; pinned by push-dedup-store.test.js).
   return { ok: false, error: 'exhausted' };
 }
 
