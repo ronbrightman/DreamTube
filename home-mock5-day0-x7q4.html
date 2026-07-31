@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock — unlinked, delete after decision.
+  Tracker item: for-product-funnel-ending-v2-founder-ins-tfuu0q
+
+  Home round 4 "The Night Shelf" (home-mock4-x7q4.html) is the approved
+  baseline — every token, hero-card, ritual-module, dreams-row and dock
+  rule below is copied VERBATIM from it. This file adds ONLY the new
+  states this tracker item introduces:
+
+    1. My-dreams row's first tile in a GENERATING state (shimmer sweep,
+       reusing this app's own existing .proc-bar-sweep recipe from
+       processing.html/css/styles.css rather than inventing a new one) —
+       toggle "Ready" below to see it complete + fire a toast.
+    2. Tonight hero pre-set to its EXISTING `.logged` treatment (mock4's
+       own logic — no new CSS) — the funnel dream counts as tonight's
+       entry via getDreamLogStatus.
+    3. Chamber hero pre-set to its EXISTING `logged`/pulsing branch (no
+       new CSS) — interpretation only needs the dream text, so it's
+       enterable immediately.
+    4. Ritual module: a NEW combined state mock4 didn't have (first-ever
+       night AND already logged, at once) — "1 night" / "streak starts
+       tonight" + a +100 FIRST-CLAIM bonus (see FOUNDER_PRINCIPLES.md's
+       FIRST_CLAIM_BONUS_AMOUNT), distinguished from the normal +20 claim.
+    5. Dream-row picker (docs/CHAMBER_DREAM_LINKAGE_SPEC.md, tracker
+       00s2dr) needs NO new UI here — its own spec already hides the
+       switcher when only one dream exists. Annotated only (dashed
+       callout), not rebuilt.
+
+  TWO ORPHANS REHOMED from processing.html (dashed "ORPHAN" callouts
+  mark both below):
+    (a) notify-me/push prompt — js/push-subscribe.js's own comment
+        already names "right after a generation starts" as the ideal
+        moment; moved here, anchored to the generating tile.
+    (b) webview escape/install nudge — processing.html's #proc-nudge-card
+        + js/install-nudge.js, folded into an ELEVATED state of the
+        existing "Add DreamTube to your phone" quiet row, shown only
+        when DreamStore.detectInAppWebviewHost() would be non-null.
+
+  Mock chrome (top, dashed, dev-only — never mistake for product UI):
+    Row 1 "Dream tile": Generating / Ready — demos the tile completing.
+    Row 2 "Browser":    Normal / In-app    — demos the webview-elevated row.
+
+  Static, self-contained: no app JS, no build step. All artwork is
+  layered CSS gradients except the Chamber's sage art
+  (chamber-sage-x7q4.jpg — already committed alongside home-mock4).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Home mock 5 — day 0 (funnel-lands-direct) — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+  --t-display:28px;
+  --t-hero:26px;
+  --t-section:20px;
+  --t-action:18px;
+  --t-body:16px;
+  --t-eyebrow:12px;
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ===== phone shell (verbatim, mock4) ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:100dvh;
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim, mock4) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
+@keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@keyframes pulse-text{ 0%,100%{ opacity:1; } 50%{ opacity:.6; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe,.dg-sweep,.dg-label,.spinner-inline{ animation:none !important; }
+}
+
+/* ===== mock chrome — TWO stacked dev-only rows (dashed hairline) ===== */
+.mockbar{
+  position:absolute; left:0; right:0; top:0; z-index:40;
+  padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 7px;
+  background:rgba(6,5,18,.9);
+  border-bottom:1px dashed rgba(157,144,255,.4);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  display:flex; flex-direction:column; gap:5px;
+}
+.mockrow{ display:flex; align-items:center; gap:5px; }
+.mocklab{
+  flex:0 0 52px; font:800 8px var(--font-body); letter-spacing:.1em;
+  text-transform:uppercase; color:#6f6894;
+}
+.mockseg{ display:flex; gap:4px; flex:1; }
+.mockbtn{
+  flex:1; padding:5px 2px; border-radius:7px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22);
+  color:#8f88b3; font:700 10px var(--font-body); white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.mockbtn.on{ background:rgba(157,144,255,.22); border-color:rgba(157,144,255,.6); color:var(--home-ink); }
+
+/* dev-only annotation callouts — dashed, muted, never mistakeable for product copy */
+.mock-annot{
+  margin-top:10px; padding:8px 10px; border:1px dashed rgba(157,144,255,.45);
+  border-radius:10px; font:700 10.5px/1.5 var(--font-body); color:#8f88b3;
+  background:rgba(157,144,255,.06);
+}
+.mock-annot b{ color:#b7aeea; }
+
+/* ===== page chrome ===== */
+.home-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.home-scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 84px) 20px calc(var(--nav-clearance) + 32px);
+}
+
+.home-topbar{ display:flex; align-items:center; padding:12px 0 0; }
+.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:radial-gradient(circle at 35% 30%, #cfc8ff, #6f5fe0 60%, #2c1f6b); border-radius:6px; }
+.home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+.home-greet{ padding:26px 0 22px; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.02em; }
+
+.hero-card{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55); color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:22px;
+}
+.hero-stars, .hero-scrim, .chamber-breathe{ position:absolute; inset:0; pointer-events:none; }
+.hero-content{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.hero-title{
+  font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2;
+  text-shadow:0 2px 12px rgba(12,10,26,.55);
+}
+.hero-sub{ margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea; text-shadow:0 1px 8px rgba(12,10,26,.55); }
+
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
+
+/* Tonight hero — pre-set to mock4's own `.logged` treatment (verbatim) */
+.hero-tonight{
+  min-height:clamp(320px, 44vh, 400px);
+  background:
+    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
+    radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
+    radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
+    linear-gradient(172deg,#0f1840 0%,#1a2158 46%,#0b1234 100%);
+  border-color:rgba(75,211,155,.5);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24);
+}
+.hero-tonight .hero-title{ color:#bdf0d8; }
+.hero-tonight .hero-stars{
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 14%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 26% 8%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 50% 12%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 40% 28%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 88% 38%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 62% 34%, rgba(207,200,255,.6), transparent 60%);
+}
+.hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+.loggedquote{
+  margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.55);
+}
+
+/* Chamber hero — pre-set to mock4's own `logged`/pulsing branch (verbatim) */
+.hero-chamber{
+  margin-top:28px;
+  min-height:300px;
+  background:
+    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
+    url(chamber-sage-x7q4.jpg) 0% 14% / 140% auto no-repeat,
+    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+.hero-chamber .hero-stars{
+  background-image:
+    radial-gradient(1.2px 1.2px at 10% 18%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 26% 10%, rgba(207,200,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 18% 40%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 8% 56%, rgba(224,170,255,.55), transparent 60%);
+}
+.chamber-breathe{
+  background:radial-gradient(46% 40% at 64% 24%, rgba(157,144,255,.26), transparent 72%);
+  animation:chamberBreathe 6s ease-in-out infinite;
+}
+.hero-chamber .hero-scrim{ background:linear-gradient(180deg, transparent 42%, rgba(12,10,26,.66) 96%); }
+
+/* Ritual module — NEW combined "day-0" state (first-ever night + already logged) */
+.ritual{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px;
+}
+.ritual-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ritual-big{ font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2; }
+.ritual-sub{ margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.ritual .constel{ flex:0 0 84px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
+.ritual-claim-eyebrow{
+  margin-top:18px; font-size:11.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--home-warn);
+}
+.ritual-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:8px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-claim:active{ transform:scale(.98); }
+.ritual-balance{
+  display:block; margin-top:14px; padding:6px 0; min-height:32px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-balance:active{ opacity:.7; }
+.ritual-balance .gold{ color:var(--home-warn); }
+
+/* My dreams row (verbatim shape; day-0 has exactly ONE tile) */
+.dreams{ margin-top:32px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory; margin:0 -20px; padding:4px 20px 8px; scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dthumb{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer;
+}
+.dthumb::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 50%, rgba(255,255,255,.6), transparent 60%);
+}
+.dthumb::after{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4)); }
+.dthumb:active{ transform:scale(.97); }
+.dthumb.t-ready{ background:radial-gradient(40px 40px at 74% 26%, rgba(255,230,176,.9), transparent 70%), radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%), linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040); }
+
+/* NEW — generating tile: violet/pink "forming" gradient + reused sweep
+   recipe (identical mechanic to processing.html's .proc-bar-fill /
+   @keyframes proc-bar-sweep — same technique, not reinvented) */
+.dthumb-generating{
+  background:
+    radial-gradient(70% 70% at 28% 26%, rgba(157,144,255,.5), transparent 65%),
+    radial-gradient(70% 70% at 78% 74%, rgba(224,120,190,.4), transparent 65%),
+    linear-gradient(160deg,#241348,#180c34);
+  border-color:rgba(157,144,255,.55);
+  box-shadow:0 0 16px -4px rgba(157,144,255,.5);
+}
+.dthumb-generating::before{ background-image:none; } /* no fake stars on an unrendered tile */
+.dthumb-generating::after{ background:none; }
+.dg-sweep{
+  position:absolute; top:0; left:-60%; height:100%; width:60%; z-index:1;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent);
+  animation:tileSweep 1.8s ease-in-out infinite;
+}
+@keyframes tileSweep{ 0%{ left:-60%; } 100%{ left:140%; } }
+.dg-inner{
+  position:relative; z-index:2; height:100%; padding:8px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+}
+.spinner-inline{ display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; animation:spin .7s linear infinite; }
+.dg-label{
+  font-size:11.5px; font-weight:700; letter-spacing:.01em; line-height:1.3; text-align:center;
+  color:#e4e0fb; text-shadow:0 1px 6px rgba(12,10,26,.6);
+  animation:pulse-text 2s ease-in-out infinite;
+}
+
+/* Toast (verbatim, mock4) */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+
+/* NEW — ORPHAN (a): notify-me card, anchored right under the dreams row */
+.notify-card{
+  margin-top:16px; position:relative;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.28); border-radius:18px;
+  padding:16px 40px 16px 16px;
+}
+.notify-x{
+  position:absolute; top:10px; right:10px; width:28px; height:28px; border-radius:50%;
+  background:none; border:none; color:var(--home-soft); font-size:18px; line-height:1; cursor:pointer;
+}
+.notify-head{ display:flex; align-items:center; gap:10px; }
+.notify-dot{ font-size:18px; flex:0 0 auto; }
+.notify-title{ font-size:15px; font-weight:800; letter-spacing:-.005em; }
+.notify-body{ margin-top:6px; font-size:13.5px; line-height:1.5; color:var(--home-soft); }
+.notify-btn{
+  margin-top:12px; display:inline-flex; align-items:center; gap:6px;
+  min-height:40px; padding:0 18px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a; font:800 14px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.notify-btn:active{ transform:scale(.97); }
+
+/* Quiet rows (verbatim, mock4) */
+.quietrows{ margin-top:32px; }
+.qrow{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:52px; padding:6px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.qrow:active{ opacity:.7; }
+.qrow .qicon{ font-style:normal; font-size:17px; width:22px; text-align:center; }
+.qrow .chev{ color:#6f6894; display:inline-flex; }
+
+/* NEW — ORPHAN (b): the elevated webview-aware state of the SAME row */
+.webview-card{
+  border:1px solid rgba(224,170,90,.4); border-radius:16px;
+  padding:14px 16px; margin:4px 0;
+  background:linear-gradient(180deg, rgba(70,48,20,.28), rgba(36,29,71,.4));
+  cursor:default;
+}
+.webview-head{ display:flex; align-items:center; gap:9px; }
+.webview-dot{ font-size:16px; }
+.webview-title{ font-size:14.5px; font-weight:800; color:#ffe0aa; }
+.webview-body{ margin-top:6px; font-size:13px; line-height:1.5; color:#e8cfa4; }
+.webview-btn{
+  margin-top:10px; display:inline-flex; align-items:center; gap:6px;
+  min-height:40px; padding:0 16px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206; font:800 13.5px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.webview-btn:active{ transform:scale(.97); }
+
+/* Bar A — the anchored night dock (verbatim, mock4) */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35); -webkit-tap-highlight-color:transparent;
+}
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+/* Claim sheet (verbatim shape, mock4) */
+.sheet-backdrop{
+  position:absolute; inset:0; z-index:50; background:rgba(6,5,18,.62);
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+.claim-sheet{
+  position:absolute; left:0; right:0; bottom:0; z-index:51;
+  background:rgba(24,19,46,.98); border:1px solid var(--home-line); border-bottom:none;
+  border-radius:22px 22px 0 0; padding:24px 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  transform:translateY(105%); transition:transform .25s ease;
+}
+.claim-sheet.open{ transform:translateY(0); }
+.claim-title{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.claim-title .gold{ color:var(--home-warn); }
+.claim-sub{ margin-top:6px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.claim-pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.claim-pill:active{ transform:scale(.98); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <!-- MOCK CHROME — two dev-only toggles, not product UI -->
+  <div class="mockbar">
+    <div class="mockrow">
+      <span class="mocklab">Dream tile</span>
+      <div class="mockseg" id="dream-seg">
+        <button type="button" class="mockbtn on" data-dream="generating">Generating</button>
+        <button type="button" class="mockbtn" data-dream="ready">Ready</button>
+      </div>
+    </div>
+    <div class="mockrow">
+      <span class="mocklab">Browser</span>
+      <div class="mockseg" id="browser-seg">
+        <button type="button" class="mockbtn on" data-browser="normal">Normal</button>
+        <button type="button" class="mockbtn" data-browser="inapp">In-app (IG/FB)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-fg">
+    <div class="home-scroll" id="home-scroll">
+
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      </div>
+
+      <div class="home-greet">
+        <div class="home-greet-line">Good evening, Ron.</div>
+      </div>
+
+      <!-- TONIGHT hero — pre-set to the existing `.logged` state (mock4's
+           own logic): the funnel dream already counts as tonight's entry -->
+      <section class="hero-card hero-tonight logged">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Tonight</div>
+          <h1 class="hero-title">Logged tonight ✓</h1>
+          <p class="loggedquote">&ldquo;I was walking through a forest made of glass — every leaf rang like a bell.&rdquo;</p>
+        </div>
+      </section>
+
+      <!-- CHAMBER hero — pre-set to the existing logged/pulsing branch:
+           interpretation only needs the dream text, so it works NOW -->
+      <section class="hero-card hero-chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub">Your reading awaits.</p>
+          <button type="button" class="pill pulse">Enter</button>
+        </div>
+      </section>
+      <div class="mock-annot">→ Opens straight to the reading. <b>Dream-row picker (00s2dr):</b> this is the only completed dream, so its own spec already hides the "change dream" switcher — this dream is simply what's shown, no new picker UI needed.</div>
+
+      <!-- RITUAL module — NEW combined state: first-ever night AND already
+           logged, at once. +100 first-claim bonus (FIRST_CLAIM_BONUS_AMOUNT). -->
+      <section class="ritual" id="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big">🔥 1 night</div>
+            <div class="ritual-sub">Your streak starts tonight</div>
+          </div>
+          <span id="ritual-constel">
+            <svg class="constel" width="84" height="46" viewBox="0 0 84 46" aria-hidden="true">
+              <line x1="12" y1="34" x2="42" y2="12"/>
+              <line x1="42" y1="12" x2="72" y2="28"/>
+              <path class="st lit" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>
+              <path class="st" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>
+              <path class="st" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>
+            </svg>
+          </span>
+        </div>
+        <div class="ritual-claim-eyebrow">🎁 First-night bonus</div>
+        <button type="button" class="ritual-claim" id="ritual-claim">Claim +100 ✦</button>
+        <button type="button" class="ritual-balance" id="ritual-balance"><span class="gold">✦</span> 220 · Vault →</button>
+      </section>
+
+      <!-- My dreams — day-0 has exactly ONE tile: the funnel dream -->
+      <section class="dreams" id="dreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <button type="button" class="dreams-all">All →</button>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb dthumb-generating" id="dream-tile">
+            <div class="dg-sweep" id="dg-sweep"></div>
+            <div class="dg-inner" id="dg-inner">
+              <span class="spinner-inline"></span>
+              <span class="dg-label">Your dream is<br>forming…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ORPHAN (a) — notify-me/push prompt, rehomed from processing.html's
+           #push-ask-slot. Anchored to the moment its own doc comment already
+           calls the ideal one: right where the first generation is visibly
+           in flight. -->
+      <div class="notify-card" id="notify-card">
+        <button type="button" class="notify-x" id="notify-x" aria-label="Dismiss">&times;</button>
+        <div class="notify-head">
+          <span class="notify-dot">🔔</span>
+          <span class="notify-title">We'll tell you the moment it's ready</span>
+        </div>
+        <div class="notify-body">Video generation takes about a minute. Turn on notifications and close the app if you want — we'll ping you the instant your first dream is done.</div>
+        <button type="button" class="notify-btn" id="notify-btn">Notify me 🔔</button>
+      </div>
+      <div class="mock-annot"><b>ORPHAN 1</b> rehomed here from processing.html's #push-ask-slot (js/push-subscribe.js). Same one-ever-per-browser dismiss rule; only ever shown outside a detected in-app webview.</div>
+
+      <!-- Quiet rows — normal state unchanged; ORPHAN (b) replaces it with
+           an elevated card when a webview is detected -->
+      <div class="quietrows" id="quietrows">
+        <button type="button" class="qrow" id="addphone-normal">
+          <i class="qicon">📲</i><span class="qlabel" style="flex:1;">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+        <div class="webview-card" id="addphone-webview" hidden>
+          <div class="webview-head"><span class="webview-dot">🌐</span><span class="webview-title">Viewing in Instagram</span></div>
+          <div class="webview-body">Open DreamTube in your real browser to keep this dream safe — and add it to your phone like any other app.</div>
+          <button type="button" class="webview-btn" id="webview-open-btn">Open in browser ↗</button>
+        </div>
+      </div>
+      <div class="mock-annot"><b>ORPHAN 2</b> — the SAME row, elevated. Rehomed from processing.html's #proc-nudge-card + js/install-nudge.js. Shown only when DreamStore.detectInAppWebviewHost() is non-null; otherwise the plain row above is unchanged.</div>
+
+    </div>
+  </div>
+
+  <nav class="night-dock" aria-label="Main">
+    <a class="night-dock-item active" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span>Home</span></a>
+    <a class="night-dock-item" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span>Explore</span></a>
+    <a class="night-dock-create" href="#" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+    <a class="night-dock-item" href="#"><div class="night-dock-avatar">Y</div><span>Profile</span></a>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="claim-sheet" id="claim-sheet" role="dialog" aria-label="First-night bonus" aria-hidden="true">
+    <div class="claim-title"><span class="gold">✦</span> First-night bonus</div>
+    <p class="claim-sub">+100 tokens for your very first night — enough to make another dream tomorrow.</p>
+    <button type="button" class="claim-pill" id="claim-pill">Claim 100 ✦</button>
+  </div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ---- Row 1: Dream tile Generating <-> Ready ----
+  var tile = document.getElementById('dream-tile');
+  document.getElementById('dream-seg').addEventListener('click', function(e){
+    var btn = e.target.closest('.mockbtn'); if(!btn) return;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.remove('on'); });
+    btn.classList.add('on');
+    if(btn.dataset.dream === 'ready'){
+      tile.className = 'dthumb t-ready';
+      tile.innerHTML = '';
+      toast('✨ Your dream is ready — tap to watch');
+    } else {
+      tile.className = 'dthumb dthumb-generating';
+      tile.innerHTML = '<div class="dg-sweep"></div><div class="dg-inner"><span class="spinner-inline"></span><span class="dg-label">Your dream is<br>forming…</span></div>';
+    }
+  });
+
+  // ---- Row 2: Browser Normal <-> In-app (the webview-elevated row) ----
+  var normalRow = document.getElementById('addphone-normal');
+  var webviewRow = document.getElementById('addphone-webview');
+  document.getElementById('browser-seg').addEventListener('click', function(e){
+    var btn = e.target.closest('.mockbtn'); if(!btn) return;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.remove('on'); });
+    btn.classList.add('on');
+    var inapp = btn.dataset.browser === 'inapp';
+    normalRow.hidden = inapp;
+    webviewRow.hidden = !inapp;
+  });
+  document.getElementById('webview-open-btn').addEventListener('click', function(){
+    toast('Opening in your browser…');
+  });
+
+  // ---- Notify-me card ----
+  document.getElementById('notify-btn').addEventListener('click', function(){
+    toast('We\'ll notify you the moment it\'s ready');
+    document.getElementById('notify-card').remove();
+  });
+  document.getElementById('notify-x').addEventListener('click', function(){
+    document.getElementById('notify-card').remove();
+  });
+
+  // ---- Claim sheet demo ----
+  var backdrop = document.getElementById('sheet-backdrop');
+  var sheet = document.getElementById('claim-sheet');
+  var balanceEl = document.getElementById('ritual-balance');
+  var claimBtn = document.getElementById('ritual-claim');
+  claimBtn.addEventListener('click', function(){
+    backdrop.classList.add('open'); sheet.classList.add('open'); sheet.setAttribute('aria-hidden','false');
+  });
+  backdrop.addEventListener('click', function(){
+    backdrop.classList.remove('open'); sheet.classList.remove('open'); sheet.setAttribute('aria-hidden','true');
+  });
+  document.getElementById('claim-pill').addEventListener('click', function(){
+    backdrop.classList.remove('open'); sheet.classList.remove('open'); sheet.setAttribute('aria-hidden','true');
+    claimBtn.remove();
+    document.querySelector('.ritual-claim-eyebrow').remove();
+    balanceEl.innerHTML = '<span class="gold">✦</span> 320 · Vault →';
+  });
+</script>
+</body>
+</html>
