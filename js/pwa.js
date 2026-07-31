@@ -115,10 +115,48 @@ window.PwaInstall = (function () {
     return !!(window.navigator && window.navigator.standalone);
   }
 
-  /** True on an iOS/iPadOS Safari-family browser — the one platform that can NEVER fire beforeinstallprompt, so the install nudge must fall back to manual "tap Share -> Add to Home Screen" instructions there instead of a real native prompt. Excludes Chrome-on-iOS/Firefox-on-iOS (they use Apple's forced WebKit engine too and also can't show a native prompt, but explicitly naming "Safari" in the instructions would be wrong for those — this just checks the OS, not the specific browser chrome, since the Add-to-Home-Screen mechanism itself is the same OS-level share-sheet action regardless of which iOS browser is showing it). */
+  /** True on an iOS/iPadOS Safari-family browser — the one platform that can NEVER fire beforeinstallprompt, so the install nudge must fall back to manual "tap Share -> Add to Home Screen" instructions there instead of a real native prompt. True for Chrome-on-iOS/Firefox-on-iOS too (they use Apple's forced WebKit engine and also can't show a native prompt) — this just checks the OS, not the specific browser chrome; see iosBrowserKind() below for the browser-specific distinction the actual on-screen guidance needs. */
   function isIOS() {
     var ua = navigator.userAgent || '';
     return /iPad|iPhone|iPod/.test(ua) || (ua.indexOf('Macintosh') !== -1 && navigator.maxTouchPoints > 1);
+  }
+
+  /**
+   * Which iOS browser chrome is actually showing this page — added for
+   * tracker item for-product-bug-research-founder-high-ad-vnda9t (the
+   * founder's own real-device report: A2HS "doesn't even appear" in
+   * Chrome). Research finding (verified at-source, not from memory — see
+   * that item's own resolution): every iOS browser runs on Apple's forced
+   * WebKit engine, so isIOS() above is still right that none of them can
+   * ever fire beforeinstallprompt — but the ACTUAL on-screen path to "Add
+   * to Home Screen" is NOT identical across them the way this file used to
+   * assume. Safari's real toolbar is a "•••" More button (bottom-right)
+   * opening a small menu with Share as its first item; Chrome's is a
+   * direct Share icon at the right of its address bar (Google's own
+   * support doc: https://support.google.com/chrome/answer/9658361).
+   * Third-party iOS browsers each opt into Apple's own
+   * SFAddToHomeScreenActivityItem system-share-sheet API independently —
+   * Chrome added this around July 2023 and it's still current for
+   * 2025/2026, confirmed via Google's own support page — but nothing
+   * guarantees every browser's menu surfaces the action identically or
+   * even reliably (real, unresolved Apple Community / Google Chrome
+   * Community reports of Chrome's share sheet needing a one-time "Edit
+   * Actions" step before "Add to Home Screen" appears at all are common).
+   * Detected via each vendor's own well-established iOS user-agent token
+   * (CriOS/FxiOS/EdgiOS/OPiOS — the same convention every vendor already
+   * uses to identify itself on iOS, not a guess) so js/install-nudge.js's
+   * guidance can show ONLY what's actually achievable for the browser in
+   * front of the visitor right now, per this app's standing no-fake-
+   * buttons discipline — never Safari's specific "•••" mock to a Chrome
+   * user, who has no such button in that place.
+   */
+  function iosBrowserKind() {
+    var ua = navigator.userAgent || '';
+    if (/CriOS/.test(ua)) return 'chrome';
+    if (/FxiOS/.test(ua)) return 'firefox';
+    if (/EdgiOS/.test(ua)) return 'edge';
+    if (/OPiOS/.test(ua)) return 'opera';
+    return 'safari'; // default -- real Safari, and any iOS browser/webview with no other vendor's own UA token
   }
 
   // ==========================================================================
@@ -456,6 +494,7 @@ window.PwaInstall = (function () {
     promptInstall: promptInstall,
     isStandalone: isStandalone,
     isIOS: isIOS,
+    iosBrowserKind: iosBrowserKind,
     registerBusyCheck: registerBusyCheck,
     recheckBusy: recheckBusy,
     __swListenersReady: swListenersReady

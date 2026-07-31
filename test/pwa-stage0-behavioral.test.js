@@ -71,6 +71,13 @@ async function safeGoto(page, url, opts) {
 var IG_ANDROID_UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/119.0.0.0 Mobile Safari/537.36 Instagram 302.0.0.23.114 Android (33/13; 420dpi; 1080x2246; google/redfin/redfin:13; en_US; 538815920)';
 var FB_IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/400.0.0.0.100;FBBV/1;FBDV/iPhone14,2;FBMD/iPhone;FBSN/iOS;FBSV/16.0;FBSS/3;FBID/phone;FBLC/en_US]';
 var NORMAL_IOS_SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+// Chrome-on-iOS's own real UA token is "CriOS/<version>" -- the same
+// vendor-identifying convention Apple's own WebKit docs and every other
+// iOS browser use to mark themselves as running on iOS's forced WebKit
+// engine (confirmed via research for tracker item for-product-bug-
+// research-founder-high-ad-vnda9t; see js/pwa.js's iosBrowserKind() doc
+// comment for citations). A real, current Chrome-for-iOS UA string.
+var CHROME_IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1';
 
 /** Seeds a logged-in account directly into localStorage — same shortcut every other behavioral test in this repo uses (see test/delete-account-behavioral.test.js's identical seedUser). */
 async function seedUser(page, username) {
@@ -222,8 +229,165 @@ test('install (A2HS) nudge: shown on a REAL browser (iOS Safari) repeat visit, w
 
     await safeGoto(page, baseUrl + '/profile.html');
     await page.waitForSelector('#install-nudge-card', { state: 'visible', timeout: 5000 });
-    var bodyText = await page.textContent('#install-nudge-card .install-nudge-body');
+    // Safari's real guidance is now split across TWO .install-nudge-body
+    // divs (••• More button, then Share) -- page.textContent() on a
+    // multi-match selector only returns the FIRST element, so this reads
+    // the whole card's text rather than just one paragraph of it.
+    var bodyText = await page.textContent('#install-nudge-card');
     assert.match(bodyText, /share/i, 'iOS instructions must mention the Share icon (no native install prompt exists on iOS Safari)');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== Browser-aware iOS guidance -- tracker item for-product-bug-
+// research-founder-high-ad-vnda9t. Founder real-device report: A2HS
+// "doesn't even appear" in Chrome on his iPhone. Root cause: the nudge
+// used to show every iOS browser the SAME Safari-specific visual (a "•••"
+// More button, bottom-right of the toolbar) -- real and accurate for
+// Safari, but Chrome-on-iOS has a genuinely different real UI (a direct
+// Share icon at the right of the address bar -- Google's own support doc,
+// support.google.com/chrome/answer/9658361). These tests confirm the fix:
+// each iOS browser now gets guidance that actually matches its own real
+// UI, never a wrong-browser mock. =====
+
+test('install (A2HS) nudge: Chrome-on-iOS gets Chrome-specific guidance (address-bar Share icon), never Safari\'s "•••" More-button mock', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: CHROME_IOS_UA });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var username = 'installchrome' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username);
+
+    await safeGoto(page, baseUrl + '/profile.html');
+    await safeGoto(page, baseUrl + '/profile.html'); // 2nd visit -- the repeat-visit trigger's own threshold
+    await page.waitForSelector('#install-nudge-card', { state: 'visible', timeout: 5000 });
+
+    var cardText = await page.textContent('#install-nudge-card');
+    assert.match(cardText, /address bar/i, 'Chrome guidance must point at its own real Share-icon location (right of the address bar), not Safari\'s toolbar');
+    assert.doesNotMatch(cardText, /•••/, 'Chrome has no "•••" More button in that spot -- must never show Safari\'s specific mock to a Chrome user');
+    assert.doesNotMatch(cardText, /bottom-right of your screen in Safari/i, 'must not literally say "in Safari" to a Chrome user');
+  } finally {
+    await context.close();
+  }
+});
+
+test('PwaInstall.iosBrowserKind() correctly distinguishes Safari from Chrome/Firefox/Edge on iOS via each vendor\'s own UA token', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  async function kindFor(userAgent) {
+    var context = await browser.newContext({ userAgent: userAgent });
+    try {
+      var page = await context.newPage();
+      await blockThirdParty(page);
+      await safeGoto(page, baseUrl + '/login.html');
+      return await page.evaluate(function () { return window.PwaInstall.iosBrowserKind(); });
+    } finally {
+      await context.close();
+    }
+  }
+
+  assert.equal(await kindFor(NORMAL_IOS_SAFARI_UA), 'safari');
+  assert.equal(await kindFor(CHROME_IOS_UA), 'chrome');
+  assert.equal(await kindFor('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/130.0 Mobile/15E148 Safari/605.1.15'), 'firefox');
+  assert.equal(await kindFor('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/130.0.0.0 Mobile/15E148 Safari/605.1.15'), 'edge');
+});
+
+test('home.html\'s persistent install journey card also shows Chrome-specific guidance on Chrome-iOS (shared buildIOSGuidanceHtml dispatch)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: CHROME_IOS_UA });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var username = 'installhomechrome' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username);
+
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
+    await page.click('#install-hcard-btn');
+    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 5000 });
+
+    var sheetText = await page.textContent('#install-sheet-body');
+    assert.match(sheetText, /address bar/i, 'home.html\'s journey-card sheet must use the same Chrome-aware guidance, not a hardcoded Safari mock');
+    assert.doesNotMatch(sheetText, /•••/, 'must not show Safari\'s "•••" mock inside Chrome');
+  } finally {
+    await context.close();
+  }
+});
+
+test('manifest.json start_url launches to the signed-in dashboard (home.html), not the marketing welcome screen (index.html)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/index.html');
+    var manifest = await page.evaluate(function () {
+      return fetch('manifest.json').then(function (r) { return r.json(); });
+    });
+    // Root cause of the founder's "doesn't do anything" report: launching
+    // the installed icon used to always land on the generic marketing
+    // welcome page (index.html), which has zero signed-in-state awareness
+    // (no getCurrentUser check, no redirect) -- indistinguishable from
+    // "nothing happened" for an already-signed-in returning user. home.html
+    // itself already redirects a signed-OUT visitor to login.html (see that
+    // page's own first script line), so this one change correctly serves
+    // both cases.
+    assert.equal(manifest.start_url, './home.html');
+  } finally {
+    await context.close();
+  }
+});
+
+test('manifest.json declares real 192x192 and 512x512 icons for both "any" and "maskable" purposes (Chrome\'s documented installability requirement)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/index.html');
+    var manifest = await page.evaluate(function () {
+      return fetch('manifest.json').then(function (r) { return r.json(); });
+    });
+    // A single 1254x1254-only declared icon (this manifest's state before
+    // this fix) does not satisfy Chrome/Chromium's installability checker,
+    // which specifically requires a 192x192 AND a 512x512 declared icon --
+    // confirmed via Chrome's own Lighthouse docs and MDN's "Making PWAs
+    // installable" guide (tracker item for-product-bug-research-founder-
+    // high-ad-vnda9t's research pass). Real installability gates whether
+    // beforeinstallprompt ever fires at all.
+    function sizesFor(purpose) {
+      return manifest.icons.filter(function (i) { return i.purpose === purpose; }).map(function (i) { return i.sizes; });
+    }
+    assert.ok(sizesFor('any').indexOf('192x192') !== -1, 'expected a 192x192 "any"-purpose icon');
+    assert.ok(sizesFor('any').indexOf('512x512') !== -1, 'expected a 512x512 "any"-purpose icon');
+    assert.ok(sizesFor('maskable').indexOf('192x192') !== -1, 'expected a 192x192 maskable icon');
+    assert.ok(sizesFor('maskable').indexOf('512x512') !== -1, 'expected a 512x512 maskable icon');
+  } finally {
+    await context.close();
+  }
+});
+
+test('apple-touch-icon is present and fetchable on every real app page (iOS uses this specifically, not just manifest icons)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var pagesToCheck = ['index.html', 'home.html', 'result.html', 'profile.html', 'processing.html'];
+    for (var i = 0; i < pagesToCheck.length; i++) {
+      await safeGoto(page, baseUrl + '/' + pagesToCheck[i]);
+      var href = await page.getAttribute('link[rel="apple-touch-icon"]', 'href');
+      assert.equal(href, 'assets/apple-touch-icon.png', pagesToCheck[i] + ' must declare a real apple-touch-icon');
+      var capableContent = await page.getAttribute('meta[name="apple-mobile-web-app-capable"]', 'content');
+      assert.equal(capableContent, 'yes', pagesToCheck[i] + ' must declare apple-mobile-web-app-capable so the installed icon launches standalone, not as a plain Safari-chrome bookmark');
+
+      var fetchStatus = await page.evaluate(function () {
+        return fetch('assets/apple-touch-icon.png').then(function (r) { return r.status; });
+      });
+      assert.equal(fetchStatus, 200, 'assets/apple-touch-icon.png must actually be fetchable, not a dangling link');
+    }
   } finally {
     await context.close();
   }
