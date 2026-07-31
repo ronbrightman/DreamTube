@@ -31,7 +31,7 @@ No build command, no environment variables, no server required.
 | `processing.html` | Generating… (real async call, shows a failure state on genuine generation errors) |
 | `result.html?id=…` | Result (Edit/Change Style sheets, Publish) |
 
-`home.html` was retired for a while (an old YouTube-style feed, unlinked from the live app) and has since been REVIVED as the new logged-in landing page — see the tracker item above for the full rebuild. Bottom nav is now Home / + Create / Explore / Profile on home.html itself; every other page keeps its existing Explore / + Create / Profile nav unchanged.
+`home.html` was retired for a while (an old YouTube-style feed, unlinked from the live app) and has since been REVIVED as the new logged-in landing page — see the tracker item above for the full rebuild. Bottom nav is Home / Explore / + Create / Profile everywhere: home.html and explore.html share one renderer (`js/bottom-nav.js`, same self-contained-module pattern as `js/purchase-sheet.js`) so their navs can't drift out of order again, and profile.html has its own separate, newer `.night-dock` bar (Bar A, founder-approved) with the same tab order but a different visual language — see that file's own header comment for why it's deliberately not on the shared renderer.
 
 Navigation between pages is real browser navigation — back/forward buttons work, every URL is shareable/bookmarkable, and each page can be understood and debugged on its own.
 

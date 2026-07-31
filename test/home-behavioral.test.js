@@ -464,7 +464,7 @@ test('home.html: Vault card shows the real token balance and links into shop.htm
   }
 });
 
-test('home.html: bottom nav is Home (active) / +Create / Explore / Profile -- Explore stays one tap away, nothing existing lost', async function (t) {
+test('home.html: bottom nav is Home (active) / Explore / +Create / Profile, matching explore.html/profile.html -- tracker item for-product-bug-design-pass-find-bottom--g0m6ck', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -477,7 +477,11 @@ test('home.html: bottom nav is Home (active) / +Create / Explore / Profile -- Ex
     var labels = await page.locator('.bottom-nav > *').evaluateAll(function (els) {
       return els.map(function (e) { return (e.textContent || '').trim() || (e.classList.contains('nav-create') ? '+' : ''); });
     });
-    assert.deepEqual(labels, ['Home', '+', 'Explore', 'Profile']);
+    // Was Home/+/Explore/Profile (the drift bug) -- now matches
+    // explore.html's and profile.html's Home/Explore/+/Profile order, the
+    // founder-approved order, so the + button no longer jumps position
+    // tabbing between Home and Explore.
+    assert.deepEqual(labels, ['Home', 'Explore', '+', 'Profile']);
     assert.equal(await page.locator('.bottom-nav .nav-item.active').textContent(), 'Home');
     var exploreHref = await page.locator('.bottom-nav a[href="explore.html"]').getAttribute('href');
     assert.equal(exploreHref, 'explore.html');
