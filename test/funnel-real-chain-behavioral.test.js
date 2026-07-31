@@ -5,8 +5,10 @@
 // asked for after failing founder QA twice on the same "fix": "the prior
 // end-to-end test did NOT mirror the actual real-world call sequence
 // (pending-gen fired pre-signup -> adopted post-signup -> resumed via
-// processing.html polling -> completed) ... make the end-to-end test
-// mirror the ACTUAL wizard call order, not a simplified sequence."
+// home.html polling, formerly processing.html's job before tracker item
+// for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page ->
+// completed) ... make the end-to-end test mirror the ACTUAL wizard call
+// order, not a simplified sequence."
 //
 // Every prior test covering this bug composed the chain ONE of two ways,
 // neither of which is what a real user's browser actually does:
@@ -14,9 +16,9 @@
 //     real Netlify function HANDLERS directly (start-pending-generation ->
 //     claim-pending-generation -> mark-generation-completed), proving the
 //     SERVER-side chain is correct in isolation, but never exercise
-//     wizard.html's/processing.html's own client-side JS at all (the
+//     wizard.html's/home.html's own client-side JS at all (the
 //     pendingGenerationToken/comparisonKey guard, adoptPendingGeneration,
-//     resumePendingJob, the poll loop, attachTaskHandlers) -- exactly the
+//     resumePendingJob, the poll loop, onGenerationSettled) -- exactly the
 //     layer the founder's own failed QA run implicated.
 //   - test/wizard-ui-behavioral.test.js's own "generate-during-signup" test
 //     drives the REAL browser/client code with Playwright, but every
@@ -27,7 +29,7 @@
 //     logic behind those endpoints actually resolves and sends.
 //
 // THIS file composes both halves at once: Playwright drives the real
-// wizard.html/processing.html pages exactly as a real visitor would (click
+// wizard.html/home.html pages exactly as a real visitor would (click
 // chips, fill the contact-capture email, fill signup fields, wait for the
 // real client-side poll loop to resume and complete) -- but every
 // intercepted /.netlify/functions/* route.fulfill()s with the response of
@@ -149,7 +151,7 @@ async function wireRealGetHandler(page, urlGlob, handler, transformBody) {
   });
 }
 
-test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture -> signup -> processing.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
+test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture -> signup -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   mockBlobs.reset();
   process.env.GENERATION_MOCK_MODE = 'true';
@@ -259,15 +261,18 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
-    // processing.html's own real resume/poll/completion sequence takes it
-    // from here -- this is the client code the founder's own failed QA run
-    // actually exercised, now running for real against real handlers.
-    await page.waitForURL(/result\.html\?id=/, { timeout: 20000 });
+    // home.html's own real resume/poll/completion sequence takes it from
+    // here (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q --
+    // processing.html removed, wizard.html now lands directly on home.html)
+    // -- this is the client code the founder's own failed QA run actually
+    // exercised, now running for real against real handlers.
+    await page.waitForURL(/home\.html/, { timeout: 20000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 20000 });
 
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must have fired exactly once, for the real funnel pendingId');
     assert.equal(claimCalls[0].email, FUNNEL_EMAIL);
-    assert.ok(markCalls.length >= 1, 'processing.html must have called the REAL mark-generation-completed.js at least once');
+    assert.ok(markCalls.length >= 1, 'home.html must have called the REAL mark-generation-completed.js at least once');
     assert.equal(markCalls[0].operationName.indexOf('mock:'), 0, 'the operationName reaching mark-generation-completed must be the SAME funnel operationName minted by start-pending-generation.js');
 
     // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the automatic retention email

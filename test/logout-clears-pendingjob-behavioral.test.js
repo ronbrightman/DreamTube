@@ -17,8 +17,8 @@
 // into the SAME account mid-flight would find their pendingJob gone —
 // silently wasting an already-spent generation (tokens are spent at
 // submission time, see generate-video.js's E112 doc block) with no error
-// surfaced, since home.html/explore.html/processing.html's resume
-// machinery had nothing left to resume.
+// surfaced, since home.html/explore.html's resume machinery had nothing
+// left to resume.
 //
 // FINAL FIX (round 2, this file): logout() no longer touches
 // state.pendingJob at all. Instead savePendingJob tags every pendingJob

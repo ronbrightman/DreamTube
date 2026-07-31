@@ -1956,17 +1956,30 @@
     });
     // Record-it (isRecordMode): there's no generation in flight — the
     // generate-during-signup call was deliberately skipped above (no real
-    // caption to submit) — so processing.html (which assumes an adopted
-    // generation to poll for) would be wrong here. Send the visitor straight
-    // into create.html's Record UI instead, via a param create.html checks
-    // on load to auto-open the mic-record flow (skipping the Build/Write/
-    // Record choice screen — the account already exists from screen 13's
-    // signup, so create.html's own auth guard passes).
+    // caption to submit) — so home.html (which shows an in-progress
+    // pendingJob tile) has nothing to show yet either. Send the visitor
+    // straight into create.html's Record UI instead, via a param create.html
+    // checks on load to auto-open the mic-record flow (skipping the Build/
+    // Write/Record choice screen — the account already exists from screen
+    // 13's signup, so create.html's own auth guard passes).
     if(isRecordMode){
       location.href = 'create.html?record=1';
       return;
     }
-    location.href = 'processing.html';
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31 evening) —
+    // processing.html's dedicated wait screen is gone. `?generate=1` is
+    // the same explicit "submit fresh from the draft if there's no
+    // pendingJob to resume" signal style.html's in-app Generate button
+    // uses (see home.html's own "Fresh in-app generation submission"
+    // script block) — needed here too for the case the pre-signup
+    // generation call above failed (pendingOperationName never adopted):
+    // home.html finds no pendingJob and falls back to submitting the
+    // intact draft fresh, instead of silently doing nothing. When the
+    // pre-signup call DID succeed, home.html's own pendingJob-first check
+    // resumes that adopted job instead and ignores this param entirely —
+    // both cases converge on the same landing page either way.
+    location.href = 'home.html?generate=1';
   }
 
   // ===================================================================

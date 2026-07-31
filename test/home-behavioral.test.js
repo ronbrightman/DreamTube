@@ -311,8 +311,16 @@ test('home.html: the ritual module stays the exact same element across locked ->
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
 
-    // Locked state: 1 of 3.
-    await seedHomeUser(page, { dreams: [makeDream('wk-1')] });
+    // Locked state: 1 of 3. A past no-recall date (well outside this week,
+    // so it doesn't affect the weekCount arithmetic below) makes this a
+    // RETURNING user's second+ week, not a genuine day-0/first-ever night
+    // -- otherwise a single dream created today with no other history
+    // would ALSO legitimately qualify as day-0 (tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q's own isFirstEverNight combined
+    // state), which takes copy priority over the plain "N of 3 this week"
+    // this test is actually about.
+    var TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toDateString();
+    await seedHomeUser(page, { dreams: [makeDream('wk-1')], noRecallDates: [TEN_DAYS_AGO] });
     await page.waitForSelector('#ritual', { timeout: 5000 });
     assert.equal(await page.locator('#ritual').count(), 1);
     assert.equal(await page.locator('#ritual').getAttribute('class'), 'ritual', 'locked state should not yet carry the warm class');
@@ -322,8 +330,12 @@ test('home.html: the ritual module stays the exact same element across locked ->
     assert.match(lockedSub, /1 of 3/);
 
     // Earned state: 3 of 3, same account, more dreams -- freshState avoids
-    // double-counting the 'wk-1' dream seeded above into a 4th entry.
-    await seedHomeUser(page, { dreams: [makeDream('wk-1'), makeDream('wk-2'), makeDream('wk-3')], freshState: true });
+    // double-counting the 'wk-1' dream seeded above into a 4th entry. Same
+    // past no-recall date as the locked-state seed above, for the same
+    // "returning user, not day-0" reason -- three dreams created today
+    // with zero OTHER history would otherwise still legitimately read as
+    // isFirstEverNight too.
+    await seedHomeUser(page, { dreams: [makeDream('wk-1'), makeDream('wk-2'), makeDream('wk-3')], noRecallDates: [TEN_DAYS_AGO], freshState: true });
     await page.waitForSelector('#ritual', { timeout: 5000 });
     assert.equal(await page.locator('#ritual').count(), 1, 'the ritual module must never be duplicated between states');
     var earnedClass = await page.locator('#ritual').getAttribute('class');
@@ -372,11 +384,12 @@ test('home.html: My Dreams row renders real thumbnails linking to result.html an
 // Regression coverage for the My Dreams row's blank/black video-tile bug
 // (tracker item for-product-home-screen-spec-drift-from--575djz, fix 5,
 // carried over into the Night Shelf rebuild via the shared
-// DreamCards.observeVideos() mechanism profile.html already uses). Follows
-// test/processing-preview-video-blank-tile-fallback-behavioral.test.js's
-// pattern of stalling the video's own network request (so no loadeddata/
-// playing/error can ever fire -- the exact real-world shape of a slow
-// network or blocked autoplay) rather than just asserting on markup.
+// DreamCards.observeVideos() mechanism profile.html already uses). Stalls
+// the video's own network request (so no loadeddata/playing/error can
+// ever fire -- the exact real-world shape of a slow network or blocked
+// autoplay) rather than just asserting on markup -- the same technique
+// processing.html's own now-deleted coverage of this used, before tracker
+// item for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page.
 function stallHomeThumbVideoRequest(page) {
   return page.route('**/mock-home-thumb-video.mp4', function () { /* deliberately never fulfilled -- stalled network, matching the real bug's shape */ });
 }

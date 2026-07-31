@@ -303,7 +303,7 @@ test('mark-generation-completed: an operationName with no job-owners record for 
 // chain that was actually broken -- start-pending-generation.js (the
 // funnel/wizard's pre-signup generation entry point) -> a real signup ->
 // claim-pending-generation.js (the wizard's own "I made it in" call) ->
-// mark-generation-completed.js (processing.html's completion choke point)
+// mark-generation-completed.js (home.html's completion choke point, formerly processing.html's before that page was removed)
 // -- rather than hand-seeding a job-owners record the way every other test
 // in this file does (which proves mark-generation-completed.js's OWN logic
 // is correct in isolation, but would have kept passing even with the real
@@ -372,7 +372,7 @@ test('END-TO-END ROOT-CAUSE FIX: a funnel-started generation (start-pending-gene
   }));
   assert.equal(JSON.parse(claimRes.body).claimed, true, 'test setup: the claim itself must succeed');
 
-  // 4) processing.html's real completion choke point -- the same request
+  // 4) home.html's real completion choke point -- the same request
   //    js/store.js's markGenerationJustCompleted fires once its poll of
   //    video-status.js sees the (mock) generation done.
   var spies = installFetchSpy();
@@ -456,7 +456,7 @@ test('EXACTLY ONE EMAIL, NOT TWO: a completed funnel user gets the automatic ret
 //      succeed from 'notified' (pending-dreams.js's own doc comment:
 //      "claiming after the re-engagement email already fully went out is
 //      still meaningful bookkeeping") -- status becomes 'claimed'.
-//   4. wizard.html redirects to processing.html, which calls
+//   4. wizard.html redirects to home.html, which calls
 //      mark-generation-completed.js once its poll sees the job done.
 //   5. maybeSendAutomaticFirstDreamEmail had ZERO awareness of
 //      pending-dreams.js's state -- it only ever consulted
@@ -537,7 +537,7 @@ test('WEBHOOK-BEFORE-CLAIM ORDERING: the abandonment email firing first (webhook
   assert.equal(afterClaim.status, 'claimed', 'test setup: status has moved on to claimed, same as the normal case');
   assert.ok(afterClaim.readyAt, 'test setup: readyAt must still be set even after the status moved past \'notified\' to \'claimed\'');
 
-  // 4) processing.html's real completion choke point -- must NOT fire a
+  // 4) home.html's real completion choke point -- must NOT fire a
   //    second email, even though a real job-owners record (with a real
   //    matching account) now resolves for this operationName.
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
@@ -638,7 +638,7 @@ test('CLAIM-BEFORE-WEBHOOK ORDERING (the realistic/typical case): claiming while
   assert.equal(afterWebhook.videoUrl, 'https://cdn.fal/finished.mp4', 'test setup: videoUrl bookkeeping must still be recorded');
   assert.equal(afterWebhook.readyAt, null, 'THE FIX: readyAt must stay unset -- this bookkeeping branch never actually sent an email, so it must never look like it did');
 
-  // 4) processing.html's real completion choke point -- the automatic
+  // 4) home.html's real completion choke point -- the automatic
   //    retention email is the ONLY email this user will ever get, and it
   //    MUST fire here.
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;

@@ -24,8 +24,10 @@
 // plain static file server, page.route() standing in for
 // video-status.js, blockThirdParty() for this sandbox's flaky outbound
 // network, and safeGoto() to tolerate a transient nav failure. A
-// pendingJob is seeded directly into localStorage so processing.html's
-// runGeneration() takes the RESUME path straight into pollUntilDone.
+// pendingJob is seeded directly into localStorage so home.html's own
+// load-time pendingJob check (tracker item for-product-funnel-ending-v2-
+// founder-ins-tfuu0q -- processing.html removed) takes the RESUME path
+// straight into pollUntilDone via DreamStore.resumePendingJob().
 //
 // Timing note: js/store.js's own POLL_INTERVAL_MS (10s) is the real
 // retry delay reused for the network-failure-retry path too (deliberately
@@ -144,7 +146,7 @@ test('js/store.js pollUntilDone: one transient network failure mid-poll is retri
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:req-should-never-be-submitted' }) });
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html');
 
     // Give the first (aborted) poll attempt time to actually reject and run
     // its .catch handler, then confirm the job was NOT wiped by that one
@@ -157,10 +159,12 @@ test('js/store.js pollUntilDone: one transient network failure mid-poll is retri
     assert.equal(pendingJobAfterOneMiss.operationName, 'fal:fal-ai/veo3.1/fast:req-transientmiss');
 
     // The retry (same POLL_INTERVAL_MS delay as the ordinary not-done-yet
-    // path) should land on the SAME operationName and eventually resolve,
-    // redirecting to result.html -- proving this was one continuous
-    // generation, not a fresh resubmission.
-    await page.waitForURL('**/result.html?id=*', { timeout: 20000 });
+    // path) should land on the SAME operationName and eventually resolve --
+    // home.html's own My-dreams row generating tile flips to a real
+    // finished tile in place (tracker item for-product-funnel-ending-v2-
+    // founder-ins-tfuu0q -- no more redirect to result.html), proving this
+    // was one continuous generation, not a fresh resubmission.
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 20000 });
 
     assert.equal(generateVideoCallCount, 0, 'a transient poll failure must never trigger a fresh generate-video submission -- the original in-flight job must be resumed, not resubmitted');
     assert.ok(statusCallCount >= 2, 'the poll must have retried past the first transient failure to reach the eventual done:true response');
@@ -185,14 +189,17 @@ test('js/store.js pollUntilDone: a SUSTAINED run of network failures past the re
       route.abort('failed');
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html');
 
-    // Must eventually give up (bounded retries, not infinite) -- the
-    // processing.html failure screen appears and shows the E302 code.
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 50000 });
-
-    var failCode = await page.textContent('#proc-fail-code');
-    assert.equal(failCode, 'E302', 'a sustained run of network failures must still eventually surface as E302, not hang forever');
+    // Must eventually give up (bounded retries, not infinite) -- home.html
+    // has no dedicated failure screen anymore (tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q -- processing.html removed); the
+    // generating tile disappears and a toast reports the failure instead.
+    // The E302 code itself now only ever reaches analytics (this page's
+    // own 'generation_blocked' track() call), not a visible DOM chip, so
+    // it's asserted via the pendingJob-cleared signal below instead of a
+    // rendered code element.
+    await page.waitForSelector('.toast.show', { timeout: 50000 });
 
     // And the pendingJob must actually be cleared once it genuinely gives
     // up -- this is the legitimate case where clearPendingJob() SHOULD run

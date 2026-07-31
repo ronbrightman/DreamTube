@@ -48,12 +48,11 @@ routing). This repo's manifest starts where that funnel hands off, via
 |---|--------|------------------------|-------|
 | 1 | Signup (email → password) | `start.html` — `renderScreen13` | Unified email-first screen (tracker item `for-product-signup-screen-the-single-big-bkwhbe`): email verified (format + `check-email.js`'s availability + MX/A/AAAA deliverability check, tracker item `for-product-signup-email-micro-step-foun-ns8uve`) and the real, billed pending-generation call captured BEFORE the password field is ever revealed, so an abandoner is still reachable by the abandoned-signup retention email. Facebook Login is additive on this same screen (not a separate screen). |
 | 2 | Token intro + confirmation | `start.html` — `renderScreen14` | Formerly "pricing" — now a plain, honest acknowledgment of the signup token grant (no plans, no checkout). Continue completes the funnel. |
-| 3 | Generation polling | `processing.html` | Resumes the pending job started at step 1 if it succeeded; falls back to a fresh generation otherwise. |
-| 4 | First video | `result.html` | End of journey. |
+| 3 | Home (background generation) | `home.html` | **Lands directly on Home — no dedicated wait screen** (tracker item `for-product-funnel-ending-v2-founder-ins-tfuu0q`, founder GO 2026-07-31 evening, removed `processing.html`/the old step-4 redirect to `result.html`). The pending job started at step 1 (or a fresh generation, if that call failed) continues in the background; the My-dreams row's first tile shows a generating state, the Chamber is enterable immediately off the dream's text, and a toast + real thumbnail replace it on completion. Tapping the finished tile opens the dream's own room (`result.html`), which is no longer an automatic journey step. |
 
 Record-it branch (mode=record, ad-funnel-only — the organic wizard has no
 Record-it option): step 2's Continue redirects to `create.html?record=1`
-instead of `processing.html` (no dream text exists yet to poll for).
+instead of `home.html` (no dream text exists yet to poll for).
 
 **Extracted/asserted array:** `start.html`'s `SCREEN_RENDERERS = [renderScreen13, renderScreen14]`.
 
@@ -78,19 +77,18 @@ drift for the PRE-signup steps, not a bug.
 | 6 | Free text | `wizard.html` — `renderFreeText` | Optional escape hatch. |
 | 7 | Contact capture | `wizard.html` — `renderContact` | Email verified (format + `check-email.js`'s availability + deliverability check) and the real, billed pending-generation call captured here, BEFORE Signup — same "verify → capture → reveal" ordering as journey 1's step 1, just on its own dedicated screen instead of a DOM swap within one screen. |
 | 8 | Signup (username + password) | `wizard.html` — `renderSignup` | Adopts the already-running generation job on success. |
-| 9 | Generation polling | `processing.html` | Resumes the adopted job. |
-| 10 | First video | `result.html` | End of journey. |
+| 9 | Home (background generation) | `home.html` | **Lands directly on Home — no dedicated wait screen** (tracker item `for-product-funnel-ending-v2-founder-ins-tfuu0q`, removed `processing.html`/the old step-10 redirect to `result.html`). Resumes the adopted job in the background — same Home-lands-with-a-generating-tile experience as journey 1's step 3. |
 
 **Extracted/asserted array:** `wizard.html`'s `SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderContact, renderSignup]`.
 
 ## Known, flagged difference between the two journeys (not silently decided)
 
 Journey 1 (ad funnel) shows a dedicated **token intro + confirmation**
-screen (`renderScreen14`) between Signup and generation polling. Journey 2
+screen (`renderScreen14`) between Signup and landing on Home. Journey 2
 (organic) has no equivalent dedicated screen — `wizard.html`'s own Signup
 screen (`renderSignup`) folds the same core fact ("220 tokens on signup,
 no card needed") into one line of that screen's own copy, then redirects
-straight to `processing.html`.
+straight to `home.html`.
 
 This is a **real, felt difference** ("I hit different pages") the founder
 noticed directly, not a stale-screen bug — `wizard.html` never had
@@ -104,7 +102,21 @@ not a bug fix — left open pending that decision.
 
 ## Last reconciled
 
-2026-07-31, alongside tracker items `for-product-realign-index-html-organic-w-lzbmfu`,
+2026-07-31 evening, alongside tracker item
+`for-product-funnel-ending-v2-founder-ins-tfuu0q` (founder GO the same
+evening): removed `processing.html` and its wait-screen step from both
+journeys — both now land directly on `home.html`, which shows the
+in-progress generation itself rather than a dedicated polling screen.
+`test/journey-manifest.test.js`'s own asserted `SCREEN_RENDERERS` arrays
+were UNCHANGED by this — both only ever covered the PRE-signup step
+sequence, never the post-signup redirect target, so this was a real,
+deliberate journey change that didn't need that test's expected arrays
+touched (see this file's own header on why the test still exists to
+catch a step being silently added/removed/reordered from those arrays,
+just not this specific change).
+
+Earlier reconciliation: 2026-07-31 (daytime), alongside tracker items
+`for-product-realign-index-html-organic-w-lzbmfu`,
 `for-product-pin-the-funnel-journey-as-a--3uawmc`, and
 `for-product-signup-email-micro-step-foun-ns8uve`. Verified against
 `start.html`/`wizard.html` on branch

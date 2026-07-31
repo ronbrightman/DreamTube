@@ -195,10 +195,11 @@
   }
 
   // A purchase sheet opened from THIS page always sends the checkout's
-  // successUrl to processing.html (the one page that knows how to
-  // auto-resume from the draft — see js/purchase-sheet.js), so this page
-  // only ever sees ?checkout=cancelled (its own cancelUrl points back at
-  // itself). Cleared quietly, no error shown, per spec.
+  // successUrl to home.html (the one page that knows how to auto-resume
+  // from the draft — see js/purchase-sheet.js — since tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q removed processing.html),
+  // so this page only ever sees ?checkout=cancelled (its own cancelUrl
+  // points back at itself). Cleared quietly, no error shown, per spec.
   (function handleCheckoutCancelled(){
     if(PurchaseSheet.readCheckoutParam() === 'cancelled'){
       PurchaseSheet.clearPendingPurchaseMarker();
@@ -341,7 +342,17 @@
 
   function proceedToGenerate(){
     DreamStore.setDraft(currentDraftPatch());
-    location.href = 'processing.html';
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31 evening,
+    // explicitly extended to in-app creation too) — processing.html's
+    // dedicated wait screen is gone. `?generate=1` is the explicit signal
+    // home.html's own load-time handling needs to submit THIS draft fresh
+    // (rather than assume it's just an ordinary Home visit with a leftover
+    // draft object sitting around from a previous session) — see that
+    // page's own "fresh in-app submission" script block. Stripped from the
+    // URL there via history.replaceState, same as ?checkout=success, so a
+    // refresh never re-submits.
+    location.href = 'home.html?generate=1';
   }
 
   // ===== Out-of-tokens purchase sheet =====

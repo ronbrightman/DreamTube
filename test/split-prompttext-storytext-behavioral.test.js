@@ -145,6 +145,31 @@ async function reachStyleScreenViaChips(page, freeText) {
   await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });
 }
 
+/**
+ * After a fresh generation completes on home.html (tracker item
+ * for-product-funnel-ending-v2-founder-ins-tfuu0q -- ALL creation now
+ * lands home first, with generation happening in the background via the
+ * My-dreams row's generating tile, instead of auto-redirecting straight
+ * to result.html?id=* the way processing.html used to), this waits for
+ * that tile to finish, resolves the just-created dream's id from the
+ * current user's own dreams (newest first), then navigates to
+ * result.html?id=<id> itself so every existing result.html-specific
+ * assertion below (recap text, Edit sheet, interpretation, etc.) keeps
+ * working completely unchanged.
+ */
+async function waitForHomeGenerationThenOpenResult(page) {
+  await page.waitForURL('**/home.html**', { timeout: 15000, waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+  var dreamId = await page.evaluate(function () {
+    var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+    var handle = raw.user && raw.user.handle;
+    var mine = (raw.dreams || []).filter(function (d) { return d.ownerHandle === handle; });
+    mine.sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    return mine[0] && mine[0].id;
+  });
+  await safeGoto(page, baseUrl + '/result.html?id=' + dreamId);
+}
+
 function mockGenerateAndPoll(page) {
   var generateVideoCalls = [];
   page.route('**/.netlify/functions/generate-video', function (route) {
@@ -224,7 +249,7 @@ test('chips-only (no free text): style.html preview shows a human story (never p
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     // ----- (c) generate-video.js's actual POST body still carries the full engineered prompt -----
     await settle(function () { return generateVideoCalls.length >= 1; });
@@ -280,7 +305,7 @@ test('chips-only (no free text), LLM rewrite fails: falls back to the determinis
     // Generation must proceed immediately -- never gated on the failed rewrite.
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
 
@@ -324,7 +349,7 @@ test('chips WITH free text: the user\'s own words are preserved byte-for-byte as
 
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -376,7 +401,7 @@ test('Write-it: unchanged/no-op -- storyText === promptText === the user\'s own 
 
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -417,7 +442,7 @@ test('result.html "Edit Dream" -> "Generate Again", with ZERO edits, resubmits t
     await reachStyleScreenViaChips(page, null);
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -440,7 +465,7 @@ test('result.html "Edit Dream" -> "Generate Again", with ZERO edits, resubmits t
     assert.doesNotMatch(editTextValue, /of a stranger,/);
     await page.click('#edit-generate-again');
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     await settle(function () { return generateVideoCalls.length >= 2; });
     assert.equal(generateVideoCalls.length, 2, 'Generate Again must actually resubmit');
@@ -474,7 +499,7 @@ test('result.html "Edit Dream" -> "Generate Again", WITH a real edit, sends the 
     await reachStyleScreenViaChips(page, null);
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
 
@@ -488,7 +513,7 @@ test('result.html "Edit Dream" -> "Generate Again", WITH a real edit, sends the 
     await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 3000 });
     await page.fill('#edit-text', EDITED_TEXT);
     await page.click('#edit-generate-again');
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    await waitForHomeGenerationThenOpenResult(page);
 
     await settle(function () { return generateVideoCalls.length >= 2; });
     assert.equal(generateVideoCalls.length, 2);
@@ -582,7 +607,7 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
-    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await waitForHomeGenerationThenOpenResult(page);
     var dream = await page.evaluate(function () {
       var id = new URLSearchParams(location.search).get('id');
       var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));

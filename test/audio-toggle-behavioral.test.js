@@ -3,10 +3,11 @@
 // Real browser-driven coverage for tracker item for-product-audio-on-off-
 // choice-at-creat-dyyr98 (founder-approved 2026-07-28) — style.html's
 // audio/music toggle placed just under the existing image-vs-video
-// segmented toggle, plus processing.html's media-aware wait-screen
-// checklist copy that must only show "Composing the soundtrack…" when
-// audio is actually on for THIS generation. Run at a mobile viewport (see
-// test.before below), same discipline as
+// segmented toggle. (Its sibling coverage of processing.html's media-aware
+// wait-screen checklist copy was removed along with that page — tracker
+// item for-product-funnel-ending-v2-founder-ins-tfuu0q — see the note
+// further down this file where those three tests used to be.) Run at a
+// mobile viewport (see test.before below), same discipline as
 // image-generation-style-toggle-behavioral.test.js. Covers:
 //   1. Audio defaults OFF on load; the music-style picker is hidden.
 //   2. Turning it on reveals the four music presets with "Dreamy"
@@ -199,7 +200,10 @@ test('end to end: generating with audio ON sends { audioOn: true, musicStyle } t
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    // Lands on home.html now (?generate=1 -- tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q removed processing.html/the old
+    // redirect to result.html).
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -236,7 +240,10 @@ test('end to end: the untouched default (audio never toggled) sends { audioOn: f
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    // Lands on home.html now (?generate=1 -- tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q removed processing.html/the old
+    // redirect to result.html).
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -247,96 +254,16 @@ test('end to end: the untouched default (audio never toggled) sends { audioOn: f
   }
 });
 
-test('processing.html: the wait-screen checklist includes "Composing the soundtrack…" only when audio is actually on for this generation', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-    // Never actually resolves — this test only inspects the checklist's
-    // caption list while the wait screen is up, never lets generation finish.
-    await page.route('**/.netlify/functions/generate-video', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:test-op-checklist' }) });
-    });
-    await page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
-    });
-
-    await seedLoggedInUserAt(page, 'checklistaudioon', '/create.html');
-    await reachStyleScreen(page, 'A dream about a lighthouse in a storm');
-    await page.click('.style-card[data-style="Cinematic"]');
-    await page.click('#audio-toggle'); // audio ON, default "Dreamy"
-    await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
-    await page.click('#generate-btn');
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-
-    var captionsAudioOn = await page.evaluate(function () { return window.__TEST_ACTIVE_CAPTIONS__(); });
-    assert.ok(captionsAudioOn.some(function (c) { return /Composing the soundtrack/.test(c); }), 'audio ON must include the soundtrack checklist line');
-  } finally {
-    await context.close();
-  }
-});
-
-test('processing.html: the wait-screen checklist NEVER includes "Composing the soundtrack…" when audio was left off (the default)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-    await page.route('**/.netlify/functions/generate-video', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:test-op-checklist-off' }) });
-    });
-    await page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
-    });
-
-    await seedLoggedInUserAt(page, 'checklistaudiooff', '/create.html');
-    await reachStyleScreen(page, 'A dream about climbing an endless staircase');
-    await page.click('.style-card[data-style="Cinematic"]');
-    // Audio left at its default (off) — never clicked.
-    await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
-    await page.click('#generate-btn');
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-
-    var captionsAudioOff = await page.evaluate(function () { return window.__TEST_ACTIVE_CAPTIONS__(); });
-    assert.ok(!captionsAudioOff.some(function (c) { return /Composing the soundtrack/.test(c); }), 'audio OFF (the default) must never show the soundtrack checklist line');
-    assert.ok(captionsAudioOff.some(function (c) { return /Adding motion/.test(c); }), 'audio being off must not also drop unrelated checklist lines like "Adding motion…"');
-  } finally {
-    await context.close();
-  }
-});
-
-test('processing.html: Image generation never shows "Composing the soundtrack…" regardless of any prior audio state', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-    await page.route('**/.netlify/functions/generate-image', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/flux/dev:test-op-checklist-image' }) });
-    });
-    await page.route('**/.netlify/functions/image-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
-    });
-
-    await seedLoggedInUserAt(page, 'checklistimage', '/create.html');
-    await reachStyleScreen(page, 'A dream about a floating island');
-    await page.click('.style-card[data-style="Anime"]');
-    await page.click('.media-type-btn[data-media-type="image"]');
-    await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
-    await page.click('#generate-btn');
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-
-    var captionsImage = await page.evaluate(function () { return window.__TEST_ACTIVE_CAPTIONS__(); });
-    assert.ok(!captionsImage.some(function (c) { return /Composing the soundtrack/.test(c); }));
-    assert.ok(!captionsImage.some(function (c) { return /Adding motion/.test(c); }));
-  } finally {
-    await context.close();
-  }
-});
+// processing.html's media-aware wait-screen checklist (three tests that
+// used to live here, asserting on window.__TEST_ACTIVE_CAPTIONS__) was
+// removed along with the whole page (tracker item for-product-funnel-
+// ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31 evening) -- home.html
+// shows a static "Your dream is forming…" caption on the generating tile
+// instead of a rotating reassurance checklist, since the user is never
+// stuck staring at a dedicated wait screen anymore (they're on a fully
+// usable Home the whole time). This is a genuine elimination, not a move:
+// there is no home.html equivalent of "the checklist's caption list" to
+// test media-awareness against.
 
 test('result.html "Generate Again" (Edit Dream) preserves the pre-existing always-audio-on behavior — not silently regressed to the new default-off', async function (t) {
   // Review finding on this branch: js/store.js's regenerateDream (Edit
@@ -393,8 +320,12 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
     await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#edit-generate-again');
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    // Lands on home.html now (?generate=1 -- tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q removed processing.html/the old
+    // redirect straight back to result.html).
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
 
+    await settle(function () { return !!capturedBody; });
     assert.ok(capturedBody, 'generate-video.js must have been called');
     assert.equal(capturedBody.audioOn, true, 'regenerateDream must preserve the pre-existing always-audio-on behavior, not silently adopt the new default-off');
   } finally {

@@ -371,7 +371,12 @@
           // Relative paths only — create-checkout-session-dodo.js's own
           // server-side guard rejects anything else (see that file's
           // header comment on the open-redirect fix this feature required).
-          successUrl: '/processing.html?checkout=success',
+          // Home.html (tracker item for-product-funnel-ending-v2-founder-
+          // ins-tfuu0q — processing.html removed) is now the one page that
+          // knows how to pick a persisted draft back up and actually run
+          // the generation once the purchase lands — see that page's own
+          // "Dodo-checkout-return resume" script block.
+          successUrl: '/home.html?checkout=success',
           cancelUrl: cancelUrlPath()
         })
       })
@@ -918,11 +923,12 @@
   // ==========================================================================
   // Checkout return handling — shared by every page that can be a
   // successUrl/cancelUrl target for a purchase started from this sheet.
-  // Today that's only processing.html (successUrl always points there —
-  // see wireBuyButton above — since it's the one page that knows how to
-  // resume a generation from an intact draft); style.html/result.html only
-  // ever see ?checkout=cancelled (their own cancelUrl points back at
-  // themselves).
+  // Today that's only home.html (successUrl always points there — see
+  // wireBuyButton above — since it's the one page that knows how to resume
+  // a generation from an intact draft, formerly processing.html's job
+  // before that page was removed, tracker item for-product-funnel-ending-
+  // v2-founder-ins-tfuu0q); style.html/result.html only ever see
+  // ?checkout=cancelled (their own cancelUrl points back at themselves).
   // ==========================================================================
   var PENDING_PURCHASE_KEY = 'dreamtube_pending_purchase';
 

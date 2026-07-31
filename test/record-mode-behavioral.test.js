@@ -11,11 +11,13 @@
 //   1. skips the generate-during-signup call entirely on screen 13's
 //      Continue (there's no real caption to submit a billed generation
 //      for), and
-//   2. redirects to create.html?record=1 instead of processing.html once
-//      the funnel's final screen (14 -- the former standalone confirmation
+//   2. redirects to create.html?record=1 instead of home.html once the
+//      funnel's final screen (14 -- the former standalone confirmation
 //      screen 15 was folded into it, tracker item
 //      for-product-funnel-handoff-screens-theme-5ttymn) completes (there's
-//      no generation in flight to show/poll for).
+//      no generation in flight to show/poll for; every other completion
+//      path lands on home.html directly since processing.html was removed,
+//      tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q).
 // create.html, in turn, auto-invokes its existing startRecordingUI() (the
 // same function the #choice-record card's own click handler calls) when
 // ?record=1 is present, landing the visitor directly in the mic-recording
@@ -138,7 +140,7 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
     await page.click('#fn-s14-continue');
 
     await page.waitForURL('**/create.html?record=1', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    assert.match(page.url(), /create\.html\?record=1$/, 'mode=record must redirect into create.html\'s Record UI, not processing.html');
+    assert.match(page.url(), /create\.html\?record=1$/, 'mode=record must redirect into create.html\'s Record UI, not home.html');
 
     // Still no start-pending-generation call anywhere in the whole flow.
     assert.equal(pendingGenerationCalls.length, 0, 'still zero start-pending-generation calls after the full mode=record flow completes');
@@ -147,7 +149,7 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
   }
 });
 
-test('start.html: a normal (no mode=record) Build/Write visitor is completely unchanged -- generate-during-signup still fires and completing the funnel still redirects to processing.html', async function (t) {
+test('start.html: a normal (no mode=record) Build/Write visitor is completely unchanged -- generate-during-signup still fires and completing the funnel still redirects to home.html', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -176,8 +178,8 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
     // matching comment in the mode=record test above.
     await page.click('#fn-s14-continue');
 
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    assert.match(page.url(), /processing\.html/, 'a normal Build/Write funnel completion must still redirect to processing.html, unchanged');
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    assert.match(page.url(), /home\.html/, 'a normal Build/Write funnel completion must still redirect to home.html (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q -- processing.html removed)');
   } finally {
     await context.close();
   }

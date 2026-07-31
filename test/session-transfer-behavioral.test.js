@@ -188,62 +188,48 @@ function mockPublishDreamCapture(page) {
   }).then(function () { return calls; });
 }
 
-/** Mocks a never-finishing generation, same as wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's own helper -- keeps processing.html parked on the wait screen. */
-function mockNeverFinishingGeneration(page) {
-  return Promise.all([
-    page.route('**/.netlify/functions/generate-video', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast/test-op' }) });
-    }),
-    page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
-    })
-  ]);
-}
-
 // ===== "Copy link for your browser" (non-Android nudge button fix) =====
 
-test('processing.html: on iOS, the nudge button is relabeled "Copy link for your browser" and actually copies the current URL (including the ?bt= token) to the clipboard, with the right toast', async function (t) {
+test('home.html: on iOS, the webview-escape card\'s button is labeled "Copy link for your browser" and actually copies the current URL (including the ?bt= token) to the clipboard, with the right toast and a persistent post-copy note', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: FB_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockNeverFinishingGeneration(page);
     await mockCreateSessionTransfer(page, 'ios-copy-token-abc123');
     await seedAccountWithDraft(page, { username: 'ioscopyuser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    // Tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q --
+    // processing.html removed; this webview-escape mechanism is now
+    // ORPHAN (b), folded into home.html's "Add DreamTube to your phone"
+    // quiet row as an elevated .webview-card. Real escape logic (Android
+    // intent://, iOS copy-link, ?bt= session-transfer token round trip)
+    // ported verbatim -- see that page's own "ORPHAN (b)" script block.
+    await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
-    var btnLabel = await page.textContent('#proc-nudge-open-btn');
-    assert.match(btnLabel, /Copy link for your browser/, 'non-Android must relabel the button to describe what it actually does now');
+    await page.waitForSelector('#webview-card', { state: 'visible', timeout: 5000 });
+    var btnLabel = await page.textContent('#webview-card-btn');
+    assert.match(btnLabel, /Copy link for your browser/, 'non-Android must show the "Copy link" action');
 
     // Wait for maintainSessionTransferUrl's mint to land on the address bar.
     await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
     var urlAtClick = page.url();
     assert.match(urlAtClick, /[?&]bt=ios-copy-token-abc123(&|$)/, 'the token must actually be on the address bar before the button is used');
 
-    await page.click('#proc-nudge-open-btn');
+    await page.click('#webview-card-btn');
     await page.waitForSelector('.toast.show', { timeout: 3000 });
     var toastText = await page.textContent('#toast');
-    assert.match(toastText, /Link copied.*Safari/i, 'toast copy must confirm the paste-in-Safari instruction from the tracker item');
+    assert.match(toastText, /Link copied/i, 'toast copy must confirm the paste-in-your-browser instruction');
 
     var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
     assert.equal(clipboardText, urlAtClick, 'clipboard must contain exactly the current URL, including its ?bt= token');
 
-    // The pre-existing hint-emphasis behavior (test/wait-screen-reassurance-
-    // and-inapp-nudge-behavioral.test.js's own iOS coverage) must still work
-    // alongside the new copy action, not be replaced by it.
-    var hintHasEmphasis = await page.evaluate(function () {
-      return document.getElementById('proc-nudge-hint').classList.contains('proc-nudge-hint-emph');
-    });
-    assert.equal(hintHasEmphasis, true, 'the emphasized hint must still appear alongside the new copy action, per the fix\'s own "keep the emphasized hint" instruction');
-
     // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
-    // nudge--5yray5): a PERSISTENT instruction line (closer to the
+    // nudge--5yray5, carried over from processing.html's own now-removed
+    // implementation): a PERSISTENT instruction line (closer to the
     // founder's own verbatim ask, "open your browser and paste the link
     // there") must appear alongside the toast and, unlike the toast, must
     // NOT auto-dismiss after a couple seconds.
-    var noteEl = page.locator('#proc-nudge-copied-note');
+    var noteEl = page.locator('#webview-card-note');
     await noteEl.waitFor({ state: 'visible', timeout: 2000 });
     var noteText = await noteEl.textContent();
     assert.match(noteText, /open your browser/i, 'the persistent note must give the exact next step, not just confirm the copy');
@@ -255,27 +241,26 @@ test('processing.html: on iOS, the nudge button is relabeled "Copy link for your
   }
 });
 
-test('processing.html: on Android, the nudge button keeps the "Open in my browser" label and its intent:// URL carries the ?bt= session-transfer token too', async function (t) {
+test('home.html: on Android, the webview-escape card\'s button keeps the "Open in my browser" label and its intent:// URL carries the ?bt= session-transfer token too', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var IG_ANDROID = IG_ANDROID_UA;
   var context = await browser.newContext({ userAgent: IG_ANDROID });
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockNeverFinishingGeneration(page);
     await mockCreateSessionTransfer(page, 'android-intent-token-xyz789');
     await seedAccountWithDraft(page, { username: 'androidtokenuser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-nudge-card', { state: 'visible', timeout: 5000 });
-    var btnLabel = await page.textContent('#proc-nudge-open-btn');
-    assert.match(btnLabel, /Open in my browser/, 'Android must keep the existing "Open in my browser" label -- this fix only changes the non-Android branch');
+    await page.waitForSelector('#webview-card', { state: 'visible', timeout: 5000 });
+    var btnLabel = await page.textContent('#webview-card-btn');
+    assert.match(btnLabel, /Open in my browser/, 'Android must keep the "Open in my browser" label -- this only changes the non-Android branch');
 
     await page.waitForFunction(function () { return location.href.indexOf('bt=') !== -1; }, null, { timeout: 5000 });
 
     var intentUrl = await page.evaluate(function () { return buildAndroidChromeIntentUrl(); });
     assert.match(intentUrl, /^intent:\/\//);
-    assert.match(intentUrl, /bt=android-intent-token-xyz789/, 'the Android intent:// URL must also carry the session-transfer token, per the fix\'s own instruction');
+    assert.match(intentUrl, /bt=android-intent-token-xyz789/, 'the Android intent:// URL must also carry the session-transfer token');
   } finally {
     await context.close();
   }
@@ -559,7 +544,7 @@ test('result.html: an invalid/expired ?bt= token is a silent no-op -- falls thro
   }
 });
 
-test('processing.html: an invalid ?bt= token is also a silent no-op there, with the param stripped and the normal draft-required guard still applying', async function (t) {
+test('home.html: an invalid ?bt= token is also a silent no-op there, with the normal signed-out redirect to login.html still applying', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -568,7 +553,7 @@ test('processing.html: an invalid ?bt= token is also a silent no-op there, with 
     await mockVerifySessionTransfer(page, null);
     // No seedAccountWithDraft -- signed out, exactly like a stale/garbage
     // bt link landing on a browser with no session at all.
-    await page.goto(baseUrl + '/processing.html?bt=garbage-token-here', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?bt=garbage-token-here', { waitUntil: 'domcontentloaded' });
     await page.waitForURL('**/login.html', { timeout: 5000 });
     assert.match(page.url(), /login\.html/);
   } finally {

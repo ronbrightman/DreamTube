@@ -417,7 +417,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
              dream.id is what gets passed to InterpretExperience.open() —
              never "the latest dream", never an ambiguous default. -->
         <button type="button" class="heropill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
-          <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
+          <span class="interp-sparkle" aria-hidden="true">✨</span> <span id="interp-cta-label-text">What does this dream mean?</span>
         </button>
         <div class="result-hero-micro" id="interp-hero-micro">Only you can see your reading.</div>
       </div>
@@ -761,12 +761,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   InstallNudge.init({ trigger: 'session-transfer' });
 
   // A purchase sheet opened from THIS page always sends the checkout's
-  // successUrl to processing.html (the one page that knows how to
-  // auto-resume from the draft — see js/purchase-sheet.js), so this page
-  // only ever sees ?checkout=cancelled (its own cancelUrl points back at
-  // itself, e.g. result.html?id=...&checkout=cancelled). Cleared quietly,
-  // no error shown, per spec. Strips only the checkout param (keeps
-  // ?id=... intact) before the dreamId parse below runs.
+  // successUrl to home.html (the one page that knows how to auto-resume
+  // from the draft — see js/purchase-sheet.js — since tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q removed processing.html),
+  // so this page only ever sees ?checkout=cancelled (its own cancelUrl
+  // points back at itself, e.g. result.html?id=...&checkout=cancelled).
+  // Cleared quietly, no error shown, per spec. Strips only the checkout
+  // param (keeps ?id=... intact) before the dreamId parse below runs.
   (function handleCheckoutCancelled(){
     if(PurchaseSheet.readCheckoutParam() === 'cancelled'){
       PurchaseSheet.clearPendingPurchaseMarker();
@@ -776,21 +777,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   document.getElementById('result-back').innerHTML = Icons.back;
   // The back button is a hardcoded link to explore.html by default, which
-  // is right for the "just finished generating" flow (processing.html
-  // redirects here directly, and there's nothing meaningful to go back
+  // is right for the "just finished generating" flow (arriving here from
+  // a spent, one-shot generation step, with nothing meaningful to go back
   // to). But Profile also links into this same page for each of a user's
   // own dreams -- and from there, "back" landing on Explore instead of
   // Profile is a real regression from where the visitor actually came
   // from. Generalized further (founder bug report 2026-07-30): return to
   // wherever the visitor ACTUALLY came from, not only profile. Rules: (1)
-  // referrer from the generation flow (processing/create/style/wizard)
-  // keeps the explore.html default -- going "back" into a spent flow is
-  // wrong; (2) any other same-origin referrer (profile.html, home.html,
-  // explore itself) -> history.back(), which also preserves that page's
-  // scroll/sheet state; (3) absent or cross-origin referrer (direct link,
-  // share, webview stripping) -> explore.html default unchanged. Now lives
-  // as a small chip over the video's top-left corner rather than in a
-  // topbar strip -- same logic, new home.
+  // referrer from a spent generation step (create/style/wizard -- the now-
+  // removed processing.html used to be in this list too, tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q) keeps the explore.html
+  // default -- going "back" into a spent flow is wrong; (2) any other
+  // same-origin referrer (home.html, profile.html, explore itself) ->
+  // history.back(), which also preserves that page's scroll/sheet state --
+  // this is now ALSO the "just finished generating" case, since every
+  // generation flow lands on home.html first rather than redirecting
+  // straight here, so "back" correctly returns to that persistent hub, not
+  // explore.html; (3) absent or cross-origin referrer (direct link, share,
+  // webview stripping) -> explore.html default unchanged. Now lives as a
+  // small chip over the video's top-left corner rather than in a topbar
+  // strip -- same logic, new home.
   (function(){
     try {
       var ref = document.referrer && new URL(document.referrer);
@@ -1233,6 +1239,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // interpretation entry IS the hero.
     document.getElementById('interp-cta-btn').classList.toggle('quiet', imageOnly);
     document.getElementById('interp-hero-micro').style.display = (isMyDream && !imageOnly) ? 'block' : 'none';
+    // State-aware label (tracker item
+    // for-product-funnel-ending-v2-founder-ins-tfuu0q): if the user already
+    // has a saved reading for THIS dream -- most commonly because they
+    // entered the Chamber from home.html's own Chamber card, or from the
+    // "dream's room" home view, before ever landing on this specific
+    // result.html page -- the button reads "View your reading" instead of
+    // the generic first-time prompt. Same signal js/interpret-experience.js's
+    // own open() already uses to decide whether to skip straight to the
+    // `reading` phase (spec §3.0) -- reused here, not a new one invented:
+    // DreamStore.getInterpretations(dream.id) returns a non-empty map only
+    // once at least one persona's reading has actually been generated and
+    // saved for this dream.
+    var hasSavedReading = isMyDream && Object.keys(DreamStore.getInterpretations(dream.id) || {}).length > 0;
+    document.getElementById('interp-cta-label-text').textContent = hasSavedReading ? 'View your reading' : 'What does this dream mean?';
+    document.getElementById('interp-cta-btn').title = hasSavedReading ? 'View your Chamber reading for this dream' : "Open the Interpreter's Chamber for this dream";
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
@@ -1956,7 +1977,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   function proceedWithEditDelta(){
     persistEditDeltaDraft();
-    location.href = 'processing.html';
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31 evening,
+    // "ALL creation lands home") — processing.html's dedicated wait screen
+    // is gone. `?generate=1` is home.html's own explicit "submit fresh
+    // from the draft" signal (see that page's own "Fresh in-app generation
+    // submission" script block) — needed here since this edit hasn't
+    // created a pendingJob yet, only persisted a draft.
+    location.href = 'home.html?generate=1';
   }
   document.getElementById('delta-confirm-generate-btn').addEventListener('click', function(){
     if(!pendingDeltaRealignment) return;
@@ -2071,7 +2099,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   function proceedWithGenerateAgain(){
     persistGenerateAgainDraft();
-    location.href = 'processing.html';
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q) — see proceedWithEditDelta's own
+    // identical comment just above for the full "why".
+    location.href = 'home.html?generate=1';
   }
 
   // ===== Out-of-tokens purchase sheet =====
@@ -2122,7 +2153,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       });
       return;
     }
-    if(DreamStore.turnImageIntoVideo(dream.id)){ location.href = 'processing.html'; }
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q) — see proceedWithEditDelta's own
+    // identical comment above for the full "why".
+    if(DreamStore.turnImageIntoVideo(dream.id)){ location.href = 'home.html?generate=1'; }
   });
 
   function showToast(msg){

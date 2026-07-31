@@ -63,9 +63,11 @@
 // constructed a custom value here — shop.html always omits both fields,
 // relying on the defaults below. The out-of-tokens purchase sheet
 // (js/purchase-sheet.js) is the FIRST real caller to pass a genuine
-// custom successUrl (carrying it back to processing.html to auto-resume
-// the blocked generation, see that file's own header comment), so this
-// had to be closed before that feature could ship, not after.
+// custom successUrl (carrying it back to home.html, formerly processing.html
+// before tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q
+// removed that page, to auto-resume the blocked generation — see that
+// file's own header comment), so this had to be closed before that
+// feature could ship, not after.
 // isSafeRedirectPath enforces "relative path only" — not just
 // "same-origin", which would still mean trusting this function's own
 // derivation of `origin` (below) from request headers (x-forwarded-host/

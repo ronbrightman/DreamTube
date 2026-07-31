@@ -14,8 +14,10 @@
 //      in test/out-of-tokens-purchase-sheet-behavioral.test.js.
 //   3. End to end: picking Image and generating actually produces an
 //      image-type dream (mediaType:'image', imageUrl set, no videoUrl) via
-//      processing.html's dispatch to DreamStore.generateImage ->
-//      generate-image.js — not just a UI-only check.
+//      home.html's own fresh-submission dispatch (?generate=1 -- formerly
+//      processing.html's, tracker item for-product-funnel-ending-v2-
+//      founder-ins-tfuu0q) to DreamStore.generateImage -> generate-image.js
+//      — not just a UI-only check.
 //
 // GENERATION_MOCK_MODE is not available to a static-file-server test (no
 // real Netlify Functions runtime here — see test/helpers/static-server.js's
@@ -192,15 +194,14 @@ test('style.html: picking Image and generating actually dispatches to the image 
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
 
-    // processing.html renders the image-specific copy while the (mocked)
-    // generation is in flight.
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    var procTitle = await page.textContent('#proc-title');
-    assert.match(procTitle, /into a picture/);
-
-    // Completion redirects to result.html?id=... (350ms setTimeout in
-    // processing.html's attachTaskHandlers, plus real navigation time).
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    // Lands directly on home.html now (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q -- processing.html removed), carrying
+    // ?generate=1 (see that page's own "Fresh in-app generation
+    // submission" script block) -- the (mocked) generation runs in the
+    // background while the My-dreams row's generating tile shows, then
+    // flips to a real finished tile in place.
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
 
     assert.equal(generateVideoCalls.length, 0, 'generate-video.js must never be called when Image is selected');
     await settle(function () { return generateImageCalls.length >= 1; });
@@ -209,17 +210,20 @@ test('style.html: picking Image and generating actually dispatches to the image 
     assert.equal(generateImageCalls[0].style, 'Anime');
 
     var dreamState = await page.evaluate(function () {
-      var id = new URLSearchParams(location.search).get('id');
       var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
-      return raw.dreams.filter(function (d) { return d.id === id; })[0];
+      return raw.dreams[0]; // most-recent-first -- the dream this test just generated
     });
     assert.equal(dreamState.mediaType, 'image');
     assert.equal(dreamState.imageUrl, 'https://example.com/fake-image.jpg');
     assert.equal(dreamState.videoUrl, null);
     assert.equal(dreamState.dur, undefined, 'an image-type dream must never get a duration stamped');
 
-    // result.html should be rendering the <img>, not the <video>, and
-    // showing the "Turn this into a video" upsell.
+    // Tapping into the finished dream's own room (result.html) -- no
+    // longer an automatic redirect (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q), so this test navigates there
+    // explicitly to check it renders the <img>, not the <video>, and shows
+    // the "Turn this into a video" upsell.
+    await page.goto(baseUrl + '/result.html?id=' + dreamState.id, { waitUntil: 'domcontentloaded' });
     var imageVisible = await page.locator('#result-image').isVisible();
     var videoVisible = await page.locator('#result-video').isVisible();
     var turnVideoBtnVisible = await page.locator('#turn-video-btn').isVisible();

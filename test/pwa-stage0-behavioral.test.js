@@ -375,7 +375,7 @@ test('apple-touch-icon is present and fetchable on every real app page (iOS uses
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    var pagesToCheck = ['index.html', 'home.html', 'result.html', 'profile.html', 'processing.html'];
+    var pagesToCheck = ['index.html', 'home.html', 'result.html', 'profile.html', 'create.html'];
     for (var i = 0; i < pagesToCheck.length; i++) {
       await safeGoto(page, baseUrl + '/' + pagesToCheck[i]);
       var href = await page.getAttribute('link[rel="apple-touch-icon"]', 'href');
@@ -393,7 +393,7 @@ test('apple-touch-icon is present and fetchable on every real app page (iOS uses
   }
 });
 
-/** Mocks a generation that never completes -- keeps processing.html parked on the wait screen, same helper shape as test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's own mockNeverFinishingGeneration. */
+/** Mocks a generation that never completes -- keeps home.html's My-dreams row parked on its generating tile (formerly processing.html's wait screen, before tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page), same helper shape as test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's own mockNeverFinishingGeneration. */
 function mockNeverFinishingGeneration(page) {
   return Promise.all([
     page.route('**/.netlify/functions/generate-video', function (route) {
@@ -415,8 +415,8 @@ function mockNeverFinishingGeneration(page) {
 // request. So `posthog.capture('push_prompt_shown', {})` shows up as a
 // queued `['capture', 'push_prompt_shown', {}]` entry, directly
 // inspectable after the fact — no monkeypatch/addInitScript needed, and
-// none would survive processing.html's own snippet re-assigning
-// window.posthog fresh on every load anyway.
+// none would survive home.html's own snippet re-assigning window.posthog
+// fresh on every load anyway.
 function capturedEventNames(queue) {
   return queue.filter(function (entry) { return entry[0] === 'capture'; }).map(function (entry) { return entry[1]; });
 }
@@ -431,7 +431,7 @@ test('push-subscribe ask: hidden inside a detected FB/IG in-app webview', async 
     var username = 'pushwebview' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(300);
 
     var visible = await page.locator('#push-ask-card').count();
@@ -468,7 +468,7 @@ test('push-subscribe ask: shown on a real browser right after generation starts,
       var username = 'pushask' + Math.random().toString(36).slice(2, 8);
       await seedUser(page, username);
 
-      await safeGoto(page, baseUrl + '/processing.html');
+      await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#push-ask-card', { state: 'visible', timeout: 5000 });
 
       var shownEventNames = await page.evaluate(function () {
@@ -505,14 +505,17 @@ test('push-subscribe ask: never re-shown once dismissed, in the same browser', a
     var username = 'pushdismiss' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#push-ask-card', { state: 'visible', timeout: 5000 });
     await page.click('#push-ask-dismiss');
     assert.equal(await page.locator('#push-ask-card').count(), 0);
 
     // A fresh generation on a later load (same browser, same localStorage)
-    // must not show the ask again.
-    await safeGoto(page, baseUrl + '/processing.html');
+    // must not show the ask again. The first attempt is still genuinely
+    // pending (video-status keeps returning done:false), so a plain
+    // revisit -- no ?generate=1 needed -- resumes it and re-renders the
+    // notify card slot.
+    await safeGoto(page, baseUrl + '/home.html');
     await page.waitForTimeout(300);
     assert.equal(await page.locator('#push-ask-card').count(), 0, 'must never re-show the push ask once dismissed in this browser');
   } finally {

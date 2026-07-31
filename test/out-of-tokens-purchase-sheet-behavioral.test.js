@@ -10,14 +10,16 @@
 // Covers:
 //  - the sheet appearing with correct shortfall arithmetic on style.html,
 //    result.html ("Generate Again" AND "Turn this into a video"), and
-//    processing.html's E112/E412 fail path
+//    home.html's own E112/E412 mid-generation-failure path (formerly
+//    processing.html's, ported verbatim when that page was removed --
+//    tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q)
 //  - the audit-found bug fix: the blocked action's full draft state is
 //    genuinely persisted (DreamStore.setDraft/turnImageIntoVideo) the
 //    moment the sheet opens on style.html AND result.html, not only on
 //    the unblocked path
-//  - the post-checkout auto-resume round trip on processing.html (a
-//    mocked successful checkout return re-fires the exact blocked
-//    generation from the intact draft)
+//  - the post-checkout auto-resume round trip on home.html (a mocked
+//    successful checkout return re-fires the exact blocked generation
+//    from the intact draft)
 //  - the honest-degrade path when the token credit is still lagging past
 //    the poll window
 //
@@ -173,7 +175,7 @@ test('style.html: tapping the buy button POSTs the smallest sufficient pack with
 
     assert.ok(captured, 'create-checkout-session-dodo must have been called');
     assert.equal(captured.pack, 'pack100');
-    assert.equal(captured.successUrl, '/processing.html?checkout=success');
+    assert.equal(captured.successUrl, '/home.html?checkout=success');
     assert.equal(captured.cancelUrl, '/style.html?checkout=cancelled');
   } finally {
     await context.close();
@@ -347,12 +349,17 @@ test('result.html "Turn this into a video": opens the purchase sheet with correc
 });
 
 // ============================================================================
-// processing.html's E112/E412 fail path — the third blocked-action entry
-// point named in the spec. The draft is already intact by construction
-// here (submission itself required a complete draft), so this only
-// checks the sheet's own arithmetic/auto-open behavior, not persistence.
+// home.html's E112/E412 mid-generation-failure path (formerly
+// processing.html's, ported when that page was removed -- tracker item
+// for-product-funnel-ending-v2-founder-ins-tfuu0q) -- the third
+// blocked-action entry point named in the spec. Reached via the
+// `?generate=1` fresh-in-app-generation signal style.html's own Generate
+// button sends (see home.html's own "Fresh in-app generation submission"
+// script block). The draft is already intact by construction here
+// (submission itself required a complete draft), so this only checks the
+// sheet's own arithmetic/auto-open behavior, not persistence.
 // ============================================================================
-test('processing.html: an E112 (insufficient tokens) generation failure auto-opens the purchase sheet with correct arithmetic', async function (t) {
+test('home.html: an E112 (insufficient tokens) generation failure auto-opens the purchase sheet with correct arithmetic', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -365,7 +372,7 @@ test('processing.html: an E112 (insufficient tokens) generation failure auto-ope
     });
 
     await seedAccount(page, { username: 'e112fail', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'video' } });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 8000 });
     var title = await page.textContent('#ps-title');
@@ -373,24 +380,23 @@ test('processing.html: an E112 (insufficient tokens) generation failure auto-ope
     var body = await page.textContent('#ps-body');
     assert.match(body, /You have\s*25/);
     assert.match(body, /75 more/);
-    // The underlying fail state is still visible/available underneath —
-    // the sheet slides up OVER the current screen, per the founder-approved
-    // mock, not a full replacement of it.
-    assert.equal(await page.locator('#proc-fail').isVisible(), true);
+    // The underlying Home screen is still visible/available underneath --
+    // the sheet slides up OVER it, same "overlay, not a full replacement"
+    // treatment every other blocked-action entry point already has.
+    assert.equal(await page.locator('#hero-tonight').isVisible(), true);
   } finally {
     await context.close();
   }
 });
 
 // ============================================================================
-// Media-aware fail-state copy (hardening fix, tracker item
-// for-product-store-launch-copy-sweep-purc-m6xhkx): the fail screen's own
-// copy ("Something went wrong while generating your ___") used to be
-// static markup that always said "video", even for a failed image
-// generation — misleading on the image path. Fixed to read
-// currentMediaType() the same way the live-state title/sub already did.
+// Media-aware fail-copy (hardening fix, tracker item
+// for-product-store-launch-copy-sweep-purc-m6xhkx, carried over to
+// home.html's own toast-based failure UX when processing.html's dedicated
+// fail screen was removed): a failed generation's toast says "video" or
+// "picture" specifically, never a static wrong media type.
 // ============================================================================
-test('processing.html: a failed VIDEO generation shows "video" in the fail copy', async function (t) {
+test('home.html: a failed VIDEO generation (non-E112/E412) shows "video" in the failure toast', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -402,18 +408,18 @@ test('processing.html: a failed VIDEO generation shows "video" in the fail copy'
     });
 
     await seedAccount(page, { username: 'failcopyvideo', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'video' } });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
-    var copy = await page.textContent('#proc-fail-copy');
+    await page.waitForSelector('.toast.show', { timeout: 8000 });
+    var copy = await page.textContent('#toast');
     assert.match(copy, /generating your video/i);
-    assert.doesNotMatch(copy, /generating your image/i);
+    assert.doesNotMatch(copy, /generating your picture/i);
   } finally {
     await context.close();
   }
 });
 
-test('processing.html: a failed IMAGE generation shows "image" in the fail copy, not "video"', async function (t) {
+test('home.html: a failed IMAGE generation (non-E112/E412) shows "picture" in the failure toast, not "video"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -425,11 +431,11 @@ test('processing.html: a failed IMAGE generation shows "image" in the fail copy,
     });
 
     await seedAccount(page, { username: 'failcopyimage', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'image' } });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
-    var copy = await page.textContent('#proc-fail-copy');
-    assert.match(copy, /generating your image/i);
+    await page.waitForSelector('.toast.show', { timeout: 8000 });
+    var copy = await page.textContent('#toast');
+    assert.match(copy, /generating your picture/i);
     assert.doesNotMatch(copy, /generating your video/i);
   } finally {
     await context.close();
@@ -437,9 +443,11 @@ test('processing.html: a failed IMAGE generation shows "image" in the fail copy,
 });
 
 // ============================================================================
-// Post-checkout auto-resume — processing.html?checkout=success
+// Post-checkout auto-resume — home.html?checkout=success (formerly
+// processing.html's, moved when that page was removed -- tracker item
+// for-product-funnel-ending-v2-founder-ins-tfuu0q)
 // ============================================================================
-test('processing.html: a mocked successful checkout return auto-resumes the exact blocked generation from the intact draft', async function (t) {
+test('home.html: a mocked successful checkout return auto-resumes the exact blocked generation from the intact draft', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -466,9 +474,12 @@ test('processing.html: a mocked successful checkout return auto-resumes the exac
       pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
-    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 15000, waitUntil: 'domcontentloaded' });
+    // Resolves in place on home.html now (no more redirect to result.html)
+    // -- the My-dreams row's generating tile appears and then flips to a
+    // real finished tile.
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'the blocked generation must have been re-fired exactly once');
@@ -488,9 +499,17 @@ test('processing.html: a mocked successful checkout return auto-resumes the exac
 });
 
 // ============================================================================
-// Honest-degrade path — the credit is still lagging past the poll window
+// Honest-degrade path — the credit is still lagging past the poll window.
+// home.html has no dedicated "payment received" resume screen (unlike the
+// now-removed processing.html) -- it degrades to a plain toast instead,
+// since Home is always a fully usable, revisitable surface rather than a
+// wait-screen dead end. There is deliberately no manual "Generate" retry
+// button tied to this specific resume anymore (tracker item for-product-
+// funnel-ending-v2-founder-ins-tfuu0q's own scope decision) -- a user in
+// this state can simply retry from the Tonight hero / create.html once
+// their balance updates, same as any other blocked attempt.
 // ============================================================================
-test('processing.html: when the token credit is still lagging past the poll window, it degrades honestly ("tap Generate when your balance updates") instead of erroring or hanging forever', async function (t) {
+test('home.html: when the token credit is still lagging past the poll window, it degrades honestly (a toast, never a hang or a silent auto-fire) instead of erroring', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -507,7 +526,8 @@ test('processing.html: when the token credit is still lagging past the poll wind
 
     // Shrinks pollForCredit's real ~75s window down to something a test can
     // actually run in — see js/purchase-sheet.js's pollForCredit doc
-    // comment and processing.html's own window.__TEST_POLL_OVERRIDES__ read.
+    // comment and home.html's own window.__TEST_POLL_OVERRIDES__ read
+    // (formerly processing.html's, same mechanism).
     await page.addInitScript(function () {
       window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 250 };
     });
@@ -518,24 +538,13 @@ test('processing.html: when the token credit is still lagging past the poll wind
       pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
-    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-payment-manual-btn', { state: 'visible', timeout: 5000 });
-    var copy = await page.textContent('#proc-payment-copy');
-    assert.match(copy, /Tokens on the way — tap Generate when your balance updates\./);
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show') && /tokens on the way/i.test(t.textContent);
+    }, null, { timeout: 5000 });
     assert.equal(generateVideoCalls.length, 0, 'must never auto-fire generation while the credit is still unconfirmed');
-    assert.equal(page.url().indexOf('result.html'), -1);
-
-    // The manual fallback must still work once tapped (balance updates for real this time).
-    await page.unroute('**/.netlify/functions/get-token-status*');
-    await mockTokenStatus(page, { balance: 150, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
-    await page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/degraded-resume-video.mp4' }) });
-    });
-    await page.click('#proc-payment-manual-btn');
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    await settle(function () { return generateVideoCalls.length >= 1; });
-    assert.equal(generateVideoCalls.length, 1, 'the manual "Generate" tap must re-run the exact same resume');
   } finally {
     await context.close();
   }
@@ -566,7 +575,7 @@ test('processing.html: when the token credit is still lagging past the poll wind
 //    (no marker data to report).
 // ============================================================================
 
-test('processing.html: pagehide cancels the in-flight credit poll -- a stale poll tick must not resume generation after the user has navigated away', async function (t) {
+test('home.html: pagehide cancels the in-flight credit poll -- a stale poll tick must not resume generation after the user has navigated away', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -603,8 +612,11 @@ test('processing.html: pagehide cancels the in-flight credit poll -- a stale pol
       pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
-    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#proc-payment-resume', { state: 'visible', timeout: 5000 });
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show') && /resuming your dream/i.test(t.textContent);
+    }, null, { timeout: 5000 });
 
     // Let the poll actually start (at least one real tick) before cancelling
     // it -- the test must not pass trivially just because the poll never
@@ -629,7 +641,7 @@ test('processing.html: pagehide cancels the in-flight credit poll -- a stale pol
   }
 });
 
-test('processing.html: checkout=success with the pending-purchase marker missing still gets a polling grace period instead of firing runGeneration() immediately (private-browsing storage block / cross-tab checkout)', async function (t) {
+test('home.html: checkout=success with the pending-purchase marker missing still gets a polling grace period instead of firing the resume generation immediately (private-browsing storage block / cross-tab checkout)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -668,19 +680,22 @@ test('processing.html: checkout=success with the pending-purchase marker missing
       draft: { caption: 'A dream about a train through the clouds', style: 'Anime', mediaType: 'video' }
     });
 
-    await page.goto(baseUrl + '/processing.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
 
-    // THE FIX: must show the same "payment received / finishing up" grace
-    // state as the marker-present path, not fall straight through to an
-    // immediate runGeneration() call just because there's no marker to read
-    // a cost/source off of.
-    await page.waitForSelector('#proc-payment-resume', { state: 'visible', timeout: 3000 });
+    // THE FIX: must show the same "payment received / resuming" grace
+    // toast as the marker-present path, not fall straight through to an
+    // immediate resume-generation call just because there's no marker to
+    // read a cost/source off of.
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show') && /resuming your dream/i.test(t.textContent);
+    }, null, { timeout: 3000 });
     assert.equal(generateVideoCalls.length, 0, 'must not fire generation immediately just because the pending-purchase marker was missing');
 
     await page.waitForTimeout(150);
     creditLanded = true;
 
-    await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'once the credit lands within the grace period, the blocked generation must still auto-resume even without marker data');
     assert.equal(page.url().indexOf('checkout=success'), -1, 'the ?checkout=success param must still be stripped on the missing-marker path too');

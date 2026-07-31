@@ -3,7 +3,8 @@
 // Regression coverage for tracker.html's
 // for-product-make-firstvideocreated-relia-5i9o0t: explore.html's
 // resume-completion path (a generation left running when the user
-// navigated away from processing.html, picked back up via
+// navigated away from home.html (formerly processing.html), picked back
+// up via
 // DreamStore.resumePendingJob() and finished right here instead --
 // see the "Your dream is ready!" toast) used to finish a user's dream
 // WITHOUT ever routing them through result.html, so the

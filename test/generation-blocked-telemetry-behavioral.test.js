@@ -10,14 +10,17 @@
 // single top-level catch for EVERY generation failure this file handles,
 // not gated behind the E109/E409/E110/E410-specific "hide retry button"
 // branch -- and confirms it does NOT fire on a successful generation.
+// This catch block lives on home.html now (tracker item for-product-
+// funnel-ending-v2-founder-ins-tfuu0q -- processing.html removed), ported
+// verbatim (see onGenerationSettled in that page's own script).
 //
 // Follows test/phase1-product-events-behavioral.test.js's
 // readPostHogCaptureCalls approach (reading window.posthog's own pending-
 // call queue directly, since blockThirdParty() aborts the real PostHog
 // script that would otherwise drain it) and test/wait-screen-
 // reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft +
-// page.route() network-stub conventions for landing on processing.html's
-// normal fresh-generation path.
+// page.route() network-stub conventions for landing on home.html's
+// `?generate=1` fresh-generation path.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -72,7 +75,7 @@ function readPostHogCaptureCalls(page) {
   });
 }
 
-/** Seeds a logged-in account with a caption+style draft and no pendingJob, landing on processing.html's normal fresh-generation path -- mirrors test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft. */
+/** Seeds a logged-in account with a caption+style draft and no pendingJob, landing on home.html's `?generate=1` fresh-generation path -- mirrors test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft. */
 async function seedAccountWithDraft(page, opts) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (o) {
@@ -87,7 +90,7 @@ async function seedAccountWithDraft(page, opts) {
   }, opts);
 }
 
-/** Mocks a generation whose submission succeeds but whose poll immediately reports the given "ENNN: reason" error -- the exact shape store.js's pollUntilDone turns into err.message (see js/store.js's data.error handling), which is what reaches processing.html's catch block. */
+/** Mocks a generation whose submission succeeds but whose poll immediately reports the given "ENNN: reason" error -- the exact shape store.js's pollUntilDone turns into err.message (see js/store.js's data.error handling), which is what reaches home.html's onGenerationSettled catch block. */
 function mockFailingGeneration(page, errorMessage) {
   return Promise.all([
     page.route('**/.netlify/functions/generate-video', function (route) {
@@ -122,9 +125,9 @@ test("generation_blocked: fires with reason='E109' on the exact rate-limit failu
     await blockThirdParty(page);
     await mockFailingGeneration(page, 'E109: rate_limited: too many generations from this network today, try again tomorrow');
     await seedAccountWithDraft(page, { username: 'e109blockeduser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 5000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });
@@ -143,17 +146,17 @@ test('generation_blocked: also fires for OTHER failure codes this file handles (
     await blockThirdParty(page);
     await mockFailingGeneration(page, 'E112: insufficient_tokens: not enough tokens to generate a video');
     // E112 specifically opens the token purchase sheet via a
-    // getTokenStatus() fetch (see processing.html's catch block) -- mock
-    // it to succeed so that convenience fetch doesn't fail-open into a
-    // location.href navigation to shop.html, which would tear down the
-    // very page.posthog queue this test is about to inspect.
+    // getTokenStatus() fetch (see home.html's onGenerationSettled catch
+    // block) -- mock it to succeed so that convenience fetch doesn't
+    // fail-open into a toast, which would race the very page.posthog
+    // queue this test is about to inspect.
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 0, claimable: false }) });
     });
     await seedAccountWithDraft(page, { username: 'e112blockeduser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#purchase-sheet-overlay.open', { state: 'visible', timeout: 5000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });
@@ -172,9 +175,9 @@ test('generation_blocked: falls back to the raw message as `reason` when the fai
     await blockThirdParty(page);
     await mockFailingGeneration(page, 'totally_unstructured_failure');
     await seedAccountWithDraft(page, { username: 'unstructuredfailuser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 5000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });
@@ -193,11 +196,13 @@ test('generation_blocked: does NOT fire on a successful generation', async funct
     await blockThirdParty(page);
     await mockSuccessfulGeneration(page);
     await seedAccountWithDraft(page, { username: 'successnoblockeduser' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    // Successful generations redirect to result.html shortly after
-    // finishing -- wait for that navigation as the success signal.
-    await page.waitForURL(/result\.html/, { timeout: 8000 });
+    // A successful generation resolves the My-dreams row's generating tile
+    // in place -- wait for that as the success signal (no more redirect to
+    // result.html, tracker item for-product-funnel-ending-v2-founder-ins-
+    // tfuu0q).
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });

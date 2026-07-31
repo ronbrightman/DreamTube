@@ -110,7 +110,7 @@ function mockTokenStatus(page, status) {
  * survives page navigation -- needed as of the screen-15-into-14 merge
  * (tracker item for-product-funnel-handoff-screens-theme-5ttymn): screen
  * 14's Continue now completes the funnel and navigates straight to
- * processing.html/create.html in the same click, instead of staying on an
+ * home.html/create.html in the same click, instead of staying on an
  * in-page confirmation screen (the old screen 15) the way a plain
  * page.evaluate() in-page monkeypatch could survive. Same
  * exposeBinding+addInitScript pattern test/meta-capi-behavioral.test.js's
@@ -1610,8 +1610,10 @@ test('pricing screen (14, now the token intro + confirmation): Continue complete
 
     await page.click('#fn-s14-continue');
     // Continue now fires completeFunnel() directly (no separate screen 15
-    // to land on first) -- confirms the funnel actually completed.
-    await page.waitForURL(/processing\.html/, { timeout: 8000 });
+    // to land on first) -- confirms the funnel actually completed. Lands
+    // on home.html now, not processing.html (tracker item for-product-
+    // funnel-ending-v2-founder-ins-tfuu0q removed that page).
+    await page.waitForURL(/home\.html/, { timeout: 8000, waitUntil: 'domcontentloaded' });
 
     var continuedCalls = phCalls.filter(function (c) { return c.name === 'funnel_token_intro_continued'; });
     var completedCalls = phCalls.filter(function (c) { return c.name === 'funnel_completed'; });
@@ -1682,7 +1684,7 @@ test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullet
 // for the full rationale/fallback behavior.
 // ===========================================================================
 
-test('start.html: generate-during-signup -- screen 13\'s Continue starts a pending generation in parallel with signup, and success adopts + resumes it straight through processing.html with no second submission', async function (t) {
+test('start.html: generate-during-signup -- screen 13\'s Continue starts a pending generation in parallel with signup, and success adopts + resumes it straight through home.html with no second submission', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -1703,7 +1705,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
       claimCalls.push(JSON.parse(route.request().postData()));
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
     });
-    // processing.html resumes the adopted pendingJob by polling video-status
+    // home.html resumes the adopted pendingJob by polling video-status
     // with the SAME operationName the pre-signup call returned above --
     // resolving it immediately proves no second generate-video.js/
     // start-pending-generation.js submission ever happened.
@@ -1740,23 +1742,27 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     assert.ok(pendingJob, 'the pending job must already be adopted into DreamStore by the time screen 14 renders');
     assert.equal(pendingJob.operationName, 'fal:fake-model:req-1');
 
-    // Click through pricing + confirmation to processing.html, and confirm
-    // it resumes the ALREADY-adopted job rather than submitting a fresh one.
+    // Click through pricing + confirmation to home.html, and confirm it
+    // resumes the ALREADY-adopted job rather than submitting a fresh one.
     // Screen 14's Continue now completes the funnel directly (the former
     // standalone screen 15 confirmation was folded into it -- tracker item
     // for-product-funnel-handoff-screens-theme-5ttymn), so there's no
-    // separate screen to click through anymore.
+    // separate screen to click through anymore. Lands directly on home.html
+    // now (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q --
+    // processing.html/the old redirect to result.html are both gone); the
+    // generating tile resolving confirms the adopted job actually completed.
     await page.click('#fn-s14-continue');
-    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await page.waitForURL(/home\.html/, { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
-    assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');
+    assert.ok(videoStatusCalls >= 1, 'home.html must actually resume polling the adopted job');
   } finally {
     await context.close();
   }
 });
 
-test('start.html: generate-during-signup -- if the pre-signup generation call fails, signup still completes normally and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
+test('start.html: generate-during-signup -- if the pre-signup generation call fails, signup still completes normally and falls back to a fresh generation at home.html (resilient, not a dead end)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -1766,6 +1772,18 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
 
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
       route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+    });
+    // home.html's own fresh-submission fallback (?generate=1) genuinely
+    // calls DreamStore.generateVideo() now -- mocked here (unlike the old
+    // version of this test, which only ever needed to prove the INPUTS to
+    // that fallback were correct, since processing.html's own separately-
+    // tested runGeneration() was trusted to pick them up) so this test can
+    // observe the fallback actually firing, not just its precondition.
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fake-model:req-start-fallback' }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
     });
 
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
@@ -1783,7 +1801,19 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
     var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
     assert.equal(pendingJob, null, 'no pendingJob should have been adopted since the pre-signup call failed');
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
-    assert.ok(draft.caption, 'draft caption must still be set for the fallback fresh-generation path at processing.html');
+    assert.ok(draft.caption, 'draft caption must still be set for the fallback fresh-generation path at home.html');
+
+    await page.click('#fn-s14-continue');
+    // Lands on home.html carrying ?generate=1 (see that page's own "Fresh
+    // in-app generation submission" script block, which strips the param
+    // via history.replaceState almost immediately -- not asserted on here
+    // to avoid a race with that strip) -- a real generation genuinely gets
+    // submitted from the intact draft, proving the fallback actually works
+    // end to end, not just that its inputs were correct.
+    await page.waitForURL(/home\.html/, { timeout: 15000 });
+    await page.waitForFunction(function () {
+      return !!(window.DreamStore && window.DreamStore.getPendingJob());
+    }, null, { timeout: 10000 });
   } finally {
     await context.close();
   }

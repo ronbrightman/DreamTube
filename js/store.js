@@ -60,8 +60,11 @@
 //   getDreamInsight()           -> local read, recurring dream-theme detection for Profile (idea #4)
 //   getDreamMilestone()         -> local read, dream-count milestone for Profile (idea #5)
 //   getDreamLogStatus()         -> local read, home.html's Today/This-Week card state (loggedToday,
-//       todayEntryType, weekCount vs. weekTarget, hasEverLogged) — tracker item
-//       for-product-build-homepage-wave-1-the-ri-xr8mir
+//       todayEntryType, weekCount vs. weekTarget, hasEverLogged, isFirstEverNight) — tracker item
+//       for-product-build-homepage-wave-1-the-ri-xr8mir (isFirstEverNight added by
+//       for-product-funnel-ending-v2-founder-ins-tfuu0q — see that field's own doc comment)
+//   getPendingDreamId()         -> local read, the synthetic `pending:<operationName>` id the
+//       Chamber opens for a still-generating dream — see findPendingDream's own doc comment
 //   logNoRecallToday()          -> local write, records a content-less "no recall" dream-log
 //       check-in for today (idempotent per day, grants nothing) — see getDreamLogStatus above
 //   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
@@ -326,6 +329,21 @@
                          // logout, so a same-account mid-generation logout/relogin can still
                          // resume it, but a different account signing in on this browser never
                          // can.
+      pendingInterpretations: {}, // operationName -> { personaKey: { text, at, qa } }, mirrors a
+                         // real dream's own `interpretations` map shape exactly. Home.html's
+                         // "funnel ending v2" day-0 flow (tracker item
+                         // for-product-funnel-ending-v2-founder-ins-tfuu0q) lets the Chamber open
+                         // for a dream that's STILL GENERATING (no dream id exists yet — only a
+                         // pendingJob) via the synthetic `pending:<operationName>` id findDream()
+                         // resolves below; a reading started there has nowhere durable to live
+                         // until the real dream record exists, so it's held here, keyed by the
+                         // job's own operationName, and migrated onto the finalized dream's real
+                         // `interpretations` map the moment finalizeDream creates it (see that
+                         // function's own comment) — so "already interpreted" carries over
+                         // seamlessly from the generating tile to the finished dream, satisfying
+                         // result.html's own "View your reading" state-aware hero button. Cleaned
+                         // up (deleted) once migrated, or on a failed generation's retry (see
+                         // startGeneration's own catch) — never left to grow unbounded.
       charactersByUser: {}, // lowercased username -> array of character objects. Private
                              // per-user and reusable across dreams, same key scheme as accounts.
       likedIds: {}, // dream id -> true. Purely local "have I liked this" state for the shared
@@ -445,6 +463,7 @@
       var parsed = JSON.parse(raw);
       if (!parsed.dreams) throw new Error('bad state');
       if (parsed.pendingJob === undefined) parsed.pendingJob = null;
+      if (!parsed.pendingInterpretations) parsed.pendingInterpretations = {};
       if (!parsed.accounts) parsed.accounts = {};
       if (!parsed.charactersByUser) parsed.charactersByUser = {};
       if (!parsed.draft.characterIds) parsed.draft.characterIds = [];
@@ -610,7 +629,61 @@
   }
 
   function newId() { return 'd' + Math.random().toString(36).slice(2, 9); }
+
+  // "pending:<operationName>" — the synthetic dream id the Chamber (js/
+  // interpret-experience.js) opens for a still-generating dream (tracker
+  // item for-product-funnel-ending-v2-founder-ins-tfuu0q: "Chamber readable
+  // immediately... interpretation only needs the dream text, so it's
+  // enterable immediately"). See pendingInterpretations' own doc comment
+  // above (seed()) for the full mechanism this id plugs into.
+  var PENDING_DREAM_ID_PREFIX = 'pending:';
+
+  /**
+   * Resolves a `PENDING_DREAM_ID_PREFIX`-id to a lightweight, in-memory
+   * dream-shaped object built straight off the CURRENT account's own
+   * pendingJob — or null if there's no matching in-flight job (already
+   * completed/failed, or belongs to a different account than the one
+   * currently signed in — scopedPendingJob() already enforces that same
+   * ownership check every other pendingJob read in this file gets).
+   *
+   * `interpretations` is NOT a copy — it's the live
+   * `state.pendingInterpretations[operationName]` object itself (created
+   * empty on first read if it doesn't exist yet), so a write through
+   * generateInterpretationReading's normal `map[personaKey] = {...};
+   * persist();` path (findDream -> this function -> mutate the returned
+   * object) durably persists here with ZERO special-case code in that
+   * function — it already treats whatever findDream() gives it as the real
+   * record to mutate.
+   *
+   * Every other field is read-only scaffolding (storyText/caption/style/
+   * mediaType) — good enough for the interpretation flow (which only ever
+   * reads `d.storyText || d.caption`), but this is deliberately NOT a real
+   * dream: it's never added to state.dreams, so getMyDreams/getDreamMilestone/
+   * the shared feed/profile grids never see it — only findDream() (and
+   * therefore getDream/getInterpretations/requestInterpretationQuestions/
+   * generateInterpretationReading, every one of which routes through
+   * findDream) ever resolves one.
+   */
+  function findPendingDream(operationName) {
+    var job = scopedPendingJob();
+    if (!job || job.operationName !== operationName) return null;
+    if (!state.pendingInterpretations[operationName]) state.pendingInterpretations[operationName] = {};
+    return {
+      id: PENDING_DREAM_ID_PREFIX + operationName,
+      ownerHandle: job.ownerHandle,
+      caption: job.caption, storyText: job.storyText || job.caption,
+      style: job.style, mediaType: job.mediaType,
+      isPublished: false,
+      interpretationText: null, interpretationAt: null,
+      interpretations: state.pendingInterpretations[operationName],
+      _pending: true
+    };
+  }
+
   function findDream(id) {
+    if (typeof id === 'string' && id.indexOf(PENDING_DREAM_ID_PREFIX) === 0) {
+      return findPendingDream(id.slice(PENDING_DREAM_ID_PREFIX.length));
+    }
     for (var i = 0; i < state.dreams.length; i++) if (state.dreams[i].id === id) return state.dreams[i];
     return null;
   }
@@ -1590,6 +1663,23 @@
       // Images never set a duration — there's no clip length concept for a
       // still image (see explore.html/profile.html's guarded d.dur render).
       if (mediaType === 'video') dream.dur = '0:08';
+      // Migrates any interpretation(s) started against this job's
+      // pending:<operationName> synthetic id (see pendingInterpretations'
+      // own doc comment above seed(), and findPendingDream) onto the real,
+      // now-finalized dream — durably carrying "already interpreted" over
+      // from the generating tile to the finished dream, so result.html's
+      // state-aware Chamber hero (tracker item
+      // for-product-funnel-ending-v2-founder-ins-tfuu0q) reads correctly
+      // for a reading opened WHILE the video was still generating. Only
+      // applies to a brand-new dream (this branch, no sourceDreamId) — a
+      // regenerate always resets `interpretations` to null on purpose (see
+      // the sourceDreamId branch above), which is correct there since the
+      // content itself changed; the pending-Chamber path never applies to a
+      // regenerate in the first place (it only exists pre-first-completion).
+      if (operationName && state.pendingInterpretations[operationName]) {
+        dream.interpretations = state.pendingInterpretations[operationName];
+        delete state.pendingInterpretations[operationName];
+      }
       state.dreams.unshift(dream);
     }
     clearPendingJob();
@@ -1832,6 +1922,17 @@
       return dream;
     }).catch(function (err) {
       clearPendingJob();
+      // Defensive cleanup — a failed job's own pendingInterpretations entry
+      // (if the user opened the Chamber while it was still generating,
+      // before it failed) has no dream to ever migrate onto (a retry
+      // submits a genuinely NEW operationName, see startGeneration's own
+      // header comment), so it would otherwise sit orphaned in local
+      // storage forever. Harmless either way (this map only ever grows by
+      // one entry per opened-Chamber-during-generation, and only until this
+      // point), just hygiene.
+      if (capturedOperationName && state.pendingInterpretations[capturedOperationName]) {
+        delete state.pendingInterpretations[capturedOperationName];
+      }
       throw err;
     });
   }
@@ -3125,6 +3226,22 @@
      *                     at all (a real dream or a no-recall check-in) —
      *                     drives home.html's D1 (brand-new account)
      *                     next-step strip vs. the returning-user one.
+     *   isFirstEverNight — true when EVERY qualifying entry this account
+     *                     has ever logged (real dream, legacy pre-createdAt
+     *                     dream, or no-recall check-in) is from TODAY —
+     *                     i.e. this is genuinely the account's first-ever
+     *                     logged night, whether tonight's entry is a
+     *                     still-generating pending job, an already-finished
+     *                     dream, or a no-recall check-in. Tracker item
+     *                     for-product-funnel-ending-v2-founder-ins-tfuu0q's
+     *                     combined ritual-module state (home.html:
+     *                     "🔥 1 night" / "Your streak starts tonight" +
+     *                     the distinct +100 first-claim bonus) keys off
+     *                     `isFirstEverNight && loggedToday` — deliberately
+     *                     a SEPARATE flag from hasEverLogged (which is also
+     *                     true tonight, but stays true forever afterward)
+     *                     so a returning day-2+ user never mistakenly gets
+     *                     the day-0-only copy again.
      *
      * A dream saved before the createdAt field existed (see finalizeDream's
      * own doc comment) simply never counts toward loggedToday/weekCount —
@@ -3165,19 +3282,44 @@
       var todayStr = now.toDateString();
       var todayDream = mine.filter(function (d) { return new Date(d.createdAt).toDateString() === todayStr; })[0] || null;
       var todayNoRecall = noRecallDates.indexOf(todayStr) !== -1;
+      // A still-generating dream counts as "logged tonight" too (tracker
+      // item for-product-funnel-ending-v2-founder-ins-tfuu0q: the Tonight
+      // hero shows its already-logged state the moment a funnel/create.html
+      // generation is SUBMITTED, not once it finishes) — scopedPendingJob()
+      // already scopes this to the currently signed-in account, same as
+      // every other read here. startedAt is stamped at submission time (see
+      // savePendingJob's own call sites), so this reads as "today" from the
+      // instant the job exists, exactly like a real dream's createdAt would.
+      var pendingJob = scopedPendingJob();
+      var pendingToday = !!(pendingJob && typeof pendingJob.startedAt === 'number' && new Date(pendingJob.startedAt).toDateString() === todayStr);
 
       var yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       var yesterdayStr = yesterday.toDateString();
       var loggedYesterday = mine.some(function (d) { return new Date(d.createdAt).toDateString() === yesterdayStr; }) || noRecallDates.indexOf(yesterdayStr) !== -1;
 
+      // isFirstEverNight (see this function's own doc comment above): true
+      // when nothing OTHER than today (a real dream, a legacy pre-createdAt
+      // dream, or a no-recall check-in) has ever been logged by this
+      // account. `mine` only ever contains dreams WITH a createdAt, so a
+      // legacy dream (no createdAt at all — see this function's own header
+      // comment on why those never count toward loggedToday/weekCount) is
+      // counted separately here via the myAny/mine length difference —
+      // such a dream necessarily predates today (createdAt didn't exist
+      // yet when it was saved), so it always disqualifies "first ever."
+      var priorRealCount = mine.filter(function (d) { return new Date(d.createdAt).toDateString() !== todayStr; }).length;
+      var legacyDreamCount = myAny.length - mine.length;
+      var priorNoRecallCount = noRecallDates.filter(function (ds) { return ds !== todayStr; }).length;
+      var isFirstEverNight = (priorRealCount + legacyDreamCount + priorNoRecallCount) === 0;
+
       return {
-        loggedToday: !!todayDream || todayNoRecall,
-        todayEntryType: todayDream ? 'dream' : (todayNoRecall ? 'no_recall' : null),
-        todayDreamCaption: todayDream ? (todayDream.storyText || todayDream.caption) : null,
+        loggedToday: !!todayDream || todayNoRecall || pendingToday,
+        todayEntryType: todayDream ? 'dream' : (todayNoRecall ? 'no_recall' : (pendingToday ? 'pending' : null)),
+        todayDreamCaption: todayDream ? (todayDream.storyText || todayDream.caption) : (pendingToday ? (pendingJob.storyText || pendingJob.caption) : null),
         loggedYesterday: loggedYesterday,
-        weekCount: weekDreamCount + weekNoRecallCount,
+        weekCount: weekDreamCount + weekNoRecallCount + (pendingToday && !todayDream ? 1 : 0),
         weekTarget: WEEK_SUMMARY_TARGET,
-        hasEverLogged: myAny.length > 0 || noRecallDates.length > 0
+        hasEverLogged: myAny.length > 0 || noRecallDates.length > 0 || pendingToday,
+        isFirstEverNight: isFirstEverNight
       };
     },
 
@@ -3509,6 +3651,20 @@
 
     /** The CURRENT account's in-flight generation job, if any — survives navigation/refresh so Home can resume polling it. Scoped by ownerHandle (see scopedPendingJob) so a different account never sees another account's job. */
     getPendingJob: function () { return scopedPendingJob(); },
+
+    /**
+     * The synthetic `pending:<operationName>` dream id (see findPendingDream's
+     * own doc comment above) for the CURRENT account's in-flight generation
+     * job, or null if there isn't one — home.html's single source of truth
+     * for "what dream id does the Chamber open while the My-dreams row's
+     * first tile is still generating." Centralized here (rather than every
+     * caller string-concatenating its own `'pending:' + job.operationName`)
+     * so the prefix itself only ever needs to change in one place.
+     */
+    getPendingDreamId: function () {
+      var job = scopedPendingJob();
+      return job ? PENDING_DREAM_ID_PREFIX + job.operationName : null;
+    },
 
     /**
      * Adopts an ALREADY-SUBMITTED generation job as this browser's

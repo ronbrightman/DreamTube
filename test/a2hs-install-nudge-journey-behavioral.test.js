@@ -91,7 +91,7 @@ function mockTokenStatus(page) {
   });
 }
 
-/** Mocks a generation that never completes -- keeps processing.html parked on the wait screen, same helper shape as test/pwa-stage0-behavioral.test.js's own mockNeverFinishingGeneration. */
+/** Mocks a generation that never completes -- keeps home.html's My-dreams row parked on its generating tile (formerly processing.html's wait screen), same helper shape as test/pwa-stage0-behavioral.test.js's own mockNeverFinishingGeneration. */
 function mockNeverFinishingGeneration(page) {
   return Promise.all([
     page.route('**/.netlify/functions/generate-video', function (route) {
@@ -453,7 +453,7 @@ test('push wait-screen: iOS real-browser-tab (PushManager absent, not standalone
     var username = 'pushfallback' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html?generate=1');
     await page.waitForSelector('#push-ask-card', { state: 'visible', timeout: 5000 });
 
     var bodyText = await page.textContent('#push-ask-card .push-ask-body');
@@ -486,7 +486,7 @@ test('push wait-screen: no fallback once already running standalone, even with P
     var username = 'pushstandalone' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html?generate=1');
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#push-ask-card').count(), 0, 'must not show the fallback once already standalone -- that is not the iOS-browser-tab case');
   } finally {
@@ -505,7 +505,7 @@ test('push wait-screen: no fallback for a non-iOS unsupported reason (stays exac
     var username = 'pushdesktopunsupported' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html?generate=1');
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#push-ask-card').count(), 0, 'a non-iOS unsupported reason must stay silent, not show the iOS-specific fallback');
   } finally {
@@ -524,7 +524,7 @@ test('push wait-screen: no fallback inside a detected in-app webview', async fun
     var username = 'pushwebviewfallback' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html?generate=1');
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#push-ask-card').count(), 0, 'the standing in-app-webview rule must suppress the fallback too, not just the real ask');
   } finally {
@@ -547,7 +547,7 @@ test('push wait-screen: real support still shows the normal "Notify me" ask, nev
     var username = 'pushrealask' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 
-    await safeGoto(page, baseUrl + '/processing.html');
+    await safeGoto(page, baseUrl + '/home.html?generate=1');
     await page.waitForSelector('#push-ask-card', { state: 'visible', timeout: 5000 });
     var bodyText = await page.textContent('#push-ask-card .push-ask-body');
     assert.match(bodyText, /takes a minute or two/i, 'expected the real ask copy');

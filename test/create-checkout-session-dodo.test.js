@@ -182,10 +182,10 @@ test('caller-supplied successUrl/cancelUrl override the defaults, resolved again
   await handler(fakeEvent({
     method: 'POST',
     headers: { host: 'dreamtube1.netlify.app' },
-    body: { email: 'buyer@example.com', pack: 'pack100', successUrl: '/processing.html?checkout=success', cancelUrl: '/style.html?checkout=cancelled' }
+    body: { email: 'buyer@example.com', pack: 'pack100', successUrl: '/home.html?checkout=success', cancelUrl: '/style.html?checkout=cancelled' }
   }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
-  assert.equal(sentBody.return_url, 'https://dreamtube1.netlify.app/processing.html?checkout=success');
+  assert.equal(sentBody.return_url, 'https://dreamtube1.netlify.app/home.html?checkout=success');
   assert.equal(sentBody.cancel_url, 'https://dreamtube1.netlify.app/style.html?checkout=cancelled');
 });
 
@@ -214,7 +214,7 @@ test('SECURITY: a cross-origin absolute cancelUrl is rejected -> 400 E8', async 
 });
 
 test('SECURITY: a same-origin absolute successUrl is still rejected — relative-path-only, not merely same-origin', async function () {
-  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'https://dreamtube1.netlify.app/processing.html' } }));
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack100', successUrl: 'https://dreamtube1.netlify.app/home.html' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E8: invalid_redirect_url/);
 });

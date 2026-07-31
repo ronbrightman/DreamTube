@@ -1555,7 +1555,21 @@
               DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
             }
             track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
-            location.href = 'processing.html';
+            // Lands directly on home.html now (tracker item for-product-
+            // funnel-ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31
+            // evening) — processing.html's dedicated wait screen is gone.
+            // `?generate=1` is the same explicit "submit fresh from the
+            // draft if there's no pendingJob to resume" signal style.html's
+            // in-app Generate button uses (see home.html's own "Fresh
+            // in-app generation submission" script block) — needed here too
+            // for the case the pre-signup generation call failed
+            // (pendingOperationName never adopted, pendingStartFailed
+            // true): home.html finds no pendingJob and falls back to
+            // submitting the intact draft (assembled.caption/chosenStyle,
+            // set earlier in this same flow) fresh. When adoption DID
+            // succeed, home.html's own pendingJob-first check resumes that
+            // job instead and ignores this param entirely.
+            location.href = 'home.html?generate=1';
           });
         });
       }, 0);

@@ -307,7 +307,9 @@ test('result.html: "Start over instead" opens the OLD full mini-wizard sheet, un
 });
 
 // ===========================================================================
-// 2. Model rotation end-to-end (through processing.html)
+// 2. Model rotation end-to-end (through home.html — formerly processing.html
+// before tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q
+// removed that page)
 // ===========================================================================
 
 /** Drives the full edit-delta flow (open sheet -> type delta -> Apply -> Generate this) through to a completed regenerate, and returns the requestedModel generate-video.js's mock received plus the resulting dream. */
@@ -318,7 +320,12 @@ async function driveFullEditDelta(page, dreamId, deltaText) {
   await page.click('#delta-apply-btn');
   await page.waitForSelector('#delta-confirm-panel', { state: 'visible', timeout: 5000 });
   await page.click('#delta-confirm-generate-btn');
-  await page.waitForURL('**/result.html?id=' + dreamId, { timeout: 15000, waitUntil: 'domcontentloaded' });
+  // Lands directly on home.html now (?generate=1 -- see that page's own
+  // "Fresh in-app generation submission" script block), not a redirect
+  // back to result.html -- the edited dream's own tile resolves in place
+  // in the My-dreams row.
+  await page.waitForURL('**/home.html**', { timeout: 15000, waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
 }
 
 test('model rotation: a veo3.1-lite dream\'s edit routes to pixverse-v6, and modelUsed + editHistory are stamped on the resulting dream', async function (t) {

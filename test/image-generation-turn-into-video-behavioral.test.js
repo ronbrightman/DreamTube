@@ -3,9 +3,11 @@
 // Real browser-driven coverage for result.html's "Turn this into a video"
 // upsell (docs/IMAGE_GENERATION_SPEC.md §6) and js/store.js's
 // turnImageIntoVideo: the CTA's visibility rule (imageUrl && !videoUrl
-// only), its copy, the tap -> draft -> processing.html -> result.html
-// round trip, and that the upgraded dream keeps its original imageUrl for
-// provenance while videoUrl/mediaType flip over. Precondition (an
+// only), its copy, the tap -> draft -> home.html (formerly processing.html
+// before tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q
+// removed that page) round trip, and that the upgraded dream keeps its
+// original imageUrl for provenance while videoUrl/mediaType flip over.
+// Precondition (an
 // image-type dream already existing) is seeded directly into localStorage
 // — the cheapest way to construct it, matching
 // test/first-video-created-behavioral.test.js's own seedAccount approach —
@@ -164,13 +166,13 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
 
     await page.click('#turn-video-btn');
 
-    await page.waitForURL('**/processing.html', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    // processing.html renders the normal VIDEO copy for this upgrade --
-    // mediaType:'video' means zero special-casing there, per spec.
-    var procTitle = await page.textContent('#proc-title');
-    assert.match(procTitle, /into a video/);
-
-    await page.waitForURL('**/result.html?id=dream-to-upgrade', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    // Lands directly on home.html now (?generate=1 -- tracker item
+    // for-product-funnel-ending-v2-founder-ins-tfuu0q removed processing.html
+    // and the old redirect straight back to result.html) -- the upgrade
+    // runs in the background; the My-dreams row's generating tile flips to
+    // a real finished tile in place.
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
@@ -184,8 +186,11 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
     assert.equal(dreamState.videoUrl, 'https://example.com/fake-upgraded-video.mp4');
     assert.equal(dreamState.imageUrl, ORIGINAL_IMAGE_URL, 'the original image must be kept for provenance, not cleared');
 
-    // The upgraded dream now renders as a normal video and the CTA must not
-    // show again (dream.videoUrl is now set).
+    // Tapping into the upgraded dream's own room (result.html) -- no
+    // longer an automatic redirect -- to confirm it now renders as a
+    // normal video and the CTA does not show again (dream.videoUrl is now
+    // set).
+    await page.goto(baseUrl + '/result.html?id=dream-to-upgrade', { waitUntil: 'domcontentloaded' });
     assert.equal(await page.locator('#result-video').isVisible(), true);
     assert.equal(await page.locator('#turn-video-btn').isVisible(), false);
   } finally {

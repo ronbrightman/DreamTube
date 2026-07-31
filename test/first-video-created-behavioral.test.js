@@ -202,7 +202,7 @@ function fbqTrackCustomCalls(fbqCalls, eventName) {
   return fbqCalls.filter(function (args) { return args[0] === 'trackCustom' && args[1] === eventName; });
 }
 
-test('result.html: a brand-new account\'s first-ever completed dream, opened fresh off processing.html, fires FirstVideoCreated on all three vendors exactly once, and a reload does not re-fire it', async function (t) {
+test('result.html: a brand-new account\'s first-ever completed dream, opened fresh off a completed generation, fires FirstVideoCreated on all three vendors exactly once, and a reload does not re-fire it', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -312,7 +312,7 @@ test('result.html: a pre-existing single-dream account (predates this feature) r
       dreams: [{ id: 'dream-legacy-1' }]
     });
     // matched:false for everything -- an ordinary revisit, not a fresh
-    // redirect from processing.html.
+    // completion.
     await mockConsumeMarker(page, null);
 
     await page.goto(baseUrl + '/result.html?id=dream-legacy-1', { waitUntil: 'domcontentloaded' });
@@ -456,24 +456,23 @@ test('result.html: does NOT fire first_video_result_view for an account\'s 2nd/N
   }
 });
 
-// ===== End-to-end: the REAL processing.html -> result.html redirect flow =====
+// ===== End-to-end: the REAL home.html fresh-generation flow =====
 // Every test above seeds state directly and jumps straight to result.html
 // (the cheapest way to exercise its own guard logic in isolation, per this
-// file's header comment). This test instead drives the actual page flow
-// the durable marker exists to survive: processing.html's
-// attachTaskHandlers calls DreamStore.markGenerationJustCompleted(dream.sourceOperationName)
-// (POSTing to mark-generation-completed), then redirects to
-// result.html?id=..., which reads that same dream's sourceOperationName
-// back off localStorage and calls
-// DreamStore.wasOperationJustCompleted(dream.sourceOperationName)
-// (POSTing to consume-generation-marker) before firing. No real fal.ai
-// call (generate-video/video-status are mocked to complete immediately,
-// per AGENT_POLICY.md's "keep generation-testing cost low" section) --
-// this is pure plumbing verification, not generation-quality verification.
-// This test mocks the mark/consume ROUTES directly (like every test
-// above), so it does NOT exercise mark-generation-completed.js's own
-// verifyOperationCompleted logic -- that's covered by
-// test/generation-completion-marker.test.js's unit tests instead.
+// file's header comment). This test instead drives the actual page flow a
+// brand-new account's first-ever completion takes: home.html's own
+// onGenerationSettled fires FirstVideoCreated DIRECTLY (tracker item
+// for-product-funnel-ending-v2-founder-ins-tfuu0q -- processing.html/the
+// old redirect to result.html are both gone, so there's no navigation to
+// survive and no need for the async wasOperationJustCompleted round trip
+// result.html's OWN identical-purpose block still uses for a direct/
+// deep-link visit) -- it still calls DreamStore.markGenerationJustCompleted
+// (POSTing to mark-generation-completed) alongside that direct fire, as a
+// defense-in-depth backstop (see that page's own comment), which this test
+// also verifies. No real fal.ai call (generate-video/video-status are
+// mocked to complete immediately, per AGENT_POLICY.md's "keep generation-
+// testing cost low" section) -- this is pure plumbing verification, not
+// generation-quality verification.
 
 /** Mocks a generation that completes immediately with a fake video, and captures the operationName processing.html's mark-generation-completed call carries -- reused by consume-generation-marker's own mock below so the two endpoints agree on the same operationName, exactly like the real operationName-keyed Blobs store would. */
 function mockGenerationCompletesImmediately(page) {
@@ -504,7 +503,7 @@ function mockGenerationCompletesImmediately(page) {
   ]).then(function () { return state; });
 }
 
-/** Seeds a logged-in account with a caption+style draft and no completed dreams yet, landing on processing.html's normal fresh-generation path -- mirrors test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft. */
+/** Seeds a logged-in account with a caption+style draft and no completed dreams yet, landing on home.html's `?generate=1` fresh-generation path -- mirrors test/wait-screen-reassurance-and-inapp-nudge-behavioral.test.js's seedAccountWithDraft. */
 async function seedAccountWithDraft(page, opts) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (o) {
@@ -519,7 +518,7 @@ async function seedAccountWithDraft(page, opts) {
   }, opts);
 }
 
-test('end-to-end: a brand-new account\'s real processing.html -> result.html redirect fires FirstVideoCreated via the durable server-side marker, with no sessionStorage involved at all', async function (t) {
+test('end-to-end: a brand-new account\'s real home.html fresh-generation flow fires FirstVideoCreated directly, and also writes the durable server-side marker as a defense-in-depth backstop', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -530,24 +529,26 @@ test('end-to-end: a brand-new account\'s real processing.html -> result.html red
     var markerState = await mockGenerationCompletesImmediately(page);
 
     await seedAccountWithDraft(page, { username: 'e2emarkeruser', email: 'e2e-marker@example.com' });
-    await page.goto(baseUrl + '/processing.html', { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForURL(/result\.html\?id=/, { timeout: 8000 });
+    // Resolves in place on home.html now (no more redirect to result.html,
+    // tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q) -- the
+    // My-dreams row's generating tile flips to a real finished tile.
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
     await settle(function () {
       return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1 &&
         conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length >= 1;
     });
 
-    assert.ok(markerState.markedOperationName, 'processing.html should have POSTed the completed generation\'s operationName to mark-generation-completed before redirecting');
-    assert.match(page.url(), /result\.html\?id=/, 'should have redirected to result.html for the freshly-completed dream');
+    assert.ok(markerState.markedOperationName, 'home.html should have POSTed the completed generation\'s operationName to mark-generation-completed, as a defense-in-depth backstop');
+    assert.match(page.url(), /home\.html/, 'should have stayed on home.html -- no redirect for the freshly-completed dream');
 
     var trackCustomCalls = fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated');
-    assert.equal(trackCustomCalls.length, 1, 'the real processing.html -> result.html flow should fire FirstVideoCreated exactly once via the durable marker round-trip');
+    assert.equal(trackCustomCalls.length, 1, 'the real home.html fresh-generation flow should fire FirstVideoCreated exactly once');
     assert.equal(conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length, 1);
 
     var phCalls = await readPostHogCaptureCalls(page);
     assert.equal(phCalls.filter(function (c) { return c.name === 'first_video_created'; }).length, 1);
-    assert.equal(phCalls.filter(function (c) { return c.name === 'first_video_result_view'; }).length, 1, 'the sanity-check view event should also have fired alongside the real KPI event');
   } finally {
     await context.close();
   }

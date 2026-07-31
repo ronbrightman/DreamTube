@@ -314,6 +314,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .ritual.warm .ritual-big{ color:#ffe0aa; }
 .ritual.warm .ritual-sub{ color:#e8cfa4; }
 .ritual.warm .constel .st.lit{ filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
+/* First-claim bonus eyebrow (tracker item
+   for-product-funnel-ending-v2-founder-ins-tfuu0q) — shown only when
+   tokenStatus.dailyClaimAmount is the account's very first-ever claim
+   (see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), distinguishing the
+   +100 first-claim bonus from every ordinary +20 daily claim. */
+.ritual-claim-eyebrow{
+  margin-top:18px; font-size:11.5px; font-weight:800; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--home-warn);
+}
+.ritual-claim-eyebrow + .ritual-claim{ margin-top:8px; }
 /* the daily claim — a real 56px button IN the module when claimable.
    STATIC warm glow, never a pulse (the single pulse stays on a hero pill). */
 .ritual-claim{
@@ -367,6 +377,71 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 }
 .dream-row-tile:active{ transform:scale(.97); }
 .dreams-empty{ font-size:var(--t-body); color:var(--home-soft); }
+
+/* --- 6b · the GENERATING tile (tracker item
+   for-product-funnel-ending-v2-founder-ins-tfuu0q — the killed
+   processing.html wait screen's job now happens in place, on the My-dreams
+   row's first tile, while the rest of Home is already usable). Same
+   shimmer-sweep TECHNIQUE as processing.html's own now-removed
+   .proc-bar-fill/.proc-bar-sweep (a diagonal light sweep over a violet
+   gradient), adapted to this row's 150×100 tile shape rather than a full
+   progress bar — no footage exists yet to show, so no scrim/video/image, a
+   spinner + label instead. --- */
+.dream-row-tile.generating{
+  background:
+    radial-gradient(70% 70% at 28% 26%, rgba(157,144,255,.5), transparent 65%),
+    radial-gradient(70% 70% at 78% 74%, rgba(224,120,190,.4), transparent 65%),
+    linear-gradient(160deg,#241348,#180c34);
+  border-color:rgba(157,144,255,.55);
+  box-shadow:0 0 16px -4px rgba(157,144,255,.5);
+  display:flex; align-items:center; justify-content:center; cursor:default;
+}
+.dream-row-tile.generating::after{ content:none; } /* no footage scrim on an unrendered tile */
+.dg-sweep{
+  position:absolute; inset:0 auto 0 -60%; width:60%; z-index:1; pointer-events:none;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent);
+  animation:dgTileSweep 1.8s ease-in-out infinite;
+}
+@keyframes dgTileSweep{ 0%{ left:-60%; } 100%{ left:140%; } }
+.dg-inner{ position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px; text-align:center; }
+.dg-label{ font-size:11.5px; font-weight:700; line-height:1.3; color:#e4e0fb; text-shadow:0 1px 6px rgba(12,10,26,.6); animation:dgPulseText 2s ease-in-out infinite; }
+@keyframes dgPulseText{ 0%,100%{ opacity:1; } 50%{ opacity:.6; } }
+@media (prefers-reduced-motion:reduce){ .dg-sweep,.dg-label{ animation:none !important; } }
+
+/* --- ORPHAN (a), rehomed from processing.html's #push-ask-slot: the
+   notify-me/push-prompt card, anchored right under the dreams row while a
+   generation is in flight (js/push-subscribe.js's own doc comment already
+   names this as the ideal moment — "right after a generation starts").
+   Markup/classes (.push-ask-card etc.) are rendered by that shared module
+   itself (css/styles.css already carries their styling from
+   processing.html) — this page only provides the empty slot + placement. --- */
+#notify-card-slot{ margin-top:16px; }
+
+/* --- ORPHAN (b), rehomed from processing.html's #proc-nudge-card +
+   js/install-nudge.js: the webview-escape nudge, folded into an ELEVATED
+   state of the existing "Add DreamTube to your phone" quiet row (mock
+   home-mock5-day0-x7q4.html's .webview-card) rather than a second nudge
+   surface. Shown only when DreamStore.detectInAppWebviewHost() is
+   non-null — the plain quiet row above stays hidden in that case (A2HS is
+   genuinely impossible inside a webview, see install-qrow's own
+   shouldShow() gate), so this never shows alongside it. --- */
+.webview-card{
+  border:1px solid rgba(224,170,90,.4); border-radius:16px;
+  padding:14px 16px; margin:4px 0 0;
+  background:linear-gradient(180deg, rgba(70,48,20,.28), rgba(36,29,71,.4));
+}
+.webview-head{ display:flex; align-items:center; gap:9px; }
+.webview-dot{ font-size:16px; flex:0 0 auto; display:flex; }
+.webview-title{ font-size:14.5px; font-weight:800; color:#ffe0aa; }
+.webview-body{ margin-top:6px; font-size:13px; line-height:1.5; color:#e8cfa4; }
+.webview-btn{
+  margin-top:10px; display:inline-flex; align-items:center; gap:6px;
+  min-height:40px; padding:0 16px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206; font:800 13.5px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.webview-btn:active{ transform:scale(.97); }
+.webview-note{ margin-top:8px; font-size:12px; color:#e8cfa4; }
 
 /* --- 7 · quiet row — 52px, flat, no card chrome (Vault absorbed into
    the ritual module's balance line above; only the add-to-phone nudge
@@ -455,6 +530,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           </div>
           <span id="ritual-constel"></span>
         </div>
+        <div class="ritual-claim-eyebrow" id="ritual-claim-eyebrow" hidden>🎁 First-night bonus</div>
         <button type="button" class="ritual-claim" id="ritual-claim" style="display:none;"></button>
         <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="gold">✦</span> – · Vault →</a>
       </section>
@@ -475,16 +551,36 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="dreams-empty" id="dreams-empty" style="display:none;">Your dreams will appear here once you make one.</div>
       </section>
 
-      <!-- 7 · quiet row — add-to-phone nudge only (Vault absorbed above).
-           Same persistence rule as before (tracker item for-product-a2hs-
-           install-nudge-3-founder-vcofk7): visible only while genuinely
-           installable AND not yet verified installed; no dismiss (X) —
-           see installJourneyRow below for why. -->
+      <!-- ORPHAN (a) rehomed from processing.html's #push-ask-slot — the
+           notify-me/push-prompt, shown only while the My-dreams row's
+           first tile is generating (see wireGeneratingTile below). Empty
+           by default; js/push-subscribe.js's own maybeShowAsk() populates
+           (or leaves empty, if its own gates don't pass — see that file's
+           header comment) it. -->
+      <div id="notify-card-slot"></div>
+
+      <!-- 7 · quiet row — add-to-phone nudge (Vault absorbed above), OR,
+           inside a detected FB/IG in-app webview (ORPHAN (b), rehomed from
+           processing.html's #proc-nudge-card + js/install-nudge.js), the
+           SAME row elevated into a webview-escape card instead — A2HS is
+           genuinely impossible inside that webview (installJourneyRow's
+           own shouldShow() gate below already hides the plain row there),
+           so the two never show together. Same persistence rule as before
+           for the plain row (tracker item for-product-a2hs-install-
+           nudge-3-founder-vcofk7): visible only while genuinely installable
+           AND not yet verified installed; no dismiss (X) — see
+           installJourneyRow below for why. -->
       <div class="quietrows">
         <button type="button" class="qrow" id="install-qrow" style="display:none;">
           <i class="qicon" id="install-qrow-icon"></i><span class="qlabel">Add DreamTube to your phone</span>
           <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
         </button>
+        <div class="webview-card" id="webview-card" style="display:none;">
+          <div class="webview-head"><span class="webview-dot" id="webview-card-icon"></span><span class="webview-title" id="webview-card-title"></span></div>
+          <div class="webview-body">Open DreamTube in your real browser to keep your dreams safe — and add it to your phone like any other app.</div>
+          <button type="button" class="webview-btn" id="webview-card-btn"></button>
+          <div class="webview-note" id="webview-card-note" style="display:none;"></div>
+        </div>
       </div>
 
     </div>
@@ -524,8 +620,31 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/purchase-sheet.js"></script>
 <script src="js/interpreter-personas.js"></script>
 <script src="js/interpret-experience.js"></script>
+<!-- Push-subscribe ask (ORPHAN (a), rehomed from processing.html — see
+     js/push-subscribe.js's own header comment) + Cloudflare Turnstile
+     (needed here now that a fresh generation can be SUBMITTED from this
+     page — the Dodo-checkout-return resume path below, mirroring
+     processing.html's own former runGeneration()). Both no-op safely (no
+     script load, no network call, no console error, no delay) until real
+     keys are configured — see each file's own doc comment. -->
+<script src="js/push-config.js"></script>
+<script src="js/push-subscribe.js"></script>
+<script src="js/turnstile-config.js"></script>
 <script>
+  // Consume a ?bt=<session-transfer-token> param (see js/store.js's own
+  // doc comment) BEFORE the sign-in guard below runs — same "host app's
+  // 3-dots-menu open-in-browser action lands signed IN" mechanism
+  // processing.html/result.html already used, now relevant here too since
+  // this page's own webview-escape card (see refreshWebviewCard below)
+  // hands out a link carrying this exact param. No-ops instantly when
+  // there's no `bt` param on this load at all, the overwhelmingly common
+  // case.
+  DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // Keeps THIS page's own URL carrying a fresh transfer token for as long
+  // as it stays open, signed in, and inside a detected FB/IG webview — see
+  // that function's own doc comment. No-ops entirely outside a webview.
+  DreamStore.maintainSessionTransferUrl();
 
   BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'home' });
 
@@ -544,8 +663,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
 
+  // Mirrors style.html's/processing.html's own IMAGE_TOKEN_COST/
+  // VIDEO_TOKEN_COST — needed here for the out-of-tokens purchase sheet's
+  // arithmetic on both the E112/E412 mid-generation-failure path
+  // (onGenerationSettled below) and the Dodo-checkout-return resume path
+  // (draftMediaTypeCost, further down this script).
+  var IMAGE_TOKEN_COST = 10;
+  var VIDEO_TOKEN_COST = 100;
+
   var user = DreamStore.getCurrentUser();
   var myDreams = DreamStore.getMyDreams(); // most-recent-first, see js/store.js's own ordering comment
+  // The in-flight generation job, if any (tracker item for-product-funnel-
+  // ending-v2-founder-ins-tfuu0q — "signup lands the user directly on
+  // home.html... where the video generates in the background and the home
+  // screen itself shows the in-progress state"). Re-read/reassigned once
+  // generation completes/fails or a fresh one appears (see
+  // onGenerationSettled/pollForPendingJobToAppear below) rather than
+  // trusted as a frozen snapshot for the rest of this page's life.
+  var pendingJob = DreamStore.getPendingJob();
 
   // ===== Greeting — one line, no date sub-line (founder amendment) =====
   (function renderGreeting(){
@@ -601,13 +736,35 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // mountBalanceChip already uses. Pulse migrates here from the Tonight
   // pill once tonight is logged (single-pulse rule, mock §3). =====
   var completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
-  (function renderChamberHero(){
+  // The dream id the Chamber should open for, in priority order: a real
+  // completed dream first, then a still-generating one (tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q — "Chamber readable
+  // immediately... interpretation only needs the dream text, so it's
+  // enterable immediately", via the synthetic pending:<operationName> id
+  // js/store.js's findDream resolves), or null when there's neither.
+  function chamberTargetDreamId(){
+    if(completedDream) return completedDream.id;
+    if(pendingJob) return DreamStore.getPendingDreamId();
+    return null;
+  }
+  function renderChamberHero(){
     var pill = document.getElementById('chamber-pill');
     var sub = document.getElementById('chamber-sub');
     if(completedDream){
       pill.href = 'result.html?id=' + encodeURIComponent(completedDream.id);
       pill.textContent = 'Enter';
       sub.textContent = 'Your reading awaits.';
+    } else if(pendingJob){
+      // No real dream to link to yet — href stays a safe, real,
+      // functioning fallback destination (create.html) for the vanishingly
+      // rare case a click somehow bypasses the JS handler below (e.g.
+      // right-click/open-in-new-tab); result.html has no way to render a
+      // synthetic pending: id, so pointing the href there would be a worse
+      // fallback than this. The click handler below is what actually opens
+      // the Chamber for the pending dream in the overwhelmingly common case.
+      pill.href = 'create.html';
+      pill.textContent = 'Enter';
+      sub.textContent = 'Your first reading is ready — no need to wait for the video.';
     } else {
       pill.href = 'create.html';
       pill.textContent = 'Begin';
@@ -619,17 +776,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // the mechanism change above — fired at HREF-COMPUTE time,
     // deliberately not gated on the click itself.
     track('home_chamber_href_computed', {
-      branch: completedDream ? 'completed_dream' : 'no_completed_dream',
+      branch: completedDream ? 'completed_dream' : (pendingJob ? 'pending_dream' : 'no_completed_dream'),
       href: pill.getAttribute('href'),
       dream_id: completedDream ? completedDream.id : null
     });
-  })();
+  }
+  renderChamberHero();
 
   document.getElementById('chamber-pill').addEventListener('click', function(e){
-    track('home_chamber_pill_tapped', { branch: completedDream ? 'completed_dream' : 'no_completed_dream' });
-    if(!completedDream) return; // real link to create.html — let it navigate normally
+    var targetId = chamberTargetDreamId();
+    track('home_chamber_pill_tapped', { branch: completedDream ? 'completed_dream' : (pendingJob ? 'pending_dream' : 'no_completed_dream') });
+    if(!targetId) return; // real link to create.html — let it navigate normally
     e.preventDefault();
-    if(window.InterpretExperience) InterpretExperience.open(completedDream.id);
+    if(window.InterpretExperience) InterpretExperience.open(targetId);
   });
 
   // ===== Ritual module — streak, constellation, daily claim, quiet
@@ -675,7 +834,22 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
     ritual.classList.toggle('warm', earned);
 
-    if(!logStatus.hasEverLogged){
+    // Combined day-0 state (tracker item
+    // for-product-funnel-ending-v2-founder-ins-tfuu0q): genuinely this
+    // account's first-ever logged night AND it's already logged (a
+    // still-generating pending dream, an already-finished one, or a
+    // no-recall check-in — see getDreamLogStatus's own doc comment).
+    // Deliberately its own top-priority branch rather than folding into
+    // the `!earned` branch below (which would render "1 of 3 this week" —
+    // technically true but the wrong first-impression copy for someone who
+    // just signed up thirty seconds ago) — never warm/earned here, night 1
+    // can't clear the 3-night weekly target on its own.
+    if(logStatus.isFirstEverNight && logStatus.loggedToday){
+      big.textContent = '🔥 1 night';
+      sub.hidden = false;
+      sub.textContent = 'Your streak starts tonight';
+      constelSlot.innerHTML = renderConstellation(1);
+    } else if(!logStatus.hasEverLogged){
       big.textContent = 'Start your streak tonight';
       sub.hidden = true;
       constelSlot.innerHTML = renderConstellation(0);
@@ -718,13 +892,22 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function renderRitualClaim(tokenStatus){
     var btn = document.getElementById('ritual-claim');
     var balance = document.getElementById('ritual-balance');
-    if(!tokenStatus){ btn.style.display = 'none'; return; }
+    var eyebrow = document.getElementById('ritual-claim-eyebrow');
+    if(!tokenStatus){ btn.style.display = 'none'; eyebrow.hidden = true; return; }
     if(tokenStatus.claimable){
       var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+      // First-claim bonus (FOUNDER_PRINCIPLES.md / lib/entitlements.js's
+      // FIRST_CLAIM_BONUS_AMOUNT): the server only ever grants MORE than
+      // the ordinary 20-token daily claim on an account's very first-ever
+      // claim — a distinct visual treatment (tracker item
+      // for-product-funnel-ending-v2-founder-ins-tfuu0q) rather than a
+      // plain bigger number with no explanation.
+      eyebrow.hidden = amount <= 20;
       btn.textContent = 'Claim +' + amount + ' ✦';
       btn.style.display = 'flex';
     } else {
       btn.style.display = 'none';
+      eyebrow.hidden = true;
     }
     balance.innerHTML = '<span class="gold">✦</span> ' + tokenStatus.balance + ' · Vault →';
   }
@@ -775,33 +958,273 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     });
   }, { threshold: 0.2 });
 
+  // GENERATING tile markup (tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q) — see this page's own
+  // .dream-row-tile.generating CSS comment for the full "why here, why
+  // this shape" reasoning. Not a link/button (there's nothing to open yet
+  // beyond the Chamber, which has its own hero above) — purely a live
+  // status tile.
+  function generatingTileHTML(){
+    return '<div class="dream-row-tile generating" id="generating-tile" role="img" aria-label="Your dream is forming">' +
+      '<div class="dg-sweep"></div>' +
+      '<div class="dg-inner"><span class="spinner-inline"></span><span class="dg-label">Your dream is<br>forming…</span></div>' +
+      '</div>';
+  }
+
   function renderDreamsRow(){
     var section = document.getElementById('dreams');
     var rowEl = document.getElementById('dreams-row');
     var emptyEl = document.getElementById('dreams-empty');
 
-    if(!logStatus.hasEverLogged){
+    // A pending job counts as "something to show" even for an account
+    // that's otherwise never logged anything real yet — getDreamLogStatus's
+    // own hasEverLogged already folds a same-day pendingJob in (see that
+    // function's doc comment), so this check normally doesn't need the
+    // separate `|| pendingJob` at all; kept explicit anyway as a defensive
+    // belt-and-braces (this row's own visibility should never silently
+    // depend on that field staying in sync with pendingJob's existence).
+    if(!logStatus.hasEverLogged && !pendingJob){
       section.style.display = 'none';
       return;
     }
     section.style.display = '';
 
     var recent = myDreams.slice(0, DREAMS_ROW_MAX);
-    if(!recent.length){
+    if(!recent.length && !pendingJob){
       rowEl.style.display = 'none';
       emptyEl.style.display = 'block';
       return;
     }
     rowEl.style.display = 'flex';
     emptyEl.style.display = 'none';
-    rowEl.innerHTML = recent.map(function(d){
+    var realTilesHtml = recent.map(function(d){
       return DreamCards.dreamRowTileHTML(d, { gradient: DreamStore.gradientFor(d) });
     }).join('');
+    // The generating tile always leads (day-0 mock: "exactly ONE tile" —
+    // for a returning user who already has completed dreams, this is the
+    // ONE new addition, ahead of their existing gallery).
+    rowEl.innerHTML = (pendingJob ? generatingTileHTML() : '') + realTilesHtml;
 
     thumbVideoObserver.disconnect();
     Array.prototype.forEach.call(rowEl.querySelectorAll('.vcard-video'), function(v){ thumbVideoObserver.observe(v); });
   }
   renderDreamsRow();
+
+  // ===== Background generation — the killed processing.html wait
+  // screen's whole job now happens here, in place, while the rest of Home
+  // is already usable (tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q). Reuses
+  // DreamStore.resumePendingJob() — the SAME polling js/store.js's
+  // startGeneration/pollUntilDone already implements for every other
+  // resume path in this app (explore.html's own resume banner, the old
+  // processing.html) — rather than reimplementing it a second time. =====
+  // Re-reads logStatus (which itself reads the live pendingJob/myDreams
+  // state — see getDreamLogStatus's own doc comment) and re-renders every
+  // module whose state can change as a generation starts/finishes/fails:
+  // Tonight (logged tonight the moment a job exists), Chamber (its target
+  // dream id), the ritual module (streak/first-night copy + claim
+  // eyebrow), the My-dreams row (the generating tile itself), and the
+  // notify card (only shown while a job is actually in flight). Shared by
+  // every place this page's pendingJob state can change: the initial
+  // resume-on-load path, a fresh in-app/checkout-resume submission
+  // appearing a beat after this page already painted (see
+  // pollForPendingJobToAppear), and completion/failure (onGenerationSettled
+  // below).
+  function refreshHomeState(){
+    logStatus = DreamStore.getDreamLogStatus();
+    renderTonightHero();
+    renderChamberHero();
+    renderRitualModule();
+    renderDreamsRow();
+    refreshNotifyCard();
+  }
+
+  function onGenerationSettled(promise){
+    promise.then(function(dream){
+      pendingJob = null;
+      myDreams = DreamStore.getMyDreams();
+      completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
+      refreshHomeState();
+      showToast('✨ Your dream is ready');
+      track('home_generation_completed', { media_type: dream.mediaType || 'video' });
+      // Durable completion marker (tracker.html's result-htmls-
+      // firstvideocreated-still-dep-qfg48t item) — kept as a defense-in-
+      // depth backstop even though this page fires FirstVideoCreated
+      // directly below (no navigation to survive, unlike the old
+      // processing.html -> result.html redirect this marker was built
+      // for): harmless to also write it here (result.html's own
+      // wasOperationJustCompleted/markFirstVideoCreatedIfEligible pair
+      // stays the real gate against a double-fire either way), and it's
+      // the one thing that still covers the vanishingly rare case this
+      // tab closes between the promise settling and the very next line.
+      DreamStore.markGenerationJustCompleted(dream.sourceOperationName);
+      fireFirstVideoCreatedIfEligible(dream);
+    }).catch(function(err){
+      pendingJob = null;
+      refreshHomeState();
+      // Same "ENNN: reason" parsing processing.html's own catch handler
+      // used — see that (now-removed) page's git history for the fuller
+      // per-code handling this mirrors (E109/E409/E110/E410 rate-limit/
+      // spend-cap failures get the same honest toast treatment there as
+      // everything else; only E112/E412 gets special handling, below).
+      // Home is a persistent, always-revisitable surface (unlike the old
+      // dead-end wait screen), so a failed generation just leaves the user
+      // back on a fully usable Home with an honest toast, free to retry
+      // from create.html — there's no "stuck on a blank fail screen" state
+      // to design around anymore.
+      var raw = (err && err.message) || 'E399: unknown_error';
+      var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      var code = match ? match[1] : null;
+      track('generation_blocked', { reason: code || raw, source: 'home' });
+
+      // E112/E412 (insufficient tokens): founder directive 2026-07-26 —
+      // "the store must come up whenever a user tries any action without
+      // enough tokens" (js/purchase-sheet.js's own header comment) — same
+      // as processing.html's old openTokenPurchaseSheet(). The draft is
+      // already fully intact at this point (submission itself required a
+      // complete draft), so no persistDraft is needed, unlike style.html's/
+      // result.html's own PurchaseSheet.show() call sites.
+      if(code === 'E112' || code === 'E412'){
+        var mediaType = DreamStore.getDraft().mediaType === 'image' ? 'image' : 'video';
+        var cost = mediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
+        DreamStore.getTokenStatus().then(function(status){
+          PurchaseSheet.show({ mediaType: mediaType, cost: cost, balance: status.balance, tokenStatus: status, source: 'blocked_action' });
+        }).catch(function(){
+          // Convenience-only fetch failed — fail open to a plain toast
+          // rather than leaving the user with silently nothing.
+          showToast('You need more tokens to generate — visit the Vault.');
+        });
+        return;
+      }
+
+      // Media-aware fallback copy (mirrors processing.html's own
+      // applyMediaTypeCopy/#proc-fail-copy, which showed BOTH a static
+      // "Something went wrong generating your video/image" line AND a
+      // separate server-reason line at once, in two different DOM
+      // elements) — this toast always leads with the media-aware phrase,
+      // then appends the server's own specific reason (when it sent one)
+      // as a second sentence, rather than treating the two as mutually
+      // exclusive.
+      var mediaTypeForCopy = DreamStore.getDraft().mediaType === 'image' ? 'picture' : 'video';
+      var baseCopy = 'Something went wrong generating your ' + mediaTypeForCopy + ' — nothing was lost.';
+      var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
+      var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
+      showToast(baseCopy + reasonSuffix + refundNote);
+    });
+  }
+
+  // ===== "First video created" conversion event + retention email —
+  // resume-completion path (mirrors explore.html's own
+  // fireFirstVideoCreatedIfEligible, the established precedent in this
+  // codebase for "a generation completed on a page OTHER than result.html"
+  // — see that file's own header comment for the full reasoning on why no
+  // extra sessionStorage/durable-marker guard is needed here: this only
+  // ever runs inside a genuine, just-happened completion, never a page
+  // revisit/reload). Home.html is now the PRIMARY place this fires from
+  // (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q killed
+  // the processing.html -> result.html redirect that used to be the only
+  // choke point) — result.html's own identical-purpose block stays fully
+  // intact for a deep-link/direct visit to a dream's room, unchanged, and
+  // simply no-ops (markFirstVideoCreatedIfEligible's own one-time account
+  // flag) if this function already fired first. Retention email logic
+  // itself is untouched — same sendFirstDreamEmailBestEffort call, same
+  // server-side eligibility/dedup — per this tracker item's own explicit
+  // "explicitly UNAFFECTED, don't touch that logic" instruction. =====
+  function fireFirstVideoCreatedIfEligible(dream){
+    try {
+      if(!dream || !DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
+      track('first_video_created', { style: dream.style });
+      if(typeof window.fireMetaConversion === 'function'){
+        fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
+      }
+      DreamStore.sendFirstDreamEmailBestEffort(dream);
+    } catch (e) { /* analytics must never break the app */ }
+  }
+
+  if(pendingJob){
+    onGenerationSettled(DreamStore.resumePendingJob());
+  }
+
+  // ===== ORPHAN (a) — the notify-me/push-prompt card, rehomed from
+  // processing.html's #push-ask-slot. js/push-subscribe.js's own header
+  // comment already names "right after a generation starts" as the ideal
+  // moment for this ask — shown for as long as (and only while) the
+  // My-dreams row's first tile is actually generating; cleared the moment
+  // it resolves either way (see onGenerationSettled above). All of the
+  // real gating logic (never inside a webview, never once already asked,
+  // never once permission is already answered, the iOS-browser-tab
+  // fallback chain) lives in that shared module, unchanged — this is
+  // purely placement. =====
+  function refreshNotifyCard(){
+    var slot = document.getElementById('notify-card-slot');
+    if(!pendingJob){ slot.innerHTML = ''; return; }
+    if(window.PushSubscribe && user) PushSubscribe.maybeShowAsk(slot, user.username);
+  }
+  refreshNotifyCard();
+
+  // ===== ORPHAN (b) — the webview-escape nudge, folded into an ELEVATED
+  // state of the "Add DreamTube to your phone" quiet row (mock
+  // home-mock5-day0-x7q4.html's .webview-card), rehomed from
+  // processing.html's #proc-nudge-card. Real escape logic ported verbatim
+  // from that (now-removed) page's initInAppNudge/buildAndroidChromeIntentUrl/
+  // copyLinkForBrowser — Android gets a real "open in Chrome" intent://
+  // action; every other platform (practically always iOS, where an in-app
+  // webview can't be escaped programmatically at all) gets a "copy link"
+  // action instead, since the copied URL carries a live session-transfer
+  // token (see DreamStore.maintainSessionTransferUrl below) that lands the
+  // visitor signed in once pasted into a real browser. =====
+  function isAndroidUA(){ return /Android/.test(navigator.userAgent || ''); }
+  function buildAndroidChromeIntentUrl(){
+    var target = location.href.replace(/^https?:\/\//, '');
+    var fallback = encodeURIComponent(location.href);
+    return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
+  }
+  function copyLinkForBrowser(onCopied){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(location.href).then(function(){
+        showToast('Link copied — paste it in your browser. Keep it to yourself.');
+        if(onCopied) onCopied();
+      }).catch(function(){ showToast("Couldn't copy link"); });
+    } else {
+      showToast("Copying isn't supported in this browser");
+    }
+  }
+  function refreshWebviewCard(){
+    var host = window.DreamStore ? DreamStore.detectInAppWebviewHost() : null;
+    var card = document.getElementById('webview-card');
+    var plainRow = document.getElementById('install-qrow');
+    if(!host){ card.style.display = 'none'; return false; }
+    // The plain A2HS row is already hidden inside a detected webview
+    // (InstallNudge.canOfferInstall()'s own gate) — hidden again here
+    // defensively so the two can never render together even if that gate
+    // ever changes independently of this one.
+    plainRow.style.display = 'none';
+    document.getElementById('webview-card-icon').innerHTML = window.Icons ? Icons.globe : '';
+    document.getElementById('webview-card-title').textContent = "Viewing in " + host;
+    var onAndroid = isAndroidUA();
+    var btn = document.getElementById('webview-card-btn');
+    btn.innerHTML = onAndroid
+      ? 'Open in my browser <span class="icon">' + (window.Icons ? Icons.externalLink : '') + '</span>'
+      : 'Copy link for your browser <span class="icon">' + (window.Icons ? Icons.copy : '') + '</span>';
+    if(!card.dataset.wired){
+      card.dataset.wired = '1';
+      btn.addEventListener('click', function(){
+        track('home_webview_escape_tapped', { host: host, platform: onAndroid ? 'android' : 'other' });
+        if(onAndroid){
+          location.href = buildAndroidChromeIntentUrl();
+        } else {
+          var note = document.getElementById('webview-card-note');
+          copyLinkForBrowser(function(){
+            note.textContent = 'Copied! Now open your browser and paste the link there.';
+            note.style.display = 'block';
+          });
+        }
+      });
+    }
+    card.style.display = 'block';
+    return true;
+  }
+  var inWebview = refreshWebviewCard();
 
   // ===== "Add to home screen" quiet row — PERSISTENT until genuinely
   // verified installed, never hidden by a mere dismiss (there is no
@@ -809,13 +1232,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // js/install-nudge.js's canOfferInstall() plus DreamStore.
   // getInstallVerified() exactly as Wave 1's install journey card did —
   // only the visual container changed (a quiet row now, absorbing what
-  // used to be its own hcard). =====
+  // used to be its own hcard). Skipped entirely inside a detected webview
+  // (refreshWebviewCard's own elevated card already owns that row's slot
+  // there — see this page's own header comment on why the two never show
+  // together). =====
   (function installJourneyRow(){
     var row = document.getElementById('install-qrow');
     var overlay = document.getElementById('install-sheet-overlay');
     var wired = false;
 
     function shouldShow(){
+      if(inWebview) return false;
       return !!(window.InstallNudge && window.PwaInstall && window.DreamStore &&
         InstallNudge.canOfferInstall() && !DreamStore.getInstallVerified());
     }
@@ -937,6 +1364,170 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     week_count: logStatus.weekCount,
     has_ever_logged: logStatus.hasEverLogged
   });
+
+  // ===== Dodo-checkout-return resume (tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q) =====
+  // js/purchase-sheet.js's out-of-tokens sheet (opened from style.html/
+  // create.html/result.html when a generation attempt hits E112/E412
+  // insufficient-tokens) always sends its successUrl HERE now — this used
+  // to be processing.html, the one page that knew how to pick a persisted
+  // draft back up and actually run the generation once the purchase
+  // landed. That responsibility moves here in full: consume the pending-
+  // purchase marker, fire the same Purchase conversion events
+  // processing.html used to, poll for the token credit to actually land
+  // (Netlify Blobs is only eventually consistent — see
+  // PurchaseSheet.pollForCredit's own doc comment), then submit a FRESH
+  // generation from whatever's in the draft (persistDraft already
+  // guaranteed it's intact before the sheet ever opened) — mirroring
+  // processing.html's own former runGeneration() non-pending branch
+  // exactly, just landing on the same generating-tile UI a fresh Tonight-
+  // hero submission uses instead of a dedicated wait screen.
+
+  /** Mirrors processing.html's former currentMediaTypeCost() — the draft's own mediaType decides which flat cost this purchase needed to clear. IMAGE_TOKEN_COST/VIDEO_TOKEN_COST are declared near the top of this script (onGenerationSettled's own E112/E412 handling needs them too). */
+  function draftMediaTypeCost(){
+    return DreamStore.getDraft().mediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
+  }
+
+  /**
+   * Submits a brand-new generation straight from whatever's currently in
+   * DreamStore.getDraft() — the exact same request-building logic
+   * processing.html's own runGeneration() used for a fresh (non-resumed)
+   * submission, ported verbatim. Only ever called from the checkout-return
+   * path above: every OTHER "start a generation" path in this app
+   * (start.html/wizard.html's pre-signup pending-generation seam,
+   * style.html's own Generate button) already produces a real pendingJob
+   * DreamStore.getPendingJob() picks up on this page's normal load path,
+   * so this is specifically for "a generation attempt that never got far
+   * enough to create a pendingJob at all, because it hit E112/E412 before
+   * submission could even happen."
+   */
+  function startFreshGenerationFromDraft(){
+    return getTurnstileToken().then(function(turnstileToken){
+      var d = DreamStore.getDraft();
+      var mediaType = d.mediaType === 'image' ? 'image' : 'video';
+      var advancedOpts = {
+        characterIds: d.characterIds, cameraView: d.cameraView,
+        sceneryTime: d.sceneryTime, sceneryPlace: d.sceneryPlace,
+        turnstileToken: turnstileToken,
+        mediaType: mediaType, sourceImageUrl: d.sourceImageUrl || null,
+        audioOn: d.audioOn, musicStyle: d.musicStyle,
+        storyText: d.storyText
+      };
+      if(d.sourceDreamId && d.isEditDelta){
+        return DreamStore.startDreamEdit(d.sourceDreamId, {
+          promptText: d.caption, storyText: d.storyText,
+          characterIds: d.characterIds, turnstileToken: turnstileToken,
+          deltaLength: d.editDeltaLength
+        });
+      }
+      if(d.sourceDreamId){
+        return DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts));
+      }
+      return mediaType === 'image'
+        ? DreamStore.generateImage(d.caption, d.style, advancedOpts)
+        : DreamStore.generateVideo(d.caption, d.style, advancedOpts);
+    });
+  }
+
+  /**
+   * Bridges the gap between "a fresh generation was just submitted" and
+   * "DreamStore.getPendingJob() actually reflects it" — the real
+   * savePendingJob() write happens inside startFreshGenerationFromDraft's
+   * own promise chain, one network round-trip in, so this page's cached
+   * `pendingJob` var can't just be set synchronously the way the normal
+   * page-load path sets it. Polls briefly (well under the real submission's
+   * typical round-trip) so the generating tile/notify-card appear as soon
+   * as realistically possible, without inventing a second, fake local
+   * pendingJob shape that could drift from the real one.
+   */
+  function pollForPendingJobToAppear(triesLeft){
+    if(pendingJob) return; // already showing (the task itself already settled, or a previous tick found it)
+    var job = DreamStore.getPendingJob();
+    if(job){
+      pendingJob = job;
+      refreshHomeState();
+      return;
+    }
+    if(triesLeft <= 0) return;
+    setTimeout(function(){ pollForPendingJobToAppear(triesLeft - 1); }, 400);
+  }
+
+  // ===== Fresh in-app generation submission (tracker item
+  // for-product-funnel-ending-v2-founder-ins-tfuu0q, "ALL creation lands
+  // home") =====
+  // style.html's Generate button (the logged-in in-app create flow) sets
+  // the draft and redirects straight here with `?generate=1` — the
+  // explicit signal that THIS load should submit that draft fresh, rather
+  // than assume it's just an ordinary Home visit that happens to find an
+  // old draft object sitting around from a previous session (state.draft
+  // is never cleared just by leaving create.html/style.html without
+  // generating). Stripped from the URL immediately (history.replaceState)
+  // so a refresh never re-submits. Mutually exclusive with the
+  // already-pending-job branch above by construction: style.html only ever
+  // redirects here right after setting a brand-new draft, at a point where
+  // this account could not simultaneously have a real generation already
+  // in flight (each account has exactly one pendingJob slot, and the
+  // in-app create flow has no other way to start one) — but the `!pendingJob`
+  // guard below is kept anyway, defensively, rather than trusted implicitly.
+  (function handleFreshInAppGeneration(){
+    var params = new URLSearchParams(location.search);
+    if(params.get('generate') !== '1') return;
+    params.delete('generate');
+    var rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
+    if(pendingJob) return; // already resuming a real in-flight job above — never double-submit
+    onGenerationSettled(startFreshGenerationFromDraft());
+    pollForPendingJobToAppear(10);
+  })();
+
+  // Holds pollForCredit's own returned cancel() while a poll from the
+  // checkout-return handler below is actually in flight, null otherwise —
+  // ported verbatim from processing.html's own identical fix (tracker item
+  // purchase-sheet-checkout-auto-resume-two--ltinmn, gap 1): without this,
+  // a poll left running when the user navigates away could still fire
+  // onCredited -> a real generation submission later, if the browser
+  // bfcache-restores this exact page with the poll's setTimeout chain
+  // still alive. Same bug class as this codebase's other "async callback
+  // side effects not scoped to the navigation that started it" fixes.
+  var activeCreditPollCancel = null;
+  window.addEventListener('pagehide', function(){
+    if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
+  });
+
+  (function handleCheckoutReturn(){
+    var checkoutParam = PurchaseSheet.readCheckoutParam();
+    if(checkoutParam !== 'success') return;
+
+    var pendingPurchase = PurchaseSheet.consumePendingPurchaseMarker();
+    if(pendingPurchase) PurchaseSheet.fireSuccessPurchaseEvents(pendingPurchase);
+
+    var neededBalance = (pendingPurchase && pendingPurchase.cost) || draftMediaTypeCost();
+    showToast('Payment received — resuming your dream…');
+    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
+    // test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real
+    // ~75s poll window down to something a browser test can actually run
+    // in; undefined/absent in every real page load, so pollForCredit just
+    // falls back to its own real defaults — ported verbatim from
+    // processing.html's identical startCreditPoll() (dropping this was a
+    // bug: without it this poll silently used the real 75s/3s window and
+    // test 1036 timed out waiting on onTimeout that was still ~75s away).
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    activeCreditPollCancel = PurchaseSheet.pollForCredit({
+      neededBalance: neededBalance,
+      intervalMs: pollOverrides.intervalMs,
+      maxMs: pollOverrides.maxMs,
+      onCredited: function(){
+        activeCreditPollCancel = null;
+        PurchaseSheet.fireBlockedActionResumed((pendingPurchase && pendingPurchase.source) || 'blocked_action');
+        onGenerationSettled(startFreshGenerationFromDraft());
+        pollForPendingJobToAppear(10);
+      },
+      onTimeout: function(){
+        activeCreditPollCancel = null;
+        showToast('Tokens on the way — try creating again in a moment.');
+      }
+    });
+  })();
 </script>
 </body>
 </html>

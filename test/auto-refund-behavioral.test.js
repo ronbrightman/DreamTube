@@ -11,10 +11,14 @@
 //   1. js/store.js's pollUntilDone actually sends `email` on the
 //      video-status.js/image-status.js poll request (the refund can't be
 //      credited to the right account without it).
-//   2. processing.html's failure screen shows "Your tokens were
-//      returned." exactly when (and only when) the poll response actually
-//      carried `tokensRefunded: true` — never assumed client-side just
-//      because generation failed at all.
+//   2. home.html's failure toast shows "Your tokens were returned."
+//      exactly when (and only when) the poll response actually carried
+//      `tokensRefunded: true` — never assumed client-side just because
+//      generation failed at all. (Formerly processing.html's own
+//      dedicated #proc-fail-refund DOM chip, before tracker item
+//      for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page
+//      and folded the same logic into home.html's onGenerationSettled
+//      catch handler's toast text.)
 //
 // Follows test/logout-clears-pendingjob-behavioral.test.js's/test/image-
 // generation-turn-into-video-behavioral.test.js's conventions: a plain
@@ -22,9 +26,10 @@
 // to stand in for video-status.js, blockThirdParty() for this sandbox's
 // flaky outbound network, and safeGoto() to tolerate a transient nav
 // failure. A pendingJob is seeded directly into localStorage (mirroring
-// seedLoggedInWithPendingJob) so processing.html's runGeneration() takes
-// the RESUME path straight into pollUntilDone — no need to also mock
-// generate-video.js's submission step, since a resume never re-submits.
+// seedLoggedInWithPendingJob) so home.html's own load-time pendingJob
+// check takes the RESUME path straight into pollUntilDone — no need to
+// also mock generate-video.js's submission step, since a resume never
+// re-submits.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -111,7 +116,7 @@ async function seedLoggedInWithPendingJob(page, username, password, email, opts)
   await safeGoto(page, baseUrl + '/login.html');
 }
 
-test('processing.html: a refund-eligible generation failure (tokensRefunded:true from video-status.js) shows "Your tokens were returned." and video-status.js received the account email', async function (t) {
+test('home.html: a refund-eligible generation failure (tokensRefunded:true from video-status.js) shows "Your tokens were returned." in the failure toast, and video-status.js received the account email', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -126,29 +131,26 @@ test('processing.html: a refund-eligible generation failure (tokensRefunded:true
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, error: 'E205: generation_failed: FAILED', tokensRefunded: true }) });
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
 
     await settle(function () { return videoStatusCalls.length >= 1; });
     assert.equal(videoStatusCalls.length, 1);
     assert.equal(videoStatusCalls[0].email, 'refundshown@example.com', 'video-status.js must receive the logged-in account\'s email so a refund can be credited to the right balance');
     assert.equal(videoStatusCalls[0].name, 'fal:fal-ai/veo3.1/fast:req-refundshown');
 
-    var refundCopyVisible = await page.locator('#proc-fail-refund').isVisible();
-    assert.equal(refundCopyVisible, true, 'the "Your tokens were returned." copy must show when the server reported tokensRefunded:true');
-    var refundCopyText = await page.textContent('#proc-fail-refund');
-    assert.match(refundCopyText, /Your tokens were returned\./);
-
-    // The underlying failure reason must still render too -- this is an
-    // addition to the existing failure screen, not a replacement of it.
-    var reasonVisible = await page.locator('#proc-fail-reason').isVisible();
-    assert.equal(reasonVisible, true);
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Your tokens were returned\./, 'the "Your tokens were returned." copy must show in the toast when the server reported tokensRefunded:true');
+    // The underlying failure reason must still be part of the same toast
+    // too -- this is an addition to the existing failure message, not a
+    // replacement of it.
+    assert.match(toastText, /generation_failed/i);
   } finally {
     await page.close();
   }
 });
 
-test('processing.html: a generation failure WITHOUT a server-reported refund does not show "Your tokens were returned."', async function (t) {
+test('home.html: a generation failure WITHOUT a server-reported refund does not show "Your tokens were returned." in the toast', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -163,17 +165,17 @@ test('processing.html: a generation failure WITHOUT a server-reported refund doe
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, error: 'E204: status_check_failed' }) });
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
 
-    var refundCopyVisible = await page.locator('#proc-fail-refund').isVisible();
-    assert.equal(refundCopyVisible, false, 'the refund copy must not be assumed just because generation failed -- only the server\'s tokensRefunded flag can show it');
+    var toastText = await page.textContent('#toast');
+    assert.doesNotMatch(toastText, /Your tokens were returned\./, 'the refund copy must not be assumed just because generation failed -- only the server\'s tokensRefunded flag can show it');
   } finally {
     await page.close();
   }
 });
 
-test('processing.html: the refund copy also works for the image path (image-status.js)', async function (t) {
+test('home.html: the refund copy also works for the image path (image-status.js)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -188,19 +190,20 @@ test('processing.html: the refund copy also works for the image path (image-stat
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, error: 'E508: no_image_in_response', tokensRefunded: true }) });
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
 
     await settle(function () { return imageStatusCalls.length >= 1; });
     assert.equal(imageStatusCalls.length, 1);
     assert.equal(imageStatusCalls[0].email, 'refundimage@example.com');
-    assert.equal(await page.locator('#proc-fail-refund').isVisible(), true);
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Your tokens were returned\./);
   } finally {
     await page.close();
   }
 });
 
-test('processing.html: the refund copy from an earlier failure does not linger into a later, unrelated failure ("Try Again")', async function (t) {
+test('home.html: the refund copy from an earlier failure does not linger into a later, unrelated failure', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -212,14 +215,23 @@ test('processing.html: the refund copy from an earlier failure does not linger i
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, error: 'E205: generation_failed: FAILED', tokensRefunded: true }) });
     });
 
-    await safeGoto(page, baseUrl + '/processing.html');
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
-    assert.equal(await page.locator('#proc-fail-refund').isVisible(), true, 'sanity check: the first failure shows the refund copy');
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    var firstToastText = await page.textContent('#toast');
+    assert.match(firstToastText, /Your tokens were returned\./, 'sanity check: the first failure shows the refund copy');
 
-    // Tapping "Try Again" re-runs generation as a FRESH submission (the
-    // resumed pendingJob was cleared on the earlier failure) -- mock a
-    // NON-refund-eligible failure on the resubmit and confirm the copy
-    // from the PREVIOUS failure doesn't linger into this new one.
+    // No dedicated "Try Again" button on home.html anymore (unlike the old
+    // processing.html fail screen) -- a real retry is just a fresh
+    // generation, driven here the same way style.html's Generate button
+    // does it (?generate=1). Mocks a NON-refund-eligible failure on this
+    // second, unrelated attempt and confirms the copy from the PREVIOUS
+    // failure doesn't linger into it.
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = JSON.parse(raw);
+      state.draft = { caption: 'A fresh, unrelated dream', style: 'Cinematic', mediaType: 'video', sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, sourceImageUrl: null, audioOn: false, musicStyle: null };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
     await page.route('**/.netlify/functions/generate-video', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/fast:req-retry' }) });
     });
@@ -231,9 +243,10 @@ test('processing.html: the refund copy from an earlier failure does not linger i
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, error: 'E204: status_check_failed' }) });
     });
 
-    await page.click('#retry-btn');
-    await page.waitForSelector('#proc-fail', { state: 'visible', timeout: 8000 });
-    assert.equal(await page.locator('#proc-fail-refund').isVisible(), false, 'the refund copy from the earlier failure must not linger into an unrelated later failure');
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    var secondToastText = await page.textContent('#toast');
+    assert.doesNotMatch(secondToastText, /Your tokens were returned\./, 'the refund copy from the earlier failure must not linger into an unrelated later failure');
   } finally {
     await page.close();
   }

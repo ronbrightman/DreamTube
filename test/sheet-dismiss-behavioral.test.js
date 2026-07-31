@@ -800,8 +800,9 @@ test('drag-dismiss velocity branch in isolation: a FAST flick dismisses even tho
 // 12. Review round-1 finding: #app must stay viewport-bounded even when a
 // page's own content is DELIBERATELY made taller than one viewport, on
 // EVERY page that was previously unbounded (create.html/style.html/
-// processing.html/shop.html had no class on #app at all; wizard.html/
-// start.html's #app.funnel-app set colors only, no height) -- not just
+// shop.html, and the now-removed processing.html, had no class on #app at
+// all; wizard.html/start.html's #app.funnel-app set colors only, no
+// height) -- not just
 // the short-content case that happened to pass before this was caught.
 // wizard.html/start.html additionally needed their character sheet moved
 // OUT of #fnScreen (the funnel's own internal scrolling region) and
@@ -927,40 +928,10 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
 // removal note above; wizard.html's identical case just above still covers
 // the shared underlying fix.
 
-test('processing.html: #app stays capped and the out-of-tokens purchase sheet has a correct on-screen position even when this page\'s own content is deliberately made much taller than one viewport', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/login.html');
-    await page.evaluate(function () {
-      var raw = localStorage.getItem('dreamtube_state_v1');
-      var state = raw ? JSON.parse(raw) : {};
-      state.user = { handle: '@proctall', username: 'proctall' };
-      if (!state.accounts) state.accounts = {};
-      state.accounts.proctall = { password: 'testpass1', email: 'proctall@example.com' };
-      if (!state.draft) state.draft = {};
-      state.draft.caption = 'Flying over mountains';
-      state.draft.style = 'Cinematic';
-      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-    });
-    await safeGoto(page, baseUrl + '/processing.html');
-    await page.waitForTimeout(200);
-
-    await inflateContentTallerThanViewport(page, '.proc-wrap');
-    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
-    assert.ok(appHeight <= 844, '#app must stay capped at the real viewport even once .proc-wrap\'s content is deliberately inflated, got ' + appHeight);
-
-    async function openPurchaseSheet() {
-      await page.evaluate(function () {
-        PurchaseSheet.show({ mediaType: 'video', cost: 100, balance: 40, tokenStatus: { balance: 40, claimable: false }, source: 'blocked_action' });
-      });
-    }
-
-    await assertTapOutsideCloses(page, '#purchase-sheet-overlay', openPurchaseSheet);
-    await assertDragPastThresholdDismisses(page, '#purchase-sheet-overlay', openPurchaseSheet);
-  } finally {
-    await context.close();
-  }
-});
+// processing.html's own copy of this regression test was removed along with
+// the page itself (tracker item for-product-funnel-ending-v2-founder-ins-
+// tfuu0q, founder GO 2026-07-31 evening) -- home.html (the page every
+// generation flow lands on now) already carries the same #app.scroll-shell
+// height-capping class as every other page in this suite (see its own
+// markup), predating this removal and unrelated to it, so there's no
+// equivalent gap this task introduces to re-cover here.

@@ -137,7 +137,7 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
   }
 });
 
-test('wizard.html: generate-during-signup — contact capture starts a pending generation BEFORE signup, and a successful signup adopts + resumes it straight through processing.html with no second submission', async function (t) {
+test('wizard.html: generate-during-signup — contact capture starts a pending generation BEFORE signup, and a successful signup adopts + resumes it straight through home.html with no second submission', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -155,12 +155,12 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
       claimCalls.push(JSON.parse(route.request().postData()));
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
     });
-    // processing.html resumes the adopted pendingJob by polling
-    // video-status.js with the SAME operationName the pre-signup call
-    // returned above -- resolving it immediately proves no second
-    // generate-video.js/start-pending-generation.js submission ever
-    // happened (there would be no route registered for one, and this
-    // test would hang/fail waiting on result.html otherwise).
+    // home.html resumes the adopted pendingJob by polling video-status.js
+    // with the SAME operationName the pre-signup call returned above --
+    // resolving it immediately proves no second generate-video.js/
+    // start-pending-generation.js submission ever happened (there would be
+    // no route registered for one, and this test would hang/fail waiting
+    // for the My-dreams row's generating tile to resolve otherwise).
     await page.route('**/.netlify/functions/video-status*', function (route) {
       videoStatusCalls++;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });
@@ -198,16 +198,20 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
-    // Should land on result.html (processing.html's own completion
-    // redirect) WITHOUT ever calling start-pending-generation a second
+    // Should land directly on home.html (tracker item for-product-funnel-
+    // ending-v2-founder-ins-tfuu0q -- processing.html/the old redirect to
+    // result.html are both gone), with the pendingJob resolved in the
+    // background: the My-dreams row's generating tile flips to a real
+    // finished tile WITHOUT ever calling start-pending-generation a second
     // time.
-    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    await page.waitForURL(/home\.html/, { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, right after signup succeeds');
     assert.equal(claimCalls[0].pendingId, 'pd-test-1');
-    assert.ok(videoStatusCalls >= 1, 'processing.html must actually resume polling the adopted job');
+    assert.ok(videoStatusCalls >= 1, 'home.html must actually resume polling the adopted job');
   } finally {
     await page.close();
   }
@@ -822,7 +826,12 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
-    await page.waitForURL(/result\.html\?id=/, { timeout: 15000 });
+    // Lands directly on home.html (tracker item for-product-funnel-ending-
+    // v2-founder-ins-tfuu0q -- processing.html/the old redirect to
+    // result.html are both gone); the generating tile resolving confirms
+    // the adopted job (A's) actually completed.
+    await page.waitForURL(/home\.html/, { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once');
     assert.equal(claimCalls[0].pendingId, 'pd-race-A', 'must claim A\'s pendingId, not the abandoned B request\'s -- B\'s belated settlement must have been discarded as stale, not applied');
@@ -831,13 +840,28 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
   }
 });
 
-test('wizard.html: if the pre-signup generation call fails, signup still completes and falls back to a fresh generation at processing.html (resilient, not a dead end)', async function (t) {
+test('wizard.html: if the pre-signup generation call fails, signup still completes and falls back to a fresh generation at home.html (resilient, not a dead end)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
       route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E7: insufficient_tokens' }) });
+    });
+    // home.html's own fresh-submission fallback (?generate=1) genuinely
+    // calls DreamStore.generateVideo() now -- mocked here (unlike the old
+    // version of this test, which only ever needed to prove the INPUTS to
+    // that fallback were correct, since processing.html's own separately-
+    // tested runGeneration() was trusted to pick them up) so this test can
+    // observe the fallback actually firing, not just its precondition.
+    // video-status deliberately never resolves done:true -- this test only
+    // needs to see a pendingJob get created, not the full generation
+    // through to completion.
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fake-model:req-fallback' }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
     });
 
     await safeGoto(page, baseUrl + '/wizard.html');
@@ -861,22 +885,30 @@ test('wizard.html: if the pre-signup generation call fails, signup still complet
     await page.click('#fn-signup-continue');
 
     // No pendingJob was ever adopted -- confirm the draft still has a
-    // real caption/style so processing.html's own fresh-generation path
-    // (unmodified) has something to work with instead of dead-ending.
-    // Wait for DreamStore to actually be defined on the NEW document, not
-    // merely for the URL to have changed: location.pathname flips as soon
-    // as the navigation commits, which is before processing.html's own
-    // <script src="js/store.js"> has necessarily executed. On an idle
-    // machine the gap is invisible; under full-suite load the evaluate
-    // below could land in it and throw "Cannot read properties of
-    // undefined (reading 'getDraft')".
+    // real caption/style so home.html's own fresh-generation path (see its
+    // "Fresh in-app generation submission" script block, triggered by the
+    // `?generate=1` param this redirect carries) has something to work
+    // with instead of dead-ending. Wait for DreamStore to actually be
+    // defined on the NEW document, not merely for the URL to have changed:
+    // location.pathname flips as soon as the navigation commits, which is
+    // before home.html's own <script src="js/store.js"> has necessarily
+    // executed. On an idle machine the gap is invisible; under full-suite
+    // load the evaluate below could land in it and throw "Cannot read
+    // properties of undefined (reading 'getDraft')".
     await page.waitForFunction(function () {
-      return window.location.pathname.indexOf('processing.html') !== -1 && !!window.DreamStore;
+      return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
     }, null, { timeout: 10000 });
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
-    var pendingJob = await page.evaluate(function () { return window.DreamStore.getPendingJob(); });
     assert.ok(draft.caption, 'draft caption must still be set for the fallback fresh-generation path');
-    assert.equal(pendingJob, null, 'no pendingJob should have been adopted since the pre-signup call failed');
+    // A real generation is now genuinely in flight here (home.html's own
+    // ?generate=1 handling submits fresh from the intact draft) -- unlike
+    // the old assertion (pendingJob === null, right after landing on
+    // processing.html before its own runGeneration() had a chance to run),
+    // this waits for that submission to actually land, which is the
+    // observable proof the fallback worked at all.
+    await page.waitForFunction(function () {
+      return !!(window.DreamStore && window.DreamStore.getPendingJob());
+    }, null, { timeout: 10000 });
   } finally {
     await page.close();
   }
@@ -1065,7 +1097,7 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-username')) return 'signup';
-      if (window.location.pathname.indexOf('processing.html') !== -1) return 'processing';
+      if (window.location.pathname.indexOf('home.html') !== -1) return 'home';
       return 'other';
     });
     assert.equal(screenAfter, 'signup', 'the abandoned first Signup attempt\'s late settlement must never force-navigate the user away from the second, fresh Signup screen they are actually on');
@@ -1077,8 +1109,10 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
+    // Lands on home.html now, not processing.html (tracker item
+    // for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page).
     await page.waitForFunction(function () {
-      return window.location.pathname.indexOf('processing.html') !== -1;
+      return window.location.pathname.indexOf('home.html') !== -1;
     }, null, { timeout: 10000 });
 
     await settle(function () { return claimCalls.length >= 1; });
@@ -1192,7 +1226,7 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
 
     var screenAfter = await page.evaluate(function () {
       if (document.getElementById('fn-username')) return 'signup';
-      if (window.location.pathname.indexOf('processing.html') !== -1) return 'processing';
+      if (window.location.pathname.indexOf('home.html') !== -1) return 'home';
       return 'other';
     });
     assert.equal(screenAfter, 'signup', 'A\'s stale inner continuation must never force-navigate the user away from the second, fresh Signup screen they are actually on');
