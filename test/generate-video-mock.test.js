@@ -213,6 +213,53 @@ test('callFalReferenceToVideo (self-photo path) also sends the no-expiry header'
   assert.deepEqual(JSON.parse(calls[0].headers['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
 });
 
+// ----- Routing-intentionality check (tracker item for-product-cost-me-
+// photo-dreams-run-on--o3h0vo): reference-to-video is billed at the
+// expensive /fast per-second rate specifically because it blends in a real
+// reference photo — a request that reaches this branch WITHOUT an actual
+// photo would pay that premium for zero benefit. selfPhoto (both here and
+// in start-pending-generation.js) is computed as
+// `characters.filter(c => c && c.isSelf && c.photoDataUrl)[0]` — a plain
+// truthy check on photoDataUrl, not just on isSelf/the character existing
+// at all. These two tests lock in the case that actually matters: a real
+// "Me" character (isSelf true) that only has a text description and no
+// photo yet must still take the cheap plain text-to-video path, not
+// reference-to-video. -----
+
+test('a "Me" character with a description but NO photoDataUrl does NOT take the reference-to-video path — plain text-to-video is called instead', async function () {
+  process.env.FAL_KEY = 'test-fal-key';
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({
+    body: { characters: [{ name: 'Me', isSelf: true, description: 'tall with short dark hair' }] }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(calls[0].url, /reference-to-video/, 'no photo was attached — this must not hit the expensive reference-to-video endpoint');
+  assert.match(calls[0].url, new RegExp(genVideo.FAL_MODEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('a "Me" character with photoDataUrl as an empty string is treated the same as no photo (falsy check, not just presence-of-key) — plain text-to-video is called', async function () {
+  process.env.FAL_KEY = 'test-fal-key';
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({
+    body: { characters: [{ name: 'Me', isSelf: true, description: 'tall', photoDataUrl: '' }] }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(calls[0].url, /reference-to-video/, 'an empty-string photoDataUrl must not be treated as a real photo');
+});
+
+test('a non-self character with a photoDataUrl does NOT take the reference-to-video path — only isSelf can trigger it', async function () {
+  process.env.FAL_KEY = 'test-fal-key';
+  var calls = installFetchSpy();
+  var res = await handler(genEvent({
+    body: { characters: [{ name: 'Friend', isSelf: false, photoDataUrl: 'data:image/png;base64,AAAA' }] }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(calls[0].url, /reference-to-video/, 'a non-self character photo must never trigger the self-photo reference-to-video path');
+});
+
 test('FAL_NO_EXPIRY_HEADER is exported and shaped exactly as fal\'s docs specify', function () {
   assert.deepEqual(JSON.parse(genVideo.FAL_NO_EXPIRY_HEADER['X-Fal-Object-Lifecycle-Preference']), { expiration_duration_seconds: null });
 });

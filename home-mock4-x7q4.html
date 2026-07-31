@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-31) — unlinked, delete after decision.
+
+  Home redesign round 3: "The Night Shelf"
+  (Manager/research/2026-07-31-home-round3-night-shelf.md §2–§3).
+
+  Round 2 was rejected for cramming everything into one viewport. This
+  round is the opposite by design: a LONG, airy scrolling page of huge
+  full-width modules — greeting + one ~430px Tonight hero above the fold,
+  the Chamber's glowing edge peeking above the dock as the scroll
+  invitation, then chamber hero / ritual module / My-dreams swipe row /
+  quiet add-to-phone row down the shelf.
+
+  Founder amendments (2026-07-31, direction approved — "big clear slick"):
+  1. Topbar is the logo ONLY, left-aligned — no token chip.
+  2. The Tonight pill leads to the WIZARD (mocked as a toast).
+  3. Chamber hero: no eyebrow (no analysis method chosen yet); the card's
+     art is the sage himself (chamber-sage-x7q4.jpg) rising from the
+     right, the violet nebula blending into the image, content over a
+     bottom scrim.
+  4. The small glance strip grew into a full RITUAL module: large streak
+     line + constellation + "n of 3 this week" + the daily claim as a
+     real 56px button inside it when claimable (STATIC warm glow, never
+     a pulse) + a quiet "✦ balance · Vault →" line (absorbs the old
+     Vault quiet row).
+
+  Sibling of the approved result-mock3-x7q4.html: same sky, same
+  hcard.hero glow DNA, same dreamvideo gradient palette (here as the
+  Tonight hero's full-bleed night scene), same pill + quiet-link
+  language, same Bar-A dock ported verbatim (Home active).
+
+  Mock chrome (top, dashed): STATE switcher for §3's four rows —
+  Day 1 / Unlogged / Logged ✓ / Week earned — incl. the pulse migration
+  (Tonight pill pulses while unlogged; once logged the Tonight hero
+  transforms in place and the Chamber's Enter pill takes the pulse).
+  Exactly ONE pulsing element per state. Claim demo: the ritual module's
+  claim button opens a small mock claim sheet, then the balance settles.
+
+  Static, self-contained: no app JS; all artwork is layered CSS
+  gradients except the Chamber's sage art (chamber-sage-x7q4.jpg,
+  committed alongside this file).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Home mock 4 — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+  /* §2 type scale — nothing below 15px; interactive ≥16px */
+  --t-display:28px;   /* greeting */
+  --t-hero:26px;      /* hero card titles */
+  --t-section:20px;   /* "My dreams" */
+  --t-action:18px;    /* pill labels (pills 56px tall) */
+  --t-body:16px;      /* subs, glance strip, quiet links */
+  --t-eyebrow:12px;   /* TONIGHT / THE DEPTH ANALYST */
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:100dvh;
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim tokens from home.html) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
+@keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe{ animation:none !important; }
+}
+
+/* ===== mock chrome — one fixed compact state switcher. Deliberately
+   dev-looking (dashed hairline, tiny type) so it can't be mistaken for
+   product UI. ===== */
+.mockbar{
+  position:absolute; left:0; right:0; top:0; z-index:40;
+  padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 7px;
+  background:rgba(6,5,18,.88);
+  border-bottom:1px dashed rgba(157,144,255,.4);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  display:flex; align-items:center; gap:5px;
+}
+.mocklab{
+  flex:0 0 auto; font:800 8.5px var(--font-body); letter-spacing:.12em;
+  text-transform:uppercase; color:#6f6894; padding-right:2px;
+}
+.mockseg{ display:flex; gap:4px; flex:1; }
+.mockbtn{
+  flex:1; padding:5px 2px; border-radius:7px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22);
+  color:#8f88b3; font:700 10.5px var(--font-body); white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.mockbtn.on{ background:rgba(157,144,255,.22); border-color:rgba(157,144,255,.6); color:var(--home-ink); }
+
+/* ===== page chrome ===== */
+.home-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+
+/* One long scroll — content scrolls BEHIND the overlaid dock. 20px gutters
+   (§2 global rules). Top padding clears the fixed mock chrome only. */
+.home-scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 44px) 20px calc(var(--nav-clearance) + 32px);
+}
+
+/* --- 1 · topbar: the logo only, left-aligned — nothing else (founder
+   amendment: minimal; the token/claim jobs live in the ritual module) --- */
+.home-topbar{ display:flex; align-items:center; padding:12px 0 0; }
+.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
+.home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* --- 2 · greeting: one 28px line, nothing under it, 22px air above hero --- */
+.home-greet{ padding:26px 0 22px; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.02em; }
+
+/* ===== hero card DNA (the approved result mock's treatment, radius 24) ===== */
+.hero-card{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55); color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:22px;
+}
+.hero-stars, .hero-scrim, .chamber-breathe{ position:absolute; inset:0; pointer-events:none; }
+.hero-content{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.hero-title{
+  font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2;
+  text-shadow:0 2px 12px rgba(12,10,26,.55);
+}
+.hero-sub{ margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea; text-shadow:0 1px 8px rgba(12,10,26,.55); }
+
+/* the pill — 56px tall, 18px/800 (§2 type scale) */
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
+
+/* --- 3 · TONIGHT hero (~430px @844) — full-bleed CSS night scene: warm
+   moon top-right + blue/violet nebula (the result mock's .dreamvideo
+   palette, card-sized), tiny stars, bottom scrim; content bottom-anchored --- */
+.hero-tonight{
+  min-height:clamp(360px, 51vh, 460px);
+  background:
+    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
+    radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
+    radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
+    linear-gradient(172deg,#0f1840 0%,#1a2158 46%,#0b1234 100%);
+}
+.hero-tonight .hero-stars{
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 14%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 26% 8%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 50% 12%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 40% 28%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 88% 38%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 62% 34%, rgba(207,200,255,.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 18% 44%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 74% 52%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
+}
+.hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+
+/* Tonight's three quiet entry links, one centered 16px row */
+.entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
+.entryrow .dot{ color:#8b83b3; font-size:14px; }
+.entrylink{
+  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
+  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+  -webkit-tap-highlight-color:transparent;
+}
+.entrylink:active{ opacity:.7; }
+
+/* Day-1-only extra line inside the Tonight hero */
+.d1line{ margin-top:2px; font-size:var(--t-body); font-weight:500; color:#c9c2e8; text-align:center; position:relative; z-index:1; text-shadow:0 1px 8px rgba(12,10,26,.6); }
+
+/* logged-today transform — in place: artwork stays full-size, title flips,
+   one clamped quote line, pill + links hidden, ok tint on the frame */
+.hero-tonight.logged{ border-color:rgba(75,211,155,.5); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24); }
+.hero-tonight.logged .hero-title{ color:#bdf0d8; }
+.loggedquote{
+  margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.55);
+}
+
+/* --- 4 · CHAMBER hero (~330px) — the sage himself (chamber-sage-x7q4.jpg,
+   violet night palette) rising from the right, the card's own nebula
+   gradient blending into the art on the left; slow breathing aura behind
+   his shoulders. Premium content-card treatment. --- */
+.hero-chamber{
+  margin-top:28px;
+  min-height:330px;
+  background:
+    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
+    url(chamber-sage-x7q4.jpg) 0% 14% / 140% auto no-repeat,
+    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+.hero-chamber .hero-stars{
+  background-image:
+    radial-gradient(1.2px 1.2px at 10% 18%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 26% 10%, rgba(207,200,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 18% 40%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 8% 56%, rgba(224,170,255,.55), transparent 60%);
+}
+.chamber-breathe{
+  background:radial-gradient(46% 40% at 64% 24%, rgba(157,144,255,.26), transparent 72%);
+  animation:chamberBreathe 6s ease-in-out infinite;
+}
+.hero-chamber .hero-scrim{ background:linear-gradient(180deg, transparent 42%, rgba(12,10,26,.66) 96%); }
+
+/* --- 5 · ritual module — the streak/claim/balance home (absorbs the old
+   topbar chip + Vault row). A real full-width module with air, but
+   deliberately calmer than the two heroes: hairline border, no glow. --- */
+.ritual{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px;
+}
+.ritual-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ritual-big{ font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2; }
+.ritual-sub{ margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.ritual .constel{ flex:0 0 84px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; }
+.ritual.warm{ border-color:rgba(224,170,90,.4); }
+.ritual.warm .ritual-big{ color:#ffe0aa; }
+.ritual.warm .ritual-sub{ color:#e8cfa4; }
+.ritual.warm .constel .st.lit{ filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
+/* the daily claim — a real 56px button IN the module when claimable.
+   STATIC warm glow, never a pulse (the single pulse stays on a hero pill). */
+.ritual-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-claim:active{ transform:scale(.98); }
+/* quiet balance line → shop */
+.ritual-balance{
+  display:block; margin-top:14px; padding:6px 0; min-height:32px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-balance:active{ opacity:.7; }
+.ritual-balance .gold{ color:var(--home-warn); }
+
+/* --- 6 · My dreams — 20px header + horizontal scroll-snap row, 150×100
+   thumbnails, full-bleed right so the last tile is cut by the edge --- */
+.dreams{ margin-top:32px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.dreams-all:active{ opacity:.7; }
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  margin:0 -20px; padding:4px 20px 8px;
+  scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dthumb{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer;
+}
+.dthumb::before{ /* tiny stars inside each frame */
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 50%, rgba(255,255,255,.6), transparent 60%);
+}
+.dthumb::after{ /* footage scrim */
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.dthumb:active{ transform:scale(.97); }
+.dthumb.t1{ background:radial-gradient(40px 40px at 74% 26%, rgba(255,230,176,.9), transparent 70%), radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%), linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040); }
+.dthumb.t2{ background:radial-gradient(70% 70% at 30% 30%, rgba(224,120,190,.5), transparent 68%), radial-gradient(60% 60% at 80% 76%, rgba(163,90,255,.45), transparent 65%), linear-gradient(150deg,#3a1350,#57155f 55%,#1c0d38); }
+.dthumb.t3{ background:radial-gradient(70% 70% at 70% 24%, rgba(120,220,200,.4), transparent 66%), radial-gradient(80% 80% at 20% 80%, rgba(60,120,220,.5), transparent 65%), linear-gradient(165deg,#0f2a4e,#14406b 55%,#0b1636); }
+.dthumb.t4{ background:radial-gradient(48px 48px at 26% 30%, rgba(255,200,150,.75), transparent 70%), radial-gradient(80% 80% at 80% 80%, rgba(180,80,200,.4), transparent 66%), linear-gradient(155deg,#40204e,#5e2a54 55%,#221038); }
+.dthumb.t5{ background:radial-gradient(70% 70% at 60% 70%, rgba(90,200,255,.35), transparent 66%), radial-gradient(70% 70% at 24% 20%, rgba(163,90,255,.5), transparent 68%), linear-gradient(160deg,#221457,#2c2a7a 55%,#101040); }
+.dthumb.t6{ background:radial-gradient(44px 44px at 70% 60%, rgba(255,240,200,.7), transparent 72%), radial-gradient(90% 90% at 12% 30%, rgba(224,120,190,.35), transparent 65%), linear-gradient(158deg,#33124a,#4c1a5e 55%,#180c34); }
+
+/* --- 7/8 · quiet rows — 52px, flat, no card chrome --- */
+.quietrows{ margin-top:32px; }
+.qrow{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:52px; padding:6px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.qrow:active{ opacity:.7; }
+.qrow .qicon{ font-style:normal; font-size:17px; width:22px; text-align:center; }
+.qrow .qicon.gold{ color:var(--home-warn); }
+.qrow .qlabel{ flex:1; }
+.qrow .chev{ color:#6f6894; display:inline-flex; }
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   Ported verbatim from production profile.html (Home active). */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.nav-icon-badge-wrap{ position:relative; display:inline-flex; }
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+/* ===== toast ===== */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+
+/* ===== mock claim sheet ===== */
+.sheet-backdrop{
+  position:absolute; inset:0; z-index:50; background:rgba(6,5,18,.62);
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+.claim-sheet{
+  position:absolute; left:0; right:0; bottom:0; z-index:51;
+  background:rgba(24,19,46,.98); border:1px solid var(--home-line); border-bottom:none;
+  border-radius:22px 22px 0 0; padding:24px 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  transform:translateY(105%); transition:transform .25s ease;
+}
+.claim-sheet.open{ transform:translateY(0); }
+.claim-title{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.claim-title .gold{ color:var(--home-warn); }
+.claim-sub{ margin-top:6px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.claim-pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.claim-pill:active{ transform:scale(.98); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sky layers — decorative, behind everything -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <!-- MOCK CHROME — §3 state switcher, not product UI -->
+  <div class="mockbar">
+    <span class="mocklab">State</span>
+    <div class="mockseg" id="state-seg">
+      <button type="button" class="mockbtn" data-state="day1">Day 1</button>
+      <button type="button" class="mockbtn on" data-state="unlogged">Unlogged</button>
+      <button type="button" class="mockbtn" data-state="logged">Logged ✓</button>
+      <button type="button" class="mockbtn" data-state="week">Week earned</button>
+    </div>
+  </div>
+
+  <div class="home-fg">
+    <div class="home-scroll" id="home-scroll">
+
+      <!-- 1 · topbar — logo only -->
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      </div>
+
+      <!-- 2 · greeting -->
+      <div class="home-greet">
+        <div class="home-greet-line">Good evening, Ron.</div>
+      </div>
+
+      <!-- 3 · TONIGHT hero -->
+      <section class="hero-card hero-tonight" id="hero-tonight">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Tonight</div>
+          <h1 class="hero-title" id="tonight-title">What did you dream?</h1>
+          <p class="loggedquote" id="tonight-quote" hidden>&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers.&rdquo;</p>
+          <button type="button" class="pill pulse" id="tonight-pill">✨ Tell your dream</button>
+        </div>
+        <div class="entryrow" id="tonight-links">
+          <button type="button" class="entrylink">Write</button><span class="dot">·</span>
+          <button type="button" class="entrylink">Speak</button><span class="dot">·</span>
+          <button type="button" class="entrylink">No recall</button>
+        </div>
+        <div class="d1line" id="tonight-d1" hidden>First night — any entry counts.</div>
+      </section>
+
+      <!-- 4 · CHAMBER hero -->
+      <section class="hero-card hero-chamber" id="hero-chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub" id="chamber-sub">Your reading awaits.</p>
+          <button type="button" class="pill" id="chamber-pill">Enter</button>
+        </div>
+      </section>
+
+      <!-- 5 · ritual module — streak, constellation, daily claim, balance -->
+      <section class="ritual" id="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big" id="ritual-big">🔥 3 nights</div>
+            <div class="ritual-sub" id="ritual-sub">2 of 3 this week</div>
+          </div>
+          <span id="ritual-constel"></span>
+        </div>
+        <button type="button" class="ritual-claim" id="ritual-claim">Claim +20 ✦</button>
+        <button type="button" class="ritual-balance" id="ritual-balance"><span class="gold">✦</span> 120 · Vault →</button>
+      </section>
+
+      <!-- 6 · My dreams — horizontal swipe row -->
+      <section class="dreams" id="dreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <button type="button" class="dreams-all">All →</button>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb t1"></div>
+          <div class="dthumb t2"></div>
+          <div class="dthumb t3"></div>
+          <div class="dthumb t4"></div>
+          <div class="dthumb t5"></div>
+          <div class="dthumb t6"></div>
+        </div>
+      </section>
+
+      <!-- 7 · quiet row (Vault absorbed into the ritual module's balance line) -->
+      <div class="quietrows">
+        <button type="button" class="qrow">
+          <i class="qicon">📲</i><span class="qlabel">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bar A, the anchored night dock (verbatim from production profile.html;
+       Home active) -->
+  <nav class="night-dock" aria-label="Main">
+    <a class="night-dock-item active" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+    <a class="night-dock-item" href="#"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+    <a class="night-dock-create" href="#" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+    <a class="night-dock-item" href="#">
+      <div class="nav-icon-badge-wrap" aria-hidden="true">
+        <i class="night-dock-avatar">Y</i>
+      </div><span class="night-dock-label">Profile</span>
+    </a>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- mock claim sheet -->
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="claim-sheet" id="claim-sheet" role="dialog" aria-label="Nightly bonus" aria-hidden="true">
+    <div class="claim-title"><span class="gold">✦</span> Nightly bonus</div>
+    <p class="claim-sub">+20 tokens for showing up tonight.</p>
+    <button type="button" class="claim-pill" id="claim-pill">Claim 20 ✦</button>
+  </div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+
+  // ---- constellation (home.html's renderConstellation, 84×46) ----
+  function renderConstellation(lit){
+    lit = Math.max(0, Math.min(3, lit));
+    var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
+    var line1 = lit >= 2 ? 'lit' : '', line2 = lit >= 3 ? 'lit' : '';
+    return '<svg class="constel" width="84" height="46" viewBox="0 0 84 46" aria-hidden="true">' +
+      '<line class="' + line1 + '" x1="12" y1="34" x2="42" y2="12"/>' +
+      '<line class="' + line2 + '" x1="42" y1="12" x2="72" y2="28"/>' +
+      '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
+      '<path class="st' + l2 + '" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>' +
+      '<path class="st' + l3 + '" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>' +
+    '</svg>';
+  }
+
+  var el = {
+    tonight: document.getElementById('hero-tonight'),
+    tonightTitle: document.getElementById('tonight-title'),
+    tonightQuote: document.getElementById('tonight-quote'),
+    tonightPill: document.getElementById('tonight-pill'),
+    tonightLinks: document.getElementById('tonight-links'),
+    tonightD1: document.getElementById('tonight-d1'),
+    chamberSub: document.getElementById('chamber-sub'),
+    chamberPill: document.getElementById('chamber-pill'),
+    ritual: document.getElementById('ritual'),
+    ritualBig: document.getElementById('ritual-big'),
+    ritualSub: document.getElementById('ritual-sub'),
+    ritualConstel: document.getElementById('ritual-constel'),
+    ritualClaim: document.getElementById('ritual-claim'),
+    ritualBalance: document.getElementById('ritual-balance'),
+    dreams: document.getElementById('dreams'),
+    scroll: document.getElementById('home-scroll'),
+    backdrop: document.getElementById('sheet-backdrop'),
+    sheet: document.getElementById('claim-sheet'),
+    claimPill: document.getElementById('claim-pill'),
+    toast: document.getElementById('toast')
+  };
+
+  var BALANCE = 120;
+  var claimed = false;      // reset on every state switch
+  var claimableNow = true;  // whether the current state offers the daily claim
+  var currentState = 'unlogged';
+  var toastTimer = null;
+
+  function toast(msg){
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.toast.classList.remove('show'); }, 1800);
+  }
+
+  // Ritual module's claim button + quiet balance line. Claim button only
+  // while claimable & unclaimed — static warm glow, never a pulse.
+  function renderRitualClaim(){
+    el.ritualClaim.hidden = !(claimableNow && !claimed);
+    var bal = (claimed || !claimableNow) ? BALANCE + 20 : BALANCE;
+    // logged/week states imply tonight's bonus was already claimed
+    el.ritualBalance.innerHTML = '<span class="gold">✦</span> ' + bal + ' · Vault →';
+  }
+
+  // §3 state table — the page NEVER reorders; modules transform in place.
+  // Exactly ONE pulsing element per state (Tonight's pill while unlogged;
+  // after logging, the pulse migrates to the Chamber's Enter pill).
+  function setState(state){
+    currentState = state;
+    claimed = false;
+    closeSheet();
+
+    var logged = (state === 'logged' || state === 'week');
+
+    // Tonight hero
+    el.tonight.classList.toggle('logged', logged);
+    el.tonightTitle.textContent = logged ? 'Logged tonight ✓' : 'What did you dream?';
+    el.tonightQuote.hidden = !logged;
+    el.tonightPill.hidden = logged;
+    el.tonightLinks.hidden = logged;
+    el.tonightD1.hidden = state !== 'day1';
+    el.tonightPill.classList.toggle('pulse', !logged);
+
+    // Chamber hero
+    if(state === 'day1'){
+      el.chamberSub.textContent = 'Make your first dream to begin.';
+      el.chamberPill.textContent = 'Begin';
+    } else {
+      el.chamberSub.textContent = 'Your reading awaits.';
+      el.chamberPill.textContent = 'Enter';
+    }
+    el.chamberPill.classList.toggle('pulse', logged);
+
+    // Ritual module — streak big, constellation, claim button, balance
+    el.ritual.classList.toggle('warm', state === 'week');
+    el.ritualSub.hidden = false;
+    if(state === 'day1'){
+      el.ritualBig.textContent = 'Start your streak tonight';
+      el.ritualSub.hidden = true;
+      el.ritualConstel.innerHTML = renderConstellation(0);
+    } else if(state === 'unlogged'){
+      el.ritualBig.textContent = '🔥 3 nights';
+      el.ritualSub.textContent = '2 of 3 this week';
+      el.ritualConstel.innerHTML = renderConstellation(2);
+    } else if(state === 'logged'){
+      el.ritualBig.textContent = '🔥 4 nights';
+      el.ritualSub.textContent = '3 of 3 this week';
+      el.ritualConstel.innerHTML = renderConstellation(3);
+    } else { // week earned
+      el.ritualBig.textContent = '✨ 3 dreams this week';
+      el.ritualSub.textContent = 'mostly Cinematic · 🔥 4 nights';
+      el.ritualConstel.innerHTML = renderConstellation(3);
+    }
+
+    // My dreams — hidden entirely on Day 1
+    el.dreams.hidden = (state === 'day1');
+
+    // Daily claim lives in the ritual module while tonight is unlogged
+    claimableNow = !logged;
+    renderRitualClaim();
+
+    el.scroll.scrollTop = 0;
+  }
+
+  // switcher
+  document.getElementById('state-seg').addEventListener('click', function(e){
+    var btn = e.target.closest('.mockbtn');
+    if(!btn) return;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.remove('on'); });
+    btn.classList.add('on');
+    setState(btn.dataset.state);
+  });
+
+  // ---- claim sheet demo ----
+  function openSheet(){
+    el.backdrop.classList.add('open');
+    el.sheet.classList.add('open');
+    el.sheet.setAttribute('aria-hidden','false');
+  }
+  function closeSheet(){
+    el.backdrop.classList.remove('open');
+    el.sheet.classList.remove('open');
+    el.sheet.setAttribute('aria-hidden','true');
+  }
+  el.ritualClaim.addEventListener('click', openSheet);
+  el.claimPill.addEventListener('click', function(){
+    claimed = true;
+    closeSheet();
+    renderRitualClaim(); // button gone, balance settles: ✦ 140
+  });
+  el.backdrop.addEventListener('click', closeSheet);
+
+  // Tonight's hero pill → the WIZARD (guided dream builder)
+  el.tonightPill.addEventListener('click', function(){
+    toast('Opening the wizard…');
+  });
+
+  setState('unlogged');
+</script>
+</body>
+</html>
