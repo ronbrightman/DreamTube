@@ -45,7 +45,21 @@ var GENERIC_DESCRIPTION = 'Create your own AI dream video on DreamTube';
 // Used only when x-forwarded-host/host fails HOSTNAME_RE below -- this
 // function's own real production host, so a rejected/malformed header still
 // produces a working redirect/preview rather than an empty-host URL.
-var FALLBACK_HOST = 'dreamtube1.netlify.app';
+//
+// Derived from Netlify's own built-in `URL` env var (every Netlify
+// Function gets this automatically -- the site's primary URL, e.g.
+// `https://dreamtube1.netlify.app` today) rather than a hardcoded literal,
+// so a future primary-domain switch (dreamtube1.netlify.app -> dreamtube.life)
+// updates this fallback with zero code change -- just Netlify's own site
+// settings. The literal below only ever fires if URL is unset (e.g. local
+// dev/tests), matching today's real production behavior exactly.
+var FALLBACK_HOST = (function () {
+  var siteUrl = process.env.URL;
+  if (siteUrl) {
+    try { return new URL(siteUrl).host; } catch (e) { /* fall through */ }
+  }
+  return 'dreamtube1.netlify.app';
+})();
 
 // Allow-list, not a block-list: a legitimate Host/X-Forwarded-Host header is
 // just a hostname (letters/digits/dots/hyphens) with an optional :port --

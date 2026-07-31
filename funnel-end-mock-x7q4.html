@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-07-31) — unlinked, delete after decision.
+
+  THE NEW FUNNEL ENDING — one interactive page demonstrating the whole
+  day-0 journey of a first-time user who just finished the ad funnel
+  (signup done, video generating):
+
+  1. Landing = the approved Night Shelf home (home-mock4-x7q4.html DNA)
+     in its DAY-0 state: the Tonight hero is already "Logged tonight ✓"
+     (their funnel dream IS tonight's entry) with a "Night 1 · your
+     streak begins" line; the My-dreams row shows exactly ONE tile in a
+     FORMING state (shimmer sweep + progress arc + "Your dream is
+     forming…"); the ritual module offers the +100 welcome-token claim
+     (static warm glow — never a pulse); the Chamber hero carries the
+     page's single pulse ("Your first reading is ready — no need to
+     wait for the video.").
+  2. ~7s after load (or the mockbar's "⏩ video ready"), a toast
+     "✨ Your dream is ready" and the forming tile crossfades into a
+     finished thumbnail with a play badge.
+  3. Tapping the ready tile swaps (same page) to THE DREAM'S ROOM — the
+     approved result-mock3-x7q4.html ritual card verbatim (watch pill,
+     player overlay, publish/unpublish, quiet row, dock), with a
+     STATE-AWARE hero pill: if the user already entered the Chamber the
+     pill reads "View your reading", otherwise "✨ What does this dream
+     mean?". The dock's Home tab returns to the home view.
+  4. Chamber "Enter" during forming: toast "Opening the Chamber — your
+     reading doesn't need the video." and marks the reading done (which
+     is what flips the room's hero pill — the state-awareness demo).
+  5. Claim: the approved claim-sheet demo with the +100 first-night
+     bonus; the balance settles after claiming.
+
+  Exactly ONE pulsing element per view (home: Chamber pill; room: the
+  hero pill). Mock chrome is one dashed bar: ↺ restart journey /
+  ⏩ video ready.
+
+  Static, self-contained: no app JS; all artwork is layered CSS
+  gradients except the Chamber's sage art (assets/chamber-sage.jpg).
+  Visual tokens are verbatim from the two approved mocks, which took
+  them from home.html / profile.html.
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Funnel ending mock — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+  /* Night Shelf type scale — nothing below 15px; eyebrows 12px */
+  --t-display:28px;
+  --t-hero:26px;
+  --t-section:20px;
+  --t-action:18px;
+  --t-body:16px;
+  --t-eyebrow:12px;
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:100dvh;
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim tokens from home.html) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
+@keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
+@keyframes formSweep{
+  0%{ transform:translateX(-70%) skewX(-12deg); }
+  100%{ transform:translateX(70%) skewX(-12deg); }
+}
+@keyframes arcSpin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe,.heropill,
+  .form-sweep,.form-arc,.pshimmer,.pstars,.pglow{ animation:none !important; }
+}
+
+/* ===== mock chrome — journey controls. Deliberately dev-looking (dashed
+   hairline, tiny type) so it can't be mistaken for product UI. ===== */
+.mockbar{
+  position:absolute; left:0; right:0; top:0; z-index:40;
+  padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 7px;
+  background:rgba(6,5,18,.88);
+  border-bottom:1px dashed rgba(157,144,255,.4);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  display:flex; align-items:center; gap:5px;
+}
+.mocklab{
+  flex:0 0 auto; font:800 8.5px var(--font-body); letter-spacing:.12em;
+  text-transform:uppercase; color:#6f6894; padding-right:2px;
+}
+.mockseg{ display:flex; gap:4px; flex:1; }
+.mockbtn{
+  flex:1; padding:5px 2px; border-radius:7px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22);
+  color:#8f88b3; font:700 10.5px var(--font-body); white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.mockbtn:disabled{ opacity:.45; cursor:default; }
+
+/* ===== view containers — one page, two views ===== */
+.view{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+
+/* =========================================================================
+   VIEW A — the Night Shelf home, DAY-0 state (home-mock4 DNA)
+   ========================================================================= */
+.home-scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 44px) 20px calc(var(--nav-clearance) + 32px);
+}
+
+/* topbar — logo only, left-aligned */
+.home-topbar{ display:flex; align-items:center; padding:12px 0 0; }
+.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
+.home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* greeting */
+.home-greet{ padding:26px 0 22px; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.02em; }
+
+/* ===== hero card DNA (the approved treatment, radius 24) ===== */
+.hero-card{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55); color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:22px;
+}
+.hero-stars, .hero-scrim, .chamber-breathe{ position:absolute; inset:0; pointer-events:none; }
+.hero-content{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.hero-title{
+  font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2;
+  text-shadow:0 2px 12px rgba(12,10,26,.55);
+}
+.hero-sub{ margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea; text-shadow:0 1px 8px rgba(12,10,26,.55); }
+
+/* the pill — 56px tall, 18px/800 */
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
+
+/* TONIGHT hero — day-0 arrives already logged: full night scene stays,
+   ok-tinted frame, quote + Night-1 line, no pill/links */
+.hero-tonight{
+  min-height:clamp(300px, 40vh, 380px);
+  background:
+    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
+    radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
+    radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
+    linear-gradient(172deg,#0f1840 0%,#1a2158 46%,#0b1234 100%);
+  border-color:rgba(75,211,155,.5);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24);
+}
+.hero-tonight .hero-stars{
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 14%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 26% 8%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 50% 12%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 40% 28%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 88% 38%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 62% 34%, rgba(207,200,255,.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 18% 44%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 74% 52%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
+}
+.hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+.hero-tonight .hero-title{ color:#bdf0d8; }
+.loggedquote{
+  margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.55);
+}
+.night1line{
+  margin-top:10px; font-size:15px; font-weight:700; color:#ffe0aa;
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+
+/* CHAMBER hero — the sage rising from the right, breathing aura. Carries
+   the home view's SINGLE pulse on its Enter pill. */
+.hero-chamber{
+  margin-top:28px;
+  min-height:330px;
+  background:
+    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
+    url(assets/chamber-sage.jpg) 0% 14% / 140% auto no-repeat,
+    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+.hero-chamber .hero-stars{
+  background-image:
+    radial-gradient(1.2px 1.2px at 10% 18%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 26% 10%, rgba(207,200,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 18% 40%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 8% 56%, rgba(224,170,255,.55), transparent 60%);
+}
+.chamber-breathe{
+  background:radial-gradient(46% 40% at 64% 24%, rgba(157,144,255,.26), transparent 72%);
+  animation:chamberBreathe 6s ease-in-out infinite;
+}
+.hero-chamber .hero-scrim{ background:linear-gradient(180deg, transparent 42%, rgba(12,10,26,.66) 96%); }
+
+/* ritual module — day-0: the +100 welcome claim (static warm glow) */
+.ritual{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px;
+}
+.ritual-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ritual-big{ font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2; }
+.ritual-sub{ margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.ritual .constel{ flex:0 0 84px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; }
+.ritual-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-claim:active{ transform:scale(.98); }
+.ritual-balance{
+  display:block; margin-top:14px; padding:6px 0; min-height:32px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-balance:active{ opacity:.7; }
+.ritual-balance .gold{ color:var(--home-warn); }
+
+/* My dreams — day-0: exactly ONE tile, forming → ready */
+.dreams{ margin-top:32px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  margin:0 -20px; padding:4px 20px 8px;
+  scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dthumb{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer;
+}
+.dthumb:active{ transform:scale(.97); }
+/* the two crossfading layers of the day-0 tile */
+.tile-layer{ position:absolute; inset:0; transition:opacity .6s ease; }
+/* FORMING layer — soft violet weave, shimmer sweep, progress arc, caption */
+.tile-forming{
+  opacity:1;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.35), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.3), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.form-sweep{
+  position:absolute; inset:-10%;
+  background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.07) 46%, rgba(207,200,255,.14) 50%, rgba(255,255,255,.07) 54%, transparent 66%);
+  animation:formSweep 2.6s ease-in-out infinite alternate;
+}
+.form-arc{
+  position:absolute; left:50%; top:38%; width:26px; height:26px; margin:-13px 0 0 -13px;
+  animation:arcSpin 1.6s linear infinite;
+}
+.form-arc circle{ fill:none; stroke:rgba(234,231,251,.85); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28; }
+.form-caption{
+  position:absolute; left:0; right:0; bottom:8px; text-align:center;
+  font:700 var(--t-eyebrow) var(--font-body); letter-spacing:.02em; color:#cfc8ea;
+  text-shadow:0 1px 6px rgba(12,10,26,.8);
+}
+/* READY layer — the golden-city dream, tiny stars, scrim, play badge */
+.tile-ready{
+  opacity:0;
+  background:
+    radial-gradient(40px 40px at 74% 26%, rgba(255,230,176,.9), transparent 70%),
+    radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040);
+}
+.tile-ready::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%);
+}
+.tile-ready::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.tile-play{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:32px; height:32px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  display:flex; align-items:center; justify-content:center;
+}
+.tile-play svg{ width:12px; height:12px; margin-left:2px; }
+.dthumb.ready .tile-forming{ opacity:0; }
+.dthumb.ready .tile-ready{ opacity:1; }
+
+/* quiet rows */
+.quietrows{ margin-top:32px; }
+.qrow{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:52px; padding:6px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.qrow:active{ opacity:.7; }
+.qrow .qicon{ font-style:normal; font-size:17px; width:22px; text-align:center; }
+.qrow .qlabel{ flex:1; }
+.qrow .chev{ color:#6f6894; display:inline-flex; }
+
+/* =========================================================================
+   VIEW B — the dream's room (result-mock3 DNA, verbatim)
+   ========================================================================= */
+.icon-btn{
+  width:38px; height:38px; border-radius:50%; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; font-size:19px;
+  background:rgba(12,10,26,.62); border:1px solid rgba(157,144,255,.4); color:var(--home-ink);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+.icon-btn:active{ transform:scale(.94); }
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+.scroll-area{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 44px) 14px calc(var(--nav-clearance) + 28px);
+}
+
+.hcard{
+  position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2));
+  border:1px solid var(--home-line); border-radius:18px; padding:15px; overflow:hidden;
+  color:var(--home-ink);
+}
+.hcard.hero{
+  border-color:rgba(157,144,255,.55);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+}
+.hcard-dt{
+  font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--home-acc); font-weight:800; margin-bottom:10px;
+}
+
+.dreamvideo{
+  position:relative; width:100%; aspect-ratio:16/9; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.14); cursor:pointer;
+  background:
+    radial-gradient(30% 42% at 76% 24%, rgba(255,226,166,.85), rgba(255,214,150,.25) 55%, transparent 75%),
+    radial-gradient(90% 90% at 14% 86%, rgba(83,140,255,.4), transparent 60%),
+    radial-gradient(120% 110% at 46% 46%, rgba(163,90,255,.42), transparent 72%),
+    radial-gradient(60% 55% at 84% 82%, rgba(224,120,190,.3), transparent 65%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 48%,#141040);
+}
+.dreamvideo::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 30%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 30% 14%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.3px 1.3px at 55% 24%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 55%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 68% 78%, rgba(207,200,255,.55), transparent 60%);
+}
+.dreamvideo::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.45));
+}
+.playbadge{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:1;
+  width:52px; height:52px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center;
+}
+.playbadge svg{ width:20px; height:20px; margin-left:3px; }
+.video-mute{
+  position:absolute; right:8px; bottom:8px; z-index:2;
+  width:32px; height:32px; font-size:15px;
+}
+
+.watchpill{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin-top:10px;
+  background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+  border-radius:99px; padding:10px 6px; cursor:pointer;
+  font:700 12.5px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.watchpill .icon{ font-size:13px; }
+.watchpill:active{ opacity:.75; }
+
+.dreamquote{
+  margin-top:12px; font-size:14px; line-height:1.5; color:var(--home-ink); font-weight:500;
+}
+.dreamquote.clamped{
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.showmore{
+  display:inline-block; margin-top:4px; background:none; border:none; cursor:pointer;
+  color:#cfc8ff; font:700 12px var(--font-body); padding:0;
+  -webkit-tap-highlight-color:transparent;
+}
+
+.tagrow{ display:flex; align-items:center; gap:8px; margin-top:10px; }
+.statetag{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+  padding:4px 10px; border-radius:99px;
+  background:rgba(12,10,26,.5); border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+}
+.statetag.public{
+  border-color:rgba(75,211,155,.55); color:var(--home-ok); background:rgba(75,211,155,.1);
+  cursor:pointer;
+}
+.statetag .icon{ font-size:12px; }
+
+/* the ONE hero action — the room view's single pulse */
+.heropill{
+  display:block; width:100%; margin-top:14px;
+  border:none; border-radius:99px; padding:14px 12px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 14.5px var(--font-body); letter-spacing:.01em; text-align:center;
+  animation:homePulse 2.6s ease-in-out infinite;
+  -webkit-tap-highlight-color:transparent;
+}
+.heropill:active{ transform:scale(.98); }
+
+.quietrow{
+  display:flex; align-items:center; justify-content:space-around;
+  margin:16px 2px 0; padding:0 2px;
+}
+.quietlink{
+  display:flex; align-items:center; gap:5px;
+  background:none; border:none; cursor:pointer; padding:8px 4px; min-height:40px;
+  color:var(--home-soft); font:600 12px var(--font-body); text-decoration:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.quietlink .icon{ font-size:15px; opacity:.9; }
+.quietlink:active{ opacity:.7; }
+.quietlink.livelink{ color:#a9e8cd; }
+.quietlink.danger .icon{ color:#e8697d; }
+
+.nextstrip{
+  margin:16px 2px 0;
+  background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4);
+  border-radius:12px; padding:9px 11px; font-size:11.5px; color:#cfc8ff; line-height:1.45;
+}
+.nextstrip b{ color:var(--home-ink); }
+
+/* ===================== Bar A — the anchored "night dock" =====================
+   Ported verbatim from production profile.html. */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create:active{ transform:scale(.94); }
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.nav-icon-badge-wrap{ position:relative; display:inline-flex; }
+
+/* ===== fullscreen "player" overlay (verbatim from result-mock3) ===== */
+.player-overlay{
+  position:fixed; inset:0; z-index:60;
+  background:
+    radial-gradient(42% 19% at 74% 20%, rgba(255,226,166,.8), rgba(255,214,150,.22) 55%, transparent 75%),
+    radial-gradient(85% 42% at 12% 80%, rgba(83,140,255,.38), transparent 60%),
+    radial-gradient(120% 55% at 46% 48%, rgba(163,90,255,.4), transparent 72%),
+    radial-gradient(60% 26% at 86% 74%, rgba(224,120,190,.28), transparent 65%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 48%,#141040);
+  opacity:0; pointer-events:none; transition:opacity .25s ease;
+}
+.player-overlay.open{ opacity:1; pointer-events:auto; }
+.player-overlay .pstars{
+  position:absolute; inset:-40px; pointer-events:none;
+  background-image:
+    radial-gradient(1.4px 1.4px at 40px 60px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 140px 30px, rgba(207,200,255,.7), transparent 60%),
+    radial-gradient(1.3px 1.3px at 90px 200px, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1px 1px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1.2px 1.2px at 15px 120px, rgba(255,224,170,.7), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 60s linear infinite, homeTwinkle 5s ease-in-out infinite;
+}
+.player-overlay .pshimmer{
+  position:absolute; inset:-20%; pointer-events:none;
+  background:linear-gradient(115deg, transparent 30%, rgba(255,255,255,.09) 46%, rgba(207,200,255,.13) 50%, rgba(255,255,255,.09) 54%, transparent 70%);
+  animation:playShimmer 4.5s ease-in-out infinite;
+}
+@keyframes playShimmer{
+  0%{ transform:translateX(-35%) skewX(-8deg); }
+  50%{ transform:translateX(35%) skewX(-8deg); }
+  100%{ transform:translateX(-35%) skewX(-8deg); }
+}
+.player-overlay .pglow{
+  position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(80% 60% at 50% 55%, rgba(157,144,255,.18), transparent 70%);
+  animation:homeTwinkle 6s ease-in-out infinite;
+}
+.player-chips{
+  position:absolute; top:calc(env(safe-area-inset-top,0px) + 12px); right:14px; z-index:2;
+  display:flex; gap:10px;
+}
+
+/* ===== toast ===== */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+
+/* ===== mock claim sheet ===== */
+.sheet-backdrop{
+  position:absolute; inset:0; z-index:50; background:rgba(6,5,18,.62);
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+.claim-sheet{
+  position:absolute; left:0; right:0; bottom:0; z-index:51;
+  background:rgba(24,19,46,.98); border:1px solid var(--home-line); border-bottom:none;
+  border-radius:22px 22px 0 0; padding:24px 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  transform:translateY(105%); transition:transform .25s ease;
+}
+.claim-sheet.open{ transform:translateY(0); }
+.claim-title{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.claim-title .gold{ color:var(--home-warn); }
+.claim-sub{ margin-top:6px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.claim-pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.claim-pill:active{ transform:scale(.98); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sky layers — decorative, behind everything -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <!-- MOCK CHROME — journey controls, not product UI -->
+  <div class="mockbar">
+    <span class="mocklab">Mock</span>
+    <div class="mockseg">
+      <button type="button" class="mockbtn" id="mock-restart">↺ restart journey</button>
+      <button type="button" class="mockbtn" id="mock-ready">⏩ video ready</button>
+    </div>
+  </div>
+
+  <!-- ================= VIEW A · the Night Shelf home, day 0 ================= -->
+  <div class="view" id="view-home">
+    <div class="home-scroll" id="home-scroll">
+
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      </div>
+
+      <div class="home-greet">
+        <div class="home-greet-line">Good evening, Ron.</div>
+      </div>
+
+      <!-- TONIGHT hero — already logged: the funnel dream IS tonight's entry -->
+      <section class="hero-card hero-tonight">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Tonight</div>
+          <h1 class="hero-title">Logged tonight ✓</h1>
+          <p class="loggedquote">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers.&rdquo;</p>
+          <div class="night1line">Night 1 · your streak begins</div>
+        </div>
+      </section>
+
+      <!-- CHAMBER hero — carries the home view's single pulse -->
+      <section class="hero-card hero-chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub">Your first reading is ready — no need to wait for the video.</p>
+          <button type="button" class="pill pulse" id="chamber-pill">Enter</button>
+        </div>
+      </section>
+
+      <!-- ritual module — first-claim welcome bonus (static warm glow) -->
+      <section class="ritual" id="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big">🔥 Night 1</div>
+            <div class="ritual-sub">Your streak starts tonight.</div>
+          </div>
+          <span id="ritual-constel"></span>
+        </div>
+        <button type="button" class="ritual-claim" id="ritual-claim">Claim your +100 welcome tokens</button>
+        <button type="button" class="ritual-balance" id="ritual-balance"><span class="gold">✦</span> 0 · Vault →</button>
+      </section>
+
+      <!-- My dreams — exactly ONE tile: forming → ready -->
+      <section class="dreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb" id="day0-tile" role="button" aria-label="Your first dream">
+            <div class="tile-layer tile-forming">
+              <div class="form-sweep"></div>
+              <svg class="form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
+              <div class="form-caption">Your dream is forming…</div>
+            </div>
+            <div class="tile-layer tile-ready">
+              <div class="tile-play"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="quietrows">
+        <button type="button" class="qrow">
+          <i class="qicon">📲</i><span class="qlabel">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Bar A — Home active -->
+    <nav class="night-dock" aria-label="Main">
+      <a class="night-dock-item active" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+      <a class="night-dock-item" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+      <a class="night-dock-create" href="#" onclick="return false" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+      <a class="night-dock-item" href="#" onclick="return false">
+        <div class="nav-icon-badge-wrap" aria-hidden="true">
+          <i class="night-dock-avatar">Y</i>
+        </div><span class="night-dock-label">Profile</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- ================= VIEW B · the dream's room (result-mock3) ================= -->
+  <div class="view" id="view-room" hidden>
+    <div class="scroll-area" id="room-scroll">
+      <div class="hcard hero">
+        <div class="hcard-dt">Tonight's dream</div>
+
+        <div class="dreamvideo" id="room-video" role="button" aria-label="Play your dream video">
+          <div class="playbadge">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>
+          </div>
+          <div class="icon-btn video-mute" id="video-mute" title="Sound" role="button" aria-label="Unmute">
+            <span class="icon" id="video-mute-icon"></span>
+          </div>
+        </div>
+
+        <button type="button" class="watchpill" id="watch-pill">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></span>
+          Watch your dream
+        </button>
+
+        <p class="dreamquote clamped" id="dream-quote">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn't scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.&rdquo;</p>
+        <button type="button" class="showmore" id="showmore-btn">Show more</button>
+
+        <div class="tagrow">
+          <span class="statetag" id="state-tag"></span>
+        </div>
+
+        <!-- STATE-AWARE hero pill: reading not done → "✨ What does this dream
+             mean?"; reading done (Chamber entered) → "View your reading" -->
+        <button type="button" class="heropill" id="hero-pill">✨ What does this dream mean?</button>
+      </div>
+
+      <div class="quietrow">
+        <button type="button" class="quietlink" id="quiet-publish">
+          <span class="icon" id="quiet-publish-icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 19V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M6 11l6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+          <span id="quiet-publish-label">Publish</span>
+        </button>
+        <button type="button" class="quietlink">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19l-4 1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></span>
+          <span>Edit</span>
+        </button>
+        <button type="button" class="quietlink">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span>Make another</span>
+        </button>
+        <button type="button" class="quietlink danger">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M5 7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M7 7l1 13h8l1-13" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></span>
+          <span>Delete</span>
+        </button>
+      </div>
+
+      <div class="nextstrip">✦ <b>Tomorrow:</b> log your next dream — your bonus is waiting.</div>
+    </div>
+
+    <!-- Bar A — no active tab; Home returns to the home view -->
+    <nav class="night-dock" aria-label="Main">
+      <a class="night-dock-item" href="#" id="room-home-tab"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+      <a class="night-dock-item" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+      <a class="night-dock-create" href="#" onclick="return false" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+      <a class="night-dock-item" href="#" onclick="return false">
+        <div class="nav-icon-badge-wrap" aria-hidden="true">
+          <i class="night-dock-avatar">Y</i>
+        </div><span class="night-dock-label">Profile</span>
+      </a>
+    </nav>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- mock claim sheet — first-claim welcome bonus -->
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="claim-sheet" id="claim-sheet" role="dialog" aria-label="Welcome bonus" aria-hidden="true">
+    <div class="claim-title"><span class="gold">✦</span> Welcome bonus</div>
+    <p class="claim-sub">+100 tokens for logging your first dream tonight.</p>
+    <button type="button" class="claim-pill" id="claim-pill">Claim 100 ✦</button>
+  </div>
+</div>
+
+<!-- Fullscreen "player" — mocks real playback (from result-mock3) -->
+<div class="player-overlay" id="player-overlay" role="dialog" aria-label="Dream playback" aria-hidden="true">
+  <div class="pstars"></div>
+  <div class="pshimmer"></div>
+  <div class="pglow"></div>
+  <div class="player-chips">
+    <div class="icon-btn" title="Sound" role="button" aria-label="Unmute">
+      <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+    </div>
+    <div class="icon-btn" id="player-close" title="Close" role="button" aria-label="Close player">
+      <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+
+  // ---- journey state ----
+  var videoReady = false;   // the fal.ai render finishing
+  var readingDone = false;  // user entered the Chamber (flips the room's hero pill)
+  var claimed = false;      // +100 welcome bonus
+  var readyTimer = null;
+  var VIDEO_MS = 7000;
+
+  var el = {
+    viewHome: document.getElementById('view-home'),
+    viewRoom: document.getElementById('view-room'),
+    homeScroll: document.getElementById('home-scroll'),
+    roomScroll: document.getElementById('room-scroll'),
+    chamberPill: document.getElementById('chamber-pill'),
+    ritualConstel: document.getElementById('ritual-constel'),
+    ritualClaim: document.getElementById('ritual-claim'),
+    ritualBalance: document.getElementById('ritual-balance'),
+    tile: document.getElementById('day0-tile'),
+    heroPill: document.getElementById('hero-pill'),
+    roomHomeTab: document.getElementById('room-home-tab'),
+    mockRestart: document.getElementById('mock-restart'),
+    mockReady: document.getElementById('mock-ready'),
+    backdrop: document.getElementById('sheet-backdrop'),
+    sheet: document.getElementById('claim-sheet'),
+    claimPill: document.getElementById('claim-pill'),
+    toast: document.getElementById('toast')
+  };
+
+  var toastTimer = null;
+  function toast(msg){
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.toast.classList.remove('show'); }, 2200);
+  }
+
+  // ---- constellation (home.html's renderConstellation, 84×46) — night 1 lit ----
+  function renderConstellation(lit){
+    lit = Math.max(0, Math.min(3, lit));
+    var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
+    var line1 = lit >= 2 ? 'lit' : '', line2 = lit >= 3 ? 'lit' : '';
+    return '<svg class="constel" width="84" height="46" viewBox="0 0 84 46" aria-hidden="true">' +
+      '<line class="' + line1 + '" x1="12" y1="34" x2="42" y2="12"/>' +
+      '<line class="' + line2 + '" x1="42" y1="12" x2="72" y2="28"/>' +
+      '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
+      '<path class="st' + l2 + '" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>' +
+      '<path class="st' + l3 + '" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>' +
+    '</svg>';
+  }
+
+  // ---- view swap ----
+  function showHome(){
+    el.viewRoom.hidden = true;
+    el.viewHome.hidden = false;
+    el.homeScroll.scrollTop = 0;
+  }
+  function showRoom(){
+    renderRoomHero();
+    el.viewHome.hidden = true;
+    el.viewRoom.hidden = false;
+    el.roomScroll.scrollTop = 0;
+  }
+  el.roomHomeTab.addEventListener('click', function(e){
+    e.preventDefault();
+    showHome();
+  });
+
+  // ---- the forming → ready progression ----
+  function markVideoReady(){
+    if(videoReady) return;
+    videoReady = true;
+    clearTimeout(readyTimer);
+    el.tile.classList.add('ready');
+    el.tile.setAttribute('aria-label', 'Play your first dream');
+    el.mockReady.disabled = true;
+    el.mockReady.textContent = '✓ video ready';
+    toast('✨ Your dream is ready');
+  }
+  el.mockReady.addEventListener('click', markVideoReady);
+
+  // Tapping the tile: ready → the dream's room; forming → gentle nudge
+  el.tile.addEventListener('click', function(){
+    if(videoReady){
+      showRoom();
+    } else {
+      toast('Still forming — the Chamber is ready now, though.');
+    }
+  });
+
+  // ---- Chamber: works during forming (the point of the demo) ----
+  el.chamberPill.addEventListener('click', function(){
+    readingDone = true;
+    if(videoReady){
+      toast('Opening the Chamber…');
+    } else {
+      toast('Opening the Chamber — your reading doesn’t need the video.');
+    }
+  });
+
+  // ---- the room's STATE-AWARE hero pill ----
+  function renderRoomHero(){
+    el.heroPill.textContent = readingDone ? 'View your reading' : '✨ What does this dream mean?';
+  }
+  el.heroPill.addEventListener('click', function(){
+    if(readingDone){
+      toast('Opening your reading…');
+    } else {
+      readingDone = true;
+      toast('Opening the Chamber…');
+      renderRoomHero();
+    }
+  });
+
+  // ---- claim demo: +100 welcome bonus ----
+  function renderClaim(){
+    el.ritualClaim.hidden = claimed;
+    el.ritualBalance.innerHTML = '<span class="gold">✦</span> ' + (claimed ? 100 : 0) + ' · Vault →';
+  }
+  function openSheet(){
+    el.backdrop.classList.add('open');
+    el.sheet.classList.add('open');
+    el.sheet.setAttribute('aria-hidden','false');
+  }
+  function closeSheet(){
+    el.backdrop.classList.remove('open');
+    el.sheet.classList.remove('open');
+    el.sheet.setAttribute('aria-hidden','true');
+  }
+  el.ritualClaim.addEventListener('click', openSheet);
+  el.claimPill.addEventListener('click', function(){
+    claimed = true;
+    closeSheet();
+    renderClaim(); // button gone, balance settles: ✦ 100
+  });
+  el.backdrop.addEventListener('click', closeSheet);
+
+  // ---- watch pill / video → fullscreen player (from result-mock3) ----
+  var playerOverlay = document.getElementById('player-overlay');
+  function openPlayer(){
+    playerOverlay.classList.add('open');
+    playerOverlay.setAttribute('aria-hidden','false');
+  }
+  function closePlayer(){
+    playerOverlay.classList.remove('open');
+    playerOverlay.setAttribute('aria-hidden','true');
+  }
+  document.getElementById('room-video').addEventListener('click', openPlayer);
+  document.getElementById('watch-pill').addEventListener('click', openPlayer);
+  document.getElementById('player-close').addEventListener('click', function(e){
+    e.stopPropagation(); closePlayer();
+  });
+
+  // Mute toggle inside the video — mock state only; must not open the player.
+  var videoMute = document.getElementById('video-mute');
+  var videoMuteIcon = document.getElementById('video-mute-icon');
+  var ICON_MUTED = '<svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  var ICON_SOUND = '<svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16.5 8.5a5 5 0 010 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 6a9 9 0 010 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>';
+  var muted = true;
+  function renderMute(){
+    videoMuteIcon.innerHTML = muted ? ICON_MUTED : ICON_SOUND;
+    videoMute.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  }
+  videoMute.addEventListener('click', function(e){
+    e.stopPropagation();
+    muted = !muted;
+    renderMute();
+  });
+
+  // ---- publish / unpublish (verbatim behavior from result-mock3) ----
+  var stateTag = document.getElementById('state-tag');
+  var quietPublish = document.getElementById('quiet-publish');
+  var quietPublishLabel = document.getElementById('quiet-publish-label');
+  var quietPublishIcon = document.getElementById('quiet-publish-icon');
+  var ICON_PUBLISH = quietPublishIcon.innerHTML;
+  var ICON_LIVE = '<svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>';
+  var ICON_LOCK = '<span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="1.8" fill="none"/></svg></span>';
+  var isPublished = false;
+
+  function setPublishState(published){
+    isPublished = published;
+    if(published){
+      stateTag.textContent = 'Public ✓';
+      stateTag.classList.add('public');
+      stateTag.setAttribute('role','button');
+      stateTag.setAttribute('title','Tap to make private');
+      quietPublish.classList.add('livelink');
+      quietPublishIcon.innerHTML = ICON_LIVE;
+      quietPublishLabel.textContent = 'Live on Explore →';
+    } else {
+      stateTag.innerHTML = ICON_LOCK + 'Private';
+      stateTag.classList.remove('public');
+      stateTag.removeAttribute('role');
+      stateTag.removeAttribute('title');
+      quietPublish.classList.remove('livelink');
+      quietPublishIcon.innerHTML = ICON_PUBLISH;
+      quietPublishLabel.textContent = 'Publish';
+    }
+  }
+  quietPublish.addEventListener('click', function(){
+    if(!isPublished){
+      setPublishState(true);
+      toast('Posted to Explore ✓');
+    }
+  });
+  stateTag.addEventListener('click', function(){
+    if(isPublished){
+      setPublishState(false);
+      toast('Back to private');
+    }
+  });
+
+  // Quote clamp toggle
+  var quote = document.getElementById('dream-quote');
+  var showmore = document.getElementById('showmore-btn');
+  showmore.addEventListener('click', function(){
+    var clamped = quote.classList.toggle('clamped');
+    showmore.textContent = clamped ? 'Show more' : 'Show less';
+  });
+
+  // ---- restart journey ----
+  function startJourney(){
+    videoReady = false;
+    readingDone = false;
+    claimed = false;
+    isPublished = false;
+    muted = true;
+    clearTimeout(readyTimer);
+    el.tile.classList.remove('ready');
+    el.tile.setAttribute('aria-label', 'Your first dream');
+    el.mockReady.disabled = false;
+    el.mockReady.textContent = '⏩ video ready';
+    el.ritualConstel.innerHTML = renderConstellation(1);
+    renderClaim();
+    renderMute();
+    setPublishState(false);
+    renderRoomHero();
+    if(!quote.classList.contains('clamped')){
+      quote.classList.add('clamped');
+      showmore.textContent = 'Show more';
+    }
+    closeSheet();
+    closePlayer();
+    showHome();
+    readyTimer = setTimeout(markVideoReady, VIDEO_MS);
+  }
+  el.mockRestart.addEventListener('click', startJourney);
+
+  startJourney();
+</script>
+</body>
+</html>
