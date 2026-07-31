@@ -281,6 +281,44 @@ regardless, there's no real near-term cost to committing to this layout now.
 
 ---
 
+## 7. Implementation status (branch `build-facebook-login-mechanics`)
+
+Everything in §2-§5 is **built**, using **Direction Y's minimal placement as a
+deliberate interim default** — the founder's X-vs-Y decision (§6) is still open and is
+NOT pre-empted by this build. The button's DOM position, its visual treatment (all of
+which lives in `js/facebook-config.js`'s `facebookButtonHtml`), its click handler, and
+every piece of backend logic are fully decoupled, so switching to Direction X later is a
+CSS/markup-only follow-up: move the button, add the divider, demote the email form. No
+backend, flow, or state logic would need to change.
+
+What shipped:
+
+| Piece | File |
+|---|---|
+| Feature flag (placeholder App ID) + OAuth URL/state/cookie helpers + brand-compliant button markup | `js/facebook-config.js` |
+| `fbUserId` field + `f:<fbUserId>` index, `getByFacebookUserId`, `linkFacebookUserId`, index cleanup on delete | `netlify/functions/lib/account-store.js` |
+| OAuth callback: CSRF check, server-to-server token exchange, `/me`, identity resolution, session-transfer mint, redirect, per-IP rate limit | `netlify/functions/facebook-oauth-callback.js` |
+| "Needs email" marker (Blobs-backed, single-use, 15-min TTL — same primitive as `session-transfer-token.js`) | `netlify/functions/lib/facebook-identity-token.js` |
+| "Needs email" completion (create-only, never links an unverified email — see that file's security note) | `netlify/functions/facebook-complete-signup.js` |
+| Shared server-side username derivation + collision retry | `netlify/functions/lib/derive-username.js` |
+| Button on both A/B variants, click handler, `staged` persist/restore, `?bt=` consume, skip-screen-13, shared `completeSignupAndAdvance`, "Signing you in…" state, inline error states, `resumed_from_facebook_redirect` tagging | `start.html` |
+| Coverage: identity resolution (all branches), CSRF/fail-closed paths, account-takeover shapes, flag on/off, `staged` round trip, skip-13, manual-signup regression | `test/facebook-oauth-callback.test.js`, `test/account-store-facebook.test.js`, `test/facebook-login-signup-behavioral.test.js` |
+
+Still blocked on the Meta Business Verification track (Manager's), and **only** this:
+dropping a real value into `FACEBOOK_APP_ID` (`js/facebook-config.js`) and setting
+`FACEBOOK_APP_ID`/`FACEBOOK_APP_SECRET` as Netlify environment variables. Until then the
+button is absent from the DOM and the callback fails closed — the feature is completely
+inert, with zero effect on the live signup screen.
+
+One deliberate deviation from the letter of §3, worth flagging: step 3's completion path
+(`facebook-complete-signup.js`) runs step 2's **"not found" branch only**, exactly as §3
+words it — it will never *link* a Facebook identity onto an existing account via the
+supplied email. That email is typed by the user, not vouched for by Facebook, so linking
+on it would be a plain account-takeover vector. An already-registered address is refused
+with a "sign in instead" message plus an escape hatch back to ordinary email signup.
+
+---
+
 **Relevant files grounded against**: `start.html` (screen 13, both variants, boot sequence,
 staging), `js/store.js` (`signup`, `commitTransferredSession`,
 `consumeSessionTransferTokenFromUrlSync`), `js/turnstile-config.js`,
