@@ -331,7 +331,7 @@ test('result.html "Turn this into a video": opens the purchase sheet with correc
     var body = await page.textContent('#ps-body');
     assert.match(body, /You have\s*30/);
     assert.match(body, /70 more/);
-    assert.equal(page.url().indexOf('processing.html'), -1, 'must not navigate away when tokens are insufficient');
+    assert.ok(page.url().indexOf('result.html') !== -1, 'must not navigate away when tokens are insufficient -- stays on result.html');
 
     // THE BUG FIX: turnImageIntoVideo's full draft (caption/style/
     // sourceDreamId/sourceImageUrl/mediaType) must already be persisted —

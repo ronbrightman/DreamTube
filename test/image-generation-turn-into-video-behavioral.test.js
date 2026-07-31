@@ -231,7 +231,7 @@ test('result.html: an insufficient balance opens the out-of-tokens purchase shee
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
     var sheetText = await page.textContent('#purchase-sheet-overlay');
     assert.match(sheetText, /100 tokens/);
-    assert.equal(page.url().indexOf('processing.html'), -1, 'must not navigate away when tokens are insufficient');
+    assert.ok(page.url().indexOf('result.html') !== -1, 'must not navigate away when tokens are insufficient -- stays on result.html');
     assert.equal(generateVideoCalls.length, 0);
   } finally {
     await context.close();

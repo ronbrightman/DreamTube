@@ -78,7 +78,7 @@
     7 Signup    (username + password; email locked to what was captured)
       -> on success, adopts the already-running generation job
       (DreamStore.adoptPendingGeneration) and hands off straight to
-      processing.html, which resumes polling it with ZERO changes needed
+      home.html, which resumes polling it with ZERO changes needed
       there (it already checks DreamStore.getPendingJob() on load).
 
   Camera chips are deliberately NOT a step here (see WIZARD_SPEC.md:
@@ -1073,7 +1073,7 @@
         lastPendingSubmissionKey = comparisonKey;
       } else {
         // Resilient fallback: generation just won't have a head start —
-        // the normal fresh-generation path at processing.html (draft
+        // the normal fresh-generation path at home.html (draft
         // caption/style are set synchronously by the caller regardless)
         // still works.
         pendingStartFailed = true;
@@ -1308,7 +1308,9 @@
   // Step 8 — Signup (username + password; email locked to Step 7's
   // capture). On success: flush staged characters, adopt the in-flight
   // generation job (if the pre-signup start succeeded), best-effort mark
-  // it claimed server-side, then hand off straight to processing.html.
+  // it claimed server-side, then hand off straight to home.html (tracker
+  // item for-product-funnel-ending-v2-founder-ins-tfuu0q — processing.html
+  // removed, generation now runs in the background there instead).
   // ===================================================================
   // Per-attempt token — same unscoped-async-callback pattern as
   // pendingGenerationToken above, and start.html's own signupAttemptToken
@@ -1336,7 +1338,7 @@
   // AFTER this outer check already ran and could go stale in that gap).
   // Signup has no "safe to advance without waiting" skip case the way a
   // reused/already-succeeded Contact submission does: there is no real
-  // account, and nothing safe to hand off to processing.html, until
+  // account, and nothing safe to hand off to home.html, until
   // DreamStore.signup itself actually resolves ok -- so navigation can
   // never be decoupled from this particular settlement the way
   // Contact's was.

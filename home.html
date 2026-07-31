@@ -1519,6 +1519,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       onCredited: function(){
         activeCreditPollCancel = null;
         PurchaseSheet.fireBlockedActionResumed((pendingPurchase && pendingPurchase.source) || 'blocked_action');
+        // Same defensive guard handleFreshInAppGeneration above keeps
+        // "kept anyway, defensively, rather than trusted implicitly" —
+        // this path is likewise argued to be structurally exclusive of an
+        // already-real pendingJob, but checking costs nothing and this
+        // codebase has been bitten before by trusting an invariant instead
+        // of verifying it (review finding, funnel-ending-v2).
+        if(pendingJob) return;
         onGenerationSettled(startFreshGenerationFromDraft());
         pollForPendingJobToAppear(10);
       },

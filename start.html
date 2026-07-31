@@ -153,15 +153,16 @@
      payment bypass — see the big comment above proceedPastPricing()
      below. There is no payment provider integrated yet; do not "finish"
      this without a human vendor decision (see AGENT_POLICY.md escalation
-     policy). Its Continue button hands off directly to the real,
-     unmodified processing.html (see completeFunnel()). Most of the time
-     by this point generation is already RUNNING, not starting — screen 13
-     already adopted it as this browser's pendingJob (see
-     DreamStore.adoptPendingGeneration), and processing.html already knows
-     how to resume a pendingJob on load with zero changes needed there. If
-     the pre-signup kickoff failed or never got a head start, this falls
-     back to processing.html's normal fresh-generation path exactly as
-     before — see startPendingGeneration()'s own comment.
+     policy). Its Continue button hands off directly to home.html (tracker
+     item for-product-funnel-ending-v2-founder-ins-tfuu0q — processing.html
+     removed, generation now runs in the background there instead; see
+     completeFunnel()). Most of the time by this point generation is
+     already RUNNING, not starting — screen 13 already adopted it as this
+     browser's pendingJob (see DreamStore.adoptPendingGeneration), and
+     home.html already knows how to resume a pendingJob on load with zero
+     changes needed there. If the pre-signup kickoff failed or never got a
+     head start, this falls back to home.html's normal fresh-generation
+     path exactly as before — see startPendingGeneration()'s own comment.
 -->
 </head>
 <body>
@@ -550,7 +551,7 @@
   // once, and threaded through renderScreen13's continue handler (skips
   // generate-during-signup — there's no real caption to submit) and
   // completeFunnel (redirects into create.html's Record UI instead of
-  // processing.html — there's no generation in flight to show/poll for).
+  // home.html — there's no generation in flight to show/poll for).
   // Deliberately a plain top-level `mode` query param read directly off
   // start.html's own location.search — this never collides with
   // login.html's unrelated ?mode=signup/login param because start.html
@@ -781,7 +782,7 @@
   // pendingOperationName are always known (one way or the other) before
   // the visitor can reach screen 14. Purely a resilient head start: if the
   // pending-generation call fails for any reason, pendingStartFailed stays
-  // true and processing.html's normal fresh-generation path (unchanged)
+  // true and home.html's normal fresh-generation path (unchanged)
   // just runs as it always did — nothing about this can block or break
   // the funnel, only speed it up when it works.
   // ===================================================================
@@ -1108,7 +1109,7 @@
     // server-verified session somehow carried no email at all. Treated
     // exactly like isRecordMode: never fire a real, billed generation
     // whose delivery address is unknown — the funnel still completes, the
-    // generation just starts later, on processing.html, as it did before
+    // generation just starts later, on home.html, as it did before
     // generate-during-signup existed.
     var pendingPromise = opts.pendingPromise ||
       ((isRecordMode || !email) ? Promise.resolve() : getOrStartPendingGeneration(email));
@@ -1400,7 +1401,7 @@
           // Generate-during-signup: fired in parallel with attemptSignup
           // below, not after it, so the video gets a head start on whatever
           // is left of the funnel (screens 14/15) instead of only starting
-          // once the visitor reaches processing.html. Goes through
+          // once the visitor reaches home.html. Goes through
           // getOrStartPendingGeneration() (not startPendingGeneration()
           // directly) so a signup retry with the same email — "email already
           // taken", a transient network error, anything — reuses the
