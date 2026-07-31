@@ -84,7 +84,7 @@ async function safeGoto(page, url) {
   }
 }
 
-/** Same base resume params test/record-mode-behavioral.test.js and test/funnel-signup-navigation-token-guard-behavioral.test.js use -- a caption with no first-person/people-indicating language skips the characters screen, landing straight on renderScreen11 ("preparing"). */
+/** Same base resume params test/record-mode-behavioral.test.js and test/funnel-signup-navigation-token-guard-behavioral.test.js use. */
 function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
@@ -106,10 +106,9 @@ function mockGetFeed(page, feed, opts) {
   });
 }
 
+/** As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-g64gjp), start.html's former characters and "preparing" transition screens were removed outright -- a fresh ?resume=1 load lands directly on screen 13. */
 async function reachScreen13(page, caption) {
   await safeGoto(page, resumeUrl(caption));
-  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
 }
 
@@ -416,7 +415,7 @@ test('the topbar Back button is disabled for the duration of an in-flight attemp
   }
 });
 
-test('Signup Continue -> immediate Back before attemptSignup resolves -> re-enter through a second, fresh screen 13 -- the first, abandoned attemptSignup callback must not force-navigate or adopt the wrong job once it settles late', async function (t) {
+test('Signup Continue -> immediate Change-email before attemptSignup resolves -> re-enter and resubmit -- the first, abandoned attemptSignup callback must not force-navigate or adopt the wrong job once it settles late', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -459,14 +458,20 @@ test('Signup Continue -> immediate Back before attemptSignup resolves -> re-ente
       var b = document.getElementById('fnBack');
       return !!(b && b.disabled);
     }, null, { timeout: 5000 });
-    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
-    await page.click('#fnBack');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
 
-    // Attempt B -- a genuinely different submission -- reaches a second,
-    // fresh screen 13 (email step again) while A's register-account call
-    // is still held back in flight.
-    await page.click('#fn-s11-continue');
+    // Abandon attempt A via screen 13's own "Change email" link -- as of
+    // 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), screen 13 is the FIRST screen in the funnel tail, so the
+    // topbar Back button would exit the app entirely (a real top-level
+    // navigation, destroying this page's JS heap along with A's in-flight
+    // promise). Change-email carries the identical signupAttemptToken-bump/
+    // invalidatePendingSignup guarantee without navigating anywhere, and
+    // unlike Back it's never disabled during an in-flight attempt.
+    await page.click('#fn-s13-change-email');
+
+    // Attempt B -- a genuinely different submission -- reaches the email
+    // step again while A's register-account call is still held back in
+    // flight.
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
     var screenBefore = await page.evaluate(function () {

@@ -85,14 +85,24 @@
   this file) have moved entirely to the separate dreamtube-growth
   marketing repo (https://dreamtubeapp.netlify.app/), with their own
   PostHog/Pixel/CAPI tracking and A/B testing. This file now only covers
-  what structurally has to run in DreamTube's own origin: Advanced
-  (characters/camera/scenery — formerly one screen 9, now split into three
-  separate funnel screens, one per section — see below), the "coming
-  together" transition (screen 11), signup, and pricing+confirmation
-  (screens 13-14 — the former standalone confirmation screen 15 was folded
-  into 14, see renderScreen14's own comment, tracker item
-  for-product-funnel-handoff-screens-theme-5ttymn). Two reasons those
-  couldn't move:
+  what structurally has to run in DreamTube's own origin: signup and
+  pricing+confirmation (screens 13-14 — the former standalone confirmation
+  screen 15 was folded into 14, see renderScreen14's own comment, tracker
+  item for-product-funnel-handoff-screens-theme-5ttymn). The former
+  Advanced/characters screen (screen 9/renderScreenAdvChars) and the
+  "coming together" transition (former screen 11/renderScreen11) have
+  since been removed outright — founder ruling 2026-07-31 (tracker item
+  for-product-urgent-founder-screenshots-i-g64gjp), enforcing the same
+  "too many options, no mid-funnel customizing" call already made
+  2026-07-29 about this exact class of step: character setup belongs in
+  create.html's own Advanced section, not mid-funnel, and the transition
+  screen's spinner + redundant always-on Continue button added a step
+  with nothing left for the visitor to actually do. The funnel now goes
+  straight from the marketing handoff into signup (screen 13). The two
+  removed screens' PARKED siblings, renderScreenAdvCamera/AdvScenery (see
+  below), are unaffected — they were already parked/unreferenced before
+  this change and still are. Two reasons signup+pricing couldn't move to
+  the marketing repo:
    1. Signup DOES make a network call now — DreamStore.signup() checks/
       creates the account server-side first (register-account.js, the
       authoritative cross-device uniqueness check), then mirrors it into
@@ -101,14 +111,15 @@
       function's own comment). The account still has to be created from
       THIS origin either way, since the local mirror it writes only exists
       here.
-   2. Character photos are staged in-memory as base64 data URLs (the
-      `staged` object below) until signup — arbitrarily large, and every
-      other Advanced field (camera/scenery chips) writes directly into
-      DreamStore.setDraft(), which only exists in this origin.
+   2. Character photos, when staged at all, are held in-memory as base64
+      data URLs (the `staged` object below, still used by the Facebook
+      Login round-trip and the pre-signup generation kickoff — see their
+      own comments) until signup — arbitrarily large, so this can't just
+      live in the marketing repo's own storage.
 
   Every visitor now arrives here from the marketing funnel, via
   ?resume=1 plus recall/types/motivations/style/caption as URL params —
-  landing directly on Advanced, with those values hydrated into
+  landing directly on signup (screen 13), with those values hydrated into
   `quiz`/`chosenStyle`/the real draft first. A bare visit with no
   ?resume=1 (stale bookmark, old link) redirects straight back to the
   funnel — see the "Entry guard" block below. There is no organic
@@ -117,37 +128,18 @@
   file), and only the paid growth-funnel handoff still lands here.
 
   Real-integration notes still relevant to what's left here:
-   - Advanced (characters/camera/scenery) is a real functional port of
-     create.html's Advanced section, split into three separate funnel
-     screens — one per section (renderScreenAdvChars/AdvCamera/AdvScenery)
-     — instead of the one crowded screen 9 used to be. As of a 2026-07-24
-     founder decision (tracker item
-     for-product-two-post-handoff-app-pages-p-atr0r7), only
-     renderScreenAdvChars is still live — renderScreenAdvCamera/
-     renderScreenAdvScenery are PARKED (intentionally kept, not deleted,
-     but omitted from SCREEN_RENDERERS so they never render) because the
-     marketing funnel that hands off here already assembles camera/scenery
-     info into captionText, making those two screens redundant for every
-     real visitor. See the SCREEN_RENDERERS/TAGS/PHASE_BY_STEP
-     construction below for the parked-screens comment and the "PARKED"
-     comment on each function itself. Continue on the characters screen
-     advances one step; Skip jumps straight to the transition screen
-     (goToStep(PREPARING_STEP)) — "skip" means "stop customizing". As of
-     the 2026-07-24 mobile-test fixes, renderScreenAdvChars itself may not
-     even be in SCREEN_RENDERERS at all — see captionSuggestsPeople() and
-     the SCREEN_RENDERERS/TAGS/PHASE_BY_STEP construction below — so
-     PREPARING_STEP is looked up dynamically rather than hardcoded, since
-     its index shifts depending on whether that screen is present. The
-     parked camera/scenery screens' chips still call DreamStore.setDraft
-     directly (login-independent) in their own dead code, unchanged.
-     Characters are the
-     one exception: DreamStore.saveCharacter() requires a logged-in user,
-     but signup doesn't happen until screen 13 — by design, per the
-     approved funnel order (dream input + Advanced moved early, paywall
-     late). So characters are staged locally (the `staged` object) with the
-     same validation rules as DreamStore.saveCharacter, and flushed into
-     real DreamStore characters via flushStagedCharactersToStore() the
-     moment signup succeeds on screen 13, before the funnel continues.
+   - renderScreenAdvCamera/renderScreenAdvScenery (camera/scenery, the
+     other two-thirds of the former one-screen Advanced section) are
+     PARKED (intentionally kept, not deleted, but omitted from
+     SCREEN_RENDERERS so they never render) — founder decision
+     2026-07-24 (tracker item for-product-two-post-handoff-app-pages-p-
+     atr0r7): the marketing funnel that hands off here already assembles
+     camera/scenery info into captionText, making those two screens
+     redundant for every real visitor. See the SCREEN_RENDERERS/TAGS/
+     PHASE_BY_STEP construction below for the parked-screens comment and
+     the "PARKED" comment on each function itself. Their chips still call
+     DreamStore.setDraft directly (login-independent) in their own dead
+     code, unchanged.
    - Screen 13 derives a username from the email's local part automatically
      (per the task spec — visitor never picks a username) and calls the
      real DreamStore.signup(username, password, email). As of the
@@ -185,16 +177,11 @@
 
 <style>
   /* ===================================================================
-     Funnel-specific styles. Every class here is prefixed "fn-", except
-     the Advanced screens' character chips/add-tiles and character sheet
-     (.char-chip/.char-chip-add/.sheet-overlay/.sheet/.char-mode-row/
-     .char-mode-btn/.char-photo-*), which deliberately reuse create.html's
-     real classes from css/styles.css verbatim (same markup, same click
-     handlers, zero JS duplicated) rather than being reimplemented under
-     fn- names. Since those classes are shared with create.html's own
-     (dark-themed) Advanced accordion, every light-theme override for them
-     below is scoped under "#app.funnel-app ..." so it can never reach
-     create.html's plain "#app" — see each override for why.
+     Funnel-specific styles. Every class here is prefixed "fn-".
+     (The Advanced/characters screen that used to live here, and its
+     create.html-shared .char-chip/.sheet-overlay/etc. light-theme
+     overrides, were removed 2026-07-31 along with the screen itself —
+     tracker item for-product-urgent-founder-screenshots-i-g64gjp.)
      Colors/values ported from scratchpad/funnel-mockup.html. */
 
   #app.funnel-app{
@@ -259,32 +246,6 @@
   .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); font-size:13px; font-weight:700; color:#2C2846; cursor:pointer; -webkit-tap-highlight-color:transparent;}
   .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
 
-  /* ----- Advanced/characters: shared create.html classes, light-themed
-     overrides scoped to the funnel only (see the file-level comment
-     above this <style> block for why these aren't fn- classes). ----- */
-  #app.funnel-app .char-chip{ background:var(--phase-card, var(--fn-card)); border-color:var(--phase-line, var(--fn-line)); color:#2C2846;}
-  #app.funnel-app .char-chip .chip-check{ border-color:var(--phase-faint, var(--fn-ink-faint));}
-  #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-  #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
-  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:var(--fn-accent-solid);}
-  #app.funnel-app .char-chip .chip-edit{ color:var(--phase-faint, var(--fn-ink-faint));}
-  #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
-  #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--phase-line, var(--fn-line)); color:var(--phase-soft, var(--fn-ink-soft));}
-  #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--phase-ink, var(--fn-ink));}
-
-  /* Character add/edit sheet — light card over the now-light Advanced
-     screens, instead of create.html's dark bottom sheet. */
-  #app.funnel-app .sheet{ background:var(--fn-card); color:#2C2846; border-top-color:var(--fn-line); box-shadow:0 -20px 50px rgba(58,51,80,.18);}
-  #app.funnel-app .sheet-handle{ background:var(--fn-line);}
-  #app.funnel-app .sheet-title{ color:#2C2846;}
-  #app.funnel-app .char-mode-row .char-mode-btn{ background:#F3F1FA; border-color:var(--fn-line); color:var(--fn-ink-soft);}
-  #app.funnel-app .char-mode-row .char-mode-btn.active{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-  #app.funnel-app .char-photo-preview{ background:#F3F1FA; border-color:var(--fn-line);}
-  #app.funnel-app .char-photo-empty{ color:var(--fn-ink-faint);}
-  #app.funnel-app .char-photo-hint{ color:var(--fn-ink-soft);}
-  #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
-  #app.funnel-app .btn-secondary:hover{ background:#F3F1FA; border-color:var(--fn-ink-faint);}
-
   /* color/placeholder/toggle-icon below are phase-aware (var(--phase-ink/
      faint, ...), not the hardcoded light-theme --fn-ink/-faint tokens) —
      required as of the theme-whiplash fix (tracker item
@@ -292,9 +253,8 @@
      email/password inputs now render on the 'night' phase (dark,
      near-transparent --phase-card), so text hardcoded to the light-phase
      dark ink color would be unreadable against it. Every phase this file
-     defines still resolves correctly: dawn/transition (dark ink) render
-     dark text on a solid-white card exactly as before; night (white ink)
-     now renders white text on its dark translucent card. */
+     defines still resolves correctly: night (white ink) renders white
+     text on its dark translucent card, same as it always has. */
   textarea.fn-field, input.fn-field{ background:var(--phase-card, var(--fn-card)); border:1px solid var(--phase-line, var(--fn-line)); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--phase-ink, var(--fn-ink)); font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
   textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--phase-faint, var(--fn-ink-faint));}
@@ -350,7 +310,6 @@
 <script src="js/store.js"></script>
 <script src="js/facebook-config.js"></script>
 <script src="js/pwa.js"></script>
-<script src="js/sheet-dismiss.js"></script>
 <script>
 (function(){
   'use strict';
@@ -447,10 +406,9 @@
   // Explore uses (DreamStore.getSharedFeed -> get-feed.js -> Blobs), since
   // there's no dedicated "dreams this month" endpoint. Kicked off here, at
   // script load, rather than when screen 14 first renders, so the fetch has
-  // the whole rest of the funnel (screens 9, 11, 13) to resolve before
-  // anyone actually reaches pricing. Stays null (and the proof strip is
-  // omitted entirely, never a fake number) if the fetch hasn't resolved in
-  // time or fails outright.
+  // the rest of the funnel to resolve before anyone actually reaches
+  // pricing. Stays null (and the proof strip is omitted entirely, never a
+  // fake number) if the fetch hasn't resolved in time or fails outright.
   var dreamsThisMonthCount = null;
   DreamStore.getSharedFeed().then(function(feed){
     var now = new Date();
@@ -462,34 +420,6 @@
     }).length;
   }).catch(function(){ /* leave dreamsThisMonthCount null -> proof strip omitted */ });
 
-  /**
-   * Downscales/recompresses a picked photo to a JPEG data URL — copied
-   * verbatim from create.html's identical helper (same reasons apply: an
-   * unmodified phone photo can blow both localStorage's quota and the
-   * generate-video request body cap).
-   */
-  function resizeImageFile(file, maxDim, quality){
-    return new Promise(function(resolve, reject){
-      var reader = new FileReader();
-      reader.onerror = function(){ reject(new Error('read_failed')); };
-      reader.onload = function(){
-        var img = new Image();
-        img.onerror = function(){ reject(new Error('decode_failed')); };
-        img.onload = function(){
-          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-          var w = Math.round(img.width * scale);
-          var h = Math.round(img.height * scale);
-          var canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
   // ===== Entry guard =====
   // The ad-facing hook/quiz/style/recap screens (formerly screens 1-8,
   // 10, 12 in this file) now live entirely in the separate
@@ -498,7 +428,7 @@
   // direct/bare visit here (no ?resume=1, e.g. a stale bookmark or old
   // link) has no quiz/style/caption context to build a dream around, so
   // it redirects to the real starting point instead of rendering a
-  // broken/empty Advanced screen.
+  // broken/empty signup screen.
   if(getParam('resume') !== '1'){
     location.href = 'https://dreamtubeapp.netlify.app/';
     return;
@@ -686,51 +616,27 @@
 
   var cur = 0;
 
-  /**
-   * Best-effort heuristic (mobile-test fix, 2026-07-24) for whether the
-   * dream text plausibly involves any people at all — used to decide
-   * whether to show the "Add the people in your dream" Advanced screen at
-   * all (see SCREEN_RENDERERS below). Deliberately simple: a first-person/
-   * people-indicating word-boundary check, plus two generic people nouns.
-   * NOT correctness-critical — a false positive (showing the screen when
-   * it isn't really needed) is totally fine; the only goal is catching the
-   * obvious no-people case ("Standing on a mountain watching the sunset")
-   * so that visitor isn't asked to define characters for nobody.
-   */
-  function captionSuggestsPeople(text){
-    return /\b(i|i'm|im|me|my|myself|we|our|us|person|someone)\b/i.test(text || '');
-  }
-
   // Phase color system — ported verbatim from funnel-mockup.html's PHASES
-  // map, plus 'dawn' (the base #app.funnel-app pastel gradient/ink tokens
-  // above, promoted to a real named phase). The 3 Advanced screens used to
-  // force a special-cased 'app-dark' branch in applyPhase() instead of
-  // going through this map at all — the founder has since decided that
-  // direction was wrong (Advanced should never have gone dark; the earlier
-  // fix corrected a real contrast bug, but by giving the app-dark path its
-  // own background rather than removing it) — so 'dawn' now runs through
-  // the exact same explicit phase-application path as every other screen.
-  //
-  // 'dusk'/'dusk-deep' (the two intermediate, progressively-lighter-purple
-  // phases that used to sit between 'transition' and 'night') were removed
-  // here (tracker item for-product-funnel-handoff-screens-theme-5ttymn) —
-  // they were the founder-reported "theme whiplash" bug: solid-white/
-  // near-white cards over a light lavender gradient, on the two most
-  // important conversion screens (signup, value/pricing), sandwiched
-  // between the dark marketing funnel before and this app's own dark theme
-  // after. PHASE_BY_STEP below now points those screens straight at
-  // 'night' instead — see its own comment for why reassigning was the
-  // safer fix over recoloring these two keys in place.
+  // map. 'dawn' and 'transition' (the light Advanced/characters and
+  // "preparing" transition phases) were removed 2026-07-31 along with the
+  // two screens that used them — tracker item
+  // for-product-urgent-founder-screenshots-i-g64gjp; every remaining
+  // screen in this file (signup, pricing+confirmation) already ran on
+  // 'night'. 'dusk'/'dusk-deep' (two more intermediate phases) were
+  // removed earlier the same way (tracker item
+  // for-product-funnel-handoff-screens-theme-5ttymn) — they were the
+  // founder-reported "theme whiplash" bug: solid-white/near-white cards
+  // over a light lavender gradient, on the two most important conversion
+  // screens (signup, value/pricing), sandwiched between the dark
+  // marketing funnel before and this app's own dark theme after.
   var PHASES = {
-    'dawn':      { grad:'linear-gradient(160deg,#FBEFEA,#E9EAF5 55%,#E3E9F7)', ink:'#3A3350', soft:'#6E6480', faint:'#9C93AC', card:'#FFFFFF', line:'rgba(58,51,80,0.10)' },
-    'transition':{ grad:'linear-gradient(160deg,#DCDCF0,#D0D5EE 55%,#C2D3EC)', ink:'#332E4A', soft:'#655E7C', faint:'#948DA8', card:'#FFFFFF', line:'rgba(51,46,74,0.12)' },
-    'night':     { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
+    'night': { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
   };
   // TAGS and PHASE_BY_STEP are built alongside SCREEN_RENDERERS, further
-  // down this file, once the "show the characters screen at all?" decision
-  // is made — all three arrays must stay entry-for-entry in sync with each
-  // other (cur/goToStep index into all three the same way), so they're
-  // constructed together in one place rather than declared separately here.
+  // down this file — all three arrays must stay entry-for-entry in sync
+  // with each other (cur/goToStep index into all three the same way), so
+  // they're constructed together in one place rather than declared
+  // separately here.
 
   var appEl = document.getElementById('app');
   var screenEl = document.getElementById('fnScreen');
@@ -739,87 +645,24 @@
   backBtn.innerHTML = Icons.back;
 
   // ===================================================================
-  // Advanced (characters/camera/scenery) — formerly one screen 9, now
-  // three separate funnel screens (renderScreenAdvChars/AdvCamera/
-  // AdvScenery below), ported from create.html. See head-of-file comment
-  // for the character-staging rationale (saveCharacter requires login;
-  // login doesn't happen until screen 13). Helpers in this section are
-  // shared across all three of the split screens (well, just the chars
-  // one for the character-specific helpers) exactly as they were shared
-  // across the one combined screen before.
+  // Characters — the funnel-side "Advanced > Characters" screen
+  // (renderScreenAdvChars) and its whole character-staging/editing UI
+  // (chips, sheet, local save/delete) were removed outright 2026-07-31 —
+  // tracker item for-product-urgent-founder-screenshots-i-g64gjp,
+  // enforcing the founder's 2026-07-29 "too many options" ruling on this
+  // exact class of mid-funnel step. Character setup now lives only in
+  // create.html's own Advanced section. flushStagedCharactersToStore()
+  // below is the one piece kept: it's still called, unconditionally,
+  // right after real signup succeeds on screen 13 (see that screen's own
+  // code) as part of the signup/generation flow this fix does not touch.
+  // `staged` (declared in the head-of-file Facebook-redirect section
+  // above) can no longer be populated by anything in this file, so this
+  // is now permanently a no-op over empty arrays — exactly the same state
+  // any visitor already reached whenever the old characters screen simply
+  // didn't apply to their dream. Left in place rather than deleted since
+  // touching the signup/generation call sites that reference it is out of
+  // scope for this fix.
   // ===================================================================
-  var charEditingId = null;
-  var charSubMode = 'describe';
-  var charPendingPhotoDataUrl = null;
-  // Bumped on every open AND every close (see openCharSheet/closeCharSheet
-  // below) so a pending resizeImageFile call started by one sheet
-  // "instance" can tell, once it resolves, whether it's still talking
-  // about the instance that's still on screen. Same pattern as create.html/
-  // profile.html's charSheetToken/identitySheetToken — see the photo-input
-  // change handler (inside renderScreenAdvChars below), the only reader of
-  // this token. Declared here (outside renderScreenAdvChars, which
-  // otherwise re-runs and rebinds listeners on every screen render) so it
-  // persists across those re-renders exactly like charPendingPhotoDataUrl
-  // above does.
-  var charSheetToken = 0;
-
-  // Mirrors create.html's charChipDisplayName -- a self character's name is
-  // genuinely optional and stored as-is (including empty); "Me" here is a
-  // display-only fallback for the chip label, never written back to the
-  // character. See js/store.js's saveCharacter doc comment.
-  function charChipDisplayName(c){
-    return c.name || (c.isSelf ? 'Me' : '');
-  }
-  function charChipHTML(c, selected){
-    return '<div class="char-chip' + (selected ? ' selected' : '') + '" data-char-select="' + c.id + '">' +
-      '<span class="chip-check"><span class="icon">' + Icons.check + '</span></span>' +
-      '<span class="chip-edit-area" data-char-edit="' + c.id + '">' +
-        '<span>' + esc(charChipDisplayName(c)) + '</span>' +
-        '<span class="chip-edit icon">' + Icons.pencil + '</span>' +
-      '</span>' +
-    '</div>';
-  }
-  function renderStagedCharacterChips(){
-    var row = document.getElementById('char-chip-row');
-    if(!row) return;
-    var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
-    var html = staged.characters.map(function(c){ return charChipHTML(c, staged.selectedIds.indexOf(c.id) !== -1); }).join('');
-    if(!hasSelf) html += '<div class="char-chip-add" id="char-add-self"><span class="icon">' + Icons.userPlus + '</span> Add yourself</div>';
-    html += '<div class="char-chip-add" id="char-add-other"><span class="icon">' + Icons.plus + '</span> Add a character</div>';
-    row.innerHTML = html;
-    var addSelfBtn = document.getElementById('char-add-self');
-    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openCharSheet('self', null); });
-    document.getElementById('char-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
-  }
-
-  /** Mirrors DreamStore.saveCharacter's validation/upsert rules exactly, against the local staging array instead of the real store. */
-  function localSaveCharacter(patch){
-    var name = (patch.name || '').trim();
-    var description = (patch.description || '').trim();
-    var isSelf = !!patch.isSelf;
-    var photoDataUrl = (isSelf && patch.photoDataUrl) ? patch.photoDataUrl : null;
-    if(!isSelf && !name) return { ok:false, error:'Give this character a name.' };
-    if(!description && !photoDataUrl) return { ok:false, error: isSelf ? 'Add a description or a photo.' : 'Add a short description.' };
-    var existing = patch.id ? staged.characters.filter(function(c){ return c.id === patch.id; })[0] : null;
-    if(!existing && isSelf) existing = staged.characters.filter(function(c){ return c.isSelf; })[0] || null;
-    if(existing){
-      existing.name = name;
-      existing.description = description;
-      if(isSelf) existing.photoDataUrl = photoDataUrl; else delete existing.photoDataUrl;
-      return { ok:true, character: existing };
-    }
-    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: name, isSelf: isSelf, description: description };
-    if(isSelf && photoDataUrl) character.photoDataUrl = photoDataUrl;
-    staged.characters.push(character);
-    return { ok:true, character: character };
-  }
-  function localDeleteCharacter(id){
-    var before = staged.characters.length;
-    staged.characters = staged.characters.filter(function(c){ return c.id !== id; });
-    staged.selectedIds = staged.selectedIds.filter(function(x){ return x !== id; });
-    return staged.characters.length !== before;
-  }
-
   /** Called once, right after real signup succeeds on screen 13 — turns staged local characters into real DreamStore characters and remaps selection onto their real ids. */
   function flushStagedCharactersToStore(){
     var idMap = {};
@@ -829,215 +672,6 @@
     });
     var realSelected = staged.selectedIds.map(function(localId){ return idMap[localId]; }).filter(Boolean);
     if(realSelected.length) DreamStore.setDraft({ characterIds: realSelected });
-  }
-
-  function openCharSheet(mode, existing){
-    charSheetToken++;
-    charEditingId = existing ? existing.id : null;
-    document.getElementById('char-sheet-title').textContent = mode === 'self'
-      ? (existing ? 'Edit yourself' : 'Add yourself')
-      : (existing ? 'Edit character' : 'Add a character');
-    var nameInput = document.getElementById('char-name-input');
-    nameInput.style.display = mode === 'self' ? 'none' : 'block';
-    nameInput.value = existing ? existing.name : '';
-    document.getElementById('char-desc-input').value = existing ? (existing.description || '') : '';
-    document.getElementById('char-desc-input').dataset.mode = mode;
-    document.getElementById('char-error').textContent = '';
-    document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
-    document.getElementById('char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
-    charPendingPhotoDataUrl = (mode === 'self' && existing && existing.photoDataUrl) ? existing.photoDataUrl : null;
-    setCharSubMode(mode === 'self' && charPendingPhotoDataUrl ? 'photo' : 'describe');
-    document.getElementById('sheet-character-overlay').classList.add('open');
-  }
-  function closeCharSheet(){
-    charSheetToken++;
-    document.getElementById('sheet-character-overlay').classList.remove('open');
-  }
-  function renderCharPhotoPreview(){
-    var preview = document.getElementById('char-photo-preview');
-    var removeLink = document.getElementById('char-photo-remove');
-    if(charPendingPhotoDataUrl){
-      preview.innerHTML = '<img src="' + charPendingPhotoDataUrl + '" alt="">';
-      removeLink.style.display = 'block';
-    } else {
-      preview.innerHTML = '<div class="char-photo-empty">No photo yet</div>';
-      removeLink.style.display = 'none';
-    }
-  }
-  function setCharSubMode(mode){
-    charSubMode = mode;
-    Array.prototype.forEach.call(document.querySelectorAll('#char-mode-row .char-mode-btn'), function(b){
-      b.classList.toggle('active', b.dataset.charMode === mode);
-    });
-    document.getElementById('char-desc-input').style.display = mode === 'describe' ? 'block' : 'none';
-    document.getElementById('char-photo-area').style.display = mode === 'photo' ? 'block' : 'none';
-    renderCharPhotoPreview();
-  }
-
-  // Mounted ONCE, as a direct child of #app -- NOT rebuilt inside
-  // renderScreenAdvChars's own el.innerHTML (which used to embed this
-  // sheet's markup directly inside #fnScreen, the funnel's own
-  // scrollable internal region). That nesting was the real root cause
-  // behind a review finding on tracker item
-  // for-product-sheet-dismissal-app-wide-fix-rlay70 (round 1) -- see
-  // wizard.html's own identical fix/comment for the full "why": a
-  // position:absolute descendant of a scrolling, position:relative
-  // ancestor (#fnScreen) is positioned against THAT ancestor's own
-  // scrollable content box, not the real viewport or #app's own (now
-  // correctly capped) box, so #fnScreen scrolling for any reason moves
-  // the sheet with it. Fixed the same way: mount once as a direct #app
-  // child, matching every other sheet in the app. Idempotent (checked
-  // via charSheetMounted) since renderScreenAdvChars can run again on a
-  // later revisit to this step.
-  var charSheetMounted = false;
-  function ensureCharSheetMounted(){
-    if(charSheetMounted) return;
-    charSheetMounted = true;
-
-    var wrap = document.createElement('div');
-    wrap.className = 'sheet-overlay';
-    wrap.id = 'sheet-character-overlay';
-    wrap.innerHTML =
-      '<div class="sheet">' +
-        '<div class="sheet-handle"></div>' +
-        '<div class="sheet-title" id="char-sheet-title">Add a character</div>' +
-        '<input class="fn-field" id="char-name-input" placeholder="Name (e.g. Mom, my friend Alex)" dir="auto">' +
-        '<div class="char-mode-row" id="char-mode-row" style="display:none;">' +
-          '<div class="char-mode-btn" data-char-mode="describe">Describe</div>' +
-          '<div class="char-mode-btn" data-char-mode="photo">Upload photo</div>' +
-        '</div>' +
-        '<textarea class="fn-field" id="char-desc-input" placeholder="Describe how they look..." dir="auto" style="min-height:90px;"></textarea>' +
-        '<div class="char-photo-area" id="char-photo-area" style="display:none;">' +
-          '<div class="char-photo-preview" id="char-photo-preview"><div class="char-photo-empty">No photo yet</div></div>' +
-          '<div class="char-photo-hint">' + "A photo of a child or teen can't be used for video generation — use Describe instead for them." + '</div>' +
-          '<input type="file" accept="image/*" id="char-photo-input" style="display:none;">' +
-          '<button type="button" class="btn btn-secondary btn-block" id="char-photo-pick-btn">Choose photo</button>' +
-          '<span class="char-photo-remove" id="char-photo-remove" style="display:none;">Remove photo</span>' +
-        '</div>' +
-        '<div class="err-text" id="char-error"></div>' +
-        '<button class="fn-btn-primary" id="char-save-btn" type="button">Save</button>' +
-        '<div style="height:10px;"></div>' +
-        '<span class="fn-small-link" id="char-cancel" style="cursor:pointer;">Cancel</span>' +
-        '<div style="height:8px;"></div>' +
-        '<span class="fn-small-link" id="char-delete-link" style="cursor:pointer; color:var(--danger); display:none;">Delete this character</span>' +
-      '</div>';
-    document.getElementById('app').appendChild(wrap);
-
-    document.getElementById('char-mode-row').addEventListener('click', function(e){
-      var btn = e.target.closest('.char-mode-btn');
-      if(btn) setCharSubMode(btn.dataset.charMode);
-    });
-    document.getElementById('char-photo-pick-btn').addEventListener('click', function(){
-      document.getElementById('char-photo-input').click();
-    });
-    document.getElementById('char-photo-input').addEventListener('change', function(e){
-      var file = e.target.files && e.target.files[0];
-      e.target.value = '';
-      if(!file) return;
-      document.getElementById('char-error').textContent = '';
-      // resizeImageFile is a real multi-step async chain (FileReader ->
-      // Image decode -> canvas draw), easily slow enough to race a Cancel-
-      // then-reopen of this sheet -- including reopening for a DIFFERENT
-      // character than the one being edited when the photo was picked.
-      // Captured now and re-checked once it resolves -- without this, a
-      // stale resize from a cancelled instance can resolve after reopen and
-      // silently overwrite charPendingPhotoDataUrl/the preview with an
-      // abandoned photo the user never confirmed for this instance.
-      var tokenAtPick = charSheetToken;
-      resizeImageFile(file, 768, 0.82).then(function(dataUrl){
-        if(tokenAtPick !== charSheetToken) return;
-        charPendingPhotoDataUrl = dataUrl;
-        renderCharPhotoPreview();
-      }).catch(function(){
-        if(tokenAtPick !== charSheetToken) return;
-        document.getElementById('char-error').textContent = "Couldn't read that photo — try a different image.";
-      });
-    });
-    document.getElementById('char-photo-remove').addEventListener('click', function(){
-      charPendingPhotoDataUrl = null;
-      renderCharPhotoPreview();
-    });
-
-    document.getElementById('char-cancel').addEventListener('click', closeCharSheet);
-    SheetDismiss.wire(document.getElementById('sheet-character-overlay'), closeCharSheet);
-    document.getElementById('char-save-btn').addEventListener('click', function(){
-      var mode = document.getElementById('char-desc-input').dataset.mode;
-      var usingPhoto = mode === 'self' && charSubMode === 'photo';
-      // Captured BEFORE localSaveCharacter runs — charEditingId is only
-      // set when this sheet was opened via an existing chip's edit tap
-      // (see openCharSheet), so a falsy value here means this save is
-      // genuinely creating a brand-new character, including the very
-      // first "Me" save.
-      var isNewChar = !charEditingId;
-      var result = localSaveCharacter({
-        id: charEditingId,
-        isSelf: mode === 'self',
-        name: document.getElementById('char-name-input').value,
-        description: usingPhoto ? '' : document.getElementById('char-desc-input').value,
-        photoDataUrl: usingPhoto ? charPendingPhotoDataUrl : null
-      });
-      if(!result.ok){
-        document.getElementById('char-error').textContent = result.error;
-        return;
-      }
-      // BUG FIX (mobile-test, 2026-07-24): a character's FIRST save always
-      // lands it selected — this used to unconditionally auto-select
-      // "other" characters on any save, but only auto-select "self" when
-      // the caption already literally contained "I"/"me", which missed
-      // the common case of a dream with no explicit first-person word
-      // (e.g. "Standing on a mountain watching the sunset") — so the "Me"
-      // chip rendered unchecked right after someone filled in their own
-      // details for the first time, even though they'd just entered them.
-      // Re-saving an EXISTING character (reopening it to edit) deliberately
-      // does NOT force it back into selectedIds — if the user had
-      // unchecked that chip before editing it again, saving again must not
-      // silently re-check it for them.
-      if(isNewChar && staged.selectedIds.indexOf(result.character.id) === -1){
-        staged.selectedIds.push(result.character.id);
-      }
-      closeCharSheet();
-      renderStagedCharacterChips();
-    });
-    document.getElementById('char-delete-link').addEventListener('click', function(){
-      if(!charEditingId) return;
-      if(!confirm('Delete this character?')) return;
-      localDeleteCharacter(charEditingId);
-      closeCharSheet();
-      renderStagedCharacterChips();
-    });
-  }
-
-  function renderScreenAdvChars(el){
-    el.innerHTML =
-      '<div class="fn-eyebrow">Optional</div>' +
-      '<div class="fn-headline">Add the people in your dream.</div>' +
-      '<div class="fn-body-copy">Define characters once, reuse them anytime.</div>' +
-      '<div class="char-chip-row" id="char-chip-row"></div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-adv-chars-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="fn-adv-chars-skip" style="cursor:pointer;">Skip — keep it simple</span>';
-
-    ensureCharSheetMounted();
-
-    document.getElementById('char-chip-row').addEventListener('click', function(e){
-      var editTarget = e.target.closest('[data-char-edit]');
-      if(editTarget){
-        var c = staged.characters.filter(function(x){ return x.id === editTarget.dataset.charEdit; })[0];
-        if(c) openCharSheet(c.isSelf ? 'self' : 'other', c);
-        return;
-      }
-      var chip = e.target.closest('[data-char-select]');
-      if(!chip) return;
-      var id = chip.dataset.charSelect;
-      var idx = staged.selectedIds.indexOf(id);
-      if(idx === -1) staged.selectedIds.push(id); else staged.selectedIds.splice(idx, 1);
-      renderStagedCharacterChips();
-    });
-
-    renderStagedCharacterChips();
-
-    document.getElementById('fn-adv-chars-continue').addEventListener('click', next);
-    document.getElementById('fn-adv-chars-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
   }
 
   // PARKED (founder decision 2026-07-24, tracker item
@@ -1132,40 +766,6 @@
 
     document.getElementById('fn-adv-scenery-continue').addEventListener('click', next);
     document.getElementById('fn-adv-scenery-skip').addEventListener('click', function(){ goToStep(PREPARING_STEP); });
-  }
-
-  // ===================================================================
-  // Screen 11 — Preparing / transition. Copy deliberately stops short of
-  // claiming generation has started — nothing has been generated yet.
-  // Record-mode-aware (bug fix, tracker item
-  // for-product-bug-founder-high-record-it-f-8ng0nf, founder repro
-  // 2026-07-26): the default copy ("Your dream is coming together...")
-  // is honest for Build/Write visitors, who already handed off real
-  // caption text from the funnel — but in Record-it mode (isRecordMode)
-  // NOTHING has been recorded yet at this point in the flow (recording
-  // happens app-side, after signup, on create.html — see completeFunnel
-  // below), so that copy was flatly false and made it look like
-  // recording had been silently skipped. Record mode gets its own
-  // honest "quick setup, then you'll record" copy instead.
-  // ===================================================================
-  var prepTimer = null;
-  function renderScreen11(el){
-    var headlineText = isRecordMode ? 'Almost there&hellip;' : 'Your dream is coming together&hellip;';
-    var bodyText = isRecordMode ? 'Quick setup, then you’ll record your dream.' : 'We’ll bring it to life the moment you’re set up.';
-    el.innerHTML =
-      '<div class="fn-spacer"></div>' +
-      '<div class="fn-spin"></div>' +
-      '<div class="fn-loading-line" style="color:var(--phase-ink, var(--fn-ink)); font-weight:700;">' + headlineText + '</div>' +
-      '<div class="fn-loading-line">' + bodyText + '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-s11-continue" type="button">Continue</button>';
-    var thisStep = cur;
-    document.getElementById('fn-s11-continue').addEventListener('click', function(){
-      clearTimeout(prepTimer);
-      next();
-    });
-    clearTimeout(prepTimer);
-    prepTimer = setTimeout(function(){ if(cur === thisStep) next(); }, 2200);
   }
 
   // ===================================================================
@@ -2287,18 +1887,21 @@
   // ===================================================================
   // SCREEN_RENDERERS/TAGS/PHASE_BY_STEP are built together, entry-for-entry
   // in lock step, so cur/goToStep/renderProgress/applyPhase all index into
-  // the same set of screens no matter which set actually got built. The
-  // "characters" screen (renderScreenAdvChars) is included only when
-  // captionSuggestsPeople(captionText) finds first-person/people-indicating
-  // language in the dream text — see that function's own comment. This is
-  // a best-effort UX heuristic, not a correctness gate: showing the screen
-  // unnecessarily (a false positive) is completely fine, the only thing
-  // that matters is not asking someone to define characters for a dream
-  // that obviously has none (e.g. "Standing on a mountain watching the
-  // sunset").
+  // the same set of screens.
   //
-  // renderScreenAdvCamera/renderScreenAdvScenery are deliberately PARKED,
-  // not deleted — founder decision 2026-07-24 (tracker item
+  // As of 2026-07-31 (tracker item
+  // for-product-urgent-founder-screenshots-i-g64gjp), this is a fixed
+  // 2-screen tail — signup, then pricing+confirmation. The former
+  // characters screen (renderScreenAdvChars, conditionally shown via
+  // captionSuggestsPeople) and the former "coming together" preparing/
+  // transition screen (renderScreen11) have both been removed outright,
+  // per the founder's explicit "make sure they are gone" ruling and the
+  // same 2026-07-29 "too many options" call already made about this class
+  // of mid-funnel step. The funnel now goes straight from the marketing
+  // handoff into signup.
+  //
+  // renderScreenAdvCamera/renderScreenAdvScenery are still deliberately
+  // PARKED, not deleted — founder decision 2026-07-24 (tracker item
   // for-product-two-post-handoff-app-pages-p-atr0r7): every real visitor
   // reaching this file's funnel tail arrives via ?resume=1 (see the Entry
   // guard above — a bare visit redirects away before ever reaching these
@@ -2310,46 +1913,33 @@
   // markup, and DreamStore.setDraft(cameraView/sceneryTime/sceneryPlace)
   // wiring are left fully intact below (see the "PARKED" comments on
   // each) for when they get folded into the wizard proper later — just
-  // omitted from the arrays that actually drive navigation.
+  // omitted from the arrays that actually drive navigation. (Their own
+  // Skip handlers still reference a PREPARING_STEP identifier that no
+  // longer exists as of this change — harmless, since those handlers are
+  // never wired up while the functions stay unreferenced here.)
   //
   // The former screen 15 (standalone confirmation) is gone — folded into
   // renderScreen14 (tracker item
   // for-product-funnel-handoff-screens-theme-5ttymn, see that function's
-  // own comment) — so every array below is one entry shorter than it used
-  // to be. The 'pricing' tag is renamed 'pricing_confirmation' since that
-  // screen's content is no longer just the token-intro pitch. PHASE_BY_STEP
-  // now points screen 13 (signup) and the merged screen 14 straight at
-  // 'night' instead of the old 'dusk'/'dusk-deep' entries: those two were
-  // a real, founder-reported "theme whiplash" bug — solid-white/near-white
-  // cards over a light lavender gradient, sandwiched between the dark
-  // marketing funnel before and this app's own dark theme after (compare
+  // own comment). The 'pricing' tag is renamed 'pricing_confirmation'
+  // since that screen's content is no longer just the token-intro pitch.
+  // PHASE_BY_STEP points both remaining screens straight at 'night'
+  // instead of the old 'dusk'/'dusk-deep' entries: those two were a real,
+  // founder-reported "theme whiplash" bug — solid-white/near-white cards
+  // over a light lavender gradient, sandwiched between the dark marketing
+  // funnel before and this app's own dark theme after (compare
   // home.html's body gradient, #171233→#100d20→#0d0a1e, near-identical to
-  // 'night' below). Reassigning to the existing, already-correct 'night'
-  // phase — rather than recoloring the 'dusk'/'dusk-deep' PHASES entries
-  // in place — was the safer fix: confirmed via grep that those two keys
-  // were referenced nowhere else in this file, so repointing here cannot
-  // affect any other caller, and it reuses colors already proven correct
-  // instead of inventing new ones. The now-fully-unused 'dusk'/'dusk-deep'
-  // entries have been removed from the PHASES map itself, below.
-  var showCharsScreen = captionSuggestsPeople(captionText);
-  var SCREEN_RENDERERS = showCharsScreen
-    ? [renderScreenAdvChars, renderScreen11, renderScreen13, renderScreen14]
-    : [renderScreen11, renderScreen13, renderScreen14];
-  var TAGS = showCharsScreen
-    ? ['advanced_characters', 'preparing', 'email_capture', 'pricing_confirmation']
-    : ['preparing', 'email_capture', 'pricing_confirmation'];
-  var PHASE_BY_STEP = showCharsScreen
-    ? ['dawn', 'transition', 'night', 'night']
-    : ['transition', 'night', 'night'];
-  // Skip handler on the (now sole, when shown) Advanced screen jumps
-  // straight to the "preparing" transition screen (renderScreen11) —
-  // looked up dynamically here instead of a hardcoded index, since that
-  // index shifts by one depending on whether the characters screen above
-  // is present.
-  var PREPARING_STEP = SCREEN_RENDERERS.indexOf(renderScreen11);
-  // Same dynamic-lookup reasoning as PREPARING_STEP above — screen 13's
-  // index shifts by one depending on whether the characters screen is
-  // present, so the Facebook-return path must never hardcode it.
+  // 'night' below). 'dawn'/'transition' (the former characters/preparing
+  // phases) and 'dusk'/'dusk-deep' have all since been removed from the
+  // PHASES map itself, above, as fully unused.
+  var SCREEN_RENDERERS = [renderScreen13, renderScreen14];
+  var TAGS = ['email_capture', 'pricing_confirmation'];
+  var PHASE_BY_STEP = ['night', 'night'];
+  // Same dynamic-lookup reasoning as before this fix — screen 13's index
+  // could shift depending on which screens preceded it, so the
+  // Facebook-return path must never hardcode it. Currently always 0, but
+  // looked up rather than hardcoded so this keeps working unchanged if a
+  // screen is ever added back in front of it.
   var SIGNUP_STEP = SCREEN_RENDERERS.indexOf(renderScreen13);
 
   function renderProgress(){
@@ -2475,8 +2065,8 @@
       // A failed round trip (?fb_error=) or the needs-email half-step
       // (?fb_needs_email=). No token to consume, so nothing to wait on —
       // but land straight back on screen 13, where the visitor actually
-      // was when they left, rather than replaying the "your dream is
-      // coming together" transition screen at them again.
+      // was when they left, rather than replaying any earlier screen at
+      // them again.
       cur = SIGNUP_STEP;
       render();
       return;

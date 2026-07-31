@@ -29,11 +29,19 @@
 // server (no real Netlify Functions runtime), page.route() intercepts for
 // the handful of function endpoints each test actually needs,
 // blockThirdParty() for this sandbox's flaky outbound network. Reaches
-// screen 13 the same fast way test/record-mode-behavioral.test.js does:
-// ?resume=1 with a caption containing no first-person/people-indicating
-// language, which skips the (unrelated) characters screen and the chip
-// steps entirely, landing straight on renderScreen11 ("preparing") ->
-// #fn-s11-continue -> screen 13.
+// screen 13 directly: as of 2026-07-31 (tracker item
+// for-product-urgent-founder-screenshots-i-g64gjp), start.html's former
+// characters screen and "preparing" transition screen (renderScreen11)
+// were both removed outright, so a fresh ?resume=1 load lands straight on
+// screen 13 with nothing left to click through first. This also means
+// screen 13 is now the FIRST screen, so the topbar Back button has no
+// in-app screen left to step back to (prev() exits to the real marketing
+// site instead) -- the tests below that used to click Back mid-signup to
+// abandon an in-flight attempt and reach "a second, fresh screen 13" now
+// use screen 13's own "Change email" link instead (#fn-s13-change-email),
+// which carries the identical signupAttemptToken-bump/
+// invalidatePendingSignup guarantee without navigating anywhere -- see
+// each test's own comment.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -92,15 +100,13 @@ async function safeGoto(page, url) {
   }
 }
 
-/** Same base resume params test/record-mode-behavioral.test.js uses -- a caption with no first-person/people-indicating language skips the characters screen, landing straight on renderScreen11 ("preparing"). */
+/** Same base resume params test/record-mode-behavioral.test.js uses. */
 function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
 async function reachScreen13(page, caption) {
   await safeGoto(page, resumeUrl(caption));
-  await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
-  await page.click('#fn-s11-continue');
   await page.waitForSelector('#fn-email', { timeout: 5000 });
 }
 
@@ -149,7 +155,7 @@ test('start.html: the topbar Back button is disabled for the duration of an in-f
   }
 });
 
-test('start.html: Signup Continue -> immediate Back before attemptSignup resolves (forced past the new Back-disable, isolating the deeper token-guard fix) -> edit + resubmit -> reach a second, fresh screen 13 -- the first, abandoned attemptSignup callback must not force-navigate or adopt the wrong job once it settles late', async function (t) {
+test('start.html: Signup Continue -> immediate Change-email before attemptSignup resolves -> edit + resubmit -- the first, abandoned attemptSignup callback must not force-navigate or adopt the wrong job once it settles late', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -168,8 +174,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
       var body = JSON.parse(route.request().postData());
       if (body.email === EMAIL_A) {
         // The abandoned signup attempt -- held back well past the point
-        // where the user has since moved on to a second, fresh screen 13
-        // for a completely different submission.
+        // where the user has since moved on to a second, fresh submission.
         await staleA.wait();
       }
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
@@ -187,23 +192,33 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
-    // Confirm we're genuinely mid-flight (Back disabled) before forcing
-    // past it -- this is the literal repro's "immediate Back" moment,
-    // just routed through a deliberate bypass of the new UI-level guard
-    // so the assertions below can attribute the outcome to the token
-    // guard itself, not merely to Back being unclickable.
+    // Confirm we're genuinely mid-flight (Back disabled) before abandoning
+    // this attempt -- this is the literal repro's "immediate navigate away"
+    // moment.
     await page.waitForFunction(function () {
       var b = document.getElementById('fnBack');
       return !!(b && b.disabled);
     }, null, { timeout: 5000 });
-    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
-    await page.click('#fnBack');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
 
-    // Attempt B -- a genuinely different submission -- reaches a second,
-    // fresh screen 13 while A's register-account call is still held back
-    // in flight.
-    await page.click('#fn-s11-continue');
+    // Abandon attempt A via screen 13's own "Change email" link -- as of
+    // 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
+    // g64gjp), screen 13 is the FIRST screen in the funnel tail, so the
+    // topbar Back button has nothing left to step back to and would exit
+    // the app entirely (a real top-level navigation, which destroys this
+    // page's JS heap along with A's in-flight promise -- impossible to
+    // keep testing against once that happens). Change-email is a real,
+    // separate escape hatch with the identical signupAttemptToken-bump/
+    // invalidatePendingSignup guarantee (see its own click handler comment,
+    // same tracker item start-html-variant-b-s-change-email-link-1kc3vs
+    // that added it) -- and, unlike Back, it's never disabled during an
+    // in-flight attempt, so no force-past-disable step is needed here.
+    await page.click('#fn-s13-change-email');
+
+    // Attempt B -- a genuinely different submission, reached via screen
+    // 13's own "Change email" escape hatch (the only in-page way left to
+    // start a fresh submission without a real page reload -- a reload
+    // would destroy A's in-flight promise along with it, which is exactly
+    // what this test needs to keep alive to prove the guard).
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
     var screenBefore = await page.evaluate(function () {
@@ -211,7 +226,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
       if (document.getElementById('fn-s14-continue')) return 'screen14';
       return 'other';
     });
-    assert.equal(screenBefore, 'screen13', 'must be sitting on the second, fresh screen 13 before A\'s stale response lands');
+    assert.equal(screenBefore, 'screen13', 'must be sitting back on screen 13\'s email step before A\'s stale response lands');
 
     // Sit idle right here -- deliberately not resubmitting -- while A's
     // held-back register-account response lands (900ms artificial delay
@@ -233,7 +248,7 @@ test('start.html: Signup Continue -> immediate Back before attemptSignup resolve
       if (document.getElementById('fn-s14-continue')) return 'screen14';
       return 'other';
     });
-    assert.equal(screenAfter, 'screen13', 'the abandoned first Signup attempt\'s late settlement must never force-navigate the user away from the second, fresh screen 13 they are actually on');
+    assert.equal(screenAfter, 'screen13', 'the abandoned first Signup attempt\'s late settlement must never force-navigate the user away from screen 13, where they are mid-way through attempt B');
     assert.equal(claimCalls.length, 0, 'the abandoned attempt must not have claimed any pending job');
 
     // Finish signup for real with B's own content -- must still work
@@ -307,19 +322,19 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
       return !!(b && b.disabled);
     }, null, { timeout: 5000 });
 
-    // Force past Back's disable -- same isolation technique as the outer-
-    // check test above -- to invalidate A's token WHILE its inner
-    // pendingPromise.then(...) is still pending, not before the outer
-    // check ran.
-    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
-    await page.click('#fnBack');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
+    // Abandon attempt A via screen 13's own "Change email" link -- same
+    // reasoning as the outer-check test above: screen 13 is the first
+    // screen now, so the topbar Back button would exit the app entirely
+    // (destroying this page's JS heap, and A's still-unsettled inner
+    // promise, along with it). Change-email invalidates via the identical
+    // signupAttemptToken bump WHILE the inner pendingPromise.then(...) is
+    // still pending, without navigating anywhere.
+    await page.click('#fn-s13-change-email');
 
-    // Attempt B -- reaches a second, fresh screen 13 but is deliberately
-    // NOT submitted -- this test only needs to prove the inner
+    // Attempt B -- reached via screen 13's own "Change email" escape hatch,
+    // deliberately NOT submitted -- this test only needs to prove the inner
     // continuation discards A's stale settlement, not exercise B's own
     // full flow (the outer-check test above already covers that).
-    await page.click('#fn-s11-continue');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
     var screenBefore = await page.evaluate(function () {
@@ -327,7 +342,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
       if (document.getElementById('fn-s14-continue')) return 'screen14';
       return 'other';
     });
-    assert.equal(screenBefore, 'screen13', 'must be sitting on the second, fresh screen 13 before A\'s stale inner settlement lands');
+    assert.equal(screenBefore, 'screen13', 'must be sitting back on screen 13\'s email step before A\'s stale inner settlement lands');
 
     // Sit idle here while A's held-back start-pending-generation response
     // lands and its pendingPromise.then(...) continuation runs.
@@ -345,7 +360,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
       if (document.getElementById('fn-s14-continue')) return 'screen14';
       return 'other';
     });
-    assert.equal(screenAfter, 'screen13', 'A\'s stale inner continuation must never force-navigate the user away from the second, fresh screen 13 they are actually on');
+    assert.equal(screenAfter, 'screen13', 'A\'s stale inner continuation must never force-navigate the user away from screen 13, where they are mid-way through attempt B');
     assert.equal(claimCalls.length, 0, 'A\'s stale inner continuation must not have claimed any pending job (it must discard itself via the inner re-check, not just rely on the outer one)');
   } finally {
     await page.close();
@@ -463,7 +478,7 @@ test('start.html: check-email.js failing outright (rate-limited/5xx) fails OPEN 
 // the deeper claim: the store itself never silently signs the browser in.
 // ===========================================================================
 
-test('start.html: Signup Continue -> immediate Back (forced past the Back-disable, same isolation technique as the token-guard test above) -> abandon the funnel entirely (never resubmit) -- once the delayed register-account response finally lands, DreamStore.getCurrentUser() must show NOT signed in', async function (t) {
+test('start.html: Signup Continue -> immediate Change-email (never resubmit) -- once the delayed register-account response finally lands, DreamStore.getCurrentUser() must show NOT signed in', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -476,8 +491,8 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
     });
     await page.route('**/.netlify/functions/register-account', async function (route) {
       // Held back well past the point the visitor has abandoned the
-      // funnel -- the exact repro: Continue is clicked, then Back is
-      // clicked before this ever resolves, and the visitor never comes
+      // attempt -- the exact repro: Continue is clicked, then Change email
+      // is clicked before this ever resolves, and the visitor never comes
       // back to resubmit.
       await abandoned.wait();
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
@@ -492,19 +507,26 @@ test('start.html: Signup Continue -> immediate Back (forced past the Back-disabl
     await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-s13-continue');
 
-    // Confirm genuinely mid-flight (Back disabled) before forcing past it
-    // -- same isolation technique the existing race test above uses, so
+    // Confirm genuinely mid-flight (Back disabled) before abandoning it --
     // this test attributes the outcome to the token/store guards
-    // themselves, not merely to Back being unclickable.
+    // themselves, not merely to some control being unclickable.
     await page.waitForFunction(function () {
       var b = document.getElementById('fnBack');
       return !!(b && b.disabled);
     }, null, { timeout: 5000 });
-    await page.evaluate(function () { document.getElementById('fnBack').disabled = false; });
-    await page.click('#fnBack');
-    await page.waitForSelector('#fn-s11-continue', { timeout: 5000 });
 
-    // Abandon the funnel entirely from here -- deliberately never
+    // Abandon via screen 13's own "Change email" link -- as of 2026-07-31
+    // (tracker item for-product-urgent-founder-screenshots-i-g64gjp),
+    // screen 13 is the FIRST screen in the funnel tail, so the topbar Back
+    // button would exit the app entirely (a real top-level navigation,
+    // destroying this page's JS heap along with the in-flight promise this
+    // test needs to keep alive). Change-email carries the identical
+    // signupAttemptToken-bump/invalidatePendingSignup guarantee (see its
+    // own click handler comment) without navigating anywhere, and unlike
+    // Back it's never disabled during an in-flight attempt.
+    await page.click('#fn-s13-change-email');
+
+    // Abandon the attempt entirely from here -- deliberately never
     // resubmit, never start a second signup() call. Just sit idle while
     // the delayed register-account response (900ms above) lands.
     // ONLY NOW release the held-back response, guaranteeing it lands
