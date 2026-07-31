@@ -385,7 +385,13 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
     });
     await page.goto(baseUrl + '/result.html?id=dream-regen-audio', { waitUntil: 'domcontentloaded' });
 
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test actually exercises (#edit-generate-again).
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
+    await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#edit-generate-again');
     await page.waitForURL('**/result.html?id=*', { timeout: 8000, waitUntil: 'domcontentloaded' });
 

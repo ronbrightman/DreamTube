@@ -228,6 +228,35 @@ function falErrorMessage(data) {
 var FAL_MODEL = process.env.FAL_MODEL_TEXT_TO_VIDEO || 'fal-ai/veo3.1/lite';
 var FAL_API_BASE = 'https://queue.fal.run';
 
+// PixVerse V6 model-rotation routing (docs/EDIT_MECHANISM_SPEC.md §2/§3.4,
+// tracker item for-product-new-edit-mechanism-founder-i-qmsdgj) — the
+// founder's own words: "Model cost for edits approved," cost-approved and
+// live from day one, no flag gate. Second plain text-to-video model option
+// alongside FAL_MODEL above, used only when the CALLER (result.html's new
+// edit sheet — see js/store.js's pickEditModel) explicitly asks for it via
+// `requestedModel` on the request body. This is a rotation PARTNER, not a
+// replacement — FAL_MODEL stays the default for every fresh/non-edit
+// generation and for any edit whose rotation picks the other slot back.
+// Env-configurable (FAL_MODEL_PIXVERSE_V6), matching this file's existing
+// "a model swap is a pure env-var flip + redeploy" convention for
+// FAL_MODEL/FAL_MODEL_REFERENCE_TO_VIDEO/FAL_MODEL_IMAGE_TO_VIDEO above.
+//
+// Deliberately scoped to the PLAIN text-to-video branch only (see
+// `rotationApplies` in the handler below) — reference-to-video (self-photo)
+// and image-to-video ("turn this into a video") are explicitly OUT of scope
+// for rotation this wave (spec §2/§3.6): an edit on either of those simply
+// reuses whichever model that path already uses, unchanged.
+var FAL_MODEL_PIXVERSE_V6 = process.env.FAL_MODEL_PIXVERSE_V6 || 'fal-ai/pixverse/v6/text-to-video';
+
+// The two rotation-eligible model keys stamped onto a dream's `modelUsed`
+// field (js/store.js's finalizeDream) — fixed string literals per the spec,
+// not derived from whatever FAL_MODEL/FAL_MODEL_PIXVERSE_V6 happen to
+// resolve to today, so a later env-var rollback (e.g. FAL_MODEL_TEXT_TO_VIDEO
+// flipped back to Fast) can never retroactively mislabel which rotation slot
+// a past generation actually used.
+var MODEL_KEY_VEO_LITE = 'veo3.1-lite';
+var MODEL_KEY_PIXVERSE_V6 = 'pixverse-v6';
+
 // Disables fal's default media-expiration window on this generation's
 // resulting file(s) — tracker item for-product-bug-build-re-host-image-
 // drea-0hpbm0: fal's own docs (docs.fal.ai/model-apis/media-expiration)
@@ -310,6 +339,50 @@ async function callFal(prompt, falKey, duration, generateAudio, webhookUrl) {
   }
 
   return { ok: true, operationName: 'fal:' + FAL_MODEL + ':' + data.request_id };
+}
+
+/**
+ * The PixVerse V6 rotation partner to callFal above — same plain
+ * text-to-video request shape (this codebase's established fal.ai
+ * video-model call convention, reused here rather than inventing a new
+ * request schema), submitted to FAL_MODEL_PIXVERSE_V6 instead. Only ever
+ * called when the edit-rotation logic in the handler below picked this
+ * slot (see MODEL_KEY_PIXVERSE_V6/rotationApplies) — never for a fresh,
+ * non-edit generation, which always defaults to callFal/FAL_MODEL.
+ *
+ * NOTE for a human reviewer: this sandbox has no FAL_KEY, so the exact
+ * request/response shape below could not be independently smoke-tested
+ * against fal's live PixVerse V6 endpoint before this shipped — it mirrors
+ * callFal's own confirmed-working shape (prompt/aspect_ratio/duration/
+ * resolution/generate_audio) rather than a shape verified against
+ * PixVerse's own docs param-by-param. Cheap to verify for real once
+ * deployed (a single GENERATION_TEST_DURATION=4s real call, per
+ * AGENT_POLICY.md's cheap-generation-testing guidance) — worth doing
+ * before this rotation actually serves real edit traffic.
+ */
+async function callFalPixverse(prompt, falKey, duration, generateAudio, webhookUrl) {
+  var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_PIXVERSE_V6, webhookUrl), {
+    method: 'POST',
+    headers: Object.assign({
+      'Content-Type': 'application/json',
+      'Authorization': 'Key ' + falKey
+    }, FAL_NO_EXPIRY_HEADER),
+    body: JSON.stringify({
+      prompt: prompt,
+      aspect_ratio: '9:16',
+      duration: duration || DEFAULT_DURATION,
+      resolution: '720p',
+      generate_audio: generateAudio !== false
+    })
+  });
+
+  var data = await res.json();
+
+  if (!res.ok) {
+    return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
+  }
+
+  return { ok: true, operationName: 'fal:' + FAL_MODEL_PIXVERSE_V6 + ':' + data.request_id };
 }
 
 var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
@@ -480,6 +553,9 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     from this file's old subscription-paywall gate (see the E112 doc
 //                                     block below) and reusing either would confuse anyone grepping old
 //                                     support tickets for what those codes used to mean.)
+//   E115 fal rejected the PixVerse V6 text-to-video submission (the edit-rotation partner model —
+//                                     see callFalPixverse above and docs/EDIT_MECHANISM_SPEC.md §2/§3.4).
+//                                     Same causes as E105, just the other rotation slot.
 //   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
 //                                     exceeded for today. Cost/abuse safety net, unrelated to E112's
 //                                     token balance below — see lib/rate-limit.js.
@@ -717,7 +793,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken, clientAudioOn, musicStyle;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken, clientAudioOn, musicStyle, requestedModel;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -746,6 +822,15 @@ exports.handler = async function (event) {
     // otherwise.
     clientAudioOn = payload.audioOn === true;
     musicStyle = typeof payload.musicStyle === 'string' ? payload.musicStyle.trim() : null;
+    // Model-rotation request (docs/EDIT_MECHANISM_SPEC.md §2/§3.4) — only
+    // ever sent by result.html's edit sheet (via js/store.js's
+    // pickEditModel), never by a fresh/non-edit generation. Any value other
+    // than the literal 'pixverse-v6' (a missing field, a stale client, a
+    // typo) silently falls back to the untouched default rotation slot
+    // (MODEL_KEY_VEO_LITE / FAL_MODEL) below — same permissive-fallback
+    // spirit as musicStyle above — so every caller that predates this
+    // feature keeps behaving exactly as it did before.
+    requestedModel = typeof payload.requestedModel === 'string' ? payload.requestedModel.trim() : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E103: invalid_json' }) };
   }
@@ -753,6 +838,25 @@ exports.handler = async function (event) {
   if (!caption || !style) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E104: caption_and_style_required' }) };
   }
+
+  // Model-rotation resolution (docs/EDIT_MECHANISM_SPEC.md §2/§3.4) —
+  // computed up front (before the mock-mode early-return below) so both the
+  // mock and real paths report an identical `modelUsed` for the identical
+  // request. selfPhoto is computed here (not re-derived later) so this and
+  // the real fal-call branch further down can never disagree about which
+  // path a given request actually takes.
+  //
+  // rotationApplies is false for the self-photo reference-to-video path and
+  // the "turn this into a video" image-to-video path — both explicitly OUT
+  // of scope for rotation this wave (spec §3.6): those two always use their
+  // own existing model, `requestedModel` is silently ignored for them, and
+  // the response's modelUsed is null (the dream's existing modelUsed field,
+  // if any, is left untouched by js/store.js's finalizeDream in that case —
+  // see that function's own doc comment).
+  var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
+  var rotationApplies = !sourceImageUrl && !selfPhoto;
+  var useModelKey = (rotationApplies && requestedModel === MODEL_KEY_PIXVERSE_V6) ? MODEL_KEY_PIXVERSE_V6 : MODEL_KEY_VEO_LITE;
+  var modelUsedForResponse = rotationApplies ? useModelKey : null;
 
   // --- Guardrails below: the Turnstile bot-check (E113, conditional — see
   // its doc block above), rate limiting (E109), the token gate (E112), and
@@ -860,7 +964,7 @@ exports.handler = async function (event) {
     await entitlements.spendTokens(event, email, 100);
     var mockOpName = mockOperationName();
     await recordJobOwnerBestEffort(event, mockOpName, email);
-    return { statusCode: 200, body: JSON.stringify({ operationName: mockOpName }) };
+    return { statusCode: 200, body: JSON.stringify({ operationName: mockOpName, modelUsed: modelUsedForResponse }) };
   }
 
   // Long captions get cut off mid-narrative otherwise: the model only has
@@ -906,7 +1010,9 @@ exports.handler = async function (event) {
   var promptMusicStyle = generateAudio ? musicStyle : null;
 
   var prompt = buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace, promptMusicStyle);
-  var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
+  // selfPhoto/rotationApplies/useModelKey are already resolved above (before
+  // the mock-mode branch) — reused here rather than re-derived, so the two
+  // can never disagree about which path this request takes.
   var duration = resolveDuration();
 
   try {
@@ -917,22 +1023,25 @@ exports.handler = async function (event) {
     // docs/IMAGE_GENERATION_SPEC.md §6's known-limitation writeup): a
     // "turn this into a video" call always animates the already-generated
     // image, it never also blends in a separate self-photo reference in
-    // the same call.
+    // the same call. Rotation (useModelKey) only ever affects the third,
+    // plain text-to-video branch — see rotationApplies above.
     var result = sourceImageUrl
       ? await callFalImageToVideo(prompt, sourceImageUrl, falKey, duration, generateAudio)
       : selfPhoto
         ? await callFalReferenceToVideo(prompt, selfPhoto.photoDataUrl, falKey, duration, generateAudio)
-        : await callFal(prompt, falKey, duration, generateAudio);
+        : (useModelKey === MODEL_KEY_PIXVERSE_V6
+            ? await callFalPixverse(prompt, falKey, duration, generateAudio)
+            : await callFal(prompt, falKey, duration, generateAudio));
     if (!result.ok) {
       // No real spend happened — a rejected submission must NOT spend
       // tokens, so spendTokens is deliberately not called on this path
       // (see the E112 doc block above).
-      var rejectCode = sourceImageUrl ? 'E114' : (selfPhoto ? 'E106' : 'E105');
+      var rejectCode = sourceImageUrl ? 'E114' : (selfPhoto ? 'E106' : (useModelKey === MODEL_KEY_PIXVERSE_V6 ? 'E115' : 'E105'));
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, 100);
     await recordJobOwnerBestEffort(event, result.operationName, email);
-    return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName }) };
+    return { statusCode: 200, body: JSON.stringify({ operationName: result.operationName, modelUsed: modelUsedForResponse }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E107: fal_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };
   }
@@ -949,11 +1058,15 @@ exports.handler = async function (event) {
 // exporting them has no behavioral cost.
 exports.buildPrompt = buildPrompt;
 exports.callFal = callFal;
+exports.callFalPixverse = callFalPixverse;
 exports.callFalReferenceToVideo = callFalReferenceToVideo;
 exports.callFalImageToVideo = callFalImageToVideo;
 exports.resolveDuration = resolveDuration;
 exports.falErrorMessage = falErrorMessage;
 exports.resolveGenerationProfile = resolveGenerationProfile;
+exports.MODEL_KEY_VEO_LITE = MODEL_KEY_VEO_LITE;
+exports.MODEL_KEY_PIXVERSE_V6 = MODEL_KEY_PIXVERSE_V6;
+exports.FAL_MODEL_PIXVERSE_V6 = FAL_MODEL_PIXVERSE_V6;
 exports.FAL_MODEL = FAL_MODEL;
 exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;
 exports.FAL_MODEL_IMAGE_TO_VIDEO = FAL_MODEL_IMAGE_TO_VIDEO;

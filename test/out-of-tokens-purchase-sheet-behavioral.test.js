@@ -268,7 +268,13 @@ test('result.html "Generate Again": opens the purchase sheet with correct per-me
     await page.goto(baseUrl + '/result.html?id=dream-regen-image', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(200);
 
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's caption/style controls live in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
+    await page.waitForSelector('#sheet-edit-overlay.open');
     await page.fill('#edit-text', 'An edited caption about the same dream');
     await page.click('#sheet-style-grid .style-card[data-style="Cinematic"]');
     await page.click('#edit-generate-again');

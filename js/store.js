@@ -308,7 +308,17 @@
       // fetch worth attempting (see js/wizard-chips.js's
       // buildDeterministicStory/netlify/functions/rewrite-dream-story.js's
       // own header comments) rather than nothing to do.
-      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null },
+      // isEditDelta/editDeltaLength (docs/EDIT_MECHANISM_SPEC.md §3.4,
+      // tracker item for-product-new-edit-mechanism-founder-i-qmsdgj): set
+      // by result.html's new edit sheet's persistEditDeltaDraft, right
+      // alongside sourceDreamId, so processing.html's runGeneration knows to
+      // call DreamStore.startDreamEdit (model-rotation + editHistory)
+      // instead of the plain regenerateDream every other sourceDreamId
+      // draft (the old full mini-wizard's "Generate Again", "Turn this into
+      // a video") already uses. editDeltaLength carries the user's
+      // ORIGINAL delta text's character length only — never the raw text
+      // itself, matching edit_submitted's own instrumentation rule.
+      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -1317,6 +1327,92 @@
     });
   }
 
+  // ===== Edit-mechanism model rotation (docs/EDIT_MECHANISM_SPEC.md §2/§3.4,
+  // tracker item for-product-new-edit-mechanism-founder-i-qmsdgj) =====
+  // Same fixed string literals generate-video.js's MODEL_KEY_VEO_LITE/
+  // MODEL_KEY_PIXVERSE_V6 use — kept as plain, independent duplicates here
+  // (this is a static multi-page site with no shared JS bundle between
+  // netlify/functions and js/store.js) rather than a shared constants file,
+  // matching this codebase's established per-file-owns-its-own-copy
+  // convention for exactly this kind of small, stable literal (see e.g.
+  // create.html's own copy of processing.html's detectInAppHost() trio).
+  var MODEL_KEY_VEO_LITE = 'veo3.1-lite';
+  var MODEL_KEY_PIXVERSE_V6 = 'pixverse-v6';
+
+  /**
+   * Picks which rotation-eligible model an EDIT of `dream` should route to
+   * — docs/EDIT_MECHANISM_SPEC.md §2's rotation rule, verbatim:
+   *   - Anime-style override: style === 'Anime' always routes to
+   *     pixverse-v6, regardless of the dream's current modelUsed (flagged
+   *     in the spec as an untested hypothesis worth watching via
+   *     instrumentation, not a verified fact — built as specified anyway,
+   *     per the founder's explicit approval).
+   *   - Otherwise, alternate: veo3.1-lite -> pixverse-v6, pixverse-v6 ->
+   *     veo3.1-lite, so a dream edited twice ping-pongs and never repeats
+   *     the model it just tried.
+   *   - A dream with no modelUsed yet (null/undefined — a legacy dream
+   *     from before this field existed, or a dream whose only prior
+   *     generation was one of the out-of-rotation-scope self-photo/
+   *     turn-into-video paths) alternates away from veo3.1-lite, the
+   *     implicit historical default every dream used before PixVerse
+   *     existed at all — same reasoning the spec itself gives for this
+   *     exact case.
+   * Pure function — takes no action itself, callers (startDreamEdit below)
+   * decide what to do with the result. Never called for a FRESH/non-edit
+   * generation — those always default to generate-video.js's own
+   * veo3.1-lite path (no requestedModel sent at all).
+   */
+  function pickEditModel(dream) {
+    if (!dream) return MODEL_KEY_PIXVERSE_V6;
+    if (dream.style === 'Anime') return MODEL_KEY_PIXVERSE_V6;
+    if (dream.modelUsed === MODEL_KEY_PIXVERSE_V6) return MODEL_KEY_VEO_LITE;
+    return MODEL_KEY_PIXVERSE_V6;
+  }
+
+  /**
+   * Calls realign-dream-prompt.js to merge a user's plain-text edit delta
+   * into a dream's existing promptText/storyText (docs/EDIT_MECHANISM_SPEC.md
+   * §3.4) — result.html's new edit sheet's step between "submit a delta" and
+   * Direction B's confirm-before-generate screen.
+   *
+   * NEVER rejects: a network failure, a non-200, or a malformed response
+   * (that function's own E7xx errors, or fetch throwing outright) all fall
+   * back to a naive concatenation merge — spec §3.3's "Realignment LLM
+   * failure" edge case: "Fall back to naive concatenation merge... rather
+   * than blocking the user... log a silent-skip telemetry event. No token
+   * charged yet at this point." — so the caller can always advance to the
+   * confirm screen once this resolves, with no separate error branch to
+   * build. Resolves `{ promptText, storyText, realigned }` — realigned:false
+   * means the fallback path was used.
+   *
+   * No raw delta text is ever included in the fallback-telemetry event —
+   * same "never the raw text, only what's needed" rule as edit_submitted's
+   * own deltaLength-only property (docs/EVENT_TAXONOMY.md).
+   */
+  function realignDreamPrompt(promptText, storyText, deltaText) {
+    return fetch('/.netlify/functions/realign-dream-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ promptText: promptText, storyText: storyText, deltaText: deltaText })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok || !data || typeof data.promptText !== 'string' || typeof data.storyText !== 'string') {
+          throw new Error((data && data.error) || 'realign_failed');
+        }
+        return { promptText: data.promptText, storyText: data.storyText, realigned: true };
+      });
+    }).catch(function (err) {
+      trackAnalytics('edit_realign_fallback', {
+        reason: (err && err.message) ? String(err.message).slice(0, 60) : 'unknown'
+      });
+      return {
+        promptText: promptText + '. ' + deltaText,
+        storyText: storyText + ' ' + deltaText,
+        realigned: false
+      };
+    });
+  }
+
   /**
    * mediaUrl is the finished videoUrl OR imageUrl, whichever mediaType
    * actually produced (see pollUntilDone above) — mediaType (default
@@ -1370,10 +1466,36 @@
    * distinct `storyText` at all (forward-only migration, per this
    * tracker item's own explicit instruction) — every reader that falls
    * back to `dream.caption` already handles that case for free.
+   *
+   * extra (optional 8th arg, docs/EDIT_MECHANISM_SPEC.md §3.4 — tracker
+   * item for-product-new-edit-mechanism-founder-i-qmsdgj) — `{ modelUsed,
+   * editHistoryEntry }`, both optional:
+   *   - modelUsed: "veo3.1-lite" | "pixverse-v6" | null — whichever
+   *     rotation-eligible model generate-video.js actually used (see that
+   *     file's own `modelUsed` response field), or null for a mediaType
+   *     other than 'video', or for the self-photo reference-to-video /
+   *     "turn this into a video" image-to-video paths, which are
+   *     explicitly out of rotation scope this wave (spec §3.6) — those
+   *     never change a dream's existing modelUsed, so on a REGENERATE
+   *     (sourceDreamId branch) a null modelUsed here means "keep whatever
+   *     this dream already had," never "erase it." A brand-new dream
+   *     (no sourceDreamId) simply gets whatever came back, null included
+   *     — there's no prior value to preserve.
+   *   - editHistoryEntry: `{ deltaLength, timestamp }` — only ever present
+   *     when this completion came from the NEW edit-delta mechanism
+   *     (result.html's "What would you like to change?" sheet, via
+   *     DreamStore.startDreamEdit below) — appended (with modelUsed
+   *     folded in) onto the dream's own lightweight `editHistory` array.
+   *     No raw delta text is ever stored here or anywhere server-side,
+   *     per the spec's explicit "no raw delta text stored beyond what's
+   *     needed to power the LLM call in-flight" — only its length.
+   *     Never applies to a brand-new dream (no sourceDreamId) — there is
+   *     no dream to have an edit history yet.
    */
-  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName, storyText) {
+  function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName, storyText, extra) {
     mediaType = mediaType === 'image' ? 'image' : 'video';
     var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
+    var extraModelUsed = (extra && typeof extra.modelUsed !== 'undefined') ? extra.modelUsed : null;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -1405,15 +1527,30 @@
       // the same way) since ensureInterpretationsMigrated's lazy migration
       // reads them if a dream somehow still has them set without a
       // migrated `interpretations` map yet.
+      // modelUsed: preserve the dream's existing value when this completion
+      // didn't come back with one of its own (the reference-to-video/
+      // image-to-video paths, or mediaType:'image') — see this function's
+      // own doc comment above for why null here means "unchanged," not
+      // "erase it."
       var patch = {
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
         style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null,
         interpretations: null, sourceOperationName: operationName || null,
+        modelUsed: extraModelUsed || dream.modelUsed || null,
         // updatedAt (tracker item for-product-build-p0-server-side-dream-p-
         // zl3rb2): stamped on every mutation so reconcilePrivateDreamsFromServer
         // can tell which of two devices' copies of this dream is newer.
         updatedAt: Date.now()
       };
+      if (extra && extra.editHistoryEntry) {
+        var existingHistory = Array.isArray(dream.editHistory) ? dream.editHistory.slice() : [];
+        existingHistory.push({
+          deltaLength: extra.editHistoryEntry.deltaLength,
+          timestamp: extra.editHistoryEntry.timestamp || Date.now(),
+          modelUsed: patch.modelUsed
+        });
+        patch.editHistory = existingHistory;
+      }
       if (mediaType === 'image') patch.imageUrl = mediaUrl; else patch.videoUrl = mediaUrl;
       Object.assign(dream, patch);
     } else {
@@ -1426,6 +1563,16 @@
         videoUrl: mediaType === 'video' ? mediaUrl : null,
         imageUrl: mediaType === 'image' ? mediaUrl : null,
         sourceOperationName: operationName || null,
+        // modelUsed (new — docs/EDIT_MECHANISM_SPEC.md §3.4): whichever
+        // rotation-eligible model this ORIGINAL generation used (always
+        // "veo3.1-lite" for a fresh generation today — rotation only ever
+        // kicks in on an edit, see js/store.js's pickEditModel/startDreamEdit
+        // below), or null for a mediaType:'image' or self-photo/turn-into-
+        // video generation (rotation out of scope for those). A dream saved
+        // before this field existed simply has no modelUsed at all (forward-
+        // only migration, same as promptText/storyText/createdAt above) —
+        // never retroactively guessed.
+        modelUsed: extraModelUsed || null,
         // createdAt (epoch ms, new — tracker item
         // for-product-build-homepage-wave-1-the-ri-xr8mir): only ever
         // stamped here, on a genuinely brand-new dream, never on the
@@ -1478,6 +1625,22 @@
     // analytics call in this file. Phase 1 reporting instrumentation —
     // tracker item for-product-phase-1-reporting-instrument-kjlh46.
     trackAnalytics('video_created', { style: dream.style, mediaType: dream.mediaType });
+    // 'model_used' (docs/EDIT_MECHANISM_SPEC.md §3.5) — fires alongside
+    // video_created above, video-only (mediaType 'video' is the only
+    // mediaType the model-rotation mechanism ever applies to — see
+    // FAL_MODEL_PIXVERSE_V6 in generate-video.js). wasEdit is true for any
+    // regenerate of an existing dream (sourceDreamId truthy) — including
+    // the OLD full mini-wizard's "Generate Again" (which never rotates,
+    // so it always reports modelUsed:"veo3.1-lite"), not just the new
+    // edit-delta mechanism — deliberately so the satisfaction-proxy cut
+    // this event powers (video_published rate by modelUsed/wasEdit, per
+    // the spec) can compare "an edit that rotated" against "an edit that
+    // didn't" on equal footing. modelUsed can be null here (an edit that
+    // hit the out-of-rotation-scope reference-to-video/image-to-video
+    // paths) — sent as-is, never coerced to a fake value.
+    if (dream.mediaType === 'video') {
+      trackAnalytics('model_used', { modelUsed: dream.modelUsed || null, wasEdit: !!sourceDreamId });
+    }
     return dream;
   }
 
@@ -1526,6 +1689,15 @@
     // resolved value) so finalizeDream below can stamp it onto the
     // completed dream — see that function's own doc comment for why.
     var capturedOperationName = null;
+    // modelUsed (docs/EDIT_MECHANISM_SPEC.md §3.4) — on a fresh submission
+    // this is set from generate-video.js's own response (see the .then
+    // below); on a RESUME (opts.resume), there is no fresh response to read
+    // it from at all (operationPromise just resolves to the already-known
+    // operationName), so it's carried over from opts.modelUsed instead —
+    // resumePendingJob passes the pending job's own already-stamped
+    // job.modelUsed here, same "re-stamp what this job already decided"
+    // pattern opts.audioOn/opts.storyText already use for a resume.
+    var capturedModelUsed = (resume && typeof opts.modelUsed !== 'undefined') ? opts.modelUsed : null;
 
     var operationPromise = resume
       ? Promise.resolve(resume.operationName)
@@ -1574,11 +1746,23 @@
           // actually matters.
           mediaType === 'video' ? Object.assign(
             { audioOn: !!opts.audioOn },
-            opts.audioOn ? { musicStyle: opts.musicStyle || null } : {}
+            opts.audioOn ? { musicStyle: opts.musicStyle || null } : {},
+            // Model-rotation request (docs/EDIT_MECHANISM_SPEC.md §2/§3.4) —
+            // only ever set by DreamStore.startDreamEdit below (via
+            // pickEditModel), video-only, and only meaningful on
+            // generate-video.js's plain text-to-video branch (that file
+            // silently ignores it on the self-photo/turn-into-video
+            // paths — see its own rotationApplies). Every other caller
+            // (a fresh generateVideo, the old full mini-wizard's
+            // regenerateDream) sends no requestedModel at all, so
+            // generate-video.js's own default (veo3.1-lite) applies,
+            // completely unchanged from before this feature existed.
+            opts.requestedModel ? { requestedModel: opts.requestedModel } : {}
           ) : {}))
         }).then(function (res) {
           return res.json().then(function (data) {
             if (!res.ok) throw new Error(data.error || 'E399: generation_failed');
+            capturedModelUsed = (typeof data.modelUsed === 'string') ? data.modelUsed : null;
             return data.operationName;
           });
         }, function (err) {
@@ -1602,6 +1786,18 @@
         // draft each time. Video-only, mirrors the request payload's own
         // mediaType-gated audioOn above.
         audioOn: mediaType === 'video' ? !!opts.audioOn : false,
+        // modelUsed (docs/EDIT_MECHANISM_SPEC.md §3.4) — carried on the
+        // pending job itself so a RESUME of this job (see resumePendingJob
+        // below) can pass it back in as opts.modelUsed, same reasoning as
+        // audioOn/storyText just above.
+        modelUsed: capturedModelUsed,
+        // editHistoryEntry (docs/EDIT_MECHANISM_SPEC.md §3.4) — only ever
+        // set by DreamStore.startDreamEdit below. Carried on the pending
+        // job so a resumed edit-delta job still records its editHistory
+        // entry on completion — resumePendingJob re-passes job.editHistoryEntry
+        // back in as opts.editHistoryEntry, same "re-stamp what this job
+        // already decided" pattern as audioOn/storyText/modelUsed above.
+        editHistoryEntry: opts.editHistoryEntry || null,
         // Reads state.pendingJob directly rather than through
         // scopedPendingJob() / the already-scoped `job` resumePendingJob()
         // obtained — safe here specifically because a resume can only ever
@@ -1618,7 +1814,10 @@
       });
       return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
-      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText);
+      var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
+        modelUsed: capturedModelUsed,
+        editHistoryEntry: opts.editHistoryEntry || null
+      });
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
       // probing needs a real network round trip to the video itself and
@@ -3114,7 +3313,7 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
@@ -3182,6 +3381,80 @@
         // the story and the prompt" semantics Write-it/Record-it already
         // have.
         storyText: patch.storyText
+      });
+    },
+
+    /**
+     * Picks which rotation-eligible model an edit of `dream` should use —
+     * see the module-level pickEditModel's own doc comment for the full
+     * rotation rule (alternation + Anime override). Exposed as a pure,
+     * read-only function so result.html can compute (and, if it wants,
+     * display/log) the target model BEFORE calling startDreamEdit below —
+     * startDreamEdit calls this internally too, so a caller never needs to
+     * compute it twice; this is here for callers that just want to know
+     * without submitting anything yet.
+     */
+    pickEditModel: pickEditModel,
+
+    /**
+     * Realigns a dream's prompt/story with a user's plain-text edit delta —
+     * see the module-level realignDreamPrompt's own doc comment. Never
+     * rejects (falls back to a naive concatenation merge on any failure) —
+     * see that function's doc comment for the full edge-case handling.
+     */
+    realignDreamPrompt: realignDreamPrompt,
+
+    /**
+     * Submits the edit-delta mechanism's actual regeneration (docs/
+     * EDIT_MECHANISM_SPEC.md §3.2 step 7-9, tracker item
+     * for-product-new-edit-mechanism-founder-i-qmsdgj) — result.html's new
+     * default edit sheet's "Generate this · 100 tokens" commit button,
+     * called only AFTER the user has reviewed Direction B's confirm screen
+     * (the realigned storyText). Like regenerateDream above, but additionally:
+     *   - applies model rotation (pickEditModel) via startGeneration's
+     *     opts.requestedModel — the one behavioral difference from a plain
+     *     Edit-sheet regenerate, which never rotates.
+     *   - records a lightweight editHistory entry on the resulting dream
+     *     (deltaLength/timestamp/modelUsed only — see finalizeDream's own
+     *     doc comment for why no raw delta text is kept here or
+     *     anywhere server-side beyond the in-flight realign call).
+     *
+     * opts: { promptText, storyText, characterIds, deltaLength,
+     * turnstileToken }. promptText/storyText are whatever
+     * DreamStore.realignDreamPrompt (or its own naive fallback) already
+     * resolved to — result.html's confirm screen is what the user actually
+     * reviewed before this is called, so this function doesn't re-run
+     * realignment itself. deltaLength is the user's ORIGINAL delta text's
+     * character length only (never the raw text — matches edit_submitted's
+     * own instrumentation rule). mediaType/style are always carried over
+     * from the dream being edited — the new edit sheet has no media-type or
+     * style picker of its own (whole-dream delta only, per spec §3.6).
+     *
+     * Returns a rejected Promise (Error('not_found')) if dreamId doesn't
+     * resolve to a real dream this account owns — same ownership guard
+     * finalizeDream's own sourceDreamId branch already enforces
+     * defense-in-depth, surfaced here early so a caller can show a clear
+     * failure immediately rather than waiting on a submission that would
+     * fail later anyway.
+     */
+    startDreamEdit: function (dreamId, opts) {
+      opts = opts || {};
+      var dream = findDream(dreamId);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!dream || !myHandle || dream.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
+      var requestedModel = pickEditModel(dream);
+      return startGeneration(opts.promptText, dream.style, {
+        sourceDreamId: dreamId,
+        storyText: opts.storyText,
+        characterIds: opts.characterIds,
+        turnstileToken: opts.turnstileToken,
+        mediaType: dream.mediaType || 'video',
+        requestedModel: requestedModel,
+        // Same reasoning as regenerateDream's own audioOn:true above — the
+        // new edit sheet has no audio picker either, and this is still a
+        // regenerate of an existing dream, not a genuinely new generation.
+        audioOn: true,
+        editHistoryEntry: { deltaLength: opts.deltaLength, timestamp: Date.now() }
       });
     },
 
@@ -3331,6 +3604,14 @@
         // own call sites), re-stamped here rather than left to finalizeDream's
         // caption fallback just because this is a resume.
         storyText: job.storyText,
+        // modelUsed/editHistoryEntry (docs/EDIT_MECHANISM_SPEC.md §3.4) —
+        // same "re-stamp what this job already decided" reasoning as
+        // audioOn/storyText above: a resume has no fresh generate-video.js
+        // response to read modelUsed from, and no live edit-sheet state to
+        // read editHistoryEntry from, so both are carried forward from
+        // whatever this job was originally submitted with.
+        modelUsed: job.modelUsed,
+        editHistoryEntry: job.editHistoryEntry || null,
         resume: { operationName: job.operationName, startedAt: job.startedAt }
       });
     },

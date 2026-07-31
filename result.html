@@ -522,6 +522,122 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     </div>
   </div>
 
+  <!-- New default edit sheet (docs/EDIT_MECHANISM_SPEC.md, tracker item
+       for-product-new-edit-mechanism-founder-i-qmsdgj) -- founder-approved
+       Direction B ("Confirm-before-generate"). #open-edit-sheet now opens
+       THIS sheet by default; #sheet-edit-overlay above (the full mini-
+       wizard) is NOT deleted -- it moves behind this sheet's "Start over
+       instead" link (see #delta-start-over-link below), unchanged.
+       One question ("What would you like to change?"), typed or recorded
+       (reusing create.html's exact getUserMedia -> MediaRecorder ->
+       transcribe-audio/transcribe-status recording chain verbatim -- see
+       that page's startRecordingUI/pollTranscribeStatus/showRecordBlockedPanel
+       for the source this mirrors, own copy per this codebase's
+       established "each page owns its own copy of this kind of
+       self-contained flow, no shared JS bundle" convention), then a
+       read-only Direction B confirm screen showing the REALIGNED storyText
+       (never the raw engineered promptText) before any token is spent. -->
+  <div class="sheet-overlay" id="sheet-edit-delta-overlay">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+
+      <!-- Step 1: ask. Textarea starts empty every time the sheet opens
+           (edge case table: "Sheet opens with textarea empty, cursor
+           focused") -- except when reopened via "Edit again" from the
+           confirm screen, which restores exactly what was there (edge
+           case: "Edit again" goes back to step 1 with the delta text
+           preserved"). -->
+      <div id="delta-ask-panel" style="display:flex; flex-direction:column;">
+        <div class="sheet-title">What would you like to change?</div>
+        <textarea class="field ph-no-capture" id="delta-text" dir="auto" placeholder="e.g. make it daytime, add my dog flying next to me"></textarea>
+        <div class="rec-error" id="delta-ask-error" style="display:none;"></div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+          <button type="button" class="btn btn-secondary" id="delta-mic-btn" style="flex:0 0 auto; width:44px; height:44px; padding:0; border-radius:50%; display:flex; align-items:center; justify-content:center;" aria-label="Record instead" title="Record instead"><span class="icon" id="delta-mic-icon" style="width:18px;height:18px;"></span></button>
+          <div style="font-size:12px; color:var(--text-muted);">Or tap the mic to speak it instead</div>
+        </div>
+        <div style="height:14px;"></div>
+        <button class="btn btn-primary btn-block" id="delta-apply-btn" disabled>Apply this change</button>
+        <div style="height:10px;"></div>
+        <span class="link-text" id="delta-cancel" style="cursor:pointer;">Cancel</span>
+        <div style="height:8px;"></div>
+        <span class="link-text" id="delta-start-over-link" style="cursor:pointer;">Start over instead</span>
+      </div>
+
+      <!-- Recording states -- mirror create.html's #create-record/
+           #create-review/#create-transcript-review/#create-record-blocked
+           verbatim: same states, same copy, same edge-case handling
+           (mic permission denied, FB/IG in-app-webview mic block), just
+           this sheet's own ids. -->
+      <div class="rec-panel" id="delta-record-panel" style="display:none; min-height:220px;">
+        <div class="rec-timer" id="delta-rec-timer">00:00</div>
+        <div class="rec-dot"></div>
+        <div class="wave"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div style="font-size:12px; color:var(--text-muted);">Speak naturally — we'll transcribe it</div>
+        <div style="width:100%; padding:0 4px;">
+          <button class="btn btn-primary btn-block" id="delta-stop-record">Stop Recording</button>
+        </div>
+      </div>
+
+      <div class="rec-panel" id="delta-review-panel" style="display:none; min-height:220px;">
+        <div class="rec-timer" id="delta-review-timer">00:00</div>
+        <div class="wave static" id="delta-review-wave">
+          <span style="height:14px;"></span><span style="height:26px;"></span><span style="height:10px;"></span><span style="height:30px;"></span>
+          <span style="height:18px;"></span><span style="height:8px;"></span><span style="height:24px;"></span><span style="height:16px;"></span>
+        </div>
+        <button class="btn btn-secondary" id="delta-play-btn"></button>
+        <div class="rec-error" id="delta-rec-error" style="display:none;"></div>
+        <div style="width:100%; display:flex; flex-direction:column; gap:10px;">
+          <button class="btn btn-primary btn-block" id="delta-review-continue">Continue</button>
+          <button class="btn btn-ghost btn-block" id="delta-re-record"></button>
+        </div>
+      </div>
+
+      <div class="rec-panel" id="delta-transcript-review-panel" style="display:none; min-height:220px;">
+        <div style="font-weight:800; font-size:15px; text-align:center; padding:0 10px;">Check your change</div>
+        <div style="font-size:12px; color:var(--text-muted); text-align:center; padding:0 14px;">Fix anything that sounds off.</div>
+        <textarea class="field ph-no-capture" id="delta-transcript-text" dir="auto" style="align-self:stretch; width:auto; flex:1;"></textarea>
+        <div class="rec-error" id="delta-transcript-error" style="display:none;"></div>
+        <div style="width:100%; display:flex; flex-direction:column; gap:10px;">
+          <button class="btn btn-primary btn-block" id="delta-transcript-continue">Continue</button>
+          <button class="btn btn-ghost btn-block" id="delta-transcript-re-record"></button>
+        </div>
+      </div>
+
+      <div class="rec-panel" id="delta-record-blocked-panel" style="display:none; min-height:220px;">
+        <div class="proc-nudge-dot" id="delta-rec-inapp-icon" style="width:44px; height:44px; border-radius:16px;"></div>
+        <div style="font-weight:800; font-size:16px; text-align:center; padding:0 10px;" id="delta-rec-inapp-title"></div>
+        <div style="font-size:13px; color:var(--text-muted); text-align:center; padding:0 14px; line-height:1.5;" id="delta-rec-inapp-body"></div>
+        <div style="width:100%; padding:0 4px;">
+          <button type="button" class="proc-nudge-btn" id="delta-rec-inapp-open-btn"></button>
+          <div class="proc-nudge-copied-note" id="delta-rec-inapp-copied-note" style="display:none;"></div>
+          <div class="proc-nudge-hint" id="delta-rec-inapp-hint">
+            <span id="delta-rec-inapp-hint-text"></span>
+            <div class="menu-row-replica" id="delta-rec-inapp-menu-replica" aria-hidden="true">
+              <span class="menu-row-replica-icon" id="delta-rec-inapp-menu-replica-icon"></span>
+              <span class="menu-row-replica-label">Open in external browser</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-block" id="delta-rec-inapp-write-btn" style="margin:0 4px;">Type it instead</button>
+      </div>
+
+      <!-- Step 2: Direction B -- confirm before tokens are spent. Shows the
+           REALIGNED storyText (never promptText), read-only, in the app's
+           existing story-recap-card display (see style.html's own
+           #style-recap-card for the same pattern). -->
+      <div id="delta-confirm-panel" style="display:none; flex-direction:column;">
+        <div class="sheet-title">Here's your realigned dream</div>
+        <div class="story-recap-card">
+          <div class="story-recap-label">Your dream</div>
+          <div class="story-recap-text" id="delta-confirm-text" dir="auto"></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="delta-confirm-generate-btn">Generate this · 100 tokens</button>
+        <div style="height:10px;"></div>
+        <span class="link-text" id="delta-confirm-edit-again" style="cursor:pointer;">Edit again</span>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-overlay" id="sheet-character-overlay" style="z-index:12;">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -1441,19 +1557,428 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     renderCharacterChips();
   }
 
-  document.getElementById('open-edit-sheet').addEventListener('click', function(){
+  // Opens the OLD full mini-wizard sheet (#sheet-edit-overlay) — no longer
+  // #open-edit-sheet's default destination (see the new edit-delta sheet
+  // below), but kept fully intact and reachable via that new sheet's
+  // "Start over instead" link (docs/EDIT_MECHANISM_SPEC.md §3.1/§3.2 step
+  // 10 — this full sheet is NOT deleted, just demoted to secondary).
+  function openFullEditWizardSheet(){
     DreamStore.setDraft({ characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null });
     renderCharacterChips();
     renderCameraChips();
     renderSceneryChips();
     autoSelectSelfIfMentioned(document.getElementById('edit-text').value);
     openSheet('edit');
-  });
+  }
   document.getElementById('edit-text').addEventListener('input', function(){
     autoSelectSelfIfMentioned(this.value);
   });
   document.getElementById('edit-cancel').addEventListener('click', function(){ closeSheet('edit'); });
   SheetDismiss.wire(document.getElementById('sheet-edit-overlay'), function(){ closeSheet('edit'); });
+
+  // ===========================================================================
+  // New default edit sheet — "What would you like to change?"
+  // (docs/EDIT_MECHANISM_SPEC.md, tracker item
+  // for-product-new-edit-mechanism-founder-i-qmsdgj). Founder-approved
+  // Direction B ("Confirm-before-generate"). #open-edit-sheet now opens
+  // THIS sheet by default (wired at the bottom of this block) instead of
+  // the full mini-wizard above.
+  //
+  // The recording sub-flow (mic button -> record -> review -> transcribe ->
+  // transcript review) below is create.html's exact "Record it" flow
+  // (getUserMedia -> MediaRecorder -> transcribe-audio/transcribe-status),
+  // reused verbatim under this sheet's own ids/state — this is a static
+  // multi-page site with no shared JS bundle, so each page keeps its own
+  // copy of this kind of self-contained flow (see create.html's own
+  // detectInAppHost/isAndroidUA/buildAndroidChromeIntentUrl trio, which
+  // processing.html also independently copies, for the established
+  // precedent this follows).
+  // ===========================================================================
+
+  var deltaMediaStream = null;
+  var deltaMediaRecorder = null;
+  var deltaRecordedChunks = [];
+  var deltaRecordedBlob = null;
+  var deltaRecordedMimeType = '';
+  var deltaPlaybackAudio = new Audio();
+  var deltaPlaybackObjectUrl = null;
+  var deltaRecInterval;
+  var deltaTranscribeAttemptToken = 0;
+  // Set once realign-dream-prompt.js (or its own naive fallback) resolves,
+  // read by the confirm screen's "Generate this" tap — see
+  // DreamStore.realignDreamPrompt's own doc comment for the fallback shape.
+  var pendingDeltaRealignment = null;
+
+  // Same busy-check registration create.html's Record mode uses (js/pwa.js's
+  // reload-when-safe guard) — an in-progress recording here is exactly as
+  // reload-unsafe as one on create.html.
+  if(window.PwaInstall && typeof PwaInstall.registerBusyCheck === 'function'){
+    PwaInstall.registerBusyCheck(function(){
+      return !!(deltaMediaRecorder && deltaMediaRecorder.state === 'recording');
+    });
+  }
+
+  document.getElementById('delta-mic-icon').innerHTML = Icons.mic;
+  document.getElementById('delta-re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
+  document.getElementById('delta-transcript-re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
+
+  var DELTA_PANEL_IDS = ['delta-ask-panel', 'delta-record-panel', 'delta-review-panel', 'delta-transcript-review-panel', 'delta-record-blocked-panel', 'delta-confirm-panel'];
+  function showDeltaPanel(id){
+    DELTA_PANEL_IDS.forEach(function(p){
+      document.getElementById(p).style.display = (p === id) ? 'flex' : 'none';
+    });
+  }
+  function deltaShowError(elId, msg){
+    var el = document.getElementById(elId);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function deltaHideError(elId){ document.getElementById(elId).style.display = 'none'; }
+
+  function deltaStopMediaStream(){
+    if(deltaMediaStream){ deltaMediaStream.getTracks().forEach(function(t){ t.stop(); }); deltaMediaStream = null; }
+  }
+  function deltaPickMimeType(){
+    var candidates = ['audio/ogg;codecs=opus', 'audio/mp4', 'audio/wav', 'audio/webm;codecs=opus', 'audio/webm'];
+    for(var i=0; i<candidates.length; i++){
+      if(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
+  }
+  function deltaPlayBtnLabel(playing){
+    return '<span class="icon" style="width:14px;height:14px;">' + (playing ? Icons.pause : Icons.play) + '</span> ' + (playing ? 'Playing…' : 'Play back');
+  }
+  document.getElementById('delta-play-btn').innerHTML = deltaPlayBtnLabel(false);
+
+  // ===== In-app webview detection (edge case: "Mic permission denied /
+  // in-app-webview block: Reuses create.html's existing exact copy and
+  // fallback panel verbatim") — own copy of the same detectInAppHost()/
+  // isAndroidUA()/buildAndroidChromeIntentUrl() trio create.html and
+  // processing.html each already keep. =====
+  function deltaDetectInAppHost(){
+    var ua = navigator.userAgent || '';
+    if (/FBAN|FBAV/.test(ua)) return 'Facebook';
+    if (/Instagram/.test(ua)) return 'Instagram';
+    return null;
+  }
+  function deltaIsAndroidUA(){ return /Android/.test(navigator.userAgent || ''); }
+  function deltaBuildAndroidChromeIntentUrl(){
+    var target = location.href.replace(/^https?:\/\//, '');
+    var fallback = encodeURIComponent(location.href);
+    return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
+  }
+  function deltaCopyLinkForBrowser(onCopied){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(location.href).then(function(){
+        showToast('Link copied — paste it in Safari. Keep it to yourself.');
+        if(onCopied) onCopied();
+      }).catch(function(){ showToast("Couldn't copy link"); });
+    } else {
+      showToast("Copying isn't supported in this browser");
+    }
+  }
+  function deltaShowRecordBlockedPanel(host){
+    deltaHideError('delta-ask-error');
+    showDeltaPanel('delta-record-blocked-panel');
+    document.getElementById('delta-rec-inapp-icon').innerHTML = Icons.globe;
+    document.getElementById('delta-rec-inapp-title').textContent = host + ' blocks microphone access';
+    document.getElementById('delta-rec-inapp-body').textContent = "In-app browsers built into " + host + " don't allow microphone access, so recording won't work here. Open DreamTube in your real browser to record — or type your change instead.";
+    var openBtn = document.getElementById('delta-rec-inapp-open-btn');
+    var onAndroid = deltaIsAndroidUA();
+    openBtn.innerHTML = onAndroid
+      ? 'Open in my browser <span class="icon">' + Icons.externalLink + '</span>'
+      : 'Copy link for your browser <span class="icon">' + Icons.copy + '</span>';
+    document.getElementById('delta-rec-inapp-copied-note').style.display = 'none';
+    document.getElementById('delta-rec-inapp-hint-text').textContent = 'or tap ' + host + '’s ⋯ at the very top, then look for “Open in external browser”:';
+    document.getElementById('delta-rec-inapp-menu-replica-icon').innerHTML = Icons.externalLink;
+  }
+  document.getElementById('delta-rec-inapp-open-btn').addEventListener('click', function(){
+    if(deltaIsAndroidUA()){
+      location.href = deltaBuildAndroidChromeIntentUrl();
+    } else {
+      deltaCopyLinkForBrowser(function(){
+        var note = document.getElementById('delta-rec-inapp-copied-note');
+        note.textContent = 'Copied! Now open your browser and paste the link there.';
+        note.style.display = 'block';
+      });
+      var hint = document.getElementById('delta-rec-inapp-hint');
+      hint.classList.add('proc-nudge-hint-emph');
+      hint.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(function(){ hint.classList.remove('proc-nudge-hint-emph'); }, 1600);
+    }
+  });
+  document.getElementById('delta-rec-inapp-write-btn').addEventListener('click', function(){
+    showDeltaPanel('delta-ask-panel');
+    document.getElementById('delta-text').focus();
+  });
+
+  function deltaStartRecordingUI(){
+    deltaHideError('delta-ask-error');
+    var inAppHost = deltaDetectInAppHost();
+    if(inAppHost){ deltaShowRecordBlockedPanel(inAppHost); return; }
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+      deltaShowError('delta-ask-error', "Recording isn't supported in this browser — try typing instead.");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+      deltaMediaStream = stream;
+      deltaRecordedChunks = [];
+      var mimeType = deltaPickMimeType();
+      deltaMediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+      deltaRecordedMimeType = deltaMediaRecorder.mimeType || mimeType || 'audio/webm';
+      deltaMediaRecorder.addEventListener('dataavailable', function(e){
+        if(e.data && e.data.size > 0) deltaRecordedChunks.push(e.data);
+      });
+      deltaMediaRecorder.start();
+      showDeltaPanel('delta-record-panel');
+      var secs = 0;
+      document.getElementById('delta-rec-timer').textContent = '00:00';
+      clearInterval(deltaRecInterval);
+      deltaRecInterval = setInterval(function(){
+        secs++;
+        var m = String(Math.floor(secs/60)).padStart(2,'0');
+        var s = String(secs%60).padStart(2,'0');
+        document.getElementById('delta-rec-timer').textContent = m+':'+s;
+      }, 1000);
+    }).catch(function(){
+      deltaShowError('delta-ask-error', 'Microphone access was denied — allow it in your browser settings, or type your change instead.');
+    });
+  }
+  document.getElementById('delta-mic-btn').addEventListener('click', deltaStartRecordingUI);
+
+  document.getElementById('delta-stop-record').addEventListener('click', function(){
+    clearInterval(deltaRecInterval);
+    if(!deltaMediaRecorder || deltaMediaRecorder.state === 'inactive'){ return; }
+    deltaMediaRecorder.addEventListener('stop', function(){
+      deltaStopMediaStream();
+      deltaRecordedBlob = new Blob(deltaRecordedChunks, { type: deltaRecordedMimeType });
+      if(deltaPlaybackObjectUrl) URL.revokeObjectURL(deltaPlaybackObjectUrl);
+      deltaPlaybackObjectUrl = URL.createObjectURL(deltaRecordedBlob);
+      deltaPlaybackAudio.src = deltaPlaybackObjectUrl;
+      document.getElementById('delta-review-timer').textContent = document.getElementById('delta-rec-timer').textContent;
+      deltaHideError('delta-rec-error');
+      var cont = document.getElementById('delta-review-continue');
+      cont.disabled = false;
+      cont.textContent = 'Continue';
+      showDeltaPanel('delta-review-panel');
+      if(window.PwaInstall && typeof PwaInstall.recheckBusy === 'function'){ PwaInstall.recheckBusy(); }
+    }, { once: true });
+    deltaMediaRecorder.stop();
+  });
+  document.getElementById('delta-re-record').addEventListener('click', function(){
+    deltaTranscribeAttemptToken++;
+    deltaPlaybackAudio.pause();
+    deltaStartRecordingUI();
+  });
+  document.getElementById('delta-play-btn').addEventListener('click', function(){
+    if(!deltaRecordedBlob) return;
+    if(!deltaPlaybackAudio.paused){ deltaPlaybackAudio.pause(); return; }
+    deltaPlaybackAudio.play();
+  });
+  deltaPlaybackAudio.addEventListener('play', function(){ document.getElementById('delta-play-btn').innerHTML = deltaPlayBtnLabel(true); });
+  deltaPlaybackAudio.addEventListener('pause', function(){ document.getElementById('delta-play-btn').innerHTML = deltaPlayBtnLabel(false); });
+  deltaPlaybackAudio.addEventListener('ended', function(){ document.getElementById('delta-play-btn').innerHTML = deltaPlayBtnLabel(false); });
+
+  function deltaBufferToBase64(buffer){
+    var bytes = new Uint8Array(buffer);
+    var binary = '';
+    for(var i=0; i<bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+  var DELTA_TRANSCRIBE_POLL_MS = 2500;
+  var DELTA_TRANSCRIBE_MAX_MS = 90 * 1000;
+  function deltaPollTranscribeStatus(operationName, startedAt){
+    return new Promise(function(resolve, reject){
+      function poll(){
+        if(Date.now() - startedAt > DELTA_TRANSCRIBE_MAX_MS){ reject(new Error('transcription_timeout')); return; }
+        fetch('/.netlify/functions/transcribe-status?name=' + encodeURIComponent(operationName))
+          .then(function(res){ return res.json(); })
+          .then(function(data){
+            if(data.error){ reject(new Error(data.error)); return; }
+            if(data.done){ resolve(data.transcript); return; }
+            setTimeout(poll, DELTA_TRANSCRIBE_POLL_MS);
+          })
+          .catch(reject);
+      }
+      poll();
+    });
+  }
+  function deltaShowTranscriptReview(transcript){
+    document.getElementById('delta-transcript-text').value = transcript;
+    deltaHideError('delta-transcript-error');
+    var cont = document.getElementById('delta-transcript-continue');
+    cont.disabled = false;
+    cont.textContent = 'Continue';
+    showDeltaPanel('delta-transcript-review-panel');
+    document.getElementById('delta-transcript-text').focus();
+  }
+  document.getElementById('delta-review-continue').addEventListener('click', function(){
+    if(!deltaRecordedBlob) return;
+    deltaHideError('delta-rec-error');
+    var cont = document.getElementById('delta-review-continue');
+    cont.disabled = true;
+    cont.textContent = 'Transcribing…';
+    var myAttempt = ++deltaTranscribeAttemptToken;
+
+    deltaRecordedBlob.arrayBuffer().then(function(buffer){
+      return fetch('/.netlify/functions/transcribe-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: deltaBufferToBase64(buffer), mimeType: deltaRecordedMimeType.split(';')[0] })
+      });
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok || result.data.error || !result.data.operationName){
+        throw new Error((result.data && result.data.error) || 'transcription_failed');
+      }
+      return deltaPollTranscribeStatus(result.data.operationName, Date.now());
+    }).then(function(transcript){
+      if(myAttempt !== deltaTranscribeAttemptToken) return; // stale -- user re-recorded or navigated away meanwhile
+      deltaShowTranscriptReview(transcript);
+    }).catch(function(){
+      if(myAttempt !== deltaTranscribeAttemptToken) return; // stale -- ignore a failure for an attempt the user already abandoned
+      cont.disabled = false;
+      cont.textContent = 'Continue';
+      deltaShowError('delta-rec-error', "Couldn't transcribe that recording — try again, or re-record.");
+    });
+  });
+  document.getElementById('delta-transcript-continue').addEventListener('click', function(){
+    var edited = document.getElementById('delta-transcript-text').value.trim();
+    if(!edited){
+      deltaShowError('delta-transcript-error', 'Type something before continuing — or re-record.');
+      return;
+    }
+    document.getElementById('delta-text').value = edited;
+    updateDeltaApplyState();
+    showDeltaPanel('delta-ask-panel');
+  });
+  document.getElementById('delta-transcript-text').addEventListener('input', function(){
+    deltaHideError('delta-transcript-error');
+  });
+  document.getElementById('delta-transcript-re-record').addEventListener('click', function(){
+    deltaTranscribeAttemptToken++;
+    deltaPlaybackAudio.pause();
+    deltaStartRecordingUI();
+  });
+
+  // ===== Ask panel (step 1) =====
+  // Edge case: "Apply this change" disabled until non-whitespace input or a
+  // confirmed transcript.
+  function updateDeltaApplyState(){
+    var val = document.getElementById('delta-text').value.trim();
+    document.getElementById('delta-apply-btn').disabled = !val;
+  }
+  document.getElementById('delta-text').addEventListener('input', updateDeltaApplyState);
+
+  function openEditDeltaSheet(){
+    deltaTranscribeAttemptToken++; // invalidate any stale in-flight recording attempt from a previous open
+    clearInterval(deltaRecInterval);
+    deltaStopMediaStream();
+    deltaPlaybackAudio.pause();
+    pendingDeltaRealignment = null;
+    // No Advanced picker on this sheet (whole-dream delta only, per spec
+    // §3.6) — reset the same fields the old full sheet resets on open, so a
+    // stale prior draft's Advanced selections never leak into this edit.
+    DreamStore.setDraft({ characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null });
+    document.getElementById('delta-text').value = '';
+    document.getElementById('delta-text').readOnly = false;
+    deltaHideError('delta-ask-error');
+    document.getElementById('delta-apply-btn').textContent = 'Apply this change';
+    updateDeltaApplyState();
+    showDeltaPanel('delta-ask-panel');
+    // edge case: "edit_started — fires when the new edit sheet opens" (not
+    // on submit) — docs/EVENT_TAXONOMY.md.
+    track('edit_started', {});
+    openSheet('edit-delta');
+    document.getElementById('delta-text').focus();
+  }
+  document.getElementById('open-edit-sheet').addEventListener('click', function(){
+    openEditDeltaSheet();
+  });
+  document.getElementById('delta-cancel').addEventListener('click', function(){ closeSheet('edit-delta'); });
+  SheetDismiss.wire(document.getElementById('sheet-edit-delta-overlay'), function(){ closeSheet('edit-delta'); });
+  document.getElementById('delta-start-over-link').addEventListener('click', function(){
+    closeSheet('edit-delta');
+    openFullEditWizardSheet();
+  });
+
+  document.getElementById('delta-apply-btn').addEventListener('click', function(){
+    var deltaText = document.getElementById('delta-text').value.trim();
+    if(!deltaText) return;
+    // edit_submitted: { deltaLength, dreamId } -- never the raw delta text
+    // (docs/EVENT_TAXONOMY.md's own stated rule).
+    track('edit_submitted', { deltaLength: deltaText.length, dreamId: dream.id });
+
+    var textArea = document.getElementById('delta-text');
+    var applyBtn = document.getElementById('delta-apply-btn');
+    // Edge case: "Loading (realignment): Textarea becomes read-only, button
+    // label changes to 'Realigning your dream…'... one continuous state,
+    // not two spinners."
+    textArea.readOnly = true;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Realigning your dream…';
+
+    var originalPromptText = dream.promptText || dream.caption;
+    var originalStoryText = dream.storyText || dream.caption;
+    // DreamStore.realignDreamPrompt never rejects (falls back to a naive
+    // concatenation merge internally on any failure — see its own doc
+    // comment) — no separate error branch needed here.
+    DreamStore.realignDreamPrompt(originalPromptText, originalStoryText, deltaText).then(function(result){
+      pendingDeltaRealignment = { promptText: result.promptText, storyText: result.storyText, deltaLength: deltaText.length };
+      autoSelectSelfIfMentioned(result.storyText);
+      document.getElementById('delta-confirm-text').textContent = result.storyText;
+      textArea.readOnly = false;
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Apply this change';
+      showDeltaPanel('delta-confirm-panel');
+    });
+  });
+
+  // ===== Confirm panel (step 2, Direction B) =====
+  document.getElementById('delta-confirm-edit-again').addEventListener('click', function(){
+    // "Edit again" goes back to step 1 with the delta text preserved --
+    // #delta-text was never cleared, so it's still exactly what the user
+    // typed/transcribed.
+    showDeltaPanel('delta-ask-panel');
+    document.getElementById('delta-text').focus();
+  });
+
+  function persistEditDeltaDraft(){
+    if(!pendingDeltaRealignment) return;
+    DreamStore.setDraft({
+      caption: pendingDeltaRealignment.promptText, storyText: pendingDeltaRealignment.storyText,
+      style: dream.style, sourceDreamId: dream.id, restore: false,
+      mediaType: dream.mediaType || 'video', sourceImageUrl: null,
+      isEditDelta: true, editDeltaLength: pendingDeltaRealignment.deltaLength
+    });
+  }
+  function proceedWithEditDelta(){
+    persistEditDeltaDraft();
+    location.href = 'processing.html';
+  }
+  document.getElementById('delta-confirm-generate-btn').addEventListener('click', function(){
+    if(!pendingDeltaRealignment) return;
+    var cost = regenerateAgainCost();
+    if(tokensBlockGeneration(cost)){
+      PurchaseSheet.show({
+        mediaType: regenerateAgainMediaType(),
+        cost: cost,
+        balance: tokenStatus ? tokenStatus.balance : 0,
+        tokenStatus: tokenStatus,
+        source: 'blocked_action',
+        persistDraft: persistEditDeltaDraft,
+        onClaimed: function(){
+          DreamStore.getTokenStatus().then(function(fresh){
+            tokenStatus = fresh;
+            PurchaseSheet.renderBalanceChip(tokenChip, fresh);
+          }).catch(function(){});
+        }
+      });
+      return;
+    }
+    proceedWithEditDelta();
+  });
 
   document.getElementById('sheet-style-grid').addEventListener('click', function(e){
     var card = e.target.closest('.style-card');

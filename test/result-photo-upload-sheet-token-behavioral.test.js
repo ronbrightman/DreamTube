@@ -140,7 +140,12 @@ test('result.html: cancelling a photo pick on the self character\'s sheet, then 
     }, ORIGINAL_PHOTO);
     await safeGoto(page, baseUrl + '/result.html?id=d-photo-token-1');
 
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's Advanced character editing lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#adv-toggle');
     await page.waitForSelector('#char-chip-row [data-char-edit="self-1"]');

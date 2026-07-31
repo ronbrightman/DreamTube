@@ -188,7 +188,13 @@ test('result.html: the purchase sheet\'s wait line reads the live dailyClaimAmou
     await page.goto(baseUrl + '/result.html?id=dream-daily-grant', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(250);
 
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet's #edit-generate-again this test uses.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
+    await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#edit-generate-again');
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
 

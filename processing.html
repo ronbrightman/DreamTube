@@ -652,11 +652,27 @@
           // here so finalizeDream can stamp it onto the completed dream.
           storyText: d.storyText
         };
-        var freshTask = d.sourceDreamId
-          ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
-          : (mediaType === 'image'
-              ? DreamStore.generateImage(d.caption, d.style, advancedOpts)
-              : DreamStore.generateVideo(d.caption, d.style, advancedOpts));
+        // isEditDelta (docs/EDIT_MECHANISM_SPEC.md §3.4, tracker item
+        // for-product-new-edit-mechanism-founder-i-qmsdgj): set only by
+        // result.html's new "What would you like to change?" edit sheet's
+        // persistEditDeltaDraft, right alongside sourceDreamId — routes to
+        // DreamStore.startDreamEdit instead of the plain regenerateDream
+        // every OTHER sourceDreamId draft (the old full mini-wizard's
+        // "Generate Again", "Turn this into a video") still uses unchanged.
+        // startDreamEdit additionally applies model rotation
+        // (js/store.js's pickEditModel) and records a lightweight
+        // editHistory entry — regenerateDream never does either.
+        var freshTask = (d.sourceDreamId && d.isEditDelta)
+          ? DreamStore.startDreamEdit(d.sourceDreamId, {
+              promptText: d.caption, storyText: d.storyText,
+              characterIds: d.characterIds, turnstileToken: turnstileToken,
+              deltaLength: d.editDeltaLength
+            })
+          : d.sourceDreamId
+            ? DreamStore.regenerateDream(d.sourceDreamId, Object.assign({ caption: d.caption, style: d.style }, advancedOpts))
+            : (mediaType === 'image'
+                ? DreamStore.generateImage(d.caption, d.style, advancedOpts)
+                : DreamStore.generateVideo(d.caption, d.style, advancedOpts));
         attachTaskHandlers(freshTask);
       });
     }

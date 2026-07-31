@@ -966,12 +966,15 @@ test('result.html FINAL placement (founder\'s 2026-07-31 amendment): Publish / M
     var editBtnColor = await page.locator('#open-edit-sheet').evaluate(function (el) { return getComputedStyle(el).color; });
     assert.equal(deleteBtnColor, editBtnColor, 'the Delete link\'s own text color must match the other quiet links exactly -- no full-red/emphasized styling');
 
-    // Edit still opens the edit sheet.
+    // Edit still opens an edit sheet -- the new default edit-delta sheet
+    // (docs/EDIT_MECHANISM_SPEC.md) as of this feature, not the old full
+    // mini-wizard directly (that one's still reachable via "Start over
+    // instead", covered in test/sheet-dismiss-behavioral.test.js).
     await page.click('#open-edit-sheet');
-    await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 5000 });
-    await page.click('#edit-cancel');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open', { timeout: 5000 });
+    await page.click('#delta-cancel');
     await page.waitForFunction(function () {
-      var el = document.getElementById('sheet-edit-overlay');
+      var el = document.getElementById('sheet-edit-delta-overlay');
       return el && !el.classList.contains('open');
     }, null, { timeout: 5000 });
 
@@ -2206,7 +2209,12 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
     await mockTokenStatus(page, { balance: 0, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
     await seedResultPage(page, baseUrl, 'd-quota-modal-test');
     await page.waitForSelector('#open-edit-sheet', { timeout: 5000 });
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet's #edit-generate-again this test uses.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open', { timeout: 5000 });
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#edit-generate-again', { timeout: 5000 });
     await page.click('#edit-generate-again');
     await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });

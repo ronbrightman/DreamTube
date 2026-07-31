@@ -581,3 +581,58 @@ part of the 2026-07-31 ritual-card rebuild; the click handler and
 `first_video` computation are unchanged), `test/ui-behavioral.test.js`
 (real-browser coverage of the event firing with the correct `first_video`
 value in both states).
+
+### edit_started / edit_submitted / model_used
+
+New edit mechanism (docs/EDIT_MECHANISM_SPEC.md, tracker item
+`for-product-new-edit-mechanism-founder-i-qmsdgj`, founder-approved
+Direction B "Confirm-before-generate," with PixVerse V6 model-rotation
+cost-approved and live from day one). `result.html`'s new default edit
+sheet ("What would you like to change?") replaces `#open-edit-sheet`'s old
+behavior of opening the full mini-wizard sheet — that full sheet is NOT
+deleted, it moves behind this new sheet's "Start over instead" link.
+
+PostHog only for all three — none are ad-optimization conversions.
+
+| | |
+|---|---|
+| **`edit_started`** | Fires the moment the new edit sheet opens (`result.html`'s `openEditDeltaSheet`) — not on submit. `{}` |
+| **`edit_submitted`** | Fires when the user taps "Apply this change," before the realignment call. `{ deltaLength: <int>, dreamId }` — the delta text's character length only, **never the raw delta text itself** (this file's own established rule for anything touching a dream's free-text content) |
+| **`model_used`** | Fires alongside the existing `video_created` event, from `js/store.js`'s `finalizeDream` — video-only (the model-rotation mechanism never applies to `mediaType:'image'`). `{ modelUsed: "veo3.1-lite" \| "pixverse-v6" \| null, wasEdit: boolean }`. `wasEdit` is true for ANY regenerate of an existing dream (`sourceDreamId` truthy) — including the old full mini-wizard's "Generate Again," which never rotates and so always reports `modelUsed:"veo3.1-lite"` — not just the new edit-delta mechanism, so the satisfaction-proxy read this powers (`video_published` rate cut by `modelUsed`/`wasEdit`) can compare a rotated edit against a non-rotated one on equal footing. `modelUsed` is `null` for the self-photo reference-to-video and "turn this into a video" image-to-video paths, both explicitly out of rotation scope this wave |
+
+**Realignment fallback telemetry — `edit_realign_fallback`:** fires from
+`js/store.js`'s `realignDreamPrompt` only when `netlify/functions/
+realign-dream-prompt.js` fails (any E7xx error, a network failure, or a
+malformed response) and the naive-concatenation fallback merge is used
+instead — the spec's edge-case table's "log a silent-skip telemetry event"
+requirement for this failure path. `{ reason: <short string, truncated,
+never the raw delta or dream text> }`. No token is charged when this
+fallback path is used — the realign call happens entirely before the
+confirm screen, upstream of any spend.
+
+**Model rotation itself (not a new event, but what these events measure):**
+`netlify/functions/generate-video.js` accepts an optional `requestedModel`
+("veo3.1-lite" | "pixverse-v6") on the plain text-to-video path only (self-
+photo reference-to-video and "turn this into a video" image-to-video are
+explicitly out of scope for rotation) and returns the model actually used
+as `modelUsed` on its response. `js/store.js`'s `pickEditModel(dream)` is
+the rotation rule: Anime-style dreams always route to `pixverse-v6`
+regardless of history (an explicitly-flagged untested hypothesis, watched
+via `model_used` cut by style — not a verified fact); otherwise the model
+alternates from whatever the dream's current `modelUsed` is (or from the
+implicit historical default, `veo3.1-lite`, if unset), so a dream edited
+twice ping-pongs and never repeats the model it just tried.
+
+**Files touched:** `result.html` (new `#sheet-edit-delta-overlay` default
+edit sheet, reusing `create.html`'s exact recording/transcription chain
+under its own `delta-*` ids; `#sheet-edit-overlay`, the old full mini-
+wizard, is unchanged and reachable via "Start over instead"),
+`processing.html` (`runGeneration` routes an `isEditDelta` draft to the
+new `DreamStore.startDreamEdit` instead of `regenerateDream`),
+`netlify/functions/realign-dream-prompt.js` (new), `netlify/functions/
+generate-video.js` (`FAL_MODEL_PIXVERSE_V6`/`callFalPixverse`, the
+`requestedModel`/`modelUsed` request/response fields, new E115 error
+code), `js/store.js` (`pickEditModel`, `realignDreamPrompt`,
+`startDreamEdit`, `modelUsed`/`editHistory` fields on the dream record,
+`isEditDelta`/`editDeltaLength` draft fields), `test/realign-dream-
+prompt.test.js`, `test/generate-video-model-rotation.test.js` (new).

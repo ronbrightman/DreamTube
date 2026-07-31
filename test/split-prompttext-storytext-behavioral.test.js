@@ -426,7 +426,12 @@ test('result.html "Edit Dream" -> "Generate Again", with ZERO edits, resubmits t
 
     // Open the Edit sheet and tap Generate Again WITHOUT touching edit-text
     // at all -- the exact repro steps from the review finding.
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet (#edit-text/#edit-generate-again) this test covers.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open', { timeout: 3000 });
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 3000 });
     var editTextValue = await page.inputValue('#edit-text');
     // The box shows the plain human story (post-split), never the old
@@ -474,7 +479,12 @@ test('result.html "Edit Dream" -> "Generate Again", WITH a real edit, sends the 
     assert.equal(generateVideoCalls.length, 1);
 
     var EDITED_TEXT = 'I was flying over a golden city, feeling joyful.';
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet (#edit-text/#edit-generate-again) this test covers.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open', { timeout: 3000 });
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open', { timeout: 3000 });
     await page.fill('#edit-text', EDITED_TEXT);
     await page.click('#edit-generate-again');

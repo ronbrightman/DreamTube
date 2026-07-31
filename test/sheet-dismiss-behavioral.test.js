@@ -357,10 +357,10 @@ test('profile.html Edit-profile sheet: tap-outside closes, drag-dismiss/snap-bac
 });
 
 // ============================================================================
-// 3. result.html — Edit dream sheet
+// 3. result.html — new default edit-delta sheet (docs/EDIT_MECHANISM_SPEC.md)
 // ============================================================================
 
-test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
+test('result.html edit-delta sheet (the new #open-edit-sheet default): tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -368,15 +368,49 @@ test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back b
     await blockThirdParty(page);
     await seedResultPageWithDream(page);
 
-    await assertTapOutsideCloses(page, '#sheet-edit-overlay', async function () {
+    await assertTapOutsideCloses(page, '#sheet-edit-delta-overlay', async function () {
       await page.click('#open-edit-sheet');
     });
-    await assertDragPastThresholdDismisses(page, '#sheet-edit-overlay', async function () {
+    await assertDragPastThresholdDismisses(page, '#sheet-edit-delta-overlay', async function () {
       await page.click('#open-edit-sheet');
     });
-    await assertDragUnderThresholdSnapsBack(page, '#sheet-edit-overlay', async function () {
+    await assertDragUnderThresholdSnapsBack(page, '#sheet-edit-delta-overlay', async function () {
       await page.click('#open-edit-sheet');
     });
+
+    // Already open from the snap-back above -- go straight to the
+    // Cancel-button regression check.
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-cancel');
+    await page.waitForSelector('#sheet-edit-delta-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// 3b. result.html — OLD full mini-wizard Edit-dream sheet (demoted to
+// "Start over instead" behind the new edit-delta sheet above, but NOT
+// deleted — same dismiss coverage still applies to it unchanged).
+// ============================================================================
+
+test('result.html Edit-dream sheet (the OLD full mini-wizard, reached via "Start over instead"): tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedResultPageWithDream(page);
+
+    async function openFullEditSheet() {
+      await page.click('#open-edit-sheet');
+      await page.waitForSelector('#sheet-edit-delta-overlay.open');
+      await page.click('#delta-start-over-link');
+    }
+
+    await assertTapOutsideCloses(page, '#sheet-edit-overlay', openFullEditSheet);
+    await assertDragPastThresholdDismisses(page, '#sheet-edit-overlay', openFullEditSheet);
+    await assertDragUnderThresholdSnapsBack(page, '#sheet-edit-overlay', openFullEditSheet);
 
     // Already open from the snap-back above -- go straight to the
     // Cancel-button regression check.
@@ -392,14 +426,19 @@ test('result.html Edit-dream sheet: tap-outside closes, drag-dismiss/snap-back b
 // 4. result.html — Add/edit character sheet (z-index-overridden overlay)
 // ============================================================================
 
-test('result.html character sheet (nested inside the Edit-dream sheet, z-index:12 override): tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
+test('result.html character sheet (nested inside the OLD full Edit-dream sheet, z-index:12 override): tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await seedResultPageWithDream(page);
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's Advanced character editing lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
     await page.click('#adv-toggle');
     await page.waitForSelector('#char-add-other');

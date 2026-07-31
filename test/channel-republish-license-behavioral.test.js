@@ -195,14 +195,24 @@ test('result.html: feature toggle is hidden on an unpublished dream, visible and
       dreams: [{ id: 'dream-priv', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: false }]
     });
     await safeGoto(page, baseUrl + '/result.html?id=dream-priv');
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's #feature-toggle-row lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
     assert.equal(await page.locator('#feature-toggle-row').isVisible(), false, 'must be hidden for a private dream');
     await page.click('#edit-cancel');
 
     await page.click('#publish-btn'); // opens the publish modal
     await page.click('#publish-confirm');
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's #feature-toggle-row lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
 
     assert.equal(await page.locator('#feature-toggle-row').isVisible(), true, 'must be visible once published');
@@ -227,7 +237,12 @@ test('result.html: clicking the feature toggle opts a published dream out, persi
       dreams: [{ id: 'dream-pub', videoUrl: 'https://example.com/v.mp4', dur: '0:08', isPublished: true }]
     });
     await safeGoto(page, baseUrl + '/result.html?id=dream-pub');
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's #feature-toggle-row lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
 
     await page.click('#feature-toggle');
@@ -239,7 +254,12 @@ test('result.html: clicking the feature toggle opts a published dream out, persi
 
     // Reload the page entirely -- confirms this is a real persisted write, not just in-memory UI state.
     await safeGoto(page, baseUrl + '/result.html?id=dream-pub');
+    // #open-edit-sheet now opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) — "Start over instead" reaches the OLD full
+    // mini-wizard sheet this test's #feature-toggle-row lives in.
     await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
     await page.waitForSelector('#sheet-edit-overlay.open');
     assert.equal(await page.locator('#feature-toggle').evaluate(function (el) { return el.classList.contains('on'); }), false, 'opt-out must survive a reload');
 
