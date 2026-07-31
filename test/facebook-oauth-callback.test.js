@@ -555,6 +555,23 @@ test('needs-email completion: if that Facebook id got linked elsewhere while the
   assert.equal(verified.email, 'nowemail@example.com');
 });
 
+test('needs-email completion: an unexpected failure is reported as the coded E9, never a bare uncoded string', async function () {
+  var marker = await markerForNoEmailUser('6660007');
+  var callback = require('../netlify/functions/facebook-oauth-callback');
+  var real = callback._internal.createFacebookAccount;
+  callback._internal.createFacebookAccount = function () { throw new Error('boom'); };
+  try {
+    var complete = require('../netlify/functions/facebook-complete-signup').handler;
+    var res = await complete(fakeEvent({ method: 'POST', ip: nextIp(), body: { token: marker, email: 'unlucky@example.com' } }));
+    assert.equal(res.statusCode, 500);
+    var body = JSON.parse(res.body);
+    assert.equal(body.ok, false);
+    assert.match(body.error, /^E9: unexpected_error/, 'a genuinely unexpected failure must still be a coded error, same scheme as every other branch in this file');
+  } finally {
+    callback._internal.createFacebookAccount = real;
+  }
+});
+
 test('needs-email completion: shape errors are rejected before anything else runs', async function () {
   var complete = require('../netlify/functions/facebook-complete-signup').handler;
   assert.equal((await complete(fakeEvent({ method: 'GET', ip: nextIp() }))).statusCode, 405);

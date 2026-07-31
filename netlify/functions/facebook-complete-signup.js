@@ -54,6 +54,7 @@
 //   E6 invalid_or_expired  — unknown/expired/already-consumed marker
 //   E7 rate_limited        — MAX_FACEBOOK_COMPLETIONS_PER_IP_PER_DAY
 //   E8 create_failed       — account creation itself failed
+//   E9 unexpected_error    — anything else (see the catch-all below)
 //
 // 200 { ok:false, error } is used for the normal business outcomes the
 // client must branch on and render inline (E5/E6/E8), matching
@@ -145,6 +146,6 @@ exports.handler = async function (event) {
     var transfer = await sessionTransferToken.createToken(event, result.record.username, result.record.email || null);
     return { statusCode: 200, body: JSON.stringify({ ok: true, transferToken: transfer, created: true }) };
   } catch (e) {
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'facebook_complete_signup_failed: ' + (e && e.message) }) };
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'E9: unexpected_error: ' + (e && e.message) }) };
   }
 };

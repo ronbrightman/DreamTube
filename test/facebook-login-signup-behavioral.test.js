@@ -658,7 +658,7 @@ test('the return leg fires CompleteRegistration with the signed-in email, exactl
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
 
-    await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&bt=transfer-token-5'));
+    await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&bt=transfer-token-5&fb=signup'));
     await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
 
     var registrations = conversions.filter(function (c) { return c.event_name === 'CompleteRegistration'; });
@@ -669,6 +669,32 @@ test('the return leg fires CompleteRegistration with the signed-in email, exactl
     // never saw that screen.
     var reached = conversions.filter(function (c) { return c.event_name === 'ReachedEmailEntry'; });
     assert.equal(reached.length, 0, 'a skipped screen 13 must not report an email-entry impression');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the return leg with fb=login (an existing email match) fires ZERO CompleteRegistration events -- spec §2.2, counted as a login, not a new signup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await configureFacebookApp(page);
+    await mockPostSignupRoutes(page);
+    await mockSessionTransfer(page, { ok: true, username: 'loginuser', email: 'loginuser@example.com', authToken: 'auth-6' });
+
+    var conversions = [];
+    await page.route('**/.netlify/functions/track-conversion', function (route) {
+      conversions.push(JSON.parse(route.request().postData() || '{}'));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&bt=transfer-token-6&fb=login'));
+    await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
+
+    var registrations = conversions.filter(function (c) { return c.event_name === 'CompleteRegistration'; });
+    assert.equal(registrations.length, 0, 'a returning Facebook user logging back in must never fire a duplicate CompleteRegistration');
   } finally {
     await context.close();
   }

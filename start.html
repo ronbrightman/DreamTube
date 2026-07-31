@@ -2511,15 +2511,21 @@
       // commitTransferredSession just wrote from the server-verified
       // token, never anything client-supplied.
       var email = DreamStore.getAccountEmail() || '';
-      track('signup_facebook_completed', { variant: signupVariant, outcome: getParam('fb') || null });
+      var fbOutcome = getParam('fb');
+      track('signup_facebook_completed', { variant: signupVariant, outcome: fbOutcome || null });
       // Shared event_id pairs this with the Pixel's own
       // CompleteRegistration call — the exact same fireMetaConversion
       // convention attemptSignup uses for the manual path (see
       // js/analytics-config.js). Fired here rather than inside
       // completeSignupAndAdvance so the manual path's own long-standing
       // call site (inside attemptSignup, at the moment the account
-      // genuinely exists) stays exactly where it is.
-      if(email) fireMetaConversion('CompleteRegistration', { email: email });
+      // genuinely exists) stays exactly where it is. Gated on fb=signup
+      // specifically — facebook-oauth-callback.js sets fb:'login' for an
+      // existing-email match (docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §2.2:
+      // "Counted as a login for funnel-conversion measurement, not a new
+      // signup"), and firing this unconditionally would double-count
+      // every returning Facebook user as a fresh signup conversion.
+      if(email && fbOutcome === 'signup') fireMetaConversion('CompleteRegistration', { email: email });
       completeSignupAndAdvance(email, {
         advance: function(){ goToStep(SIGNUP_STEP + 1); }
       });
