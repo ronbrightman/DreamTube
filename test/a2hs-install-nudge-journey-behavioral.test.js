@@ -218,7 +218,7 @@ test('homepage journey card: hidden inside a detected in-app webview even though
     await safeGoto(page, baseUrl + '/home.html');
     await page.waitForSelector('.nav-icon', { timeout: 5000 });
 
-    var display = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(display, 'none', 'must never show the A2HS journey card inside a detected in-app webview');
   } finally {
     await context.close();
@@ -237,7 +237,7 @@ test('homepage journey card: hidden on a platform with nothing real to offer (de
     await safeGoto(page, baseUrl + '/home.html');
     await page.waitForSelector('.nav-icon', { timeout: 5000 });
 
-    var display = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(display, 'none', 'must never show the journey card when there is nothing actionable to offer');
   } finally {
     await context.close();
@@ -258,7 +258,7 @@ test('homepage journey card: a beforeinstallprompt that arrives AFTER this scrip
 
     // Confirms the starting state genuinely has nothing to offer yet --
     // this test would be meaningless if the card were already visible.
-    var initialDisplay = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    var initialDisplay = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(initialDisplay, 'none', 'must start hidden -- nothing captured yet, same as the desktop-with-nothing-to-offer case');
 
     // Dispatches a REAL beforeinstallprompt-shaped event through the actual
@@ -276,8 +276,8 @@ test('homepage journey card: a beforeinstallprompt that arrives AFTER this scrip
     // The card must appear WITHOUT a reload, and its own click wiring
     // (which the pre-fix code only ever attached if the card was already
     // visible on the very first synchronous pass) must actually work.
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 2000 });
-    await page.click('#install-hcard-btn');
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 2000 });
+    await page.click('#install-qrow');
     await page.waitForSelector('#install-sheet-overlay.open', { timeout: 2000 });
   } finally {
     await context.close();
@@ -296,7 +296,7 @@ test('homepage journey card: hidden once the account is genuinely verified insta
     await safeGoto(page, baseUrl + '/home.html');
     await page.waitForSelector('.nav-icon', { timeout: 5000 });
 
-    var display = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(display, 'none', 'a genuinely verified-installed account must never see the journey card again');
   } finally {
     await context.close();
@@ -318,14 +318,18 @@ test('homepage journey card: shown for an iOS-eligible, not-yet-verified account
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
 
-    // Deliberately has no X/dismiss control -- unlike every other nudge card in this app.
-    var dismissCount = await page.locator('#card-install button:not(#install-hcard-btn)').count();
-    assert.equal(dismissCount, 0, 'the persistent journey card must have no dismiss control at all');
+    // Deliberately has no X/dismiss control -- unlike every other nudge card
+    // in this app. The Night Shelf rebuild (tracker item for-product-build-
+    // ship-founder-go-07-31--vtsyg3) made the whole row itself the one
+    // button (no nested "See how" sub-button anymore) -- so the absence of
+    // a dismiss control is now "no nested button at all inside it".
+    var dismissCount = await page.locator('#install-qrow button').count();
+    assert.equal(dismissCount, 0, 'the persistent journey row must have no dismiss control (or any nested button) at all');
 
     await safeGoto(page, baseUrl + '/home.html'); // reload, same browser/account
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
   } finally {
     await context.close();
   }
@@ -353,7 +357,7 @@ test('homepage journey card: dismissing the SMALL nudge card elsewhere never hid
 
     // The persistent homepage card must be UNAFFECTED by that flag.
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
   } finally {
     await context.close();
   }
@@ -380,7 +384,7 @@ test('standalone-mode page load marks getInstallVerified() true for the signed-i
     var verified = await page.evaluate(function () { return DreamStore.getInstallVerified(); });
     assert.equal(verified, true, 'a standalone-mode load for a signed-in account must mark getInstallVerified() true');
 
-    var display = await page.locator('#card-install').evaluate(function (el) { return getComputedStyle(el).display; });
+    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(display, 'none', 'the journey card must already be hidden on the very same standalone load that verified it');
   } finally {
     await context.close();
@@ -416,7 +420,7 @@ test('appinstalled event marks getInstallVerified() true and immediately hides t
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
 
     var verifiedBefore = await page.evaluate(function () { return DreamStore.getInstallVerified(); });
     assert.equal(verifiedBefore, false);
@@ -424,7 +428,7 @@ test('appinstalled event marks getInstallVerified() true and immediately hides t
     await page.evaluate(function () { window.dispatchEvent(new Event('appinstalled')); });
 
     await page.waitForFunction(function () {
-      return getComputedStyle(document.getElementById('card-install')).display === 'none';
+      return getComputedStyle(document.getElementById('install-qrow')).display === 'none';
     }, null, { timeout: 5000 });
 
     var verifiedAfter = await page.evaluate(function () { return DreamStore.getInstallVerified(); });

@@ -18,7 +18,7 @@
   1. Topbar is the logo ONLY, left-aligned — no token chip.
   2. The Tonight pill leads to the WIZARD (mocked as a toast).
   3. Chamber hero: no eyebrow (no analysis method chosen yet); the card's
-     art is the sage himself (chamber-sage-x7q4.jpg) rising from the
+     art is the sage himself (assets/chamber-sage.jpg) rising from the
      right, the violet nebula blending into the image, content over a
      bottom scrim.
   4. The small glance strip grew into a full RITUAL module: large streak
@@ -40,8 +40,9 @@
   claim button opens a small mock claim sheet, then the balance settles.
 
   Static, self-contained: no app JS; all artwork is layered CSS
-  gradients except the Chamber's sage art (chamber-sage-x7q4.jpg,
-  committed alongside this file).
+  gradients except the Chamber's sage art (assets/chamber-sage.jpg —
+  moved there, off its original -x7q4 mock-review name, when the real
+  home.html rebuild shipped per this item's own founder verdict).
 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
@@ -271,7 +272,7 @@ body{
   text-shadow:0 1px 8px rgba(12,10,26,.55);
 }
 
-/* --- 4 · CHAMBER hero (~330px) — the sage himself (chamber-sage-x7q4.jpg,
+/* --- 4 · CHAMBER hero (~330px) — the sage himself (assets/chamber-sage.jpg,
    violet night palette) rising from the right, the card's own nebula
    gradient blending into the art on the left; slow breathing aura behind
    his shoulders. Premium content-card treatment. --- */
@@ -280,7 +281,7 @@ body{
   min-height:330px;
   background:
     linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
-    url(chamber-sage-x7q4.jpg) 0% 14% / 140% auto no-repeat,
+    url(assets/chamber-sage.jpg) 0% 14% / 140% auto no-repeat,
     linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
 }
 .hero-chamber .hero-stars{

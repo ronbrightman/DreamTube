@@ -1,16 +1,29 @@
 // test/home-behavioral.test.js
 //
-// Behavioral coverage for home.html — the new logged-in landing page
-// (tracker item for-product-build-homepage-wave-1-the-ri-xr8mir,
-// founder-approved 2026-07-29). Follows this repo's established
-// Playwright/node:test convention (test/ui-behavioral.test.js's
-// seedLoggedInUserAt/mockTokenStatus shape, test/interp-analytics-
-// behavioral.test.js's readPostHogCalls/captures shape) rather than
-// inventing a new one.
+// Behavioral coverage for home.html — the "Night Shelf" home rebuild
+// (tracker item for-product-build-ship-founder-go-07-31--vtsyg3, founder
+// GO 2026-07-31 evening), built against the approved visual spec
+// home-mock4-x7q4.html. Supersedes Wave 1's grid-card home
+// (for-product-build-homepage-wave-1-the-ri-xr8mir, 2026-07-29) — this
+// file replaces that wave's own coverage rather than living alongside it,
+// since the DOM it asserted on (#home-grid, .hcard, #card-week, etc.) no
+// longer exists. Every BEHAVIOR that wave shipped (D1 vs returning-user
+// state, silent streak freeze, account-scoped analytics dedup, the
+// Chamber/InterpretExperience integration, the claim/token mechanism, the
+// video-thumb blank-tile fix, Write/Speak/Wizard deep-links into
+// create.html, the Bar A dock) is still covered here — only the
+// selectors/copy changed to match the new shelf layout.
+//
+// Follows this repo's established Playwright/node:test convention
+// (test/ui-behavioral.test.js's seedLoggedInUserAt/mockTokenStatus shape,
+// test/interp-analytics-behavioral.test.js's readPostHogCalls/captures
+// shape, test/profile-night-restyle-behavioral.test.js's real
+// MOBILE_VIEWPORT + pure-helper-unit-test split) rather than inventing a
+// new one.
 //
 // Deliberately seeds every dream's createdAt as "now" (or "now minus a
 // few ms/hours", same calendar day) rather than reaching for a specific
-// day-of-week — home.html's "This Week" window is Monday-anchored (see
+// day-of-week — home.html's "this week" window is Monday-anchored (see
 // js/store.js's startOfWeekMs), and "today" is by definition always
 // inside the current week regardless of which real day the test suite
 // happens to run on, so same-day timestamps sidestep week-boundary
@@ -20,8 +33,13 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var DreamCards = require('../js/dream-cards.js');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
+// A real phone-sized viewport (task explicitly requires mobile-viewport
+// coverage) — same 390x844 convention test/barA-nav-rollout-behavioral.
+// test.js / test/profile-night-restyle-behavioral.test.js already use.
+var MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 var playwright = null;
 var unavailableReason = null;
@@ -54,6 +72,10 @@ test.after(async function () {
   if (browser) await browser.close();
   if (server) await server.close();
 });
+
+function newMobileContext() {
+  return browser.newContext({ viewport: MOBILE_VIEWPORT });
+}
 
 function blockThirdParty(page) {
   return page.route(/fonts\.(googleapis|gstatic)\.com|connect\.facebook\.net|i\.posthog\.com/, function (route) {
@@ -134,9 +156,41 @@ function captures(phCalls, eventName) {
   return phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === eventName; });
 }
 
+// ============================================================================
+// Pure unit coverage of js/dream-cards.js's new dreamRowTileHTML — required
+// directly under node --test, no browser. Same dual-export pattern
+// test/profile-night-restyle-behavioral.test.js already uses for this file.
+// ============================================================================
+
+test('DreamCards.dreamRowTileHTML: renders a video tile linking to result.html, escapes the id, and is NOT the vertical vcard component', function () {
+  var html = DreamCards.dreamRowTileHTML({ id: 'ab"c', videoUrl: 'https://example.com/x.mp4' }, {});
+  assert.match(html, /class="dream-row-tile"/);
+  assert.match(html, /href="result\.html\?id=ab&quot;c"/);
+  assert.match(html, /data-dream-id="ab&quot;c"/);
+  assert.match(html, /<video class="vcard-video"/, 'must reuse the .vcard-video class so the shared observeVideos() picks it up');
+  assert.doesNotMatch(html, /vcard-thumb\b/, 'must not be the vertical profile.html grid tile markup');
+});
+
+test('DreamCards.dreamRowTileHTML: falls back to the gradient div when there is no video/image, and to an <img> when there is an image but no video', function () {
+  var gradientHtml = DreamCards.dreamRowTileHTML({ id: 'g1' }, { gradient: 'red' });
+  assert.match(gradientHtml, /vcard-thumb-bg" style="background:red"/);
+  var imgHtml = DreamCards.dreamRowTileHTML({ id: 'i1', imageUrl: 'https://example.com/i.png' }, {});
+  assert.match(imgHtml, /<img class="vcard-image" src="https:\/\/example\.com\/i\.png"/);
+});
+
+test('DreamCards.dreamRowTileHTML: asButton renders a non-navigating <button> (for a future picker), and `selected` adds the is-selected ring class', function () {
+  var btnHtml = DreamCards.dreamRowTileHTML({ id: 'p1', videoUrl: 'https://example.com/p.mp4' }, { asButton: true, selected: true });
+  assert.match(btnHtml, /^<button type="button" class="dream-row-tile is-selected"/);
+  assert.doesNotMatch(btnHtml, /href=/, 'asButton variant must not carry a navigating href');
+});
+
+// ============================================================================
+// Real browser coverage of home.html itself.
+// ============================================================================
+
 test('home.html redirects to login.html when not authenticated', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -147,26 +201,32 @@ test('home.html redirects to login.html when not authenticated', async function 
   }
 });
 
-test('home.html: a brand-new (D1) account sees the D1 next-step strip, real entry buttons, and neutral "start your streak" copy -- never a punitive missed-day message anywhere on the page', async function (t) {
+test('home.html: a brand-new (D1) account sees the Tonight hero\'s "first night" line, all three quiet entry links, the primary pulsing pill, "Start your streak tonight" in the ritual module, and the My Dreams row hidden entirely -- never a punitive missed-day message anywhere on the page', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: 0, dailyClaimAmount: 100, streak: 0 });
     await seedHomeUser(page, {});
 
-    await page.waitForSelector('#next-strip', { timeout: 5000 });
-    var stripText = await page.locator('#next-strip').textContent();
-    assert.match(stripText, /new here/i);
+    await page.waitForSelector('#tonight-d1', { state: 'visible', timeout: 5000 });
+    var d1Text = await page.locator('#tonight-d1').textContent();
+    assert.match(d1Text, /first night/i);
 
-    assert.equal(await page.locator('#today-entrybtns').isVisible(), true);
+    assert.equal(await page.locator('#tonight-links').isVisible(), true);
     assert.equal(await page.locator('#btn-write').isVisible(), true);
     assert.equal(await page.locator('#btn-speak').isVisible(), true);
     assert.equal(await page.locator('#btn-norecall').isVisible(), true);
+    assert.equal(await page.locator('#tonight-pill').isVisible(), true);
+    assert.match(await page.locator('#tonight-pill').getAttribute('class'), /\bpulse\b/, 'the primary pill must pulse while tonight is unlogged');
 
-    var streakLabel = await page.locator('#streak-label').textContent();
-    assert.match(streakLabel, /start your dream capture streak/i);
+    var ritualBig = await page.locator('#ritual-big').textContent();
+    assert.match(ritualBig, /start your streak tonight/i);
+
+    // My Dreams row is hidden entirely for a genuinely brand-new account
+    // (mock §7) -- there is nothing to show a total newcomer.
+    assert.equal(await page.locator('#dreams').isVisible(), false);
 
     var bodyText = await page.locator('#app').textContent();
     assert.doesNotMatch(bodyText, /broke|lost your streak|reset to zero/i, 'the page must never show a punitive missed-day message -- silent freeze means silent');
@@ -175,9 +235,9 @@ test('home.html: a brand-new (D1) account sees the D1 next-step strip, real entr
   }
 });
 
-test('home.html: an account with only a LEGACY dream (no createdAt field) is never shown the brand-new-user "New here?" hint -- getDreamLogStatus\'s hasEverLogged must not require createdAt (tracker item for-product-home-screen-spec-drift-from--575djz, fix 4)', async function (t) {
+test('home.html: an account with only a LEGACY dream (no createdAt field) is never shown the brand-new-user "first night" hint -- getDreamLogStatus\'s hasEverLogged must not require createdAt (tracker item for-product-home-screen-spec-drift-from--575djz, fix 4, carried over into the Night Shelf rebuild)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -187,18 +247,18 @@ test('home.html: an account with only a LEGACY dream (no createdAt field) is nev
     // createdAt field existed (see finalizeDream's own doc comment).
     await seedHomeUser(page, { dreams: [makeDream('legacy-1', { createdAt: undefined })] });
 
-    await page.waitForSelector('#next-strip', { timeout: 5000 });
-    var stripText = await page.locator('#next-strip').textContent();
-    assert.doesNotMatch(stripText, /new here/i, 'an account with a real (if undated) logged dream must never see the D1 brand-new-user hint');
-    assert.match(stripText, /more this week/i, 'a returning-user strip shape should show instead -- the legacy dream just cannot be date-bucketed into this week\'s count');
+    await page.waitForSelector('#ritual-big', { timeout: 5000 });
+    assert.equal(await page.locator('#tonight-d1').isVisible(), false, 'an account with a real (if undated) logged dream must never see the D1 "first night" hint');
+    var ritualSub = await page.locator('#ritual-sub').textContent();
+    assert.match(ritualSub, /of \d+ this week/i, 'a returning-user ritual shape should show instead -- the legacy dream just cannot be date-bucketed into this week\'s count');
   } finally {
     await context.close();
   }
 });
 
-test('home.html: tapping "No recall" logs today without any token/claim call, flips the Today card to the logged state, and updates the next-step strip', async function (t) {
+test('home.html: tapping "No recall" logs today without any token/claim call, flips the Tonight hero to the logged state, reveals the My Dreams row (now that this account has logged something) with its empty-state message, and persists across a reload', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -213,27 +273,39 @@ test('home.html: tapping "No recall" logs today without any token/claim call, fl
     await page.waitForSelector('#btn-norecall', { timeout: 5000 });
     await page.click('#btn-norecall');
 
-    await page.waitForSelector('#today-logged-row', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#today-entrybtns').isVisible(), false, 'entry buttons should hide once today is logged');
-    var loggedRowText = await page.locator('#today-logged-row').textContent();
-    assert.match(loggedRowText, /no recall.*counts too/i);
+    await page.waitForFunction(function () {
+      var el = document.getElementById('hero-tonight');
+      return el && el.classList.contains('logged');
+    }, null, { timeout: 5000 });
+    assert.equal(await page.locator('#tonight-pill').isVisible(), false, 'the primary pill should hide once tonight is logged');
+    assert.equal(await page.locator('#tonight-links').isVisible(), false, 'the quiet entry links should hide once tonight is logged');
+    var quoteText = await page.locator('#tonight-quote').textContent();
+    assert.match(quoteText, /no recall.*counts too/i);
 
-    var stripText = await page.locator('#next-strip').textContent();
-    assert.match(stripText, /more this week/i, 'a returning-shape strip (not the D1 one) should show once something has been logged');
+    // Never logged a real dream, but HAS now logged something -- the My
+    // Dreams row should appear with its friendly empty message rather than
+    // staying fully hidden (D1's "hide entirely" only applies before the
+    // account has ever logged anything at all).
+    await page.waitForSelector('#dreams', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#dreams-empty', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#dreams-row').isVisible(), false);
 
     assert.equal(claimCalled, false, 'logging "no recall" must never call the token-claim endpoint -- it grants nothing');
 
     // Persists across a reload (real store.js write, not just in-memory JS state).
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#today-logged-row', { state: 'visible', timeout: 5000 });
+    await page.waitForFunction(function () {
+      var el = document.getElementById('hero-tonight');
+      return el && el.classList.contains('logged');
+    }, null, { timeout: 5000 });
   } finally {
     await context.close();
   }
 });
 
-test('home.html: This Week card stays in the exact same grid slot across locked -> earned states (founder amendment: cards never change position)', async function (t) {
+test('home.html: the ritual module stays the exact same element across locked -> earned states (founder amendment carried over from Wave 1: the module transforms in place, never moves/duplicates)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -241,104 +313,102 @@ test('home.html: This Week card stays in the exact same grid slot across locked 
 
     // Locked state: 1 of 3.
     await seedHomeUser(page, { dreams: [makeDream('wk-1')] });
-    await page.waitForSelector('#card-week', { timeout: 5000 });
-    var cardIds = await page.locator('#home-grid > *').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
-    var lockedIndex = cardIds.indexOf('card-week');
-    assert.ok(lockedIndex !== -1, 'card-week must be present');
-    assert.equal(await page.locator('#card-week').getAttribute('class'), 'hcard span2', 'locked state should not yet carry the week-earned class');
-    var lockedText = await page.locator('#week-body').textContent();
-    assert.match(lockedText, /1 of 3/);
+    await page.waitForSelector('#ritual', { timeout: 5000 });
+    assert.equal(await page.locator('#ritual').count(), 1);
+    assert.equal(await page.locator('#ritual').getAttribute('class'), 'ritual', 'locked state should not yet carry the warm class');
+    var lockedBig = await page.locator('#ritual-big').textContent();
+    assert.match(lockedBig, /🔥 ?1 night/);
+    var lockedSub = await page.locator('#ritual-sub').textContent();
+    assert.match(lockedSub, /1 of 3/);
 
     // Earned state: 3 of 3, same account, more dreams -- freshState avoids
     // double-counting the 'wk-1' dream seeded above into a 4th entry.
     await seedHomeUser(page, { dreams: [makeDream('wk-1'), makeDream('wk-2'), makeDream('wk-3')], freshState: true });
-    await page.waitForSelector('#card-week', { timeout: 5000 });
-    var cardIdsAfter = await page.locator('#home-grid > *').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
-    var earnedIndex = cardIdsAfter.indexOf('card-week');
-    assert.equal(earnedIndex, lockedIndex, 'card-week must occupy the exact same index in the grid in both states');
-    assert.equal(cardIdsAfter.length, cardIds.length, 'the total number of top-level cards must not change between states');
-    var earnedClass = await page.locator('#card-week').getAttribute('class');
-    assert.match(earnedClass, /week-earned/);
-    var earnedText = await page.locator('#week-body').textContent();
-    assert.match(earnedText, /3 dreams this week/i);
-    assert.match(earnedText, /cinematic/i, 'the earned summary should reflect the REAL seeded style, not fabricated text');
+    await page.waitForSelector('#ritual', { timeout: 5000 });
+    assert.equal(await page.locator('#ritual').count(), 1, 'the ritual module must never be duplicated between states');
+    var earnedClass = await page.locator('#ritual').getAttribute('class');
+    assert.match(earnedClass, /\bwarm\b/);
+    var earnedBig = await page.locator('#ritual-big').textContent();
+    assert.match(earnedBig, /3 dreams this week/i);
+    var earnedSub = await page.locator('#ritual-sub').textContent();
+    assert.match(earnedSub, /cinematic/i, 'the earned summary should reflect the REAL seeded style, not fabricated text');
   } finally {
     await context.close();
   }
 });
 
-test('home.html: My Dreams gallery renders real thumbnails linking to result.html and an "All my dreams" link to profile.html; shows an empty state with none', async function (t) {
+test('home.html: My Dreams row renders real thumbnails linking to result.html and an "All" link to profile.html; a truly brand-new account never shows the row at all; an account that has logged but has no real dream yet shows the friendly empty message', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedHomeUser(page, { dreams: [makeDream('md-1'), makeDream('md-2')] });
 
-    await page.waitForSelector('#mydreams-thumbs a.thumb', { timeout: 5000 });
-    var hrefs = await page.locator('#mydreams-thumbs a.thumb').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
+    await page.waitForSelector('#dreams-row a.dream-row-tile', { timeout: 5000 });
+    var hrefs = await page.locator('#dreams-row a.dream-row-tile').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
     assert.equal(hrefs.length, 2);
     hrefs.forEach(function (h) { assert.match(h, /^result\.html\?id=md-/); });
-    var allLinkHref = await page.locator('#card-mydreams .alllink').getAttribute('href');
+    var allLinkHref = await page.locator('#dreams .dreams-all').getAttribute('href');
     assert.equal(allLinkHref, 'profile.html');
 
-    // Empty case, fresh account.
+    // Genuinely brand-new account -- the whole section stays hidden.
     await seedHomeUser(page, { username: 'emptytester', dreams: [] });
-    await page.waitForSelector('#mydreams-empty', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#mydreams-thumbs').isVisible(), false);
+    await page.waitForSelector('#ritual', { timeout: 5000 });
+    assert.equal(await page.locator('#dreams').isVisible(), false);
+
+    // An account that HAS logged (a no-recall check-in) but has no real
+    // dream yet -- the row shows the friendly empty message instead.
+    await seedHomeUser(page, { username: 'norecalltester', dreams: [], noRecallDates: [new Date().toDateString()] });
+    await page.waitForSelector('#dreams', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#dreams-empty').isVisible(), true);
+    assert.equal(await page.locator('#dreams-row').isVisible(), false);
   } finally {
     await context.close();
   }
 });
 
-// Regression coverage for the My Dreams carousel blank/black video-tile bug
-// (tracker item for-product-home-screen-spec-drift-from--575djz, fix 5).
-// Follows test/processing-preview-video-blank-tile-fallback-behavioral.
-// test.js's pattern of stalling the video's own network request (so no
-// loadeddata/playing/error can ever fire -- the exact real-world shape of
-// a slow network or blocked autoplay) rather than just asserting on
-// markup, but adapted to what home.html's fix actually IS: unlike
-// processing.html, home.html has no load-timeout fallback (out of scope
-// for this round -- see the tracker item's review notes) -- its fix is
-// preload="metadata" (never fetches zero bytes, unlike the old
-// preload="none") plus thumbVideoObserver actually calling play() once a
-// thumb scrolls into view. So this asserts the mechanism of the fix
-// directly: the attribute regression class (preload="none" reintroduced)
-// and the behavioral regression class (no observer/no play() call ever
-// wired up) would each independently be caught here.
+// Regression coverage for the My Dreams row's blank/black video-tile bug
+// (tracker item for-product-home-screen-spec-drift-from--575djz, fix 5,
+// carried over into the Night Shelf rebuild via the shared
+// DreamCards.observeVideos() mechanism profile.html already uses). Follows
+// test/processing-preview-video-blank-tile-fallback-behavioral.test.js's
+// pattern of stalling the video's own network request (so no loadeddata/
+// playing/error can ever fire -- the exact real-world shape of a slow
+// network or blocked autoplay) rather than just asserting on markup.
 function stallHomeThumbVideoRequest(page) {
   return page.route('**/mock-home-thumb-video.mp4', function () { /* deliberately never fulfilled -- stalled network, matching the real bug's shape */ });
 }
 
-test('home.html: My Dreams carousel video thumb uses preload="metadata" (never "none") and its IntersectionObserver actually calls play() once the thumb is visible -- regression coverage for the blank/black tile bug', async function (t) {
+test('home.html: My Dreams row video thumb uses preload="metadata" (never "none") and DreamCards.observeVideos()\'s IntersectionObserver actually calls play() once the thumb is visible -- regression coverage for the blank/black tile bug', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await stallHomeThumbVideoRequest(page);
     // Installed before any page script runs (Playwright guarantee for
     // addInitScript), so this wraps HTMLMediaElement.prototype.play before
-    // home.html's own thumbVideoObserver ever gets a chance to call it --
-    // records real invocations rather than inferring them from a decoded
-    // frame that a stalled request can never produce.
+    // home.html's own observer ever gets a chance to call it -- records
+    // real invocations rather than inferring them from a decoded frame
+    // that a stalled request can never produce.
     await page.addInitScript(function () {
       window.__thumbPlayCalls = 0;
       var origPlay = HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play = function () {
-        if (this.classList && this.classList.contains('thumb-video')) window.__thumbPlayCalls++;
+        if (this.classList && this.classList.contains('vcard-video')) window.__thumbPlayCalls++;
         return origPlay.apply(this, arguments);
       };
     });
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedHomeUser(page, { dreams: [makeDream('vid-1', { videoUrl: baseUrl + '/mock-home-thumb-video.mp4' })] });
 
-    await page.waitForSelector('#mydreams-thumbs video.thumb-video', { timeout: 5000 });
+    await page.waitForSelector('#dreams-row video.vcard-video', { timeout: 5000 });
 
     // Attribute regression guard: the original bug was preload="none",
     // which never fetches enough to decode a frame at all.
-    var preload = await page.locator('#mydreams-thumbs video.thumb-video').getAttribute('preload');
+    var preload = await page.locator('#dreams-row video.vcard-video').getAttribute('preload');
     assert.equal(preload, 'metadata', 'must never regress back to preload="none" -- that alone caused the blank/black tile');
 
     // Behavioral regression guard: force the intersection (scrolled fully
@@ -346,67 +416,71 @@ test('home.html: My Dreams carousel video thumb uses preload="metadata" (never "
     // play() on this exact element -- the request is still stalled at this
     // point, so this would NOT pass merely because the video happened to
     // have decoded a frame on its own.
-    await page.locator('#mydreams-thumbs video.thumb-video').scrollIntoViewIfNeeded();
+    await page.locator('#dreams-row video.vcard-video').scrollIntoViewIfNeeded();
     await page.waitForFunction(function () { return window.__thumbPlayCalls > 0; }, null, { timeout: 5000 });
   } finally {
     await context.close();
   }
 });
 
-test('home.html: Chamber card\'s fallback href points at result.html for a completed dream (no ?openInterp=1 -- that mechanism is gone), and at create.html when there is nothing to interpret yet', async function (t) {
+test('home.html: the Chamber pill\'s fallback href points at result.html for a completed dream (no ?openInterp=1 -- that mechanism is gone), and at create.html when there is nothing to interpret yet', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
 
     await seedHomeUser(page, { dreams: [makeDream('ch-1')] });
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
-    var href = await page.locator('#card-chamber').getAttribute('href');
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
+    var href = await page.locator('#chamber-pill').getAttribute('href');
     assert.equal(href, 'result.html?id=ch-1');
+    assert.equal(await page.locator('#chamber-pill').textContent(), 'Enter');
 
     await seedHomeUser(page, { username: 'nodreamsyet', dreams: [] });
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
-    var href2 = await page.locator('#card-chamber').getAttribute('href');
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
+    var href2 = await page.locator('#chamber-pill').getAttribute('href');
     assert.equal(href2, 'create.html');
+    assert.equal(await page.locator('#chamber-pill').textContent(), 'Begin');
   } finally {
     await context.close();
   }
 });
 
-test('home.html: Chamber card, with a completed dream, opens InterpretExperience directly ON THIS PAGE (no navigation away) -- Interpretation Wave 1, tracker item for-product-build-interpretation-wave-1--xuftyn', async function (t) {
+test('home.html: the Chamber pill, with a completed dream, opens InterpretExperience directly ON THIS PAGE (no navigation away) -- Interpretation Wave 1, tracker item for-product-build-interpretation-wave-1--xuftyn', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedHomeUser(page, { dreams: [makeDream('ch-itp-1')] });
 
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
-    await page.click('#card-chamber');
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
+    await page.click('#chamber-pill');
     await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
     assert.equal(page.url(), baseUrl + '/home.html', 'must open the overlay in place, never navigate to result.html');
 
     var phCalls = await readPostHogCalls(page);
     assert.equal(captures(phCalls, 'interp_surface_opened').length, 1);
+    assert.equal(captures(phCalls, 'home_chamber_pill_tapped').length, 1, 'the new tracker-item-required event must fire on a real pill tap');
+    assert.deepEqual(captures(phCalls, 'home_chamber_pill_tapped')[0][2], { branch: 'completed_dream' });
   } finally {
     await context.close();
   }
 });
 
-test('home.html: Chamber card, with NO completed dream, still navigates to create.html normally (a real link, not intercepted)', async function (t) {
+test('home.html: the Chamber pill, with NO completed dream, still navigates to create.html normally (a real link, not intercepted), and still fires home_chamber_pill_tapped', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedHomeUser(page, { username: 'chambernodream', dreams: [] });
 
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
-    await page.click('#card-chamber');
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
+    await page.click('#chamber-pill');
     await page.waitForURL(/create\.html/, { timeout: 5000, waitUntil: 'domcontentloaded' });
   } finally {
     await context.close();
@@ -415,18 +489,18 @@ test('home.html: Chamber card, with NO completed dream, still navigates to creat
 
 test('home.html: home_chamber_href_computed fires at render time (not gated on a click) with the branch actually taken and the resolved href -- diagnostic added for tracker item for-product-bug-founder-new-home-tapping-yuspxa (founder tapped Chamber, landed in the store; every hypothesis traced statically came back unsupported, so this is the concrete signal a recurrence would need)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
 
-    // Completed-dream branch -- never click the card, since this must fire
+    // Completed-dream branch -- never click the pill, since this must fire
     // purely from href computation, matching what actually happened on the
     // live bug (the tap already landed somewhere before any click handler
     // could matter).
     await seedHomeUser(page, { dreams: [makeDream('ch-2')] });
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
     var calls1 = await readPostHogCalls(page);
     var fired1 = captures(calls1, 'home_chamber_href_computed');
     assert.equal(fired1.length, 1, 'expected exactly one home_chamber_href_computed capture on load');
@@ -434,7 +508,7 @@ test('home.html: home_chamber_href_computed fires at render time (not gated on a
 
     // No-completed-dream branch.
     await seedHomeUser(page, { username: 'nodreamsyet2', dreams: [] });
-    await page.waitForSelector('#card-chamber', { timeout: 5000 });
+    await page.waitForSelector('#chamber-pill', { timeout: 5000 });
     var calls2 = await readPostHogCalls(page);
     var fired2 = captures(calls2, 'home_chamber_href_computed');
     assert.equal(fired2.length, 1, 'expected exactly one home_chamber_href_computed capture on load');
@@ -444,9 +518,9 @@ test('home.html: home_chamber_href_computed fires at render time (not gated on a
   }
 });
 
-test('home.html: Vault card shows the real token balance and links into shop.html', async function (t) {
+test('home.html: the ritual module\'s quiet balance line shows the real token balance and links into shop.html (absorbs the old Vault card)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -454,11 +528,60 @@ test('home.html: Vault card shows the real token balance and links into shop.htm
     await seedHomeUser(page, { dreams: [] });
 
     await page.waitForFunction(function () {
-      var el = document.getElementById('vault-balance');
-      return el && el.textContent === '340';
+      var el = document.getElementById('ritual-balance');
+      return el && /340/.test(el.textContent);
     }, null, { timeout: 5000 });
-    var href = await page.locator('#card-vault').getAttribute('href');
-    assert.equal(href, 'shop.html?source=home_vault_card');
+    var href = await page.locator('#ritual-balance').getAttribute('href');
+    assert.equal(href, 'shop.html?source=home_ritual_balance');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: the daily claim lives in the ritual module as a real 56px button when claimable, opens the existing claim sheet, and disappears once claimed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Stateful mock: claimable until the claim actually succeeds, then not
+    // -- refreshTokenStatus(false)'s post-claim re-fetch (onClaimed above)
+    // must see the real post-claim status, not the same claimable:true
+    // response forever, or the button would wrongly reappear.
+    var claimed = false;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(
+        claimed
+          ? { balance: 120, claimable: false, nextClaimAt: Date.now() + 86400000, dailyClaimAmount: 20, streak: 3 }
+          : { balance: 100, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 2 }
+      ) });
+    });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimed = true;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 120, streak: 3, nextClaimAt: Date.now() + 86400000 }) });
+    });
+    // skipNav + a pre-seeded "already auto-shown today" marker so
+    // PurchaseSheet's own once-per-day auto-open (unrelated to what this
+    // test covers) doesn't race with -- or visually cover -- the explicit
+    // #ritual-claim click below.
+    await seedHomeUser(page, { dreams: [makeDream('claim-1')], skipNav: true });
+    await page.evaluate(function () { localStorage.setItem('dreamtube_claim_sheet_shown_date', new Date().toDateString()); });
+    await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#ritual-claim', { state: 'visible', timeout: 5000 });
+    var claimBtnBox = await page.locator('#ritual-claim').boundingBox();
+    assert.ok(claimBtnBox.height >= 44, 'the ritual claim button must meet a real tap-target minimum');
+
+    await page.click('#ritual-claim');
+    await page.waitForSelector('#claim-sheet-btn', { state: 'visible', timeout: 5000 });
+    await page.click('#claim-sheet-btn');
+    await page.waitForFunction(function () {
+      var btn = document.getElementById('ritual-claim');
+      return btn && btn.style.display === 'none';
+    }, null, { timeout: 5000 });
+
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'home_claim_chip_tapped').length, 1);
   } finally {
     await context.close();
   }
@@ -466,7 +589,7 @@ test('home.html: Vault card shows the real token balance and links into shop.htm
 
 test('home.html: the Bar A night dock is Home (active) / Explore / +Create / Profile, matching explore.html/profile.html -- tracker item for-product-urgent-founder-roll-the-new--8pyek3', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -499,9 +622,9 @@ test('home.html: the Bar A night dock is Home (active) / Explore / +Create / Pro
   }
 });
 
-test('home.html: Write it / Speak it reuse create.html\'s EXISTING entry points via the same deep-link convention as ?record=1', async function (t) {
+test('home.html: Write / Speak quiet links reuse create.html\'s EXISTING entry points via the same deep-link convention as ?record=1', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -517,27 +640,27 @@ test('home.html: Write it / Speak it reuse create.html\'s EXISTING entry points 
   }
 });
 
-test('home.html: Wizard is the first, primary entry button and reuses create.html\'s EXISTING chip-first "Build it" wizard via a ?build=1 deep-link (tracker item for-product-home-screen-spec-drift-from--575djz, fix 2 -- the founder-requested Wizard entry point that has a history of not surviving from mock into the live build)', async function (t) {
+test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dream" action and reuses create.html\'s EXISTING chip-first "Build it" wizard via a ?build=1 deep-link (tracker item for-product-home-screen-spec-drift-from--575djz, fix 2 -- the founder-requested Wizard entry point that has a history of not surviving from mock into the live build -- and the mock4 amendment moving it from a small button among four into the hero\'s own primary pill)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedHomeUser(page, { dreams: [] });
 
-    await page.waitForSelector('#btn-wizard', { timeout: 5000 });
-    assert.equal(await page.locator('#btn-wizard').isVisible(), true);
-    assert.equal(await page.locator('#btn-wizard').getAttribute('class'), 'ebtn p', 'Wizard must carry the primary (.ebtn.p) treatment, same as the frozen spec\'s other primary actions');
+    await page.waitForSelector('#tonight-pill', { timeout: 5000 });
+    assert.equal(await page.locator('#tonight-pill').isVisible(), true);
+    assert.match(await page.locator('#tonight-pill').getAttribute('class'), /\bpill\b/);
+    var pillBox = await page.locator('#tonight-pill').boundingBox();
+    assert.ok(pillBox.height >= 44, 'the primary pill must meet a real tap-target minimum (spec: 56px tall)');
 
-    // DOM order: Wizard, Write, Speak, No recall -- Wizard leads as the
-    // guided, primary path ahead of the three already-shipped manual entry
-    // points (same #today-entrybtns row the D1/entry-button tests above
-    // already assert on for visibility, but not yet on order).
-    var entryIds = await page.locator('#today-entrybtns > *').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
-    assert.deepEqual(entryIds, ['btn-wizard', 'btn-write', 'btn-speak', 'btn-norecall']);
+    // DOM order of the quiet entry links underneath: Write, Speak, No
+    // recall -- Wizard itself is no longer among them (it's the pill above).
+    var entryIds = await page.locator('#tonight-links button').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
+    assert.deepEqual(entryIds, ['btn-write', 'btn-speak', 'btn-norecall']);
 
-    await page.click('#btn-wizard');
+    await page.click('#tonight-pill');
     await page.waitForURL(/create\.html\?build=1/, { timeout: 5000, waitUntil: 'domcontentloaded' });
 
     // Not just a URL check -- confirm the actual chip-first wizard UI is
@@ -558,7 +681,7 @@ test('home.html: Wizard is the first, primary entry button and reuses create.htm
 
 test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped fires for the no_recall tap, home_card_tapped fires on a card tap, and no event name or string prop is ever health/therapy-flavored', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -570,9 +693,9 @@ test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped
     assert.equal(captures(initialCalls, 'home_viewed').length, 1);
 
     await page.click('#btn-norecall');
-    await page.waitForSelector('#today-logged-row', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#dreams-empty', { state: 'visible', timeout: 5000 });
 
-    await page.click('#card-mydreams');
+    await page.click('#dreams-empty');
 
     var phCalls = await readPostHogCalls(page);
     assert.equal(captures(phCalls, 'home_today_entry_tapped').length, 1);
@@ -599,7 +722,7 @@ test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped
 
 test('home.html: silent streak freeze -- a real gap since the last logged day fires home_streak_freeze_shown quietly, with no user-visible punitive message anywhere', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -620,10 +743,9 @@ test('home.html: silent streak freeze -- a real gap since the last logged day fi
 
     var bodyText = await page.locator('#app').textContent();
     // Narrower than the D1 test's regex on purpose: this page's own
-    // legitimate reassurance copy ("a quiet freeze protects a MISSED
-    // night") contains the bare word "missed" -- these phrases are the
-    // actual punitive shapes that copy must never take, not the word
-    // itself.
+    // legitimate reassurance copy contains the bare word "missed" in a
+    // benign phrase elsewhere in the app -- these phrases are the actual
+    // punitive shapes that copy must never take, not the word itself.
     assert.doesNotMatch(bodyText, /you missed|broke your|lost your streak|reset to zero|streak reset/i, 'the freeze must stay silent -- no visible warning copy anywhere on the page');
   } finally {
     await context.close();
@@ -632,7 +754,7 @@ test('home.html: silent streak freeze -- a real gap since the last logged day fi
 
 test('home.html: the weekly-summary and streak-freeze analytics dedup flags are scoped per account, not just per date -- a second account sharing the same browser still fires its own first-time events (review finding, fixed)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -690,9 +812,38 @@ test('home.html: the weekly-summary and streak-freeze analytics dedup flags are 
   }
 });
 
+test('home.html: no horizontal overflow at a real 390px mobile viewport, and the primary pill / entry links all meet a real tap-target minimum', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 2 });
+    // Deliberately no dreams -- an unlogged-tonight account, so the quiet
+    // entry links under the Tonight hero are actually visible to measure
+    // (a "today" dream, like most other tests here seed, would flip tonight
+    // to its logged state and correctly hide them, per the mock's own
+    // state machine).
+    await seedHomeUser(page, { dreams: [] });
+
+    await page.waitForSelector('#chamber-pill', { state: 'visible', timeout: 5000 });
+    var overflowsHorizontally = await page.evaluate(function () {
+      return document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
+    });
+    assert.equal(overflowsHorizontally, false, 'home.html must not cause horizontal overflow at a real 390px mobile viewport');
+
+    var pillBox = await page.locator('#tonight-pill').boundingBox();
+    assert.ok(pillBox.height >= 44, 'the primary pill must meet a real tap-target minimum');
+    var entryBox = await page.locator('#btn-write').boundingBox();
+    assert.ok(entryBox.height >= 44, 'quiet entry links must meet a real 44px tap-target minimum');
+  } finally {
+    await context.close();
+  }
+});
+
 test('create.html: ?write=1 deep-link jumps straight into Write mode (mirrors the existing ?record=1 convention)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -715,14 +866,14 @@ test('create.html: ?write=1 deep-link jumps straight into Write mode (mirrors th
 
 // The old ?openInterp=1 deep-link mechanism (result.html noticing a query
 // param and synthesizing a click on its own pill) is GONE entirely --
-// superseded by Interpretation Wave 1's "Chamber card opens
+// superseded by Interpretation Wave 1's "Chamber pill opens
 // InterpretExperience directly on home.html" tests above, and the surface
 // itself is covered end-to-end by test/interp-analytics-behavioral.test.js.
 // No dead code/dead test left behind for a mechanism that no longer exists.
 
 test('login.html: a successful login now lands on home.html by default (was explore.html) -- an explicit ?next= override still wins', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -755,7 +906,7 @@ test('login.html: a successful login now lands on home.html by default (was expl
 
 test('login.html: ?next= override still wins over the home.html default', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
+  var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);

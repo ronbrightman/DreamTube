@@ -304,8 +304,8 @@ test('home.html\'s persistent install journey card also shows Chrome-specific gu
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#card-install', { state: 'visible', timeout: 5000 });
-    await page.click('#install-hcard-btn');
+    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
+    await page.click('#install-qrow');
     await page.waitForSelector('#install-sheet-overlay.open', { timeout: 5000 });
 
     var sheetText = await page.textContent('#install-sheet-body');

@@ -69,21 +69,27 @@
 </script>
 
 <!--
-  Homepage Wave 1 (tracker item for-product-build-homepage-wave-1-the-ri-xr8mir,
-  founder-approved 2026-07-29). Visual spec = home-mock2-x7q4.html (repo
-  root, commit 8458a35) — this page ports that mock's "magical night" look
-  (star layers, aurora, glowing cards) into a real, wired page, deliberately
-  keeping every effect CSS-only (radial-gradient star fields + two cheap
-  transform/opacity keyframe animations, no canvas/video/JS animation loop,
-  no image assets for the sky) per FOUNDER_PRINCIPLES.md's "light media
-  over heavy on mobile" principle and this item's own explicit "keep it
-  LIGHT for webview" instruction. This <style> block is page-scoped (same
-  pattern as index.html's --dawn-* override) — it only ever applies here,
-  never touching css/styles.css's shared dark theme other pages use.
+  Home "Night Shelf" rebuild (tracker item
+  for-product-build-ship-founder-go-07-31--vtsyg3, founder GO 2026-07-31
+  evening) — supersedes Wave 1 (for-product-build-homepage-wave-1-the-ri-
+  xr8mir, 2026-07-29). Visual spec = home-mock4-x7q4.html (repo root,
+  commit ca4ada0 + edda05f's four founder amendments), itself round 3 of
+  the home redesign (round 2's home-mock3-x7q4.html was rejected for
+  cramming everything into one viewport) — this page is the opposite by
+  design: a long, airy scrolling shelf of full-width modules rather than a
+  dense grid. Every visual token/keyframe below is ported verbatim from
+  that approved mock; only the wiring (real store data, real navigation,
+  real analytics) is new. Same "CSS-only art, no image/video/canvas
+  payload for the sky" discipline as Wave 1 (FOUNDER_PRINCIPLES.md's
+  "light media over heavy on mobile") — the one exception is the
+  Chamber hero's sage artwork (assets/chamber-sage.jpg, re-compressed to
+  ~52KB — see this item's own build notes — specifically because this is
+  the one page with a real image payload and Meta/Instagram's in-app
+  webview is a real, low-bandwidth audience for it).
 -->
 <style>
 :root{
-  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app/.bottom-nav both read this variable already */
+  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app/.night-dock both read this variable already */
   --home-raise:rgba(36,29,71,.88);
   --home-raise2:rgba(24,19,46,.92);
   --home-ink:#eae7fb;
@@ -92,9 +98,25 @@
   --home-acc:#9d90ff;
   --home-warn:#e0aa5a;
   --home-ok:#4bd39b;
+  /* §2 type scale (home-mock4-x7q4.html) — nothing below 15px; interactive ≥16px */
+  --t-display:28px;   /* greeting */
+  --t-hero:26px;      /* hero card titles */
+  --t-section:20px;   /* "My dreams" */
+  --t-action:18px;    /* pill labels (pills 56px tall) */
+  --t-body:16px;      /* subs, quiet links, quiet rows */
+  --t-eyebrow:12px;   /* TONIGHT */
 }
 body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 #app{ overflow:hidden; }
+/* home-mock4-x7q4.html's own reset, ported verbatim: several modules below
+   set their own `display` via a class (.pill{display:flex}, etc.), which
+   otherwise beats the browser's plain [hidden]{display:none} UA rule
+   (author origin always wins over user-agent origin, regardless of
+   selector specificity) — css/styles.css has no equivalent blanket reset,
+   so this page needs its own, same as the mock. Without this, every
+   `el.hidden = true` toggle below (the pill/quote/entry-links/d1-line
+   state transforms) would silently do nothing. */
+[hidden]{ display:none !important; }
 
 /* ===== the living night sky — CSS-only, no image/video/canvas payload ===== */
 .home-bg{
@@ -134,128 +156,240 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 @keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
 @keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
 @keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
+@keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
 @media (prefers-reduced-motion:reduce){
-  .home-stars-a,.home-stars-b,.home-aurora,.ebtn.p,.claimchip.pulsing{ animation:none !important; }
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe{ animation:none !important; }
 }
 
 .home-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
-.home-topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0; flex:none; }
-/* Brand mark (tracker item for-product-home-screen-spec-drift-from--575djz,
-   fix 1) — the frozen visual spec (commit 6886e1c, home-mock2-x7q4.html)'s
-   .logo/.logo i/.logo em treatment, ported verbatim (icon data URI, gradient
-   stops) and scaled up from the mock's tiny in-phone size to this page's
-   real topbar: the crescent-play icon extracted from assets/logo-v2.png
-   (black bg -> alpha, inline PNG data URI) ahead of the wordmark, "Dream"
-   in plain ink, "Tube" carrying the logo's own pink-to-orange gradient. */
-.home-logo{ font-weight:800; font-size:16px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
-.home-logo i{ font-style:normal; width:20px; height:20px; flex:0 0 20px; margin-right:6px; background:url(data:image/png;base64,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) center/contain no-repeat; }
+
+/* --- 1 · topbar: the logo only, left-aligned (founder amendment: no
+   token chip here anymore — that job lives in the ritual module's quiet
+   balance line now) --- */
+.home-topbar{ display:flex; align-items:center; padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 0; flex:none; }
+.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
 .home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
-/* Same PurchaseSheet.mountBalanceChip markup every other page uses — just a
-   translucent tint over the night sky instead of the default opaque
-   --surface-alt box, matching this page's own theme (same idea as
-   .explore-token-chip-slot's override, not reused directly since that
-   class also carries explore.html's fullscreen absolute positioning,
-   which this topbar-embedded slot doesn't want). */
-#home-token-chip-slot .token-chip-compact{ background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4); backdrop-filter:blur(4px); }
-#home-token-chip-slot .token-chip-balance{ color:var(--home-ink); }
-.home-greet{ padding:8px 18px 12px; flex:none; }
-.home-greet-line{ font-size:15px; font-weight:800; color:var(--home-ink); }
-.home-greet-sub{ font-size:11.5px; color:var(--home-soft); margin-top:2px; }
 
-/* Bottom padding reserves the overlaid night dock's own height
-   (--nav-clearance, shared css/styles.css) now that the nav is
-   absolutely positioned rather than sticky/in-flow -- otherwise the
-   Vault/My dreams cards at the end of the grid would end up hidden
-   behind the bar. */
-.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 14px calc(var(--nav-clearance) + 20px); }
-.home-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+/* --- 2 · greeting: one 28px line, nothing under it (founder amendment:
+   dropped the old date sub-line — nothing else lives in the topbar
+   region now) --- */
+.home-greet{ padding:26px 0 22px; flex:none; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.02em; }
 
-.hcard{ position:relative; background:linear-gradient(180deg,var(--home-raise),var(--home-raise2)); border:1px solid var(--home-line); border-radius:18px; padding:14px 15px; overflow:hidden; color:var(--home-ink); }
-.hcard.span2{ grid-column:span 2; }
-.hcard-dt{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--home-acc); font-weight:800; margin-bottom:5px; }
-.hcard.hero{ border-color:rgba(157,144,255,.55); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 18px -4px rgba(157,144,255,.28); }
-.hcard-title{ font-size:15px; font-weight:800; display:block; margin:0 0 3px; }
-.hcard-sub{ color:var(--home-soft); font-size:12px; display:block; }
+/* One long scroll — content scrolls BEHIND the overlaid night dock. 20px
+   side gutters (memo's global rule); bottom padding reserves the dock's
+   own footprint via the shared --nav-clearance token. */
+.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 20px calc(var(--nav-clearance) + 32px); }
 
-.entrybtns{ display:flex; gap:8px; margin-top:13px; }
-.ebtn{ flex:1; text-align:center; border-radius:99px; padding:10px 6px; font-size:11.5px; font-weight:700; border:none; cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
-.ebtn.p{ background:var(--home-acc); color:#0c0a1a; animation:homePulse 2.6s ease-in-out infinite; }
-.ebtn.g{ background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft); }
-@keyframes homePulse{ 0%,100%{ box-shadow:0 0 5px rgba(157,144,255,.4); } 50%{ box-shadow:0 0 14px rgba(157,144,255,.85); } }
+/* ===== hero card DNA (the approved result-mock's treatment, radius 24) ===== */
+.hero-card{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55); color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:22px;
+}
+.hero-stars, .hero-scrim, .chamber-breathe{ position:absolute; inset:0; pointer-events:none; }
+.hero-content{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.hero-title{
+  font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2;
+  text-shadow:0 2px 12px rgba(12,10,26,.55);
+}
+.hero-sub{ margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea; text-shadow:0 1px 8px rgba(12,10,26,.55); }
 
-.today-logged-row{ margin-top:12px; padding:10px 12px; background:rgba(75,211,155,.1); border:1px solid rgba(75,211,155,.4); border-radius:12px; font-size:12.5px; color:#bdf0d8; }
-.today-logged-row b{ color:var(--home-ink); }
+/* the pill — 56px tall, 18px/800 (§2 type scale) */
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1; text-decoration:none;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
 
-/* Today card's claim chip + D1's next-step strip, together on one line
-   (tracker item for-product-home-screen-spec-drift-from--575djz, fix 3 —
-   frozen spec's .stripline, commit 6886e1c). The streak ring itself no
-   longer lives here — it consolidated into the This Week card below. */
-.stripline{ display:flex; align-items:stretch; gap:10px; margin-top:13px; }
-.claimchip{ align-self:center; background:rgba(157,144,255,.16); border:1px solid rgba(157,144,255,.5); color:#cfc8ff; border-radius:99px; padding:8px 13px; font-size:11px; font-weight:800; white-space:nowrap; cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; }
-.claimchip.pulsing{ animation:homePulse 2.6s ease-in-out infinite; }
-.claimchip.done{ background:transparent; border-color:rgba(75,211,155,.55); color:var(--home-ok); cursor:default; }
+/* --- 3 · TONIGHT hero (~430px @844) — full-bleed CSS night scene: warm
+   moon top-right + blue/violet nebula (the result mock's .dreamvideo
+   palette, card-sized), tiny stars, bottom scrim; content bottom-anchored --- */
+.hero-tonight{
+  min-height:clamp(360px, 51vh, 460px);
+  background:
+    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
+    radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
+    radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
+    linear-gradient(172deg,#0f1840 0%,#1a2158 46%,#0b1234 100%);
+}
+.hero-tonight .hero-stars{
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 14%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 26% 8%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 50% 12%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 40% 28%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 88% 38%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 62% 34%, rgba(207,200,255,.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 18% 44%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 74% 52%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
+}
+.hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
 
-.nextstrip{ flex:1; background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4); border-radius:12px; padding:9px 11px; font-size:11.5px; color:#cfc8ff; }
-.nextstrip b{ color:var(--home-ink); }
+/* Tonight's three quiet entry links, one centered 16px row */
+.entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
+.entryrow .dot{ color:#8b83b3; font-size:14px; }
+.entrylink{
+  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
+  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+  -webkit-tap-highlight-color:transparent;
+}
+.entrylink:active{ opacity:.7; }
 
-/* This Week — the ONE place all streak UI lives (ring, count, freeze note),
-   consolidated alongside the week's constellation as a single element
-   (tracker item for-product-home-screen-spec-drift-from--575djz, fix 3 —
-   frozen spec's .weekrow, commit 6886e1c). Also transforms IN PLACE
-   (founder amendment: cards never change position between states — see
-   the render function, not this stylesheet, for how the same #card-week
-   slot is simply re-rendered). */
-.weekrow{ display:flex; align-items:center; gap:10px; }
-.weekrow .wtxt{ flex:1; min-width:0; line-height:1.3; }
-.weekrow b{ font-size:13px; display:block; }
-.weekrow span{ font-size:11px; color:var(--home-soft); }
-.freezenote{ color:#8f88b3; font-size:10px !important; margin-top:2px; display:block; }
-.ring{ width:44px; height:44px; border-radius:50%; background:conic-gradient(var(--home-acc) 0 70%, rgba(255,255,255,.12) 70% 100%); display:flex; align-items:center; justify-content:center; flex:0 0 44px; }
-.ring i{ width:34px; height:34px; border-radius:50%; background:#1d1834; display:flex; align-items:center; justify-content:center; font-style:normal; font-weight:800; font-size:12.5px; color:var(--home-ink); }
-.constel{ flex:0 0 74px; }
+/* Day-1-only extra line inside the Tonight hero */
+.d1line{ margin-top:2px; font-size:var(--t-body); font-weight:500; color:#c9c2e8; text-align:center; position:relative; z-index:1; text-shadow:0 1px 8px rgba(12,10,26,.6); }
+
+/* logged-today transform — in place: artwork stays full-size, title flips,
+   one clamped quote line, pill + links hidden, ok tint on the frame */
+.hero-tonight.logged{ border-color:rgba(75,211,155,.5); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24); }
+.hero-tonight.logged .hero-title{ color:#bdf0d8; }
+.loggedquote{
+  margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.55);
+}
+
+/* --- 4 · CHAMBER hero (~330px) — the sage himself (assets/chamber-sage.jpg,
+   violet night palette) rising from the right, the card's own nebula
+   gradient blending into the art on the left; slow breathing aura behind
+   his shoulders. Premium content-card treatment, no eyebrow (founder
+   amendment: no analysis method has been chosen yet). --- */
+.hero-chamber{
+  margin-top:28px;
+  min-height:330px;
+  background:
+    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
+    url(assets/chamber-sage.jpg) 0% 14% / 140% auto no-repeat,
+    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+.hero-chamber .hero-stars{
+  background-image:
+    radial-gradient(1.2px 1.2px at 10% 18%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 26% 10%, rgba(207,200,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 18% 40%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 8% 56%, rgba(224,170,255,.55), transparent 60%);
+}
+.chamber-breathe{
+  background:radial-gradient(46% 40% at 64% 24%, rgba(157,144,255,.26), transparent 72%);
+  animation:chamberBreathe 6s ease-in-out infinite;
+}
+.hero-chamber .hero-scrim{ background:linear-gradient(180deg, transparent 42%, rgba(12,10,26,.66) 96%); }
+
+/* --- 5 · ritual module — the streak/claim/balance home (absorbs the old
+   topbar chip + Vault row). A real full-width module with air, but
+   deliberately calmer than the two heroes: hairline border, no glow. --- */
+.ritual{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px;
+}
+.ritual-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ritual-big{ font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2; }
+.ritual-sub{ margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.ritual .constel{ flex:0 0 84px; }
 .constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
 .constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
 .constel .st{ fill:rgba(207,200,255,.28); }
 .constel .st.lit{ fill:#ffe0aa; }
-.hcard.week-earned{ border-color:var(--home-warn); box-shadow:0 4px 18px -6px rgba(0,0,0,.5), 0 0 16px rgba(224,170,90,.25); }
-.hcard.week-earned .hcard-dt{ color:var(--home-warn); }
-.hcard.week-earned .ring{ background:conic-gradient(var(--home-warn) 0 100%); box-shadow:0 0 10px rgba(224,170,90,.45); }
+.ritual.warm{ border-color:rgba(224,170,90,.4); }
+.ritual.warm .ritual-big{ color:#ffe0aa; }
+.ritual.warm .ritual-sub{ color:#e8cfa4; }
+.ritual.warm .constel .st.lit{ filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
+/* the daily claim — a real 56px button IN the module when claimable.
+   STATIC warm glow, never a pulse (the single pulse stays on a hero pill). */
+.ritual-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-claim:active{ transform:scale(.98); }
+/* quiet balance line → Vault (shop.html) */
+.ritual-balance{
+  display:block; margin-top:14px; padding:6px 0; min-height:32px;
+  background:none; border:none; cursor:pointer; text-align:left; text-decoration:none;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-balance:active{ opacity:.7; }
+.ritual-balance .gold{ color:var(--home-warn); }
 
-/* My Dreams gallery */
-.dreamshdr{ display:flex; align-items:baseline; }
-.dreamshdr .hcard-dt{ margin-bottom:0; }
-.alllink{ margin-left:auto; font-size:11px; font-weight:700; color:#cfc8ff; text-decoration:none; }
-.thumbs{ display:flex; gap:8px; margin-top:11px; }
-.thumb{ flex:1; height:56px; border-radius:10px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,.14); text-decoration:none; background:var(--home-raise2); display:block; }
-.thumb img,.thumb video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.thumbs-empty{ font-size:11.5px; color:var(--home-soft); margin-top:10px; }
+/* --- 6 · My dreams — 20px header + horizontal scroll-snap row, 150×100
+   thumbnails, full-bleed right so the last tile is cut by the edge --- */
+.dreams{ margin-top:32px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px; text-decoration:none;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.dreams-all:active{ opacity:.7; }
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  margin:0 -20px; padding:4px 20px 8px;
+  scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dream-row-tile{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer; background:var(--home-raise2); display:block;
+}
+.dream-row-tile.is-selected{ border-color:var(--home-acc); box-shadow:0 0 0 2px var(--home-acc); }
+.dream-row-tile .vcard-video,.dream-row-tile .vcard-image{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.dream-row-tile::after{ /* footage scrim, matches the mock's dthumb treatment */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.dream-row-tile:active{ transform:scale(.97); }
+.dreams-empty{ font-size:var(--t-body); color:var(--home-soft); }
 
-/* "Add to home screen" journey card — tracker item for-product-a2hs-
-   install-nudge-3-founder-vcofk7's fix for the small nudge's "one-shot
-   disappearance": a PERSISTENT next-step card that stays until
-   DreamStore.getInstallVerified() is genuinely true (a real standalone-
-   launch/appinstalled signal, see js/pwa.js), never on a mere dismiss —
-   deliberately has no dismiss (X) button at all, unlike every other
-   nudge in this app, since there is nothing to permanently dismiss here
-   by design (see renderInstallCard below). */
-.install-hcard-row{ display:flex; align-items:center; gap:11px; margin-top:2px; }
-.install-hcard-icon{ flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:rgba(157,144,255,.16); border:1px solid var(--home-line); display:flex; align-items:center; justify-content:center; color:var(--home-acc); }
-.install-hcard-icon svg{ width:18px; height:18px; }
-.install-hcard-txt{ flex:1; min-width:0; }
-.install-hcard-btn{ margin-top:11px; width:100%; }
+/* --- 7 · quiet row — 52px, flat, no card chrome (Vault absorbed into
+   the ritual module's balance line above; only the add-to-phone nudge
+   remains here) --- */
+.quietrows{ margin-top:32px; }
+.qrow{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:52px; padding:6px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.qrow:active{ opacity:.7; }
+.qrow .qicon{ font-style:normal; font-size:17px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--home-acc); }
+.qrow .qlabel{ flex:1; }
+.qrow .chev{ color:#6f6894; display:inline-flex; }
 
-/* Chamber / Vault — glowing night-object cards, CSS gradients only (no jpg art payload) */
-.hcard-art{ display:flex; flex-direction:column; justify-content:flex-end; min-height:86px; text-decoration:none; }
-.card-chamber{ background:linear-gradient(160deg, rgba(107,79,181,.5), transparent 65%), linear-gradient(180deg,var(--home-raise),var(--home-raise2)); }
-.card-vault{ border-color:rgba(224,170,90,.45); box-shadow:0 4px 18px -6px rgba(0,0,0,.5), 0 0 12px -3px rgba(224,170,90,.28); background:linear-gradient(160deg, rgba(224,170,90,.32), transparent 65%), linear-gradient(180deg,var(--home-raise),var(--home-raise2)); }
-.card-vault .hcard-dt{ color:var(--home-warn); }
-
-.toast{ position:fixed; left:50%; bottom:calc(90px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
+.toast{ position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
 .toast.show{ opacity:1; transform:translate(-50%,0); }
 </style>
 </head>
 <body>
-<!-- cache-bust 2026-07-31T09:20Z: Bar A dock rolled out here (for-product-urgent-founder-roll-the-new--8pyek3) -->
+<!-- cache-bust 2026-07-31T11:00Z: Night Shelf home rebuild (for-product-build-ship-founder-go-07-31--vtsyg3) -->
 <div id="app" class="scroll-shell">
   <div class="home-bg"></div>
   <div class="home-stars-a"></div>
@@ -263,116 +397,111 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   <div class="home-aurora"></div>
 
   <div class="home-fg">
-    <div class="home-topbar">
-      <div class="home-logo"><i></i>Dream<em>Tube</em></div>
-      <div id="home-token-chip-slot"></div>
-    </div>
-    <div class="home-greet">
-      <div class="home-greet-line" id="home-greet-line">Good morning</div>
-      <div class="home-greet-sub" id="home-greet-sub"></div>
-    </div>
-
     <div class="home-scroll">
-      <div class="home-grid" id="home-grid">
 
-        <div class="hcard hero span2" id="card-today" data-card="today">
-          <div class="hcard-dt">Today</div>
-          <span class="hcard-title" id="today-title">What did you dream?</span>
-          <span class="hcard-sub" id="today-sub">No recall is an entry too</span>
-
-          <!-- Wizard leads (tracker item for-product-home-screen-spec-drift-
-               from--575djz, fix 2 — frozen spec's .ebtn.p treatment, commit
-               6886e1c): the guided, primary entry path, ahead of the three
-               already-shipped manual entry points. Wired to the same
-               chip-first "Build it" dream-builder wizard create.html's own
-               #choice-build card already launches for a signed-in user
-               (see create.html's ?build=1 deep-link, added alongside its
-               existing ?write=1/?record=1 convention). -->
-          <div class="entrybtns" id="today-entrybtns">
-            <button type="button" class="ebtn p" id="btn-wizard">Wizard</button>
-            <button type="button" class="ebtn g" id="btn-write">Write it</button>
-            <button type="button" class="ebtn g" id="btn-speak">Speak it</button>
-            <button type="button" class="ebtn g" id="btn-norecall">No recall</button>
-          </div>
-          <div class="today-logged-row" id="today-logged-row" style="display:none;"></div>
-
-          <!-- Streak UI (ring/count/freeze note) lives ONLY in the This Week
-               card below now (fix 3) -- Today card is entry actions + claim
-               chip + next-step strip only. -->
-          <div class="stripline">
-            <button type="button" class="claimchip" id="claim-chip" style="display:none;"></button>
-            <div class="nextstrip" id="next-strip"></div>
-          </div>
-        </div>
-
-        <!-- "Add to home screen" journey card (tracker item for-product-
-             a2hs-install-nudge-3-founder-vcofk7) -- hidden by default,
-             shown by renderInstallCard() below only while genuinely
-             possible (InstallNudge.canOfferInstall()) AND not yet
-             verified installed (DreamStore.getInstallVerified()). Stays
-             visible across reloads until that real verification fires --
-             tapping "See how" only opens the guidance sheet, it never
-             dismisses this card. -->
-        <div class="hcard span2" id="card-install" data-card="install" style="display:none;">
-          <div class="hcard-dt">Next step</div>
-          <div class="install-hcard-row">
-            <div class="install-hcard-icon" id="install-hcard-icon"></div>
-            <div class="install-hcard-txt">
-              <span class="hcard-title">Add DreamTube to your home screen</span>
-              <span class="hcard-sub">Open your dreams like an app — no browser tabs</span>
-            </div>
-          </div>
-          <button type="button" class="ebtn p install-hcard-btn" id="install-hcard-btn">See how</button>
-        </div>
-
-        <div class="hcard span2" id="card-week" data-card="week">
-          <div class="hcard-dt">This week</div>
-          <div id="week-body"></div>
-        </div>
-
-        <div class="hcard span2" id="card-mydreams" data-card="mydreams">
-          <div class="dreamshdr">
-            <div class="hcard-dt">My dreams</div>
-            <a class="alllink" href="profile.html">All my dreams →</a>
-          </div>
-          <div class="thumbs" id="mydreams-thumbs"></div>
-          <div class="thumbs-empty" id="mydreams-empty" style="display:none;">Your dreams will appear here once you make one.</div>
-        </div>
-
-        <a class="hcard hcard-art card-chamber" id="card-chamber" data-card="chamber" href="create.html">
-          <div class="hcard-dt">Chamber</div>
-          <span class="hcard-title" id="chamber-title" style="font-size:13px;">The Depth Analyst</span>
-          <span class="hcard-sub" id="chamber-sub" style="font-size:11px;">awaits · your reading</span>
-        </a>
-
-        <a class="hcard hcard-art card-vault" id="card-vault" data-card="vault" href="shop.html?source=home_vault_card">
-          <div class="hcard-dt">Vault</div>
-          <span class="hcard-title" id="vault-balance" style="font-size:13px;">–</span>
-          <span class="hcard-sub" style="font-size:11px;">claim history · packs</span>
-        </a>
-
+      <!-- 1 · topbar — logo only -->
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
       </div>
+
+      <!-- 2 · greeting -->
+      <div class="home-greet">
+        <div class="home-greet-line" id="home-greet-line">Good evening</div>
+      </div>
+
+      <!-- 3 · TONIGHT hero — the guided Wizard pill leads; Write/Speak/No
+           recall are quiet links underneath it (founder amendment). -->
+      <section class="hero-card hero-tonight" id="hero-tonight" data-card="tonight">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Tonight</div>
+          <h1 class="hero-title" id="tonight-title">What did you dream?</h1>
+          <p class="loggedquote" id="tonight-quote" hidden></p>
+          <button type="button" class="pill pulse" id="tonight-pill">✨ Tell your dream</button>
+        </div>
+        <div class="entryrow" id="tonight-links">
+          <button type="button" class="entrylink" id="btn-write">Write</button><span class="dot" aria-hidden="true">·</span>
+          <button type="button" class="entrylink" id="btn-speak">Speak</button><span class="dot" aria-hidden="true">·</span>
+          <button type="button" class="entrylink" id="btn-norecall">No recall</button>
+        </div>
+        <div class="d1line" id="tonight-d1" hidden>First night — any entry counts.</div>
+      </section>
+
+      <!-- 4 · CHAMBER hero — no eyebrow; the sage's own artwork is the
+           analyst. Enter/Begin is a real <a> (href + click-override), same
+           "real fallback destination + JS override" pattern the old
+           #card-chamber link used, just living on the pill now instead of
+           the whole card (only the pill navigates; the card itself is
+           decorative, per the mock). -->
+      <section class="hero-card hero-chamber" id="hero-chamber" data-card="chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub" id="chamber-sub">Your reading awaits.</p>
+          <a class="pill" id="chamber-pill" href="create.html">Enter</a>
+        </div>
+      </section>
+
+      <!-- 5 · ritual module — streak, constellation, daily claim, quiet
+           balance line (absorbs the old topbar token chip + Vault card). -->
+      <section class="ritual" id="ritual" data-card="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big" id="ritual-big">Start your streak tonight</div>
+            <div class="ritual-sub" id="ritual-sub" hidden></div>
+          </div>
+          <span id="ritual-constel"></span>
+        </div>
+        <button type="button" class="ritual-claim" id="ritual-claim" style="display:none;"></button>
+        <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="gold">✦</span> – · Vault →</a>
+      </section>
+
+      <!-- 6 · My dreams — horizontal swipe row, shared js/dream-cards.js
+           renderer (DreamCards.dreamRowTileHTML). Hidden entirely for a
+           genuinely brand-new (D1) account — see renderDreamsRow below —
+           an empty gallery box has nothing to show a total newcomer;
+           shown with a friendly empty message for an account that HAS
+           logged before (e.g. only "no recall" check-ins so far) but has
+           no completed dream yet. -->
+      <section class="dreams" id="dreams" data-card="mydreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <a class="dreams-all" href="profile.html">All →</a>
+        </div>
+        <div class="dreams-row" id="dreams-row"></div>
+        <div class="dreams-empty" id="dreams-empty" style="display:none;">Your dreams will appear here once you make one.</div>
+      </section>
+
+      <!-- 7 · quiet row — add-to-phone nudge only (Vault absorbed above).
+           Same persistence rule as before (tracker item for-product-a2hs-
+           install-nudge-3-founder-vcofk7): visible only while genuinely
+           installable AND not yet verified installed; no dismiss (X) —
+           see installJourneyRow below for why. -->
+      <div class="quietrows">
+        <button type="button" class="qrow" id="install-qrow" style="display:none;">
+          <i class="qicon" id="install-qrow-icon"></i><span class="qlabel">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+      </div>
+
     </div>
   </div>
 
-  <!-- Bar A, the anchored night dock, rendered by the shared
-       js/bottom-nav.js (tracker item
-       for-product-urgent-founder-roll-the-new--8pyek3 -- "make it like it
-       is in the profile screen", superseding g0m6ck's old-.bottom-nav
-       order-drift fix). Sits OUTSIDE .home-fg and is absolutely
-       positioned (see css/styles.css's .night-dock), so page content
-       scrolls behind it; .home-scroll's --nav-clearance padding below is
-       what keeps the last card row reachable. Placed before the sheet
-       overlay in the DOM and at a lower z-index than .sheet-overlay, so
-       an open sheet always covers it -- same placement as profile.html. -->
+  <!-- Bar A, the anchored night dock, rendered by the shared js/bottom-
+       nav.js (tracker item for-product-urgent-founder-roll-the-new--
+       8pyek3). Sits OUTSIDE .home-fg and is absolutely positioned (see
+       css/styles.css's .night-dock), so page content scrolls behind it;
+       .home-scroll's --nav-clearance padding above is what keeps the last
+       row reachable. -->
   <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
 
-  <!-- "Add to home screen" guidance sheet — opened by the #card-install
-       journey card above. Standard .sheet-overlay/.sheet/.sheet-handle
-       pattern (js/sheet-dismiss.js wires tap-outside/drag-to-dismiss),
-       same as every other bottom sheet in this app (see profile.html's
-       settings sheet). Closing this sheet never dismisses #card-install
-       itself -- only DreamStore.getInstallVerified() becoming true does. -->
+  <!-- "Add to home screen" guidance sheet — opened by the install quiet
+       row above. Standard .sheet-overlay/.sheet/.sheet-handle pattern
+       (js/sheet-dismiss.js wires tap-outside/drag-to-dismiss), same as
+       every other bottom sheet in this app. -->
   <div class="sheet-overlay" id="install-sheet-overlay">
     <div class="sheet">
       <div class="sheet-handle"></div>
@@ -387,6 +516,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
@@ -417,89 +547,95 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   var user = DreamStore.getCurrentUser();
   var myDreams = DreamStore.getMyDreams(); // most-recent-first, see js/store.js's own ordering comment
 
-  // ===== Greeting =====
+  // ===== Greeting — one line, no date sub-line (founder amendment) =====
   (function renderGreeting(){
     var hour = new Date().getHours();
     var part = hour < 12 ? 'morning' : (hour < 18 ? 'afternoon' : 'evening');
     var name = DreamStore.displayHandle(user && user.handle ? user.handle : '@you');
-    document.getElementById('home-greet-line').textContent = 'Good ' + part + ', ' + name;
-    var dateStr = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    document.getElementById('home-greet-sub').textContent = dateStr;
+    document.getElementById('home-greet-line').textContent = 'Good ' + part + ', ' + name + '.';
   })();
 
-  // ===== Today card =====
+  // ===== State reads — local, no network call (js/store.js's own doc
+  // comment on getDreamLogStatus/getTokenStatus) =====
   var logStatus = DreamStore.getDreamLogStatus();
-
-  function renderTodayEntry(){
-    var title = document.getElementById('today-title');
-    var sub = document.getElementById('today-sub');
-    var entryBtns = document.getElementById('today-entrybtns');
-    var loggedRow = document.getElementById('today-logged-row');
-    if(logStatus.loggedToday){
-      entryBtns.style.display = 'none';
-      loggedRow.style.display = 'block';
-      title.textContent = 'What did you dream?';
-      sub.textContent = 'No recall is an entry too';
-      loggedRow.innerHTML = logStatus.todayEntryType === 'dream'
-        ? '<b>Logged today ✓</b> — "' + esc((logStatus.todayDreamCaption || '').slice(0, 80)) + (logStatus.todayDreamCaption && logStatus.todayDreamCaption.length > 80 ? '…' : '') + '"'
-        : '<b>Logged today ✓</b> — no recall, and that counts too.';
-    } else {
-      entryBtns.style.display = 'flex';
-      loggedRow.style.display = 'none';
-      title.textContent = 'What did you dream?';
-      sub.textContent = 'No recall is an entry too';
-    }
-  }
-  renderTodayEntry();
-
-  function renderNextStrip(){
-    var strip = document.getElementById('next-strip');
-    if(!logStatus.hasEverLogged){
-      // D1 next-step strip (tracker item for-product-build-homepage-wave-1-the-ri-xr8mir)
-      // — a first-day-specific guidance strip pointing a brand-new account
-      // at its very next action.
-      strip.innerHTML = '<b>New here?</b> Log tonight’s dream above to start your dream capture streak — writing, speaking, or "No recall" all count.';
-    } else if(logStatus.weekCount < logStatus.weekTarget){
-      var toGo = logStatus.weekTarget - logStatus.weekCount;
-      strip.innerHTML = '<b>' + toGo + ' more this week</b> → unlocks your weekly summary below.';
-    } else {
-      strip.innerHTML = 'Your weekly summary is ready below. <b>Nice work this week.</b>';
-    }
-  }
-  renderNextStrip();
-
-  function renderClaimChip(tokenStatus){
-    var chip = document.getElementById('claim-chip');
-    if(!tokenStatus){ chip.style.display = 'none'; return; }
-    chip.style.display = 'inline-block';
-    if(tokenStatus.claimable){
-      var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
-      chip.textContent = '+' + amount + ' today';
-      chip.className = 'claimchip pulsing';
-      chip.disabled = false;
-    } else {
-      chip.textContent = 'Claimed ✓';
-      chip.className = 'claimchip done';
-      chip.disabled = true;
-    }
-  }
-
   var lastTokenStatus = null;
-  document.getElementById('claim-chip').addEventListener('click', function(){
-    if(!lastTokenStatus || !lastTokenStatus.claimable) return;
-    track('home_claim_chip_tapped', { source: 'today_card' });
-    PurchaseSheet.showClaimSheet({
-      source: 'home_today_card',
-      tokenStatus: lastTokenStatus,
-      onClaimed: function(){
-        refreshTokenStatus();
-      }
+
+  // ===== Tonight hero =====
+  function renderTonightHero(){
+    var section = document.getElementById('hero-tonight');
+    var title = document.getElementById('tonight-title');
+    var quote = document.getElementById('tonight-quote');
+    var pill = document.getElementById('tonight-pill');
+    var links = document.getElementById('tonight-links');
+    var d1 = document.getElementById('tonight-d1');
+    var logged = logStatus.loggedToday;
+
+    section.classList.toggle('logged', logged);
+    title.textContent = logged ? 'Logged tonight ✓' : 'What did you dream?';
+    if(logged){
+      var quoteText = logStatus.todayEntryType === 'dream'
+        ? (logStatus.todayDreamCaption || '')
+        : 'No recall, and that counts too.';
+      quote.textContent = quoteText;
+      quote.hidden = false;
+    } else {
+      quote.hidden = true;
+    }
+    pill.hidden = logged;
+    pill.classList.toggle('pulse', !logged);
+    links.hidden = logged;
+    d1.hidden = logged || logStatus.hasEverLogged;
+  }
+  renderTonightHero();
+
+  // ===== Chamber hero — Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
+  // tracker item for-product-build-interpretation-wave-1--xuftyn), now
+  // living on #chamber-pill rather than the whole card (mock amendment:
+  // the hero's artwork/copy is decorative, only the pill is a real tap
+  // target). `href` still resolves to a genuine result.html link (no
+  // ?openInterp=1 — that mechanism is gone) purely as an honest fallback
+  // destination (right-click/open-in-new-tab, or a click that somehow
+  // bypasses the JS handler below); the click handler is what actually
+  // drives the real Chamber experience in place, same "real href +
+  // preventDefault + JS override" pattern js/purchase-sheet.js's own
+  // mountBalanceChip already uses. Pulse migrates here from the Tonight
+  // pill once tonight is logged (single-pulse rule, mock §3). =====
+  var completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
+  (function renderChamberHero(){
+    var pill = document.getElementById('chamber-pill');
+    var sub = document.getElementById('chamber-sub');
+    if(completedDream){
+      pill.href = 'result.html?id=' + encodeURIComponent(completedDream.id);
+      pill.textContent = 'Enter';
+      sub.textContent = 'Your reading awaits.';
+    } else {
+      pill.href = 'create.html';
+      pill.textContent = 'Begin';
+      sub.textContent = 'Make your first dream to begin.';
+    }
+    pill.classList.toggle('pulse', logStatus.loggedToday);
+    // Diagnostic-only (tracker item for-product-bug-founder-new-home-
+    // tapping-yuspxa), kept since it's still useful signal independent of
+    // the mechanism change above — fired at HREF-COMPUTE time,
+    // deliberately not gated on the click itself.
+    track('home_chamber_href_computed', {
+      branch: completedDream ? 'completed_dream' : 'no_completed_dream',
+      href: pill.getAttribute('href'),
+      dream_id: completedDream ? completedDream.id : null
     });
+  })();
+
+  document.getElementById('chamber-pill').addEventListener('click', function(e){
+    track('home_chamber_pill_tapped', { branch: completedDream ? 'completed_dream' : 'no_completed_dream' });
+    if(!completedDream) return; // real link to create.html — let it navigate normally
+    e.preventDefault();
+    if(window.InterpretExperience) InterpretExperience.open(completedDream.id);
   });
 
-  // ===== This Week card — transforms IN PLACE (founder amendment): same
-  // #card-week slot, same position in the grid, in every state — only the
-  // markup INSIDE #week-body changes between "locked" and "earned". =====
+  // ===== Ritual module — streak, constellation, daily claim, quiet
+  // balance line. Transforms IN PLACE (founder amendment carried over
+  // from Wave 1's This Week card): same #ritual element, same position on
+  // the shelf, in every state. =====
   function renderConstellation(lit){
     lit = Math.max(0, Math.min(3, lit));
     var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
@@ -514,9 +650,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
 
   // Mirrors js/store.js's own private startOfWeekMs (Monday 00:00 local
-  // time) -- duplicated rather than exported, since this is the only page
-  // that needs it client-side and getDreamLogStatus already does the
-  // account-scoped version of this same math for weekCount itself.
+  // time) -- duplicated rather than exported, same rationale as Wave 1's
+  // identical helper (the only page that needs it client-side).
   function startOfThisWeekMs(){
     var d = new Date();
     var day = d.getDay();
@@ -528,60 +663,47 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   var WEEK_SUMMARY_SHOWN_PREFIX = 'dreamtube_home_week_summary_shown_';
 
-  // All streak UI (ring, count, freeze note) lives here now, consolidated
-  // with the week's constellation into one element (tracker item
-  // for-product-home-screen-spec-drift-from--575djz, fix 3 — frozen spec
-  // commit 6886e1c). Reads the streak off `lastTokenStatus` (module-level,
-  // set by refreshTokenStatus below) rather than a separately-updated DOM
-  // node, since #week-body's innerHTML is fully replaced on every call —
-  // any element written into it by a PRIOR render would just be discarded,
-  // so the ring's number has to be baked into the markup string itself
-  // every time this runs, same as the constellation SVG already is.
-  function renderStreakRingHtml(){
+  function renderRitualModule(){
+    var ritual = document.getElementById('ritual');
+    var big = document.getElementById('ritual-big');
+    var sub = document.getElementById('ritual-sub');
+    var constelSlot = document.getElementById('ritual-constel');
     var streak = (lastTokenStatus && typeof lastTokenStatus.streak === 'number') ? lastTokenStatus.streak : 0;
-    return { streak: streak, html: '<div class="ring"><i id="streak-num">🔥' + streak + '</i></div>' };
-  }
-
-  function renderWeekCard(){
-    var card = document.getElementById('card-week');
-    var body = document.getElementById('week-body');
     var n = logStatus.weekCount;
     var target = logStatus.weekTarget;
-    var ring = renderStreakRingHtml();
-    if(n < target){
-      card.classList.remove('week-earned');
-      var streakLabel = ring.streak > 0
-        ? (ring.streak + '-day dream capture streak')
-        : 'Start your dream capture streak';
-      body.innerHTML =
-        '<div class="weekrow">' + ring.html +
-        '<div class="wtxt"><b id="streak-label">' + esc(streakLabel) + '</b>' +
-        '<span>' + n + ' of ' + target + ' dreams · ' + (target - n) + ' to go</span>' +
-        '<span class="freezenote">A quiet freeze protects a missed night</span></div>' +
-        renderConstellation(n) + '</div>';
+    var earned = n >= target;
+
+    ritual.classList.toggle('warm', earned);
+
+    if(!logStatus.hasEverLogged){
+      big.textContent = 'Start your streak tonight';
+      sub.hidden = true;
+      constelSlot.innerHTML = renderConstellation(0);
+    } else if(!earned){
+      big.textContent = '🔥 ' + streak + (streak === 1 ? ' night' : ' nights');
+      sub.hidden = false;
+      sub.textContent = n + ' of ' + target + ' this week';
+      constelSlot.innerHTML = renderConstellation(n);
     } else {
-      card.classList.add('week-earned');
       // A real, locally-computed summary — never fabricated: this week's
       // actual dream count plus its most common style, both straight from
-      // getMyDreams(). No AI-generated recap in this wave (that's the
-      // separate, not-yet-built "earned weekly summary" content feature) —
-      // just an honest aggregate of what's already there.
+      // getMyDreams() (same computation Wave 1's This Week card used).
       var weekStart = startOfThisWeekMs();
       var weekDreams = myDreams.filter(function(d){ return typeof d.createdAt === 'number' && d.createdAt >= weekStart; });
       var styleCounts = {};
       weekDreams.forEach(function(d){ if(d.style){ styleCounts[d.style] = (styleCounts[d.style] || 0) + 1; } });
       var topStyle = null, topCount = 0;
       Object.keys(styleCounts).forEach(function(s){ if(styleCounts[s] > topCount){ topStyle = s; topCount = styleCounts[s]; } });
-      var subText = topStyle ? ('Mostly ' + topStyle + ' scenes') : 'Recall is up this week';
-      body.innerHTML =
-        '<div class="weekrow">' + ring.html +
-        '<div class="wtxt"><b>' + n + ' dreams this week</b><span>' + esc(subText) + '</span></div>' +
-        renderConstellation(3) + '</div>';
+      big.textContent = '✨ ' + n + ' dreams this week';
+      sub.hidden = false;
+      sub.textContent = (topStyle ? ('mostly ' + topStyle) : 'recall is up') + ' · 🔥 ' + streak + (streak === 1 ? ' night' : ' nights');
+      constelSlot.innerHTML = renderConstellation(3);
 
       // Keyed by the CURRENT account's own handle, not just the date --
-      // review finding: a shared browser where a different account later
-      // logs in and legitimately earns the same week's summary must not
-      // find this flag already tripped by someone else's session.
+      // review finding carried over from Wave 1: a shared browser where a
+      // different account later logs in and legitimately earns the same
+      // week's summary must not find this flag already tripped by someone
+      // else's session.
       var key = WEEK_SUMMARY_SHOWN_PREFIX + (user && user.handle ? user.handle : '') + '_' + new Date(startOfThisWeekMs()).toDateString();
       try {
         if(!localStorage.getItem(key)){
@@ -591,20 +713,38 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       } catch(e){ /* private mode / storage disabled — never worth breaking the page for */ }
     }
   }
-  renderWeekCard();
+  renderRitualModule();
+
+  function renderRitualClaim(tokenStatus){
+    var btn = document.getElementById('ritual-claim');
+    var balance = document.getElementById('ritual-balance');
+    if(!tokenStatus){ btn.style.display = 'none'; return; }
+    if(tokenStatus.claimable){
+      var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+      btn.textContent = 'Claim +' + amount + ' ✦';
+      btn.style.display = 'flex';
+    } else {
+      btn.style.display = 'none';
+    }
+    balance.innerHTML = '<span class="gold">✦</span> ' + tokenStatus.balance + ' · Vault →';
+  }
+
+  document.getElementById('ritual-claim').addEventListener('click', function(){
+    if(!lastTokenStatus || !lastTokenStatus.claimable) return;
+    track('home_claim_chip_tapped', { source: 'home_ritual_module' });
+    PurchaseSheet.showClaimSheet({
+      source: 'home_ritual_module',
+      tokenStatus: lastTokenStatus,
+      onClaimed: function(){ refreshTokenStatus(false); }
+    });
+  });
 
   // ===== Silent streak freeze — never a punitive message, just a
   // background, honest analytics signal that a missed night's streak was
-  // quietly protected (tracker item for-product-build-homepage-wave-1-the-
-  // ri-xr8mir: "a missed day doesn't visibly break the streak/reset it to
-  // zero without warning"). Computed from this account's own dreams + no-
-  // recall check-ins — never fabricated. =====
+  // quietly protected. Unchanged from Wave 1. =====
   function maybeTrackStreakFreeze(tokenStatus){
     if(!tokenStatus || !tokenStatus.streak || tokenStatus.streak < 2) return;
     if(logStatus.loggedYesterday) return; // yesterday was covered normally -- no freeze happened
-    // Same account-scoping fix as WEEK_SUMMARY_SHOWN_PREFIX above -- see
-    // that key's own comment for the shared-browser scenario this guards
-    // against (review finding).
     var flagKey = 'dreamtube_home_streak_freeze_shown_' + (user && user.handle ? user.handle : '') + '_' + new Date().toDateString();
     try {
       if(!localStorage.getItem(flagKey)){
@@ -614,14 +754,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     } catch(e){ /* private mode / storage disabled */ }
   }
 
-  // ===== My Dreams gallery card =====
-  // Video thumbs (tracker item for-product-home-screen-spec-drift-from--
-  // 575djz, fix 5): preload="metadata" alone doesn't guarantee a decoded
-  // frame to show until something has actually asked the video to play --
-  // same root cause, and same fix, as profile.html's vcardVideoObserver
-  // (see that file's own comment on .vcard-video). Root cause of the blank/
-  // black tile bug here specifically was preload="none", which never even
-  // fetches enough to decode a frame at all.
+  // ===== My Dreams row — shared js/dream-cards.js renderer
+  // (DreamCards.dreamRowTileHTML), the horizontal scroll-snap strip. A
+  // genuinely brand-new (D1, never-logged) account sees the whole section
+  // hidden entirely (mock §7); an account that HAS logged before but has
+  // no real dream yet (e.g. only "no recall" check-ins) sees the friendly
+  // empty-state copy instead of an empty gallery box; otherwise the real
+  // thumbnails render. Capped at a reasonable window (see the feed-
+  // windowing tracker item on unbounded eager rendering) rather than
+  // rendering every dream a power-user account has ever made. =====
+  var DREAMS_ROW_MAX = 10;
   var thumbVideoObserver = new IntersectionObserver(function(entries){
     entries.forEach(function(entry){
       var video = entry.target;
@@ -633,109 +775,43 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     });
   }, { threshold: 0.2 });
 
-  function observeThumbVideos(){
-    thumbVideoObserver.disconnect();
-    Array.prototype.forEach.call(document.querySelectorAll('#mydreams-thumbs .thumb-video'), function(v){ thumbVideoObserver.observe(v); });
-  }
+  function renderDreamsRow(){
+    var section = document.getElementById('dreams');
+    var rowEl = document.getElementById('dreams-row');
+    var emptyEl = document.getElementById('dreams-empty');
 
-  (function renderMyDreamsCard(){
-    var thumbsEl = document.getElementById('mydreams-thumbs');
-    var emptyEl = document.getElementById('mydreams-empty');
-    var recent = myDreams.slice(0, 3);
+    if(!logStatus.hasEverLogged){
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+
+    var recent = myDreams.slice(0, DREAMS_ROW_MAX);
     if(!recent.length){
-      thumbsEl.style.display = 'none';
+      rowEl.style.display = 'none';
       emptyEl.style.display = 'block';
       return;
     }
-    thumbsEl.style.display = 'flex';
+    rowEl.style.display = 'flex';
     emptyEl.style.display = 'none';
-    thumbsEl.innerHTML = recent.map(function(d){
-      var media = d.videoUrl
-        ? '<video class="thumb-video" src="' + esc(d.videoUrl) + '" muted loop playsinline preload="metadata"></video>'
-        : d.imageUrl
-          ? '<img src="' + esc(d.imageUrl) + '" alt="">'
-          : '<div style="position:absolute; inset:0; background:' + DreamStore.gradientFor(d) + '"></div>';
-      return '<a class="thumb" href="result.html?id=' + esc(d.id) + '" data-card="mydreams">' + media + '</a>';
+    rowEl.innerHTML = recent.map(function(d){
+      return DreamCards.dreamRowTileHTML(d, { gradient: DreamStore.gradientFor(d) });
     }).join('');
-    observeThumbVideos();
-  })();
 
-  // ===== Chamber card — Interpretation Wave 1 (docs/INTERPRETATION_WAVE1_SPEC.md,
-  // tracker item for-product-build-interpretation-wave-1--xuftyn) =====
-  // Now opens js/interpret-experience.js's "Interpreter's Chamber"
-  // (InterpretExperience.open) directly ON THIS PAGE for a completed
-  // dream, superseding the old stopgap routing to
-  // result.html?id=...&openInterp=1 (which just synthesized a click on
-  // result.html's own interpretation pill). This also resolves/absorbs
-  // tracker item for-product-bug-founder-new-home-tapping-yuspxa
-  // ("tapping Chamber card lands in the store") — that item shipped
-  // diagnostics-only because no root cause was ever found in the OLD
-  // result.html-deep-link routing; now that Chamber routes straight into
-  // this self-contained experience instead of through result.html at all,
-  // whatever was going on with that old path is moot regardless of root
-  // cause.
-  //
-  // `href` is still set to a real result.html link (no ?openInterp=1
-  // param anymore — that whole mechanism is gone, see result.html's own
-  // comment) purely as an honest fallback destination (right-click/open-
-  // in-new-tab, or a click that somehow bypasses the JS handler below) —
-  // the click handler is what actually drives the real Chamber
-  // experience, same "real href + preventDefault + JS override" pattern
-  // js/purchase-sheet.js's own mountBalanceChip already uses for its
-  // claimable-state tap-through.
-  (function renderChamberCard(){
-    var chamber = document.getElementById('card-chamber');
-    var completed = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
-    if(completed){
-      chamber.href = 'result.html?id=' + encodeURIComponent(completed.id);
-      chamber.addEventListener('click', function(e){
-        e.preventDefault();
-        if(window.InterpretExperience) InterpretExperience.open(completed.id);
-      });
-      document.getElementById('chamber-sub').textContent = 'awaits · your reading';
-    } else {
-      chamber.href = 'create.html';
-      document.getElementById('chamber-sub').textContent = 'make your first dream to begin';
-    }
-    // Diagnostic-only (tracker item for-product-bug-founder-new-home-
-    // tapping-yuspxa), kept since it's still useful signal independent of
-    // the mechanism change above — fired at HREF-COMPUTE time,
-    // deliberately not gated on the click itself: the original bug was
-    // about where a real tap actually LANDS, not whether a navigation
-    // happened at all.
-    track('home_chamber_href_computed', {
-      branch: completed ? 'completed_dream' : 'no_completed_dream',
-      href: chamber.getAttribute('href'),
-      dream_id: completed ? completed.id : null
-    });
-  })();
+    thumbVideoObserver.disconnect();
+    Array.prototype.forEach.call(rowEl.querySelectorAll('.vcard-video'), function(v){ thumbVideoObserver.observe(v); });
+  }
+  renderDreamsRow();
 
-  // ===== "Add to home screen" journey card (tracker item for-product-
-  // a2hs-install-nudge-3-founder-vcofk7) — PERSISTENT until genuinely
+  // ===== "Add to home screen" quiet row — PERSISTENT until genuinely
   // verified installed, never hidden by a mere dismiss (there is no
-  // dismiss action on this card at all, deliberately — see the markup's
-  // own comment). Reuses js/install-nudge.js's canOfferInstall() (the
-  // exact same capability-detect gates as the small nudge card, MINUS
-  // that card's own device-level dismiss flag, which must never hide
-  // THIS persistent card — see install-nudge.js's own doc comment on
-  // why the two are factored apart) plus DreamStore.getInstallVerified()
-  // (js/pwa.js's real standalone-launch/appinstalled signal) as the one
-  // and only thing that makes this card go away.
-  //
-  // As of 2026-07-30 this card is also HOME'S OWNERSHIP of repeat-visit
-  // install nudging outright: result.html's own
-  // InstallNudge.init({trigger:'repeat-visit', pageKey:'result'}) call was
-  // removed by the interpret-primary result redesign (tracker item
-  // for-product-build-founder-decided-2026-0-75fnlk, cut list: "repeat-
-  // visit install nudge moved to Home"). No equivalent init() call was
-  // added here on purpose — THIS card already covers a strict superset of
-  // that trigger's moment (every eligible visit, not just the 2nd+; until
-  // genuinely verified installed, not until dismissed once), so adding one
-  // could only ever render a second, weaker install card on top of this
-  // one. js/install-nudge.js's repeat-visit trigger itself is untouched
-  // and still used by profile.html. =====
-  (function installJourneyCard(){
-    var card = document.getElementById('card-install');
+  // dismiss action on this row at all, deliberately). Reuses
+  // js/install-nudge.js's canOfferInstall() plus DreamStore.
+  // getInstallVerified() exactly as Wave 1's install journey card did —
+  // only the visual container changed (a quiet row now, absorbing what
+  // used to be its own hcard). =====
+  (function installJourneyRow(){
+    var row = document.getElementById('install-qrow');
     var overlay = document.getElementById('install-sheet-overlay');
     var wired = false;
 
@@ -745,7 +821,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
 
     function refresh(){
-      card.style.display = shouldShow() ? '' : 'none';
+      row.style.display = shouldShow() ? 'flex' : 'none';
     }
 
     function closeSheet(){ overlay.classList.remove('open'); }
@@ -762,10 +838,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         document.getElementById('install-sheet-android-btn').addEventListener('click', function(){
           PwaInstall.promptInstall().then(function(outcome){
             track('home_install_sheet_outcome', { outcome: outcome || 'unavailable' });
-            // Real acceptance fires the browser's own `appinstalled` event
-            // shortly after (js/pwa.js marks getInstallVerified() true off
-            // that, not off this outcome string directly) — refresh right
-            // away too so the card doesn't linger a beat behind reality.
             if(outcome === 'accepted'){ closeSheet(); refresh(); }
           });
         });
@@ -773,68 +845,37 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       overlay.classList.add('open');
     }
 
-    // Wires the card's own controls exactly once -- separated from the
-    // initial refresh() below because Android's beforeinstallprompt can
-    // arrive AFTER this script's first pass already found nothing to
-    // offer (see the dreamtube:install-capability-changed listener at the
-    // bottom of this IIFE) -- the card's buttons must still get wired the
-    // moment it first becomes actually showable, not only if it already
-    // was on the very first synchronous pass.
     function wireUp(){
       if(wired) return;
       wired = true;
-      document.getElementById('install-hcard-icon').innerHTML = window.Icons ? Icons.download : '';
-      document.getElementById('install-hcard-btn').addEventListener('click', function(){
+      document.getElementById('install-qrow-icon').innerHTML = window.Icons ? Icons.download : '';
+      row.addEventListener('click', function(){
         track('home_install_card_tapped', {});
         openSheet();
       });
       document.getElementById('install-sheet-close').addEventListener('click', closeSheet);
       SheetDismiss.wire(overlay, closeSheet);
-      // Android's real appinstalled event can fire while this exact page is
-      // still open (accept the sheet's own install button above, or the
-      // browser's native mini-infobar) — re-check right away rather than
-      // only on a later reload, so the card completes in the SAME session
-      // it was actually installed in.
       window.addEventListener('appinstalled', refresh);
     }
 
     refresh();
-    if(card.style.display !== 'none') wireUp();
+    if(row.style.display !== 'none') wireUp();
 
-    // Review finding, tracker item for-product-a2hs-install-nudge-3-
-    // founder-vcofk7: beforeinstallprompt (Android/Chrome) is async and
-    // heuristic-gated, so it can fire moments AFTER this script's first
-    // synchronous pass already computed the card as hidden -- without this
-    // listener, the card would stay wrongly hidden for the WHOLE page
-    // view (undermining the very "persistent, not one-shot" fix this card
-    // exists to be). js/pwa.js dispatches this real DOM event the instant
-    // it captures beforeinstallprompt; re-checking here lets the card
-    // appear (and get wired, if this is its first time becoming showable)
-    // later in the same load, not just at the next reload.
     window.addEventListener('dreamtube:install-capability-changed', function(){
       refresh();
-      if(card.style.display !== 'none') wireUp();
+      if(row.style.display !== 'none') wireUp();
     });
   })();
-
-  // ===== Vault card =====
-  function renderVaultCard(tokenStatus){
-    document.getElementById('vault-balance').textContent = tokenStatus ? String(tokenStatus.balance) : '–';
-  }
 
   // ===== Token status — reused, existing daily-claim mechanism (no new
   // claim logic here at all: js/store.js's getTokenStatus/claimDailyTokens
   // + js/purchase-sheet.js's claim sheet, exactly as explore.html/
   // profile.html/shop.html already use). =====
-  var tokenChipSlot = document.getElementById('home-token-chip-slot');
-  var tokenChip = PurchaseSheet.mountBalanceChip(tokenChipSlot);
   function refreshTokenStatus(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
       lastTokenStatus = status;
-      PurchaseSheet.renderBalanceChip(tokenChip, status);
-      renderWeekCard(); // re-render with the real streak now that tokenStatus has arrived (see renderStreakRingHtml above)
-      renderClaimChip(status);
-      renderVaultCard(status);
+      renderRitualModule(); // re-render with the real streak now that tokenStatus has arrived
+      renderRitualClaim(status);
       maybeTrackStreakFreeze(status);
       if(autoOpen){
         PurchaseSheet.maybeAutoOpenClaimSheet(status, {
@@ -845,16 +886,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   refreshTokenStatus(true);
 
-  // ===== Today card entry points — reuse create.html's own Write/Speak
-  // affordances (no reinvention); "No recall" is the one genuinely new
-  // entry point this wave adds, a content-less check-in (see
-  // js/store.js's logNoRecallToday doc comment for why it never creates a
-  // fake dream record). Wizard reuses create.html's existing "Build it"
-  // chip-first dream-builder (#choice-build), the same logged-in retrofit
-  // of wizard.html's pre-signup flow already wired there — this just adds
-  // the ?build=1 deep-link entry point, matching ?write=1/?record=1's own
-  // established convention (see create.html's own comment on that param). =====
-  document.getElementById('btn-wizard').addEventListener('click', function(){
+  // ===== Tonight hero entry points — reuse create.html's own Write/Speak
+  // affordances (no reinvention); "No recall" is the one genuinely
+  // content-less entry point (see js/store.js's logNoRecallToday doc
+  // comment for why it never creates a fake dream record). The primary
+  // pill is the Wizard — create.html's existing chip-first "Build it"
+  // dream-builder (#choice-build), reached via the ?build=1 deep-link,
+  // matching ?write=1/?record=1's own established convention. =====
+  document.getElementById('tonight-pill').addEventListener('click', function(){
     track('home_today_entry_tapped', { method: 'wizard' });
     location.href = 'create.html?build=1';
   });
@@ -871,9 +910,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var result = DreamStore.logNoRecallToday();
     if(!result.ok) return;
     logStatus = DreamStore.getDreamLogStatus();
-    renderTodayEntry();
-    renderNextStrip();
-    renderWeekCard();
+    renderTonightHero();
+    renderRitualModule();
+    renderDreamsRow();
     showToast('Logged — no recall counts too.');
   });
 
@@ -884,10 +923,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
-  // ===== Card-tap analytics — delegated so re-renders never need to
-  // re-wire per-card listeners. Fires alongside (not instead of) each
-  // card's own real navigation/action above. =====
-  document.getElementById('home-grid').addEventListener('click', function(e){
+  // ===== Card-tap analytics — delegated on the whole scroll area so
+  // re-renders never need to re-wire per-card listeners. Fires alongside
+  // (not instead of) each module's own real navigation/action above. =====
+  document.querySelector('.home-scroll').addEventListener('click', function(e){
     var cardEl = e.target.closest('[data-card]');
     if(!cardEl) return;
     track('home_card_tapped', { card: cardEl.dataset.card });

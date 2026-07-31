@@ -207,6 +207,53 @@
     return upcomingSlots(opts).map(slotHTML).join('');
   }
 
+  /**
+   * One tile for the horizontal "dream row" strip — home.html's My Dreams
+   * scroll-snap row (tracker item for-product-build-ship-founder-go-07-31--
+   * vtsyg3, home-mock4-x7q4.html's .dthumb). Deliberately NOT the same
+   * component as tileHTML above (that's the vertical 9:14 profile.html
+   * library grid, with caption/meta/privacy badge) — this is a small, wide,
+   * media-only thumbnail with no text overlay at all.
+   *
+   * Factored here now, ahead of any second consumer, per the founder's own
+   * verdict on the separate (non-blocking) tracker item
+   * for-product-chamber-dream-linkage-is-unc-00s2dr (2026-07-31 evening):
+   * the Chamber's own dream-picker is meant to reuse this exact row
+   * component — "factor into js/dream-cards.js if not yet done, per the
+   * standing shared-renderer discipline." Home.html is the only real
+   * consumer today; the `selected`/`asButton` options below exist so that
+   * future picker can opt into a non-navigating, ring-highlighted variant
+   * without a second markup builder or a rewrite of this one.
+   *
+   * opts:
+   *   gradient — CSS background for the no-media fallback (caller passes
+   *              DreamStore.gradientFor(d), same convention as tileHTML).
+   *   selected — true adds an `is-selected` class (a future picker's own
+   *              visible ring) — home.html never sets this today.
+   *   asButton — true renders a <button type="button"> (for a future
+   *              picker that selects in place rather than navigating)
+   *              instead of the default <a href="result.html?id=...">.
+   *
+   * The video element still uses the `.vcard-video` class (not a new
+   * name) so the existing observeVideos() below picks it up automatically
+   * — one observer, one convention, whichever component is on the page.
+   */
+  function dreamRowTileHTML(d, opts) {
+    opts = opts || {};
+    var gradient = opts.gradient || '';
+    var media = d.videoUrl
+      ? '<video class="vcard-video" src="' + esc(d.videoUrl) + '" muted loop playsinline preload="metadata"></video>'
+      : d.imageUrl
+        ? '<img class="vcard-image" src="' + esc(d.imageUrl) + '" alt="">'
+        : '<div class="vcard-thumb-bg" style="background:' + gradient + '"></div>';
+    var cls = 'dream-row-tile' + (opts.selected ? ' is-selected' : '');
+    var idAttr = ' data-dream-id="' + esc(d.id) + '"';
+    if (opts.asButton) {
+      return '<button type="button" class="' + cls + '"' + idAttr + '>' + media + '</button>';
+    }
+    return '<a class="' + cls + '" href="result.html?id=' + esc(d.id) + '"' + idAttr + '>' + media + '</a>';
+  }
+
   // ==========================================================================
   // Browser-only: the grid's video-preview observer.
   // ==========================================================================
@@ -249,6 +296,7 @@
     tileHTML: tileHTML,
     slotHTML: slotHTML,
     slotsHTML: slotsHTML,
+    dreamRowTileHTML: dreamRowTileHTML,
     observeVideos: observeVideos
   };
 
