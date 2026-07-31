@@ -73,6 +73,53 @@
 //      mere dismiss. THIS card (the small one below) keeps its original
 //      one-shot-permanent dismiss semantics — it's the lighter-weight nudge
 //      now, not the only chance to install.
+//
+// ===== 2026-07-31 revision (tracker item for-product-bug-research-founder-
+// high-ad-vnda9t) =====
+// Founder real-device report: A2HS "doesn't do anything" in Safari and
+// "doesn't even appear as an option" in Chrome, on his own iPhone (iOS
+// 26-era, iPhone 17). Root-caused via fresh at-source research (not
+// from-memory platform claims — see that item's own resolution comment for
+// full citations), not guessed at:
+//   - buildIOSGuidanceHtml() below used to show every iOS browser the SAME
+//     Safari-specific visual (a "•••" More button at bottom-right of the
+//     toolbar). That's real and accurate FOR SAFARI (rebuilt from the
+//     founder's own screenshots, 2026-07-29) — but Chrome on iOS has a
+//     completely different real UI: a direct Share icon at the right of
+//     its address bar (confirmed via Google's own support page,
+//     support.google.com/chrome/answer/9658361), no "•••" More-button-then-
+//     Share detour at all. Showing a Chrome user a mock of a button that
+//     isn't there in that form is exactly the kind of "instruction that
+//     can't be completed as described" this feature's own no-fake-buttons
+//     discipline exists to prevent — very plausibly why the founder
+//     reported the option as not appearing at all in Chrome (he was
+//     correctly looking for what the guidance described, which Chrome
+//     simply doesn't have in that place).
+//   - PwaInstall.isIOS() itself was never wrong (no iOS browser can ever
+//     fire beforeinstallprompt — confirmed still true; there remains NO
+//     programmatic A2HS trigger anywhere on iOS), but its OWN doc comment's
+//     claim that "the Add-to-Home-Screen mechanism is the same OS-level
+//     share-sheet action regardless of which iOS browser is showing it"
+//     conflated the shared DESTINATION action (real — both browsers
+//     ultimately hand off to Apple's own SFAddToHomeScreenActivityItem
+//     system API) with the PATH to reach it, which is not shared at all.
+//   - Split into three real per-browser guidance builders below
+//     (buildSafariGuidanceHtml/buildChromeIOSGuidanceHtml/
+//     buildOtherIOSGuidanceHtml), selected via PwaInstall.iosBrowserKind()
+//     (new — see js/pwa.js's own doc comment for the UA-token detection and
+//     its citations). Chrome's guidance is deliberately honest about a
+//     second real, separately-confirmed platform quirk: Apple Community and
+//     Google Chrome Community threads document Chrome's iOS share sheet
+//     sometimes needing a one-time "Edit Actions" step before "Add to Home
+//     Screen" appears in it at all — mentioned directly rather than
+//     silently omitted, since omitting it would leave exactly the founder's
+//     reported "doesn't even appear" experience unexplained and unfixable
+//     from the guidance alone. Firefox/Edge/Opera-on-iOS (rare in this
+//     app's real traffic, unverified current layout) get an honest generic
+//     fallback that never invents a specific button location for a browser
+//     nobody has actually screenshotted here, plus a nudge toward Safari as
+//     the one path this codebase has actually confirmed against a real
+//     device.
 window.InstallNudge = (function () {
   /** Fire-and-forget PostHog capture, same guarded shape as every other page's own local track() helper (see result.html/shop.html) — this module is shared across pages, so it gets its own copy rather than depending on one page's local function existing. */
   function track(name, props) {
@@ -123,7 +170,7 @@ window.InstallNudge = (function () {
   }
 
   /**
-   * The shared iOS visual-aid + copy block — rebuilt directly from the
+   * Safari's own real toolbar-based guidance — rebuilt directly from the
    * founder's own real-device screenshots (see this file's 2026-07-29
    * revision note above): a mock of Safari's ACTUAL bottom toolbar (back
    * chevron / address-bar pill / a highlighted "•••" More button at the
@@ -134,16 +181,12 @@ window.InstallNudge = (function () {
    * Home Screen" row visual. Three real visuals in sequence, matching the
    * three real screens a visitor actually walks through, not one bare
    * icon floating with no context. CSS/SVG only, no image/canvas payload,
-   * matching this app's "keep it light for webview" principle. Reused by
-   * THREE callers: this module's own render() below, home.html's
-   * persistent journey-card sheet, and js/push-subscribe.js's
-   * iOS-browser-tab push fallback (see that file's own header comment) —
-   * one visual language for "how to add to your home screen" everywhere
-   * it's explained, not three copies. Deliberately never promises the
-   * "Add to Home Screen" row will be exactly there (problem 2 above) —
-   * "usually looks like," "can vary."
+   * matching this app's "keep it light for webview" principle. Deliberately
+   * never promises the "Add to Home Screen" row will be exactly there
+   * (problem 2, 2026-07-29 revision note) — "usually looks like," "can
+   * vary."
    */
-  function buildIOSGuidanceHtml() {
+  function buildSafariGuidanceHtml() {
     var backIcon = window.Icons ? Icons.back : '‹';
     var moreIcon = window.Icons ? Icons.moreHoriz : '•••';
     var shareIcon = window.Icons ? Icons.shareIos : '';
@@ -157,7 +200,7 @@ window.InstallNudge = (function () {
         '</div>' +
         '<div class="install-nudge-toolbar-arrow">▲ Tap here (bottom-right)</div>' +
       '</div>' +
-      '<div class="install-nudge-body">Tap the <b>••• (More)</b> button — usually at the <b>bottom-right</b> of your screen in Safari (shown above; some browsers show a direct Share icon instead of this menu).</div>' +
+      '<div class="install-nudge-body">Tap the <b>••• (More)</b> button — usually at the <b>bottom-right</b> of your screen in Safari (shown above).</div>' +
       '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
         '<span class="menu-row-replica-icon">' + shareIcon + '</span>' +
         '<span class="menu-row-replica-label">Share</span>' +
@@ -167,8 +210,80 @@ window.InstallNudge = (function () {
         '<span class="menu-row-replica-icon">' + plusIcon + '</span>' +
         '<span class="menu-row-replica-label">Add to Home Screen</span>' +
       '</div>' +
-      '<div class="install-nudge-note">Exact wording, icon, and position can vary by browser.</div>'
+      '<div class="install-nudge-note">Exact wording, icon, and position can vary by Safari version.</div>'
     );
+  }
+
+  /**
+   * Chrome-on-iOS's real UI is genuinely different from Safari's, not just
+   * a relabeled copy — see this file's 2026-07-31 revision note above and
+   * js/pwa.js's iosBrowserKind() doc comment for the research citations. A
+   * direct Share icon at the right of the address bar (Google's own
+   * support doc), not Safari's bottom "•••" More-button detour. Also
+   * mentions the real, separately-documented "Edit Actions" quirk (Apple
+   * Community / Google Chrome Community threads: Chrome's share sheet can
+   * need a one-time opt-in before "Add to Home Screen" shows up in it at
+   * all) — the most plausible explanation for the founder's own "doesn't
+   * even appear" report, and something no amount of "scroll down" guidance
+   * alone would have fixed.
+   */
+  function buildChromeIOSGuidanceHtml() {
+    var backIcon = window.Icons ? Icons.back : '‹';
+    var shareIcon = window.Icons ? Icons.shareIos : '';
+    var plusIcon = window.Icons ? Icons.plus : '+';
+    return (
+      '<div class="install-nudge-visual" aria-hidden="true">' +
+        '<div class="install-nudge-toolbar">' +
+          '<span class="install-nudge-toolbar-back">' + backIcon + '</span>' +
+          '<span class="install-nudge-toolbar-url">dreamtube1.netlify.app</span>' +
+          '<span class="install-nudge-toolbar-highlight">' + shareIcon + '</span>' +
+        '</div>' +
+        '<div class="install-nudge-toolbar-arrow">▲ Tap here</div>' +
+      '</div>' +
+      '<div class="install-nudge-body">In Chrome, tap the <b>Share</b> icon — usually at the <b>right of the address bar</b> (shown above).</div>' +
+      '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
+        '<span class="menu-row-replica-icon">' + plusIcon + '</span>' +
+        '<span class="menu-row-replica-label">Add to Home Screen</span>' +
+      '</div>' +
+      '<div class="install-nudge-body">Then tap <b>Add to Home Screen</b>. Don\'t see it in the list? Scroll down, or tap <b>Edit Actions</b> at the bottom and add it from there — Chrome sometimes needs that one-time step.</div>' +
+      '<div class="install-nudge-note">Chrome\'s menu layout can vary by version — Safari has the most reliably tested path if this doesn\'t match what you see.</div>'
+    );
+  }
+
+  /**
+   * Honest fallback for iOS browsers this codebase hasn't actually
+   * confirmed a real layout for (Firefox/Edge/Opera-on-iOS, or any other
+   * vendor's UA token PwaInstall.iosBrowserKind() doesn't specifically
+   * recognize) — never invents a specific button location it hasn't
+   * verified, per this feature's own no-fake-buttons standing rule.
+   */
+  function buildOtherIOSGuidanceHtml(kind) {
+    var label = kind === 'firefox' ? 'Firefox' : kind === 'edge' ? 'Edge' : kind === 'opera' ? 'Opera' : 'your browser';
+    var plusIcon = window.Icons ? Icons.plus : '+';
+    return (
+      '<div class="install-nudge-body">Look for <b>Share</b> in ' + label + '\'s menu, then <b>Add to Home Screen</b>:</div>' +
+      '<div class="menu-row-replica install-nudge-menurow" aria-hidden="true">' +
+        '<span class="menu-row-replica-icon">' + plusIcon + '</span>' +
+        '<span class="menu-row-replica-label">Add to Home Screen</span>' +
+      '</div>' +
+      '<div class="install-nudge-note">' + label + '\'s exact menu layout varies and hasn\'t been verified here — Safari has the most reliably tested path.</div>'
+    );
+  }
+
+  /**
+   * Dispatches to the right per-browser guidance builder — see this file's
+   * 2026-07-31 revision note above for why a single shared visual stopped
+   * being accurate. Reused by THREE callers: this module's own render()
+   * below, home.html's persistent journey-card sheet, and
+   * js/push-subscribe.js's iOS-browser-tab push fallback (see that file's
+   * own header comment) — one shared dispatch for "how to add to your home
+   * screen" everywhere it's explained, not three copies.
+   */
+  function buildIOSGuidanceHtml() {
+    var kind = (window.PwaInstall && typeof PwaInstall.iosBrowserKind === 'function') ? PwaInstall.iosBrowserKind() : 'safari';
+    if (kind === 'chrome') return buildChromeIOSGuidanceHtml();
+    if (kind === 'safari') return buildSafariGuidanceHtml();
+    return buildOtherIOSGuidanceHtml(kind);
   }
 
   function render() {
