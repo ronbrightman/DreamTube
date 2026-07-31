@@ -250,13 +250,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
    protruding one), and the account's own avatar standing in for the
    Profile tab's icon.
 
-   SCOPED TO THIS PAGE ONLY, deliberately. The shared js/bottom-nav.js
-   renderer this is eventually meant to live on is not on origin/main yet
-   (it exists only on the unmerged fix-bottom-nav-order-drift branch), and
-   the open question that branch surfaced — whether explore.html should
-   gain a persistent Home tab — is still awaiting the founder's answer.
-   explore.html and home.html are untouched by this build. See this
-   commit's own notes for the reconciliation that should follow. */
+   SCOPED TO THIS PAGE ONLY, deliberately -- a separate, newer visual
+   language (Bar A) from the plain .bottom-nav home.html/explore.html
+   share via js/bottom-nav.js (see that file's own header comment).
+   Home/Explore/+/Profile everywhere is the founder-approved end state
+   (Ron, 2026-07-29 + his Bar A mock approval); unifying these two
+   visual systems into one shared renderer is a real, separate restyle
+   question, not yet decided. */
 .night-dock{
   position:absolute; left:0; right:0; bottom:0; z-index:9;
   height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
