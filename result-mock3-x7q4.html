@@ -10,6 +10,12 @@
   is INTERPRETATION (not publish), the shared Bar-A night dock present so the
   screen is never a dead end, and much fewer things than the live result.html.
 
+  Founder-requested additions (2026-07-31, round 2): a ghost "▶ Watch your
+  dream" pill under the video (both states), and a fullscreen overlay
+  "player" (dream gradient + playing shimmer, ✕/mute chips) opened by the
+  play badge or the pill — mocking real playback incl. the in-app overlay
+  fallback for the FB/IG webview.
+
   Two review states via the fixed switcher: "Fresh dream" (tag [Private],
   quiet Publish link) and "Published" (tag [Public ✓], quiet "Live on
   Explore →" link). Hero is unchanged between states.
@@ -203,6 +209,18 @@ body{
 }
 .playbadge svg{ width:20px; height:20px; margin-left:3px; }
 
+/* ghost play affordance outside the video (home.html's .ebtn.g treatment) */
+.watchpill{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin-top:10px;
+  background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+  border-radius:99px; padding:10px 6px; cursor:pointer;
+  font:700 12.5px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.watchpill .icon{ font-size:13px; }
+.watchpill:active{ opacity:.75; }
+
 .dreamquote{
   margin-top:12px; font-size:14px; line-height:1.5; color:var(--home-ink); font-weight:500;
 }
@@ -306,6 +324,55 @@ body{
 }
 .nav-icon-badge-wrap{ position:relative; display:inline-flex; }
 
+/* ===== fullscreen "player" overlay — mocks real playback (in-app overlay
+   fallback for the FB/IG webview, where true fullscreen video is flaky) ===== */
+.player-overlay{
+  position:fixed; inset:0; z-index:60;
+  /* same dream palette as the in-card frame, with radii retuned for a
+     portrait viewport so the moon stays round instead of smearing */
+  background:
+    radial-gradient(42% 19% at 74% 20%, rgba(255,226,166,.8), rgba(255,214,150,.22) 55%, transparent 75%),
+    radial-gradient(85% 42% at 12% 80%, rgba(83,140,255,.38), transparent 60%),
+    radial-gradient(120% 55% at 46% 48%, rgba(163,90,255,.4), transparent 72%),
+    radial-gradient(60% 26% at 86% 74%, rgba(224,120,190,.28), transparent 65%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 48%,#141040);
+  opacity:0; pointer-events:none; transition:opacity .25s ease;
+}
+.player-overlay.open{ opacity:1; pointer-events:auto; }
+.player-overlay .pstars{
+  position:absolute; inset:-40px; pointer-events:none;
+  background-image:
+    radial-gradient(1.4px 1.4px at 40px 60px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 140px 30px, rgba(207,200,255,.7), transparent 60%),
+    radial-gradient(1.3px 1.3px at 90px 200px, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1px 1px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1.2px 1.2px at 15px 120px, rgba(255,224,170,.7), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 60s linear infinite, homeTwinkle 5s ease-in-out infinite;
+}
+.player-overlay .pshimmer{ /* the subtle "it's playing" motion */
+  position:absolute; inset:-20%; pointer-events:none;
+  background:linear-gradient(115deg, transparent 30%, rgba(255,255,255,.09) 46%, rgba(207,200,255,.13) 50%, rgba(255,255,255,.09) 54%, transparent 70%);
+  animation:playShimmer 4.5s ease-in-out infinite;
+}
+@keyframes playShimmer{
+  0%{ transform:translateX(-35%) skewX(-8deg); }
+  50%{ transform:translateX(35%) skewX(-8deg); }
+  100%{ transform:translateX(-35%) skewX(-8deg); }
+}
+.player-overlay .pglow{ /* slow breathing of the whole scene */
+  position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(80% 60% at 50% 55%, rgba(157,144,255,.18), transparent 70%);
+  animation:homeTwinkle 6s ease-in-out infinite;
+}
+.player-chips{
+  position:absolute; top:calc(env(safe-area-inset-top,0px) + 12px); right:14px; z-index:2;
+  display:flex; gap:10px;
+}
+@media (prefers-reduced-motion:reduce){
+  .player-overlay .pstars,.player-overlay .pshimmer,.player-overlay .pglow{ animation:none !important; }
+}
+
 /* ===== toast ===== */
 .toast{
   position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
@@ -355,6 +422,11 @@ body{
             <svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg>
           </div>
         </div>
+
+        <button type="button" class="watchpill" id="watch-pill">
+          <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></span>
+          Watch your dream
+        </button>
 
         <p class="dreamquote clamped" id="dream-quote">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn't scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.&rdquo;</p>
         <button type="button" class="showmore" id="showmore-btn">Show more</button>
@@ -407,6 +479,22 @@ body{
   <div class="toast" id="toast"></div>
 </div>
 
+<!-- Fullscreen "player" — mocks real playback: the dream gradient fills the
+     viewport with a playing shimmer; ✕ returns to the result screen. -->
+<div class="player-overlay" id="player-overlay" role="dialog" aria-label="Dream playback" aria-hidden="true">
+  <div class="pstars"></div>
+  <div class="pshimmer"></div>
+  <div class="pglow"></div>
+  <div class="player-chips">
+    <div class="icon-btn" title="Sound" role="button" aria-label="Unmute">
+      <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+    </div>
+    <div class="icon-btn" id="player-close" title="Close" role="button" aria-label="Close player">
+      <span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+    </div>
+  </div>
+</div>
+
 <script>
   // Mock-only interactivity — no app JS.
   var toastEl = document.getElementById('toast');
@@ -421,6 +509,23 @@ body{
   // Hero action → mock Chamber handoff
   document.getElementById('hero-pill').addEventListener('click', function(){
     toast('Opening the Chamber…');
+  });
+
+  // Fullscreen "player" overlay — opened by the in-video play badge OR the
+  // ghost watch pill; ✕ returns.
+  var playerOverlay = document.getElementById('player-overlay');
+  function openPlayer(){
+    playerOverlay.classList.add('open');
+    playerOverlay.setAttribute('aria-hidden','false');
+  }
+  function closePlayer(){
+    playerOverlay.classList.remove('open');
+    playerOverlay.setAttribute('aria-hidden','true');
+  }
+  document.querySelector('.dreamvideo').addEventListener('click', openPlayer);
+  document.getElementById('watch-pill').addEventListener('click', openPlayer);
+  document.getElementById('player-close').addEventListener('click', function(e){
+    e.stopPropagation(); closePlayer();
   });
 
   // Quote clamp toggle
