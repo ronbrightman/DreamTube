@@ -693,7 +693,30 @@ async function claimDailyTokens(event, email) {
   // same sequencing creditTokenPackAmountOnce follows, for the same
   // reason (a brand-new email's first-ever grant must exist before any
   // later credit path reads/mutates the record).
-  await syncTokens(event, key);
+  //
+  // The return value is captured (2026-08-01 fix, tracker item
+  // for-product-bug-founder-repro-high-brand-1dtzdc) — it used to be
+  // discarded here, which was the actual root cause of a brand-new
+  // account's very first claim silently losing its signup grant: unlike
+  // creditTokenPackAmountOnce/refundTokenAmountOnce/
+  // applyAchievementGrantOnce (all fixed 2026-07-29, tracker item
+  // entitlements-js-retryingwrite-balance-mu-qxm1ih, via this exact
+  // baseTokensForAttempt/syncedTokens pattern — see that helper's own doc
+  // comment for the full reasoning), this function's `mutate` below used
+  // to read balance straight off `rec.tokens` on every attempt, including
+  // attempt 0. For a genuinely brand-new email, the `syncTokens` call
+  // directly above JUST wrote the INITIAL_GRANT seed moments earlier in
+  // this SAME call — and Netlify Blobs has no read-your-own-write
+  // guarantee (this file's own header comment), so attempt 0's own fresh
+  // read can legitimately still show the pre-seed (no-tokens) record.
+  // Without this fix, that phantom `{balance:0}` became the base the
+  // claim amount was added to, quietly discarding the real signup
+  // grant — home.html's auto-open-right-after-signup flow, firing a claim
+  // only seconds after the account (and its entitlement record) was
+  // created, makes this the near-guaranteed default path for every new
+  // signup rather than a rare edge case.
+  var syncedTokens = await syncTokens(event, key);
+  var attemptIndex = 0;
 
   var now = Date.now();
   var newBalance, newStreak, claimAmount;
@@ -728,12 +751,20 @@ async function claimDailyTokens(event, email) {
       return store().get(key, { type: 'json' });
     },
     mutate: function (existing) {
+      var currentAttempt = attemptIndex;
+      attemptIndex++;
       var rec = existing || { email: key };
       var tokens = rec.tokens || { balance: 0 };
       var lastClaimAt = tokens.lastClaimAt || 0;
       // Fresh, per-attempt re-check — a concurrent claim from another
       // request/tab may have already landed between our outer syncTokens
-      // read above and this attempt's read.
+      // read above and this attempt's read. Deliberately off THIS
+      // attempt's own fresh `rec`/`tokens` (never `syncedTokens`) — the
+      // cooldown/streak/first-claim decision must always reflect the most
+      // current state a real concurrent claim could have already written.
+      // baseTokensForAttempt below only ever supplies a trustworthy
+      // BALANCE base for a still-propagating seed write — see its own doc
+      // comment — it is never a stand-in for this claimability check.
       if (now - lastClaimAt < CLAIM_COOLDOWN_MS) return blobsRetry.SKIP;
       var gap = now - lastClaimAt;
       var previousStreak = tokens.streak || 0;
@@ -744,7 +775,21 @@ async function claimDailyTokens(event, email) {
       // firstClaimAt existed, so it's never re-granted the bonus.
       var isFirstEverClaim = !hasCompletedAnyClaim(rec.firstClaimAt, tokens.lastClaimAt);
       claimAmount = isFirstEverClaim ? FIRST_CLAIM_BONUS_AMOUNT : DAILY_CLAIM_AMOUNT;
-      newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + claimAmount);
+      // baseTokensForAttempt (2026-08-01 fix, tracker item for-product-bug-
+      // founder-repro-high-brand-1dtzdc — see this function's own doc
+      // comment above for the full incident): on attempt 0 of a call whose
+      // OWN syncTokens just seeded this record, `rec.tokens` (this
+      // attempt's fresh read) may still legitimately show the pre-seed
+      // state under Blobs' no-read-your-own-write guarantee, so the
+      // BALANCE is based on `syncedTokens` (this call's own in-memory copy
+      // of what it just wrote) instead of trusting that read — same rule
+      // creditTokenPackAmountOnce/refundTokenAmountOnce/
+      // applyAchievementGrantOnce already apply. Every other case trusts
+      // this attempt's own fresh `rec.tokens`, so a real concurrent
+      // spendTokens/addTokens/another claim that landed since our outer
+      // syncTokens call is still correctly picked up rather than reverted.
+      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + claimAmount);
       return Object.assign({}, rec, {
         email: key,
         tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak },
