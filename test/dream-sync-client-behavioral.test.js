@@ -426,3 +426,83 @@ test('reconcile: a NEWER server copy (edited on a different device) overwrites t
     await page.close();
   }
 });
+
+// ===== password-reset -> login navigation race (tracker item nsbbg5) =====
+//
+// Real production data-loss report: a forgot-password reset, followed
+// immediately by login.html's own auto-login-then-redirect, lost every
+// private dream that should have been restored from the server. Root
+// cause (see reconcilePrivateDreamsFromServer's own doc comment): the
+// reconcile GET was fire-and-forget, so login.html's `location.href =
+// nextUrl` right after DreamStore.login() resolved could -- and, on any
+// real network latency, reliably did -- abort the in-flight fetch mid-
+// flight before its merge-into-localStorage ever ran. This drives the
+// REAL reset-password UI end-to-end (not a direct DreamStore.login()
+// call, unlike every other test in this file) specifically because only
+// a real page navigation can exercise the race: a delayed-but-successful
+// dream-sync response must still land in localStorage even though
+// login.html redirects to home.html the instant DreamStore.login()'s
+// promise resolves.
+
+/** Same shape as mockDreamSync's GET branch, but resolves after `delayMs` -- long enough that, pre-fix, login.html's redirect reliably wins the race and the merge never lands. */
+function mockDreamSyncDelayedGet(page, dreams, delayMs) {
+  var calls = [];
+  page.route('**/.netlify/functions/dream-sync*', function (route) {
+    var req = route.request();
+    if (req.method() === 'GET') {
+      calls.push({ method: 'GET' });
+      setTimeout(function () {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, dreams: dreams }) });
+      }, delayMs);
+    } else {
+      calls.push({ method: 'POST', body: JSON.parse(req.postData()) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    }
+  });
+  return calls;
+}
+
+/** Mocks verify-password-reset.js for both the page-load peek (consume falsy) and the actual reset-submit consume:true+newPassword call login.html's reset form fires — same {token,username,email} identity throughout, matching the real endpoint's response shape. */
+function mockVerifyPasswordReset(page, username, email) {
+  page.route('**/.netlify/functions/verify-password-reset', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: username, email: email }) });
+  });
+}
+
+test('reset-then-login (regression, nsbbg5): a real reset-password UI flow followed by login restores private dreams from the server despite network latency', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var serverDream = { id: 'ben-dream-1', ownerHandle: '@benbrightman14', caption: 'a dream from before the reset', style: 'Cartoon', mediaType: 'video', videoUrl: 'https://x/ben.mp4', isPublished: false, likes: 0, likedByMe: false, updatedAt: Date.now() - 100000 };
+    // Deliberately delayed -- this is what the pre-fix code raced against
+    // login.html's immediate post-login redirect.
+    mockDreamSyncDelayedGet(page, [serverDream], 400);
+    mockVerifyPasswordReset(page, 'benbrightman14', 'ben@example.com');
+    page.route('**/.netlify/functions/account-login', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'benbrightman14', email: 'ben@example.com', authToken: 'fresh-token-after-reset' }) });
+    });
+
+    // A fresh-to-this-device login is the exact scenario this feature
+    // exists for -- no seedUser() call here, deliberately: this device
+    // has no local `accounts`/`dreams` entry for benbrightman14 at all,
+    // same as a real webview wipe or a genuinely new browser.
+    await safeGoto(page, baseUrl + '/login.html?reset=fake-reset-token');
+    await page.waitForSelector('#reset-form', { state: 'visible' });
+    await page.fill('#reset-password', 'newpassword1');
+    await page.click('#reset-submit');
+
+    // login.html's reset-submit handler chains DreamStore.resetPasswordLocally()
+    // -> DreamStore.login() -> location.href = nextUrl (home.html by
+    // default) -- this is the exact real redirect the race is about.
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
+
+    var dreams = await page.evaluate(function () { return window.DreamStore.getMyDreams(); });
+    assert.ok(
+      dreams.some(function (d) { return d.id === 'ben-dream-1'; }),
+      'a private dream synced to the server before the reset must be restored by the post-reset login, even though the dream-sync response landed after the redirect started'
+    );
+  } finally {
+    await page.close();
+  }
+});

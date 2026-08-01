@@ -44,14 +44,27 @@
 //   for-product-build-p0-server-side-dream-p-zl3rb2, lib/dream-store.js /
 //   dream-sync.js) — reconcilePrivateDreamsFromServer() merges this
 //   account's local dreams with that server copy right after every real
-//   login()/signup() success (never clobbering a newer local edit),
-//   syncPrivateDreamBestEffort()/deletePrivateDreamBestEffort() fire on
-//   every local create/edit/unpublish/delete. All three are internal (not
-//   exposed on the DreamStore object below) and fully best-effort, reusing
-//   the SAME state.user.authToken block-user's own sync above already
-//   mints/threads — see their own doc comments just above them for the
-//   full merge logic and the PRIVATE_DREAM_SYNC_ENABLED staged-rollout
-//   flag. Deliberately triggered eagerly at login/signup (unlike
+//   login()/signup() success (never clobbering a newer local edit).
+//   login()'s own server-confirmed branch AWAITS this call (chains its
+//   promise) rather than firing it off unobserved — tracker item
+//   for-product-urgent-founder-family-repro--nsbbg5, a real production
+//   data-loss report, found that a fire-and-forget call here races an
+//   immediate post-login redirect (login.html does exactly that, for
+//   both an ordinary login and a post-password-reset login — both funnel
+//   through this same login()): the browser can abort the in-flight
+//   fetch when the document unloads, before the merge/persist() this
+//   function performs ever runs, silently discarding a webview-wipe/
+//   password-reset restore that had already round-tripped successfully.
+//   See reconcilePrivateDreamsFromServer's own doc comment for the full
+//   reproduction. syncPrivateDreamBestEffort()/deletePrivateDreamBestEffort()
+//   still fire fully fire-and-forget on every local create/edit/unpublish/
+//   delete — those aren't followed by an immediate redirect the way login
+//   is, so the same race doesn't apply. All three are internal (not
+//   exposed on the DreamStore object below), reusing the SAME
+//   state.user.authToken block-user's own sync above already mints/
+//   threads — see their own doc comments just above them for the full
+//   merge logic and the PRIVATE_DREAM_SYNC_ENABLED staged-rollout flag.
+//   Deliberately triggered eagerly at login/signup (unlike
 //   syncBlockedHandlesFromServer's own lazy explore.html-page-load trigger)
 //   — a brand-new-to-this-device login is exactly what webview-storage-wipe
 //   recovery looks like, so restoring dreams as early as possible matters
@@ -1092,10 +1105,40 @@
   /**
    * Reconciles this account's LOCAL private dreams with its server-side
    * dream-sync record — called once right after every real server-verified
-   * login/signup (see each call site's own comment). Fire-and-forget: a
+   * login/signup (see each call site's own comment). Returns a Promise that
+   * always resolves (never rejects — see the .catch below), so a caller
+   * that needs the merge to actually have landed in localStorage before
+   * doing anything else (a redirect, most importantly — see tracker item
+   * for-product-urgent-founder-family-repro--nsbbg5) can chain onto it. A
    * failure here (offline, functions runtime unreachable) leaves this
    * device's local dreams exactly as they already were — never worse off,
    * just not yet caught up with whatever another device may have synced.
+   *
+   * NAVIGATION-RACE NOTE (nsbbg5 root cause): this used to be called
+   * fire-and-forget (no `return` on the fetch chain below) from login()'s
+   * success branch, with login.html's own click handler doing
+   * `DreamStore.login(...).then(() => location.href = nextUrl)` right
+   * after. On a real network (not a same-tick mock), that `location.href`
+   * assignment starts unloading the current document — and an in-flight
+   * `fetch()` initiated by a document that's being unloaded gets aborted,
+   * so this function's own `.then()` (the part that actually merges
+   * server dreams into `state.dreams` and calls `persist()`) never ran.
+   * Confirmed by reproduction: driving login.html's real reset-password UI
+   * end-to-end with a ~400ms-delayed dream-sync response landed on
+   * home.html with the restored dream completely absent from
+   * localStorage, even though the GET request itself had gone out. This
+   * reproduced identically for a plain (non-reset) login too — it's a
+   * property of ANY caller that redirects immediately after login()
+   * resolves, not something specific to the password-reset flow; reset
+   * just happens to be the scenario where a restore is most likely to
+   * both be needed (a fresh/wiped device) AND get raced (the reset form's
+   * own two chained network round trips before this one only make the
+   * timing worse). Fixed at the source: login()'s success branch now
+   * returns this function's promise (chained, not fire-and-forget), so
+   * its own caller's `.then()` — including login.html's redirect for
+   * BOTH the ordinary and the post-reset login path, since both funnel
+   * through this same login() function — never fires until the merge (or
+   * its failure) has actually settled.
    *
    * MERGE, NOT CLOBBER (tracker item's own explicit instruction — a device
    * with newer local edits must not lose them to a stale server copy, and
@@ -1136,11 +1179,11 @@
    * exactly like the newer-locally branch above.
    */
   function reconcilePrivateDreamsFromServer() {
-    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
-    if (!state.user || !state.user.authToken) return;
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return Promise.resolve();
+    if (!state.user || !state.user.authToken) return Promise.resolve();
     var myHandle = state.user.handle;
     var authToken = state.user.authToken;
-    fetch('/.netlify/functions/dream-sync?authToken=' + encodeURIComponent(authToken))
+    return fetch('/.netlify/functions/dream-sync?authToken=' + encodeURIComponent(authToken))
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data || data.ok !== true || !Array.isArray(data.dreams)) return;
@@ -3013,13 +3056,16 @@
           state.user = { handle: '@' + displayUsername, username: displayUsername, authToken: data.authToken || null };
           persist();
           identifyForAnalytics(displayUsername);
-          // Fire-and-forget — see reconcilePrivateDreamsFromServer's own
-          // doc comment. This is the single most important call site for
-          // it: a brand-new-to-this-device login (see the comment just
+          // AWAITED, not fire-and-forget — see reconcilePrivateDreamsFromServer's
+          // own doc comment (NAVIGATION-RACE NOTE, tracker item nsbbg5) for
+          // exactly why: this is the single most important call site for
+          // it, and a brand-new-to-this-device login (see the comment just
           // above) is exactly what a webview-storage-wipe recovery looks
-          // like.
-          reconcilePrivateDreamsFromServer();
-          return { ok: true, user: state.user };
+          // like — a caller (login.html) that redirects the instant this
+          // promise resolves must not be able to outrun the restore.
+          return reconcilePrivateDreamsFromServer().then(function () {
+            return { ok: true, user: state.user };
+          });
         }
         if (data && data.ok === false && data.error && data.error.indexOf('incorrect_password') !== -1) {
           // The server found a REAL registered account but the password
