@@ -2241,40 +2241,97 @@
     }
   }
 
-  // Founder's own real accounts — excluded from revenue reporting per the
-  // founder's standing "no contaminated data" rule. benbrightman14 is a
-  // confirmed, founder-approved secondary identity (his son's account — see
-  // owner-topup-tokens.js's own header comment on tracker item
-  // for-product-extend-owner-top-up-with-a-t-2hmopn). These are USERNAMEs,
-  // not emails: identifyForAnalytics is always called with the account's
-  // username (the distinct_id this app identifies with), never its email —
-  // see every call site above (commitLocalSignup/attemptLocalLogin/etc.).
-  // Deliberately NOT OWNER_EMAIL itself: that's a server-only env var (see
-  // lib/owner-bypass.js) with no client-side equivalent, and profile.html's
-  // owner-topup-block already establishes this codebase's convention of
-  // never hardcoding the real owner email client-side for an owner check.
-  // The founder's known usernames serve this analytics-labeling purpose
-  // just as well without that tradeoff — this is a low-stakes reporting
-  // tag, not a privilege/security check.
-  var TEST_OR_INTERNAL_USERNAMES = { ronbrightman: true, benbrightman14: true };
+  // Founder's own real accounts and known aliases — excluded from revenue
+  // reporting per the founder's standing "no contaminated data" rule
+  // (tracker item for-product-founder-alias-exclusion-by-p-f7qyxo, 08-01).
+  // These are base NAMES, not exact usernames/emails: matched via
+  // normalizeIdentityBase() below rather than a hardcoded exact-string
+  // list, so a numbered throwaway account the founder creates later (e.g.
+  // ronbrightman8877, already a real example in this codebase's data)
+  // or a Gmail dot-variant of one of his real inboxes (Gmail ignores dots
+  // in the local part — ri.chardharrisman@gmail.com and
+  // richardharrisman@gmail.com are the same real inbox) is caught without
+  // needing a code change every time. benbrightman14 (his son's confirmed,
+  // founder-approved secondary account — see owner-topup-tokens.js's own
+  // header comment on tracker item
+  // for-product-extend-owner-top-up-with-a-t-2hmopn) is deliberately
+  // stored here as its reduced base, "benbrightman": normalizeIdentityBase
+  // strips a trailing numeric suffix from EVERY identity it checks (that's
+  // the whole point — see below), so keeping the literal "benbrightman14"
+  // in this list would never match anything (the normalized form of the
+  // input "benbrightman14" is "benbrightman", not "benbrightman14") and
+  // would silently stop matching the very account this list exists to
+  // cover. Storing the already-reduced base keeps this list internally
+  // consistent with the same rule applied to every other entry.
+  //
+  // Compared against the RAW identifyForAnalytics input only (a username
+  // in every current call site — see the comment above
+  // identifyForAnalytics for why never an email), the same shape the old
+  // exact-match TEST_OR_INTERNAL_USERNAMES map checked. Deliberately NOT
+  // also checked against state.accounts[key].email below (unlike the
+  // @example.com check, which was already checking account.email before
+  // this change) — that's a real gap the tracker item didn't ask this
+  // pass to close, left alone to keep this change minimal and scoped.
+  var TEST_OR_INTERNAL_BASE_NAMES = {
+    richardharrisman: true,
+    jackflaa: true,
+    ronbrightman: true,
+    benbrightman: true
+  };
+
+  /**
+   * Normalizes a username or email to the "base name" TEST_OR_INTERNAL_BASE_NAMES
+   * is matched against: lowercase, email domain dropped (compare on the
+   * local part only — Gmail's dot-insensitivity is a local-part rule),
+   * dots stripped (ri.chardharrisman -> richardharrisman), then any
+   * trailing run of digits stripped (ronbrightman8877 -> ronbrightman).
+   * Digits/dots anywhere OTHER than a trailing run, or in the domain, are
+   * left alone — this is base-name normalization, not general sanitizing,
+   * so it doesn't over-match an unrelated real user whose name merely
+   * contains a digit or a dot (e.g. "sonbrightman99" normalizes to
+   * "sonbrightman", which still compares unequal to "ronbrightman").
+   *
+   * Exposed as window.normalizeIdentityBase purely so
+   * test/founder-alias-exclusion-behavioral.test.js can assert this exact
+   * function's output directly (both in-browser and via source-extraction
+   * against netlify/functions/lib/test-identity.js's server-side twin —
+   * see that file's own header for why a byte-for-byte duplicate exists
+   * there instead of a shared requireable module, and the parity test
+   * that keeps the two from silently drifting).
+   */
+  function normalizeIdentityBase(usernameOrEmail) {
+    var s = String(usernameOrEmail == null ? '' : usernameOrEmail).toLowerCase();
+    var at = s.indexOf('@');
+    if (at !== -1) s = s.slice(0, at);
+    s = s.replace(/\./g, '');
+    s = s.replace(/\d+$/, '');
+    return s;
+  }
+
+  /** True if `raw` (a username or email) normalizes to one of the founder's known base names — see TEST_OR_INTERNAL_BASE_NAMES above. */
+  function isKnownFounderOrInternalBase(raw) {
+    return !!TEST_OR_INTERNAL_BASE_NAMES[normalizeIdentityBase(raw)];
+  }
 
   /**
    * True if `usernameOrEmail` (whatever identifyForAnalytics was just asked
    * to identify as) should be tagged `is_test` in PostHog: a known founder
-   * account, an `@example.com` test-fixture email (checked directly, and
-   * via the matching account's on-file email in state.accounts, since the
-   * distinct_id identifyForAnalytics receives is normally a username, not
-   * an email), or a probe-style throwaway username matching the exact
-   * `/^__.+__$/` shape register-account.js's E10 suspicious_username check
-   * and this file's own signup() already treat as a synthetic autofill
-   * placeholder rather than a real human-chosen name (see signup()'s own
-   * comment for the incident this pattern comes from) — reused here rather
-   * than a new heuristic, per the tracker item's own explicit instruction.
+   * account/alias (matched by normalized base name — see
+   * isKnownFounderOrInternalBase above), an `@example.com` test-fixture
+   * email (checked directly, and via the matching account's on-file email
+   * in state.accounts, since the distinct_id identifyForAnalytics receives
+   * is normally a username, not an email), or a probe-style throwaway
+   * username matching the exact `/^__.+__$/` shape register-account.js's
+   * E10 suspicious_username check and this file's own signup() already
+   * treat as a synthetic autofill placeholder rather than a real
+   * human-chosen name (see signup()'s own comment for the incident this
+   * pattern comes from) — reused here rather than a new heuristic, per the
+   * tracker item's own explicit instruction.
    */
   function isTestOrInternalIdentity(usernameOrEmail) {
     var raw = String(usernameOrEmail || '');
     var key = raw.toLowerCase();
-    if (TEST_OR_INTERNAL_USERNAMES[key]) return true;
+    if (isKnownFounderOrInternalBase(raw)) return true;
     if (/^__.+__$/.test(raw)) return true;
     if (/@example\.com$/i.test(raw)) return true;
     var account = state.accounts[key];
