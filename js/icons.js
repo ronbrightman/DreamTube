@@ -135,6 +135,18 @@
     // 24x24/currentColor/stroke-only convention as every other entry here.
     moreHoriz: svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>'),
 
+    // Added for the Step 2 install moment's Android "no beforeinstallprompt
+    // captured yet" menu-fallback visual (tracker item for-product-install-
+    // first-door-founder-d-b60cls) — Android Chrome/most Android browsers
+    // show a VERTICAL "⋮" overflow-menu button (top-right), a genuinely
+    // different real glyph from moreHoriz above (Safari's horizontal "•••",
+    // bottom of screen) — reusing moreHoriz there would show the wrong
+    // platform's real icon, exactly the "no fake buttons" mistake this
+    // codebase's A2HS guidance has already been burned by once (see
+    // js/install-nudge.js's 2026-07-31 revision note). Same three-dot
+    // convention as moreHoriz, just rotated to vertical.
+    moreVert: svg('<circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>'),
+
     // Added for the in-app-browser nudge card's non-Android "Copy link for
     // your browser" button (processing.html) — on iOS there is no
     // programmatic way to escape a webview, so the button's action became
