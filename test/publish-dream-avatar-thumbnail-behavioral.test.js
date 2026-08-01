@@ -7,7 +7,7 @@
 // cover the RENDERING half (explore-avatar-fallback-behavioral.test.js)
 // and the SERVER validation half (publish-dream-avatar-validation.test.js)
 // against synthetic/pre-made small data URLs — this file is the one that
-// actually drives a REAL, large (1254x1254, >1MB) photo through
+// actually drives a REAL, large (1254x1254, several-hundred-KB) photo through
 // profile.html's real upload/resize UI and confirms what gets sent over
 // the wire to publish-dream.js is genuinely "aggressively resized, few
 // KB" (the tracker item's own words), not just a synthetic stand-in.
@@ -18,7 +18,7 @@ var path = require('node:path');
 var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
-var PHOTO_FIXTURE = path.join(__dirname, '..', 'assets', 'logo-v2.png'); // real 1254x1254, >1MB source photo
+var PHOTO_FIXTURE = path.join(__dirname, '..', 'assets', 'logo-v3.png'); // real 1254x1254, several-hundred-KB source photo
 
 var playwright = null;
 var unavailableReason = null;
@@ -151,7 +151,7 @@ test('a real, large uploaded Me photo produces a small ("few KB") avatar thumbna
     // "Few KB" per the tracker item -- the approximate DECODED byte size
     // (matching publish-dream.js's own validateAvatar arithmetic), not the
     // base64 text length, must land comfortably under both the server's
-    // 20KB cap and, more importantly, well below the ~1MB+ source photo
+    // 20KB cap and, more importantly, well below the several-hundred-KB source photo
     // and even the tens-of-KB full Me photo.
     var base64Body = captured.avatar.split(',')[1];
     var approxBytes = Math.floor(base64Body.length * 3 / 4);

@@ -52,8 +52,8 @@ isn't a real contact address.
 
 ## 2. The maskable icon is an interim asset, not a designed one
 
-`manifest.json` now has two icon entries: the existing `assets/logo-v2.png`
-(`purpose: "any"`, unchanged) and a new `assets/logo-v2-maskable.png`
+`manifest.json` now has two icon entries: the existing `assets/logo-v3.png`
+(`purpose: "any"`, unchanged) and a new `assets/logo-v3-maskable.png`
 (`purpose: "maskable"`). Only one source image exists in `assets/` (the
 full "dreamtube" wordmark lockup, 1254×1254) — there's no separately
 designed icon-only mark to use as a real maskable asset.
