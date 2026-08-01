@@ -697,8 +697,8 @@ async function claimDailyTokens(event, email) {
   // The return value is captured (2026-08-01 fix, tracker item
   // for-product-bug-founder-repro-high-brand-1dtzdc) — it used to be
   // discarded here, which was the actual root cause of a brand-new
-  // account's very first claim silently losing its 220-token signup
-  // grant: unlike creditTokenPackAmountOnce/refundTokenAmountOnce/
+  // account's very first claim silently losing its signup grant: unlike
+  // creditTokenPackAmountOnce/refundTokenAmountOnce/
   // applyAchievementGrantOnce (all fixed 2026-07-29, tracker item
   // entitlements-js-retryingwrite-balance-mu-qxm1ih, via this exact
   // baseTokensForAttempt/syncedTokens pattern — see that helper's own doc
@@ -710,7 +710,7 @@ async function claimDailyTokens(event, email) {
   // guarantee (this file's own header comment), so attempt 0's own fresh
   // read can legitimately still show the pre-seed (no-tokens) record.
   // Without this fix, that phantom `{balance:0}` became the base the
-  // claim amount was added to, quietly discarding the real 220-token
+  // claim amount was added to, quietly discarding the real signup
   // grant — home.html's auto-open-right-after-signup flow, firing a claim
   // only seconds after the account (and its entitlement record) was
   // created, makes this the near-guaranteed default path for every new

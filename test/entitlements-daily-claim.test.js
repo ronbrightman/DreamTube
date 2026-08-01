@@ -442,7 +442,7 @@ test('a single claim call whose OWN verify-read lags, then loops into a fresh re
 // Tracker item for-product-bug-founder-repro-high-brand-1dtzdc (founder
 // repro, 2026-08-01): a brand-new account's very first daily-claim attempt,
 // fired seconds after signup (home.html's auto-open-right-after-signup
-// flow), silently lost its 220-token signup grant. Root cause: unlike
+// flow), silently lost its signup grant. Root cause: unlike
 // creditTokenPackAmountOnce/refundTokenAmountOnce/applyAchievementGrantOnce
 // (all fixed 2026-07-29, tracker item entitlements-js-retryingwrite-
 // balance-mu-qxm1ih, via baseTokensForAttempt/syncedTokens -- see that
@@ -450,16 +450,17 @@ test('a single claim call whose OWN verify-read lags, then loops into a fresh re
 // value entirely and let its retryingWrite `mutate` read balance straight
 // off `rec.tokens` on EVERY attempt, including attempt 0. For a genuinely
 // brand-new email, syncTokens' own first-ever-read branch JUST wrote the
-// 220-token seed moments earlier in this SAME call -- and Netlify Blobs has
-// no read-your-own-write guarantee (this file's own header comment, and
+// INITIAL_GRANT seed (320 as of the 2026-08-01 economy bump, tracker
+// xostu6) moments earlier in this SAME call -- and Netlify Blobs has no
+// read-your-own-write guarantee (this file's own header comment, and
 // syncTokens' `justSeeded` doc comment, both document this exact hazard).
 // So attempt 0's fresh read can legitimately still show the pre-seed
 // (null/no-tokens) record, and the claim gets computed off a phantom
-// balance of 0 instead of the real 220 -- silently discarding the signup
-// grant the instant this account's first-ever claim lands, even though the
-// claim itself reports `claimed:true` (no error, no visible failure -- the
-// balance is just quietly wrong).
-test('a claim on a JUST-SEEDED brand-new account, whose own retry loop does not yet see syncTokens\' own seeding write (Netlify Blobs read-your-own-write hazard), still credits off the REAL seeded balance -- must not silently drop the 220-token signup grant', async function () {
+// balance of 0 instead of the real seeded balance -- silently discarding
+// the signup grant the instant this account's first-ever claim lands, even
+// though the claim itself reports `claimed:true` (no error, no visible
+// failure -- the balance is just quietly wrong).
+test('a claim on a JUST-SEEDED brand-new account, whose own retry loop does not yet see syncTokens\' own seeding write (Netlify Blobs read-your-own-write hazard), still credits off the REAL seeded balance -- must not silently drop the signup grant', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'freshaccountrace@example.com';
 
@@ -487,13 +488,13 @@ test('a claim on a JUST-SEEDED brand-new account, whose own retry loop does not 
     var result = await entitlements.claimDailyTokens(ev, email);
     assert.equal(result.claimed, true, 'the claim should still succeed once the retry loop catches up');
     assert.equal(result.amountClaimed, 100, 'first-ever claim bonus');
-    assert.equal(result.balance, 320, '220 (signup grant, already seeded moments earlier in this same call) + 100 (first-ever-claim bonus) -- must NOT silently drop the signup grant just because attempt 0\'s own read raced its own seeding write');
+    assert.equal(result.balance, 420, '320 (signup grant, already seeded moments earlier in this same call) + 100 (first-ever-claim bonus) -- must NOT silently drop the signup grant just because attempt 0\'s own read raced its own seeding write');
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }
 
   var record = await entitlements.getEntitlement(ev, email);
-  assert.equal(record.tokens.balance, 320, 'the persisted record must reflect the real seeded balance too, not just this call\'s return value');
+  assert.equal(record.tokens.balance, 420, 'the persisted record must reflect the real seeded balance too, not just this call\'s return value');
 });
 
 test('a read() (and its verify-read) that keeps returning the stale pre-claim snapshot for a real ~250ms propagation-lag window still lands the claim once the fix\'s inter-attempt delay gives it enough real time -- proving the delay does something a synchronous mock can\'t fake by attempt count alone', async function () {
