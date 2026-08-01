@@ -28,6 +28,20 @@
   Also demonstrated: the approved multi-dream badge — a small
   "2 dreams tonight" chip on the Tonight hero in its logged states.
 
+  FOUNDER AMENDMENTS (2026-08-01), three:
+    ① Tonight hero, logged states: the dream ITSELF shows — a 16:9
+      dream-gradient thumbnail + play badge beneath "Logged tonight ✓",
+      quote line under it; tap → the dream's room. When "2 dreams
+      tonight", the thumb is the newest dream.
+    ② The token balance returns to the topbar as a compact chip
+      (balance only — the claim stays in the ritual module), and a NEW
+      token icon replaces the tilted-square ✦ everywhere: three inline
+      SVG candidates (A coin+play / B coin+moon / C moon-play hybrid),
+      switchable live from the mock chrome ("icon: A/B/C").
+    ③ Make-it-yours rows are accordions: copy-link and bookmark expand
+      with fuller step-by-step instructions when tapped (one open at a
+      time), like the add-to-home-screen row.
+
   Single-pulse rule holds: Tonight pill pulses while unlogged; once
   logged the pulse migrates to the Chamber's Enter pill. The new
   sections NEVER pulse (claims glow statically at most).
@@ -171,7 +185,7 @@ body{
    Top padding clears the (two-row) fixed mock chrome only. */
 .home-scroll{
   flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  padding:calc(env(safe-area-inset-top,0px) + 72px) 20px calc(var(--nav-clearance) + 32px);
+  padding:calc(env(safe-area-inset-top,0px) + 100px) 20px calc(var(--nav-clearance) + 32px);
 }
 
 /* --- 1 · topbar: the logo only, left-aligned --- */
@@ -179,6 +193,22 @@ body{
 .home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
 .home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
 .home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* --- 1b · the token chip — balance only, claim stays in the ritual --- */
+.tok-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:34px; padding:5px 13px; border-radius:99px; cursor:pointer;
+  background:rgba(12,10,26,.5); border:1px solid var(--home-line);
+  color:var(--home-ink); font:700 15px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.tok-chip:active{ opacity:.75; }
+.tok-chip .tok{ color:var(--home-acc); font-size:16px; }
+
+/* the token icon — inline SVG, sized by font-size, colored by context */
+.tok{ display:inline-flex; width:1em; height:1em; vertical-align:-.12em; flex:0 0 auto; }
+.tok svg{ width:100%; height:100%; display:block; }
+.gold .tok, .tok.gold{ color:var(--home-warn); }
 
 /* --- 2 · greeting: one 28px line, nothing under it --- */
 .home-greet{ padding:26px 0 22px; }
@@ -266,6 +296,43 @@ body{
   display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
   text-shadow:0 1px 8px rgba(12,10,26,.55);
 }
+/* founder amendment ① — logged states show the dream itself: a 16:9
+   dream-gradient thumbnail + play badge beneath the title, quote under it.
+   The newest dream when there's more than one tonight. */
+.tonight-thumb{
+  display:block; position:relative; width:100%; aspect-ratio:16/9;
+  margin-top:14px; border-radius:16px; overflow:hidden; cursor:pointer;
+  border:1px solid rgba(255,255,255,.18); padding:0;
+  background: /* the golden-city dream (t1 DNA at hero scale) */
+    radial-gradient(56px 56px at 74% 24%, rgba(255,230,176,.9), transparent 70%),
+    radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%),
+    radial-gradient(70% 60% at 60% 60%, rgba(163,90,255,.3), transparent 70%),
+    linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040);
+  -webkit-tap-highlight-color:transparent;
+}
+.tonight-thumb:active{ transform:scale(.985); }
+.tonight-thumb .tt-stars{
+  position:absolute; inset:0; pointer-events:none;
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 30%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 30% 14%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.3px 1.3px at 55% 24%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 55%, rgba(255,255,255,.65), transparent 60%);
+}
+.tonight-thumb .tt-scrim{
+  position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.45));
+}
+.tonight-thumb .tt-play{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:44px; height:44px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center;
+}
+.tonight-thumb .tt-play svg{ width:17px; height:17px; margin-left:2px; }
+
 /* the approved multi-dream badge — logged states only */
 .tchip{
   position:absolute; top:16px; right:16px; z-index:2;
@@ -460,6 +527,26 @@ body{
 .mky-row .chev{ color:#6f6894; display:inline-flex; }
 .mky-row.primary{ color:var(--home-ink); font-weight:700; }
 .mky-row .done-check{ color:var(--home-ok); font-weight:800; margin-left:6px; }
+/* founder amendment ③ — every row expands with fuller instructions
+   (accordion, one open at a time); the chevron turns when open */
+.mky-row .chev svg{ transition:transform .2s ease; }
+.mky-item.open .mky-row .chev svg{ transform:rotate(90deg); }
+.mky-exp{
+  overflow:hidden; max-height:0; opacity:0;
+  transition:max-height .28s ease, opacity .2s ease;
+  padding-left:33px; /* aligns under the row labels */
+}
+.mky-item.open .mky-exp{ max-height:220px; opacity:1; }
+.mky-step{
+  font-size:15px; font-weight:500; line-height:1.55; color:var(--home-soft);
+  padding:2px 0 12px;
+}
+.mky-step b{ color:#c8c2e2; font-weight:700; }
+.mky-copied{
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:15px; font-weight:700; color:var(--home-ok);
+  padding:2px 0 6px;
+}
 .mky-reward{
   margin-top:12px; font-size:15px; font-weight:600; color:#e8cfa4;
 }
@@ -598,14 +685,24 @@ body{
         <button type="button" class="mockbtn" id="tog-installed">installed: no</button>
       </div>
     </div>
+    <div class="mockrow">
+      <span class="mocklab">Icon</span>
+      <div class="mockseg" id="icon-seg">
+        <button type="button" class="mockbtn on" data-icon="a">A · coin+play</button>
+        <button type="button" class="mockbtn" data-icon="b">B · coin+moon</button>
+        <button type="button" class="mockbtn" data-icon="c">C · moon-play</button>
+      </div>
+    </div>
   </div>
 
   <div class="home-fg">
     <div class="home-scroll" id="home-scroll">
 
-      <!-- 1 · topbar — logo only -->
-      <div class="home-topbar">
+      <!-- 1 · topbar — logo left, the token chip right (balance only;
+           the claim stays in the ritual module) -->
+      <div class="home-topbar" style="justify-content:space-between;">
         <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+        <button type="button" class="tok-chip" id="tok-chip" aria-label="Token balance — open the Vault"></button>
       </div>
 
       <!-- 2 · greeting -->
@@ -621,6 +718,13 @@ body{
         <div class="hero-content">
           <div class="eyebrow">Tonight</div>
           <h1 class="hero-title" id="tonight-title">What did you dream?</h1>
+          <!-- amendment ① — logged states: the dream itself (newest when
+               "2 dreams tonight"), quote line under it -->
+          <button type="button" class="tonight-thumb" id="tonight-thumb" hidden aria-label="Open your dream">
+            <span class="tt-stars"></span>
+            <span class="tt-scrim"></span>
+            <span class="tt-play"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg></span>
+          </button>
           <p class="loggedquote" id="tonight-quote" hidden>&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers.&rdquo;</p>
           <button type="button" class="pill pulse" id="tonight-pill">✨ Tell your dream</button>
         </div>
@@ -653,8 +757,8 @@ body{
           </div>
           <span id="ritual-constel"></span>
         </div>
-        <button type="button" class="ritual-claim" id="ritual-claim">Claim +20 ✦</button>
-        <button type="button" class="ritual-balance" id="ritual-balance"><span class="gold">✦</span> 120 · Vault →</button>
+        <button type="button" class="ritual-claim" id="ritual-claim">Claim +20&nbsp;<span class="tok"></span></button>
+        <button type="button" class="ritual-balance" id="ritual-balance"></button>
       </section>
 
       <!-- NEW ① · TIP OF THE DAY -->
@@ -746,22 +850,41 @@ body{
       <section class="mky" id="mky">
         <div id="mky-live">
           <h2 class="mky-title">Make DreamTube yours</h2>
+          <!-- amendment ③ — accordion rows, one open at a time -->
           <div class="mky-rows">
-            <button type="button" class="mky-row primary" id="mky-install">
-              <i class="qicon">📲</i>
-              <span class="qlabel">Add to your home screen<span class="done-check" id="mky-install-check" hidden>✓</span></span>
-              <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
-            </button>
-            <button type="button" class="mky-row" id="mky-copy">
-              <i class="qicon">🔗</i>
-              <span class="qlabel">Copy the link for your browser</span>
-            </button>
-            <button type="button" class="mky-row" id="mky-bookmark">
-              <i class="qicon">⭐</i>
-              <span class="qlabel">Bookmark this page</span>
-            </button>
+            <div class="mky-item" id="mky-item-install">
+              <button type="button" class="mky-row primary" id="mky-install" aria-expanded="false">
+                <i class="qicon">📲</i>
+                <span class="qlabel">Add to your home screen<span class="done-check" id="mky-install-check" hidden>✓</span></span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp">
+                <div class="mky-step"><b>In Safari:</b> tap Share <b>→ Add to Home Screen</b> · <b>In Chrome:</b> tap ⋮ <b>→ Add to Home Screen</b>. DreamTube becomes one tap from your dream — and the install verifies your +100 <span class="tok"></span>.</div>
+              </div>
+            </div>
+            <div class="mky-item" id="mky-item-copy">
+              <button type="button" class="mky-row" id="mky-copy" aria-expanded="false">
+                <i class="qicon">🔗</i>
+                <span class="qlabel">Copy the link for your browser<span class="done-check" id="mky-copy-check" hidden>✓</span></span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp">
+                <div class="mky-copied" id="mky-copied">✓ Link copied</div>
+                <div class="mky-step">Open your browser and paste it there — dreamtube1.netlify.app comes with you.</div>
+              </div>
+            </div>
+            <div class="mky-item" id="mky-item-bookmark">
+              <button type="button" class="mky-row" id="mky-bookmark" aria-expanded="false">
+                <i class="qicon">⭐</i>
+                <span class="qlabel">Bookmark this page</span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp">
+                <div class="mky-step"><b>In Safari:</b> tap Share <b>→ Add Bookmark</b> · <b>In Chrome:</b> tap ⋮ <b>→ ☆</b>. On a computer: <b>⌘D / Ctrl+D</b>.</div>
+              </div>
+            </div>
           </div>
-          <div class="mky-reward">Verified install unlocks +100 ✦</div>
+          <div class="mky-reward gold">Verified install unlocks +100 <span class="tok"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled>Claim +100 ✦</button>
         </div>
         <div id="mky-done" hidden>
@@ -791,14 +914,33 @@ body{
   <!-- mock claim sheet — serves the nightly +20 AND the install +100 -->
   <div class="sheet-backdrop" id="sheet-backdrop"></div>
   <div class="claim-sheet" id="claim-sheet" role="dialog" aria-label="Bonus" aria-hidden="true">
-    <div class="claim-title" id="claim-title"><span class="gold">✦</span> Nightly bonus</div>
+    <div class="claim-title" id="claim-title"></div>
     <p class="claim-sub" id="claim-sub">+20 tokens for showing up tonight.</p>
-    <button type="button" class="claim-pill" id="claim-pill">Claim 20 ✦</button>
+    <button type="button" class="claim-pill" id="claim-pill"></button>
   </div>
 </div>
 
 <script>
   // Mock-only interactivity — no app JS.
+
+  // ---- founder amendment ② · the token icon — three inline-SVG
+  //      candidates replacing the tilted-square ✦, picked live from the
+  //      mock chrome. All use currentColor: accent on the topbar chip,
+  //      warm gold in earned/claim contexts, ink-dark inside gold pills.
+  var TOKS = {
+    // A — coin: circle + filled play triangle (brand-mark echo)
+    a: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M9.6 8.1v7.8l6.8-3.9z" fill="currentColor"/></svg>',
+    // B — coin: circle + crescent moon (night theme)
+    b: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="2.2" fill="none"/><g transform="translate(12 12) scale(0.56) translate(-12.6 -12.2)"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" fill="currentColor"/></g></svg>',
+    // C — hybrid: crescent whose inner curve is the play wedge
+    //     (the logo's own moon-play trick, miniaturized)
+    c: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 2.6A9.4 9.4 0 1012.5 21.4L15.2 12Z" fill="currentColor"/></svg>'
+  };
+  var TOKV = 'a';
+  function tok(extra){ return '<span class="tok' + (extra ? ' ' + extra : '') + '">' + TOKS[TOKV] + '</span>'; }
+  function applyTokens(){
+    document.querySelectorAll('.tok').forEach(function(n){ n.innerHTML = TOKS[TOKV]; });
+  }
 
   // ---- constellation (home.html's renderConstellation, 84×46) ----
   function renderConstellation(lit){
@@ -822,6 +964,8 @@ body{
     tonightLinks: document.getElementById('tonight-links'),
     tonightD1: document.getElementById('tonight-d1'),
     tonightChip: document.getElementById('tonight-chip'),
+    tonightThumb: document.getElementById('tonight-thumb'),
+    tokChip: document.getElementById('tok-chip'),
     chamberSub: document.getElementById('chamber-sub'),
     chamberPill: document.getElementById('chamber-pill'),
     ritual: document.getElementById('ritual'),
@@ -868,11 +1012,13 @@ body{
   }
 
   // Balance: base + tonight's 20 (claimed or implied by a logged state)
-  // + the install 100 once claimed.
+  // + the install 100 once claimed. Renders BOTH balance surfaces: the
+  // ritual line and the topbar chip (amendment ②).
   function renderRitualClaim(){
     el.ritualClaim.hidden = !(claimableNow && !claimed);
     var bal = BALANCE + ((claimed || !claimableNow) ? 20 : 0) + (installClaimed ? 100 : 0);
-    el.ritualBalance.innerHTML = '<span class="gold">✦</span> ' + bal + ' · Vault →';
+    el.ritualBalance.innerHTML = tok('gold') + ' ' + bal + ' · Vault →';
+    el.tokChip.innerHTML = tok() + ' ' + bal;
   }
 
   // ---- NEW ① · tip of the day: verbatim founder-approved content ----
@@ -940,14 +1086,29 @@ body{
     renderMky();
     renderRitualClaim();
   });
+  // amendment ③ — accordion rows: tap expands fuller instructions, one
+  // open at a time. Copy also demos its copied-state inside the panel.
+  var MKY_ITEMS = ['install','copy','bookmark'];
+  function toggleMky(which){
+    MKY_ITEMS.forEach(function(name){
+      var item = document.getElementById('mky-item-' + name);
+      var row = document.getElementById('mky-' + name);
+      var open = (name === which) && !item.classList.contains('open');
+      item.classList.toggle('open', open);
+      row.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
   document.getElementById('mky-install').addEventListener('click', function(){
-    toast(installedMock ? 'Already on your home screen ✓' : 'Opening install steps…');
+    toggleMky('install');
   });
   document.getElementById('mky-copy').addEventListener('click', function(){
-    toast('Link copied ✓');
+    toggleMky('copy');
+    if(document.getElementById('mky-item-copy').classList.contains('open')){
+      document.getElementById('mky-copy-check').hidden = false; // "copied"
+    }
   });
   document.getElementById('mky-bookmark').addEventListener('click', function(){
-    toast('Press ⌘D / Ctrl+D to bookmark');
+    toggleMky('bookmark');
   });
   el.mkyClaim.addEventListener('click', function(){
     if(el.mkyClaim.disabled) return;
@@ -968,6 +1129,7 @@ body{
     // Tonight hero
     el.tonight.classList.toggle('logged', logged);
     el.tonightTitle.textContent = logged ? 'Logged tonight ✓' : 'What did you dream?';
+    el.tonightThumb.hidden = !logged; // amendment ① — the dream itself
     el.tonightQuote.hidden = !logged;
     el.tonightPill.hidden = logged;
     el.tonightLinks.hidden = logged;
@@ -1033,13 +1195,13 @@ body{
   function openSheet(mode){
     sheetMode = mode || 'nightly';
     if(sheetMode === 'install'){
-      el.claimTitle.innerHTML = '<span class="gold">✦</span> Install bonus';
+      el.claimTitle.innerHTML = tok('gold') + ' Install bonus';
       el.claimSub.textContent = '+100 tokens — DreamTube is on your home screen.';
-      el.claimPill.textContent = 'Claim 100 ✦';
+      el.claimPill.innerHTML = 'Claim 100&nbsp;' + tok();
     } else {
-      el.claimTitle.innerHTML = '<span class="gold">✦</span> Nightly bonus';
+      el.claimTitle.innerHTML = tok('gold') + ' Nightly bonus';
       el.claimSub.textContent = '+20 tokens for showing up tonight.';
-      el.claimPill.textContent = 'Claim 20 ✦';
+      el.claimPill.innerHTML = 'Claim 20&nbsp;' + tok();
     }
     el.backdrop.classList.add('open');
     el.sheet.classList.add('open');
@@ -1069,9 +1231,31 @@ body{
     toast('Opening the wizard…');
   });
 
+  // amendment ① — tapping tonight's dream thumb opens its room
+  el.tonightThumb.addEventListener('click', function(){
+    toast('Opening your dream…');
+  });
+
+  // amendment ② — topbar chip is balance-only; it peeks at the Vault
+  el.tokChip.addEventListener('click', function(){
+    toast('Opening the Vault…');
+  });
+
+  // amendment ② — the icon picker (mock chrome)
+  document.getElementById('icon-seg').addEventListener('click', function(e){
+    var btn = e.target.closest('.mockbtn');
+    if(!btn) return;
+    this.querySelectorAll('.mockbtn').forEach(function(b){ b.classList.remove('on'); });
+    btn.classList.add('on');
+    TOKV = btn.dataset.icon;
+    applyTokens();       // every static .tok span (claim pill, reward line…)
+    renderRitualClaim(); // rebuilt surfaces: balance line + topbar chip
+  });
+
   renderTip();
   renderMky();
   setState('unlogged');
+  applyTokens();
 </script>
 </body>
 </html>
