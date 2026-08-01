@@ -267,7 +267,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     // -- this is the client code the founder's own failed QA run actually
     // exercised, now running for real against real handlers.
     await page.waitForURL(/home\.html/, { timeout: 20000 });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 20000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 20000 });
 
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must have fired exactly once, for the real funnel pendingId');

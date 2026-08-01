@@ -205,7 +205,7 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
     // finished tile WITHOUT ever calling start-pending-generation a second
     // time.
     await page.waitForURL(/home\.html/, { timeout: 15000 });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
     await settle(function () { return claimCalls.length >= 1; });
@@ -831,7 +831,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     // result.html are both gone); the generating tile resolving confirms
     // the adopted job (A's) actually completed.
     await page.waitForURL(/home\.html/, { timeout: 15000 });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once');
     assert.equal(claimCalls[0].pendingId, 'pd-race-A', 'must claim A\'s pendingId, not the abandoned B request\'s -- B\'s belated settlement must have been discarded as stale, not applied');

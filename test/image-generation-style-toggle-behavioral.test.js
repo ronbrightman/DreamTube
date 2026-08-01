@@ -201,7 +201,7 @@ test('style.html: picking Image and generating actually dispatches to the image 
     // background while the My-dreams row's generating tile shows, then
     // flips to a real finished tile in place.
     await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
 
     assert.equal(generateVideoCalls.length, 0, 'generate-video.js must never be called when Image is selected');
     await settle(function () { return generateImageCalls.length >= 1; });

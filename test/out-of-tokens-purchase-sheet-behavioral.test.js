@@ -479,7 +479,7 @@ test('home.html: a mocked successful checkout return auto-resumes the exact bloc
     // Resolves in place on home.html now (no more redirect to result.html)
     // -- the My-dreams row's generating tile appears and then flips to a
     // real finished tile.
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'the blocked generation must have been re-fired exactly once');
@@ -695,7 +695,7 @@ test('home.html: checkout=success with the pending-purchase marker missing still
     await page.waitForTimeout(150);
     creditLanded = true;
 
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1, 'once the credit lands within the grace period, the blocked generation must still auto-resume even without marker data');
     assert.equal(page.url().indexOf('checkout=success'), -1, 'the ?checkout=success param must still be stripped on the missing-marker path too');

@@ -198,11 +198,14 @@ test('generation_blocked: does NOT fire on a successful generation', async funct
     await seedAccountWithDraft(page, { username: 'successnoblockeduser' });
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    // A successful generation resolves the My-dreams row's generating tile
-    // in place -- wait for that as the success signal (no more redirect to
-    // result.html, tracker item for-product-funnel-ending-v2-founder-ins-
-    // tfuu0q).
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
+    // A successful generation resolves in place -- wait for that as the
+    // success signal (no more redirect to result.html, tracker item
+    // for-product-funnel-ending-v2-founder-ins-tfuu0q). A brand-new
+    // account's first dream is the day-0 scenario (tracker item
+    // for-product-build-ship-founder-go-08-01--ags710) -- the embedded
+    // #day0-card owns it and flips to ready in place, not the My-dreams
+    // row (hidden entirely for this account).
+    await page.waitForSelector('#d0-video.ready', { timeout: 8000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });

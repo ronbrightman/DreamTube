@@ -148,18 +148,23 @@ async function reachStyleScreenViaChips(page, freeText) {
 /**
  * After a fresh generation completes on home.html (tracker item
  * for-product-funnel-ending-v2-founder-ins-tfuu0q -- ALL creation now
- * lands home first, with generation happening in the background via the
- * My-dreams row's generating tile, instead of auto-redirecting straight
- * to result.html?id=* the way processing.html used to), this waits for
- * that tile to finish, resolves the just-created dream's id from the
- * current user's own dreams (newest first), then navigates to
- * result.html?id=<id> itself so every existing result.html-specific
- * assertion below (recap text, Edit sheet, interpretation, etc.) keeps
- * working completely unchanged.
+ * lands home first, with generation happening in the background, instead
+ * of auto-redirecting straight to result.html?id=* the way processing.html
+ * used to), this waits for that generation to finish, resolves the
+ * just-created dream's id from the current user's own dreams (newest
+ * first), then navigates to result.html?id=<id> itself so every existing
+ * result.html-specific assertion below (recap text, Edit sheet,
+ * interpretation, etc.) keeps working completely unchanged. Two possible
+ * "done" signals, either of which means the same thing: an ordinary
+ * account's My-dreams row generating tile flipping to a real tile, OR (for
+ * a genuinely brand-new test account -- day-0, tracker item for-product-
+ * build-ship-founder-go-08-01--ags710) the embedded #day0-card's own video
+ * frame flipping to `.ready` instead, since that account's My-dreams row
+ * stays hidden entirely in that state.
  */
 async function waitForHomeGenerationThenOpenResult(page) {
   await page.waitForURL('**/home.html**', { timeout: 15000, waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
   var dreamId = await page.evaluate(function () {
     var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
     var handle = raw.user && raw.user.handle;
