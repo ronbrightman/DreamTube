@@ -379,14 +379,14 @@ test('apple-touch-icon is present and fetchable on every real app page (iOS uses
     for (var i = 0; i < pagesToCheck.length; i++) {
       await safeGoto(page, baseUrl + '/' + pagesToCheck[i]);
       var href = await page.getAttribute('link[rel="apple-touch-icon"]', 'href');
-      assert.equal(href, 'assets/apple-touch-icon.png', pagesToCheck[i] + ' must declare a real apple-touch-icon');
+      assert.equal(href, 'assets/apple-touch-icon-v3.png', pagesToCheck[i] + ' must declare a real apple-touch-icon');
       var capableContent = await page.getAttribute('meta[name="apple-mobile-web-app-capable"]', 'content');
       assert.equal(capableContent, 'yes', pagesToCheck[i] + ' must declare apple-mobile-web-app-capable so the installed icon launches standalone, not as a plain Safari-chrome bookmark');
 
       var fetchStatus = await page.evaluate(function () {
-        return fetch('assets/apple-touch-icon.png').then(function (r) { return r.status; });
+        return fetch('assets/apple-touch-icon-v3.png').then(function (r) { return r.status; });
       });
-      assert.equal(fetchStatus, 200, 'assets/apple-touch-icon.png must actually be fetchable, not a dangling link');
+      assert.equal(fetchStatus, 200, 'assets/apple-touch-icon-v3.png must actually be fetchable, not a dangling link');
     }
   } finally {
     await context.close();

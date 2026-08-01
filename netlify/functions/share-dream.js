@@ -25,7 +25,7 @@
 // preview card.
 //
 // mediaType 'video' dreams (and any dream missing its own image) fall
-// back to a static branded image (assets/logo-v2.png) — no poster-frame
+// back to a static branded image (assets/logo-v3.png) — no poster-frame
 // extraction exists in this codebase yet; a static fallback is explicitly
 // in-scope for v1 per this feature's own spec.
 //
@@ -39,7 +39,7 @@
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 
-var FALLBACK_IMAGE_PATH = '/assets/logo-v2.png';
+var FALLBACK_IMAGE_PATH = '/assets/logo-v3.png';
 var GENERIC_DESCRIPTION = 'Create your own AI dream video on DreamTube';
 
 // Used only when x-forwarded-host/host fails HOSTNAME_RE below -- this
