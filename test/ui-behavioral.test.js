@@ -1666,12 +1666,12 @@ test('pricing screen (14): mobile-test fix -- the old wall-of-text (value bullet
     // for-product-store-launch-copy-sweep-purc-m6xhkx): "Still in beta" /
     // "Free to try and enjoy right now" is gone -- a real, live
     // contradiction once Dodo Payments checkout actually went live.
-    // Replaced with the real signup grant (220 tokens, matching
+    // Replaced with the real signup grant (320 tokens, matching
     // lib/entitlements.js's INITIAL_GRANT and wizard.html's own
     // renderSignup screen). "No card needed" is still accurate and kept.
     assert.doesNotMatch(cardText, /still in beta/i, 'the beta framing must be gone now that the store is live');
     assert.match(cardText, /free to start/i);
-    assert.match(cardText, /220 tokens/i, 'should state the real signup grant, matching entitlements.js\'s INITIAL_GRANT');
+    assert.match(cardText, /320 tokens/i, 'should state the real signup grant, matching entitlements.js\'s INITIAL_GRANT');
     assert.match(cardText, /no card needed/i);
 
     var bodyText = await page.textContent('#app');

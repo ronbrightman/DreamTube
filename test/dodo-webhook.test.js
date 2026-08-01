@@ -51,7 +51,7 @@ function signedEvent(payloadObj, opts) {
  * Seeds an email with an existing, zero-balance token record before a
  * webhook fires — isolates a test's balance assertion to just the credit
  * this test is checking, instead of also having to account for
- * lib/entitlements.js's own separate 220-token first-ever-read signup
+ * lib/entitlements.js's own separate 320-token first-ever-read signup
  * grant (which addTokens' underlying syncTokens would otherwise apply
  * automatically to a genuinely brand-new email, since it has never been
  * read before). That signup grant is real, correct, unrelated production

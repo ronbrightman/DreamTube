@@ -43,7 +43,8 @@ growth-owned).
 ## What's built and live (main branch, all tested)
 
 - **Monetization:** pivoted from subscription/quota to a one-time
-  token ledger. 220-token signup grant. Daily free tokens are now an
+  token ledger. 320-token signup grant (raised from 220, 2026-08-01,
+  founder-directed, tracker xostu6). Daily free tokens are now an
   ACTIVE claim (2026-07-28 daily-claim switch, no more automatic drip/
   ceiling): 100 tokens on an account's very first-ever claim, 20 on
   every claim after that. Dodo Payments is the chosen, live payment
