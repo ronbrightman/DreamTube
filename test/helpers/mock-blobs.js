@@ -10,12 +10,37 @@
 // spend-guard.js, or the functions that require those) resolves to this
 // fake instead of hitting the real package.
 //
+// ALSO fakes the `blobs10` aliased package the same way (tracker.html's
+// for-product-spike-conditional-write-only-rnurgw item —
+// lib/first-dream-email-store.js and lib/push-dedup-store.js's CAS
+// rewrite, `npm install blobs10@npm:@netlify/blobs@^10` per package.json),
+// against the SAME underlying storeName -> Map state as the
+// `@netlify/blobs` fake below — both real SDK versions are just different
+// clients talking to the same physical Blobs backend for a given store
+// name, so a test reading a record back out via
+// `require('@netlify/blobs').getStore(...)` (the convention every existing
+// test in this suite already uses) sees exactly what a CAS write made
+// through `require('blobs10')` actually persisted, with no separate mock
+// state to keep in sync.
+//
 // Storage is a plain object of storeName -> Map(key -> value), mirroring
 // getStore({name}).get(key)/.setJSON(key, value)/.delete(key) closely
 // enough for every call site in this codebase (verify-password-reset.js is
 // the one caller that uses .delete, to consume a one-time reset token).
 // `reset()` clears everything between tests so one test's writes can't
 // leak into another's.
+//
+// CAS SUPPORT (`{ onlyIfNew: true }`, added for the same tracker item):
+// mirrors the real 10.x SDK's own documented contract (see
+// node_modules/blobs10/dist/main.d.ts's SetOptions/WriteResult, and
+// dist/main.cjs's Store.setJSON) — a conditional write either resolves
+// with `{ modified: true, etag }` (the key didn't exist, ours now does) or
+// `{ modified: false }` (the key already existed, write atomically
+// rejected) — it NEVER throws for an ordinary "already exists" collision,
+// only for a genuine transport/server failure (simulated here the same way
+// as every unconditional write, via setWriteOverride). `{ onlyIfMatch }`
+// (etag-based conditional update) is intentionally NOT implemented here —
+// neither rewritten store uses it, only `onlyIfNew` (fresh-claim creation).
 
 var stores = {};
 
@@ -40,6 +65,25 @@ var readOverrides = {};
 // variable's own comment) — every lib/*.js module already has its own
 // bound reference to fakeGetStore by the time a test installs an override.
 var writeOverrides = {};
+
+// Per-store CAS-result overrides — narrower than writeOverrides above:
+// writeOverrides can only make setJSON either throw or perform an ordinary
+// write, which can't express "the write resolved normally but with a
+// shape blobs10's own real implementation should never actually produce"
+// (see lib/first-dream-email-store.js / lib/push-dedup-store.js's own
+// defensive "unexpected shape" fail-closed branch, kept even though
+// reading node_modules/blobs10/dist/main.cjs's own Store.setJSON shows it
+// can only ever resolve with a real `{ modified: boolean }` or throw).
+// `fn(key, value, options, callIndex)` returning `{ result }` makes setJSON
+// resolve with `result` directly, bypassing the map entirely; a falsy
+// return falls through to the normal CAS/unconditional write below.
+var resultOverrides = {};
+
+// Monotonic counter for fake etags handed back on a successful CAS write
+// (`{ modified: true, etag }`) — real Blobs etags are opaque strings, and
+// nothing in this codebase's two CAS call sites reads the etag value back
+// (only `modified`), so uniqueness is the only property that matters here.
+var etagCounter = 0;
 
 function storeFor(name) {
   if (!stores[name]) stores[name] = new Map();
@@ -66,7 +110,7 @@ function fakeGetStore(opts) {
       }
       return map.has(key) ? map.get(key) : undefined;
     },
-    setJSON: async function (key, value) {
+    setJSON: async function (key, value, options) {
       var override = writeOverrides[name];
       if (override) {
         override.callCount++;
@@ -76,6 +120,23 @@ function fakeGetStore(opts) {
         // through to a normal write, same shape as setReadOverride's `fn`.
         var err = override.fn(key, value, override.callCount);
         if (err) throw (err instanceof Error ? err : new Error(String(err)));
+      }
+      var resultOverride = resultOverrides[name];
+      if (resultOverride) {
+        resultOverride.callCount++;
+        var substituted = resultOverride.fn(key, value, options, resultOverride.callCount);
+        if (substituted) return substituted.result;
+      }
+      // CAS path (`{ onlyIfNew: true }`, blobs10 only — see this file's
+      // header comment): the real SDK never throws for an ordinary
+      // "already exists" collision, it resolves with `modified: false`
+      // instead. Mirrored exactly here, ahead of the unconditional
+      // fallthrough below.
+      if (options && options.onlyIfNew) {
+        if (map.has(key)) return { modified: false };
+        map.set(key, value);
+        etagCounter++;
+        return { modified: true, etag: 'mock-etag-' + etagCounter };
       }
       map.set(key, value);
     },
@@ -146,6 +207,28 @@ function clearWriteOverride(storeName) {
   delete writeOverrides[storeName];
 }
 
+/**
+ * Installs a temporary override on every setJSON() call against
+ * `storeName` that substitutes the RESOLVED VALUE directly (rather than
+ * throwing, or performing a real write): `fn(key, value, options,
+ * callIndex)` (callIndex starts at 1) is called on every write; returning
+ * `{ result }` makes setJSON resolve with `result` as-is, bypassing the
+ * map entirely (no write happens). A falsy return falls through to the
+ * normal CAS/unconditional write. See this override's own declaration
+ * comment (near `resultOverrides`) for why this exists separately from
+ * setWriteOverride above — it exists for shapes the real SDK's own
+ * implementation should never produce, only reachable by deliberately
+ * forcing them here. Call clearResultOverride (or reset()) when done.
+ */
+function setResultOverride(storeName, fn) {
+  resultOverrides[storeName] = { fn: fn, callCount: 0 };
+}
+
+/** Removes a single store's CAS-result override, if any. */
+function clearResultOverride(storeName) {
+  delete resultOverrides[storeName];
+}
+
 function fakeConnectLambda() {
   // Real @netlify/blobs uses this to pull Blobs credentials out of the
   // Lambda-compatible event/context. Nothing to do in the fake — getStore
@@ -157,22 +240,35 @@ function seed(storeName, key, value) {
   storeFor(storeName).set(key, value);
 }
 
-/** Clears all fake store state, including any read/write overrides. Call between tests. */
+/** Clears all fake store state, including any read/write/result overrides. Call between tests. */
 function reset() {
   stores = {};
   readOverrides = {};
   writeOverrides = {};
+  resultOverrides = {};
 }
 
-/** Installs the fake in place of the real @netlify/blobs for the rest of this process. Call once, before requiring any module that (transitively) requires('@netlify/blobs'). */
+/**
+ * Installs the fake in place of the real @netlify/blobs AND the real
+ * `blobs10` alias (see this file's header comment) for the rest of this
+ * process. Call once, before requiring any module that (transitively)
+ * requires either package.
+ */
 function install() {
-  var resolved = require.resolve('@netlify/blobs');
-  require.cache[resolved] = {
-    id: resolved,
-    filename: resolved,
-    loaded: true,
-    exports: { getStore: fakeGetStore, connectLambda: fakeConnectLambda }
-  };
+  var fakeExports = { getStore: fakeGetStore, connectLambda: fakeConnectLambda };
+  [require.resolve('@netlify/blobs'), require.resolve('blobs10')].forEach(function (resolved) {
+    require.cache[resolved] = {
+      id: resolved,
+      filename: resolved,
+      loaded: true,
+      exports: fakeExports
+    };
+  });
 }
 
-module.exports = { install, reset, seed, setReadOverride, clearReadOverride, setWriteOverride, clearWriteOverride };
+module.exports = {
+  install, reset, seed,
+  setReadOverride, clearReadOverride,
+  setWriteOverride, clearWriteOverride,
+  setResultOverride, clearResultOverride
+};

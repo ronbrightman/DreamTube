@@ -37,19 +37,43 @@
 // — same "generic store, caller owns key semantics" shape as
 // lib/rate-limit.js's own checkAndIncrement(scope, identifier, ...).
 //
-// ATOMICITY: uses lib/blobs-retry.js's shared bounded read -> mutate ->
-// write -> verify loop, same as lib/first-dream-email-store.js's own
-// markSentOnce — a genuine race is realistically reachable here too (e.g.
-// mark-generation-completed.js being hit twice in quick succession for
-// the same operationName, or two daily-claim scheduled runs overlapping).
-// Fails CLOSED on exhaustion, exactly like first-dream-email-store.js's
-// own markSentOnce and for the same reason: a rare skipped push is an
-// honest, low-stakes degrade; a duplicate push notification for the same
-// event is the one outcome worth spending a retry loop to prevent.
+// ── CAS REWRITE (tracker.html's for-product-spike-conditional-write-only-
+//    rnurgw item) ──
+//
+// Same root cause and same fix as lib/first-dream-email-store.js's own
+// markSentOnce, which carries the fuller writeup — see that file's header
+// comment. Short version: the installed @netlify/blobs 8.2.0 has no
+// compare-and-swap primitive, so the old bounded read -> mutate -> write ->
+// verify retry loop (lib/blobs-retry.js) could only mitigate, never close,
+// the eventual-consistency race window; @netlify/blobs 10.x's
+// `setJSON(key, value, { onlyIfNew: true })` closes it completely, resolving
+// with `{ modified: boolean }` — true if THIS write atomically created the
+// key, false if it already existed. No retry loop, no "was this skip
+// actually our own just-landed write" ambiguity (this file's own old
+// round-5 section) — an atomic conditional write is unambiguous by
+// construction.
+//
+// Installed as the SEPARATE aliased `blobs10` package (see package.json),
+// not a bump of the shared `@netlify/blobs` 8.2.0 dependency — only this
+// file and lib/first-dream-email-store.js import `blobs10`.
+//
+// Fails CLOSED on any write that REJECTS rather than resolving with a real
+// `modified` boolean (a genuine transport/server error, never the expected
+// precondition-rejection signal) — same posture as
+// lib/first-dream-email-store.js's own markSentOnce and for the same
+// reason: a rare skipped push is an honest, low-stakes degrade; a
+// duplicate push notification for the same event is the one outcome worth
+// refusing to guess about.
+//
+// HONESTY NOTE: this is a SPIKE, same as lib/first-dream-email-store.js's
+// own rewrite — verified against test/helpers/mock-blobs.js's in-memory
+// fake (both module names, including the new CAS semantics and
+// error-injection for the fail-closed path), NOT against a real Netlify
+// Blobs backend. See that file's header comment for the fuller honesty
+// note; it applies here identically.
 
-var { getStore, connectLambda } = require('@netlify/blobs');
+var { getStore, connectLambda } = require('blobs10');
 var crypto = require('crypto');
-var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-push-dedup';
 
@@ -61,8 +85,7 @@ function store() {
 // own key literally contains an email address — see the module comment
 // above), and this store deliberately doesn't parse caller key structure
 // to know which part that is, so NO log line in this file may touch a key
-// at all. The one exhaustion log lives in blobs-retry.js (store name +
-// per-attempt trace, key-free by design); pinned by push-dedup-store.test.js.
+// at all — pinned by push-dedup-store.test.js.
 
 /** True if `key` has already been recorded as sent. */
 async function hasSent(event, key) {
@@ -75,8 +98,8 @@ async function hasSent(event, key) {
  * Atomically records `key` as sent, but only if it hasn't been already.
  * Returns { ok:true } the first time for a given key, { ok:false,
  * alreadySent:true } every time after, or { ok:false, error:'exhausted' }
- * on the rare case every retry attempt's verify-read fails to confirm our
- * own write (see lib/blobs-retry.js's own header comment) — callers MUST
+ * if the underlying CAS write REJECTS rather than resolving with a real
+ * `modified` boolean (see this file's header comment) — callers MUST
  * treat both `alreadySent` and `exhausted` identically (skip the send),
  * same discipline first-dream-email-store.js's own markSentOnce
  * documents.
@@ -84,62 +107,39 @@ async function hasSent(event, key) {
 async function markSentOnce(event, key) {
   if (!key) return { ok: false, error: 'invalid_key' };
 
-  var claimId;
-  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
-    read: function (evt) {
-      connectLambda(evt);
-      return store().get(key, { type: 'json' });
-    },
-    mutate: function (existing) {
-      if (existing) return blobsRetry.SKIP;
-      claimId = crypto.randomUUID();
-      return { key: key, sentAt: Date.now(), claimId: claimId };
-    },
-    verify: function (verifyRead) {
-      return !!(verifyRead && verifyRead.claimId === claimId);
-    }
-  });
+  var claimId = crypto.randomUUID();
+  var record = { key: key, sentAt: Date.now(), claimId: claimId };
 
-  if (result.ok) return { ok: true, claimId: claimId };
+  var result;
+  try {
+    connectLambda(event);
+    result = await store().setJSON(key, record, { onlyIfNew: true });
+  } catch (e) {
+    // Deliberately does NOT include `key` in the log -- see the module
+    // comment above on why no log line here may touch a caller-supplied
+    // key. Not the expected "key already exists" CAS-rejection signal
+    // (that resolves normally with modified:false); a genuine
+    // transport/server error means we cannot verify the guard. Fail
+    // CLOSED: refuse to send rather than risk a duplicate push.
+    console.error('push-dedup-store: CAS write threw for a push-dedup claim -- refusing to send rather than risk a duplicate push', e);
+    return { ok: false, error: 'exhausted' };
+  }
 
-  // ── IS THIS SKIP OUR OWN WRITE? (tracker.html's
-  //    for-product-bug-founder-affects-all-funn-0efe7t item, round 5) ──
-  //
-  // Same hazard, same guard, same reasoning as lib/first-dream-email-store.js's
-  // own markSentOnce -- see that function's fuller comment on this branch, and
-  // lib/entitlements.js's claimDailyTokens for the in-codebase precedent. In
-  // short: blobs-retry reports `skipped` whenever an attempt's fresh read saw
-  // an existing record, and that record may be THIS call's own write from an
-  // earlier attempt whose verify-read raced it under Blobs' eventual
-  // consistency. Reporting that as alreadySent suppresses a push that nobody
-  // ever actually sent, and permanently -- the dedup marker stays written.
-  //
-  // Fails CLOSED in every ambiguous case: `claimId` is truthy only if this
-  // call's own `mutate` actually built and wrote a record, so a call that
-  // skipped on its very first read can never match, and a legacy record with
-  // no claimId at all can never read as ours.
-  if (result.skipped) {
-    if (claimId && result.current && result.current.claimId === claimId) {
-      // Deliberately does NOT include `key`: unlike first-dream-email-store's
-      // normalized username, a key here is caller-built and can carry raw PII
-      // (send-daily-claim-pushes.js builds 'daily-claim-available:' + EMAIL +
-      // ':' + nextClaimAt) -- see blobs-retry.js's describeRead comment on the
-      // raw-email log line that had to be pulled back out before merge during
-      // round 3 of this same tracker item. The line below is still enough to
-      // spot the pattern in logs; the existing exhaustion log further down
-      // predates that rule and is left alone here as out of this fix's scope.
-      console.error('push-dedup-store: retry loop skipped, but the record it skipped on'
-        + ' carries OUR OWN claim -- treating the claim as won');
-      return { ok: true, claimId: claimId };
-    }
+  if (result && result.modified === true) {
+    return { ok: true, claimId: claimId };
+  }
+
+  if (result && result.modified === false) {
+    // The key already existed -- some earlier call already won this claim,
+    // atomically rejected by the store itself.
     return { ok: false, alreadySent: true };
   }
 
-  // No log line here: blobs-retry.js's retryingWrite already emits the one
-  // canonical exhaustion log for this failure (store name + full per-attempt
-  // trace, deliberately key-free — see its describeRead comment), and the
-  // exhaustion path must log exactly once with no raw key (the key embeds an
-  // email address; pinned by push-dedup-store.test.js).
+  // Resolved without throwing but didn't come back with a real `modified`
+  // boolean -- not a shape this SDK's own implementation should ever
+  // produce, but fail CLOSED rather than assume either outcome. No key in
+  // the log, same rule as the catch branch above.
+  console.error('push-dedup-store: CAS write for a push-dedup claim returned an unexpected shape -- refusing to send rather than risk a duplicate push: ' + JSON.stringify(result));
   return { ok: false, error: 'exhausted' };
 }
 

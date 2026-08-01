@@ -82,6 +82,22 @@ function fmt(v,kind){ if(v==null)return "–"; if(kind==="m")return "$"+(v>=100?
 function sumH(hs,k){var s=0,any=false;hs.forEach(function(h){if(h[k]!=null){s+=h[k];any=true}});return any?s:null}
 function nowIsrael(){ var d=new Date(Date.now()+IL_OFFSET*3600e3); return d; }
 function hourKey(h){ return h.israel_date+"T"+h.israel_hour; }
+function spendTiles(){
+ // Marketing spend KPI: yesterday's final number from the daily series, plus
+ // today's line if the nightly/intraday feed has landed (dimmed = partial day).
+ var today=null,yest=null;
+ DAYS.forEach(function(d,i){ if(d.date===PARTIAL_DATE){today=d;yest=DAYS[i-1]||null;} });
+ var ySpend=yest?yest.marketing_spend_usd:null;
+ var tSpend=today?today.marketing_spend_usd:null;
+ var todayLine=tSpend!=null
+  ? '<b style="opacity:.45">'+fmt(tSpend,"m")+'</b> today · partial'
+  : '– · today · awaiting Growth’s line';
+ var html='<div class="kpi"><div class="l">Marketing spend</div><div class="v">'+fmt(ySpend,"m")+'</div><div class="cmp">yesterday · final</div><div class="cmp">'+todayLine+'</div></div>';
+ if(ySpend!=null&&yest.signups!=null&&yest.signups>0){
+  html+='<div class="kpi"><div class="l">CPS yesterday</div><div class="v">'+fmt(ySpend/yest.signups,"m")+'</div><div class="cmp">'+fmt(ySpend,"m")+' ÷ '+fmt(yest.signups,"c")+' signups</div></div>';
+ }
+ return html;
+}
 function kpiCompare(){
  var mode=document.querySelector("#today-mode .chip.on").getAttribute("data-m");
  var now=nowIsrael(); var todayStr=now.toISOString().slice(0,10); var curHour=now.getUTCHours();
@@ -99,7 +115,7 @@ function kpiCompare(){
  }
  var METRICS=[["signups","Signups","c"],["funnel_entrants","Funnel entrants","c"],["ree","Reached email (REE)","c"],["videos_total","Videos","c"],["daily_claims","Claims","c"],["second_day_claims","2nd-day claims","c"],["purchases","Purchases","c"],["revenue_usd","Revenue","m"],["likes","Likes","c"]];
  var CUMTILE=(D.cumulative&&D.cumulative.multiday_claimers!=null)?'<div class="kpi"><div class="l">2+day claimers · ever</div><div class="v">'+fmt(D.cumulative.multiday_claimers,"c")+'</div><div class="cmp">of '+fmt(D.cumulative.total_claimers,"c")+' people who ever claimed</div></div>':"";
- document.getElementById("kpis").innerHTML=METRICS.map(function(m){
+ document.getElementById("kpis").innerHTML=spendTiles()+METRICS.map(function(m){
   var a=sumH(cur,m[0]), b=sumH(prev,m[0]);
   var cmp="–";
   if(a!=null&&b!=null){var d=a-b; var cls=d>0?"up":(d<0?"down":"flat"); cmp='<b class="'+cls+'">'+(d>0?"+":"")+fmt(d,m[2])+'</b> vs '+fmt(b,m[2]);}
