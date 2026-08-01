@@ -879,6 +879,29 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // trusted as a frozen snapshot for the rest of this page's life.
   var pendingJob = DreamStore.getPendingJob();
 
+  // Optimistic "this exact dream is about to start forming" signal for an
+  // edit/regenerate landing here via ?generate=1 (tracker item for-product-
+  // bug-founder-repro-edited-dre-jcasn1) — the REAL pendingJob only exists
+  // once handleFreshInAppGeneration's own network round trip lands (see
+  // that IIFE further down), which can take a couple of seconds;
+  // shouldShowRoomCard()/renderDay0Card() run once, synchronously, well
+  // before that. Without this, a dream the room card ALREADY owns and is
+  // already showing as "ready" (tonight's own, already-finished dream being
+  // re-edited) would keep showing that STALE pre-edit content for the whole
+  // round trip — the founder-reported bug, just on a shorter timescale.
+  // sourceDreamId is read straight off state.draft (synchronous, no network
+  // needed) — result.html's persistEditDeltaDraft/persistGenerateAgainDraft
+  // both set it before redirecting here, whether via the edit-delta sheet
+  // or a plain Generate-Again. Cleared the moment a real pendingJob is
+  // observed or this settles (see pollForPendingJobToAppear/
+  // onGenerationSettled below) so it can never wrongly pin the card in
+  // forming after this attempt is actually done.
+  var optimisticEditDreamId = null;
+  if (new URLSearchParams(location.search).get('generate') === '1' && !pendingJob) {
+    var __freshDraft = DreamStore.getDraft();
+    if (__freshDraft && __freshDraft.sourceDreamId) optimisticEditDreamId = __freshDraft.sourceDreamId;
+  }
+
   // ===== Greeting — one line, no date sub-line (founder amendment) =====
   (function renderGreeting(){
     var hour = new Date().getHours();
@@ -1000,8 +1023,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     video.removeAttribute('src'); video.style.display = 'none';
     image.removeAttribute('src'); image.style.display = 'none';
     document.getElementById('d0-bg').style.background = 'transparent';
+    // pendingJob can still be null here during the optimistic-edit window
+    // above (the real job hasn't landed yet) — leave whatever quote is
+    // already on screen (the dream's own current text) rather than
+    // blanking it; it self-corrects the moment the real pendingJob (with
+    // whatever the edit actually changed it to) lands and re-renders.
     var quoteText = (pendingJob && (pendingJob.storyText || pendingJob.caption)) || '';
-    document.getElementById('d0-quote').textContent = quoteText ? ('“' + quoteText + '”') : '';
+    if (quoteText) document.getElementById('d0-quote').textContent = '“' + quoteText + '”';
   }
   function renderDay0CardReady(dream){
     d0DreamId = dream.id;
@@ -1058,8 +1086,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // An in-flight job's own live state takes priority over an already-
     // completed dream, so the rare same-day second submission still shows
     // as forming rather than silently jumping straight to the dream's
-    // ready state.
-    if(pendingJob){
+    // ready state. editingOwnedDream (see optimisticEditDreamId's own doc
+    // comment above) closes the brief window where an edit/regenerate of
+    // the EXACT dream this card already owns has been submitted but the
+    // real pendingJob hasn't landed yet — without it the card would keep
+    // showing that dream's stale pre-edit content as "ready" for that
+    // whole round trip.
+    var editingOwnedDream = !!(optimisticEditDreamId && completedDream && optimisticEditDreamId === completedDream.id);
+    if(pendingJob || editingOwnedDream){
       card.style.display = '';
       renderDay0CardForming();
     } else if(completedDream){
@@ -1457,6 +1491,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   function onGenerationSettled(promise){
     promise.then(function(dream){
+      optimisticEditDreamId = null;
+      // A null dream (js/store.js's own stale-completion guard, tracker
+      // item for-product-bug-founder-repro-edited-dre-jcasn1) means this
+      // attempt was superseded by a newer edit/regenerate of the same dream
+      // submitted elsewhere (another tab/device) before this one resolved —
+      // that newer attempt already owns pendingJob/completedDream and will
+      // settle on its own; nothing to do here, and definitely not this
+      // page's own pendingJob=null/refreshHomeState(), which would wrongly
+      // stomp whatever the newer attempt is currently showing.
+      if(!dream) return;
       pendingJob = null;
       myDreams = DreamStore.getMyDreams();
       completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
@@ -1476,6 +1520,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       DreamStore.markGenerationJustCompleted(dream.sourceOperationName);
       fireFirstVideoCreatedIfEligible(dream);
     }).catch(function(err){
+      optimisticEditDreamId = null;
+      // err.superseded (js/store.js's own stale-completion guard) — this
+      // attempt was superseded by a newer edit/regenerate of the same dream
+      // before it failed; the newer attempt owns pendingJob now and is
+      // still genuinely in flight (or has already settled) elsewhere —
+      // showing an error toast here would be about an attempt the user has
+      // already moved on from, and clearing pendingJob/refreshHomeState()
+      // would wrongly hide the newer attempt's own still-forming state.
+      if(err && err.superseded) return;
       pendingJob = null;
       refreshHomeState();
       // Same "ENNN: reason" parsing processing.html's own catch handler
@@ -1964,6 +2017,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var job = DreamStore.getPendingJob();
     if(job){
       pendingJob = job;
+      optimisticEditDreamId = null; // the real job has landed -- no longer needed, see its own doc comment above
       refreshHomeState();
       return;
     }

@@ -862,6 +862,34 @@
   }
   function clearPendingJob() { state.pendingJob = null; persist(); }
 
+  /**
+   * Cross-tab/cross-device staleness check for a generation attempt about to
+   * finalize (tracker item for-product-bug-founder-repro-edited-dre-jcasn1,
+   * the "stale async callback" bug class this codebase has hit repeatedly —
+   * see e.g. signupAttemptToken/pendingGenerationToken in wizard.html/
+   * start.html for the same shape applied at the UI layer). A second edit/
+   * regenerate of the SAME dream, submitted from another tab or device
+   * before the first one's own poll resolves, overwrites this account's
+   * single pendingJob slot with ITS OWN operationName the moment IT starts
+   * (see savePendingJob above) — so by the time the FIRST attempt's
+   * pollUntilDone finally resolves, state.pendingJob no longer names it.
+   * Reads localStorage FRESH (not this page's own in-memory `state`, which
+   * a second tab/device's write never updates here — this app has no
+   * cross-tab storage-event sync) so this is reliable even when the newer
+   * attempt was submitted somewhere else entirely, not just later on this
+   * same page. Fails open (true) on any storage/parse hiccup — never block
+   * a legitimate completion over an infra blip, same reasoning as this
+   * file's other defensive localStorage reads.
+   */
+  function isPendingJobStillCurrent(operationName) {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return true;
+      var job = JSON.parse(raw).pendingJob;
+      return !!job && job.operationName === operationName;
+    } catch (e) { return true; }
+  }
+
   // Returns state.pendingJob only when it belongs to whoever is currently
   // logged in — never to a logged-out visitor (myHandle null) and never to
   // a job tagged for a different account, same filter shape as
@@ -1947,6 +1975,23 @@
       });
       return pollUntilDone(operationName, startedAt, mediaType, email);
     }).then(function (mediaUrl) {
+      // Stale-completion guard (tracker item for-product-bug-founder-repro-
+      // edited-dre-jcasn1) — only ever applies to a regenerate/edit of an
+      // EXISTING dream (sourceDreamId set): a fresh, brand-new generation
+      // always creates its own new dream record on finalize, so there is no
+      // existing dream's content for a "supersede" to clobber. If a second
+      // edit/regenerate of THIS SAME dream has been submitted (anywhere —
+      // another tab, another device) since this attempt's own savePendingJob
+      // call above, this completion is superseded: skip finalizing (no
+      // dream mutation, no clearPendingJob, no analytics/toast) so it can
+      // never silently overwrite the newer attempt's already-in-progress
+      // state. Resolves to null rather than rejecting — this isn't a
+      // failure from the user's point of view, just a stale straggler with
+      // nothing left to do; callers (home.html/result.html) treat a null
+      // result as a quiet no-op.
+      if (sourceDreamId && !isPendingJobStillCurrent(capturedOperationName)) {
+        return null;
+      }
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
         modelUsed: capturedModelUsed,
         editHistoryEntry: opts.editHistoryEntry || null
@@ -1964,7 +2009,24 @@
       }
       return dream;
     }).catch(function (err) {
-      clearPendingJob();
+      // Same stale-completion guard as the success path above, mirrored for
+      // a failure: only ever clear THIS account's live pendingJob slot (and
+      // let the failure surface normally) if it's still this attempt's own
+      // — an attempt that never even got as far as savePendingJob
+      // (capturedOperationName still null — e.g. E303, the fetch to submit
+      // it failed outright) never touched pendingJob in the first place, so
+      // clearing unconditionally there is exactly as safe as it always was.
+      // A superseded edit's late failure is tagged (err.superseded) instead
+      // of clearing/rejecting normally, so a caller can quietly ignore it
+      // rather than showing an error toast about an attempt the user has
+      // already moved on from — the newer attempt owns the account's
+      // pendingJob now and will settle (success or failure) on its own.
+      var isStaleEdit = sourceDreamId && capturedOperationName && !isPendingJobStillCurrent(capturedOperationName);
+      if (isStaleEdit) {
+        err.superseded = true;
+      } else {
+        clearPendingJob();
+      }
       // Defensive cleanup — a failed job's own pendingInterpretations entry
       // (if the user opened the Chamber while it was still generating,
       // before it failed) has no dream to ever migrate onto (a retry
