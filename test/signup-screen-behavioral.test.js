@@ -638,12 +638,22 @@ test('Signup Continue -> immediate "Change email" before attemptSignup resolves 
 // v2g1vi), now checked at the EMAIL step itself (tracker item
 // for-product-signup-email-micro-step-foun-ns8uve's "verify -> capture ->
 // reveal" ordering moved the check-email.js gate BEFORE the password field
-// is ever revealed, not just before submission) -- a blocked email now
-// shows its inline error right on the email step, and the password field
-// never appears at all.
+// is ever revealed, not just before submission) -- a blocked email never
+// fires the real, billed pending-generation call or an already-doomed
+// register-account attempt.
+//
+// Seamless already-registered handoff (tracker item
+// for-product-urgent-forensic-find-the-pro-fzgghg, item 1): a blocked email
+// used to dead-end here with only a "sign in instead" link off to a whole
+// separate page. Forensic finding: of the only two genuine returning users
+// this product has ever had, both hit exactly this dead end via this exact
+// funnel, and only one of them ever found their way back in (by manually
+// discovering /login on their own). It now swaps this screen, in place,
+// into a lightweight login prompt instead -- see renderInPlaceLoginStep's
+// own doc comment in start.html.
 // ===========================================================================
 
-test('screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline, and never reveals the password field', async function (t) {
+test('screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, and swaps in place into a login prompt instead of a dead end', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -670,24 +680,144 @@ test('screen 13 email step with an email that already has an account never fires
     await page.fill('#fn-email', 'variant-b-already-taken@example.com');
     await page.click('#fn-s13-email-continue');
 
-    await page.waitForFunction(function () {
-      var errEl = document.getElementById('fn-signup-error');
-      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
-    }, null, { timeout: 5000 });
+    // The in-place login prompt, not the old dead-end error message.
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
+    var headline = await page.locator('.fn-headline').first().textContent();
+    assert.equal(headline, 'Welcome back');
+    var emailValue = await page.locator('#fn-email').inputValue();
+    assert.equal(emailValue, 'variant-b-already-taken@example.com', 'the already-confirmed email stays prefilled, not re-asked');
 
     await settle(function () { return checkEmailCalls.length >= 1; });
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'variant-b-already-taken@example.com');
-    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
-    assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must not even attempt a signup already known to be rejected');
-    assert.equal(await page.locator('#fn-password').count(), 0, 'the password field must never have been revealed for a blocked email');
-    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14');
+    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call BEFORE login succeeds');
+    assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must never attempt a signup already known to be rejected');
+    assert.equal(await page.locator('#fn-password').count(), 0, 'the CREATE-a-password field must never be revealed for a blocked email -- this is a login prompt, not a signup form');
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14 without actually logging in');
 
-    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-email-continue').disabled; });
-    assert.equal(continueDisabled, false, 'the email step\'s Continue must be re-enabled after the blocked-email response, not left stuck disabled');
+    // A genuine escape hatch to the full login.html flow must still exist
+    // (forgot password, or any other reason the in-place prompt doesn't work).
+    assert.equal(await page.locator('a[href="login.html"]').count(), 1, 'a real escape hatch to login.html must still be present');
+  } finally {
+    await context.close();
+  }
+});
 
-    var loginLinkHref = await page.locator('#fn-signup-error a').getAttribute('href');
-    assert.equal(loginLinkHref, 'login.html');
+test('the in-place login prompt: a correct password logs the visitor in, kicks off the real pending generation for their now-confirmed account, and lands on screen 14 -- exactly where a fresh signup would have', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var startPendingCalls = [];
+    var loginCalls = [];
+    var claimCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-returning-1', operationName: 'fal:fake-model:req-returning-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      claimCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    await page.route('**/.netlify/functions/account-login', function (route) {
+      loginCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'returninguser', email: 'returning-user@example.com', authToken: 'tok-returning-1' }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'returning-user@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
+
+    await page.fill('#fn-login-password', 'theirrealpassword');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
+
+    assert.equal(loginCalls.length, 1, 'DreamStore.login must have been called exactly once');
+    assert.equal(loginCalls[0].usernameOrEmail, 'returning-user@example.com');
+    assert.equal(loginCalls[0].password, 'theirrealpassword');
+
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.equal(startPendingCalls.length, 1, 'a real pending generation must fire once identity is actually confirmed via login -- this is the "create a second video" step the forensic survivor proved works');
+    assert.equal(startPendingCalls[0].email, 'returning-user@example.com');
+    await settle(function () { return claimCalls.length >= 1; });
+    assert.equal(claimCalls.length, 1, 'the newly-started pending job must be claimed under the now-logged-in account');
+
+    var currentUser = await page.evaluate(function () { return window.DreamStore.getCurrentUser(); });
+    assert.ok(currentUser, 'a real session must exist after a successful in-place login');
+    assert.equal(currentUser.username, 'returninguser');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the in-place login prompt: a wrong password shows an inline error, refocuses the field, and never advances or fires a real generation', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(1);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-wrongpw-1', operationName: 'fal:fake-model:req-wrongpw-1' }) });
+    });
+    await page.route('**/.netlify/functions/account-login', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'incorrect_password' }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'returning-wrongpw@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
+
+    await page.fill('#fn-login-password', 'notmyrealpassword');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForFunction(function () {
+      var errEl = document.getElementById('fn-signup-error');
+      return errEl && errEl.textContent.length > 0;
+    }, null, { timeout: 5000 });
+
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'a wrong password must never advance past this screen');
+    assert.equal(startPendingCalls.length, 0, 'a wrong password must never fire a real, billed generation');
+
+    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-continue').disabled; });
+    assert.equal(continueDisabled, false, 'Continue must be re-enabled after a rejected login, not left stuck disabled');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the in-place login prompt: "Not you? Change email" returns to the email step, with the email prefilled', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    await page.fill('#fn-email', 'change-email-from-login@example.com');
+    await page.click('#fn-s13-email-continue');
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
+
+    await page.click('#fn-s13-change-email');
+
+    await page.waitForSelector('#fn-s13-email-continue', { timeout: 5000 });
+    assert.equal(await page.locator('#fn-login-password').count(), 0, 'must genuinely be back on the email step');
+    var emailValue = await page.locator('#fn-email').inputValue();
+    assert.equal(emailValue, 'change-email-from-login@example.com');
   } finally {
     await context.close();
   }
@@ -901,6 +1031,62 @@ test('signup_error_shown: fires with reason missing_password when the password f
   }
 });
 
+// Regression test for the forensic 17x-rageclick trap (tracker item
+// for-product-urgent-forensic-find-the-pro-fzgghg, item 2). Root cause:
+// renderPasswordStep's own pwInput.focus() call fires from inside an async
+// Promise .then() (after a real network round trip), not synchronously
+// inside a user gesture -- WebKit/mobile browsers commonly refuse to raise
+// the on-screen keyboard for a focus() call outside that gesture's call
+// stack, so the field can end up genuinely un-typable the moment the
+// password step first appears. This can't be proven by literally checking
+// whether a virtual keyboard opened (Playwright doesn't render one), but
+// the actual code fix is: the missing_password click handler is itself a
+// real, fresh user gesture, and it must refocus the field synchronously,
+// right there, every single time -- that's the one thing that reliably
+// works regardless of platform, and it's exactly what this asserts.
+test('missing_password trap fix: the password field is synchronously refocused after the "Enter a password" error, every time, so the loop cannot persist', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockHappyPathRoutes(page, { pendingId: 'pd-rageclick-1', operationName: 'fal:fake-model:req-rageclick-1' });
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    await signupFlow.advanceToPasswordStep(page, 'rageclick-repro@example.com');
+
+    // Deliberately blur the field first (simulating the keyboard having
+    // failed to appear/stay open after the async email->password swap,
+    // the actual root cause) before rageclicking Continue several times in
+    // a row with nothing typed -- exactly the forensic user's own repro.
+    await page.locator('#fn-password').blur();
+    for (var i = 0; i < 5; i++) {
+      await page.click('#fn-s13-continue');
+      // eslint-disable-next-line no-await-in-loop
+      await page.waitForFunction(function () {
+        var errEl = document.getElementById('fn-signup-error');
+        return errEl && errEl.textContent.indexOf('Enter a password') !== -1;
+      }, null, { timeout: 5000 });
+      // eslint-disable-next-line no-await-in-loop
+      var activeIsPassword = await page.evaluate(function () {
+        return document.activeElement && document.activeElement.id === 'fn-password';
+      });
+      assert.equal(activeIsPassword, true, 'the password field must be refocused after every single missing_password error, attempt #' + (i + 1));
+    }
+
+    // Now actually type a password and confirm the field genuinely still
+    // accepts input and submits normally -- the loop is not a permanent trap.
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-s14-continue', { timeout: 10000 });
+  } finally {
+    await context.close();
+  }
+});
+
 test('signup_error_shown: fires with reason already_registered when check-email.js reports the address is taken, at the email step itself', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -914,15 +1100,19 @@ test('signup_error_shown: fires with reason already_registered when check-email.
     await reachScreen13(page, 'Flying over the ocean at sunset');
     await page.fill('#fn-email', 'error-shown-taken@example.com');
     await page.click('#fn-s13-email-continue');
-    await page.waitForFunction(function () {
-      var errEl = document.getElementById('fn-signup-error');
-      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
-    }, null, { timeout: 5000 });
+    // The already_registered reason is still tracked, even though the
+    // outcome is now the in-place login prompt rather than a dead-end
+    // error message -- see renderInPlaceLoginStep's own doc comment.
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
 
     var calls = await readPostHogCalls(page);
     var errors = captureNamed(calls, 'signup_error_shown');
     assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
     assert.deepEqual(errors[0][2], { reason: 'already_registered', variant: 'unified' });
+
+    var loginShown = captureNamed(calls, 'returning_user_login_shown');
+    assert.equal(loginShown.length, 1, 'the new in-place login prompt must also be tracked on its own');
+    assert.deepEqual(loginShown[0][2], { variant: 'unified' });
   } finally {
     await context.close();
   }
@@ -1014,6 +1204,73 @@ test('signup_error_shown: fires with reason signup_failed when register-account.
     var errors = captureNamed(calls, 'signup_error_shown');
     assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
     assert.deepEqual(errors[0][2], { reason: 'signup_failed', variant: 'unified' });
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// Returning-visitor-with-a-live-session guard (tracker item
+// for-product-urgent-forensic-find-the-pro-fzgghg, item 3). Forensic
+// finding: the only two genuine returning users this product has ever had
+// BOTH re-entered through this exact funnel and were walked through the
+// whole quiz/signup tail again -- even for the one who already held a real,
+// logged-in session on that device. There is no reason to ever repeat the
+// funnel for an already-signed-in visitor; they belong at home.html.
+// ===========================================================================
+
+test('an already-signed-in visitor hitting screen 13 via ?resume=1 is redirected straight to home.html, never re-shown the signup screen', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    // Establish a real signed-in session first (an ordinary signup --
+    // nothing funnel/pending-generation-related involved).
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    var signupResult = await page.evaluate(function () {
+      return window.DreamStore.signup('alreadyloggedin', 'password123', 'alreadyloggedin@example.com');
+    });
+    assert.equal(signupResult.ok, true, 'sanity: the real signup this test relies on must have actually succeeded');
+
+    // Now simulate the exact forensic scenario: this same, already-signed-in
+    // browser re-enters the ad funnel from scratch (a second ad click).
+    await safeGoto(page, resumeUrl('A different dream this time'));
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
+
+    assert.equal(await page.locator('#fn-email').count(), 0, 'the signup screen must never have rendered for an already-signed-in visitor');
+  } finally {
+    await context.close();
+  }
+});
+
+test('the Facebook Login return leg is never blocked by the already-signed-in guard -- an active identity exchange in progress must still land on screen 13, even if this browser also holds an unrelated older session', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.route('**/.netlify/functions/register-account', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+    var signupResult = await page.evaluate(function () {
+      return window.DreamStore.signup('olderaccount', 'password123', 'olderaccount@example.com');
+    });
+    assert.equal(signupResult.ok, true);
+
+    // A Facebook return leg that failed closed (?fb_error=) is one of the
+    // three return-leg markers the already-signed-in guard must defer to --
+    // the visitor needs to see the inline Facebook error and the ordinary
+    // email/password fallback, not get silently bounced to home.html.
+    await safeGoto(page, resumeUrl('A different dream this time') + '&fb_error=denied');
+    await page.waitForSelector('#fn-email', { timeout: 5000 });
+    assert.ok(/start\.html/.test(page.url()), 'must have stayed on start.html to show the Facebook error + fallback, not been redirected away');
   } finally {
     await context.close();
   }
