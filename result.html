@@ -1992,8 +1992,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     if(!pendingDeltaRealignment) return;
     var cost = regenerateAgainCost();
     if(tokensBlockGeneration(cost)){
+      var deltaMediaType = regenerateAgainMediaType();
       PurchaseSheet.show({
-        mediaType: regenerateAgainMediaType(),
+        mediaType: deltaMediaType,
         cost: cost,
         balance: tokenStatus ? tokenStatus.balance : 0,
         tokenStatus: tokenStatus,
@@ -2004,7 +2005,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             tokenStatus = fresh;
             PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
-        }
+        },
+        // "Make it as an image instead" fallback (tracker item
+        // for-product-out-of-tokens-sheet-founder--dg5q1y) -- the
+        // edit-delta sheet is the DEFAULT edit mechanism on this page now
+        // (one of the founder's named general routes), so it gets the
+        // same fallback the older full edit-wizard sheet's own
+        // #edit-generate-again handler below does. Only offered when
+        // this dream regenerates as a video; persistEditDeltaDraft above
+        // already persisted the delta-realigned caption/storyText/style,
+        // this only flips mediaType before resuming.
+        onImageFallback: deltaMediaType === 'video' ? function(){
+          DreamStore.setDraft({ mediaType: 'image', audioOn: false, musicStyle: null });
+          location.href = 'home.html?generate=1';
+        } : undefined
       });
       return;
     }
@@ -2113,8 +2127,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   document.getElementById('edit-generate-again').addEventListener('click', function(){
     var cost = regenerateAgainCost();
     if(tokensBlockGeneration(cost)){
+      var editAgainMediaType = regenerateAgainMediaType();
       PurchaseSheet.show({
-        mediaType: regenerateAgainMediaType(),
+        mediaType: editAgainMediaType,
         cost: cost,
         balance: tokenStatus ? tokenStatus.balance : 0,
         tokenStatus: tokenStatus,
@@ -2125,7 +2140,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             tokenStatus = fresh;
             PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
-        }
+        },
+        // "Make it as an image instead" fallback (tracker item
+        // for-product-out-of-tokens-sheet-founder--dg5q1y) -- the full
+        // edit-wizard sheet's own "Generate Again" is one of the
+        // founder's named general routes ("the edit mechanism"). Only
+        // offered when this dream regenerates as a video -- an
+        // already-image dream's regenerate is already the cheap path, no
+        // fallback needed. persistGenerateAgainDraft above already
+        // persisted caption/storyText/style/sourceDreamId; this only
+        // flips mediaType before resuming.
+        onImageFallback: editAgainMediaType === 'video' ? function(){
+          DreamStore.setDraft({ mediaType: 'image', audioOn: false, musicStyle: null });
+          location.href = 'home.html?generate=1';
+        } : undefined
       });
       return;
     }
