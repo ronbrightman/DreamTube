@@ -683,7 +683,7 @@ test('first-claim bonus: the claim sheet shows 100 (not 20) up front, and the to
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await mockTokenStatus(page, { balance: 320, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
     await seedLoggedInUserAt(page, 'firstclaimbonusui', '/create.html');
 
     await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
@@ -697,14 +697,14 @@ test('first-claim bonus: the claim sheet shows 100 (not 20) up front, and the to
   }
 });
 
-test('first-claim bonus: a successful 100-token claim animates the balance from 220 to 320', async function (t) {
+test('first-claim bonus: a successful 100-token claim animates the balance from 320 to 420', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
-    await mockClaim(page, { claimed: true, balance: 320, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 });
+    await mockTokenStatus(page, { balance: 320, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await mockClaim(page, { claimed: true, balance: 420, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 });
 
     await seedLoggedInUserAt(page, 'firstclaimbonusclaim', '/create.html');
     await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
@@ -713,7 +713,7 @@ test('first-claim bonus: a successful 100-token claim animates the balance from 
     await page.waitForFunction(function () {
       var el = document.getElementById('claim-sheet-balance');
       var numEl = document.getElementById('claim-sheet-balance-num');
-      return el && el.style.display !== 'none' && numEl && numEl.textContent === '320';
+      return el && el.style.display !== 'none' && numEl && numEl.textContent === '420';
     }, { timeout: 3000 });
   } finally {
     await context.close();
@@ -726,7 +726,7 @@ test('first-claim bonus: a failed claim restores the button label to "Claim 100 
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await mockTokenStatus(page, { balance: 320, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
     // A malformed/error response (data.error present) is what js/store.js's
     // claimDailyTokens throws on, driving purchase-sheet.js's runClaim()
     // into its .catch() branch -- see that function's own doc comment.

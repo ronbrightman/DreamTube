@@ -45,7 +45,7 @@ async function mockBlobsRead(storeName, key) {
 /**
  * Seeds an email with an existing, zero-balance token record before a grant
  * — isolates a test's balance assertion to just the grant being tested,
- * instead of also having to account for the separate 220-token
+ * instead of also having to account for the separate 320-token
  * first-ever-read signup grant syncTokens applies automatically. Same
  * helper as entitlements-refund.test.js's own seedZeroBalance.
  */
@@ -200,7 +200,7 @@ test("applyAchievementGrantOnce bases the new balance on syncTokens' own returne
     assert.equal(result.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'achstaleread@example.com');
-    assert.equal(record.tokens.balance, 220 + 20, "balance must be 220 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 20 (this grant) -- a buggy re-read-based implementation would compute 0 + 20 = 20 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 20, "balance must be 320 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 20 (this grant) -- a buggy re-read-based implementation would compute 0 + 20 = 20 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }

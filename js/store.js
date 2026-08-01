@@ -4826,7 +4826,7 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * mechanism (220 on first-ever read; the daily grant — 100 on an
+     * mechanism (320 on first-ever read; the daily grant — 100 on an
      * account's first-ever claim ever, 20 on every claim after that, see
      * FIRST_CLAIM_BONUS_AMOUNT's own doc comment — must be actively
      * CLAIMED via claimDailyTokens/claim-daily-tokens.js, never applied

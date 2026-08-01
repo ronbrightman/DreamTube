@@ -345,7 +345,7 @@ toward cheaper models (cost over speed — they run in the background).
   at most once per account, ever, matching what he actually wants (a
   returning day-2 user affording another video), not a repeatable exploit.
   Abuse exposure (the one-time +80 delta) is bounded by the same per-IP
-  cap that already guards the 220-token signup grant, since a genuine
+  cap that already guards the 320-token signup grant, since a genuine
   first-ever claim requires a genuinely new, never-initialized account.
   See `netlify/functions/lib/entitlements.js`'s `FIRST_CLAIM_BONUS_AMOUNT`
   doc comment for the full mechanism.
