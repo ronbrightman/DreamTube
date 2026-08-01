@@ -79,7 +79,7 @@ var RESEND_API_BASE = 'https://api.resend.com/emails';
 // see send-first-dream-email.js's own header comment on why (small,
 // self-contained per-file/per-lib constants are this codebase's own
 // established convention over one shared constants module).
-var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
+var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
 // Same style -> color mapping as js/store.js's STYLE_GRADIENTS, flattened
 // to a single flat hex for an email client — see send-first-dream-email.js's
