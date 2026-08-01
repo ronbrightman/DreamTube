@@ -1,6 +1,17 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+  # This repo's pages themselves still have NO build step (no bundler, no
+  # transpiler, plain <script> tags — see README.md/CLAUDE.md) — this
+  # command exists ONLY to stamp version.json with the commit actually
+  # being deployed, since that information only exists at build time, not
+  # request time. See scripts/generate-version.js's own header comment for
+  # the full reasoning (why this needs a build step at all, why it reads
+  # Netlify's build env vars over shelling out to git where possible, and
+  # why the human-readable "version" field uses a date+shortsha scheme
+  # instead of a fake "nth deploy today" counter). Tracker item
+  # for-product-release-visibility-founder-a-8hx5cz.
+  command = "npm run build"
 
 # Scheduled Functions (Netlify's own cron mechanism) -- tracker item
 # for-product-build-stage-0-pwa-web-push-f-jbutt5, part 4

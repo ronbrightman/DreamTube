@@ -37,6 +37,18 @@
     </div>
 
     <div id="admin-content" style="display:none;">
+      <!-- Release visibility (tracker.html's
+           for-product-release-visibility-founder-a-8hx5cz item): a small,
+           subtle line reading version.json (stamped at Netlify BUILD time
+           by scripts/generate-version.js — see that file's header for why
+           this needs a real build step and how the version string is
+           derived). Internal debugging aid only, not user-facing — this is
+           the instant answer to "is my device on the latest deploy" that
+           the tracker item calls out. Fails silently (line just stays
+           hidden) rather than showing an error if version.json 404s or
+           the fetch fails, since this is a convenience, not a feature. -->
+      <div class="admin-row-sub" id="admin-version-line" style="display:none; margin-bottom:18px; padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--border); font-size:11.5px; line-height:1.5;"></div>
+
       <div class="section-label" style="padding:0;">Paywall</div>
       <div class="choice-card" style="cursor:default; margin-top:10px;">
         <div class="choice-icon" id="admin-paywall-icon"></div>
@@ -114,6 +126,21 @@
   document.getElementById('admin-unauthorized-icon').innerHTML = Icons.lock;
   document.getElementById('admin-paywall-icon').innerHTML = Icons.lock;
   document.getElementById('admin-bypass-icon').innerHTML = Icons.lock;
+
+  // ===== Release visibility (version.json, see comment above the element) =====
+  (function loadVersionLine() {
+    var el = document.getElementById('admin-version-line');
+    fetch('/version.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.commitSha) return; // placeholder/unbuilt or missing — stay hidden
+        var when = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time';
+        var msg = data.shortMessage ? ' — "' + data.shortMessage + '"' : '';
+        el.textContent = (data.version || data.commitSha.slice(0, 7)) + ' · built ' + when + msg;
+        el.style.display = 'block';
+      })
+      .catch(function () { /* stays hidden — debugging aid, not a feature */ });
+  })();
 
   var user = DreamStore.getCurrentUser();
   if (!user) { location.href = 'login.html?next=admin.html'; }

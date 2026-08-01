@@ -1,0 +1,737 @@
+# Releases
+
+_Regenerated from `git log main` — do not hand-edit, run `npm run release-notes`
+instead (see scripts/generate-releases.js for why this is regenerate-on-demand
+rather than auto-appended at build time). One line per commit on main; this
+repo deploys on every push to main, so each line below is a real deploy._
+
+- `379a05c` 2026-08-01T16:03:06+00:00 — Merge origin/main into build-home-round4-9ta1j0
+- `e14db73` 2026-08-01T16:01:02+00:00 — Add dedicated Token Icon A test coverage for home.html's own surfaces
+- `b031a77` 2026-08-01T15:57:53+00:00 — Home round 4: tips, carousels, Make-it-yours, token icon A, dock rebalance
+- `0053381` 2026-08-01T15:20:10+00:00 — Bake logo variant C (purple-shifted, no glow) into static assets
+- `9df35df` 2026-08-01T14:51:17+00:00 — Merge origin/main into fix-reset-reconcile-nsbbg5
+- `4715b3d` 2026-08-01T14:40:28+00:00 — Merge origin/main into fix-founder-account-email-0gwe1m
+- `ec8d227` 2026-08-01T14:40:10+00:00 — Investigate + fix founder account missing email (0gwe1m)
+- `d9c065f` 2026-08-01T14:31:24+00:00 — Merge origin/main into fix-reset-reconcile-nsbbg5
+- `e37a3ad` 2026-08-01T14:31:04+00:00 — Fix flaky regenerating-veil test: wait for the CSS transition to settle
+- `44b79a1` 2026-08-01T14:19:55+00:00 — Merge origin/main into fix-reset-reconcile-nsbbg5
+- `752d864` 2026-08-01T13:59:44+00:00 — Merge origin/main into fix-reset-reconcile-nsbbg5
+- `282c895` 2026-08-01T13:59:09+00:00 — Merge origin/main into fix-edit-regen-forming-state-jcasn1
+- `4766f69` 2026-08-01T13:33:24+00:00 — Merge origin/main into fix-edit-regen-forming-state-jcasn1
+- `61892ed` 2026-08-01T13:33:07+00:00 — Edit-regeneration forming state in the room (jcasn1)
+- `83eaf50` 2026-08-01T13:29:47+00:00 — Fix reconcilePrivateDreamsFromServer navigation race on login (nsbbg5)
+- `d51e994` 2026-08-01T13:13:58+00:00 — Merge origin/main into image-fallback-out-of-tokens-dg5q1y
+- `b45a73d` 2026-08-01T13:13:45+00:00 — Out-of-tokens sheet: make-an-image-instead fallback (dg5q1y)
+- `cfcb2be` 2026-08-01T12:48:56+00:00 — merge main
+- `9792ff3` 2026-08-01T12:48:55+00:00 — Actually flip every email sender to dreams@dreamtube.life (sandbox address was still hardcoded in all four senders - the resend_rejected root cause)
+- `9052cd1` 2026-08-01T12:34:47+00:00 — Merge origin/main into install-first-door
+- `245620c` 2026-08-01T12:26:37+00:00 — Merge origin/main into install-first-door
+- `ea7c7b9` 2026-08-01T12:08:03+00:00 — Fix real bugs surfaced by install-first-door's own test suite
+- `aae2ef4` 2026-08-01T12:07:48+00:00 — Fix stale 220-token literals in claim-race test after economy grant merge
+- `014b264` 2026-08-01T11:53:25+00:00 — Merge origin/main into fix-daily-claim-fresh-account-race
+- `847d7dd` 2026-08-01T11:42:20+00:00 — Merge origin/main into install-first-door
+- `374612d` 2026-08-01T11:41:55+00:00 — INSTALL-FIRST door: guided two-step webview-escape -> install flow (b60cls)
+- `b37f403` 2026-08-01T11:22:54+00:00 — Merge origin/main into fix-daily-claim-fresh-account-race
+- `07ee543` 2026-08-01T11:22:34+00:00 — Fix brand-new account's first daily-claim silently losing its grant (1dtzdc)
+- `3edcda2` 2026-08-01T11:18:28+00:00 — Merge origin/main into build/signup-grant-320-xostu6
+- `0d05246` 2026-08-01T11:18:14+00:00 — Raise base signup grant 220 -> 320 tokens (xostu6, founder-directed)
+- `423ba27` 2026-08-01T11:05:54+00:00 — home-mock5: three founder amendments — logged hero shows the dream, topbar token chip + 3 token-icon candidates, make-it-yours accordion rows
+- `6279ec7` 2026-08-01T10:49:36+00:00 — Add logo-mock-x7q4.html — logo retouch options (A-F) for founder review
+- `79ebe1b` 2026-08-01T10:31:48+00:00 — Merge remote-tracking branch 'origin/main' into founder-amendments-0801
+- `9b2960c` 2026-08-01T10:31:43+00:00 — Add home-mock5-x7q4.html — round-4 extended Night Shelf mock for founder review
+- `c223f29` 2026-08-01T10:10:43+00:00 — Merge origin/main into extend-room-card-existing-users
+- `eac5e8b` 2026-08-01T10:10:35+00:00 — Generalize the embedded dream-room card to all accounts (ags710)
+- `34ece07` 2026-08-01T10:09:41+00:00 — Fix owner dashboard mobile horizontal overflow (14px)
+- `7a30b4a` 2026-08-01T09:41:37+00:00 — Merge origin/main into embed-dreams-room-card
+- `549bf51` 2026-08-01T09:41:31+00:00 — Day-0 home = embedded dream-room card (ags710, founder GO 2026-08-01)
+- `e399ded` 2026-08-01T09:35:01+00:00 — Merge origin/main into fix-returning-user-login-handoff
+- `4d9588c` 2026-08-01T09:27:55+00:00 — Merge origin/main into fix-returning-user-login-handoff
+- `ef2f38c` 2026-08-01T09:27:48+00:00 — Seamless login for registered emails at the funnel tail (fzgghg)
+- `9f75038` 2026-08-01T09:17:24+00:00 — Merge origin/main into founder-alias-exclusion-normalization
+- `0022804` 2026-08-01T08:40:37+00:00 — Founder amendments: wizard capture links in morning mock + existing-user scenario in funnel-end mock
+- `017b889` 2026-08-01T08:28:49+00:00 — Pattern-based founder/internal alias exclusion for analytics
+- `90498e3` 2026-08-01T08:28:34+00:00 — Merge origin/main into founder-alias-exclusion-normalization
+- `d872f23` 2026-08-01T08:24:53+00:00 — Add morning-mock-x7q4.html — Morning Capture Ritual founder mock (A Quiet Knock / B Dawn Shelf / C WhatsApp) + new tip glance strip
+- `f5e53ed` 2026-08-01T07:59:30+00:00 — Merge origin/main into fix-founder-walkthrough-punch-list
+- `37e4568` 2026-08-01T07:55:57+00:00 — Founder walkthrough punch list (2026-08-01): 9 fixes + day-0 state bug + result.html chrome removal
+- `52d817d` 2026-08-01T07:36:11+00:00 — Owner dashboard: Marketing spend + CPS tiles in KPI row
+- `7dce7ed` 2026-08-01T07:22:43+00:00 — Merge origin/main into spike-blobs10-cas
+- `b2b0ce8` 2026-08-01T07:22:25+00:00 — Spike: real CAS conditional writes (blobs10) for email/push dedup markers
+- `59d1671` 2026-08-01T07:03:01+00:00 — funnel-end mock: day-0 home leads with embedded dream's-room card
+- `ab586de` 2026-08-01T06:43:02+00:00 — Owner dashboard: 2026-08-01 morning refresh (v4 data)
+- `3df6c6f` 2026-07-31T21:15:02+00:00 — Review fixes: defensive pendingJob guard, stale processing.html comments, vacuous test assertions
+- `8ea9cdb` 2026-07-31T20:54:27+00:00 — Remove processing.html: all creation lands on home.html, generation runs in background
+- `b709918` 2026-07-31T13:57:34+00:00 — Merge origin/main into build-edit-mechanism-confirm-b
+- `41d81ee` 2026-07-31T13:57:00+00:00 — Add new edit mechanism: delta-based edit sheet + PixVerse V6 model rotation
+- `d978086` 2026-07-31T13:37:53+00:00 — Chamber dream-picker: horizontal dream-row strip, founder's own direction
+- `835fc5f` 2026-07-31T12:54:04+00:00 — Merge origin/main into result-ritual-card-rebuild
+- `ea20484` 2026-07-31T12:52:47+00:00 — Rebuild result.html as the founder-approved ritual completion card
+- `3fcbce4` 2026-07-31T12:31:42+00:00 — Merge origin/main into build/domain-migration-prep
+- `9b222c5` 2026-07-31T12:31:27+00:00 — Domain-migration prep: env/relative host sweep + cutover checklist
+- `57c7976` 2026-07-31T12:23:33+00:00 — Add funnel-end-mock-x7q4.html — interactive day-0 funnel-ending journey mock for founder review
+- `816fc44` 2026-07-31T11:43:52+00:00 — Realign organic entry to night theme, pin the funnel journey, add signup email micro-step
+- `6633671` 2026-07-31T11:43:13+00:00 — Merge origin/main into organic-path-realign-journey-manifest-email-capture
+- `3a17758` 2026-07-31T11:25:33+00:00 — Merge origin/main into Night Shelf home.html rebuild
+- `f1bae9a` 2026-07-31T11:25:27+00:00 — Build Night Shelf home.html rebuild per founder-approved home-mock4
+- `d7625e1` 2026-07-31T11:02:53+00:00 — Fix send-daily-claim-pushes test's timestamp-collision flake
+- `943adb6` 2026-07-31T10:32:55+00:00 — Merge origin/main (funnel wizard-step removal) into Bar A nav rollout
+- `d002c83` 2026-07-31T10:30:02+00:00 — Merge fix-remove-stale-funnel-wizard-steps: remove stale characters + preparing-transition steps from start.html
+- `6157f52` 2026-07-31T10:29:55+00:00 — Remove stale post-signup funnel steps: characters screen + preparing transition
+- `a35d1e2` 2026-07-31T10:25:59+00:00 — Merge build-barA-nav-rollout: unify Bar A night dock across home/explore/profile/result
+- `233bf3c` 2026-07-31T10:25:53+00:00 — Roll Bar A night dock out to home/explore/result, retire old .bottom-nav
+- `0b6d9a8` 2026-07-31T10:17:59+00:00 — Merge remote-tracking branch 'origin/main' into home-mock4
+- `edda05f` 2026-07-31T10:17:57+00:00 — home-mock4: apply four founder amendments to the approved Night Shelf
+- `fe311b5` 2026-07-31T10:00:40+00:00 — Merge fix-reference-to-video-routing-check: regression tests confirming reference-to-video routing intentionality
+- `4f970c3` 2026-07-31T10:00:32+00:00 — Add regression tests locking in reference-to-video routing intentionality
+- `ca4ada0` 2026-07-31T09:58:38+00:00 — Add home-mock4-x7q4.html — round-3 'Night Shelf' home mock for founder review
+- `ce29c8d` 2026-07-31T09:35:55+00:00 — home-mock3: round-2 home redesign founder mock (4 states + Chamber A/B switcher)
+- `0b34e3c` 2026-07-31T09:24:13+00:00 — result-mock3: drop switcher + topbar, real publish flow, in-video mute (founder round 3)
+- `64f5b74` 2026-07-31T09:17:21+00:00 — Merge remote-tracking branch 'origin/main' into result-mock3
+- `b9321c5` 2026-07-31T09:17:20+00:00 — result-mock3: add ghost Watch pill + fullscreen player overlay (founder round 2)
+- `8d98ef7` 2026-07-31T09:09:58+00:00 — Merge fix-bottom-nav-order-drift-v2: standardize Home/Explore/+/Profile order, factor shared renderer
+- `925f85f` 2026-07-31T09:09:17+00:00 — Merge origin/main (concurrent push) into merge of fix-a2hs-ios-broken
+- `970d74e` 2026-07-31T09:03:53+00:00 — Add result-mock3-x7q4.html — founder mock: result screen as ritual completion card (night look + Bar-A dock)
+- `d822694` 2026-07-31T09:01:41+00:00 — Merge fix-a2hs-ios-broken: fix Add-to-Home-Screen broken on iOS (Safari start_url, Chrome-aware guidance)
+- `c1b77a1` 2026-07-31T08:54:58+00:00 — Address review round-2's two non-blocking follow-ups
+- `c7c7297` 2026-07-31T08:43:59+00:00 — Dashboard UX: anchor tooltips to tapped point, dim partial today, clarify cost-per-video chart
+- `9cf18cf` 2026-07-31T08:40:45+00:00 — Fix Add-to-Home-Screen broken on iOS: two real root causes, browser-aware guidance
+- `7551c79` 2026-07-31T08:14:05+00:00 — Fix bottom-nav order drift: standardize Home/Explore/+/Profile, factor shared renderer
+- `6541d33` 2026-07-31T08:01:20+00:00 — Merge concurrent main commits
+- `a0b5b57` 2026-07-31T07:56:46+00:00 — Reconcile double exhaustion log after merge: blobs-retry's key-free trace is the single canonical log; drop push-dedup-store's now-redundant hashKey line entirely
+- `9049472` 2026-07-31T07:39:09+00:00 — Owner report: refresh data through 2026-07-31 morning + new 2nd-day-claims metric
+- `d742b30` 2026-07-31T07:35:59+00:00 — Merge unified signup CRO + Facebook Login, flag-off until Meta credentials (founder sign-off 2026-07-31)
+- `a4fdec7` 2026-07-31T07:35:59+00:00 — Merge retention-email exhaustion fix (founder go 2026-07-31)
+- `445f90c` 2026-07-31T07:35:51+00:00 — Merge server-side dream persistence (founder go 2026-07-31): dreams stored per-account in Blobs + restored on login; updatedAt stamps reconciled with Wave-1 interpretation map, createdAt, and license fields
+- `d598750` 2026-07-31T01:39:23+00:00 — Merge build-fal-cost-reconciliation: real per-job fal cost reconciliation via fal's usage API
+- `e365a3e` 2026-07-31T01:31:57+00:00 — Fix review round-1 findings: correct openrouter endpoint prefix, cover 3 failure modes
+- `0a78841` 2026-07-31T01:13:18+00:00 — Real per-job fal cost reconciliation via fal's usage API
+- `af12bd1` 2026-07-31T00:32:28+00:00 — Fix review round-1 findings: gate CompleteRegistration on real signups, code the E9 catch-all
+- `1a695c7` 2026-07-30T23:47:18+00:00 — Unified signup screen (CRO) + Facebook Login, landed as one screen
+- `93aebe6` 2026-07-30T23:25:14+00:00 — Merge fix-shop-cta-button-polish: give the Token shop button real visual weight in Settings
+- `a877ee5` 2026-07-30T23:16:34+00:00 — Polish the Token shop button in the Settings sheet
+- `332092a` 2026-07-30T23:02:01+00:00 — Facebook Login: full backend mechanics + Direction-Y interim button
+- `48ab863` 2026-07-30T22:46:48+00:00 — Merge explore-avatar-circle-fallback: real photo when available, deterministic colored fallback otherwise
+- `35c6b9b` 2026-07-30T22:38:16+00:00 — Explore avatar circle: real photo when available, deterministic colored fallback otherwise
+- `a7eeacb` 2026-07-30T22:19:08+00:00 — Merge fix-server-analytics-test-leak: guard server-side PostHog capture against firing from test processes
+- `a865c89` 2026-07-30T22:18:38+00:00 — Guard server-side PostHog capture against firing from a test process
+- `aeff320` 2026-07-30T22:06:28+00:00 — Merge sync-founder-principles-3: fold growth's FOUNDER_PRINCIPLES.md additions in
+- `d2ad145` 2026-07-30T22:06:14+00:00 — Merge growth's FOUNDER_PRINCIPLES.md additions into this repo's copy
+- `11ad1c7` 2026-07-30T21:59:14+00:00 — Merge fix-test-suite-cross-file-flakiness: condition-based waits for the DOM-gate/fixed-timeout races behind the recurring full-suite nondeterminism
+- `10c7871` 2026-07-30T21:56:12+00:00 — Extend settle() fix to 4 more files; fix a fragile self-test margin
+- `14c7d9c` 2026-07-30T21:22:54+00:00 — Merge build-profile-night-restyle-bar-a: Profile night restyle + Bar A dock + streak-through-empty-tiles
+- `49d7bbc` 2026-07-30T21:16:33+00:00 — Merge build-result-screen-redesign: interpret-primary hero (founder-decided 2026-07-30)
+- `4a3f557` 2026-07-30T21:15:03+00:00 — Merge fix-stale-audio-force-test: fix stale assertions against retired audio-force override
+- `842f47a` 2026-07-30T21:15:03+00:00 — Merge fix-push-dedup-exhaustion-log-pii: never log raw key (email) on exhaustion
+- `80dd093` 2026-07-30T21:14:30+00:00 — Fix stale audio-force assertions in start-pending-generation test
+- `b678b96` 2026-07-30T21:14:22+00:00 — push-dedup-store.js: never log the raw key on exhaustion
+- `0b3fa26` 2026-07-30T20:40:23+00:00 — result.html: interpret-primary hero redesign
+- `eff77f4` 2026-07-30T20:38:31+00:00 — Fix full-suite cross-file test flakiness with condition-based waits
+- `7e92a4c` 2026-07-30T20:28:41+00:00 — Merge docs-speaking-sage-wave2-spec: Speaking Sage Wave 2 cost/design spec
+- `1368913` 2026-07-30T20:13:08+00:00 — Add Speaking Sage WAVE 2 spec: cinematic talking-head personas
+- `d7a64e6` 2026-07-30T20:03:19+00:00 — Clarify the night dock's icon fill-variant comment
+- `bb6224b` 2026-07-30T20:01:57+00:00 — Profile night restyle + Bar A night dock + streak-through-empty-tiles
+- `99f1221` 2026-07-30T18:54:45+00:00 — Merge founder-directed-admin-and-mock-cleanup: remove served one-off admin panels + temp mock files
+- `e30e26b` 2026-07-30T18:51:53+00:00 — Founder-directed cleanup: remove served one-off admin panels + temp mock files
+- `3720d9b` 2026-07-30T17:42:27+00:00 — Merge drop-username-at-prefix-display: drop @ prefix from username display (founder-directed)
+- `839f8e2` 2026-07-30T17:42:12+00:00 — Fix review findings: escape displayHandle() output, consolidate home.html's inline @ strip
+- `2956525` 2026-07-30T17:17:35+00:00 — Founder mocks: result-screen redesign (D1/D2) + Profile night restyle with bottom-bar A/B (temp, unlinked)
+- `32d23eb` 2026-07-30T17:17:31+00:00 — Drop leading @ from every displayed username (display-only)
+- `3993ea4` 2026-07-30T16:54:53+00:00 — Owner page: live 'Waiting on Ron' list (waiting-x7q4.html) reading the shared tracker's waitingFor flags
+- `743dba2` 2026-07-30T16:43:55+00:00 — Merge docs-signup-facebook-login-spec: combined signup CRO + FB Login design doc
+- `f21ad43` 2026-07-30T16:43:23+00:00 — Add build-ready spec: signup CRO + Facebook Login (combined)
+- `4fc1a98` 2026-07-30T16:04:57+00:00 — Merge fix-home-spec-drift-and-bugs: brand mark, Wizard button, streak consolidation, hasEverLogged fix, carousel blank-tile fix
+- `02be21a` 2026-07-30T16:01:19+00:00 — Round 2: add missing test coverage for Wizard button + carousel blank-tile fix
+- `dfd7fbc` 2026-07-30T15:44:29+00:00 — Merge consolidate-founder-accounts: one-off admin endpoint + panel to merge the founder's two accounts
+- `137174e` 2026-07-30T15:33:47+00:00 — Fix home screen spec drift + 2 bugs (tracker for-product-home-screen-spec-drift-from--575djz)
+- `21f8758` 2026-07-30T13:19:50+00:00 — Round 5: markSentOnce must not report its OWN just-landed write as alreadySent (SKIP-branch self-clobber)
+- `700a3bc` 2026-07-30T12:47:28+00:00 — Round 4: stop the test suite polluting production PostHog; make blobs-retry exhaustion diagnosable; markSentOnce final confirming read
+- `dba8149` 2026-07-30T12:41:38+00:00 — Merge fix-pollUntilDone-transient-network-retry: fix double-charge risk on flaky poll requests
+- `0840723` 2026-07-30T12:26:46+00:00 — Fix pollUntilDone rejecting immediately on a single transient network failure
+- `dad98a2` 2026-07-30T11:59:39+00:00 — Merge fix-review-agent-process-gaps: address 3 recurring review-pipeline gaps
+- `d6a11b2` 2026-07-30T11:59:17+00:00 — Fix review agent process gaps: unreliable WebFetch on tracker, stale-checkout trust
+- `a20087a` 2026-07-30T11:16:26+00:00 — Merge instrument-signup-email-entered: signup_email_entered + signup_error_shown micro-step tracking
+- `693f4ce` 2026-07-30T11:15:26+00:00 — Instrument signup_email_entered + signup_error_shown on start.html Screen 13
+- `96f6c64` 2026-07-30T11:14:41+00:00 — Fix back navigation from a dream page: return to the actual origin page (history.back for same-origin non-flow referrers), explore stays the fallback
+- `6dd7cc0` 2026-07-30T10:59:22+00:00 — Dashboard: clickable legend toggles with axis rescale; returning members folded into funnel chart; visitors metric dropped per founder
+- `3a49712` 2026-07-30T10:37:42+00:00 — Owner dashboard v2: Today-vs-yesterday KPIs (Israel midnight), combined trend charts, returning split, cost split, 2nd-day claims, REE labels
+- `e36ff39` 2026-07-30T09:28:17+00:00 — Dashboard: remove dead helper
+- `09aa3cf` 2026-07-30T09:26:49+00:00 — Owner reporting dashboard v1 (founder-approved design: daily totals + per-user averages, timeframe chips, table view, honesty notes)
+- `d9e612f` 2026-07-30T08:42:11+00:00 — Add signup-screen CRO redesign spec + mockup reference
+- `ecd639f` 2026-07-30T08:39:19+00:00 — Add edit-a-dream mechanism design spec + mockup reference
+- `be429da` 2026-07-30T07:41:23+00:00 — Add Chamber dream-linkage design spec + mockup reference
+- `03ff769` 2026-07-30T07:14:53+00:00 — Add Speaking Sage design spec (voice/audio wave for the Chamber)
+- `25f1d71` 2026-07-30T05:59:26+00:00 — Mirror founder standing rule: copy proven solutions, don't invent (2026-07-30)
+- `dd75b54` 2026-07-30T01:11:46+00:00 — Merge Interpretation Wave 1 -- The Interpreter's Chamber (Direction B)
+- `cf67e66` 2026-07-30T01:03:02+00:00 — Review round 2 fixes: SAFETY_BLOCK ordering + portrait stacking bug
+- `7479244` 2026-07-30T00:14:40+00:00 — Build Interpretation Wave 1 -- "The Interpreter's Chamber" (Direction B)
+- `86cb970` 2026-07-29T23:22:54+00:00 — Sweep stale screen-15 doc-comment references after the merge
+- `83b7bb9` 2026-07-29T23:22:53+00:00 — Fix funnel handoff theme whiplash + merge redundant confirmation screen
+- `3c05409` 2026-07-29T23:00:35+00:00 — Webview escape nudge round 2: honest button, persistent copy note, collapse-not-vanish dismiss
+- `b0aebae` 2026-07-29T22:12:00+00:00 — Add Chamber-card href diagnostic (tracker for-product-bug-founder-new-home-tapping-yuspxa)
+- `c2dc5f8` 2026-07-29T21:54:25+00:00 — Review round 2 fix: recheck deferred reload off the real stop event, not focus
+- `4661c24` 2026-07-29T21:32:02+00:00 — Review round 1 fix: cover create.html Record mode in the stale-reload guard
+- `bae7969` 2026-07-29T21:32:02+00:00 — Fix stale-page-after-deploy bug: force SW update check + reload on foreground
+- `45164a2` 2026-07-29T20:56:30+00:00 — Fix review finding: session-transfer-established sessions had no authToken, silently breaking Publish
+- `894ed2b` 2026-07-29T20:56:30+00:00 — Require verified authToken for publish-dream.js/unpublish-dream.js (tracker item publish-dream-js-trusts-client-supplied--lkppcu)
+- `c7a5886` 2026-07-29T20:44:54+00:00 — Add interpretation wave-1 spec (founder-approved, Direction B confirmed - The Interpreter's Chamber)
+- `326e573` 2026-07-29T19:16:47+00:00 — Cache-bust profile/explore: force new file digests (Netlify served stale content after queue-jam dedup)
+- `4787eb4` 2026-07-29T18:55:54+00:00 — Drop raw email from the new job-owner-write diagnostic log line
+- `4459f29` 2026-07-29T18:55:54+00:00 — Diagnostics + eventual-consistency hardening for the funnel first-dream email (reopened bug)
+- `28bafe6` 2026-07-29T18:45:29+00:00 — Hotfix: Home tab in explore/profile bottom navs (founder blocked twice - home.html was live but unreachable)
+- `d6a8624` 2026-07-29T18:18:07+00:00 — Add generation_blocked telemetry + effective-config cold-start logging
+- `c3eaea0` 2026-07-29T18:00:26+00:00 — Fix inaccurate A2HS visual: rebuild from Ron's own real-device screenshots
+- `beac29a` 2026-07-29T17:40:17+00:00 — Review fix: reconcile home.html's install card with a late-arriving beforeinstallprompt
+- `d558ee1` 2026-07-29T17:29:40+00:00 — Fix A2HS install nudge: real visual aid, tighter capability-detect, persistent homepage step, push fallback chain
+- `bfff9fe` 2026-07-29T17:29:22+00:00 — Trigger redeploy to pick up MAX_GENERATIONS_PER_IP_PER_DAY env change
+- `6bcdf73` 2026-07-29T17:25:23+00:00 — Set per-IP generation cap default back to 40 (founder; 80 didn't unblock - env override confirmed in practice)
+- `80b4b47` 2026-07-29T17:23:06+00:00 — Raise per-IP generation cap default 40->80 (founder directive, network still blocked after first raise)
+- `dfa355d` 2026-07-29T17:11:51+00:00 — Merge remote-tracking branch 'origin/main'
+- `6a235a2` 2026-07-29T17:11:49+00:00 — Founder directives 2026-07-29: retire owner/IL audio force-off + double per-IP generation cap default to 40
+- `722ced9` 2026-07-29T16:57:54+00:00 — Review fix (round 3): ownership guard on getInterpretation read path
+- `f654039` 2026-07-29T16:47:35+00:00 — Review fix (round 2): ownership guards on turnImageIntoVideo/generateInterpretation
+- `2f9a6de` 2026-07-29T16:23:51+00:00 — Review fix: ownership guards on publish/unpublish/feature-toggle + result.html gating
+- `06ab929` 2026-07-29T15:53:04+00:00 — Add republish-license terms clause + zero-click channel-feature opt-out
+- `0c1a03c` 2026-07-29T15:48:12+00:00 — Review fix: add real keyboard-accessibility test for the chip expander
+- `c19380a` 2026-07-29T15:48:12+00:00 — Curate wizard step 3 action chips: default-visible list + expander
+- `4ca7b50` 2026-07-29T15:33:35+00:00 — Review fix: disconnect prior preview IntersectionObserver on re-render
+- `085e9ea` 2026-07-29T15:33:35+00:00 — Fix regression: wait-screen carousel eagerly autoplayed all tiles at once
+- `6886e1c` 2026-07-29T14:48:20+00:00 — Homepage synthesis mock round 3: logo-color brand mark, drop in-app header dates
+- `c79d874` 2026-07-29T14:30:00+00:00 — Mirror founder standing rule: announce every go-live with a test link
+- `94bd979` 2026-07-29T14:08:03+00:00 — Fix stale-snapshot race in creditTokenPackAmountOnce/refundTokenAmountOnce/applyAchievementGrantOnce
+- `acb8f47` 2026-07-29T13:59:43+00:00 — Fix review finding: scope home.html's analytics dedup flags per account
+- `7de30f8` 2026-07-29T13:59:42+00:00 — Homepage Wave 1: revive home.html as the ritual-dashboard logged-in landing page
+- `cc6751b` 2026-07-29T13:40:14+00:00 — Homepage synthesis mock round 2: founder feedback patches
+- `5ae6394` 2026-07-29T13:14:15+00:00 — Fix review findings: marker-key collision, achievement-marker cleanup on delete
+- `75caae4` 2026-07-29T13:12:59+00:00 — Fix post-rebase staleness + a real test bug found while re-verifying
+- `04aa59e` 2026-07-29T13:07:18+00:00 — Add server-side private-dream persistence (P0)
+- `dd43e70` 2026-07-29T12:50:26+00:00 — Add server-side achievement/grant ledger to entitlements.js (mechanism only, no live grants)
+- `6a2db6d` 2026-07-29T12:35:43+00:00 — Reorder delete-account.js: invalidate auth tokens right after account delete succeeds
+- `c6ca61f` 2026-07-29T12:35:42+00:00 — Fix account-auth-token identity-reuse gap (review round 2 finding)
+- `e0e5154` 2026-07-29T12:35:42+00:00 — Fix block-user.js identity binding + per-account block scoping (review findings)
+- `b00abad` 2026-07-29T12:35:42+00:00 — Add public-feed-safety report/block flow (tracker item for-product-public-feed-safety-in-app-re-ppuw77)
+- `8458a35` 2026-07-29T12:26:05+00:00 — Homepage synthesis mock: founder amendments — stable card positions in every state, My Dreams gallery card added
+- `c3e6750` 2026-07-29T11:46:10+00:00 — Temporary founder mock: synthesized homepage (D5 chassis + D1 strip + D2c Monday + D3 magic + D4 as Chamber card)
+- `2d60009` 2026-07-29T11:11:17+00:00 — Temporary founder mock: five homepage directions D1-D5 with generated art (unlinked)
+- `bec452c` 2026-07-29T11:10:10+00:00 — Build admin-consolidate-accounts.js: merge founder's two real accounts
+- `94f11d9` 2026-07-29T10:49:17+00:00 — Host round-6 final approved creative set for growth's compliance+upload flow (temporary, removed after uploads)
+- `99a6d7a` 2026-07-29T10:42:45+00:00 — Instrument the interpretation pill with PostHog events
+- `5fc5c02` 2026-07-29T10:38:25+00:00 — Temporary founder mock: interpretation wave-1 direction A vs B (unlinked)
+- `0863e6f` 2026-07-29T10:33:09+00:00 — Review page round 6: redesigned cards, A2 test variants (CTA-in-card-only), UGC v6, sleeper-journey
+- `29862ff` 2026-07-29T10:03:01+00:00 — SECURITY: rotate VAPID keypair, remove leaked private key from docs
+- `feab003` 2026-07-29T09:47:24+00:00 — Stage 0: PWA installability + web push infrastructure
+- `68dd48f` 2026-07-29T09:17:23+00:00 — Review page round 5: end cards + A2 test variant + UGC v5 + POV wave (temp assets, removed at round close)
+- `7b78d05` 2026-07-29T08:27:45+00:00 — Mirror research/evaluation/design agent files into docs/agent-library/
+- `a098b14` 2026-07-29T06:43:46+00:00 — Fix fal media expiry: disable expiration on every active generation call
+- `89e2bf4` 2026-07-29T06:06:20+00:00 — Review page round 4: two-voice speech face-off (Seedance vs Kling) + bright UGC-1
+- `987fdf4` 2026-07-29T00:41:02+00:00 — Merge remote-tracking branch 'origin/main'
+- `26bf0cd` 2026-07-29T00:40:53+00:00 — Review page round 3: Kling/Seedance face-off pairs + Seedance regens; drop obsolete round-2 mp4
+- `821530a` 2026-07-29T00:28:13+00:00 — Document the accepted lazy-seed race in entitlements.js/tracker-store.js
+- `0f113ac` 2026-07-29T00:12:42+00:00 — Invalidate pending signup on navigation-away, not just on a newer signup() call
+- `d4cf097` 2026-07-28T23:58:47+00:00 — Add standing checklist note for adding new low-frequency entitlements.js fields
+- `157e71d` 2026-07-28T23:21:30+00:00 — Fix cross-account stale likes-badge leak on shared-browser logout/login
+- `0f9981e` 2026-07-28T22:53:17+00:00 — Add in-app new-likes notification (tracker item idea-notify-likes, v1)
+- `e8117d8` 2026-07-28T22:32:46+00:00 — Fix dangling ", in,"/", through," in ACTION_CHIPS captions when place is skipped
+- `e3d3a99` 2026-07-28T21:57:52+00:00 — Add research-backed dream archetype chips to the wizard/quiz flow
+- `1cc6c11` 2026-07-28T21:47:50+00:00 — Mirror durable principle: assumptions have expiry dates
+- `0475469` 2026-07-28T21:33:51+00:00 — Fix review round 1 findings: broken "Something else" place grammar, Edit-Dream-regenerate prompt-language loss, and add wizard.html/ claim-dream.html/regenerate test coverage
+- `e0b3d5d` 2026-07-28T21:33:50+00:00 — Split promptText/storyText: human dream description everywhere humans look, prompt-speak only to fal
+- `be0cbbd` 2026-07-28T21:16:41+00:00 — Review page round 2: v2 clips + archetype POVs; host UGC-1 captioned final
+- `29added` 2026-07-28T20:36:37+00:00 — Update MANAGER_BRIEF.md's stale monetization snapshot (review finding)
+- `641c56d` 2026-07-28T20:36:37+00:00 — Double token-pack contents at the same prices (pack enrichment, founder-approved 2026-07-28)
+- `85bc521` 2026-07-28T20:32:37+00:00 — Temporary founder review page for UGC/POV creative round (unlinked, obscure URL)
+- `abc0fda` 2026-07-28T19:53:02+00:00 — Switch default video model to fal-ai/veo3.1/lite (~80% cost cut)
+- `6943272` 2026-07-28T19:17:07+00:00 — Fix review finding: preserve pre-existing audio-on behavior for regenerate/turn-into-video
+- `c261ad6` 2026-07-28T18:56:25+00:00 — Add audio/music toggle (default off) and silent owner/IL cheap-audio forcing
+- `fd6c188` 2026-07-28T18:17:15+00:00 — Harden mark-generation-completed's readyAt check against a narrow Blobs propagation race
+- `ad4a169` 2026-07-28T17:55:42+00:00 — Fix review round 2: live-wire shop.html's cost banner claim number, update profile.html FAQ, add regression coverage
+- `6be985a` 2026-07-28T17:39:10+00:00 — Fix stale dailyClaimAmount read in shop.html's inline claim toast
+- `ce7349c` 2026-07-28T17:20:12+00:00 — Add first-claim bonus: 100 tokens on an account's very first daily claim
+- `cbee05a` 2026-07-28T16:29:04+00:00 — Fix review findings: correct overstated Back-handler comparison, update stale central signupAttemptToken doc block for the third trigger
+- `3daafbd` 2026-07-28T16:29:04+00:00 — Fix stale signup attempt not invalidated by start.html's Change-email link
+- `537bf11` 2026-07-28T16:09:10+00:00 — Tag test/internal traffic with is_test PostHog person property
+- `26be28e` 2026-07-28T15:50:35+00:00 — Document claim-dream events in EVENT_TAXONOMY.md, add invalid_or_expired/fetch_failed test coverage
+- `75f7c2e` 2026-07-28T15:37:52+00:00 — Add claim-dream.html analytics + signup benefit bullets
+- `9769cb3` 2026-07-28T14:41:09+00:00 — Remove fabricated founder-approval claim on the retry-delay value
+- `66e6e65` 2026-07-28T14:41:09+00:00 — Fix daily-claim sheet showing +0, and add delay to blobs-retry to fix intermittent claim failures
+- `0b29fb8` 2026-07-28T14:31:44+00:00 — Review round 3: validate Host/X-Forwarded-Host before use in Location header
+- `16d4a34` 2026-07-28T14:31:43+00:00 — Review round 2: escape </script> injection in share-dream.js, add stale-Save-to-device regression test
+- `b07270a` 2026-07-28T14:31:43+00:00 — Add share mini-sheet (Share link / Save to device) + OG-tag preview links
+- `726993c` 2026-07-28T14:15:54+00:00 — Fix blank grey tile in processing.html's wait carousel
+- `05422b9` 2026-07-28T13:47:53+00:00 — Add variant-b coverage for the check-email money-leak fix
+- `0826a2a` 2026-07-28T13:16:00+00:00 — Fix money-leak: check email availability before firing pending generation
+- `0ec61ec` 2026-07-28T12:26:37+00:00 — Add test coverage for wipeAllLocalState and the TTL boundary itself
+- `7884114` 2026-07-28T12:16:41+00:00 — Review round 2: bound the pre-account marker with a TTL + clear it on logout/delete
+- `676d797` 2026-07-28T11:54:23+00:00 — Review round 1: guard linkPreSignupIdentity against already-signed-in and repeat-visit cases
+- `4032e08` 2026-07-28T11:35:49+00:00 — Fix PostHog identity split: merge pre-signup and post-signup persons via alias()
+- `deda4e8` 2026-07-28T11:10:46+00:00 — Fix two minor review-round-2 findings
+- `7330121` 2026-07-28T10:52:34+00:00 — Review round 1: tests for #app viewport-bounding + isolated dismiss branches
+- `4d6ccf5` 2026-07-28T10:52:13+00:00 — Fix stale 88vh comment in profile.html (trivial review finding)
+- `38a7c49` 2026-07-28T10:51:59+00:00 — Review round 1 (blocking): mount wizard/start.html's character sheet on #app, not #fnScreen
+- `c4a4a4f` 2026-07-28T10:51:46+00:00 — Include .proc-wrap's overflow-y:auto (missed from the #app cap commit)
+- `d7de961` 2026-07-28T10:51:17+00:00 — Review round 1 (blocking): cap #app on create/style/processing/shop.html
+- `91f36bc` 2026-07-28T09:57:35+00:00 — Add behavioral test coverage for sheet dismissal across every sheet
+- `b252aba` 2026-07-28T09:57:35+00:00 — Wire SheetDismiss into every sheet in the app
+- `8eef5c5` 2026-07-28T09:57:35+00:00 — Add shared sheet-dismiss module (drag-to-close + real viewport cap)
+- `7264a4c` 2026-07-28T09:44:22+00:00 — Fix review-round-2 finding: readyAt was ambiguous, causing a new regression
+- `5f1660a` 2026-07-28T09:44:22+00:00 — Fix review-round-1 finding: funnel completers could get two emails
+- `b945c25` 2026-07-28T09:44:22+00:00 — Tests: rewrite the bug-enshrining test, add real end-to-end coverage
+- `3fad9ae` 2026-07-28T09:44:22+00:00 — First-dream email: generic copy, silent-skip telemetry, no-burn-on-fail
+- `387930c` 2026-07-28T09:44:22+00:00 — Fix root cause: funnel-started generations never recorded a job owner
+- `27791e2` 2026-07-28T08:47:41+00:00 — Fix round-5 review findings: SKIP-branch self-clobber, unguarded Buy-button callback
+- `c4ddc51` 2026-07-28T08:47:41+00:00 — Fix round-4 review finding: inline claim never notified its caller
+- `7b1b2f7` 2026-07-28T08:47:41+00:00 — Fix round-3 review finding: instance-scoping guard for claim-sheet async callbacks
+- `9dbdb3b` 2026-07-28T08:47:41+00:00 — Fix round-2 review findings: identical stale-closure bug in claimInline, chip never refreshed on self-triggered claim
+- `4911dec` 2026-07-28T08:47:41+00:00 — Fix review findings: claim race, stale sheet callback, dead-field rename fallout
+- `9412598` 2026-07-28T08:47:41+00:00 — Test coverage for the daily token claim + full copy-sweep test updates
+- `3b620c9` 2026-07-28T08:47:41+00:00 — Wire the daily claim into every token-UI page + copy sweep
+- `c0565b9` 2026-07-28T08:47:40+00:00 — Add daily-claim UI infrastructure to purchase-sheet.js/store.js
+- `c03ea01` 2026-07-28T08:47:40+00:00 — Replace the daily token drip with an active daily claim (server core)
+- `ba1a239` 2026-07-28T08:41:54+00:00 — Document widened race blast radius from targeting a gifted account
+- `a4f2562` 2026-07-28T08:41:54+00:00 — Extend owner-topup-tokens.js with an optional gift-to-account target
+- `83ddf15` 2026-07-28T08:31:57+00:00 — Fix second stale WhatsApp doc comment found in round-2 review
+- `8ff70b3` 2026-07-28T08:31:57+00:00 — Address review findings: behavioral test coverage + stale header comment
+- `78e7a3c` 2026-07-28T08:31:57+00:00 — Hide wizard.html WhatsApp capture -- no channel can deliver to it today
+- `9df2b2a` 2026-07-28T08:05:48+00:00 — Encode standing rule: full QA on every change, escalate to founder QA when needed
+- `ccd3ad2` 2026-07-28T05:49:58+00:00 — Fix stale comment header left over from the removed overflow menu
+- `a12b572` 2026-07-28T05:42:26+00:00 — Result screen quiet row, FINAL placement (4th iteration): Delete as an ordinary quiet link, Save removed
+- `3a586c8` 2026-07-27T21:32:18+00:00 — Fix review finding: allow_tax_id must nest under feature_flags
+- `800b4bb` 2026-07-27T21:26:30+00:00 — Disable Dodo's business/tax-id checkout option for token-pack purchases
+- `33cdc16` 2026-07-27T21:18:00+00:00 — Fix review finding: reserve clearance so the overflow trigger never overlaps the quiet-links row
+- `5e31a61` 2026-07-27T21:18:00+00:00 — Move result.html Delete from the Edit sheet into a small overflow menu
+- `c68bb52` 2026-07-27T21:10:31+00:00 — Fix review finding: topbar Back also needs to invalidate an in-flight transcription
+- `fd1ebee` 2026-07-27T20:56:14+00:00 — Add a text-review step after transcription so users can see and edit it before it becomes their dream's caption
+- `bd0b42b` 2026-07-27T20:41:06+00:00 — Update FAQ for image generation: correct token costs, photo-support scope
+- `498a1d4` 2026-07-27T19:45:32+00:00 — Promote shop.html's first-purchase +50% bonus to a real, prominent callout
+- `92bbc7d` 2026-07-27T15:22:55+00:00 — Merge remote-tracking branch 'origin/add-privacy-terms-pages'
+- `7639b0a` 2026-07-27T15:22:55+00:00 — Merge remote-tracking branch 'origin/activate-automatic-first-video-email'
+- `1ae9008` 2026-07-27T12:57:20+00:00 — Fix review findings: expose menu-row instruction to screen readers, use externalLink icon
+- `5bb372b` 2026-07-27T12:43:35+00:00 — Show a static menu-row replica alongside the in-app-browser escape hint
+- `f77840c` 2026-07-27T12:25:54+00:00 — Fix review finding: privacy.html overclaimed characters are stored server-side
+- `2da1bcb` 2026-07-27T12:17:22+00:00 — Add real Privacy Policy + Terms of Service pages, linked from Settings and every signup screen
+- `1c2c43d` 2026-07-27T12:07:57+00:00 — Add read-only rename-conflict diagnostic (admin-diagnose-rename-conflict.js)
+- `0b8d981` 2026-07-27T12:01:26+00:00 — Activate automatic first-video retention email (tracker for-product-activate-automatic-retention-4n74rw)
+- `0aea69f` 2026-07-27T11:53:29+00:00 — Move result.html's Delete out of the bottom action bar into the Edit sheet
+- `6f7e7fd` 2026-07-27T11:41:41+00:00 — Hide Record it choice card in in-app webviews instead of blocking on click
+- `5b1701f` 2026-07-27T11:28:00+00:00 — Encode two founder-brain principles from the Record-it lesson
+- `3f53621` 2026-07-27T11:20:00+00:00 — Fix review finding: doc comment undercounted its own edits
+- `0d16e5c` 2026-07-27T11:07:27+00:00 — Add static FAQ section to Settings (tracker idea-faq-section)
+- `714ecdb` 2026-07-27T10:52:13+00:00 — Merge remote-tracking branch 'origin/build-account-deletion-flow'
+- `7c825aa` 2026-07-27T13:45:08+03:00 — Merge in-app-nudge-session-transfer (Ron approved)
+- `b02c095` 2026-07-27T10:28:11+00:00 — Round-3 review fix: close username/email rate-limit bucket split
+- `d071f0e` 2026-07-27T10:28:11+00:00 — Round-2 review fixes for session-transfer feature
+- `78a1736` 2026-07-27T10:28:11+00:00 — Fix in-app-nudge iOS dead button + add session-transfer token for webview escape
+- `00a4718` 2026-07-27T09:44:15+00:00 — Fix Record it silently failing inside FB/IG in-app webviews
+- `9079bfc` 2026-07-27T07:24:22+00:00 — Fix review finding: password edit didn't invalidate a stale dry run
+- `8bddfe0` 2026-07-27T07:24:22+00:00 — Add owner-tools rename panel to admin.html
+- `53c5462` 2026-07-27T06:59:36+00:00 — Round-3 fix: make the proof-strip regression test genuinely gate the fetch
+- `164ba31` 2026-07-27T06:59:36+00:00 — Round-2 review fixes for email-first signup A/B test
+- `9777300` 2026-07-27T06:59:36+00:00 — A/B test: email-first signup sequencing (screen 13)
+- `119f7e3` 2026-07-27T06:57:01+00:00 — Encode standing rule: founder-facing actions ship with UI, never curl
+- `a9a8982` 2026-07-27T06:34:59+00:00 — Fix draft-summary parity gap flagged in review
+- `58f7f7a` 2026-07-27T06:20:21+00:00 — Cancel stale credit poll on pagehide; grace-period poll when checkout marker is missing
+- `192065d` 2026-07-27T05:50:41+00:00 — Skip 60s countdown refetch for at-ceiling accounts (unbounded polling)
+- `69d82c4` 2026-07-27T05:34:58+00:00 — Merge remote-tracking branch 'origin/main'
+- `c138da2` 2026-07-27T05:28:41+00:00 — Add standing review checklist item for token-binding bug class
+- `0a3d98e` 2026-07-27T05:25:03+00:00 — Merge remote-tracking branch 'origin/owner-per-ip-generation-bypass'
+- `b1613c3` 2026-07-27T04:31:14+00:00 — Merge branch 'store-launch-copy-sweep'
+- `6ac35bb` 2026-07-27T04:28:37+00:00 — Fix comment misattribution in refundTokenAmountOnce's doc comment
+- `31fe354` 2026-07-27T04:28:37+00:00 — Make low-balance/fail-state copy media-aware (video vs. image)
+- `6578874` 2026-07-27T04:28:36+00:00 — Fail closed on a payment.succeeded webhook missing payment_id
+- `4135a43` 2026-07-27T04:28:36+00:00 — Sweep stale "beta"/no-store copy now that the token shop is live
+- `a8578a4` 2026-07-27T04:01:39+00:00 — Merge branch 'fix-character-description-dropped-with-photo'
+- `614e82c` 2026-07-27T03:56:11+00:00 — Fix stale comment describing generate-video.js's old drop-description behavior
+- `3f1b07d` 2026-07-27T03:48:26+00:00 — Stop dropping a character's text description just because it has a photo
+- `da093c1` 2026-07-27T03:41:42+00:00 — Merge branch 'result-html-first-video-redesign'
+- `63f549d` 2026-07-27T03:37:56+00:00 — Redesign result.html's bottom action area (founder-approved Variant A)
+- `a98f41a` 2026-07-27T03:23:19+00:00 — Merge branch 'correct-founder-account-username'
+- `4e04309` 2026-07-27T03:16:03+00:00 — Centralize the rename-casing pin so no state.user= site can be missed again
+- `fe49d7a` 2026-07-27T03:00:08+00:00 — Pin casing on the local-fallback login path too, not just server-confirmed
+- `ba35b83` 2026-07-27T03:00:08+00:00 — Pin renamed account's display casing to canonical lowercase always
+- `cacc57b` 2026-07-27T03:00:08+00:00 — Migrate founder's local dreams/characters on first login after rename
+- `6bf00cb` 2026-07-27T03:00:08+00:00 — Add safe, owner-only, sanity-checked admin endpoint to rename __probe_throwaway_user__ to ronbrightman
+- `86daafd` 2026-07-27T02:48:51+00:00 — Merge branch 'out-of-tokens-purchase-sheet'
+- `ce73b6b` 2026-07-27T02:48:29+00:00 — Address review non-blockers: reject control chars in redirect path, note doc supersession
+- `d781b56` 2026-07-27T02:36:43+00:00 — Build out-of-tokens purchase sheet with checkout auto-resume
+- `cb35744` 2026-07-27T01:36:36+00:00 — Bind owner bypass token to the verified owner's own email
+- `8156f1e` 2026-07-27T01:26:28+00:00 — Fix token chip showing "+20 in now" forever when balance is at/above the grant ceiling
+- `ab214ef` 2026-07-27T01:21:44+00:00 — Add owner bypass for per-IP/per-email generation rate limits
+- `43d1598` 2026-07-27T00:58:22+00:00 — Merge remote-tracking branch 'origin/durable-firstvideocreated-marker'
+- `d06c3f4` 2026-07-27T00:55:50+00:00 — Merge remote-tracking branch 'origin/auto-refund-failed-generation'
+- `0423e2d` 2026-07-27T00:37:18+00:00 — Merge remote-tracking branch 'origin/feed-windowing-explore-home'
+- `3380ed0` 2026-07-27T00:30:44+00:00 — Fix review findings: real DOM virtualization for the Explore feed, not just video src release
+- `417505b` 2026-07-26T21:06:50+00:00 — Fix Record-it funnel screens lying about a dream already in progress
+- `967648c` 2026-07-26T21:06:24+00:00 — Bind refund eligibility to the job's actual submitting email
+- `3389f14` 2026-07-26T20:57:32+00:00 — Fix review finding: key the durable completion marker by operationName, not dreamId
+- `96f52bf` 2026-07-26T20:37:39+00:00 — Fix auto-refund tests for Token Economy C's new grant/bonus numbers
+- `d69b2c5` 2026-07-26T20:32:13+00:00 — Merge origin/main into auto-refund-failed-generation
+- `56e0e6d` 2026-07-26T20:28:45+00:00 — Merge remote-tracking branch 'origin/main' into durable-firstvideocreated-marker
+- `efe706b` 2026-07-26T20:28:19+00:00 — Add automatic token refund on post-submission generation failure
+- `374111d` 2026-07-26T20:27:51+00:00 — Make FirstVideoCreated's freshness guard durable (server-side marker, not sessionStorage)
+- `40bced2` 2026-07-26T20:26:29+00:00 — css/styles.css: fix stale --gradient-ig comment (tracker: css-styles-css-s-gradient-ig-used-in-exa-488m97)
+- `9fefbb8` 2026-07-26T20:19:17+00:00 — Window the Explore feed: batch render + lazy-append + off-screen src release
+- `4c30b33` 2026-07-26T20:19:08+00:00 — profile.html: fix stale grant-ceiling comment (review finding)
+- `e6b8c51` 2026-07-26T20:15:30+00:00 — Merge remote-tracking branch 'origin/token-economy-c'
+- `fad1a2d` 2026-07-26T20:09:14+00:00 — Merge remote-tracking branch 'origin/main' into route-organic-to-wizard
+- `1665acd` 2026-07-26T20:09:14+00:00 — Fix start.html's stale organic-entry-point comment (review finding)
+- `49961a7` 2026-07-26T20:02:54+00:00 — Route organic/direct index.html visitors to wizard.html
+- `ed61a46` 2026-07-26T20:01:50+00:00 — Merge origin/main into token-economy-c
+- `64308c0` 2026-07-26T19:49:03+00:00 — Token Economy C: new grants (220/+20/200), 3-pack lineup, first-purchase bonus
+- `88319e3` 2026-07-26T19:48:54+00:00 — Merge wait-screen-reassurance-and-inapp-nudge: generation-wait time estimate + post-signup FB/IG in-app-browser nudge (Frame 1)
+- `8bf00e8` 2026-07-26T19:45:57+00:00 — Merge empty-sparse-feed-fallback: friendly fallback state for processing.html's first-timer preview carousel
+- `de8eade` 2026-07-26T19:35:14+00:00 — Add wait-screen time estimate + post-signup FB/IG in-app-browser nudge
+- `c6a7152` 2026-07-26T19:34:49+00:00 — Merge retention-email-first-video: send-first-dream-email with real password verification
+- `facfcce` 2026-07-26T19:30:17+00:00 — Add empty/sparse fallback state to processing.html's first-timer preview carousel
+- `78cde8f` 2026-07-26T19:25:45+00:00 — Merge phase-1-reporting-instrumentation: server-side Purchase (P0) + video_created/video_published/like_given/like_received/signed_up events
+- `601890e` 2026-07-26T19:25:16+00:00 — Fix two more incorrect precedent citations in send-first-dream-email.js's header comment
+- `b5b5658` 2026-07-26T19:08:50+00:00 — Remove accidentally-committed node_modules symlink (git add -A slip -- .gitignore's node_modules/ pattern doesn't match a symlink)
+- `6784fe0` 2026-07-26T19:08:11+00:00 — Add end-to-end test coverage for the eventId chain (review finding)
+- `2a8802f` 2026-07-26T18:58:59+00:00 — Fix security finding: require real password verification for send-first-dream-email.js
+- `3057025` 2026-07-26T18:46:18+00:00 — Merge verify-email-durably-captured-before-gen: prove fal generation never fires before the pending-dream email record is durably persisted
+- `1086fec` 2026-07-26T18:38:15+00:00 — build.md: require an isolated git worktree, never the shared main checkout
+- `5e81e87` 2026-07-26T18:36:41+00:00 — Fix create-checkout-session-dodo.js: actually mint and return the shared event_id
+- `d15ed6e` 2026-07-26T18:32:35+00:00 — Fix shop.html: don't add \$insert_id as an explicit-undefined object key
+- `63d3dd7` 2026-07-26T18:27:45+00:00 — Add tests for dodo-webhook.js's server-side Purchase conversion
+- `7feee4b` 2026-07-26T18:25:55+00:00 — Document Phase 1 reporting instrumentation's 5 new/changed events
+- `046bb1b` 2026-07-26T18:24:54+00:00 — Add browser-driven behavioral coverage for the retention email
+- `0728ced` 2026-07-26T18:24:26+00:00 — shop.html: share the Purchase event_id with dodo-webhook.js for dedup
+- `80bfe82` 2026-07-26T18:23:57+00:00 — Fire server-side Purchase conversion (PostHog + Meta CAPI) from dodo-webhook.js
+- `60f1467` 2026-07-26T18:22:28+00:00 — Fire like_given/like_received PostHog events from like-dream.js
+- `28b6cdf` 2026-07-26T18:21:34+00:00 — Add signed_up, video_created, video_published events to js/store.js
+- `b486ca6` 2026-07-26T18:20:23+00:00 — Add first-dream retention email (tracker: for-product-retention-email-send-user-th-eke9ra)
+- `dccff5d` 2026-07-26T18:19:17+00:00 — Export POSTHOG_KEY/POSTHOG_HOST from analytics-config.js; add explicitEventId param to fireMetaConversion
+- `5db30fb` 2026-07-26T18:18:42+00:00 — Add posthog-capture.js lib + unit tests for Phase 1 reporting instrumentation
+- `a6027c3` 2026-07-26T18:10:17+00:00 — Add regression test proving fal generation never fires before the pending-dream email record is durably persisted
+- `4b8b23e` 2026-07-26T17:53:46+00:00 — Address round-3 review findings: stale comment + missing network-error test
+- `512e133` 2026-07-26T17:52:22+00:00 — Merge main into build-account-deletion-flow (pick up harden-submit-support-message)
+- `c6726b0` 2026-07-26T17:50:09+00:00 — Merge harden-submit-support-message: sanitize username before it reaches the email subject header
+- `5924808` 2026-07-26T17:49:57+00:00 — Harden submit-support-message.js: sanitize username before it hits the email subject header
+- `124382e` 2026-07-26T17:46:42+00:00 — Address round-2 review non-blocking findings on account deletion
+- `6a1eb79` 2026-07-26T17:45:16+00:00 — Merge main into build-account-deletion-flow (pick up flaky-comments-test fix + jwks-cache test)
+- `801a4f1` 2026-07-26T17:41:18+00:00 — Merge add-jwks-cache-test: JWKS caching unit test for fal-webhook-verify.js
+- `0ac820a` 2026-07-26T17:41:18+00:00 — Add fal-webhook-verify.js JWKS caching unit test
+- `b1eb17f` 2026-07-26T17:37:13+00:00 — Merge fix-flaky-tracker-comments-test: fix intermittent two-comment-save race in tracker-comments-behavioral.test.js
+- `dea49b0` 2026-07-26T17:36:55+00:00 — Fix flaky tracker-comments-behavioral test (two-comment-save race)
+- `4d6c6e6` 2026-07-26T17:34:04+00:00 — Fix account-deletion's local wipe to scope to just the deleting account
+- `b926844` 2026-07-26T17:23:11+00:00 — Merge main into build-account-deletion-flow to pick up fix-firstvideocreated-reliability
+- `7f66c05` 2026-07-26T17:18:53+00:00 — Add account-deletion flow (server + Settings UI + tests)
+- `4588282` 2026-07-26T16:58:03+00:00 — Merge fix-firstvideocreated-reliability: fire the KPI event on explore.html's resume path too
+- `322d159` 2026-07-26T16:49:55+00:00 — Address review: fix cross-path test's real assertion, soften race wording, remove dead resumePendingJob() from home.html
+- `32784ff` 2026-07-26T16:36:04+00:00 — Fire FirstVideoCreated on explore.html's resume-completion path too
+- `534a63e` 2026-07-26T16:30:57+00:00 — Merge raise-daily-token-award-to-200: fix new-user token choke point
+- `fe03905` 2026-07-26T16:29:23+00:00 — Fix two stale comments conflating signup grant (290) with daily grant (200)
+- `2a83a99` 2026-07-26T16:21:39+00:00 — shop.html: fix third stale daily-grant copy location (round 2 review)
+- `64f9882` 2026-07-26T16:12:40+00:00 — result.html: fix stale static placeholder copy still reading 10 tokens
+- `5a4c75b` 2026-07-26T16:06:37+00:00 — Raise daily token award from 10 to 200 tokens/24h
+- `a29779b` 2026-07-26T15:59:44+00:00 — Add standing rule: always show Ron a real design/visual, not prose description
+- `eefc8f7` 2026-07-26T06:52:13+00:00 — Merge fix-shop-palette-variant-test-flake: wait for border-color transition to settle
+- `c3c38dd` 2026-07-26T06:37:33+00:00 — Fix flaky shop palette variant test: wait for border-color transition to settle
+- `bfd1034` 2026-07-26T06:23:18+00:00 — Merge photo-upload-sheet-instance-token-guard: fix stale photo-resize overwrite in 3 character sheets
+- `2c18ea3` 2026-07-26T06:13:46+00:00 — Guard result.html/start.html/wizard.html character-sheet photo upload against stale-resize overwrite
+- `a4a346b` 2026-07-26T05:47:08+00:00 — Merge signup-store-level-token-guard: guard DreamStore.signup() itself against stale-call clobbering
+- `9be310b` 2026-07-26T05:39:24+00:00 — js/store.js: guard signup() against concurrent-call staleness at the store layer
+- `2104e02` 2026-07-26T04:59:11+00:00 — Merge signup-step-navigation-token-guard: fix Signup-step force-navigation on stale settlement
+- `988ebaf` 2026-07-26T04:51:46+00:00 — wizard.html: fire CompleteRegistration unconditionally, document pendingGenerationPromise live-read binding
+- `c2ba1db` 2026-07-26T04:38:56+00:00 — Re-check signupAttemptToken inside the nested pending-generation .then() too
+- `c455f8e` 2026-07-26T04:18:09+00:00 — Fix Signup step force-navigation on stale attemptSignup settlement (wizard.html + start.html)
+- `bb02046` 2026-07-26T03:51:16+00:00 — Merge wizard-guard-duplicate-submission: guard Contact-step against duplicate real submissions
+- `cb8706a` 2026-07-26T03:40:47+00:00 — wizard.html: structural fix -- settlement never drives navigation (review round 4)
+- `9e70aba` 2026-07-26T03:18:02+00:00 — Merge clear-pendingjob-on-logout: scope pendingJob by owner on logout
+- `9a06bf6` 2026-07-26T03:17:11+00:00 — wizard.html: guard against a stale in-flight response clobbering pendingId after revert
+- `0370e98` 2026-07-26T03:16:16+00:00 — Document residual same-browser-account-switch risk in pendingJob backfill
+- `190c6ca` 2026-07-26T03:08:04+00:00 — Backfill pendingJob.ownerHandle on load for pre-branch-deploy jobs (review round 3)
+- `321227e` 2026-07-26T02:55:44+00:00 — wizard.html: fix resubmission guard to not gate on stale pendingStartFailed
+- `7515450` 2026-07-26T02:51:28+00:00 — Scope pendingJob by owner instead of wholesale-clearing on logout (review round 2)
+- `a7a848b` 2026-07-26T02:37:39+00:00 — wizard.html: guard contact-capture Continue against resubmitting start-pending-generation
+- `fcd1a5a` 2026-07-26T02:36:01+00:00 — Clear pendingJob on logout to prevent stale cross-account leakage
+- `e4f165a` 2026-07-25T14:44:43+00:00 — Add Secure to the attribution cookies, tighten the overwrite-behavior comment
+- `83150e3` 2026-07-25T14:34:13+00:00 — Persist Meta fbc/fbp/fbclid from funnel handoff so CAPI conversions attribute
+- `92a059a` 2026-07-25T14:12:24+00:00 — Manager is now live -- update coordinator references from Growth to Manager
+- `da335c7` 2026-07-25T11:13:49+00:00 — Add MANAGER_BRIEF.md, note Manager entity in FOUNDER_PRINCIPLES.md
+- `2cd742b` 2026-07-25T10:25:49+00:00 — FOUNDER_PRINCIPLES.md: always summarize a thread when it needs Ron's input
+- `b8bde1d` 2026-07-25T10:16:25+00:00 — tracker.html: stop speech when the speaking item is deleted, add onerror test
+- `c6aac1e` 2026-07-25T10:08:35+00:00 — tracker.html: add a "Read aloud" button using the browser SpeechSynthesis API
+- `8b596fb` 2026-07-25T09:52:40+00:00 — Link PostHog identity across the funnel->app handoff (distinct_id)
+- `d7b69e6` 2026-07-25T09:40:08+00:00 — tracker.html: use a new muted-green accent for Waiting-Growth, not red
+- `83e8c8b` 2026-07-25T09:40:08+00:00 — Add waitingFor field to tracker items (Product/Growth/Ron/none)
+- `bd74516` 2026-07-25T09:12:25+00:00 — Wire the funnel's Record-it handoff into start.html/create.html
+- `78a9375` 2026-07-25T08:04:26+00:00 — tracker.html: add "Needs your input" badge for open items awaiting founder reply
+- `e9fb1e6` 2026-07-24T23:01:39+00:00 — ANALYTICS_SETUP.md: document the live shop.html Purchase call site
+- `f146afc` 2026-07-24T23:00:16+00:00 — Clear the pending-purchase marker on cancelled checkout too
+- `2bfac65` 2026-07-24T22:46:59+00:00 — Fire Purchase conversion events on the Dodo checkout return trip
+- `574915d` 2026-07-24T22:28:54+00:00 — Ship shop palette redesign as a live A/B test (Direction A vs B)
+- `d632090` 2026-07-24T22:24:06+00:00 — SHOP_PALETTE_REDESIGN_SPEC.md: run both directions as an in-product A/B test
+- `05b0403` 2026-07-24T22:20:16+00:00 — Add token shop palette redesign spec (design pass, not yet built)
+- `f414ca4` 2026-07-24T22:13:02+00:00 — Fix over-scroll bug: closed bottom sheets inflate page scroll height
+- `df37412` 2026-07-24T22:00:48+00:00 — Reject __word__-shaped usernames (privacy-browser autofill-probe signature)
+- `ddabfc4` 2026-07-24T20:57:18+00:00 — FOUNDER_PRINCIPLES.md: mirror the research-then-design-before-build standing rule
+- `5b7c9d6` 2026-07-24T20:14:44+00:00 — Merge park-camera-scenery-screens: skip camera/scenery Advanced screens from the funnel tail
+- `2c4ea08` 2026-07-24T20:04:34+00:00 — Park camera/scenery Advanced screens on start.html's funnel tail
+- `69c07a8` 2026-07-24T20:03:37+00:00 — Merge fix-dodo-webhook-two-phase-credit: resumable payment crediting, no lost or doubled credits
+- `0c29648` 2026-07-24T20:02:43+00:00 — Add webhook-layer test for exhaustion-throws -> real 500/E5
+- `265b95f` 2026-07-24T19:50:00+00:00 — Fix two round-2 review findings in the two-phase credit fix
+- `8b235ce` 2026-07-24T19:12:59+00:00 — Fix Dodo webhook credit: two-phase pending->committed marker
+- `9edf008` 2026-07-24T18:57:01+00:00 — Merge extract-blobs-retry-helper: shared lib/blobs-retry.js for 4 hand-rolled retry loops
+- `cd9c2f0` 2026-07-24T18:55:52+00:00 — FOUNDER_PRINCIPLES.md: mirror 2 new creative rules from growth
+- `c995790` 2026-07-24T18:51:02+00:00 — Fix token countdown getting stuck on "now" forever (profile.html, shop.html)
+- `75489c3` 2026-07-24T18:45:09+00:00 — Extract shared lib/blobs-retry.js from four independently hand-rolled retry loops
+- `1bef210` 2026-07-24T18:40:41+00:00 — Add UNIFIED_IDENTITY_SPEC.md: idea-unified-me-identity is already fully built
+- `b54d3f7` 2026-07-24T18:35:32+00:00 — FOUNDER_PRINCIPLES.md: sharpen autonomous cycle order rule per Ron's live correction
+- `c4ae1c9` 2026-07-24T18:09:14+00:00 — Merge funnel-mobile-test-fixes: fix bugs Ron found live-testing the funnel
+- `80db427` 2026-07-24T18:02:35+00:00 — Fix stale-async-response race in generate-during-signup pending state
+- `f242e46` 2026-07-24T17:56:58+00:00 — Merge image-generation-option: cheap AI image tier + Turn this into a video upsell
+- `0c1102d` 2026-07-24T17:50:07+00:00 — Fix review round 2: wizard.html signup copy still said 200 tokens
+- `7042769` 2026-07-24T17:45:14+00:00 — Fix duplicate real-generation bug in generate-during-signup retry path
+- `7c4279a` 2026-07-24T17:40:53+00:00 — Fix review finding: read dailyGrantAmount live instead of hardcoding 100
+- `6788af3` 2026-07-24T17:26:21+00:00 — Add image generation option: cheap image tier + Turn this into a video upsell
+- `5fdd402` 2026-07-24T17:25:14+00:00 — Fix funnel bugs from Ron's live mobile test (Messenger in-app browser)
+- `2ab4666` 2026-07-24T14:39:36+00:00 — Update IMAGE_GENERATION_SPEC.md with Ron's decisions: toggle UI, video-first onboarding kept, 290/10 token numbers
+- `cb62ba4` 2026-07-24T14:20:17+00:00 — Add IMAGE_GENERATION_SPEC.md: design pass for cheap image tier + onboarding pivot
+- `6ba3b53` 2026-07-24T14:16:52+00:00 — Merge dodo-payments-shop-integration: real Dodo checkout for token-pack purchases
+- `3a3768e` 2026-07-24T14:01:08+00:00 — Add ReachedEmailEntry Pixel/CAPI custom event on the funnel's email-entry screen
+- `fdc3659` 2026-07-24T13:50:06+00:00 — Merge support-and-feedback-settings: Settings support/feedback form + redesign
+- `a78f3b2` 2026-07-24T13:43:18+00:00 — Fix email/reply_to spoofing + duplicate-append race in support endpoint
+- `5409681` 2026-07-24T13:30:09+00:00 — Fix stale-async-response race in Settings support/feedback compose
+- `e88ee95` 2026-07-24T13:18:40+00:00 — Add founder-clickable Reviewed marker to tracker.html
+- `1926caf` 2026-07-24T13:17:49+00:00 — Add Settings support/feedback flow + redesign Settings for the beta
+- `237018e` 2026-07-24T12:59:25+00:00 — Merge sync-founder-principles-2: pull autonomous-cycle-order rule
+- `30ab5b3` 2026-07-24T12:58:41+00:00 — Sync FOUNDER_PRINCIPLES.md: pull growth's autonomous-cycle-order rule
+- `5be7f69` 2026-07-24T12:36:24+00:00 — Hold index.html's Get Started routing at the external funnel pending confirmation
+- `00f2a6d` 2026-07-24T12:36:04+00:00 — Merge dream-builder-wizard: chip-first pre-signup wizard, generate-during-signup, email re-engagement
+- `96b848e` 2026-07-24T12:25:21+00:00 — Fix review FAILs: pending-dreams TOCTOU race + claim ownership check
+- `c855d75` 2026-07-24T11:57:44+00:00 — Sync FOUNDER_PRINCIPLES.md: pull growth's model-selection policy + tracker trigger-phrase note
+- `fe9237b` 2026-07-24T11:50:06+00:00 — Add dream-builder wizard + generate-during-signup + abandoned-dream re-engagement
+- `fe2fa94` 2026-07-24T11:47:16+00:00 — Fix creditTokenPackOnce's TOCTOU double-credit race, per review
+- `995b839` 2026-07-24T11:42:04+00:00 — Merge beta-onboarding-and-email-reassurance: free-beta messaging + email reassurance copy
+- `1604cf7` 2026-07-24T11:37:03+00:00 — Fix result.html's separate out-of-tokens modal, missed by the first pass
+- `3ce90db` 2026-07-24T11:29:56+00:00 — Wire shop.html's token packs to a live Dodo Payments checkout
+- `c092df1` 2026-07-24T11:26:32+00:00 — Beta-free messaging + email-ask reassurance (tracker: jaalf6, z63dy2)
+- `c6ecc28` 2026-07-24T11:05:30+00:00 — Merge add-founder-principles: mirror founder-brain doc, adopt autonomous-work model
+- `518eb0d` 2026-07-24T11:05:23+00:00 — Mirror FOUNDER_PRINCIPLES.md from dreamtube-growth, wire into CLAUDE.md, adopt autonomous-work model
+- `1d9c3de` 2026-07-24T09:35:49+00:00 — Merge fix/agent-skill-duplication-resolved: document plugin-drift fix
+- `7e0e1a5` 2026-07-24T09:35:39+00:00 — Resolve agent-skill-duplication: fix root cause (unbumped plugin version), not just symptom
+- `1d454bb` 2026-07-23T13:31:52+00:00 — Merge fix/tracker-mobile-summary-layout: title full-width, controls in a row below
+- `202d82b` 2026-07-23T13:31:37+00:00 — tracker.html: put item title on its own line, controls in a row below
+- `01edbaf` 2026-07-23T13:14:11+00:00 — Merge fix/account-store-orphaned-email-index: fix real account lockout bug
+- `038c609` 2026-07-23T13:13:54+00:00 — Fix account-store.js: createAccount no longer permanently blocked by a stale/orphaned email index
+- `f314a1a` 2026-07-23T11:43:48+00:00 — Merge tracker-start-done-comments: start button, Done section, timestamps, comment redesign
+- `59e1e80` 2026-07-23T11:19:28+00:00 — Add per-id isolation test for the start button's async guard, and document why a same-id overlap isn't reachable
+- `79b4dbc` 2026-07-23T11:14:47+00:00 — Add direct-concurrency tests for updateItem()'s retry/verify loop
+- `723ea27` 2026-07-23T11:14:03+00:00 — Fix updateItem() verify() spuriously failing on already-done legacy items with null doneAt
+- `352adc1` 2026-07-23T10:29:19+00:00 — Add start button, clearer Done button, single combined Done section, timestamps, and multi-author comments to tracker.html
+- `f031124` 2026-07-23T09:58:50+00:00 — Merge docs/tracker-coordination-migration: redirect agent coordination to tracker.html
+- `6301138` 2026-07-23T09:58:43+00:00 — Redirect agent coordination from archived dreamtube-signals to tracker.html
+- `945b8b9` 2026-07-23T09:53:57+00:00 — Merge fix/tracker-updateitem-race: fix tracker updateItem() concurrent-write race
+- `05beee0` 2026-07-23T09:53:46+00:00 — Fix updateItem() concurrent-write race in tracker-store.js
+- `72ef27e` 2026-07-23T09:34:47+00:00 — Rewrite identity/retention spec: email + SMS (Twilio) is the decided fix, not social login
+- `ac93d0b` 2026-07-23T08:25:34+00:00 — Add identity/retention project spec (social login + PWA push + SMS) for founder review
+- `92280aa` 2026-07-23T07:35:41+00:00 — Record cross-session tracker-coordination standing rule (paused-campaign staleness incident)
+- `2abb202` 2026-07-22T21:20:42+00:00 — Merge me-avatar-describe-generation: AI avatar generation from Describe text
+- `605f9c6` 2026-07-22T21:12:08+00:00 — Fix round-4 gap: photo-upload change handler had the same unguarded-async shape as the already-fixed generate-avatar path
+- `8719904` 2026-07-22T20:58:32+00:00 — Fix round-2 fix's own gap: Save button stuck if sheet reopened during a pending avatar generation
+- `d417cb6` 2026-07-22T20:46:04+00:00 — Fix review finding: cancelling the avatar-generation sheet mid-request still saved
+- `7fe1e6e` 2026-07-22T20:31:53+00:00 — Add real AI avatar image generation for the Me character's Describe option
+- `59164a5` 2026-07-22T19:58:41+00:00 — HOTFIX: signup/login/password-reset broken in production for every user
+- `a270922` 2026-07-22T18:51:05+00:00 — Merge profile-me-character-unification: bidirectional profile <-> Me character identity
+- `890c38b` 2026-07-22T18:46:12+00:00 — Fix review finding: create.html's name-less "Add yourself" flow stored a literal 'Me' name
+- `5bdd041` 2026-07-22T18:35:04+00:00 — Unify profile identity with the Me character; extend name auto-detection
+- `14f4e4b` 2026-07-22T15:49:26+00:00 — Merge first-video-created-event: FirstVideoCreated conversion event across Pixel/PostHog/CAPI
+- `dbf7790` 2026-07-22T15:42:21+00:00 — Add "first video created" conversion event (Pixel custom event + PostHog + CAPI)
+- `c8093e5` 2026-07-22T15:31:48+00:00 — Merge cross-device-login: server-side account store for cross-device login/signup/reset
+- `1c5a8f8` 2026-07-22T14:18:38+00:00 — Merge tracker-comments-add-delete-merge: per-item comment field, reconciled with add/delete
+- `3cd9053` 2026-07-22T14:15:05+00:00 — Fix handleAddSubmit: missing captureDrafts() and unseeded Confirmed maps
+- `12033d1` 2026-07-22T13:59:46+00:00 — Round 4: disclose rollback delete's residual TOCTOU gap, share one lookup between account-login's rate-limit resolve and verifyLogin, add duplicate-signup test
+- `8b0cffd` 2026-07-22T13:58:06+00:00 — Merge tracker-comments into tracker-add-delete-based main
+- `738c68c` 2026-07-22T13:47:56+00:00 — Fix round-2 gap: roll back the losing racer's own stale email index
+- `a4f6c55` 2026-07-22T13:38:52+00:00 — Guard the success (.then) side of tracker.html's Confirmed writes, not just the .catch revert side
+- `484a5c8` 2026-07-22T13:31:09+00:00 — Address review: rate limiting on auth endpoints, narrow account-store race
+- `0bb6648` 2026-07-22T13:30:54+00:00 — Merge tracker-add-delete: real owner-gated add/delete endpoints for tracker.html
+- `9a3e16b` 2026-07-22T13:27:39+00:00 — Add missing seq-guard regression tests; fix chained-failure revert target
+- `69a1ccd` 2026-07-22T13:22:31+00:00 — Fix tracker-add-delete review findings: retry-guarded concurrent writes, id-based delete revert
+- `3ff11aa` 2026-07-22T13:16:32+00:00 — Merge turnstile-guardrail: Cloudflare Turnstile guardrail before generation
+- `2cbd27b` 2026-07-22T13:10:59+00:00 — Add committed Playwright coverage for turnstile-config.js + fix re-entrancy
+- `07461c7` 2026-07-22T13:07:22+00:00 — Scope down frozen superpowers skills to just debugging + brainstorming
+- `b02271b` 2026-07-22T13:05:51+00:00 — Fix root cause of tracker comment-save concurrency bug: add per-id request sequencing
+- `31ac496` 2026-07-22T13:02:21+00:00 — Fix accounts only working on the device they were created on
+- `71485b3` 2026-07-22T13:00:37+00:00 — Add real owner-gated add/delete endpoints for tracker.html
+- `2ffb835` 2026-07-22T12:58:02+00:00 — Fix review FAIL: Managed-mode challenge visibility, widget cleanup, stale tracker item
+- `2f70812` 2026-07-22T12:55:38+00:00 — Fix stale unsavedComments entry surviving a comment-save failure revert
+- `13002ce` 2026-07-22T12:40:46+00:00 — Add Cloudflare Turnstile as a baseline bot-abuse layer on generate-video
+- `a5d6041` 2026-07-22T12:38:27+00:00 — Fix tracker.html: unrelated re-renders wiped unsaved comment drafts
+- `c1c7549` 2026-07-22T12:35:42+00:00 — Tracker: mark account/login fix in progress, add deferred dream-sync item
+- `716db1e` 2026-07-22T12:22:10+00:00 — Add owner-only comment field to tracker items
+- `146869d` 2026-07-22T12:14:17+00:00 — Move pricing off a standalone page into the funnel + shop; polish token UI
+- `96ca424` 2026-07-22T11:57:05+00:00 — Add public how-it-works + pricing page, linked from index.html
+- `b8988f2` 2026-07-22T11:46:02+00:00 — Standing rule: verify dashboard/UI nav paths before stating them as fact
+- `0cee090` 2026-07-22T08:49:32+00:00 — Add tracker item: accounts/forgot-password don't work cross-device
+- `6385568` 2026-07-22T08:13:31+00:00 — Remove resolved owner-token-bypass tracker item; fix test that assumed it
+- `95be88b` 2026-07-22T08:10:59+00:00 — Merge: owner self-service token top-up in Settings
+- `8836c57` 2026-07-22T08:10:48+00:00 — Client-side validate the 5000-per-call top-up cap, matching the server
+- `7c67107` 2026-07-22T08:07:55+00:00 — Add explicit agent-invocation policy; resolve+remove its tracker item
+- `10b88c8` 2026-07-22T08:05:19+00:00 — profile.html: re-apply owner-topup visibility once the async isOwner check resolves, even if the sheet was already open
+- `ea4360c` 2026-07-22T08:04:50+00:00 — Record standing tracker-flagging rule; add 4 missed open flags
+- `6e942a0` 2026-07-22T08:03:13+00:00 — Owner self-service token top-up, resolving the E112-bypass question
+- `c235199` 2026-07-22T07:59:59+00:00 — Add drafted FAQ Q&A content to the FAQ-section tracker idea
+- `ed21a6f` 2026-07-22T07:53:28+00:00 — Merge: owner-only open-items tracker page (tasks + ideas)
+- `f632cbc` 2026-07-22T07:52:21+00:00 — Add 3 tracker ideas; resolve the refund-decision task
+- `d71f152` 2026-07-22T07:44:19+00:00 — Add owner-only tracker page for open tasks and ideas
+- `078936d` 2026-07-22T07:07:40+00:00 — Merge: consumption-based token economy, replacing subscription/quota system
+- `5311705` 2026-07-22T06:58:15+00:00 — Fix review findings on token-economy: stale pricing copy, stale comments
+- `9293e40` 2026-07-22T06:42:13+00:00 — Replace subscription-quota system with consumption-based token economy
+- `32b023c` 2026-07-21T19:51:06+00:00 — Merge: usage-quota/credits system — 10 generations/month gate + top-up bonus
+- `3c40b4a` 2026-07-21T19:50:02+00:00 — Usage-quota/credits system: 10 generations/month gate + top-up bonus
+- `544646a` 2026-07-21T16:32:50+00:00 — Merge: fix stale signal category names to match corrected taxonomy
+- `570f941` 2026-07-21T16:32:44+00:00 — Fix stale signal category names to match corrected taxonomy
+- `b5dc33f` 2026-07-21T16:16:27+00:00 — Merge: retrofit build/review/ab-test-creator to read/write dreamtube-signals
+- `f59b510` 2026-07-21T16:16:08+00:00 — Retrofit build/review/ab-test-creator to read/write dreamtube-signals
+- `0c612e9` 2026-07-21T16:03:09+00:00 — Merge: reject keyboard-mashing/digit/punctuation-only gibberish in dream text
+- `ee44fd1` 2026-07-21T15:57:11+00:00 — Fix looksLikeGibberish's zero-letter/non-Latin confusion
+- `c6a0b02` 2026-07-21T15:48:41+00:00 — Block gibberish dream text from reaching generation
+- `4ba698d` 2026-07-21T15:32:41+00:00 — Merge: redesign welcome screen to light dawn theme, matching the funnel
+- `6ee04cd` 2026-07-21T15:28:09+00:00 — Frame welcome-screen logo as a light badge, tighten wm-copy/subcopy specificity
+- `cb63061` 2026-07-21T15:19:53+00:00 — Reskin index.html's welcome screen to match the light funnel theme
+- `026a193` 2026-07-21T14:51:52+00:00 — Merge: revert Advanced screen to light funnel theme, split into 3 separate steps
+- `ffd1b6f` 2026-07-21T14:43:49+00:00 — Revert Advanced screen to light theme, split into 3 funnel screens
+- `ff23ed0` 2026-07-21T14:17:33+00:00 — Default merge-to-main to autonomous; keep a hard stop for genuinely high-risk changes
+- `2b295e8` 2026-07-21T14:15:27+00:00 — Merge: fix Advanced screen contrast, break into 3 steps, lighten chips, selectable pricing cards + value content
+- `be99c91` 2026-07-21T14:11:59+00:00 — Merge: fix Save button to true download, add Explore/Profile nav to result.html
+- `b0c7aca` 2026-07-21T13:20:10+00:00 — Add real Playwright coverage for the Advanced-screen/pricing fixes (commit ae7da62)
+- `dfb1aaa` 2026-07-21T13:10:53+00:00 — Fix result.html topbar title wrap at 320px, add regression test
+- `ae7da62` 2026-07-21T13:03:26+00:00 — Fix Advanced screen contrast bug, restructure into 3 steps, lighten chips, add pricing-card selection + paywall content
+- `cc9c403` 2026-07-21T12:54:25+00:00 — Fix result.html Save button and add Explore/Profile nav
+- `3e7652b` 2026-07-21T11:50:52+00:00 — Merge: "Your dreams come alive" tagline across welcome screen, titles, and manifest
+- `2f14b48` 2026-07-21T11:50:21+00:00 — Merge: real Meta Conversions API server-side tracking
+- `0bab67c` 2026-07-21T11:48:23+00:00 — Merge: funnel/UX quick-win batch (paywall pre-warning, removed fake OAuth buttons, make-another-dream CTA, processing screen rework, recommended-plan badge)
+- `7a66069` 2026-07-21T11:47:12+00:00 — Merge: mechanical correctness fixes (password minimum, profile button label, dead Explore icons, real pricing stat)
+- `7495292` 2026-07-21T11:44:28+00:00 — Add "Your dreams come alive" tagline across welcome screen, titles, and manifest
+- `d6ff4cc` 2026-07-21T09:38:49+00:00 — Document the "always" keyword as a standing-instruction signal
+- `741829a` 2026-07-21T09:38:37+00:00 — Document the "always" keyword as a standing-instruction signal
+- `6cb227f` 2026-07-21T08:53:55+00:00 — Address review findings: rate limit track-conversion, single Pixel ID source, stripe-webhook tests, behavioral coverage
+- `d281c21` 2026-07-21T08:33:38+00:00 — Add Meta Conversions API (CAPI) server-side event tracking
+- `dfb2ba2` 2026-07-21T07:39:32+00:00 — Address review findings: reset-password minimum, dead icons, behavioral tests
+- `8842015` 2026-07-21T07:27:05+00:00 — Four mechanical correctness fixes from research/evaluation pass
+- `7366381` 2026-07-21T07:14:07+00:00 — Implement 5 approved design specs: paywall pre-warning, remove fake social buttons, "Make another dream" CTA, indeterminate processing bar, motivation-based pricing badge
+- `36869db` 2026-07-21T06:07:59+00:00 — Add "Working with Ron" preferences section to CLAUDE.md
+- `40ef1ab` 2026-07-21T05:29:52+00:00 — Merge: remove migrated funnel screens, redirect to marketing repo
+- `cf4641a` 2026-07-21T05:29:34+00:00 — Remove migrated funnel screens from start.html; point Get Started at growth repo
+- `552e0d9` 2026-07-20T20:58:05+00:00 — Merge: resume-from-marketing entry point + CORS on get-feed
+- `2d77b69` 2026-07-20T20:57:51+00:00 — Add resume-from-marketing entry point to start.html; CORS on get-feed
+- `3a7db9a` 2026-07-20T19:33:26+00:00 — Merge: remove notify button, update processing screen timing copy
+- `74ed761` 2026-07-20T19:33:13+00:00 — Processing screen: remove "Notifications coming soon", update timing copy
+- `53ef623` 2026-07-20T19:10:23+00:00 — Merge: honest 'Not decided yet' fallback on recap card
+- `dccd842` 2026-07-20T19:10:13+00:00 — Recap card: honest "Not decided yet" instead of guessed fallback text
+- `3aa517e` 2026-07-20T19:04:25+00:00 — Merge: funnel color tune (less pink, more blue) and People I know option
+- `4f1a45e` 2026-07-20T19:04:11+00:00 — Funnel: nudge pastel palette from pink toward light blue, add "People I know"
+- `590d8a7` 2026-07-20T18:58:18+00:00 — Merge: funnel carousels show real published dreams
+- `2eac8f2` 2026-07-20T18:57:18+00:00 — Funnel carousels (screens 1 & 7) show real published dreams, not placeholders
+- `f35e113` 2026-07-20T18:45:22+00:00 — Merge: pause video/audio when tab loses visibility
+- `59c555a` 2026-07-20T18:45:12+00:00 — Pause video (and its audio) when the tab/app loses visibility
+- `951be9b` 2026-07-20T15:34:03+00:00 — Merge: fix autoplay regression and Result's back button
+- `4582ef6` 2026-07-20T15:33:49+00:00 — Fix autoplay regression from error-retry, and Result's back button
+- `524b30b` 2026-07-20T15:23:17+00:00 — Merge: Dream of the Day, rotating daily server-side
+- `944942c` 2026-07-20T15:23:04+00:00 — Change Dream of the Week to Dream of the Day, rotating daily server-side
+- `04efcbf` 2026-07-20T15:12:56+00:00 — Merge: only pin Dream of the Week once per user
+- `76aa33e` 2026-07-20T15:12:42+00:00 — Only pin Dream of the Week to Explore's top once per user, not every visit
+- `b93b8ad` 2026-07-20T15:09:04+00:00 — Merge: fix stuck video playback (root-cause badge event bug + recovery controls)
+- `6af07ef` 2026-07-20T15:08:49+00:00 — Fix stuck video playback: add recovery controls, fix root-cause badge bug
+- `c90a4cc` 2026-07-20T14:30:15+00:00 — Merge: condense long dream descriptions, disable narration when condensed
+- `4e50bc4` 2026-07-20T14:30:02+00:00 — Condense long dream descriptions before video generation; disable narration when condensed
+- `7bd344a` 2026-07-20T14:16:27+00:00 — Merge: real fal.ai preview images for style picker cards
+- `0efbbc6` 2026-07-20T14:16:03+00:00 — Replace CSS-only style-card backgrounds with real fal.ai preview images
+- `1126acf` 2026-07-20T13:30:56+00:00 — Merge: nicer style-picker card backgrounds
+- `588a250` 2026-07-20T13:30:47+00:00 — Redesign style-picker card backgrounds with a real signature per style
+- `c8d8b94` 2026-07-20T13:20:18+00:00 — Merge: client-only account backup/restore mitigation (Option 4)
+- `03db783` 2026-07-20T13:20:10+00:00 — Add client-only account durability mitigation (Option 4 from server evaluation)
+- `fe7224b` 2026-07-20T12:57:18+00:00 — Merge: explicit warning when deleting a published dream
+- `25fce07` 2026-07-20T12:57:09+00:00 — Warn explicitly when deleting a published dream (also unpublishes it)
+- `b07f431` 2026-07-20T12:52:06+00:00 — Merge: caption overflow fix, processing feed fallback, profile swipe nav
+- `37ee1b9` 2026-07-20T12:51:58+00:00 — Fix long-caption overflow, processing-screen fallback, profile swipe nav
+- `22d238e` 2026-07-20T12:21:56+00:00 — Merge: Dream of the Week (idea #3, auto-picked by likes)
+- `3ae0460` 2026-07-20T12:21:49+00:00 — Build idea #3: Dream of the Week (auto-picked by most likes)
+- `66d905a` 2026-07-20T12:03:46+00:00 — Merge: Profile pattern insight + milestone counter (ideas #4/#5)
+- `851386c` 2026-07-20T12:03:35+00:00 — Build ideas #4/#5: Profile pattern insight + milestone counter
+- `8007762` 2026-07-20T10:46:38+00:00 — Set up self-improving-agent loop (frozen + adapted from claude-skills)
+- `ab648d8` 2026-07-20T10:45:42+00:00 — Merge: freeze-copy build/review skills, document marketing agent (7-agent pipeline)
+- `018c4df` 2026-07-20T10:34:37+00:00 — Merge: unmute toggle for video audio + share promo text
+- `cdd6297` 2026-07-20T10:34:30+00:00 — Add unmute toggle for video audio; add promo text to all share flows
+- `aa6f894` 2026-07-20T10:21:33+00:00 — Freeze-copy third-party skills into build/review; document marketing agent
+- `6d440b5` 2026-07-20T10:01:36+00:00 — Merge remote-tracking branch 'origin/claude/mock-generation-mode'
+- `d9c9aa3` 2026-07-20T09:58:32+00:00 — Add GENERATION_MOCK_MODE and GENERATION_TEST_DURATION for cost-free/reduced generation testing
+- `dad1f69` 2026-07-20T09:50:30+00:00 — Merge remote-tracking branch 'origin/claude/dream-interpretation'
+- `1c36223` 2026-07-20T09:48:36+00:00 — Add AI dream interpretation ("What this dream might mean"), opt-in bottom sheet
+- `4f33acf` 2026-07-20T09:43:01+00:00 — Relax generation-testing cost rule: default to cheap, don't gate on approval
+- `81a175d` 2026-07-20T09:30:04+00:00 — Add standing rule: never spend real fal.ai generation cost on testing
+- `589980a` 2026-07-20T07:19:05+00:00 — Add save/share for the actual video clip on result.html
+- `81ed3ed` 2026-07-19T18:28:08+00:00 — Merge remote-tracking branch 'origin/claude/onboarding-funnel'
+- `98351a6` 2026-07-19T18:21:06+00:00 — Add real onboarding funnel (start.html), 15 screens per approved mockup
+- `9b8b06a` 2026-07-19T18:05:58+00:00 — Turn on Meta Pixel with the founder's real pixel ID
+- `dff6c60` 2026-07-19T17:53:49+00:00 — Turn on PostHog with the founder's real project key
+- `fdfd6a5` 2026-07-19T17:50:36+00:00 — Hotfix: drop Blobs strong-consistency reads that broke generate-video.js
+- `214d0f0` 2026-07-19T17:47:48+00:00 — Merge remote-tracking branch 'origin/claude/stripe-paywall-backend'
+- `716e0fb` 2026-07-19T17:46:46+00:00 — Add in-product paywall toggle and owner bypass to the Stripe paywall backend
+- `a14cba7` 2026-07-19T17:34:29+00:00 — Merge remote-tracking branch 'origin/claude/analytics-install'
+- `e4ea132` 2026-07-19T17:34:10+00:00 — Add ab-test-creator agent for post-launch PostHog experiment iteration
+- `c34d442` 2026-07-19T17:10:18+00:00 — Install PostHog + Meta Pixel analytics scaffolding, placeholder-safe
+- `145ab91` 2026-07-19T17:03:47+00:00 — Add Stripe subscription paywall backend, default-off behind PAYWALL_ENABLED
+- `dec32da` 2026-07-19T14:35:17+00:00 — Ignore .claude/worktrees/ — session-local agent isolation dirs, not product content
+- `9ac7e0c` 2026-07-19T14:18:40+00:00 — Merge remote-tracking branch 'origin/main' into claude/logo-profile-advanced-feature-3s4rqp
+- `0f73d6c` 2026-07-19T14:17:46+00:00 — Fix Advanced section hiding the Continue/Save button on desktop
+- `85e3ebd` 2026-07-19T16:54:56+03:00 — Auto-link "I"/"me" in the caption to the saved self character
+- `a9768fe` 2026-07-19T13:08:14+00:00 — Move review to project-level scope alongside build
+- `2e5417b` 2026-07-19T11:51:29+00:00 — Set up five-agent product-improvement workflow
+- `0768a09` 2026-07-19T11:22:40+00:00 — Let existing accounts add/change an email so password reset can find them
+- `b7adbb7` 2026-07-19T10:43:10+00:00 — Let anonymous shared-link visitors browse the full feed, then pitch signup
+- `a068b39` 2026-07-19T09:40:36+00:00 — Replace Apple/Google login with email + real password reset
+- `df5d35b` 2026-07-18T21:39:40+00:00 — Exclude private dreams from the "revisit your dreams" preview
+- `4e11caf` 2026-07-18T21:27:35+00:00 — Fix "revisit your dreams" preview leaking a previous account's videos
+- `26bf5e9` 2026-07-18T20:26:46+00:00 — Make "Get Started" open the sign-up screen instead of login
+- `efbf3dc` 2026-07-18T20:19:49+00:00 — Let clicking the Published button unpublish the video
+- `e2c6e86` 2026-07-18T20:16:33+00:00 — Warn upfront that a minor's photo can't be used for video generation
+- `4984510` 2026-07-18T20:11:51+00:00 — Fix cross-account video leak, hardcoded duration, progress-bar pacing, and publish copy
+- `453fe21` 2026-07-18T19:51:23+00:00 — Enlarge the tap target around a character chip's edit pencil icon
+- `6e47327` 2026-07-18T19:29:53+00:00 — Add Advanced options (characters, camera, scenery) to the Record flow
+- `be39ef5` 2026-07-18T19:00:06+00:00 — Humanize content-policy-violation errors; stop leaking the reference photo into failure text
+- `2a49dcf` 2026-07-18T18:25:30+00:00 — Fix E207 swallowing fal's actual failure reason
+- `d8fec2a` 2026-07-18T18:20:43+00:00 — Fix blank Profile thumbnails, remove grid delete icon, grey out dead Explore actions, swap Explore's tab icon off the search glyph
+- `ff70619` 2026-07-18T18:09:02+00:00 — Fix self-photo generation: use reference-to-video, not image-to-video
+- `ada48d0` 2026-07-18T18:04:57+00:00 — Add error codes to generation failures; fix Explore's background-video bug
+- `7f6c7d3` 2026-07-18T17:09:58+00:00 — Enforce publishing before sharing, reusing the existing publish warning
+- `e5474c0` 2026-07-18T16:51:01+00:00 — Retire Home; Explore becomes the primary tab, disable non-functional buttons
+- `7385f3a` 2026-07-18T16:33:54+00:00 — Build the Advanced/character feature: self photo upload, camera view, scenery
+- `6d1b36d` 2026-07-18T16:08:13+00:00 — Fix regenerate (and create) dropping Advanced character data from the prompt
+- `7e744ee` 2026-07-18T15:49:22+00:00 — Merge Change Style into the Edit Dream sheet
+- `ef42a25` 2026-07-18T15:39:39+00:00 — Add explicit Public/Private badges; verify Profile ordering
+- `ae2109d` 2026-07-18T15:22:27+00:00 — Fix Profile dream cards linking to the shared feed instead of the owner view
+- `3cb3ed2` 2026-07-18T15:17:39+00:00 — Replace app logo with new artwork (assets/logo-v2.png)
+- `60c2242` 2026-07-18T15:08:15+03:00 — Explore: no login required; Result: compact single-row action buttons
+- `efc17c3` 2026-07-18T15:01:36+03:00 — Backfill already-published local dreams into the shared feed
+- `cbc5f39` 2026-07-18T14:46:44+03:00 — Make Explore/Home a real shared feed (Netlify Blobs), not per-browser
+- `121d51e` 2026-07-18T14:24:52+03:00 — Add reusable dream characters (stage 1: text description, no photo)
+- `9c9b17b` 2026-07-18T13:44:53+03:00 — Add ability to delete a video
+- `251a537` 2026-07-18T13:44:42+03:00 — Fix real-world transcription failures: switch to async submit+poll
+- `3f88b36` 2026-07-18T13:44:12+03:00 — Rename "Tell us your dream" to "Describe a dream"
+- `a920c4c` 2026-07-18T13:05:44+03:00 — Redesign entire app to Instagram-style black/white/gray, per reference mockup
+- `47d4cc5` 2026-07-17T17:08:11+03:00 — Switch video generation from fal.ai wan to fal.ai Veo 3.1 Fast
+- `19a9ebd` 2026-07-17T16:49:49+03:00 — Polish Result screen: real play/pause control, reclaim video area, nicer buttons
+- `bf00315` 2026-07-17T16:49:30+03:00 — Fix duplicate videos in Processing's revisit-your-dreams row
+- `85da326` 2026-07-17T16:49:18+03:00 — Fix short/mislabeled video duration: request 7s clips from fal.ai
+- `cedb47a` 2026-07-17T16:49:03+03:00 — Switch dream transcription from Gemini to fal.ai Whisper
+- `a355d8a` 2026-07-17T16:48:52+03:00 — README: correct stale claims about auth, failure rate, and transcription
+- `f627f40` 2026-07-17T15:44:41+03:00 — Real username-based login, replacing the fully mocked auth
+- `88b6ac8` 2026-07-17T15:40:28+03:00 — Explore: clickable style tags and usernames filter the feed
+- `697b9d8` 2026-07-17T15:36:38+03:00 — Style cards: evocative per-style backgrounds, CSS/SVG only
+- `58a9a24` 2026-07-17T15:30:30+03:00 — New Dream screen: redesign the Write/Record choice cards
+- `1e0ab85` 2026-07-16T18:23:13+03:00 — Profile: split into created/shared stats and two separate lists
+- `2608026` 2026-07-16T18:19:30+03:00 — Migrate away stale pre-fal.ai localStorage data that was hijacking generation
+- `fab18ef` 2026-07-16T17:51:43+03:00 — Remove mock data and wire up 8 previously-stubbed features
+- `b645eeb` 2026-07-16T16:42:28+03:00 — Replace welcome-screen graphic and add real favicon/PWA icons
+- `e826c03` 2026-07-16T16:34:04+03:00 — Fix fal.ai status/result URLs: use short app id, not the full model path
+- `764346d` 2026-07-16T16:25:42+03:00 — Surface raw response body on fal.ai JSON parse failures
+- `ed809ce` 2026-07-16T16:05:51+03:00 — Switch active video generation backend from Google Veo to fal.ai
+- `e15e21b` 2026-07-16T14:09:11+03:00 — Make video-status idempotent: reuse the stored blob instead of re-downloading
+- `f9977e3` 2026-07-16T13:56:25+03:00 — Call connectLambda() before getStore() in the classic Lambda handler
+- `9f71078` 2026-07-16T13:54:37+03:00 — Surface the real exception message from video-status's catch block
+- `4e3419f` 2026-07-16T13:51:35+03:00 — Store generated videos in Netlify Blobs instead of returning raw bytes
+- `bd57ea6` 2026-07-16T11:54:00+03:00 — Replace mock video generation with real Veo 3.1 Lite via Netlify Functions
+- `ca6c841` 2026-07-15T19:24:21+03:00 — Remove duplicate flat copies of styles.css and store.js
+- `c3eeefc` 2026-07-15T19:22:41+03:00 — Initial commit: DreamTube MPA scaffold
+- `58d0b47` 2026-07-15T19:03:42+03:00 — Add files via upload
