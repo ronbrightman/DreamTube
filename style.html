@@ -385,7 +385,24 @@
             tokenStatus = fresh;
             PurchaseSheet.renderBalanceChip(topbarChip, fresh);
           }).catch(function(){});
-        }
+        },
+        // "Make it as an image instead" fallback (tracker item
+        // for-product-out-of-tokens-sheet-founder--dg5q1y) -- only offered
+        // when the blocked action is itself a video (this is a general
+        // route, style.html's own media-type picker -- an already-selected
+        // image path never needs a cheaper alternative offered). The
+        // draft's caption/style/storyText are already persisted above
+        // (persistDraft), so this only needs to flip mediaType (and clear
+        // the video-only audio fields) before resuming — same
+        // ?generate=1/home.html destination proceedToGenerate() above
+        // already uses (processing.html is gone — see that function's own
+        // comment), so home.html submits this same draft fresh, now as an
+        // image, same "carry the same prompt content" contract as the
+        // unblocked path.
+        onImageFallback: selectedMediaType === 'video' ? function(){
+          DreamStore.setDraft({ mediaType: 'image', audioOn: false, musicStyle: null });
+          location.href = 'home.html?generate=1';
+        } : undefined
       });
       return;
     }

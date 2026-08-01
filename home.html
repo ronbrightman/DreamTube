@@ -1556,8 +1556,38 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       if(code === 'E112' || code === 'E412'){
         var mediaType = DreamStore.getDraft().mediaType === 'image' ? 'image' : 'video';
         var cost = mediaType === 'image' ? IMAGE_TOKEN_COST : VIDEO_TOKEN_COST;
+        // "Make it as an image instead" fallback (tracker item
+        // for-product-out-of-tokens-sheet-founder--dg5q1y) -- this catch
+        // handler is the single generic choke point for EVERY blocked
+        // generation failure regardless of which page/route submitted it
+        // (create.html/style.html/wizard.html, result.html's edit
+        // mechanisms, or result.html's "Turn this into a video" upsell —
+        // by the time submission has actually happened and failed, there's
+        // no other record of which page it came from), so it can't gate
+        // on "was this a general route" the way style.html/result.html's
+        // own PurchaseSheet.show() call sites do (they simply never pass
+        // onImageFallback for the upsell button). Instead it reads the
+        // one durable signal the draft itself already carries:
+        // sourceImageUrl is set ONLY by DreamStore.turnImageIntoVideo
+        // (see that function's own doc comment) — every general-route
+        // video draft (style.html/edit sheet/edit-delta sheet) explicitly
+        // sets it null. A non-empty sourceImageUrl is therefore exactly
+        // "this generation IS the image-to-video upsell", the founder's
+        // explicit exclusion.
+        var isImageToVideoUpsell = !!DreamStore.getDraft().sourceImageUrl;
         DreamStore.getTokenStatus().then(function(status){
-          PurchaseSheet.show({ mediaType: mediaType, cost: cost, balance: status.balance, tokenStatus: status, source: 'blocked_action' });
+          PurchaseSheet.show({
+            mediaType: mediaType, cost: cost, balance: status.balance, tokenStatus: status, source: 'blocked_action',
+            onImageFallback: (mediaType === 'video' && !isImageToVideoUpsell) ? function(){
+              DreamStore.setDraft({ mediaType: 'image', audioOn: false, musicStyle: null });
+              // Already on home.html — no navigation needed, retry the
+              // submission in place, same "resubmit fresh from the draft"
+              // call the checkout-return resume path and the ?generate=1
+              // fresh-submission handler both already use.
+              onGenerationSettled(startFreshGenerationFromDraft());
+              pollForPendingJobToAppear(10);
+            } : undefined
+          });
         }).catch(function(){
           // Convenience-only fetch failed — fail open to a plain toast
           // rather than leaving the user with silently nothing.

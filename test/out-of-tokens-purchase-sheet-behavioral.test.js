@@ -79,6 +79,58 @@ function mockTokenStatus(page, status) {
   });
 }
 
+/**
+ * Records every posthog.capture() call into a plain Node-side array —
+ * needed for the image-fallback tests below (tracker item
+ * for-product-out-of-tokens-sheet-founder--dg5q1y), where tapping the
+ * fallback link fires an event AND (on style.html/result.html)
+ * immediately navigates away to home.html?generate=1.
+ *
+ * Root-cause note (systematic-debugging): two earlier approaches were
+ * tried and both failed for real reasons, not flakiness --
+ *  1. A plain post-click `page.evaluate(() => window.__phEvents)` read
+ *     came back undefined even though the event genuinely fired: this
+ *     app registers a service worker (sw.js), and Chromium's top-frame
+ *     navigation to home.html completed essentially synchronously with
+ *     the click, tearing down style.html's whole JS realm (window.__phEvents
+ *     included) before the read could run -- confirmed by instrumenting
+ *     a standalone repro with framenavigated/console logging.
+ *  2. Trying to keep the OLD page alive by delaying a page.route()
+ *     handler matching the home.html navigation never even fired (no log
+ *     output from inside the handler) -- again the service worker, which intercepts
+ *     navigation requests ahead of Playwright's own routing layer in
+ *     this app.
+ * Fixed with page.exposeFunction(), which installs a real Node-side
+ * function callable from the page and, per Playwright's own docs,
+ * survives navigations -- so events land directly in this array in the
+ * TEST process, immune to the page's JS realm being torn down at all.
+ * Call this ONCE, before the first page.goto (exposeFunction must be
+ * registered before the page that will call it loads); call
+ * wirePostHogCaptureForwarding(page) again after EVERY later goto, since
+ * the window.posthog.capture wrap itself is page-JS-realm state that
+ * does NOT survive navigation the way the exposed function does.
+ */
+async function capturePostHogEvents(page) {
+  var events = [];
+  await page.exposeFunction('__notifyPhEvent__', function (name, propsJson) {
+    var props = null;
+    try { props = JSON.parse(propsJson); } catch (e) { /* leave null */ }
+    events.push({ name: name, props: props });
+  });
+  return events;
+}
+
+/** Wraps window.posthog.capture (once it's a real function -- call AFTER page.goto, same "analytics snippet already ran synchronously" timing the existing claim-inline tests already rely on) to forward every call to the exposed __notifyPhEvent__ -- see capturePostHogEvents' own doc comment for why this two-step split exists. */
+function wirePostHogCaptureForwarding(page) {
+  return page.evaluate(function () {
+    var orig = window.posthog.capture.bind(window.posthog);
+    window.posthog.capture = function (name, props) {
+      try { window.__notifyPhEvent__(name, JSON.stringify(props)); } catch (e) { /* best effort */ }
+      return orig(name, props);
+    };
+  });
+}
+
 /** Seeds a logged-in account (with email — DreamStore.getTokenStatus/getAccountEmail short-circuit without one) plus an optional draft and/or dream, mirroring test/image-generation-turn-into-video-behavioral.test.js's seedAccountWithDream. */
 async function seedAccount(page, opts) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
@@ -1012,6 +1064,331 @@ test('style.html: a failed inline claim restores the button label to "Claim +100
     await page.waitForSelector('#ps-error:visible', { timeout: 3000 });
     var claimLabel = await page.textContent('#ps-claim-label');
     assert.match(claimLabel, /Claim \+100 free tokens/, 'the error-recovery label must restore the real 100 amount, never fall back to a hardcoded 20');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// "Make it as an image instead" fallback (tracker item
+// for-product-out-of-tokens-sheet-founder--dg5q1y, founder-directed
+// 2026-08-01). See js/purchase-sheet.js's own header comment for the full
+// feature story. Covers the four conditions the spec names:
+//  1. only for a blocked VIDEO generation via a general route (style.html,
+//     result.html's edit mechanisms, home.html's own E112/E412 catch) --
+//     never the "Turn this into a video" image-to-video upsell
+//  2. only when balance >= IMAGE_TOKEN_COST (10)
+//  3. quiet-link treatment under the buy CTA, exact copy
+//  4. tapping carries the same prompt content into the image path and
+//     fires out_of_tokens_image_fallback_tapped
+// ============================================================================
+
+test('style.html: the fallback link shows for a blocked VIDEO generation when the balance can afford the cheaper image, with the exact quiet-link copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // 40 < 100 (video cost, blocks the primary action) but >= 10 (image
+    // cost) -- exactly the "can afford the cheaper alternative" case.
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await seedAccount(page, { username: 'fallbackvisible', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, true, 'the fallback link must show -- blocked video, balance affords the 10-token image');
+    var text = await page.textContent('#ps-image-fallback');
+    assert.equal(text, 'or make it as an image — 10 tokens');
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: the fallback link stays hidden when the balance cannot even afford the cheaper image', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // 5 < 10 -- offering "make it as an image" here would be showing an
+    // option the user still can't take (the founder's own "otherwise
+    // it's a lie" framing).
+    await mockTokenStatus(page, { balance: 5, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await seedAccount(page, { username: 'fallbackunaffordable', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, false, 'the fallback link must stay hidden -- the account cannot afford the 10-token image either');
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: the fallback link stays hidden when Image is already the selected media type (no cheaper alternative to offer)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Blocks even the (already cheapest) image action -- the sheet still
+    // opens, but there is nothing cheaper left to offer.
+    await mockTokenStatus(page, { balance: 5, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await seedAccount(page, { username: 'fallbackalreadyimage', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('.media-type-btn[data-media-type="image"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var title = await page.textContent('#ps-title');
+    assert.match(title, /this image needs 10 tokens/);
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, false);
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: tapping the fallback link fires out_of_tokens_image_fallback_tapped and carries the SAME prompt/style into the image path (not a fresh/empty submission)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    var generateImageCalls = [];
+    await page.route('**/.netlify/functions/generate-image', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateImageCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/flux/dev:fallback-op-1' }) });
+    });
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      generateVideoCalls.push(true);
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E999: should_not_be_called' }) });
+    });
+    await page.route('**/.netlify/functions/image-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, imageUrl: 'https://example.com/fallback-image.jpg' }) });
+    });
+    var phEvents = await capturePostHogEvents(page);
+
+    await seedAccount(page, { username: 'fallbacktap', draft: { caption: 'A dream about a floating library' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await wirePostHogCaptureForwarding(page);
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-image-fallback:visible', { timeout: 3000 });
+
+    await page.click('#ps-image-fallback');
+
+    var fallbackEvents = phEvents.filter(function (e) { return e.name === 'out_of_tokens_image_fallback_tapped'; });
+    assert.equal(fallbackEvents.length, 1, 'out_of_tokens_image_fallback_tapped must fire exactly once on tap');
+    assert.equal(fallbackEvents[0].props.cost, 10);
+    assert.equal(fallbackEvents[0].props.source, 'blocked_action');
+
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+
+    assert.equal(generateVideoCalls.length, 0, 'generate-video.js must never be called -- the tap switched this generation to the image path');
+    await settle(function () { return generateImageCalls.length >= 1; });
+    assert.equal(generateImageCalls.length, 1);
+    assert.equal(generateImageCalls[0].caption, 'A dream about a floating library', 'the SAME prompt must carry into the image path, not a fresh/empty one');
+    assert.equal(generateImageCalls[0].style, 'Anime');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html "Turn this into a video": the fallback link never shows, even with a balance that could afford the image (the founder\'s explicit exclusion)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // 30 < 100 (blocks the video upsell) but >= 10 -- if this were a
+    // general route the fallback would show; it must not, here.
+    await mockTokenStatus(page, { balance: 30, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await seedAccount(page, {
+      username: 'upsellnofallback',
+      dream: { id: 'dream-upsell-nofallback', mediaType: 'image', imageUrl: 'https://fal.media/files/sample/original-image.png', videoUrl: null, caption: 'A dream about a floating library', style: 'Anime' }
+    });
+    await page.goto(baseUrl + '/result.html?id=dream-upsell-nofallback', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#turn-video-btn', { state: 'visible', timeout: 5000 });
+    await page.waitForTimeout(200);
+
+    await page.click('#turn-video-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, false, 'the image-to-video upsell must never offer the cheaper-image fallback');
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html "Generate Again" (the older full edit-wizard sheet, reached via "Start over instead"): the fallback link shows for a blocked video regenerate, and tapping it carries the edited caption/style into the image path', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    var generateImageCalls = [];
+    await page.route('**/.netlify/functions/generate-image', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateImageCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/flux/dev:fallback-op-2' }) });
+    });
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      generateVideoCalls.push(true);
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E999: should_not_be_called' }) });
+    });
+    await page.route('**/.netlify/functions/image-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, imageUrl: 'https://example.com/fallback-edit-image.jpg' }) });
+    });
+    var phEvents = await capturePostHogEvents(page);
+
+    await seedAccount(page, {
+      username: 'editagainfallback',
+      dream: { id: 'dream-edit-again-fallback', mediaType: 'video', imageUrl: null, videoUrl: 'https://example.com/original-video.mp4', caption: 'Original caption', style: 'Anime' }
+    });
+    await page.goto(baseUrl + '/result.html?id=dream-edit-again-fallback', { waitUntil: 'domcontentloaded' });
+    await wirePostHogCaptureForwarding(page);
+    await page.waitForTimeout(200);
+
+    // #open-edit-sheet opens the new edit-delta sheet by default (docs/
+    // EDIT_MECHANISM_SPEC.md) -- "Start over instead" reaches the OLD full
+    // mini-wizard sheet #edit-generate-again lives in.
+    await page.click('#open-edit-sheet');
+    await page.waitForSelector('#sheet-edit-delta-overlay.open');
+    await page.click('#delta-start-over-link');
+    await page.waitForSelector('#sheet-edit-overlay.open');
+    await page.fill('#edit-text', 'An edited caption about the same dream');
+    await page.click('#sheet-style-grid .style-card[data-style="Cinematic"]');
+    await page.click('#edit-generate-again');
+
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, true, 'a video-type dream\'s "Generate Again" is a general route -- the fallback must show');
+
+    await page.click('#ps-image-fallback');
+
+    var fallbackEvents = phEvents.filter(function (e) { return e.name === 'out_of_tokens_image_fallback_tapped'; });
+    assert.equal(fallbackEvents.length, 1);
+
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+
+    assert.equal(generateVideoCalls.length, 0);
+    await settle(function () { return generateImageCalls.length >= 1; });
+    assert.equal(generateImageCalls.length, 1);
+    assert.equal(generateImageCalls[0].caption, 'An edited caption about the same dream', 'the edited caption must carry into the image path');
+    assert.equal(generateImageCalls[0].style, 'Cinematic');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html E112 fail path: the fallback link shows for a blocked general-route video generation, and tapping it retries in place as an image with the SAME prompt (no navigation needed)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 25, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E112: insufficient_tokens' }) });
+    });
+    var generateImageCalls = [];
+    await page.route('**/.netlify/functions/generate-image', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateImageCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/flux/dev:home-fallback-op' }) });
+    });
+    await page.route('**/.netlify/functions/image-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, imageUrl: 'https://example.com/home-fallback-image.jpg' }) });
+    });
+    var phEvents = await capturePostHogEvents(page);
+
+    // No sourceImageUrl -- this is a general-route video draft (e.g. from
+    // style.html/wizard.html), never a turnImageIntoVideo one.
+    await seedAccount(page, { username: 'homee112fallback', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'video', sourceImageUrl: null } });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
+    await wirePostHogCaptureForwarding(page);
+
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 8000 });
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, true);
+
+    await page.click('#ps-image-fallback');
+
+    var fallbackEvents = phEvents.filter(function (e) { return e.name === 'out_of_tokens_image_fallback_tapped'; });
+    assert.equal(fallbackEvents.length, 1);
+
+    // No navigation on this path -- the tap retries in place on home.html.
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+    await settle(function () { return generateImageCalls.length >= 1; });
+    assert.equal(generateImageCalls.length, 1);
+    assert.equal(generateImageCalls[0].caption, 'A whale made of stars');
+    assert.equal(generateImageCalls[0].style, 'Cinematic');
+    assert.ok(page.url().indexOf('home.html') !== -1, 'stays on home.html -- no navigation for the in-place retry');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html E112 fail path: the fallback link stays hidden when the failed submission was itself the image-to-video upsell (draft.sourceImageUrl set), even though the balance could afford the image', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // 25 >= 10 -- would afford the image; must still be excluded here.
+    await mockTokenStatus(page, { balance: 25, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'E112: insufficient_tokens' }) });
+    });
+
+    // Mirrors what DreamStore.turnImageIntoVideo actually persists
+    // (sourceImageUrl set to the original image's URL) -- home.html's
+    // single generic E112/E412 catch has no other record of which page a
+    // failed submission came from, so this is the one durable signal it
+    // checks (see that call site's own comment in home.html). No
+    // sourceDreamId here on purpose -- isolates the sourceImageUrl gating
+    // logic under test from regenerateDream's separate ownership-check
+    // code path.
+    await seedAccount(page, {
+      username: 'homee112upsellnofallback',
+      draft: { caption: 'A dream about a floating library', style: 'Anime', mediaType: 'video', sourceImageUrl: 'https://fal.media/files/sample/original-image.png' }
+    });
+    await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 8000 });
+    var visible = await page.isVisible('#ps-image-fallback');
+    assert.equal(visible, false, 'a failed image-to-video upsell submission must never offer the cheaper-image fallback, even via the generic E112 catch');
   } finally {
     await context.close();
   }
