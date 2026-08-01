@@ -83,7 +83,7 @@ var pendingDreamToken = require('./lib/pending-dream-token');
 var whatsappClient = require('./lib/whatsapp-client');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
-var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
+var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
 /**
  * Sends the "your dream is ready" email via Resend, with a claim link back

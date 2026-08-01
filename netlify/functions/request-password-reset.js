@@ -71,7 +71,7 @@ var RESET_TTL_MS = 30 * 60 * 1000;
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Works out of the box with any Resend account, no domain verification
 // needed — swap for a verified custom domain address once one is set up.
-var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
+var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
 // See the "Timing side-channel" doc block above. Rough order-of-magnitude
 // match for the matched-account path's Blobs write + Resend HTTPS call.

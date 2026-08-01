@@ -116,7 +116,7 @@ var MAX_SUPPORT_MESSAGES_PER_IP_PER_DAY_DEFAULT = 10;
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Same "works out of the box, no domain verification needed" address
 // request-password-reset.js already uses.
-var FROM_ADDRESS = 'DreamTube <onboarding@resend.dev>';
+var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
 function esc(str) {
   return String(str == null ? '' : str)
