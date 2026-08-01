@@ -1,11 +1,14 @@
 // test/push-dedup-store.test.js
 //
 // Covers netlify/functions/lib/push-dedup-store.js in isolation — tracker
-// item for-product-build-stage-0-pwa-web-push-f-jbutt5, part 4. Mirrors
-// test/blobs-retry.test.js's own exhaustion-scenario conventions (this
-// file's markSentOnce is a thin, generically-keyed wrapper around that
-// same shared retry loop, same shape as
-// lib/first-dream-email-store.js's own markSentOnce).
+// item for-product-build-stage-0-pwa-push-f-jbutt5, part 4, and (the CAS
+// rewrite below) tracker.html's
+// for-product-spike-conditional-write-only-rnurgw item. markSentOnce is a
+// thin, generically-keyed wrapper around blobs10's real compare-and-swap
+// write (`setJSON(key, value, { onlyIfNew: true })`), same shape as
+// lib/first-dream-email-store.js's own markSentOnce — see that file's
+// header comment for the fuller "why" (production telemetry, root cause,
+// what's verified vs. not).
 // Run with: node --test test/
 
 var test = require('node:test');
@@ -66,58 +69,37 @@ test('daily-claim-available keys are scoped per availability window -- a new nex
   assert.equal(windowOneAgain.alreadySent, true);
 });
 
-// ===== the SKIP branch's own self-clobber check (round 5) =====
+// ===== CAS write semantics (tracker.html's
+//       for-product-spike-conditional-write-only-rnurgw item) =====
 //
-// Identical hazard, identical fix as lib/first-dream-email-store.js's own
-// markSentOnce (tracker item for-product-bug-founder-affects-all-funn-0efe7t):
-// blobs-retry's SKIP fires on ANY existing record, including this same call's
-// own just-landed write from a previous attempt whose verify-read lagged
-// behind it. Reporting that as alreadySent suppresses a push nobody actually
-// sent. The plain in-memory mock is perfectly consistent and can't produce
-// this on its own -- setReadOverride simulates the lagging read.
+// markSentOnce now wins or loses its claim via a single atomic conditional
+// write (`store.setJSON(key, value, { onlyIfNew: true })`, see this file's
+// header comment) instead of the old bounded read -> mutate -> write ->
+// verify retry loop. That eliminates an entire class of test this file used
+// to need: there is no more "was this skip actually our own just-landed
+// write racing its own verify-read" ambiguity to disambiguate (the old
+// round-5 self-clobber tests) -- a conditional write can never observe its
+// OWN write as a competing "existing record" in the first place.
+// `modified: true` / `modified: false` are the two complete, unambiguous
+// outcomes, full stop. Likewise there's no more "legacy record with no
+// claimId" special case: the CAS write only ever inspects whether the KEY
+// exists, never the existing record's shape.
 
-test('markSentOnce: a SKIP caused by OUR OWN previous attempt\'s just-landed write is a WIN, not alreadySent', async function () {
-  // Call 1 = attempt 1's read (sees nothing), call 2 = attempt 1's own
-  // verify-read (lags, sees nothing) -> retry; call 3 = attempt 2's read,
-  // which falls through and now sees attempt 1's OWN record -> SKIP.
-  mockBlobs.setReadOverride(pushDedupStore.STORE_NAME, function (key, callIndex) {
-    if (callIndex <= 2) return { value: undefined };
-    return null;
-  });
-
-  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:selfskip');
-
-  assert.equal(result.ok, true, 'nobody else claimed this key -- THIS call\'s own write is the one sitting there, so the push must go out');
-  assert.ok(result.claimId);
-  assert.equal(result.alreadySent, undefined);
-
-  mockBlobs.clearReadOverride(pushDedupStore.STORE_NAME);
-  var { getStore } = require('@netlify/blobs');
-  var persisted = await getStore({ name: pushDedupStore.STORE_NAME }).get('video-ready:mock:1:selfskip', { type: 'json' });
-  assert.equal(persisted.claimId, result.claimId);
-});
-
-test('markSentOnce: a SKIP caused by a genuinely DIFFERENT caller\'s record still reports alreadySent', async function () {
+test('markSentOnce: a pre-existing record for the key loses the CAS write atomically -- no read/verify race to disambiguate', async function () {
   mockBlobs.seed(pushDedupStore.STORE_NAME, 'video-ready:mock:1:contended', {
     key: 'video-ready:mock:1:contended', sentAt: Date.now(), claimId: 'a-different-callers-claim'
   });
 
   var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:contended');
 
-  assert.equal(result.ok, false, 'this must NOT overcorrect into treating every skip as ours');
+  assert.equal(result.ok, false);
   assert.equal(result.alreadySent, true);
   assert.equal(result.error, undefined);
-});
 
-test('markSentOnce: a SKIP caused by a legacy record with NO claimId at all reports alreadySent, never a win', async function () {
-  mockBlobs.seed(pushDedupStore.STORE_NAME, 'video-ready:mock:1:legacy', {
-    key: 'video-ready:mock:1:legacy', sentAt: Date.now()
-  });
-
-  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:legacy');
-
-  assert.equal(result.ok, false, 'an undefined claimId on both sides must never read as "this is mine"');
-  assert.equal(result.alreadySent, true);
+  // The pre-existing record must be untouched by the losing CAS attempt.
+  var { getStore } = require('@netlify/blobs');
+  var persisted = await getStore({ name: pushDedupStore.STORE_NAME }).get('video-ready:mock:1:contended', { type: 'json' });
+  assert.equal(persisted.claimId, 'a-different-callers-claim');
 });
 
 test('markSentOnce rejects an empty/falsy key', async function () {
@@ -131,15 +113,46 @@ test('hasSent fails closed (treats a missing key as "already sent") for a falsy 
   assert.equal(sent, true);
 });
 
-test('the exhaustion log never contains the raw key -- send-daily-claim-pushes.js keys literally embed an email address', async function () {
-  // Forces every verify-read to miss (see blobs-retry.js's retryingWrite:
-  // both the initial read and the post-write verify-read go through this
-  // same override), so markSentOnce exhausts maxAttempts and hits its
-  // console.error branch -- the one this test is pinning.
-  mockBlobs.setReadOverride(pushDedupStore.STORE_NAME, function () { return { value: undefined }; });
+// ===== fail-closed: the CAS write does something other than the expected
+//       "key already exists" rejection (tracker.html's
+//       for-product-spike-conditional-write-only-rnurgw item) =====
 
+test('markSentOnce: the CAS write REJECTING (a genuine transport/server error, never the expected precondition-rejection signal) fails CLOSED, never treated as safe to send', async function () {
+  mockBlobs.setWriteOverride(pushDedupStore.STORE_NAME, function () {
+    return new Error('simulated Blobs 500 -- transient storage-layer fault');
+  });
+
+  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:writefails');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'exhausted', 'a thrown write is NOT the ordinary "already exists" outcome -- must fail closed, not be mistaken for alreadySent');
+  assert.equal(result.alreadySent, undefined);
+});
+
+test('markSentOnce: an unexpected CAS write result shape (no real `modified` boolean) also fails CLOSED rather than guessing', async function () {
+  // Not reachable against the real blobs10 SDK (its own Store.setJSON
+  // either resolves with a real `{ modified: boolean }` or throws -- see
+  // node_modules/blobs10/dist/main.cjs) -- this exercises the defensive
+  // branch directly via mock-blobs' setResultOverride, which exists
+  // exactly for shapes the real implementation should never produce.
+  mockBlobs.setResultOverride(pushDedupStore.STORE_NAME, function () {
+    return { result: { unexpected: 'shape', modified: undefined } };
+  });
+
+  var result = await pushDedupStore.markSentOnce(fakeEvent({}), 'video-ready:mock:1:weirdshape');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'exhausted');
+  assert.equal(result.alreadySent, undefined);
+});
+
+test('the fail-closed logs never contain the raw key -- send-daily-claim-pushes.js keys literally embed an email address', async function () {
   var email = 'alice@example.com';
   var key = 'daily-claim-available:' + email + ':1000';
+  mockBlobs.setWriteOverride(pushDedupStore.STORE_NAME, function () {
+    return new Error('simulated failure');
+  });
+
   var originalError = console.error;
   var logged = [];
   console.error = function () { logged.push(Array.prototype.join.call(arguments, ' ')); };
@@ -151,7 +164,7 @@ test('the exhaustion log never contains the raw key -- send-daily-claim-pushes.j
     console.error = originalError;
   }
 
-  assert.equal(logged.length, 1, 'exhaustion must log exactly once');
-  assert.ok(!logged[0].includes(email), 'exhaustion log must never contain the raw email address: ' + logged[0]);
-  assert.ok(!logged[0].includes(key), 'exhaustion log must never contain the raw key at all: ' + logged[0]);
+  assert.equal(logged.length, 1, 'the fail-closed path must log exactly once');
+  assert.ok(!logged[0].includes(email), 'the log must never contain the raw email address: ' + logged[0]);
+  assert.ok(!logged[0].includes(key), 'the log must never contain the raw key at all: ' + logged[0]);
 });
