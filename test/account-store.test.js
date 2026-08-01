@@ -122,6 +122,52 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
   assert.equal(newWorks.ok, true);
 });
 
+// ===== field-preservation on upsert (audit for tracker item
+// for-product-bug-founder-account-u-ronbri-0gwe1m) =====
+//
+// That tracker item's own working theory was that a one-off account-merge
+// tool (admin-consolidate-accounts.js, since deleted -- recoverable at git
+// commit bec452c) silently dropped u:ronbrightman's email field during a
+// merge. Reading that recovered code found the theory unsupported -- it
+// (and its sibling admin-rename-account.js, recoverable at 6bf00cb) both
+// construct their surviving record via `Object.assign({}, existingRecord,
+// { onlyTheFieldsBeingChanged })`, the exact same field-preserving pattern
+// applyPasswordReset itself already uses below. This test locks in that
+// pattern's correctness on the durable, still-present code (the one-off
+// tools themselves are gone, so they can't be tested directly) -- any
+// FUTURE one-off admin tool built against a bare object literal instead of
+// this spread-existing-first pattern would be the actual class of bug the
+// tracker item was worried about; this guards the pattern staying correct
+// here, and documents it as the template to copy.
+test('account-store: applyPasswordReset preserves every pre-existing field it does not itself touch (e.g. fbUserId) -- proves the upsert pattern never silently drops fields', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'gina', password: 'oldpassword1', email: 'gina@example.com', fbUserId: '1234567890' });
+
+  var before = await accountStore.getByUsername(event, 'gina');
+  assert.equal(before.fbUserId, '1234567890');
+
+  await accountStore.applyPasswordReset(event, { username: 'gina', email: 'gina@example.com', password: 'newpassword2' });
+
+  var after = await accountStore.getByUsername(event, 'gina');
+  assert.equal(after.password, 'newpassword2');
+  assert.equal(after.fbUserId, '1234567890', 'a field applyPasswordReset never touches must survive its upsert untouched');
+});
+
+test('account-store: linkFacebookUserId preserves the account\'s email/password while only adding fbUserId', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'harold', password: 'somepassword1', email: 'harold@example.com' });
+
+  var result = await accountStore.linkFacebookUserId(event, 'harold', '9876543210');
+  assert.equal(result.ok, true);
+
+  var after = await accountStore.getByUsername(event, 'harold');
+  assert.equal(after.email, 'harold@example.com', 'linking a Facebook id must never touch the existing email field');
+  assert.equal(after.password, 'somepassword1', 'linking a Facebook id must never touch the existing password field');
+  assert.equal(after.fbUserId, '9876543210');
+});
+
 // ===== orphaned "e:" index (real production bug, 2026-07-23) =====
 //
 // Because createAccount/applyPasswordReset write the "e:" index and the
