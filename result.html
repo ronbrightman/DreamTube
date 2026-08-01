@@ -227,6 +227,54 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 }
 .dv-chip.mute{ right:8px; bottom:8px; }
 
+/* ===== the REGENERATING veil (tracker item for-product-bug-founder-repro-
+   edited-dre-jcasn1) — shown ONLY while an edit/Generate-Again of THIS
+   dream is in flight, replacing the stale pre-edit video/image until the
+   new result lands, then crossfading away in place. Ported from home.html's
+   own .day0card .video-forming/.form-sweep/.form-arc/.form-caption (itself
+   ported from the founder-approved funnel-end-mock-x7q4.html's forming
+   veil) — default HIDDEN here (opacity 0) since this page's ordinary state
+   already has real media, the opposite of home's day0-card, which defaults
+   to forming. ===== */
+.dreamvideo .video-forming{
+  position:absolute; inset:0; z-index:3; overflow:hidden; opacity:0; pointer-events:none;
+  transition:opacity .5s ease;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.4), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.34), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.dreamvideo.regenerating .video-forming{ opacity:1; pointer-events:auto; }
+.dreamvideo .form-sweep{
+  position:absolute; inset:-10%;
+  background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.07) 46%, rgba(207,200,255,.14) 50%, rgba(255,255,255,.07) 54%, transparent 66%);
+  animation:resultFormSweep 2.6s ease-in-out infinite alternate;
+}
+.dreamvideo .form-arc{
+  position:absolute; left:50%; top:44%; width:34px; height:34px; margin:-17px 0 0 -17px;
+  animation:resultArcSpin 1.6s linear infinite;
+}
+.dreamvideo .form-arc circle{ fill:none; stroke:rgba(234,231,251,.85); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28; }
+.dreamvideo .form-caption{
+  position:absolute; left:0; right:0; bottom:12px; text-align:center;
+  font:700 14px var(--font-body); letter-spacing:.01em; color:#cfc8ea;
+  text-shadow:0 1px 6px rgba(12,10,26,.8);
+}
+@keyframes resultFormSweep{
+  0%{ transform:translateX(-70%) skewX(-12deg); }
+  100%{ transform:translateX(70%) skewX(-12deg); }
+}
+@keyframes resultArcSpin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce){
+  .dreamvideo .form-sweep, .dreamvideo .form-arc{ animation:none !important; }
+}
+/* Quiet row (and the hero's own interpretation/turn-video CTAs) go visible-
+   but-muted while regenerating, same "waiting" treatment home.html's day0-
+   card quiet row already uses -- there is nothing for any of them to act
+   on until the new result lands. */
+.quietrow.waiting{ opacity:.45; }
+.heropill.waiting, .turn-video-cta.waiting{ opacity:.45; pointer-events:none; }
+
 /* ghost play affordance OUTSIDE the video — an explicit, always-visible
    "this is playable" cue even if the in-video badge is missed (founder
    amendment). Hidden entirely for an image-only dream — there is nothing
@@ -278,6 +326,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 }
 .heroshare .icon{ width:12px; height:12px; }
 .heroshare:active{ opacity:.7; }
+.heroshare:disabled{ opacity:.4; cursor:not-allowed; }
 
 /* "Turn this into a video" upsell — shown only when this dream has an
    image but no video yet, still the one CTA on this screen that keeps its
@@ -404,6 +453,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           <img class="dv-media" id="result-image" alt="" style="display:none;">
           <div class="playbadge" id="result-play-badge"><span class="icon" id="result-play-icon"></span></div>
           <button class="icon-btn dv-chip mute" id="mute-btn" title="Sound" aria-label="Unmute"></button>
+          <!-- Regenerating veil (tracker item for-product-bug-founder-repro-
+               edited-dre-jcasn1) -- hidden unless #dreamvideo-frame carries
+               .regenerating (an edit/Generate-Again of THIS dream is
+               in flight). See render()'s own regenerating branch below. -->
+          <div class="video-forming" id="result-forming-veil">
+            <div class="form-sweep"></div>
+            <svg class="form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
+            <div class="form-caption">Your dream is regenerating…</div>
+          </div>
         </div>
 
         <button type="button" class="watchpill" id="watch-pill">
@@ -1110,6 +1168,23 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   var currentUser = DreamStore.getCurrentUser();
   var isMyDream = !!(dream && currentUser && dream.ownerHandle === currentUser.handle);
 
+  // ===== Regenerating state (tracker item for-product-bug-founder-repro-
+  // edited-dre-jcasn1, founder repro) =====
+  // This dream's room must show the SAME forming/shimmer treatment a
+  // brand-new generation gets whenever an edit/Generate-Again of THIS
+  // dream is in flight — replacing the stale old video until the new one
+  // lands, then transitioning in place with a toast. Root cause of the
+  // bug this fixes: the pendingJob plumbing ALREADY fires correctly for a
+  // regenerate (js/store.js's startGeneration always savePendingJob's with
+  // sourceDreamId set) — this page just never read it. pendingJob is
+  // re-read fresh on every call (never cached) so it reflects the resume/
+  // completion writes below as the job progresses.
+  var pendingJob = DreamStore.getPendingJob();
+  function regeneratingThisDream(){
+    pendingJob = DreamStore.getPendingJob();
+    return !!(pendingJob && pendingJob.sourceDreamId === dreamId);
+  }
+
   // ===== "Feature on DreamTube's channels" per-dream opt-out (tracker item
   // for-product-terms-republish-license-per--fhpcxk) =====
   // Default ON (undefined reads as true) so publishing itself stays
@@ -1205,6 +1280,34 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
     }
+
+    // ===== Regenerating override (tracker item for-product-bug-founder-
+    // repro-edited-dre-jcasn1) — applied AFTER the ordinary media block
+    // above, so the underlying video/image element is already fully
+    // loaded and ready to show the instant this dream stops regenerating
+    // (no extra load flash stacked on top of the crossfade). Every CTA
+    // below that acts on this dream's CURRENT content (Publish/Make
+    // another/Edit/Delete, Turn-into-video, Share, the Chamber hero) stays
+    // visible but disabled while regenerating — same "waiting" muted
+    // treatment (never hidden) home.html's own day0-card quiet row
+    // already uses — see the disabling block near the end of this
+    // function. =====
+    var regenerating = regeneratingThisDream();
+    var frame = document.getElementById('dreamvideo-frame');
+    frame.classList.toggle('regenerating', regenerating);
+    frame.setAttribute('aria-label', regenerating ? 'Your dream is regenerating' : 'Play your dream video');
+    if(regenerating){
+      playBadge.style.display = 'none';
+      watchPill.style.display = 'none';
+      muteBtn.style.display = 'none';
+      // Live quote — shows the NEW (being-generated) story text the
+      // moment it's known, mirroring home.html's day0-card own #d0-quote
+      // treatment: immediate confirmation the edit was received, rather
+      // than the stale pre-edit text sitting there unexplained for the
+      // whole regenerate.
+      var liveQuote = pendingJob && (pendingJob.storyText || pendingJob.caption);
+      if(liveQuote) document.getElementById('result-quote').textContent = '"' + liveQuote + '"';
+    }
     // isMyDream: see the ownership-gate comment above -- "Turn this into a
     // video" spends tokens and calls DreamStore.turnImageIntoVideo, which
     // refuses to act on a dream that isn't this account's own, so the
@@ -1263,9 +1366,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // that field already carries the same value for those (see
     // js/store.js's finalizeDream doc comment), so this is a no-op
     // behavior change for every pre-existing dream.
-    document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
-    quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
-    setupExpandableQuote();
+    // Skipped while regenerating -- the regenerating-override block above
+    // already put the LIVE (new) quote up; this dream's own storyText is
+    // still the STALE pre-edit value until finalizeDream actually runs, so
+    // overwriting it here would silently revert the live quote back to
+    // the old text on every re-render while the job is in flight.
+    if(!regenerating){
+      document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
+      quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
+      setupExpandableQuote();
+    }
     // Fresh (private) vs Published visual states -- the state tag itself
     // is the one thing that changes between them; tapping it while
     // published reverts to private (see the click handler further below).
@@ -1310,8 +1420,67 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     pubBtn.style.display = isMyDream ? 'flex' : 'none';
     document.getElementById('delete-btn').style.display = isMyDream ? 'flex' : 'none';
     updateFeatureToggleUI();
+
+    // Visible-but-disabled while regenerating (see the regenerating
+    // override near the top of this function) — Publish/Make another/
+    // Edit/Delete, Turn-into-video, Share, and the Chamber hero all act on
+    // THIS dream's content, which is mid-flight; there is nothing for any
+    // of them to do until the new result lands. Runs LAST so it overrides
+    // every disabled/display decision made above, rather than needing each
+    // of those branches to separately know about regenerating.
+    document.querySelector('.result-quiet-links').classList.toggle('waiting', regenerating);
+    Array.prototype.forEach.call(document.querySelectorAll('.result-quiet-links .quietlink'), function(b){ b.disabled = regenerating; });
+    document.getElementById('interp-cta-btn').disabled = regenerating;
+    document.getElementById('interp-cta-btn').classList.toggle('waiting', regenerating);
+    document.getElementById('turn-video-btn').disabled = regenerating;
+    document.getElementById('turn-video-btn').classList.toggle('waiting', regenerating);
+    document.getElementById('share-btn').disabled = regenerating;
   }
   render();
+
+  // ===== Regenerating resume driver (tracker item for-product-bug-founder-
+  // repro-edited-dre-jcasn1) =====
+  // If this dream is the one an edit/Generate-Again is currently
+  // regenerating, keep polling it forward from here. The ACTUAL submission
+  // always happens on home.html (see that page's own "Fresh in-app
+  // generation submission" — every edit persists a draft and redirects to
+  // home.html?generate=1), so by the time a job is genuinely in flight and
+  // the user is back on this dream's own room (having navigated away from
+  // home.html mid-generation, or opened this dream directly/via a link),
+  // nothing is actively polling it anymore — home.html's own JS context
+  // that started the poll was torn down by that navigation (this is a
+  // plain multi-page app; nothing survives a real page navigation). Mirrors
+  // home.html's own identical "resume on load" pattern
+  // (DreamStore.resumePendingJob()) rather than inventing a second one.
+  if(regeneratingThisDream()){
+    DreamStore.resumePendingJob().then(function(finishedDream){
+      // A null result (js/store.js's own stale-completion guard) means a
+      // NEWER edit of this same dream was submitted elsewhere (another
+      // tab/device) before this one resolved — that newer attempt owns
+      // this dream's regeneration now and will settle on its own; nothing
+      // to do here, and definitely no toast about an attempt this page no
+      // longer owns.
+      if(!finishedDream) return;
+      render();
+      showToast('✨ Your dream is ready');
+      track('result_regeneration_completed', { media_type: finishedDream.mediaType || 'video' });
+    }).catch(function(err){
+      // err.superseded — same reasoning as the success branch above, for a
+      // failure: a newer attempt already owns this dream's regeneration,
+      // so this stale failure must not surface an error toast about an
+      // attempt the user has already moved on from.
+      if(err && err.superseded) return;
+      render(); // drops back out of the regenerating state -- finalizeDream never ran, so `dream` is exactly what it was before this attempt; nothing was silently lost
+      var raw = (err && err.message) || 'E399: unknown_error';
+      var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      var mediaTypeForCopy = (dream.mediaType === 'image') ? 'picture' : 'video';
+      var baseCopy = 'Something went wrong regenerating your ' + mediaTypeForCopy + ' — nothing was lost.';
+      var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
+      var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
+      showToast(baseCopy + reasonSuffix + refundNote);
+      track('generation_blocked', { reason: (match && match[1]) || raw, source: 'result' });
+    });
+  }
 
   // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
   // every other page's inline funnel script already defines locally (see
