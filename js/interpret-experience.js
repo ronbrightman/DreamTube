@@ -116,8 +116,7 @@
     root.innerHTML =
       '<div class="itp-topbar" id="itp-topbar"></div>' +
       '<div class="itp-dream-strip" id="itp-dream-strip"></div>' +
-      '<div class="itp-body" id="itp-body"></div>' +
-      '<div class="itp-composer" id="itp-composer" style="display:none;"></div>';
+      '<div class="itp-body" id="itp-body"></div>';
     host.appendChild(root);
   }
 
@@ -279,7 +278,6 @@
   // no network; a fresh persona starts the questions flow).
   // ==========================================================================
   function renderPicker() {
-    document.getElementById('itp-composer').style.display = 'none';
     var body = document.getElementById('itp-body');
     var existing = window.DreamStore.getInterpretations(session.dreamId) || {};
     var personas = window.InterpreterPersonas.ALL;
@@ -399,7 +397,6 @@
   }
 
   function renderQuestions() {
-    document.getElementById('itp-composer').style.display = 'flex';
     var persona = getPersonaOrFallback(session.personaKey);
     var body = document.getElementById('itp-body');
     var q = currentQuestion();
@@ -417,6 +414,15 @@
       return '<div class="itp-bubble-row mine"><div class="itp-bubble mine">' + esc(turn.text) + '</div></div>';
     }).join('');
 
+    // Founder walkthrough punch list (2026-08-01, tracker item
+    // for-product-founder-walkthrough-punch-li-t33k3y, item 7): the
+    // free-text field (rendered by renderComposer into
+    // #itp-inline-composer just below) now sits INLINE, right after the
+    // question/chips and BEFORE "Skip this question" -- it used to be a
+    // separate docked bar UNDER all of this content (so it always ended
+    // up visually below Skip, never above it, regardless of DOM order
+    // inside .itp-body). See css/styles.css's own .itp-inline-composer
+    // comment for the visual-weight side of this same fix.
     var currentQuestionHtml = q
       ? '<div class="itp-bubble-row"><div class="itp-bubble persona">' + esc(q.text) + '</div></div>' +
         (q.chips && q.chips.length
@@ -424,6 +430,7 @@
               return '<div class="itp-chip" data-chip="' + esc(c) + '">' + esc(c) + '</div>';
             }).join('') + '</div>'
           : '') +
+        '<div class="itp-inline-composer" id="itp-inline-composer"></div>' +
         '<div class="itp-skip-row"><span class="link-text" id="itp-skip-link">Skip this question</span></div>'
       : '';
 
@@ -449,11 +456,13 @@
       goToReadingLoading();
     });
 
-    renderComposer(q);
+    renderComposer();
   }
 
-  function renderComposer(q) {
-    var composer = document.getElementById('itp-composer');
+  /** Renders the free-text field/send button into #itp-inline-composer (part of .itp-body's own content now, see renderQuestions' own doc comment above) -- a no-op if that slot doesn't exist (q was falsy, defensive only, shouldn't happen while phase is 'questions'). IDs (#itp-composer-field/#itp-composer-send) are unchanged from before this relocation -- existing tests target them directly. */
+  function renderComposer() {
+    var composer = document.getElementById('itp-inline-composer');
+    if (!composer) return;
     composer.innerHTML =
       '<input class="itp-composer-field" id="itp-composer-field" type="text" maxlength="' + FREE_TEXT_MAXLENGTH + '" dir="auto" placeholder="Type your answer…">' +
       '<button type="button" class="itp-composer-send" id="itp-composer-send" disabled><span class="icon">' + Icons.chevronDown + '</span></button>';
@@ -528,7 +537,6 @@
   }
 
   function renderReading() {
-    document.getElementById('itp-composer').style.display = 'none';
     var persona = getPersonaOrFallback(session.personaKey);
     var body = document.getElementById('itp-body');
     body.innerHTML =
@@ -578,7 +586,6 @@
   }
 
   function renderError() {
-    document.getElementById('itp-composer').style.display = 'none';
     var body = document.getElementById('itp-body');
     var opts = session.errorOpts || {};
     var copy = opts.rateLimited
@@ -598,7 +605,6 @@
   // reusing the app-wide .spinner-inline pattern.
   // ==========================================================================
   function renderLoading() {
-    document.getElementById('itp-composer').style.display = 'none';
     var persona = getPersonaOrFallback(session.personaKey);
     var body = document.getElementById('itp-body');
     var line = session.phase === 'q_loading' ? persona.loadingQuestions : persona.loadingReading;

@@ -419,29 +419,41 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
   }
 });
 
-test('pricing screen shows a real dreams-this-month count when getSharedFeed() resolves', async function (t) {
+test('pricing screen shows the static "Hundreds of dreams brought to life" proof line regardless of getSharedFeed() -- and no longer shows the trailing "This is DreamTube..." line', async function (t) {
+  // Founder walkthrough punch list (2026-08-01, tracker item
+  // for-product-founder-walkthrough-punch-li-t33k3y, item 4): the live
+  // dreamsThisMonthCount stat on THIS screen (screen 14, "Never lose a
+  // dream") is replaced with static copy -- this early in the product's
+  // life a real live count reads as 0/tiny, which is worse than no number.
+  // Screen 13's own proof strip is UNCHANGED (still the real live count --
+  // see the two tests below) since the founder's ask was scoped to this
+  // one screen specifically. The trailing "This is DreamTube -- quiet and
+  // dark, like the room you just woke up in." line is deleted entirely
+  // too (same item).
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     var now = new Date();
-    var lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
     await mockGetFeed(page, [
       { id: 'a', publishedAt: now.toISOString() },
-      { id: 'b', publishedAt: now.toISOString() },
-      { id: 'c', publishedAt: lastMonth.toISOString() } // outside the current UTC month -- must not be counted
+      { id: 'b', publishedAt: now.toISOString() }
     ]);
     await goToPricingScreen(page, 'buyer-resolved@example.com');
     await page.waitForSelector('.fn-proof-strip', { timeout: 5000 });
     var text = await page.textContent('.fn-proof-strip');
-    assert.match(text, /2 dreams brought to life this month/);
+    assert.match(text, /Hundreds of dreams brought to life\./);
+    assert.doesNotMatch(text, /\d/, 'must be static copy, never a live/computed number on this screen');
+
+    var bodyText = await page.textContent('#app');
+    assert.doesNotMatch(bodyText, /quiet and dark, like the room you just woke up in/i, 'the trailing "This is DreamTube..." line must be gone entirely, not reworded');
   } finally {
     await context.close();
   }
 });
 
-test('pricing screen omits the stat line entirely (never a fake number) when getSharedFeed() fails', async function (t) {
+test('pricing screen still shows the static proof line even when getSharedFeed() fails (it no longer depends on the feed at all)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -449,8 +461,9 @@ test('pricing screen omits the stat line entirely (never a fake number) when get
     await blockThirdParty(page);
     await mockGetFeed(page, null, { fail: true });
     await goToPricingScreen(page, 'buyer-failed@example.com');
-    var proofStripCount = await page.$$eval('.fn-proof-strip', function (els) { return els.length; });
-    assert.equal(proofStripCount, 0);
+    await page.waitForSelector('.fn-proof-strip', { timeout: 5000 });
+    var text = await page.textContent('.fn-proof-strip');
+    assert.match(text, /Hundreds of dreams brought to life\./, 'the static line must show regardless of the feed fetch outcome');
   } finally {
     await context.close();
   }
@@ -477,7 +490,16 @@ test('result.html: Save is gone entirely (redundant with Share) -- no #save-vide
   }
 });
 
-test('result.html ritual-card rebuild: no topbar at all -- back/share/mute all live as chips over the video, and the old Explore/Profile nav icons and page title stay gone', async function (t) {
+test('result.html ritual-card rebuild: no topbar and no back/share chips over the video -- only mute lives there; back is via Bar-A, share lives in the hero\'s own tag row', async function (t) {
+  // Founder walkthrough punch list (2026-08-01, tracker item
+  // for-product-founder-walkthrough-punch-li-t33k3y, Manager addition B):
+  // the founder confirmed via fresh screenshots that the approved final
+  // has NO top chrome at all, overriding this build's own earlier,
+  // deliberate deviation from the static result-mock3 sketch (which kept
+  // back+share as real chips). #result-back is removed entirely (Bar-A's
+  // Home/Explore/Profile tabs replace it); #share-btn survives, same id
+  // and click behavior, just relocated out of the video into the hero's
+  // own .tagrow.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -485,7 +507,7 @@ test('result.html ritual-card rebuild: no topbar at all -- back/share/mute all l
     await blockThirdParty(page);
     var dreamId = 'd-nav-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#result-back', { timeout: 5000 });
+    await page.waitForSelector('#mute-btn', { timeout: 5000 });
 
     // The .topbar element itself is gone entirely now (this screen has no
     // topbar at all per the founder-approved mock) -- not just emptied.
@@ -493,27 +515,21 @@ test('result.html ritual-card rebuild: no topbar at all -- back/share/mute all l
     assert.equal(await page.locator('#result-nav-explore').count(), 0, 'the old topbar Explore nav icon must be gone');
     assert.equal(await page.locator('#result-nav-profile').count(), 0, 'the old topbar Profile nav icon must be gone');
     assert.equal(await page.locator('#result-topbar-title').count(), 0, 'the topbar page title must not exist anywhere on the page');
+    assert.equal(await page.locator('#result-back').count(), 0, '#result-back must not exist anywhere on the page -- removed entirely, not just hidden');
 
-    // Back/share/mute all sit over the video frame's corners -- every one
-    // has a real box, and none overlap each other.
-    var boxes = await page.$$eval('#dreamvideo-frame #result-back, #dreamvideo-frame #share-btn, #dreamvideo-frame #mute-btn', function (els) {
-      return els.map(function (el) {
-        var r = el.getBoundingClientRect();
-        return { id: el.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
-      });
-    });
-    assert.equal(boxes.length, 3, 'expected back + share + mute, and nothing else, over the video');
-    boxes.forEach(function (b) {
-      assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box');
-    });
-    for (var i = 0; i < boxes.length; i++) {
-      for (var j = i + 1; j < boxes.length; j++) {
-        var a = boxes[i], b = boxes[j];
-        var overlapsHorizontally = a.left < b.right && b.left < a.right;
-        var overlapsVertically = a.top < b.bottom && b.top < a.bottom;
-        assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
-      }
-    }
+    // Only mute is left over the video frame -- a real, non-collapsed box.
+    var chipsOverVideo = await page.locator('#dreamvideo-frame .dv-chip').count();
+    assert.equal(chipsOverVideo, 1, 'only mute should remain as a chip over the video');
+    var muteBox = await page.locator('#mute-btn').boundingBox();
+    assert.ok(muteBox && muteBox.width > 0 && muteBox.height > 0, 'mute should have a real, non-collapsed box');
+
+    // Share now lives in the hero's own tag row, next to the Private/
+    // Public state tag -- outside the video frame entirely.
+    assert.equal(await page.locator('#dreamvideo-frame #share-btn').count(), 0, 'share must no longer be inside the video frame');
+    var shareInTagRow = await page.locator('.tagrow #share-btn').count();
+    assert.equal(shareInTagRow, 1, 'share must live in the hero\'s .tagrow now, alongside the Private/Public tag');
+    var shareBox = await page.locator('#share-btn').boundingBox();
+    assert.ok(shareBox && shareBox.width > 0 && shareBox.height > 0, 'the relocated share pill should have a real, non-collapsed box');
   } finally {
     await context.close();
   }
@@ -726,7 +742,12 @@ test('result.html ritual-card rebuild: the token chip is off-screen on an ordina
     assert.equal(await page.locator('#result-token-chip-slot').isVisible(), false, 'the token chip must be off-screen on an ordinary video result');
     var videoInterp = await measureInterp(page);
     assert.equal(videoInterp.quiet, false, 'the interpretation entry must be the full hero when it is the only hero on screen');
-    assert.ok(await page.locator('#interp-hero-micro').isVisible(), 'the hero\'s reassurance micro line shows alongside the hero');
+    // "Only you can see your reading" reassurance micro-line deleted
+    // entirely (founder walkthrough punch list, 2026-08-01, tracker item
+    // for-product-founder-walkthrough-punch-li-t33k3y, item 6) to recover
+    // vertical space that was clipping the card's bottom on some
+    // viewports.
+    assert.equal(await page.locator('#interp-hero-micro').count(), 0, 'the hero\'s reassurance micro line must be gone entirely, not just hidden');
 
     // (b) Image-only dream -- chip back, Turn-into-video hero present with
     //     its token-cost pill intact (founder-explicit: untouched).
@@ -750,7 +771,7 @@ test('result.html ritual-card rebuild: the token chip is off-screen on an ordina
     assert.ok(imageInterp.height < videoInterp.height, 'the quiet treatment should be shorter than the hero (got ' + imageInterp.height + ' vs ' + videoInterp.height + ')');
     var turnVideoHeight = await page.$eval('#turn-video-btn', function (el) { return el.getBoundingClientRect().height; });
     assert.ok(turnVideoHeight > imageInterp.height, 'the Turn-into-video hero must stay the largest CTA in the image-only state');
-    assert.equal(await page.locator('#interp-hero-micro').isVisible(), false, 'the hero micro line steps aside with the hero in the image-only state');
+    assert.equal(await page.locator('#interp-hero-micro').count(), 0, 'the hero micro line must be gone entirely here too');
   } finally {
     await context.close();
   }
@@ -1052,7 +1073,7 @@ test('result.html: deleting a published dream still shows the extended Explore-r
   }
 });
 
-test('result.html ritual-card rebuild: the Share chip (over the video) still keeps its publishes-if-private behavior', async function (t) {
+test('result.html ritual-card rebuild: the relocated Share pill (in the hero\'s tag row) still keeps its publishes-if-private behavior', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 375, height: 800 } });
   try {
@@ -1061,6 +1082,7 @@ test('result.html ritual-card rebuild: the Share chip (over the video) still kee
     var dreamId = 'd-share-test';
     await seedResultPage(page, baseUrl, dreamId);
     await page.waitForSelector('#share-btn svg', { timeout: 5000 });
+    assert.equal(await page.locator('.tagrow #share-btn').count(), 1, 'share must render inside the hero\'s .tagrow');
 
     // Unpublished dream: Share must route through the publish modal first
     // (unchanged existing behavior), not a plain visual re-skin only.
@@ -1071,7 +1093,7 @@ test('result.html ritual-card rebuild: the Share chip (over the video) still kee
   }
 });
 
-test('result.html: back/share/mute chips lay out cleanly with no overlap at 320px, and stay real >=32px tap targets', async function (t) {
+test('result.html: mute (the only remaining video chip) and the relocated Share pill both stay real >=32px tap targets and lay out with no overlap at 320px', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: { width: 320, height: 800 } });
   try {
@@ -1079,12 +1101,13 @@ test('result.html: back/share/mute chips lay out cleanly with no overlap at 320p
     await blockThirdParty(page);
     var dreamId = 'd-nav-320-test';
     await seedResultPage(page, baseUrl, dreamId);
-    await page.waitForSelector('#result-back', { timeout: 5000 });
+    await page.waitForSelector('#mute-btn', { timeout: 5000 });
 
     assert.equal(await page.locator('.topbar').count(), 0, 'the .topbar element must be gone entirely at 320px too');
+    assert.equal(await page.locator('#result-back').count(), 0, '#result-back must not exist at 320px either');
 
     var boxes = await page.$$eval(
-      '#dreamvideo-frame #result-back, #dreamvideo-frame #share-btn, #dreamvideo-frame #mute-btn',
+      '#mute-btn, #share-btn',
       function (els) {
         return els.map(function (el) {
           var r = el.getBoundingClientRect();
@@ -1092,19 +1115,18 @@ test('result.html: back/share/mute chips lay out cleanly with no overlap at 320p
         });
       }
     );
-    assert.equal(boxes.length, 3, 'expected back + share + mute, and nothing else');
+    assert.equal(boxes.length, 2, 'expected mute + the relocated share pill, and nothing else');
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at 320px');
       assert.ok(b.width >= 32 && b.height >= 32, b.id + ' should stay a real tap target at 320px (got ' + b.width + 'x' + b.height + ')');
     });
-    for (var i = 0; i < boxes.length; i++) {
-      for (var j = i + 1; j < boxes.length; j++) {
-        var a = boxes[i], b = boxes[j];
-        var overlapsHorizontally = a.left < b.right && b.left < a.right;
-        var overlapsVertically = a.top < b.bottom && b.top < a.bottom;
-        assert.ok(!(overlapsHorizontally && overlapsVertically), a.id + ' and ' + b.id + ' should not visually overlap');
-      }
-    }
+    // Not over the video and not overlapping each other -- different
+    // regions of the card entirely now (mute over the video, share in the
+    // tag row well below it), but still worth a cheap overlap check.
+    var a = boxes[0], b = boxes[1];
+    var overlapsHorizontally = a.left < b.right && b.left < a.right;
+    var overlapsVertically = a.top < b.bottom && b.top < a.bottom;
+    assert.ok(!(overlapsHorizontally && overlapsVertically), 'mute and the relocated share pill should not visually overlap');
   } finally {
     await context.close();
   }

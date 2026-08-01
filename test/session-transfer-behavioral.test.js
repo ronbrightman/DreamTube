@@ -190,7 +190,19 @@ function mockPublishDreamCapture(page) {
 
 // ===== "Copy link for your browser" (non-Android nudge button fix) =====
 
-test('home.html: on iOS, the webview-escape card\'s button is labeled "Copy link for your browser" and actually copies the current URL (including the ?bt= token) to the clipboard, with the right toast and a persistent post-copy note', async function (t) {
+test('home.html: on iOS, the webview-escape card\'s button is labeled "Copy link for your browser" and actually copies the current URL (including the ?bt= token) to the clipboard, confirmed by a persistent ON-PAGE note (no toast at all for this success path)', async function (t) {
+  // Founder walkthrough punch list (2026-08-01, tracker item
+  // for-product-founder-walkthrough-punch-li-t33k3y, item 5 / Manager
+  // addition C): a real FB-webview screenshot showed the old toast
+  // confirmation clipped mid-sentence ("Keep it to yo...") and it
+  // auto-dismissed too fast (~2.2s) to read anyway. Fixed by dropping the
+  // toast for this success path entirely (the failure paths -- clipboard
+  // write rejected / Clipboard API unsupported -- keep their own short
+  // toasts, unchanged) and relying solely on the on-page
+  // #webview-card-note, which now also carries the "keep it to yourself"
+  // warning the old toast had, and auto-hides itself after ~1 minute
+  // (not instantly, not forever) -- see home.html's copyLinkForBrowser
+  // doc comment for the full reasoning.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: FB_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
   try {
@@ -204,6 +216,7 @@ test('home.html: on iOS, the webview-escape card\'s button is labeled "Copy link
     // quiet row as an elevated .webview-card. Real escape logic (Android
     // intent://, iOS copy-link, ?bt= session-transfer token round trip)
     // ported verbatim -- see that page's own "ORPHAN (b)" script block.
+    await page.clock.install({ time: Date.now() });
     await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
 
     await page.waitForSelector('#webview-card', { state: 'visible', timeout: 5000 });
@@ -216,26 +229,28 @@ test('home.html: on iOS, the webview-escape card\'s button is labeled "Copy link
     assert.match(urlAtClick, /[?&]bt=ios-copy-token-abc123(&|$)/, 'the token must actually be on the address bar before the button is used');
 
     await page.click('#webview-card-btn');
-    await page.waitForSelector('.toast.show', { timeout: 3000 });
-    var toastText = await page.textContent('#toast');
-    assert.match(toastText, /Link copied/i, 'toast copy must confirm the paste-in-your-browser instruction');
+
+    var noteEl = page.locator('#webview-card-note');
+    await noteEl.waitFor({ state: 'visible', timeout: 2000 });
+    var noteText = await noteEl.textContent();
+    assert.match(noteText, /open your browser/i, 'the on-page note must give the exact next step, not just confirm the copy');
+    assert.match(noteText, /paste/i, 'the on-page note must tell the visitor to paste the link');
+    assert.match(noteText, /keep it to yourself/i, 'the security warning the old toast carried must survive the move to the on-page note');
 
     var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
     assert.equal(clipboardText, urlAtClick, 'clipboard must contain exactly the current URL, including its ?bt= token');
 
-    // ROUND-2 FOUNDER FIX (tracker item for-product-webview-notify-escape-
-    // nudge--5yray5, carried over from processing.html's own now-removed
-    // implementation): a PERSISTENT instruction line (closer to the
-    // founder's own verbatim ask, "open your browser and paste the link
-    // there") must appear alongside the toast and, unlike the toast, must
-    // NOT auto-dismiss after a couple seconds.
-    var noteEl = page.locator('#webview-card-note');
-    await noteEl.waitFor({ state: 'visible', timeout: 2000 });
-    var noteText = await noteEl.textContent();
-    assert.match(noteText, /open your browser/i, 'the persistent note must give the exact next step, not just confirm the copy');
-    assert.match(noteText, /paste/i, 'the persistent note must tell the visitor to paste the link');
-    await page.waitForTimeout(2500); // outlast the toast's own ~2.2s auto-dismiss
-    assert.equal(await noteEl.isVisible(), true, 'the note must still be visible after the toast itself has faded -- that is the whole point of it being separate from the toast');
+    // No toast at all for this success path -- the on-page note fully
+    // replaces it now, it doesn't just supplement it.
+    assert.equal(await page.locator('.toast.show').count(), 0, 'the success path must not show a toast at all -- the on-page note is the only confirmation now');
+
+    // Persists well past the old toast's ~2.2s auto-dismiss window...
+    await page.waitForTimeout(2500);
+    assert.equal(await noteEl.isVisible(), true, 'the note must still be visible several seconds later');
+
+    // ...but is not permanent -- it clears itself after ~1 minute.
+    await page.clock.fastForward(60000);
+    assert.equal(await noteEl.isVisible(), false, 'the note must auto-hide itself roughly a minute after the copy, so it does not read as stale forever');
   } finally {
     await context.close();
   }

@@ -280,7 +280,13 @@ test('home.html: tapping "No recall" logs today without any token/claim call, fl
     assert.equal(await page.locator('#tonight-pill').isVisible(), false, 'the primary pill should hide once tonight is logged');
     assert.equal(await page.locator('#tonight-links').isVisible(), false, 'the quiet entry links should hide once tonight is logged');
     var quoteText = await page.locator('#tonight-quote').textContent();
-    assert.match(quoteText, /no recall.*counts too/i);
+    // "No recall" wording removed from this logged-state copy (founder
+    // walkthrough punch list, 2026-08-01, tracker item
+    // for-product-founder-walkthrough-punch-li-t33k3y) -- meaning
+    // unchanged (still the no-content-logged fallback), just no longer
+    // uses that exact phrase.
+    assert.doesNotMatch(quoteText, /no recall/i, 'the logged-state copy must no longer say "No recall"');
+    assert.match(quoteText, /nothing remembered.*counts too/i);
 
     // Never logged a real dream, but HAS now logged something -- the My
     // Dreams row should appear with its friendly empty message rather than
@@ -298,6 +304,58 @@ test('home.html: tapping "No recall" logs today without any token/claim call, fl
       var el = document.getElementById('hero-tonight');
       return el && el.classList.contains('logged');
     }, null, { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: a funnel-submitted dream whose generation is still PENDING (todayEntryType "pending", no finished dream with createdAt yet) renders the Tonight hero with that dream\'s own quote -- never falls through to the no-recall copy (regression test for Manager screenshot-verified bug A)', async function (t) {
+  // Founder walkthrough punch list (2026-08-01, tracker item
+  // for-product-founder-walkthrough-punch-li-t33k3y, Manager addition A):
+  // a real device screenshot showed a user who gave a REAL dream via the
+  // funnel still seeing "Logged tonight -- No recall, and that counts
+  // too." Root cause: home.html's renderTonightHero() only ever checked
+  // logStatus.todayEntryType === 'dream', never 'pending' -- but a
+  // freshly-submitted funnel dream (generation in flight, no finished
+  // dream with createdAt yet) reports 'pending', not 'dream', even though
+  // js/store.js's getDreamLogStatus() already correctly populated
+  // todayDreamCaption from the pending job's own storyText/caption the
+  // whole time. This is the exact real-world shape: seedHomeUser has no
+  // dreams at all yet, only a pendingJob started today (same shape
+  // test/first-video-created-explore-resume-behavioral.test.js's
+  // seedAccountWithPendingJob already establishes for this codebase).
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page, { dreams: [] });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = JSON.parse(raw);
+      state.pendingJob = {
+        operationName: 'mock:req-pending-funnel-dream',
+        startedAt: Date.now(),
+        caption: 'Flying over a glowing city at midnight',
+        storyText: 'Flying over a glowing city at midnight',
+        style: 'Cinematic',
+        sourceDreamId: null,
+        mediaType: 'video',
+        notify: false,
+        ownerHandle: state.user.handle
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('hero-tonight');
+      return el && el.classList.contains('logged');
+    }, null, { timeout: 5000 });
+    var quoteText = await page.locator('#tonight-quote').textContent();
+    assert.match(quoteText, /Flying over a glowing city at midnight/, 'a pending funnel dream must render as a real logged entry, showing its own quote');
+    assert.doesNotMatch(quoteText, /nothing remembered|no recall/i, 'must never fall through to the no-recall copy when a real dream was actually submitted');
   } finally {
     await context.close();
   }

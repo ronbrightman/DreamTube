@@ -217,15 +217,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   transition:opacity .2s ease;
 }
 .playbadge .icon{ width:20px; height:20px; margin-left:3px; }
-/* Back / share / mute — small chips OVER the video's corners, z-index above
-   the frame's own click-to-fullscreen handler (each stops propagation so
-   tapping one never also opens the player). */
+/* Mute — the ONLY chip left over the video's corner (founder-confirmed
+   no-topbar mock, see the markup comment above #dreamvideo-frame), z-index
+   above the frame's own click-to-fullscreen handler (stops propagation so
+   tapping it never also opens the player). */
 .dv-chip{
   position:absolute; z-index:2; width:32px; height:32px; font-size:15px;
   background:rgba(12,10,26,.55); border-color:rgba(255,255,255,.3);
 }
-.dv-chip.back{ left:8px; top:8px; }
-.dv-chip.share{ right:8px; top:8px; }
 .dv-chip.mute{ right:8px; bottom:8px; }
 
 /* ghost play affordance OUTSIDE the video — an explicit, always-visible
@@ -264,6 +263,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   cursor:pointer; /* tappable — reverts to private */
 }
 .statetag .icon{ width:12px; height:12px; }
+/* Share, relocated into the hero's tag row (Manager addition B, see the
+   markup comment above #dreamvideo-frame) -- same small-pill language as
+   .statetag next to it, but a real button (cursor:pointer, no text-
+   transform/letter-spacing since "Share" is an action label, not a state
+   word like PRIVATE/PUBLIC). */
+.heroshare{
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  min-height:32px; box-sizing:border-box;
+  font-size:11px; font-weight:800;
+  padding:4px 12px; border-radius:99px;
+  background:rgba(12,10,26,.5); border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+}
+.heroshare .icon{ width:12px; height:12px; }
+.heroshare:active{ opacity:.7; }
 
 /* "Turn this into a video" upsell — shown only when this dream has an
    image but no video yet, still the one CTA on this screen that keeps its
@@ -301,7 +315,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   box-shadow:none; animation:none;
 }
 .interp-sparkle{ font-size:15px; line-height:1; }
-.result-hero-micro{ margin:9px 2px 0; text-align:center; font-size:11.5px; line-height:1.45; color:var(--home-soft); }
 
 /* ===== quiet row — Publish / Make another / Edit / Delete (founder's
    final amendment order — Edit moved next to Delete) ===== */
@@ -369,13 +382,27 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       <div class="hcard hero">
         <div class="hcard-dt">Tonight's dream</div>
 
+        <!-- No topbar/back/share chips over the video (founder-confirmed,
+             2026-08-01, tracker item for-product-founder-walkthrough-punch-
+             li-t33k3y, Manager addition B -- overriding this build's own
+             earlier, deliberate deviation from the static result-mock3
+             sketch, which kept back+share as chips reasoning they were
+             real tested features the mock's own "no topbar" sketch
+             predates). Mute is the ONLY chip left, still inside the video
+             per the approved mock. Back is covered by the shared Bar-A
+             dock below (same explore.html destination #result-back used
+             to hardcode/smart-resolve to -- see the removed IIFE's own
+             former comment in this page's script block, now dead code
+             cleaned up alongside this markup change). Share now lives in
+             the hero's own tag row below, next to the Private/Public
+             state tag -- same #share-btn id/click handler/doShare()
+             logic, unchanged, just relocated + restyled as a small pill
+             instead of a video-corner icon chip. -->
         <div class="dreamvideo" id="dreamvideo-frame" role="button" aria-label="Play your dream video">
           <div class="dv-fallback" id="result-bg" style="position:absolute; inset:0;"></div>
           <video class="dv-media" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
           <img class="dv-media" id="result-image" alt="" style="display:none;">
           <div class="playbadge" id="result-play-badge"><span class="icon" id="result-play-icon"></span></div>
-          <a class="icon-btn dv-chip back" href="explore.html" id="result-back" aria-label="Back"></a>
-          <button class="icon-btn dv-chip share" id="share-btn" aria-label="Share"></button>
           <button class="icon-btn dv-chip mute" id="mute-btn" title="Sound" aria-label="Unmute"></button>
         </div>
 
@@ -391,6 +418,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
         <div class="tagrow">
           <span class="statetag" id="result-privacy-tag" title="Private">Private</span>
+          <button type="button" class="statetag heroshare" id="share-btn" aria-label="Share"><span class="icon" id="share-icon"></span>Share</button>
         </div>
 
         <!-- "Turn this into a video" upsell — shown only when this dream has an
@@ -419,7 +447,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <button type="button" class="heropill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
           <span class="interp-sparkle" aria-hidden="true">✨</span> <span id="interp-cta-label-text">What does this dream mean?</span>
         </button>
-        <div class="result-hero-micro" id="interp-hero-micro">Only you can see your reading.</div>
       </div>
 
       <!-- Quiet row — Publish / Make another / Edit / Delete (founder's
@@ -775,48 +802,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
   })();
 
-  document.getElementById('result-back').innerHTML = Icons.back;
-  // The back button is a hardcoded link to explore.html by default, which
-  // is right for the "just finished generating" flow (arriving here from
-  // a spent, one-shot generation step, with nothing meaningful to go back
-  // to). But Profile also links into this same page for each of a user's
-  // own dreams -- and from there, "back" landing on Explore instead of
-  // Profile is a real regression from where the visitor actually came
-  // from. Generalized further (founder bug report 2026-07-30): return to
-  // wherever the visitor ACTUALLY came from, not only profile. Rules: (1)
-  // referrer from a spent generation step (create/style/wizard -- the now-
-  // removed processing.html used to be in this list too, tracker item
-  // for-product-funnel-ending-v2-founder-ins-tfuu0q) keeps the explore.html
-  // default -- going "back" into a spent flow is wrong; (2) any other
-  // same-origin referrer (home.html, profile.html, explore itself) ->
-  // history.back(), which also preserves that page's scroll/sheet state --
-  // this is now ALSO the "just finished generating" case, since every
-  // generation flow lands on home.html first rather than redirecting
-  // straight here, so "back" correctly returns to that persistent hub, not
-  // explore.html; (3) absent or cross-origin referrer (direct link, share,
-  // webview stripping) -> explore.html default unchanged. Now lives as a
-  // small chip over the video's top-left corner rather than in a topbar
-  // strip -- same logic, new home.
-  (function(){
-    try {
-      var ref = document.referrer && new URL(document.referrer);
-      var sameOrigin = ref && ref.origin === location.origin;
-      var flowPage = ref && /\/(processing|create|style|wizard)\.html$/.test(ref.pathname);
-      if (sameOrigin && !flowPage) {
-        var btn = document.getElementById('result-back');
-        btn.addEventListener('click', function(ev){ ev.stopPropagation(); ev.preventDefault(); history.back(); });
-      } else {
-        document.getElementById('result-back').addEventListener('click', function(ev){ ev.stopPropagation(); });
-      }
-    } catch (e) {
-      // malformed/absent referrer -- keep the explore.html default, but
-      // still stop the click from also bubbling into the frame's
-      // open-fullscreen handler below.
-      document.getElementById('result-back').addEventListener('click', function(ev){ ev.stopPropagation(); });
-    }
-  })();
-  // Standard iOS-style share icon (box + arrow escaping the top).
-  document.getElementById('share-btn').innerHTML = Icons.shareIos;
+  // #result-back and its own smart-referrer-aware back logic (return to
+  // wherever the visitor actually came from -- home/profile/explore --
+  // rather than a flat explore.html default) are REMOVED entirely, not
+  // just hidden (founder-confirmed no-topbar mock, 2026-08-01, tracker
+  // item for-product-founder-walkthrough-punch-li-t33k3y, Manager addition
+  // B). Deliberate, founder-directed trade-off, flagged here for the
+  // record: the shared Bar-A dock's Home/Explore/Profile tabs replace it
+  // -- a visitor picks their destination explicitly instead of the page
+  // guessing their exact referrer, which loses the one-tap "return to
+  // literally where I was" magic for a same-origin referrer but matches
+  // this build's own approved mock (and Bar-A's Home tab already covers
+  // the single most common real case: arriving from a fresh generation,
+  // which now always lands on home.html first).
+  document.getElementById('share-icon').innerHTML = Icons.shareIos;
   document.getElementById('watch-pill-icon').innerHTML = Icons.play;
   document.getElementById('edit-icon').innerHTML = Icons.pencil;
   document.getElementById('make-another-icon').innerHTML = Icons.plus;
@@ -1234,11 +1233,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // The image-only state keeps its OWN untouched hero ("Turn this into a
     // video", founder-explicit). Two full-size emphasized CTAs there would
     // read as two heroes -- so in that ONE state the interpretation hero
-    // steps back down to the quiet pill it was before this redesign, and
-    // its reassurance micro line steps aside with it. Everywhere else the
-    // interpretation entry IS the hero.
+    // steps back down to the quiet pill it was before this redesign.
+    // Everywhere else the interpretation entry IS the hero. (Its own
+    // "Only you can see your reading" reassurance micro-line below it was
+    // deleted entirely -- founder walkthrough punch list, 2026-08-01,
+    // tracker item for-product-founder-walkthrough-punch-li-t33k3y, item
+    // 6 -- to recover the vertical space that was clipping the card's
+    // bottom on some viewports.)
     document.getElementById('interp-cta-btn').classList.toggle('quiet', imageOnly);
-    document.getElementById('interp-hero-micro').style.display = (isMyDream && !imageOnly) ? 'block' : 'none';
     // State-aware label (tracker item
     // for-product-funnel-ending-v2-founder-ins-tfuu0q): if the user already
     // has a saved reading for THIS dream -- most commonly because they
@@ -2243,8 +2245,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     location.href = 'profile.html';
   });
 
-  document.getElementById('share-btn').addEventListener('click', function(e){
-    e.stopPropagation(); // don't also open the fullscreen player
+  // No longer inside #dreamvideo-frame (relocated into the hero's tag
+  // row, see the markup comment above that frame) -- e.stopPropagation()
+  // dropped since there's no longer a parent open-fullscreen handler to
+  // guard against. Behavior itself (publish-first prompt for an
+  // unpublished dream, otherwise share immediately) is unchanged.
+  document.getElementById('share-btn').addEventListener('click', function(){
     if(!dream.isPublished){
       shareAfterPublish = true;
       document.getElementById('modal-publish').classList.add('open');

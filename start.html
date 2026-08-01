@@ -630,8 +630,24 @@
   // over a light lavender gradient, on the two most important conversion
   // screens (signup, value/pricing), sandwiched between the dark
   // marketing funnel before and this app's own dark theme after.
+  // 'night' (founder walkthrough punch list, 2026-08-01, tracker item
+  // for-product-founder-walkthrough-punch-li-t33k3y, item 3): founder
+  // real-device report — screen 13/14 (this file's own dark navy 'night'
+  // phase) reads as flat/off-palette right after the purple funnel pages
+  // that precede them (the external dreamtube-growth marketing funnel's
+  // own dark 'dark' experience arm, PHASES_DARK in that repo's index.html
+  // — grounded there in this app's real dark theme PLUS a deliberate
+  // purple-glow radial gradient, rgba(131,58,180,...)). NOT a revert to
+  // the old light 'dusk'/'dusk-deep' phases this file already removed for
+  // a real "theme whiplash" bug (see the removal comment further down) —
+  // that would reintroduce exactly the light-vs-dark clash those phases
+  // caused against THIS app's own dark home.html right after. Instead:
+  // the SAME dark base, with the purple radial glow folded in — reusing
+  // dreamtube-growth's own PHASES_DARK['mid-dusk'] tokens verbatim (its
+  // last phase before the handoff to this file, so the most adjacent
+  // real palette), not an invented one.
   var PHASES = {
-    'night': { grad:'linear-gradient(160deg,#211B33,#14121F 55%,#0A0912)', ink:'#FFFFFF', soft:'#C9C4DA', faint:'#8A84A0', card:'rgba(255,255,255,0.08)', line:'rgba(255,255,255,0.14)' }
+    'night': { grad:'radial-gradient(120% 65% at 50% 10%, rgba(131,58,180,0.45), transparent 65%), linear-gradient(160deg,#120A1C,#1B0F2B 55%,#0F0817)', ink:'#FFFFFF', soft:'#D8CFEC', faint:'#9B8FB8', card:'#221530', line:'rgba(255,255,255,0.14)' }
   };
   // TAGS and PHASE_BY_STEP are built alongside SCREEN_RENDERERS, further
   // down this file — all three arrays must stay entry-for-entry in sync
@@ -1904,15 +1920,32 @@
     var primaryMotivation = quiz.motivations[0] || null;
     var headline = (primaryMotivation && MOTIVATION_HEADLINES[primaryMotivation]) || 'Never lose a dream again.';
     var confirmHeadline = isRecordMode ? "You're in. Let’s record your dream." : "You're in. Building your first dream now.";
-    var confirmBody = isRecordMode ? 'Next: tap record and tell us about it — DreamTube will bring it to life.' : 'This is DreamTube — quiet and dark, like the room you just woke up in.';
+    // Record-mode keeps its own real next-step instruction (there's
+    // genuinely something to do next — go record). The non-record-mode
+    // line ("This is DreamTube — quiet and dark, like the room you just
+    // woke up in.") is DELETED entirely, not reworded (founder walkthrough
+    // punch list, 2026-08-01, tracker item
+    // for-product-founder-walkthrough-punch-li-t33k3y, item 4's "last
+    // line") — there's nothing actionable left to say once generation is
+    // already under way, so the confirmation screen just ends after the
+    // checkmark + headline for that path now.
+    var confirmBody = isRecordMode ? 'Next: tap record and tell us about it — DreamTube will bring it to life.' : null;
     var btnLabel = isRecordMode ? 'Start recording' : 'Watch it happen';
 
     el.innerHTML =
       '<div class="fn-eyebrow">Built around: ' + esc(primaryMotivation || 'your dreams') + '</div>' +
       '<div class="fn-headline" style="font-size:21px;">' + esc(headline) + '</div>' +
-      (dreamsThisMonthCount !== null ?
-        '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>' :
-        '') +
+      // Static proof copy (founder walkthrough punch list, 2026-08-01,
+      // tracker item for-product-founder-walkthrough-punch-li-t33k3y,
+      // item 4) — this used to be the SAME live, computed
+      // dreamsThisMonthCount count screen 13 still shows (see that
+      // screen's own doc comment), but this early in the product's life
+      // it's realistically showing 0 or a tiny number, which reads worse
+      // than no number at all. Deliberately static, not a lower-bound
+      // clamp on the real count — the founder's own ask was specifically
+      // to stop this ONE screen from ever showing a live, possibly-small
+      // number, not to fix the number itself.
+      '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>Hundreds of dreams brought to life.</span></div>' +
       '<div class="fn-token-free-card">' +
         '<div class="title">Free to start</div>' +
         '<div class="body">220 tokens on signup, no card needed — enough for a couple of free videos.</div>' +
@@ -1920,7 +1953,7 @@
       '<div style="height:22px;"></div>' +
       '<div class="fn-check-badge">&#10003;</div>' +
       '<div class="fn-headline" style="text-align:center; font-size:19px;">' + confirmHeadline + '</div>' +
-      '<div class="fn-body-copy" style="text-align:center;">' + confirmBody + '</div>' +
+      (confirmBody ? '<div class="fn-body-copy" style="text-align:center;">' + confirmBody + '</div>' : '') +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary" id="fn-s14-continue" type="button">' + btnLabel + '</button>';
 

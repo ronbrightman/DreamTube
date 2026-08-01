@@ -791,7 +791,10 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .result-quiet-link:disabled{ opacity:.4; cursor:not-allowed;}
 .result-quiet-link .icon{ width:13px; height:13px;}
 .interp-loading-row{ display:flex; align-items:center; gap:10px; padding:8px 0 20px; color:var(--text-muted); font-size:14px;}
-.interp-text{ font-size:14.5px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
+/* Founder walkthrough punch list (2026-08-01, tracker item
+   for-product-founder-walkthrough-punch-li-t33k3y, item 8): "sat on the
+   new 15px floor" (this was 14.5px) -- a modest bump, not a redesign. */
+.interp-text{ font-size:16px; line-height:1.65; color:var(--text-primary); margin:2px 0 14px; white-space:pre-wrap;}
 .interp-disclosure{ font-size:12px; color:var(--text-faint); line-height:1.4; margin:10px 0 16px;}
 .interp-error-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; margin:6px 0 16px;}
 
@@ -1582,7 +1585,15 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .itp-bubble{
   max-width:82%; padding:11px 14px; border-radius:16px; font-size:13.5px; line-height:1.5;
 }
-.itp-bubble.persona{ background:var(--surface-alt); border:1px solid var(--border); border-bottom-left-radius:5px;}
+/* Founder walkthrough punch list (2026-08-01, tracker item
+   for-product-founder-walkthrough-punch-li-t33k3y, item 7): the QUESTION
+   bubble used to inherit plain var(--text-primary) (#fff), the exact same
+   color the answer chips below (.itp-chip) also use -- too similar to
+   visually tell apart at a glance. Bold white for the question (it's the
+   primary content of this screen) vs. the chips' muted gray + visible
+   border below (secondary/interactive) is a real color+weight split, not
+   just a font-size nudge. */
+.itp-bubble.persona{ background:var(--surface-alt); border:1px solid var(--border); border-bottom-left-radius:5px; color:var(--text-primary); font-weight:700;}
 .itp-bubble.mine{ background:#fff; color:#000; border-bottom-right-radius:5px; font-weight:600;}
 .itp-typing-dots{ display:inline-flex; gap:3px; padding:2px 0;}
 .itp-typing-dots i{ width:5px; height:5px; border-radius:50%; background:var(--text-faint); animation:itpTyping 1.1s ease-in-out infinite;}
@@ -1596,23 +1607,42 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .itp-progress-dot.current{ background:#fff;}
 
 .itp-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 10px;}
-.itp-chip{ padding:8px 14px; border-radius:100px; background:var(--surface); border:1px solid var(--border); color:var(--text-primary); cursor:pointer; font-size:12.5px; font-weight:600; transition:background .15s ease, border-color .15s ease;}
-.itp-chip:hover{ border-color:var(--text-faint);}
+/* color changed from var(--text-primary) (#fff, same as the question
+   bubble above) to var(--text-muted) -- see .itp-bubble.persona's own
+   comment just above for why these two needed to visually diverge. */
+.itp-chip{ padding:8px 14px; border-radius:100px; background:var(--surface); border:1px solid var(--border); color:var(--text-muted); cursor:pointer; font-size:12.5px; font-weight:600; transition:background .15s ease, border-color .15s ease, color .15s ease;}
+.itp-chip:hover{ border-color:var(--text-faint); color:var(--text-primary);}
 .itp-chip:active{ transform:scale(.96);}
 
-.itp-composer{ flex:none; display:flex; align-items:center; gap:8px; padding:8px 20px calc(10px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--border);}
+/* Free-text "type your answer" field — moved INLINE (part of .itp-body's
+   own scrolling content, right after the question/chips and BEFORE "Skip
+   this question") and given a deliberately LIGHTER visual treatment than
+   the old docked-bar composer had (founder walkthrough punch list,
+   2026-08-01, tracker item for-product-founder-walkthrough-punch-li-t33k3y,
+   item 7): a near-invisible tinted background instead of the same solid
+   --surface every other field in the app uses, muted text instead of
+   --text-primary, and a plain outline send affordance instead of a solid
+   filled white circle -- this field is a secondary escape hatch here, not
+   the primary answer mechanism (the chips are), and shouldn't visually
+   compete with them. #itp-composer-field/#itp-composer-send keep their
+   IDs unchanged (existing tests target them directly) even though they no
+   longer live inside the old #itp-composer docked bar, which is removed
+   entirely now that every phase this component has only ever needed it
+   for (questions) renders it inline instead. */
+.itp-inline-composer{ display:flex; align-items:center; gap:8px; margin:2px 0 12px;}
 .itp-composer-field{
-  flex:1; background:var(--surface); border:1px solid var(--border); border-radius:100px; padding:11px 16px;
-  font-family:var(--font-body); color:var(--text-primary); font-size:13.5px; min-width:0;
+  flex:1; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:100px; padding:10px 15px;
+  font-family:var(--font-body); color:var(--text-muted); font-size:13px; font-weight:400; min-width:0;
 }
 .itp-composer-field::placeholder{ color:var(--text-faint);}
-.itp-composer-field:focus{ outline:2px solid var(--accent); border-color:transparent;}
+.itp-composer-field:focus{ color:var(--text-primary); outline:1.5px solid var(--border-strong); border-color:transparent;}
 .itp-composer-send{
-  width:38px; height:38px; border-radius:50%; background:#fff; color:#000; border:none; flex:none; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;
+  width:34px; height:34px; border-radius:50%; background:transparent; color:var(--text-faint); border:1px solid var(--border); flex:none; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; transition:color .15s ease, border-color .15s ease;
 }
-.itp-composer-send:disabled{ opacity:.35; cursor:not-allowed;}
-.itp-composer-send .icon{ width:15px; height:15px; transform:rotate(-90deg);}
+.itp-composer-send:not(:disabled){ color:var(--text-primary); border-color:var(--border-strong);}
+.itp-composer-send:disabled{ opacity:.5; cursor:not-allowed;}
+.itp-composer-send .icon{ width:13px; height:13px; transform:rotate(-90deg);}
 
 .itp-skip-row{ display:flex; justify-content:center; padding:2px 0 8px;}
 

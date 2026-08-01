@@ -19,7 +19,9 @@
 //      (e.g. a CORS-blocked external image URL).
 //   4. share_option_chosen fires with the right {option} the moment
 //      either option is tapped.
-//   5. Both real call sites (result.html's topbar share-btn, explore.html's
+//   5. Both real call sites (result.html's #share-btn, now a pill in the
+//      hero's own tag row rather than a topbar chip -- see tracker item
+//      for-product-founder-walkthrough-punch-li-t33k3y -- and explore.html's
 //      feed-card Share action) open the same shared sheet.
 
 var test = require('node:test');

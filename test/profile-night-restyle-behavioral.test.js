@@ -323,7 +323,11 @@ test('profile.html: the night theme is really applied — #0c0a1a theme-color, s
     assert.equal(await page.locator('.home-stars-a').count(), 1);
     assert.equal(await page.locator('.home-stars-b').count(), 1);
     assert.equal(await page.locator('.home-aurora').count(), 1);
-    assert.equal(await page.locator('.profile-caption').textContent(), 'This is you in your dreams');
+    // Founder walkthrough punch list (2026-08-01, tracker item
+    // for-product-founder-walkthrough-punch-li-t33k3y, item 9): the
+    // "This is you in your dreams" caption is deleted entirely, not
+    // reworded — must not exist anywhere on the page.
+    assert.equal(await page.locator('.profile-caption').count(), 0, 'the "This is you in your dreams" caption must be gone entirely');
 
     // The plain chip's own shape, per the mock: "✦ 240 · Shop".
     var chip = await page.locator('#topbar-token-chip').innerText();
