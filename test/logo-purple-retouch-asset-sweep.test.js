@@ -72,10 +72,17 @@ var NEW_LOGO_FILES = [
 var SKIP_DIRS = new Set(['.git', 'node_modules', '.netlify']);
 var SKIP_PATH_PREFIXES = [path.join(ROOT, '.claude', 'worktrees')];
 
-// The one deliberate, documented exception: the founder look-and-pick mock
-// this migration's color choice was decided from. Not this migration's to
-// edit or delete -- see this file's header comment and the tracker item.
+// The deliberate, documented exceptions: the founder look-and-pick mock this
+// migration's color choice was decided from (not this migration's to edit or
+// delete -- see this file's header comment and the tracker item), and
+// RELEASES.md (tracker item for-product-release-visibility-founder-a-8hx5cz)
+// -- an auto-regenerated changelog that verbatim-quotes historical commit
+// messages, one of which is this migration's own commit summary naming the
+// retired filename it swept. That's an honest historical record, not a live
+// asset reference (RELEASES.md is plain-text documentation, never loaded or
+// rendered as a page), so it's excluded the same way the mock is.
 var ALLOWED_OLD_REFERENCE_FILE = path.join(ROOT, 'logo-mock-x7q4.html');
+var ALLOWED_OLD_REFERENCE_FILE_2 = path.join(ROOT, 'RELEASES.md');
 
 // This test file itself legitimately spells out every OLD_LOGO_FILES name
 // as literal strings (that's the whole list being swept FOR) -- exclude it
@@ -192,6 +199,7 @@ test('repo-wide sweep: no OLD logo/icon filename is referenced anywhere except t
 
   allFiles.forEach(function (filePath) {
     if (filePath === ALLOWED_OLD_REFERENCE_FILE) return;
+    if (filePath === ALLOWED_OLD_REFERENCE_FILE_2) return;
     if (filePath === SELF_PATH) return;
     // Never flag the new binary asset files themselves (their filenames
     // legitimately contain "apple-touch-icon" etc. but not the exact old
