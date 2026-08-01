@@ -848,11 +848,25 @@
 
     DreamStore.claimDailyTokens().then(function (data) {
       if (!data || !data.claimed) {
-        // Not an error (see claim-daily-tokens.js's own doc comment) — most
-        // likely another tab/request already claimed this cooldown window.
-        // Nothing left to claim; say so plainly and let the user dismiss.
+        // Not necessarily an error (see claim-daily-tokens.js's own doc
+        // comment) — most often another tab/request already claimed this
+        // cooldown window. But it can also be an HONEST server-side "not
+        // yet" for a request that raced its own account's just-landed
+        // setup (e.g. a fresh signup's auto-opened claim sheet, tracker
+        // item for-product-bug-founder-repro-high-brand-1dtzdc) — a case
+        // where trying again is genuinely likely to succeed. Round 2 fix
+        // (same tracker item): this branch used to leave the button
+        // permanently disabled with no way to act on this message except
+        // dismissing the whole sheet — a real dead end the founder's own
+        // repro hit ("saw NOTHING" when a claim attempt silently didn't
+        // land). Re-enabling it with an explicit "Try again" CTA costs
+        // nothing on a genuine already-claimed outcome (the server just
+        // reports the same honest claimed:false again) and gives a real
+        // recovery path on a transient race — never worse than before,
+        // sometimes strictly better.
         if (myGen !== claimGen) return;
-        label.textContent = 'Already claimed';
+        btn.disabled = false;
+        label.textContent = 'Try again';
         errEl.textContent = 'Looks like you already claimed today — check back later.';
         errEl.style.display = 'block';
         return;

@@ -463,6 +463,71 @@ test('claim sheet: a "not yet claimable" server response (lost a race) shows an 
   }
 });
 
+// Tracker item for-product-bug-founder-repro-high-brand-1dtzdc (founder
+// repro, 2026-08-01): a brand-new account's very first claim attempt --
+// fired seconds after signup by home.html's auto-open flow -- failed with
+// no visible completion and no way to recover; the founder "saw NOTHING"
+// and just dismissed the sheet. Root cause (server side): see
+// test/entitlements-daily-claim.test.js's own regression test for the
+// Blobs read-your-own-write race that silently dropped the signup grant.
+// This is the CLIENT-side half of the fix: even a genuinely honest
+// `{claimed:false}` response (which is exactly what a client sees on any
+// lost race, including a transient one worth retrying) used to leave the
+// claim button permanently disabled with only a static "Already claimed"
+// message and no way to act on it short of dismissing the whole sheet --
+// itself indistinguishable from "nothing happened". This test proves the
+// button now re-enables with a real "Try again" retry affordance, and that
+// tapping it actually re-fires the claim request (and can still succeed).
+test('claim sheet: a "not yet claimable" response re-enables the button with a real "Try again" retry affordance, and retrying can still succeed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    var claimCalls = 0;
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      claimCalls++;
+      if (claimCalls === 1) {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: false, nextClaimAt: Date.now() + 72000000 }) });
+      } else {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 320, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 }) });
+      }
+    });
+
+    await seedLoggedInUserAt(page, 'claimretryaffordance', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-btn');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-error');
+      return el && el.style.display !== 'none' && el.textContent.length > 0;
+    }, { timeout: 3000 });
+
+    // The button must be a real, clickable retry affordance now -- not
+    // stuck disabled with a dead-end message.
+    var afterFirstAttempt = await page.evaluate(function () {
+      return {
+        disabled: document.getElementById('claim-sheet-btn').disabled,
+        label: document.getElementById('claim-sheet-btn-label').textContent
+      };
+    });
+    assert.equal(afterFirstAttempt.disabled, false, 'the button must be re-enabled, not left permanently disabled');
+    assert.match(afterFirstAttempt.label, /try again/i);
+
+    // Tapping it again must genuinely retry -- calling the real endpoint a
+    // second time -- and a claim that now succeeds must complete normally.
+    await page.click('#claim-sheet-btn');
+    await page.waitForFunction(function () {
+      var numEl = document.getElementById('claim-sheet-balance-num');
+      return numEl && numEl.textContent === '320';
+    }, { timeout: 3000 });
+    assert.equal(claimCalls, 2, 'the retry tap must have fired a genuine second request to the claim endpoint');
+  } finally {
+    await context.close();
+  }
+});
+
 // ============================================================================
 // Auto-open once per day (localStorage presentation throttle only)
 // ============================================================================
