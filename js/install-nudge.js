@@ -479,9 +479,47 @@ window.InstallNudge = (function () {
     );
   }
 
-  /** Wires the two buttons buildIOSOpenInSafariHtml renders — factored out of render() since it's the only guidance builder above with interactive elements of its own (the others are pure display, wired generically by render()'s existing dismiss/install handlers). */
+  /**
+   * Wires the two buttons buildIOSOpenInSafariHtml renders — factored out
+   * of render() since it's the only guidance builder above with
+   * interactive elements of its own (the others are pure display, wired
+   * generically by render()'s existing dismiss/install handlers).
+   *
+   * Also asynchronously refreshes both the href and the copy-link target
+   * with a FRESH session-transfer token, minted via
+   * DreamStore.mintSessionTransferToken() — buildIOSOpenInSafariHtml's own
+   * synchronous window.location.href read happens AFTER
+   * consumeSessionTransferTokenFromUrlSync has already stripped that
+   * page's own ?bt= param (every Step 2 caller — create.html/result.html —
+   * consumes it before InstallNudge.init() ever runs, see those pages' own
+   * script order), so without this the link handed to Safari would land
+   * the visitor there SIGNED OUT, defeating the entire point of this
+   * guided handoff. Mirrors the exact mechanism
+   * DreamStore.maintainSessionTransferUrl() already uses to keep a
+   * webview's own address bar carrying a live token — same mint call,
+   * same "null just leaves the existing value in place, never surfaces an
+   * error" resilience (mintSessionTransferToken's own doc comment) — just
+   * applied to this button's href/copy target instead of location.href
+   * itself, since rewriting the page's OWN address bar here (outside a
+   * detected webview) is out of scope for this button.
+   */
   function wireIOSOpenInSafari(trigger, platform) {
     var openBtn = document.getElementById('install-nudge-open-safari');
+    var currentHref = openBtn ? openBtn.getAttribute('href') : '';
+
+    if (window.DreamStore && typeof DreamStore.mintSessionTransferToken === 'function') {
+      DreamStore.mintSessionTransferToken().then(function (token) {
+        if (!token) return; // no-op on null -- see this function's own doc comment
+        try {
+          var url = new URL(window.location.href);
+          url.searchParams.set('bt', token);
+          var refreshed = url.toString().replace(/^https:\/\//, 'x-safari-https://').replace(/^http:\/\//, 'x-safari-http://');
+          currentHref = refreshed;
+          if (openBtn) openBtn.setAttribute('href', refreshed);
+        } catch (e) { /* malformed URL API -- leave the href as originally rendered */ }
+      });
+    }
+
     if (openBtn) {
       openBtn.addEventListener('click', function () {
         track('install_nudge_outcome', { outcome: 'ios_open_safari_tapped', platform: platform, trigger: trigger || 'unknown' });
@@ -491,7 +529,12 @@ window.InstallNudge = (function () {
     if (copyBtn) {
       copyBtn.addEventListener('click', function () {
         if (!navigator.clipboard || !navigator.clipboard.writeText) return;
-        navigator.clipboard.writeText(window.location.href).then(function () {
+        // currentHref (already x-safari-... prefixed) carries the freshly
+        // minted token once resolved above; falls back to the plain,
+        // token-less current URL only if minting hasn't landed yet or
+        // failed -- same graceful-degradation shape as the href itself.
+        var toCopy = currentHref ? currentHref.replace(/^x-safari-https:\/\//, 'https://').replace(/^x-safari-http:\/\//, 'http://') : window.location.href;
+        navigator.clipboard.writeText(toCopy).then(function () {
           var note = document.getElementById('install-nudge-safari-fallback');
           if (note) note.textContent = 'Copied! Open Safari and paste the link there.';
           track('install_nudge_outcome', { outcome: 'ios_copy_for_safari', platform: platform, trigger: trigger || 'unknown' });
@@ -597,7 +640,14 @@ window.InstallNudge = (function () {
     // competing prompts" install surface) reuses these same three Step 2
     // builders/wirer rather than duplicating the Android-menu-fallback/
     // iOS-open-in-Safari logic a second time — see home.html's own
-    // installJourneyRow for how.
+    // installJourneyRow for how. canOfferInstallForStep2 is exported
+    // alongside them for the same reason: installJourneyRow's own
+    // shouldShow() must use the broadened Step 2 check too (see that
+    // function's own doc comment above), not just the strict default —
+    // otherwise the row never becomes visible for a plain Android UA with
+    // no captured beforeinstallprompt, and the fallback builders below
+    // become unreachable.
+    canOfferInstallForStep2: canOfferInstallForStep2,
     buildAndroidMenuFallbackHtml: buildAndroidMenuFallbackHtml,
     buildIOSOpenInSafariHtml: buildIOSOpenInSafariHtml,
     wireIOSOpenInSafari: wireIOSOpenInSafari

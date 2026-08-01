@@ -1710,7 +1710,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
     function shouldShow(){
       if(inWebview) return false;
-      return !!(window.InstallNudge && window.PwaInstall && window.DreamStore && InstallNudge.canOfferInstall());
+      if(!window.InstallNudge || !window.PwaInstall || !window.DreamStore) return false;
+      // Step 2 (just escaped a webview) uses the broadened
+      // canOfferInstallForStep2() so a plain Android UA with no captured
+      // beforeinstallprompt still shows this row -- openSheet's own
+      // showAndroidMenuFallback branch below exists precisely for that
+      // case, but is unreachable if the row itself never becomes visible.
+      return justEscapedWebview ? InstallNudge.canOfferInstallForStep2() : InstallNudge.canOfferInstall();
     }
 
     function refresh(){
