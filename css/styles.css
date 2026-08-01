@@ -688,8 +688,23 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .install-nudge-dot{ flex:0 0 auto; width:22px; height:22px; border-radius:7px; background:var(--gradient-ig); display:flex; align-items:center; justify-content:center; color:#fff;}
 .install-nudge-dot svg{ width:13px; height:13px;}
 .install-nudge-body{ font-size:12px; color:var(--text-muted); line-height:1.5;}
-.install-nudge-btn{ margin-top:10px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:13px; border-radius:100px; padding:10px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer;}
+/* Step label (Step 2 of 2) -- tracker item for-product-install-first-door-
+   founder-d-b60cls's guided two-step framing. Same small-caps convention as
+   .section-label/.story-recap-label elsewhere in this file, just recolored
+   with --accent-trust so it reads as "you're partway through a flow," not
+   a generic section heading. */
+.install-nudge-steplabel{ font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-trust); margin-bottom:4px;}
+/* .install-nudge-btn doubles as a real <a href> (the Step 2 "Open in
+   Safari" x-safari-https:// link, tracker item for-product-install-first-
+   door-founder-d-b60cls) as well as a <button> -- text-decoration:none
+   keeps an anchor from picking up the browser's default underline/blue
+   link color the button variant never had. */
+.install-nudge-btn{ margin-top:10px; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700; font-size:13px; border-radius:100px; padding:10px 12px; background:var(--accent-trust); color:#0a1130; border:none; cursor:pointer; text-decoration:none;}
 .install-nudge-btn .icon{ width:14px; height:14px;}
+/* Secondary (copy-link fallback) variant -- same shape as the primary CTA
+   above, softer fill so it doesn't compete with "Open in Safari" for
+   attention while still being a real, tappable second option. */
+.install-nudge-btn-secondary{ background:var(--surface-alt); color:var(--text-primary); border:1px solid var(--border-strong);}
 /* iOS visual aid — tracker item for-product-a2hs-install-nudge-3-founder-
    vcofk7. Founder screenshot correction 2026-07-29: current Safari on iOS
    does NOT show a direct Share icon in its bottom toolbar — the toolbar
@@ -712,9 +727,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 /* .install-nudge-toolbar-more (Safari's real "•••" More button, bottom-
    right) and .install-nudge-toolbar-highlight (Chrome's real Share icon,
    right of its address bar -- tracker item for-product-bug-research-
-   founder-high-ad-vnda9t's browser-aware guidance) are visually identical
-   highlighted circles, just pointing at two different real buttons in two
-   different real browsers -- one shared rule, two class names. */
+   founder-high-ad-vnda9t's browser-aware guidance; also reused for
+   Android's real "⋮" overflow-menu icon in Step 2's menu-fallback visual,
+   tracker item for-product-install-first-door-founder-d-b60cls -- same
+   "highlighted circle pointing at a real button" role, just a third real
+   button in a third real browser) are visually identical highlighted
+   circles, just pointing at different real buttons -- one shared rule,
+   shared class names. */
 .install-nudge-toolbar-more, .install-nudge-toolbar-highlight{ flex:0 0 auto; width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid var(--accent-trust); color:#0a63d6; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 4px rgba(20,120,230,.16); }
 .install-nudge-toolbar-more svg, .install-nudge-toolbar-highlight svg{ width:15px; height:15px; }
 .install-nudge-toolbar-arrow{ font-size:10.5px; font-weight:800; letter-spacing:.03em; color:var(--accent-trust); text-align:center; }

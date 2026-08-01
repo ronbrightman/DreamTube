@@ -44,12 +44,19 @@ window.PwaInstall = (function () {
    * time, so DreamStore.getCurrentUser() already reflects a real signed-in
    * session here if one exists, but this stays defensive anyway since
    * markInstallVerified is safe to call speculatively either way.
+   *
+   * `source` (added for tracker item for-product-install-first-door-
+   * founder-d-b60cls, the retention-sprint "install-verified rate"
+   * scoreboard number) is passed straight through to
+   * DreamStore.markInstallVerified(source), the layer that actually fires
+   * the install_verified PostHog event — see that function's own doc
+   * comment in js/store.js.
    */
-  function markInstallVerifiedIfSignedIn() {
+  function markInstallVerifiedIfSignedIn(source) {
     try {
       if (!window.DreamStore || typeof DreamStore.markInstallVerified !== 'function') return;
       if (!DreamStore.getCurrentUser || !DreamStore.getCurrentUser()) return;
-      DreamStore.markInstallVerified();
+      DreamStore.markInstallVerified(source);
     } catch (e) { /* must never break the page */ }
   }
 
@@ -78,7 +85,7 @@ window.PwaInstall = (function () {
       // finished) — worth marking right away rather than waiting for this
       // same account's next standalone-mode page load to catch it via the
       // isStandalone() check below.
-      markInstallVerifiedIfSignedIn();
+      markInstallVerifiedIfSignedIn('appinstalled');
     });
   }
 
@@ -119,6 +126,23 @@ window.PwaInstall = (function () {
   function isIOS() {
     var ua = navigator.userAgent || '';
     return /iPad|iPhone|iPod/.test(ua) || (ua.indexOf('Macintosh') !== -1 && navigator.maxTouchPoints > 1);
+  }
+
+  /**
+   * True on an Android device (any browser) — same plain-UA-token
+   * convention as isIOS() above, and the same detection processing.html's
+   * own private isAndroidUA() already used for the webview-escape Android
+   * intent:// path (that one stays page-local, this is the one other
+   * callers — js/install-nudge.js's Step 2 install moment — need). Added
+   * for tracker item for-product-install-first-door-founder-d-b60cls:
+   * Android without a captured beforeinstallprompt (Chrome can be slow or
+   * heuristic-gated about firing it, and other Android browsers never fire
+   * it at all) still needs a real "look in your browser's menu" fallback at
+   * the guided Step 2 moment, rather than silently offering nothing — see
+   * js/install-nudge.js's hasSomethingToOfferForStep2().
+   */
+  function isAndroid() {
+    return /Android/.test(navigator.userAgent || '');
   }
 
   /**
@@ -487,13 +511,14 @@ window.PwaInstall = (function () {
   // home.html, per this item's own spec ("the first time home.html — or
   // any page — loads in standalone mode for a signed-in user"). Cheap
   // no-op on every ordinary browser-tab load, the overwhelming majority.
-  if (isStandalone()) markInstallVerifiedIfSignedIn();
+  if (isStandalone()) markInstallVerifiedIfSignedIn('standalone_load');
 
   return {
     canPromptInstall: canPromptInstall,
     promptInstall: promptInstall,
     isStandalone: isStandalone,
     isIOS: isIOS,
+    isAndroid: isAndroid,
     iosBrowserKind: iosBrowserKind,
     registerBusyCheck: registerBusyCheck,
     recheckBusy: recheckBusy,

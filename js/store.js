@@ -4625,19 +4625,37 @@
      * (no-op) both when there's no signed-in account to persist against
      * and when the flag was already set — callers never need to guard
      * against double-marking themselves.
+     *
+     * MEASURE (tracker item for-product-install-first-door-founder-d-
+     * b60cls): this flag flipping true used to be silent — no PostHog event
+     * fired anywhere, so "install-verified rate" had no way to become an
+     * actual retention-sprint scoreboard number even though the underlying
+     * signal was already real and durable. markInstallVerified now fires a
+     * guarded install_verified capture (same defensive try/catch pattern
+     * every other posthog call in this file already uses — e.g.
+     * setCurrentUser's identify/alias calls above) the one time it actually
+     * transitions false -> true, carrying `source` (js/pwa.js's two real
+     * triggers: 'standalone_load' or 'appinstalled') through as a prop so
+     * the two completion paths stay distinguishable in PostHog. Extends the
+     * existing install_* taxonomy (install_nudge_shown/dismissed/outcome in
+     * js/install-nudge.js) rather than inventing a separate one.
      */
     getInstallVerified: function () {
       if (!state.user) return false;
       var account = state.accounts[state.user.username.toLowerCase()];
       return !!(account && account.installVerified);
     },
-    markInstallVerified: function () {
+    markInstallVerified: function (source) {
       if (!state.user) return false;
       var key = state.user.username.toLowerCase();
       var account = state.accounts[key];
       if (!account || account.installVerified) return false;
       account.installVerified = true;
       persist();
+      if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.capture === 'function') {
+        try { window.posthog.capture('install_verified', { source: source || 'unknown' }); }
+        catch (e) { /* analytics must never break the app */ }
+      }
       return true;
     },
 
