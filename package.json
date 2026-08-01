@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "test": "node --test test/*.test.js",
-    "smoke:prod": "node --test test/prod-smoke/*.test.js"
+    "smoke:prod": "node --test test/prod-smoke/*.test.js",
+    "build": "node scripts/generate-version.js",
+    "release-notes": "node scripts/generate-releases.js"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",

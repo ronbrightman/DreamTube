@@ -15,7 +15,7 @@ Still just static files — drop the whole folder on any static host:
 - **GitHub Pages**: push the folder to a repo, enable Pages.
 - **Vercel / any static host / S3**: upload as-is.
 
-No build command, no environment variables, no server required.
+No build command, no environment variables, no server required — the pages themselves are still just static files however you host them. (This repo's own real Netlify deploy, connected via `netlify.toml`, does run one tiny build command now — see "Release visibility & rollback" below for what it does and why; it doesn't change anything about how the site works or how you'd deploy a plain copy of this folder elsewhere.)
 
 ## Pages
 
@@ -79,6 +79,106 @@ css/styles.css                 all styling
 js/store.js                      localStorage-backed data layer (the backend seam)
 manifest.json                      basic PWA manifest
 ```
+
+## Release visibility & rollback
+
+Founder-approved lightweight versioning (tracker item
+`for-product-release-visibility-founder-a-8hx5cz`) — the goal is
+answering "what's currently live, and can I get back to the last one"
+without slowing down how often this repo ships.
+
+### `version.json`
+
+Served at the site root (`/version.json`), stamped fresh on every real
+Netlify build by `scripts/generate-version.js` (wired in via
+`netlify.toml`'s `[build] command`). Shape:
+
+```json
+{
+  "version": "v2026.08.01-a1b2c3d",
+  "commitSha": "a1b2c3d4e5f6...",
+  "shortMessage": "First line of the deployed commit's message",
+  "timestamp": "2026-08-01T21:33:23.545Z",
+  "branch": "main",
+  "context": "production",
+  "deployId": "…"
+}
+```
+
+A copy is committed to the repo as a placeholder (`"version": "unbuilt"`)
+so the file always exists, including when this site is opened straight
+from disk (no build step ran) — every real Netlify deploy overwrites it
+with the real values above.
+
+**`version` field, and why it isn't `v<date>.<n>`:** the ideal scheme
+(`v2026.08.01.3` — "the 3rd deploy today") needs a persistent counter
+across builds, and Netlify's build environment is stateless — nothing
+survives between builds except what's in git or pulled from an external
+store. This repo has already been burned by exactly the failure mode a
+Blobs-backed counter would introduce (Netlify Blobs has no compare-and-
+swap / read-your-own-write guarantee — see `FOUNDER_PRINCIPLES.md`'s
+engineering-lessons section), so two near-simultaneous deploys could
+race and silently produce a wrong "nth deploy" number. Rather than fake
+a counter that isn't reliably real, `version` is `v<YYYY.MM.DD>-<short
+sha>` — still unique per build and sortable by date, just honest about
+what it's counting. Full reasoning is in `scripts/generate-version.js`'s
+header comment.
+
+Surfaced subtly in `admin.html` (owner-only tools) as a small text line
+— the instant answer to "is my device on the latest version," useful
+whenever a deploy looks like it hasn't landed yet.
+
+### `RELEASES.md`
+
+One line per commit on `main` (timestamp, short SHA, commit subject).
+**Regenerated on demand, not auto-appended at build time** — run
+`npm run release-notes` (`scripts/generate-releases.js`) after merging
+to `main`. See that script's header comment for the honest reasoning:
+Netlify's build sandbox has no credentials to push a commit back to this
+repo, and this repo has no CI/git-hooks to hang an "after merge" step
+off, so anything claiming to run automatically inside the build would
+silently never actually persist in production. Regenerating on demand
+from `git log` instead means the file is always exactly reconstructable
+and never drifts or duplicates, however long it's been since it was last
+run.
+
+### Milestone tags
+
+Ad-hoc merges to `main` do **not** get git tags — this stays fast and
+ceremony-free, matching "deploy-on-merge" as the normal flow. For an
+actual milestone worth marking permanently, tag it by hand:
+
+```
+git tag v1.0 <sha>
+git push origin v1.0
+```
+
+This is a process note, not tooling — no automation creates these tags.
+
+### Rolling back a bad deploy
+
+Netlify keeps every deploy as an immutable, individually-restorable
+version — this is the actual safety net `version.json`/`RELEASES.md`
+above are meant to make more *discoverable*, not replace. Per Netlify's
+own current docs (verified live, not from memory, per this repo's
+standing rule on dashboard instructions):
+
+- Every deploy Netlify makes is versioned and can be previewed from its
+  own unique deploy URL, browsable from the site's deploy history in the
+  Netlify UI.
+- Rolling back means publishing a previously-made deploy again — this
+  republishes that exact already-built version instantly, with no new
+  build running.
+- If the site auto-publishes on every push to `main` (the setup here),
+  a rollback stays live only until the next push-triggered deploy
+  publishes over it — Netlify calls out "locked deploys" as the way to
+  hold a specific deploy live and prevent that automatic override, if a
+  rollback needs to stick around.
+
+Exact menu/button labels aren't reproduced here since Netlify's own UI
+terminology drifts over time (see `CLAUDE.md`'s standing rule) — use the
+site's own deploy history in the Netlify dashboard, find the deploy you
+want, and use its "publish this deploy" action.
 
 ## Known gaps (by design, not bugs)
 

@@ -1,0 +1,9 @@
+{
+  "version": "v2026.08.01-b71dca3",
+  "commitSha": "b71dca363ac8503c16ec85fbadfba05bc887f332",
+  "shortMessage": "Fix stuck-on-stale-video bug after edit regenerate (tracker item for-product-bug-founder-repro-high-edit--i2yzqo)",
+  "timestamp": "2026-08-01T21:34:45.035Z",
+  "branch": null,
+  "context": null,
+  "deployId": null
+}
