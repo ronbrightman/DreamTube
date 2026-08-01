@@ -414,16 +414,23 @@ test('home.html: My Dreams row renders real thumbnails linking to result.html an
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
-    // A past no-recall date makes this a RETURNING user's account, not a
-    // genuine day-0/first-ever night -- otherwise two dreams created today
-    // with no other history would legitimately qualify as day-0 too (see
-    // shouldShowDay0Card in home.html's own script), and the embedded
-    // #day0-card (tracker item for-product-build-ship-founder-go-08-01--
-    // ags710) would own one of these two dreams instead of the row -- this
-    // test is specifically about the plain My-dreams row's own rendering,
-    // covered separately by test/home-day0-dream-card-behavioral.test.js.
+    // Both dreams dated BEFORE today (not tonight's own entry) -- otherwise
+    // whichever is most recent would qualify as tonight's real dream and
+    // get claimed by the embedded room card instead of a row tile (see
+    // shouldShowRoomCard() in home.html's own script, tracker item
+    // for-product-build-ship-founder-go-08-01--ags710 -- generalized
+    // 2026-08-01 to cover every account logging a real dream tonight, not
+    // just day-0). This test is specifically about the plain My-dreams
+    // row's own rendering with dreams from OTHER nights; the room card
+    // itself (day-0 and returning-user alike) is covered separately by
+    // test/home-day0-dream-card-behavioral.test.js.
     var TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toDateString();
-    await seedHomeUser(page, { dreams: [makeDream('md-1'), makeDream('md-2')], noRecallDates: [TEN_DAYS_AGO] });
+    var TWO_DAYS_AGO_MS = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    var ONE_DAY_AGO_MS = Date.now() - 24 * 60 * 60 * 1000;
+    await seedHomeUser(page, {
+      dreams: [makeDream('md-1', { createdAt: TWO_DAYS_AGO_MS }), makeDream('md-2', { createdAt: ONE_DAY_AGO_MS })],
+      noRecallDates: [TEN_DAYS_AGO]
+    });
 
     await page.waitForSelector('#dreams-row a.dream-row-tile', { timeout: 5000 });
     var hrefs = await page.locator('#dreams-row a.dream-row-tile').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
@@ -482,13 +489,15 @@ test('home.html: My Dreams row video thumb uses preload="metadata" (never "none"
       };
     });
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
-    // Same "not day-0" reasoning as the test above -- a single dream
-    // created today with zero other history would otherwise qualify for
-    // the embedded #day0-card instead of a My-dreams row tile at all (see
-    // shouldShowDay0Card in home.html's own script), which is exactly
-    // right for that new feature but not what THIS test is about.
+    // Same "not tonight's own dream" reasoning as the test above -- a
+    // dream created today would otherwise qualify as tonight's real dream
+    // and get claimed by the embedded room card instead of a My-dreams row
+    // tile at all (see shouldShowRoomCard() in home.html's own script),
+    // which is exactly right for that feature but not what THIS test is
+    // about, so this dream is dated yesterday instead.
     var TEN_DAYS_AGO_VID = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toDateString();
-    await seedHomeUser(page, { dreams: [makeDream('vid-1', { videoUrl: baseUrl + '/mock-home-thumb-video.mp4' })], noRecallDates: [TEN_DAYS_AGO_VID] });
+    var YESTERDAY_MS = Date.now() - 24 * 60 * 60 * 1000;
+    await seedHomeUser(page, { dreams: [makeDream('vid-1', { videoUrl: baseUrl + '/mock-home-thumb-video.mp4', createdAt: YESTERDAY_MS })], noRecallDates: [TEN_DAYS_AGO_VID] });
 
     await page.waitForSelector('#dreams-row video.vcard-video', { timeout: 5000 });
 

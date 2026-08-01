@@ -1,25 +1,40 @@
 // test/home-day0-dream-card-behavioral.test.js
 //
-// Behavioral coverage for home.html's day-0 EMBEDDED DREAM'S-ROOM CARD
-// (tracker item for-product-build-ship-founder-go-08-01--ags710, founder
-// GO 2026-08-01, "ship with or right after the 9-fix punch list"). Builds
-// on top of the day-0 state-bug fix from the founder walkthrough punch
-// list (tracker item for-product-founder-walkthrough-punch-li-t33k3y,
-// already on main -- see home-behavioral.test.js's own regression test for
-// that fix), which is unaffected by this change.
+// Behavioral coverage for home.html's EMBEDDED DREAM'S-ROOM CARD (tracker
+// item for-product-build-ship-founder-go-08-01--ags710). Shipped
+// 2026-08-01 scoped to day-0 only (founder GO, "ship with or right after
+// the 9-fix punch list"); founder generalized it the SAME day (Manager
+// comment on the tracker item, "Both good to go") to every account, not
+// just day-0. Builds on top of the day-0 state-bug fix from the founder
+// walkthrough punch list (tracker item
+// for-product-founder-walkthrough-punch-li-t33k3y, already on main -- see
+// home-behavioral.test.js's own regression test for that fix), which is
+// unaffected by this change.
 //
 // The change itself: the OLD "Logged tonight ✓" hero-tonight square is
-// DELETED for the one scenario where this account's very first-ever
-// logged night is a REAL dream (still generating, or already finished) --
-// replaced by a compact copy of result.html's own recently-shipped ritual
-// card, embedded at the top of the home scroll, transforming forming ->
-// ready IN PLACE (no reload, no toast-then-navigate). Visual/structural
-// reference: funnel-end-mock-x7q4.html (repo root, "day-0 home leads with
-// embedded dream's-room card"). See home.html's own shouldShowDay0Card()/
-// renderDay0Card() for the implementation this exercises.
+// DELETED for any account whose tonight entry is a REAL dream (still
+// generating, or already finished) -- replaced by a compact copy of
+// result.html's own recently-shipped ritual card, embedded at the top of
+// the home scroll, transforming forming -> ready IN PLACE (no reload, no
+// toast-then-navigate). Visual/structural reference: funnel-end-mock-
+// x7q4.html (repo root) -- its "new · day 0" scenario for the original
+// day-0 shape, its "existing user" scenario (added the same day, commit
+// 0022804) for the generalized returning-user shape: SAME embedded card
+// at top, but the rest of that account's already-populated shelf (streak,
+// dreams row minus the one dream now shown at top, Chamber, ritual module)
+// still renders below it, and none of the day-0-only "first ever" framing
+// leaks through. See home.html's own shouldShowRoomCard()/renderDay0Card()
+// for the implementation this exercises.
 //
-// Every OTHER Tonight state (unlogged, day-0-logged-via-"No recall"-only,
-// ordinary returning-user logged) is untouched by this feature and stays
+// Sections 1-4 below predate the generalization and exercise the day-0
+// shape specifically (still fully correct -- day-0 is still one of the two
+// cases shouldShowRoomCard() covers). Section 4b covers the generalized
+// existing/returning-user shape. Section 5's OLD "a returning user never
+// shows the embedded day-0 card" test has been replaced -- that assumption
+// was true only for the pre-generalization scope and is no longer correct
+// behavior; see section 4b for its replacement coverage. Every OTHER
+// Tonight state (unlogged, logged-via-"No recall"-only -- day-0 or not,
+// there's no dream to embed) is untouched by this feature and stays
 // covered by test/home-behavioral.test.js -- not re-covered here.
 //
 // Follows this repo's established Playwright/node:test convention
@@ -426,7 +441,7 @@ test('home.html: a day-0 account whose ONLY entry is a "No recall" check-in stil
   }
 });
 
-test('home.html: an ordinary RETURNING user (not day-0) with a real dream never shows the embedded day-0 card -- unaffected by this change', async function (t) {
+test('home.html: an ordinary RETURNING user (not day-0) whose most recent dream is from a PRIOR night still gets the plain hero-tonight.logged square once they log tonight via "No recall" -- the embedded card is a real-dream-only state, day-0 or not', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -435,20 +450,16 @@ test('home.html: an ordinary RETURNING user (not day-0) with a real dream never 
     await mockTokenStatus(page, { balance: 220, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 3 });
     await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(function () {
-      var handle = '@returningtester';
-      var TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).getTime();
+      var handle = '@returningnorecalltester';
+      var TEN_DAYS_AGO_MS = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).getTime();
       var state = {
-        user: { handle: handle, username: 'returningtester' },
-        accounts: { returningtester: { password: 'testpass1', email: 'x@example.com', noRecallDates: [] } },
+        user: { handle: handle, username: 'returningnorecalltester' },
+        accounts: { returningnorecalltester: { password: 'testpass1', email: 'x@example.com', noRecallDates: [new Date().toDateString()] } },
         draft: {},
         dreams: [{
           id: 'old-dream', ownerHandle: handle, caption: 'An old dream', storyText: 'An old dream',
           style: 'Cinematic', videoUrl: 'https://example.com/old.mp4', isPublished: false, likes: 0,
-          createdAt: TEN_DAYS_AGO
-        }, {
-          id: 'today-dream', ownerHandle: handle, caption: 'Tonight\'s dream', storyText: 'Tonight\'s dream',
-          style: 'Cinematic', videoUrl: 'https://example.com/today.mp4', isPublished: false, likes: 0,
-          createdAt: Date.now()
+          createdAt: TEN_DAYS_AGO_MS
         }]
       };
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
@@ -457,11 +468,183 @@ test('home.html: an ordinary RETURNING user (not day-0) with a real dream never 
 
     await page.waitForSelector('#hero-tonight', { state: 'visible', timeout: 5000 });
     assert.match(await page.locator('#hero-tonight').getAttribute('class'), /\blogged\b/);
-    assert.equal(await page.locator('#day0-card').isVisible(), false, 'a returning user (real prior history) must never see the day-0 embedded card');
-    // Both dreams show as ordinary My-dreams row tiles -- nothing hidden.
+    assert.equal(await page.locator('#day0-card').isVisible(), false, 'a "No recall"-only night has no real dream to embed, day-0 or returning alike');
     await page.waitForSelector('#dreams', { state: 'visible', timeout: 5000 });
     var rowHrefs = await page.locator('#dreams-row a.dream-row-tile').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
-    assert.equal(rowHrefs.length, 2);
+    assert.deepEqual(rowHrefs, ['result.html?id=old-dream']);
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// 4b. GENERALIZATION -- the same embedded card for an EXISTING/RETURNING
+// user (not first-ever night) whose TONIGHT entry is a real dream, still
+// generating or just finished (founder generalization, tracker item
+// for-product-build-ship-founder-go-08-01--ags710, Manager's "Both good to
+// go" sign-off -- see funnel-end-mock-x7q4.html's "existing user" scenario,
+// commit 0022804, for the approved visual reference this exercises).
+// ============================================================================
+
+/**
+ * Seeds a logged-in, ESTABLISHED account (real prior history well before
+ * today -- streak, multiple older completed dreams -- the opposite of
+ * seedDay0Pending/seedDay0Completed above) with an in-flight pendingJob
+ * started "now" for TONIGHT's own dream. Mirrors seedDay0Pending's shape
+ * deliberately, minus the day-0 (empty-history) constraint.
+ */
+async function seedReturningUserPending(page, opts) {
+  opts = opts || {};
+  var username = opts.username || 'returningpendinguser';
+  var priorDreams = opts.priorDreams || [
+    { id: 'prior-dream-1', caption: 'An older dream', storyText: 'An older dream', style: 'Cinematic', videoUrl: 'https://example.com/prior-1.mp4', isPublished: false, likes: 0, createdAt: Date.now() - 3 * 24 * 60 * 60 * 1000 },
+    { id: 'prior-dream-2', caption: 'A dream from last week', storyText: 'A dream from last week', style: 'Cinematic', videoUrl: 'https://example.com/prior-2.mp4', isPublished: false, likes: 0, createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 }
+  ];
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var handle = '@' + o.username;
+    var dreams = o.priorDreams.map(function (d) { return Object.assign({ ownerHandle: handle }, d); });
+    var state = {
+      user: { handle: handle, username: o.username },
+      accounts: {},
+      draft: { caption: '', style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null },
+      dreams: dreams,
+      pendingJob: {
+        operationName: 'mock:req-' + o.username,
+        startedAt: Date.now(),
+        caption: o.storyText || 'I was back in my childhood house, but every door opened onto the sea',
+        storyText: o.storyText || 'I was back in my childhood house, but every door opened onto the sea',
+        style: 'Cinematic',
+        sourceDreamId: null,
+        mediaType: 'video',
+        notify: false,
+        ownerHandle: handle
+      }
+    };
+    // A no-recall date well outside this week, well before any of the
+    // prior dreams -- real, established account history, not day-0.
+    state.accounts[o.username] = { password: 'testpass1', email: o.username + '@example.com', noRecallDates: [new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toDateString()] };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, { username: username, storyText: opts.storyText, priorDreams: priorDreams });
+  await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+}
+
+/**
+ * Same established-account shape as seedReturningUserPending, but tonight's
+ * own dream is already finished (created "now") rather than still pending.
+ */
+async function seedReturningUserCompleted(page, opts) {
+  opts = opts || {};
+  var username = opts.username || 'returningreadyuser';
+  var priorDreams = opts.priorDreams || [
+    { id: 'prior-dream-1', caption: 'An older dream', storyText: 'An older dream', style: 'Cinematic', videoUrl: 'https://example.com/prior-1.mp4', isPublished: false, likes: 0, createdAt: Date.now() - 3 * 24 * 60 * 60 * 1000 },
+    { id: 'prior-dream-2', caption: 'A dream from last week', storyText: 'A dream from last week', style: 'Cinematic', videoUrl: 'https://example.com/prior-2.mp4', isPublished: false, likes: 0, createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 }
+  ];
+  await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(function (o) {
+    var handle = '@' + o.username;
+    var tonightDream = Object.assign({
+      id: 'tonight-dream-1',
+      ownerHandle: handle,
+      caption: 'Back in my childhood house',
+      storyText: 'I was back in my childhood house, but every door opened onto the sea',
+      style: 'Cinematic',
+      videoUrl: 'https://example.com/tonight-dream-1.mp4',
+      isPublished: false,
+      likes: 0,
+      createdAt: Date.now()
+    }, o.dreamExtra || {});
+    var priorDreams = o.priorDreams.map(function (d) { return Object.assign({ ownerHandle: handle }, d); });
+    var state = {
+      user: { handle: handle, username: o.username },
+      accounts: {},
+      draft: {},
+      dreams: [tonightDream].concat(priorDreams)
+    };
+    state.accounts[o.username] = { password: 'testpass1', email: o.username + '@example.com', noRecallDates: [new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toDateString()] };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, { username: username, dreamExtra: opts.dreamExtra, priorDreams: priorDreams });
+  await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+}
+
+test('home.html: an EXISTING/RETURNING user (real prior history, not first-ever night) whose tonight\'s dream is still GENERATING gets the same embedded room card at top -- Tonight tile replaced, and their rest-of-shelf (streak, dreams row minus the embedded dream, Chamber, ritual module) still renders below it, with no day-0-only "first ever"/"welcome" copy leaking through', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 340, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 4 });
+    await page.route('**/.netlify/functions/video-status*', function () { /* stalled, deliberately -- stay forming */ });
+    await seedReturningUserPending(page, { username: 'existinggeneratingtester', storyText: 'I was back in my childhood house, but every door opened onto the sea' });
+
+    // The embedded card shows, forming, and replaces the Tonight tile --
+    // the exact same mechanics as the day-0 case.
+    await page.waitForSelector('#day0-card', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#hero-tonight').isVisible(), false, 'the Tonight tile must be replaced by the embedded card for a returning user too');
+    var frameClass = await page.locator('#d0-video').getAttribute('class');
+    assert.doesNotMatch(frameClass, /\bready\b/);
+    assert.equal(await page.locator('#d0-forming-veil').isVisible(), true);
+    var quote = await page.locator('#d0-quote').textContent();
+    assert.match(quote, /childhood house/i, 'tonight\'s OWN dream quote must render, not a placeholder');
+
+    // Rest of their already-populated shelf still renders below it.
+    var chamberPillClass = await page.locator('#chamber-pill').getAttribute('class');
+    assert.match(chamberPillClass, /\bpulse\b/, 'Chamber hero still renders with its pulse');
+    await page.waitForSelector('#ritual', { state: 'visible', timeout: 5000 });
+    var ritualBig = await page.locator('#ritual-big').textContent();
+    var ritualSub = await page.locator('#ritual-sub').textContent();
+    assert.match(ritualBig + ' ' + ritualSub, /4/, 'the ritual module must show this account\'s REAL streak (4) somewhere, not day-0\'s "Night 1"');
+    assert.doesNotMatch(ritualBig, /night 1\b/i, 'must never show day-0\'s "Night 1" copy for a returning user');
+
+    // My-dreams row: the two PRIOR dreams still show, the embedded one does not duplicate.
+    await page.waitForSelector('#dreams', { state: 'visible', timeout: 5000 });
+    var rowHrefs = await page.locator('#dreams-row a.dream-row-tile').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
+    assert.deepEqual(rowHrefs.sort(), ['result.html?id=prior-dream-1', 'result.html?id=prior-dream-2'].sort(), 'the two OLDER dreams still show as ordinary row tiles, and there is no duplicate generating tile for tonight\'s dream (already shown forming at top)');
+    assert.equal(await page.locator('#generating-tile').count(), 0, 'no second, duplicate generating tile in the row -- the embedded card already owns that job');
+
+    // No day-0-only "first ever"/"welcome bonus" framing leaks through anywhere visible.
+    var bodyText = await page.locator('#app').innerText();
+    assert.doesNotMatch(bodyText, /first[- ]ever|night 1|welcome bonus|streak starts tonight/i, 'an existing user must never see day-0-only first-night framing');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: an EXISTING/RETURNING user whose tonight\'s dream has JUST FINISHED gets the same embedded room card, alive and ready, at top -- with their rest-of-shelf intact below it and no day-0-only copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 340, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 4 });
+    await seedReturningUserCompleted(page, { username: 'existingreadytester' });
+
+    await page.waitForSelector('#d0-video.ready', { timeout: 5000 });
+    assert.equal(await page.locator('#hero-tonight').isVisible(), false);
+    assert.equal(await page.locator('#d0-watch').isVisible(), true);
+    var quietButtons = await page.locator('#d0-quiet .quietlink').all();
+    for (var i = 0; i < quietButtons.length; i++) {
+      assert.equal(await quietButtons[i].isDisabled(), false, 'quiet-row actions must be enabled once tonight\'s dream is ready, for a returning user too');
+    }
+
+    // Rest of shelf renders below it, unchanged.
+    await page.waitForSelector('#ritual', { state: 'visible', timeout: 5000 });
+    var ritualBig = await page.locator('#ritual-big').textContent();
+    var ritualSub = await page.locator('#ritual-sub').textContent();
+    assert.match(ritualBig + ' ' + ritualSub, /4/, 'the ritual module must show this account\'s REAL streak (4) somewhere');
+    assert.doesNotMatch(ritualBig, /night 1\b/i, 'must never show day-0\'s "Night 1" copy for a returning user');
+    await page.waitForSelector('#dreams', { state: 'visible', timeout: 5000 });
+    var rowHrefs = await page.locator('#dreams-row a.dream-row-tile').evaluateAll(function (els) { return els.map(function (e) { return e.getAttribute('href'); }); });
+    assert.deepEqual(rowHrefs.sort(), ['result.html?id=prior-dream-1', 'result.html?id=prior-dream-2'].sort(), 'tonight\'s own dream (now shown in the embedded card) must never also appear as a row tile');
+
+    // Tapping through opens the full room, same as day-0.
+    await Promise.all([
+      page.waitForURL(/result\.html\?id=tonight-dream-1/, { timeout: 5000, waitUntil: 'domcontentloaded' }),
+      page.click('#d0-video')
+    ]);
+
+    var bodyText = await page.locator('#app').innerText();
+    assert.doesNotMatch(bodyText, /first[- ]ever|night 1|welcome bonus|streak starts tonight/i, 'an existing user must never see day-0-only first-night framing');
   } finally {
     await context.close();
   }

@@ -267,14 +267,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   text-shadow:0 1px 8px rgba(12,10,26,.55);
 }
 
-/* --- 3b · EMBEDDED DREAM'S-ROOM CARD (day-0 forming-or-just-completed
-   state ONLY — founder call 2026-08-01, tracker item for-product-build-
-   ship-founder-go-08-01--ags710). DELETES the old "Logged tonight ✓"
-   .hero-tonight.logged square for this ONE scenario (the account's first-
-   ever logged night, while that night's own dream is either still
-   generating or just finished — see shouldShowDay0Card() in this page's
-   own script) and replaces it with a compact version of result.html's own
-   recently-shipped ritual card, embedded here at the top of the shelf,
+/* --- 3b · EMBEDDED DREAM'S-ROOM CARD (any night tonight's own entry is a
+   REAL dream, still generating or just finished — tracker item for-
+   product-build-ship-founder-go-08-01--ags710). Shipped 2026-08-01 scoped
+   to day-0 only (the account's very first-ever logged night); founder then
+   generalized it the same day (Manager comment on the tracker item, "Both
+   good to go") to EVERY account, not just day-0 — see shouldShowRoomCard()
+   in this page's own script, and funnel-end-mock-x7q4.html's "existing
+   user" scenario for the founder-approved visual reference for a returning
+   account. DELETES the old "Logged tonight ✓" .hero-tonight.logged square
+   for this scenario and replaces it with a compact version of result.html's
+   own recently-shipped ritual card, embedded here at the top of the shelf,
    transforming forming -> ready IN PLACE (no navigation, no reload, no
    toast-then-redirect) — tapping the video/watch pill is what actually
    opens the full dream's room (result.html?id=..., this app's existing
@@ -285,9 +288,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    one module in a much longer scroll, not the whole screen. The forming
    veil (shimmer sweep + progress arc + caption) is ported from the
    founder-approved funnel-end-mock-x7q4.html's own .video-forming/
-   .form-sweep/.form-arc/.form-caption. Every OTHER Tonight state (unlogged,
-   day-0 logged via "No recall" only, ordinary returning-user logged) is
-   completely untouched — out of scope per this tracker item. --- */
+   .form-sweep/.form-arc/.form-caption. The card itself carries no day-0-only
+   copy (its "Tonight's dream" title, "Ready when your dream is" caption
+   etc. are already scenario-neutral) — any actual first-ever-night framing
+   lives entirely OUTSIDE this card (hero-tonight's own d1line, the ritual
+   module's first-claim eyebrow), gated by isFirstEverNight there, untouched
+   by this generalization. Every OTHER Tonight state (unlogged, logged via
+   "No recall" only — day-0 or not, there is no dream to embed) is
+   completely untouched — out of scope per this tracker item. .day0card/
+   #day0-card/#d0-* naming is legacy from the original day-0-only ship and
+   kept as-is (internal implementation detail, not user-facing) rather than
+   a repo-wide rename for a comment-only generalization. --- */
 .day0card{ margin-bottom:28px; }
 .day0card .dreamvideo{
   position:relative; height:min(34vh, 280px); width:auto; max-width:100%; margin:0 auto;
@@ -600,9 +611,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="home-greet-line" id="home-greet-line">Good evening</div>
       </div>
 
-      <!-- 3a · EMBEDDED DREAM'S-ROOM CARD — day-0 forming-or-just-completed
-           state only (see this page's own style-block comment above
-           .day0card, and shouldShowDay0Card()/renderDay0Card() in the
+      <!-- 3a · EMBEDDED DREAM'S-ROOM CARD — any account whose tonight entry
+           is a real dream, still generating or just finished (day-0 or
+           returning user alike — see this page's own style-block comment
+           above .day0card, and shouldShowRoomCard()/renderDay0Card() in the
            script below). Hidden by default; shown/hidden opposite
            #hero-tonight, never both at once. -->
       <section class="hcard hero day0card" id="day0-card" data-card="day0dream" style="display:none;">
@@ -847,19 +859,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   var logStatus = DreamStore.getDreamLogStatus();
   var lastTokenStatus = null;
 
-  // ===== Day-0 embedded dream's-room card gate (tracker item for-product-
-  // build-ship-founder-go-08-01--ags710) — the ONE state where the old
-  // "Logged tonight ✓" hero-tonight square is replaced by the embedded
-  // card: this account's very first-ever logged night, AND tonight's own
-  // entry is a REAL dream (still generating, or already finished) rather
-  // than a "No recall" check-in. A day-0 "No recall" night keeps the
-  // ordinary hero-tonight.logged treatment untouched -- there is no dream
-  // to embed for that case. Single source of truth so renderTonightHero,
-  // renderDay0Card, and renderDreamsRow (which must not also show this
-  // exact dream as a My-dreams row tile) can never disagree with each
-  // other about which state the page is in.
-  function shouldShowDay0Card(){
-    return logStatus.isFirstEverNight && logStatus.loggedToday &&
+  // ===== Embedded dream's-room card gate (tracker item for-product-build-
+  // ship-founder-go-08-01--ags710) — the state where the old "Logged
+  // tonight ✓" hero-tonight square is replaced by the embedded card:
+  // tonight's own entry is a REAL dream (still generating, or already
+  // finished) rather than a "No recall" check-in. Originally shipped
+  // scoped to isFirstEverNight (day-0) only; the founder generalized it
+  // the same day to EVERY account (Manager comment on the tracker item,
+  // "Both good to go") -- so this deliberately does NOT check
+  // isFirstEverNight anymore. A "No recall" night (day-0 or returning)
+  // keeps the ordinary hero-tonight.logged treatment untouched -- there is
+  // no dream to embed for that case. Single source of truth so
+  // renderTonightHero, renderDay0Card, and renderDreamsRow (which must not
+  // also show this exact dream as a My-dreams row tile) can never disagree
+  // with each other about which state the page is in. Day-0-only COPY
+  // (the "first ever" framing) stays gated separately by isFirstEverNight,
+  // entirely outside this card -- see hero-tonight's own d1line and the
+  // ritual module's first-claim eyebrow, both untouched by this function.
+  function shouldShowRoomCard(){
+    return logStatus.loggedToday &&
       (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending');
   }
 
@@ -908,7 +926,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // The embedded dream's-room card (#day0-card, rendered by
     // renderDay0Card below) takes over this hero's job entirely for the
     // one state it owns -- never both on screen at once.
-    section.style.display = shouldShowDay0Card() ? 'none' : '';
+    section.style.display = shouldShowRoomCard() ? 'none' : '';
   }
   renderTonightHero();
 
@@ -1003,14 +1021,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   function renderDay0Card(){
     var card = document.getElementById('day0-card');
-    if(!shouldShowDay0Card()){ card.style.display = 'none'; return; }
+    if(!shouldShowRoomCard()){ card.style.display = 'none'; return; }
     // An in-flight job's own live state takes priority over an already-
-    // completed dream, so the rare same-day second submission (still
-    // possible within isFirstEverNight -- see getDreamLogStatus's own doc
-    // comment: "a real dream wins if somehow both exist the same day" is
-    // THAT function's own priority for its unrelated todayEntryType field,
-    // not a constraint on this card) still shows as forming rather than
-    // silently jumping straight to the first dream's ready state.
+    // completed dream, so the rare same-day second submission still shows
+    // as forming rather than silently jumping straight to the dream's
+    // ready state.
     if(pendingJob){
       card.style.display = '';
       renderDay0CardForming();
@@ -1018,7 +1033,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       card.style.display = '';
       renderDay0CardReady(completedDream);
     } else {
-      // Defensive: shouldShowDay0Card() implies loggedToday with a real
+      // Defensive: shouldShowRoomCard() implies loggedToday with a real
       // dream, so one of the two above should always be true here -- hide
       // rather than show a broken/empty card if that invariant is ever violated.
       card.style.display = 'none';
@@ -1307,21 +1322,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var emptyEl = document.getElementById('dreams-empty');
 
     // The embedded #day0-card (tracker item for-product-build-ship-
-    // founder-go-08-01--ags710) IS whichever dream it's currently showing
-    // -- that exact dream must never ALSO appear as a tile down here.
-    // Filtered out by id (not "hide the whole row whenever day-0 is
-    // active") so the rare case of a second same-day dream on an
-    // otherwise-day-0 account still gets its own tile here, same as any
+    // founder-go-08-01--ags710, generalized to every account the same day)
+    // IS whichever dream it's currently showing -- that exact dream must
+    // never ALSO appear as a tile down here. Filtered out by id (not "hide
+    // the whole row whenever the room card is active") so the rare case of
+    // a second same-day dream still gets its own tile here, same as any
     // other day -- only the ONE dream #day0-card owns is ever excluded.
-    var day0Active = shouldShowDay0Card();
-    var day0OwnedId = day0Active ? (pendingJob ? DreamStore.getPendingDreamId() : (completedDream ? completedDream.id : null)) : null;
-    var eligible = day0OwnedId ? myDreams.filter(function(d){ return d.id !== day0OwnedId; }) : myDreams;
+    // Applies identically whether this account is day-0 or a long-time
+    // returning user -- shouldShowRoomCard() no longer distinguishes them.
+    var roomCardActive = shouldShowRoomCard();
+    var roomCardOwnedId = roomCardActive ? (pendingJob ? DreamStore.getPendingDreamId() : (completedDream ? completedDream.id : null)) : null;
+    var eligible = roomCardOwnedId ? myDreams.filter(function(d){ return d.id !== roomCardOwnedId; }) : myDreams;
 
     // When #day0-card owns the ONLY dream this account has (the common
-    // case), there is nothing left to show here at all -- the whole
-    // section stays hidden entirely, matching the founder-approved mock's
-    // "No My-dreams row in this state — the top card IS the dream."
-    if(day0Active && !eligible.length){
+    // day-0 case -- a returning user will almost always still have OTHER
+    // dreams left in `eligible`), there is nothing left to show here at
+    // all -- the whole section stays hidden entirely, matching the
+    // founder-approved mock's "No My-dreams row in this state — the top
+    // card IS the dream."
+    if(roomCardActive && !eligible.length){
       section.style.display = 'none';
       return;
     }
@@ -1341,10 +1360,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
     var recent = eligible.slice(0, DREAMS_ROW_MAX);
     // The generating tile only ever represents the SAME in-flight job
-    // #day0-card already shows forming while day0Active -- never duplicated
-    // here in that case; a returning user's own generating tile (not
-    // day-0) still leads the row exactly as before.
-    var showGeneratingTile = !!pendingJob && !day0Active;
+    // #day0-card already shows forming while roomCardActive -- never
+    // duplicated here in that case, for a day-0 OR a returning account
+    // alike (the founder-approved existing-user mock: "NO duplicate
+    // forming tile"). Only a pending job outside the room card's scope
+    // (there isn't one — every pending job is owned by the card whenever
+    // it's showing) would ever lead the row instead.
+    var showGeneratingTile = !!pendingJob && !roomCardActive;
     if(!recent.length && !showGeneratingTile){
       rowEl.style.display = 'none';
       emptyEl.style.display = 'block';
@@ -1377,9 +1399,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // state — see getDreamLogStatus's own doc comment) and re-renders every
   // module whose state can change as a generation starts/finishes/fails:
   // Tonight (logged tonight the moment a job exists — hidden entirely in
-  // favor of #day0-card for the day-0 forming-or-just-completed state, see
-  // shouldShowDay0Card), the embedded day-0 card itself (forming -> ready,
-  // tracker item for-product-build-ship-founder-go-08-01--ags710), Chamber
+  // favor of #day0-card for the forming-or-just-completed real-dream state,
+  // day-0 or returning user alike, see shouldShowRoomCard()), the embedded
+  // room card itself (forming -> ready, tracker item for-product-build-
+  // ship-founder-go-08-01--ags710), Chamber
   // (its target dream id), the ritual module (streak/first-night copy +
   // claim eyebrow), the My-dreams row (the generating tile itself, or
   // hidden entirely while #day0-card owns this exact dream), and the
