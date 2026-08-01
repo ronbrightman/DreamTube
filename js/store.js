@@ -880,13 +880,67 @@
    * same page. Fails open (true) on any storage/parse hiccup — never block
    * a legitimate completion over an infra blip, same reasoning as this
    * file's other defensive localStorage reads.
+   *
+   * BUG FIX (tracker item for-product-bug-founder-repro-high-edit--i2yzqo,
+   * founder repro directly on top of jcasn1 shipping): a MISSING pendingJob
+   * (`job` falsy) used to be treated as unconditionally "superseded"
+   * (`!!job && ...` short-circuits to false) — but a cleared pendingJob is
+   * AMBIGUOUS, not proof of that. It can mean either:
+   *   (a) a genuinely NEWER edit of this same dream was submitted AND has
+   *       already itself finished (cleared pendingJob on ITS OWN
+   *       completion) — this attempt really is stale, must not clobber it
+   *       (the exact scenario this guard was built for, and this repo's
+   *       own regression test for it — "a SECOND edit... wins" below);
+   *   (b) a CONCURRENT resumer of THIS EXACT SAME operationName already
+   *       finished it first and cleared the slot — this attempt is NOT
+   *       stale, just redundant. Completely realistic in production, not
+   *       just theoretical: home.html's own "resume on load"
+   *       (`if(pendingJob){ DreamStore.resumePendingJob(); }`) and
+   *       result.html's identical "regenerating resume driver" can both be
+   *       alive at once for the SAME operationName — e.g. the tab that
+   *       actually submitted the edit (home.html) is left open (or
+   *       preserved by the browser's back-forward cache — bfcache does
+   *       not abort an in-flight fetch, it just freezes/thaws it) while
+   *       the user separately opens or returns to the dream's own room
+   *       mid-generation. Reproduced directly with two concurrent
+   *       Playwright pages sharing one localStorage, both auto-resuming
+   *       the same seeded pendingJob: whichever finished first
+   *       legitimately cleared pendingJob, and the second (the one the
+   *       "user" was actually watching) had the OLD `!!job` check wrongly
+   *       read that as supersession, silently swallowing its own
+   *       completion — `resumePendingJob().then()` got back `null`, so
+   *       result.html's own `if(!finishedDream) return;` bailed with no
+   *       render(), no toast, and the frame stayed stuck showing the
+   *       regenerating veil (over the OLD pre-edit video underneath)
+   *       forever — exactly the founder's report.
+   * Disambiguating (a) from (b) needs one more signal beyond pendingJob
+   * alone, since clearing it destroys which job cleared it: `sourceDreamId`
+   * (now threaded through as a second argument) lets this read the DREAM's
+   * own `sourceOperationName` — stamped by finalizeDream at the moment ANY
+   * job actually lands on this dream. If it already equals THIS
+   * operationName, case (b): a concurrent resumer of the same job beat
+   * this one to it, not a genuinely different attempt — not stale (see
+   * finalizeDream's own matching idempotency guard for what happens next
+   * once this lets a redundant-but-legitimate same-job completion
+   * through). If it's anything else (a different operationName, or the
+   * dream doesn't even exist), case (a): genuinely superseded, stale.
    */
-  function isPendingJobStillCurrent(operationName) {
+  function isPendingJobStillCurrent(operationName, sourceDreamId) {
     try {
       var raw = localStorage.getItem(KEY);
       if (!raw) return true;
-      var job = JSON.parse(raw).pendingJob;
-      return !!job && job.operationName === operationName;
+      var parsed = JSON.parse(raw);
+      var job = parsed.pendingJob;
+      if (job) return job.operationName === operationName;
+      // pendingJob is cleared -- ambiguous, see doc comment above.
+      // Disambiguate via the dream's own sourceOperationName.
+      var dreams = Array.isArray(parsed.dreams) ? parsed.dreams : [];
+      var dream = null;
+      for (var i = 0; i < dreams.length; i++) {
+        if (dreams[i] && dreams[i].id === sourceDreamId) { dream = dreams[i]; break; }
+      }
+      if (!dream) return true; // can't tell -- fail open, same philosophy as the rest of this function
+      return dream.sourceOperationName === operationName;
     } catch (e) { return true; }
   }
 
@@ -1655,6 +1709,25 @@
       // dream at all — same not_found failure, no silent partial mutation.
       var myHandle = state.user ? state.user.handle : null;
       if (!dream || !myHandle || dream.ownerHandle !== myHandle) throw new Error('not_found');
+      // Idempotent-redundant-completion guard (tracker item for-product-
+      // bug-founder-repro-high-edit--i2yzqo) — isPendingJobStillCurrent's
+      // own fix (see that function's doc comment) now correctly lets a
+      // completion through even when pendingJob was already cleared by a
+      // CONCURRENT resumer of this EXACT SAME operationName (two page
+      // contexts alive at once — e.g. an earlier tab bfcache-preserved or
+      // simply left open, both auto-resuming the same in-flight job). That
+      // fix makes it possible for finalizeDream to legitimately be called
+      // TWICE for the same completed job. If this dream was already
+      // patched by THIS exact operationName (not a different, genuinely
+      // newer one), don't re-mutate/re-clear/re-sync/re-fire analytics a
+      // second time for what is, from this dream's point of view, a no-op
+      // — just hand back the dream exactly as it already stands so the
+      // CALLER's own render()/toast still fires (this is what actually
+      // resolves the founder's reported stuck-on-the-old-video symptom —
+      // the caller previously received `null` here and silently gave up).
+      if (operationName && dream.sourceOperationName === operationName) {
+        return dream;
+      }
       // Regenerating (Edit Dream -> Generate Again, or Try Again after a
       // failure) changes the dream's actual content, so any previously
       // generated interpretation was reflecting on content that no longer
@@ -1989,7 +2062,7 @@
       // failure from the user's point of view, just a stale straggler with
       // nothing left to do; callers (home.html/result.html) treat a null
       // result as a quiet no-op.
-      if (sourceDreamId && !isPendingJobStillCurrent(capturedOperationName)) {
+      if (sourceDreamId && !isPendingJobStillCurrent(capturedOperationName, sourceDreamId)) {
         return null;
       }
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
@@ -2021,7 +2094,7 @@
       // rather than showing an error toast about an attempt the user has
       // already moved on from — the newer attempt owns the account's
       // pendingJob now and will settle (success or failure) on its own.
-      var isStaleEdit = sourceDreamId && capturedOperationName && !isPendingJobStillCurrent(capturedOperationName);
+      var isStaleEdit = sourceDreamId && capturedOperationName && !isPendingJobStillCurrent(capturedOperationName, sourceDreamId);
       if (isStaleEdit) {
         err.superseded = true;
       } else {

@@ -180,7 +180,20 @@ function mockGenerateAndPoll(page) {
   page.route('**/.netlify/functions/generate-video', function (route) {
     var body = JSON.parse(route.request().postData() || '{}');
     generateVideoCalls.push(body);
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fake-model:test-op-1' }) });
+    // A unique operationName per call (test/edit-mechanism-behavioral.test.js's
+    // own mockGenerateAndPoll does the same, via generateVideoCalls.length)
+    // -- matches what generate-video.js's real operationName ALWAYS is
+    // (fal's own per-request request_id embedded in the string, see that
+    // file's own `'fal:' + FAL_MODEL + ':' + data.request_id`), which this
+    // file's own "Generate Again" tests below rely on being genuinely
+    // distinct across a dream's first generation and its later regenerate
+    // -- js/store.js's finalizeDream idempotency guard (tracker item
+    // for-product-bug-founder-repro-high-edit--i2yzqo) treats a REPEATED
+    // operationName landing on the same dream as a redundant re-completion
+    // of the identical job and intentionally no-ops it, so a fixed,
+    // never-changing operationName across two REAL, different submissions
+    // would incorrectly look like that here.
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fake-model:test-op-' + generateVideoCalls.length }) });
   });
   page.route('**/.netlify/functions/video-status*', function (route) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });

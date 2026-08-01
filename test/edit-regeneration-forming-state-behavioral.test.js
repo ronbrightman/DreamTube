@@ -508,3 +508,137 @@ test('js/store.js: a SECOND edit of the same dream, submitted before the first r
     await context.close();
   }
 });
+
+// ============================================================================
+// 6. Root-cause regression for tracker item
+//    for-product-bug-founder-repro-high-edit--i2yzqo — founder repro
+//    directly on top of jcasn1 shipping: "editing a dream on result.html
+//    shows the forming/regenerating veil correctly, but when it completes
+//    the founder keeps seeing the PRE-EDIT video, not the new one."
+//
+// Root cause (confirmed by REPRODUCING it first, per this repo's
+// systematic-debugging discipline, before touching any code): TWO
+// CONCURRENT resumers of the exact SAME pendingJob. The real submission
+// always happens on home.html (`?generate=1`), which ALSO auto-resumes any
+// pendingJob it finds on load (`if(pendingJob){ DreamStore.resumePendingJob(); }`)
+// -- if that tab is left open, or preserved by the browser's back-forward
+// cache (bfcache freezes an in-flight fetch rather than aborting it), it
+// keeps polling in the background. When the user separately opens/returns
+// to the dream's own room (result.html) mid-generation, result.html's own
+// "regenerating resume driver" ALSO resumes the identical operationName.
+// Whichever of the two finishes first legitimately clears the account's
+// single pendingJob slot -- and the OLD isPendingJobStillCurrent
+// (js/store.js) treated a MISSING pendingJob as unconditional proof of
+// "superseded by a newer edit," when it just as often means "a concurrent
+// resumer of THIS SAME job already finished it." The page the founder was
+// actually WATCHING got `null` back from resumePendingJob() and silently
+// gave up (`if(!finishedDream) return;`) -- no render(), no toast, frame
+// stuck showing the regenerating veil over the OLD pre-edit video forever.
+//
+// Fix: isPendingJobStillCurrent now disambiguates via the dream's own
+// sourceOperationName (only stamped once a job actually lands) instead of
+// treating "pendingJob is gone" as inherently stale; finalizeDream gained a
+// matching idempotency guard so a redundant-but-legitimate same-job
+// completion doesn't re-fire analytics/side-effects a second time. Test 5
+// above (a GENUINELY newer edit superseding an older in-flight one) is the
+// regression guard for the "don't overcorrect" direction — both must hold.
+// ============================================================================
+
+test('REGRESSION for-product-bug-founder-repro-high-edit--i2yzqo: two concurrent resumers of the SAME job (home.html + result.html, e.g. an earlier tab bfcache-preserved or left open) -- the page the user is watching must NOT get stuck on the stale pre-edit video, and the fix must survive a reload', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var dreamId = 'd-i2yzqo-race-1';
+    var opName = 'mock:req-i2yzqo-race';
+
+    var pageHome = await context.newPage();
+    var pageRoom = await context.newPage();
+    await blockThirdParty(pageHome);
+    await blockThirdParty(pageRoom);
+    await mockTokenStatus(pageHome);
+    await mockTokenStatus(pageRoom);
+
+    // Seed a logged-in account with an already-finished dream, PLUS a
+    // pendingJob already regenerating it -- mirrors the real state right
+    // after home.html's own submission has landed (see
+    // seedResultPageRegenerating's identical shape above), before either
+    // page in this test has loaded at all.
+    await safeGoto(pageHome, baseUrl + '/login.html');
+    await pageHome.evaluate(function (o) {
+      var handle = '@' + o.username;
+      var state = {
+        user: { handle: handle, username: o.username },
+        accounts: {}, draft: {},
+        dreams: [{
+          id: o.dreamId, ownerHandle: handle,
+          caption: 'old story', promptText: 'old prompt', storyText: 'old story',
+          style: 'Cinematic', mediaType: 'video',
+          videoUrl: 'https://example.com/old-video.mp4', dur: '0:08',
+          isPublished: false, likes: 0, likedByMe: false, createdAt: Date.now() - 86400000
+        }],
+        pendingJob: {
+          operationName: o.opName, startedAt: Date.now(),
+          caption: 'new prompt', storyText: 'new story', style: 'Cinematic',
+          sourceDreamId: o.dreamId, mediaType: 'video', notify: false, ownerHandle: handle
+        }
+      };
+      state.accounts[o.username] = { password: 'testpass1', email: o.username + '@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    }, { username: 'i2yzqoracetester', dreamId: dreamId, opName: opName });
+
+    // Both pages independently poll the SAME operationName -- held open on
+    // both, released together below to model them completing at nearly
+    // the same real-world moment.
+    var heldRoutes = [];
+    function holdVideoStatus(page) {
+      return page.route('**/.netlify/functions/video-status*', function (route) { heldRoutes.push(route); });
+    }
+    await holdVideoStatus(pageHome);
+    await holdVideoStatus(pageRoom);
+    await pageHome.route('**/.netlify/functions/mark-generation-completed', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await pageRoom.route('**/.netlify/functions/mark-generation-completed', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    // pageHome = home.html, auto-resumes the seeded pendingJob on load.
+    await safeGoto(pageHome, baseUrl + '/home.html');
+    // pageRoom = the SAME dream's own room, resumes independently.
+    await safeGoto(pageRoom, baseUrl + '/result.html?id=' + dreamId);
+    await pageRoom.waitForSelector('#dreamvideo-frame.regenerating', { timeout: 5000 });
+
+    await settle(function () { return heldRoutes.length >= 2; }, { timeout: 5000 });
+    assert.equal(heldRoutes.length, 2, 'both home.html and result.html must have independently reached video-status for the SAME job');
+
+    var newVideoUrl = 'https://example.com/new-video-i2yzqo.mp4';
+    await Promise.all(heldRoutes.map(function (route) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: newVideoUrl }) });
+    }));
+
+    // The page the "founder" is actually watching (the dream's room) must
+    // transition OUT of the regenerating veil and show the NEW video --
+    // never get stuck showing the stale pre-edit one.
+    await pageRoom.waitForFunction(function () {
+      return !document.getElementById('dreamvideo-frame').classList.contains('regenerating');
+    }, null, { timeout: 5000 });
+    var videoSrc = await pageRoom.locator('#result-video').getAttribute('src');
+    assert.match(videoSrc, /new-video-i2yzqo\.mp4/, 'must show the NEW video, not get silently stuck on the stale pre-edit one');
+
+    var dreamAfter = await readDream(pageRoom, dreamId);
+    assert.equal(dreamAfter.videoUrl, newVideoUrl);
+    var pendingJobAfter = await readPendingJob(pageRoom);
+    assert.equal(pendingJobAfter, null);
+
+    // ===== Reload-in-the-loop (tracker item's own explicitly-named second
+    // place to check) — the fix must hold up after a fresh page load too,
+    // not just within the same live page instance. =====
+    await safeGoto(pageRoom, baseUrl + '/result.html?id=' + dreamId);
+    await pageRoom.waitForTimeout(200);
+    var videoSrcAfterReload = await pageRoom.locator('#result-video').getAttribute('src');
+    assert.match(videoSrcAfterReload, /new-video-i2yzqo\.mp4/, 'a reload of the room must still show the NEW video');
+    assert.equal(await pageRoom.locator('#dreamvideo-frame').evaluate(function (el) { return el.classList.contains('regenerating'); }), false, 'must not still be showing the regenerating veil after a reload');
+  } finally {
+    await context.close();
+  }
+});
