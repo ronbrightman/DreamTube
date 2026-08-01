@@ -48,6 +48,30 @@
 // draft, so it's already intact. That's the reference shape "correctly
 // preserved" state looks like.
 // ============================================================================
+//
+// "Make it as an image instead" fallback (tracker item
+// for-product-out-of-tokens-sheet-founder--dg5q1y, founder-directed
+// 2026-08-01): when the blocked action is specifically a VIDEO generation
+// via a general route (style.html's own media-type picker, reached from
+// create.html/wizard.html; result.html's edit-delta sheet or the older
+// full edit-wizard sheet's "Generate Again"; or home.html's
+// onGenerationSettled E112/E412 catch, the generic fail path every
+// generation submission funnels through since processing.html was
+// removed — see that page's own doc comment) — NOT result.html's "Turn
+// this into a video" image-to-video upsell, the founder's explicit
+// exclusion — a quiet link under the buy CTA offers the same content as
+// a cheaper (10-token) image instead. A call site opts in by passing
+// `opts.onImageFallback` (see show()'s own doc comment) — its ABSENCE is
+// what keeps the upsell context clean at style.html/result.html's own
+// call sites; home.html's single generic catch handler can't rely on
+// that alone (it has no record of which page originally submitted a
+// failed generation) so it additionally checks the draft's own
+// sourceImageUrl (set only by DreamStore.turnImageIntoVideo) before ever
+// passing onImageFallback — see that call site's own comment. Shown only
+// when the account can actually afford the image (balance >=
+// IMAGE_TOKEN_COST) — anything else would be showing an option the user
+// still can't take.
+// ============================================================================
 
 (function () {
   'use strict';
@@ -71,6 +95,16 @@
     pack700: { tokens: 1400, price: 14.99 }
   };
   var PACK_ORDER = ['pack100', 'pack300', 'pack700'];
+
+  // Flat cost of one image generation — mirrors generate-image.js's own
+  // server-side IMAGE_TOKEN_COST (that file is the real source of truth;
+  // this is a local copy, same "no shared browser module" convention
+  // already used for style.html's/result.html's/processing.html's own
+  // IMAGE_TOKEN_COST copies — see this file's header comment on why no
+  // shared module). Needed here for the "make it as an image instead"
+  // fallback link below (tracker item
+  // for-product-out-of-tokens-sheet-founder--dg5q1y).
+  var IMAGE_TOKEN_COST = 10;
 
   /**
    * The "one-tap purchase of the smallest sufficient pack" logic: the
@@ -180,6 +214,16 @@
       '  <div class="purchase-meter"><i id="ps-meter-fill"></i></div>' +
       '  <div class="purchase-meter-label"><span id="ps-meter-have"></span><span id="ps-meter-need"></span></div>' +
       '  <button type="button" class="purchase-buy-btn" id="ps-buy-btn"><span id="ps-buy-label"></span></button>' +
+      // "Make it as an image instead" quiet-link fallback (tracker item
+      // for-product-out-of-tokens-sheet-founder--dg5q1y) — directly under
+      // the primary buy CTA per the founder's spec, hidden by default
+      // (display:none) and only shown by show() below when a call site
+      // opts in via `onImageFallback` AND the account can actually afford
+      // the cheaper image. Deliberately its own quiet class (not
+      // .purchase-see-all's styling) — smaller/more muted, so it doesn't
+      // compete with the primary CTA the way "See all packs" already sits
+      // one step below it.
+      '  <div class="purchase-image-fallback" id="ps-image-fallback" style="display:none;"></div>' +
       '  <div class="purchase-error" id="ps-error" style="display:none;"></div>' +
       '  <div class="purchase-see-all" id="ps-see-all">See all packs →</div>' +
       '  <div class="purchase-wait-line" id="ps-wait-line"></div>' +
@@ -199,6 +243,7 @@
       location.href = 'shop.html?source=blocked_action';
     });
     document.getElementById('ps-claim-btn').addEventListener('click', function () { claimInline(); });
+    document.getElementById('ps-image-fallback').addEventListener('click', function () { handleImageFallbackTap(); });
   }
 
   var CLAIM_INLINE_IDLE_LABEL_PREFIX = 'Claim +';
@@ -216,6 +261,69 @@
     label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + amount + ' free tokens';
     btn.style.display = '';
     btn.disabled = false;
+  }
+
+  /**
+   * Shows/hides the "or make it as an image instead — N tokens" quiet
+   * link per the CURRENT `current` — called from show() only (unlike
+   * renderClaimOption/renderPurchaseAmounts, this never needs re-rendering
+   * mid-sheet-lifetime: a successful inline claim can only ever raise the
+   * balance further above IMAGE_TOKEN_COST, never take an already-shown
+   * link away, and re-running the whole eligibility check on every claim
+   * isn't worth the complexity for a link that would never disappear
+   * anyway).
+   *
+   * Eligible only when ALL of:
+   *  - the call site opted in with a real `onImageFallback` function (its
+   *    ABSENCE is what keeps result.html's "Turn this into a video"
+   *    image-to-video upsell — the founder's explicit exclusion — clean;
+   *    see this file's header comment)
+   *  - the blocked action itself is a video (`opts.mediaType === 'video'`
+   *    — defense in depth alongside the call site's own opt-in, same
+   *    "don't rely on a single gate" posture the rest of this file uses)
+   *  - the account can actually afford the cheaper image right now
+   *    (`balance >= IMAGE_TOKEN_COST`) — otherwise offering it would be
+   *    showing an option the user still can't take (the founder's own
+   *    "otherwise it's a lie" framing).
+   */
+  function renderImageFallback(opts, balance) {
+    var el = document.getElementById('ps-image-fallback');
+    var eligible = typeof opts.onImageFallback === 'function' &&
+      opts.mediaType === 'video' &&
+      balance >= IMAGE_TOKEN_COST;
+    if (!eligible) {
+      el.style.display = 'none';
+      el.textContent = '';
+      return;
+    }
+    el.textContent = 'or make it as an image — ' + IMAGE_TOKEN_COST + ' tokens';
+    el.style.display = 'block';
+  }
+
+  /**
+   * Click handler for the "make it as an image instead" link — fires the
+   * dedicated `out_of_tokens_image_fallback_tapped` event (tracker item
+   * for-product-out-of-tokens-sheet-founder--dg5q1y), then closes this
+   * sheet instance WITHOUT the normal dismiss tracking/onDismiss callback
+   * (tapping this link is a real choice, not a dismiss — same reasoning
+   * the buy button's own click handler never calls hide() either, it just
+   * navigates away), then hands off to the call site's own
+   * `onImageFallback()` — which knows, per its own page, whether that
+   * means navigating to home.html?generate=1 with the draft's mediaType
+   * flipped to 'image' (style.html/result.html, mirroring their own
+   * unblocked-path navigation) or retrying generation in place
+   * (home.html's own onGenerationSettled E112/E412 catch, already on the
+   * page that generates).
+   */
+  function handleImageFallbackTap() {
+    if (!current || typeof current.onImageFallback !== 'function') return;
+    var target = current;
+    trackLocal('out_of_tokens_image_fallback_tapped', { source: target.source || null, cost: IMAGE_TOKEN_COST });
+    var el = document.getElementById(SHEET_ID);
+    if (el) el.classList.remove('open');
+    current = null;
+    currentGen++;
+    target.onImageFallback();
   }
 
   /**
@@ -453,6 +561,23 @@
    *                     own "instantly unblocks" promise). Same
    *                     unconditional-regardless-of-staleness posture as
    *                     showClaimSheet's own onClaimed.
+   *   onImageFallback — optional zero-arg function (tracker item
+   *                     for-product-out-of-tokens-sheet-founder--dg5q1y).
+   *                     Its mere PRESENCE (combined with mediaType==='video'
+   *                     and a sufficient balance — see renderImageFallback)
+   *                     is what shows the "or make it as an image instead
+   *                     — 10 tokens" quiet link under the buy CTA — omit
+   *                     it entirely for any call site that must never
+   *                     offer this (result.html's "Turn this into a
+   *                     video" image-to-video upsell, the founder's
+   *                     explicit exclusion). Called on tap, AFTER this
+   *                     sheet instance has already been closed (no
+   *                     dismiss tracking/onDismiss fired) — responsible
+   *                     for flipping the SAME already-persisted draft's
+   *                     mediaType to 'image' (DreamStore.setDraft) and
+   *                     either navigating to home.html?generate=1 or, if
+   *                     already there (home.html's own E112/E412 catch),
+   *                     retrying generation in place.
    */
   function show(opts) {
     opts = opts || {};
@@ -473,6 +598,7 @@
     document.getElementById('ps-wait-line').textContent = waitLineText(opts.tokenStatus);
     document.getElementById('ps-error').style.display = 'none';
     renderClaimOption();
+    renderImageFallback(opts, balance);
 
     wireBuyButton(pack, packInfo, opts);
 
