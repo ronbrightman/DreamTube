@@ -379,7 +379,7 @@ test('start.html: the token guard also protects the NESTED pendingPromise.then()
 // already known to be rejected).
 // ===========================================================================
 
-test('start.html: screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, shows the you-already-have-an-account message inline at the email step, and never reveals the password field', async function (t) {
+test('start.html: screen 13 email step with an email that already has an account never fires start-pending-generation or register-account, and swaps in place into a login prompt instead of a dead end (tracker item for-product-urgent-forensic-find-the-pro-fzgghg)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -405,27 +405,23 @@ test('start.html: screen 13 email step with an email that already has an account
     await page.fill('#fn-email', 'already-taken@example.com');
     await page.click('#fn-s13-email-continue');
 
-    await page.waitForFunction(function () {
-      var errEl = document.getElementById('fn-signup-error');
-      return errEl && errEl.textContent.indexOf('already have an account') !== -1;
-    }, null, { timeout: 5000 });
+    // The in-place login prompt, not the old dead-end error message --
+    // see start.html's renderInPlaceLoginStep own doc comment.
+    await page.waitForSelector('#fn-login-password', { timeout: 5000 });
 
     await settle(function () { return checkEmailCalls.length >= 1; });
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'already-taken@example.com');
-    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call');
+    assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call BEFORE login succeeds');
     assert.equal(registerCalls.length, 0, 'a blocked (already-taken) email must not even attempt a signup already known to be rejected');
-    assert.equal(await page.locator('#fn-email').count(), 1, 'must still be sitting on screen 13');
-    assert.equal(await page.locator('#fn-password').count(), 0, 'the password field must never have been revealed for a blocked email');
-    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14');
+    assert.equal(await page.locator('#fn-email').count(), 1, 'the confirmed email stays visible, prefilled, on the login prompt');
+    assert.equal(await page.locator('#fn-password').count(), 0, 'the CREATE-a-password field must never have been revealed for a blocked email');
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never have advanced to screen 14 without actually logging in');
 
-    var continueDisabled = await page.evaluate(function () { return document.getElementById('fn-s13-email-continue').disabled; });
     var backDisabled = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
-    assert.equal(continueDisabled, false, 'the email step\'s Continue must be re-enabled after the blocked-email response, not left stuck disabled');
-    assert.equal(backDisabled, false, 'Back must be re-enabled after the blocked-email response');
+    assert.equal(backDisabled, false, 'Back must be re-enabled on the login prompt, not left stuck disabled');
 
-    var loginLinkHref = await page.locator('#fn-signup-error a').getAttribute('href');
-    assert.equal(loginLinkHref, 'login.html');
+    assert.equal(await page.locator('a[href="login.html"]').count(), 1, 'a real escape hatch to login.html must still be present');
   } finally {
     await page.close();
   }
