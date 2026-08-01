@@ -52,7 +52,7 @@ test.beforeEach(function () {
 /**
  * Seeds an email with an existing, zero-balance token record before a
  * refund — isolates a test's balance assertion to just the refund being
- * tested, instead of also having to account for the separate 220-token
+ * tested, instead of also having to account for the separate 320-token
  * first-ever-read signup grant syncTokens applies automatically to a
  * genuinely brand-new email. Same helper as entitlements-token-
  * purchases.test.js's/dodo-webhook.test.js's own seedZeroBalance.
@@ -345,7 +345,7 @@ test("refundTokenAmountOnce bases the new balance on syncTokens' own returned va
     assert.equal(result.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'refundstaleread@example.com');
-    assert.equal(record.tokens.balance, 220 + 100, "balance must be 220 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 100, "balance must be 320 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }

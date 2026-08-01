@@ -86,7 +86,7 @@ drift for the PRE-signup steps, not a bug.
 Journey 1 (ad funnel) shows a dedicated **token intro + confirmation**
 screen (`renderScreen14`) between Signup and landing on Home. Journey 2
 (organic) has no equivalent dedicated screen — `wizard.html`'s own Signup
-screen (`renderSignup`) folds the same core fact ("220 tokens on signup,
+screen (`renderSignup`) folds the same core fact ("320 tokens on signup,
 no card needed") into one line of that screen's own copy, then redirects
 straight to `home.html`.
 

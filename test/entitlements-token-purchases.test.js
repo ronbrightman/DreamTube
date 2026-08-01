@@ -40,7 +40,7 @@ test.beforeEach(function () {
  * Seeds an email with an existing, zero-balance token record before a
  * credit — isolates a test's balance assertion to just the credit being
  * tested, instead of also having to account for this same file's own
- * separate 220-token first-ever-read signup grant, which
+ * separate 320-token first-ever-read signup grant, which
  * addTokens/syncTokens applies automatically to a genuinely brand-new
  * email the first time its balance is ever materialized. That grant is
  * real, correct, unrelated production behavior (covered by its own tests
@@ -322,7 +322,7 @@ test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returne
 
   try {
     // Deliberately brand-new/unseeded: syncTokens (called first, inside
-    // creditTokenPackAmountOnce) applies the one-time 220-token signup
+    // creditTokenPackAmountOnce) applies the one-time 320-token signup
     // grant as part of this very call. This account also has no
     // firstPackPurchaseAt on file (genuinely brand-new to purchasing, not
     // just to tokens), so the +50% first-purchase bonus applies too —
@@ -331,7 +331,7 @@ test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returne
     assert.equal(applyResult.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'staleread@example.com');
-    assert.equal(record.tokens.balance, 220 + 150, "balance must be 220 (signup grant, from syncTokens' own in-memory return value) + 150 (this credit, bonused 1.5x as a first purchase) — a buggy re-read-based implementation would compute 0 + 150 = 150 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 150, "balance must be 320 (signup grant, from syncTokens' own in-memory return value) + 150 (this credit, bonused 1.5x as a first purchase) — a buggy re-read-based implementation would compute 0 + 150 = 150 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }

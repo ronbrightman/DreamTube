@@ -110,7 +110,7 @@ test('does not re-send for an account whose cooldown elapsed long ago (outside C
 test('never sends for an account that has never claimed even once (no lastClaimAt at all)', async function () {
   var event = fakeEvent({});
   await seedSubscribedAccount('dave', 'dave@example.com');
-  await entitlements.setEntitlement(event, 'dave@example.com', { tokens: { balance: 220 } }); // fresh account, never claimed
+  await entitlements.setEntitlement(event, 'dave@example.com', { tokens: { balance: 320 } }); // fresh account, never claimed
 
   var result = await sendDailyClaimPushes.scanAndSend(fakeEvent({}));
 

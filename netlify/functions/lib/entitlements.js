@@ -77,9 +77,10 @@
 // an edit/regenerate, or a style change — all three already funnel through
 // the same generate-video.js call site, see that file; a cheaper 10-token
 // image generation was added later, see generate-image.js). Balance is
-// earned partly for free and partly by claiming: 220 on first read of a
-// never-before-seen email (unchanged — the funnel's free onboarding video
-// (100) plus one additional day-1 video (100) plus 2 images (20)), plus a
+// earned partly for free and partly by claiming: 320 on first read of a
+// never-before-seen email (the funnel's free onboarding video (100) plus
+// one additional day-1 video (100) plus 2 images (20), plus a further
+// +100 headroom — 2026-08-01 founder-directed bump, tracker xostu6), plus a
 // further +20/day the user must actively CLAIM (claim-daily-tokens.js) —
 // EXCEPT the account's first-ever claim ever, which grants +100 instead
 // (2026-07-28 founder amendment — "enough to make more videos on the
@@ -108,7 +109,7 @@
 // default-off until real Stripe checkout existed — being entitled there
 // required having actually paid, so gating on it before a checkout flow
 // existed would have hard-blocked everyone. This model can never fully
-// block anyone (the 220-token signup grant plus a daily claim guarantee
+// block anyone (the 320-token signup grant plus a daily claim guarantee
 // continued access), it just rate-limits free usage to a sustainable
 // level, now gated behind an active tap rather than a silent drip. See
 // generate-video.js's E112 doc block and AGENT_POLICY.md for the full
@@ -272,10 +273,13 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-// 220 initial = free funnel video (100) + one additional day-1 video (100)
-// + 2 images (20) — unchanged by the daily-claim switch (2026-07-28), see
-// the doc block at the top of this file for the full retune history.
-var INITIAL_GRANT = 220;
+// 320 initial = free funnel video (100) + one additional day-1 video (100)
+// + 2 images (20) + a further +100 headroom (2026-08-01 founder-directed
+// bump, tracker xostu6 — "add 100 tokens to the base balance of every new
+// user so they get some more capabilities") — unchanged by the
+// daily-claim switch (2026-07-28), see the doc block at the top of this
+// file for the full retune history.
+var INITIAL_GRANT = 320;
 
 // The daily-claim mechanism (claim-daily-tokens.js) — replaces the old
 // DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
@@ -314,7 +318,7 @@ var DAILY_CLAIM_AMOUNT = 20;
 // have enough to make more videos on the second day so let's make the free
 // tokens on the second day be 100". A returning day-2 user who claims for
 // the very first time can then afford another full video (100 tokens) on
-// top of whatever they still have left from the 220-token signup grant.
+// top of whatever they still have left from the 320-token signup grant.
 //
 // Deliberately a CLAIM-COUNT/`firstClaimAt` rule, NOT a streak-day-2 rule:
 // a streak-based "day 2 of a streak gets 100" would re-grant the bonus
@@ -332,7 +336,7 @@ var DAILY_CLAIM_AMOUNT = 20;
 // recurring-bug-class-hardcoded-daily-gran-h6swgy).
 //
 // Abuse exposure: the one-time +80 delta (100 vs the usual 20) is bounded
-// by the SAME per-IP daily cap that already guards the 220-token signup
+// by the SAME per-IP daily cap that already guards the 320-token signup
 // grant (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" rate-limit
 // bucket, see below) — a genuinely first-ever claim can only ever happen
 // for an email whose tokens were never initialized before (no
@@ -354,12 +358,14 @@ var FIRST_CLAIM_BONUS_AMOUNT = 100;
 // js/store.js's signup() is 100% client-side (localStorage only, confirmed
 // by reading it — there is no server touchpoint at account-creation time at
 // all today), so a scripted attacker can create unlimited accounts purely
-// to farm the 220-token signup bonus, each one worth up to ~$1.60-3.20 of
-// real fal.ai generation cost with no payment and no email verification.
+// to farm the 320-token signup bonus, each one worth up to ~$2.40-4.80 of
+// real fal.ai generation cost (up to 3 full 100-token video generations,
+// same $0.80-1.60/video basis as before the 2026-08-01 grant bump) with no
+// payment and no email verification.
 //
 // Rather than inventing new server-side signup-registration plumbing just
 // to enforce a rate limit (a new, wider surface for a narrow problem), this
-// gates the actual moment the 220-token grant becomes real cost exposure:
+// gates the actual moment the 320-token grant becomes real cost exposure:
 // the first time syncTokens below ever materializes a balance for a given
 // email (the `!record.tokens` branch), regardless of which caller triggered
 // it (get-token-status.js's read, or generate-video.js's gate on a client
@@ -429,7 +435,7 @@ effectiveConfig.logEffectiveConfigOnce('entitlements', [
  * in this function or file — it has no effect on the daily claim,
  * spendTokens, addTokens, or (critically) the E112/E412 balance-threshold
  * check itself, which callers apply completely independently of this — a
- * bypassed IP still gets exactly INITIAL_GRANT (220) tokens, no more, same
+ * bypassed IP still gets exactly INITIAL_GRANT (320) tokens, no more, same
  * as any other brand-new email that simply wasn't IP-capped.
  *
  * Return value also carries `justSeeded` (2026-07-29, tracker item
@@ -518,7 +524,7 @@ async function syncTokens(event, email, opts) {
 }
 
 /**
- * Reads this email's current token status, applying the one-time 220-token
+ * Reads this email's current token status, applying the one-time 320-token
  * first-ever-read grant if needed (see syncTokens above) — the daily +20 is
  * a separate, explicit CLAIM (claimDailyTokens below), never applied
  * lazily by this read. Returns

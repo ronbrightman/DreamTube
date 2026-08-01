@@ -39,11 +39,11 @@ test.beforeEach(function () {
 
 test('claimDailyTokens on a brand-new email claims immediately: +100 first-claim bonus balance, streak 1, nextClaimAt ~20h out', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, 'brandnewclaim@example.com'); // materializes the 220-token record
+  await entitlements.getTokenStatus(ev, 'brandnewclaim@example.com'); // materializes the 320-token record
   var before = Date.now();
   var result = await entitlements.claimDailyTokens(ev, 'brandnewclaim@example.com');
   assert.equal(result.claimed, true);
-  assert.equal(result.balance, 320, '220 + 100 (2026-07-28 first-claim-bonus amendment: the account\'s first-ever claim grants 100, not 20)');
+  assert.equal(result.balance, 420, '320 + 100 (2026-07-28 first-claim-bonus amendment: the account\'s first-ever claim grants 100, not 20)');
   assert.equal(result.amountClaimed, 100, 'amountClaimed reflects the real bonus amount actually credited');
   assert.equal(result.streak, 1, 'first-ever claim always starts the streak at 1');
   assert.ok(result.nextClaimAt >= before + entitlements.CLAIM_COOLDOWN_MS - 1000, 'nextClaimAt ~= now + the cooldown');
@@ -53,7 +53,7 @@ test('claimDailyTokens works even when getTokenStatus/syncTokens was never calle
   var ev = fakeEvent({ ip: nextIp() });
   var result = await entitlements.claimDailyTokens(ev, 'directclaim@example.com');
   assert.equal(result.claimed, true);
-  assert.equal(result.balance, 320, '220 signup grant (materialized lazily inside claimDailyTokens itself) + 100 first-ever-claim bonus');
+  assert.equal(result.balance, 420, '320 signup grant (materialized lazily inside claimDailyTokens itself) + 100 first-ever-claim bonus');
   assert.equal(result.amountClaimed, 100);
 });
 
@@ -79,7 +79,7 @@ test('claiming twice in a row -- the second claim is rejected as not-yet-claimab
   assert.equal(second.nextClaimAt, first.nextClaimAt, 'nextClaimAt does not move just from a rejected attempt');
 
   var record = await entitlements.getEntitlement(ev, 'twice@example.com');
-  assert.equal(record.tokens.balance, 320, 'balance must NOT have moved on the rejected second attempt (220 + 100 first-claim bonus from the first, successful claim)');
+  assert.equal(record.tokens.balance, 420, 'balance must NOT have moved on the rejected second attempt (320 + 100 first-claim bonus from the first, successful claim)');
 });
 
 // ----- 2026-07-28 first-claim-bonus amendment (founder-approved economy
@@ -92,13 +92,13 @@ test('claiming twice in a row -- the second claim is rejected as not-yet-claimab
 test('a brand-new account\'s very first claim grants exactly 100 and stamps a top-level firstClaimAt', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'firstclaimbonus@example.com';
-  await entitlements.getTokenStatus(ev, email); // -> 220, no lastClaimAt/firstClaimAt yet
+  await entitlements.getTokenStatus(ev, email); // -> 320, no lastClaimAt/firstClaimAt yet
 
   var before = Date.now();
   var result = await entitlements.claimDailyTokens(ev, email);
   assert.equal(result.claimed, true);
   assert.equal(result.amountClaimed, 100);
-  assert.equal(result.balance, 320);
+  assert.equal(result.balance, 420);
 
   var record = await entitlements.getEntitlement(ev, email);
   assert.ok(record.firstClaimAt, 'firstClaimAt must be stamped on the actual first successful claim');
@@ -108,7 +108,7 @@ test('a brand-new account\'s very first claim grants exactly 100 and stamps a to
 test('that same account\'s SECOND claim (after the cooldown) grants the normal 20, and firstClaimAt is never overwritten', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'secondclaimnormal@example.com';
-  await entitlements.getTokenStatus(ev, email); // -> 220
+  await entitlements.getTokenStatus(ev, email); // -> 320
 
   var first = await entitlements.claimDailyTokens(ev, email);
   assert.equal(first.amountClaimed, 100);
@@ -124,7 +124,7 @@ test('that same account\'s SECOND claim (after the cooldown) grants the normal 2
   var second = await entitlements.claimDailyTokens(ev, email);
   assert.equal(second.claimed, true);
   assert.equal(second.amountClaimed, 20, 'the second-ever claim must grant the normal amount, not another 100 bonus');
-  assert.equal(second.balance, 320 + 20);
+  assert.equal(second.balance, 420 + 20);
 
   var recordAfterSecond = await entitlements.getEntitlement(ev, email);
   assert.equal(recordAfterSecond.firstClaimAt, stampedFirstClaimAt, 'firstClaimAt must never be overwritten once stamped');
@@ -271,11 +271,11 @@ test('empty/missing email is a safe no-op, matching the documented { claimed:fal
 
 test('claiming daily just under 48h apart, three days running, keeps incrementing the streak', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, 'multiday@example.com'); // -> 220
+  await entitlements.getTokenStatus(ev, 'multiday@example.com'); // -> 320
 
   var day1 = await entitlements.claimDailyTokens(ev, 'multiday@example.com');
   assert.equal(day1.streak, 1);
-  assert.equal(day1.balance, 320, '220 + 100 first-ever-claim bonus');
+  assert.equal(day1.balance, 420, '320 + 100 first-ever-claim bonus');
 
   // Simulate "the next day" by rolling lastClaimAt back 21h (past the 20h
   // cooldown, well under the 48h streak window).
@@ -292,7 +292,7 @@ test('claiming daily just under 48h apart, three days running, keeps incrementin
   });
   var day3 = await entitlements.claimDailyTokens(ev, 'multiday@example.com');
   assert.equal(day3.streak, 3);
-  assert.equal(day3.balance, 220 + 100 + 20 * 2, 'day1 gets the 100 first-claim bonus, day2/day3 get the normal 20 each');
+  assert.equal(day3.balance, 320 + 100 + 20 * 2, 'day1 gets the 100 first-claim bonus, day2/day3 get the normal 20 each');
 });
 
 // ----- Round 1 review findings: record-shape safety + real concurrency -----

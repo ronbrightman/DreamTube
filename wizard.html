@@ -1540,12 +1540,13 @@
   function renderSignup(el){
     el.innerHTML =
       '<div class="fn-headline">Create your account</div>' +
-      // 220 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
+      // 320 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
       // 2026-07-24, later raised 2026-07-26 morning, then retuned again
       // 2026-07-26 night to 220 initial — "Token Economy C", founder-
-      // approved — and unchanged by the 2026-07-28 daily-claim switch,
-      // which only replaced the separate +20/day mechanism, see that
-      // file's own doc block). Hardcoded, not fetched live: this screen
+      // approved — unchanged by the 2026-07-28 daily-claim switch, which
+      // only replaced the separate +20/day mechanism, see that file's own
+      // doc block — then raised again 2026-08-01 to 320, founder-directed,
+      // tracker xostu6). Hardcoded, not fetched live: this screen
       // renders before a real account exists, so there's no logged-in
       // DreamStore.getTokenStatus() call to make here (that method needs
       // state.user to be set at all — see js/store.js), and INITIAL_GRANT
@@ -1554,7 +1555,7 @@
       // nextClaimAt, dailyClaimAmount, streak} only, no separate "signup
       // grant" field). If this constant changes again, this line must be
       // updated by hand, same as before this comment existed.
-      '<div class="fn-body-copy">Free to start — 220 tokens on signup, no card needed.</div>' +
+      '<div class="fn-body-copy">Free to start — 320 tokens on signup, no card needed.</div>' +
       '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
       '<input class="fn-field" id="fn-username" placeholder="Choose a username" autocomplete="username" dir="auto">' +
       '<div class="fn-field-pw-wrap">' +
