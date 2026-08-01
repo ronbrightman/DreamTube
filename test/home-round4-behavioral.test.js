@@ -19,10 +19,12 @@
 //      the copy-link/bookmark rows, and the full claim round trip)
 //   6. Dock rebalance — Home tab prominent + glowing, "+" a quiet 40px ring
 //   7. The logged hero shows the dream itself + the multi-dream chip
-// (5, TOKEN ICON A, is covered by test/profile-night-restyle-behavioral.
-// test.js's topbar-chip assertion, since js/purchase-sheet.js's
-// mountBalanceChip is the SAME renderer home.html now also mounts — not
-// re-covered here beyond the ritual-module/claim-sheet spot checks below.
+// (5, TOKEN ICON A, has its own dedicated section below on top of test/
+// profile-night-restyle-behavioral.test.js's topbar-chip assertion — since
+// js/purchase-sheet.js's mountBalanceChip is the SAME renderer home.html
+// now also mounts, that page's coverage already proves the shared piece;
+// this file adds the home.html-specific surfaces (ritual module, MKY
+// reward line) that page doesn't have.
 // 8, the single-pulse rule, is already covered by test/home-behavioral.
 // test.js's existing pulse assertions; this file only adds the "the new
 // sections never pulse" regression check.)
@@ -580,6 +582,39 @@ test('home.html: none of the four new round-4 sections ever carry the .pulse cla
 
     var pulsingCount = await page.locator('#tipcard.pulse, #inspired .pulse, #unpub .pulse, #mky .pulse, #mky-claim.pulse, .ritual-claim.pulse').count();
     assert.equal(pulsingCount, 0, 'none of the four new round-4 sections may ever carry the .pulse class');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// 5. TOKEN ICON A — home.html-specific surfaces (the shared topbar-chip
+// piece is already proven by test/profile-night-restyle-behavioral.
+// test.js, since it's the SAME js/purchase-sheet.js renderer)
+// ============================================================================
+
+test('home.html: TOKEN ICON A (the shared coin+play SVG) renders in the topbar chip, the ritual module\'s balance line, and the Make-it-yours reward line -- never the old "✦" text glyph', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 340, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await mockFeed(page, []);
+    await seedHomeUser(page, { username: 'tokeniconhometester', dreams: [] });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('ritual-balance');
+      return el && /340/.test(el.textContent);
+    }, null, { timeout: 5000 });
+
+    assert.equal(await page.locator('#home-tok-chip-slot .token-chip-star svg').count(), 1, 'expected the real inline token-icon SVG in the topbar chip');
+    assert.equal(await page.locator('#ritual-balance .tok-ico svg').count(), 1, 'expected the real inline token-icon SVG in the ritual module\'s balance line');
+    assert.equal(await page.locator('.mky-reward .tok-ico svg').count(), 1, 'expected the real inline token-icon SVG in the Make-it-yours reward line');
+
+    var bodyText = await page.locator('#app').innerText();
+    assert.doesNotMatch(bodyText, /✦/, 'the old tilted-square glyph must be gone everywhere on this page');
   } finally {
     await context.close();
   }
