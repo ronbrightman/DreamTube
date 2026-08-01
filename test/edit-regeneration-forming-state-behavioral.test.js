@@ -186,10 +186,15 @@ test('result.html: a dream currently being regenerated via edit shows the shimme
     await seedResultPageRegenerating(page, { username: 'veiltester', dreamId: 'd-regen-veil-1', newStoryText: 'I was flying over a neon city at dawn.' });
 
     await page.waitForSelector('#dreamvideo-frame.regenerating', { timeout: 5000 });
-    // The veil is opacity-driven (a CSS transition, not display:none) --
-    // Playwright's isVisible() doesn't factor in opacity, so check the
-    // computed style directly, same as home.html's own day0-card
-    // crossfade coverage does.
+    // The veil is opacity-driven (a .5s CSS transition, not display:none) --
+    // Playwright's isVisible() doesn't factor in opacity, and a read taken
+    // immediately after the class toggle can catch it mid-transition under
+    // load, so wait for the transition to actually settle first, same as
+    // home.html's own day0-card crossfade coverage does.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('result-forming-veil');
+      return el && parseFloat(getComputedStyle(el).opacity) > 0.99;
+    }, null, { timeout: 2000 });
     var veilOpacity = await page.locator('#result-forming-veil').evaluate(function (el) { return getComputedStyle(el).opacity; });
     assert.equal(parseFloat(veilOpacity) > 0.99, true, 'the veil must be opaque (visible) while regenerating');
     assert.equal(await page.locator('#watch-pill').isVisible(), false, 'no watch pill for stale content while regenerating');
