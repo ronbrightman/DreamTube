@@ -172,7 +172,7 @@ test('result.html: tapping "Turn this into a video" upgrades the dream in place 
     // runs in the background; the My-dreams row's generating tile flips to
     // a real finished tile in place.
     await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);

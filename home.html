@@ -267,6 +267,130 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   text-shadow:0 1px 8px rgba(12,10,26,.55);
 }
 
+/* --- 3b · EMBEDDED DREAM'S-ROOM CARD (any night tonight's own entry is a
+   REAL dream, still generating or just finished — tracker item for-
+   product-build-ship-founder-go-08-01--ags710). Shipped 2026-08-01 scoped
+   to day-0 only (the account's very first-ever logged night); founder then
+   generalized it the same day (Manager comment on the tracker item, "Both
+   good to go") to EVERY account, not just day-0 — see shouldShowRoomCard()
+   in this page's own script, and funnel-end-mock-x7q4.html's "existing
+   user" scenario for the founder-approved visual reference for a returning
+   account. DELETES the old "Logged tonight ✓" .hero-tonight.logged square
+   for this scenario and replaces it with a compact version of result.html's
+   own recently-shipped ritual card, embedded here at the top of the shelf,
+   transforming forming -> ready IN PLACE (no navigation, no reload, no
+   toast-then-redirect) — tapping the video/watch pill is what actually
+   opens the full dream's room (result.html?id=..., this app's existing
+   navigation). Visual tokens ported from result.html's own .hcard/
+   .dreamvideo/.watchpill/.dreamquote/.quietrow block (see that file's own
+   header comment on why real generated media is 9:16, not 16:9) — kept
+   shorter here (min(34vh,280px) vs that page's 42vh/340px) since this is
+   one module in a much longer scroll, not the whole screen. The forming
+   veil (shimmer sweep + progress arc + caption) is ported from the
+   founder-approved funnel-end-mock-x7q4.html's own .video-forming/
+   .form-sweep/.form-arc/.form-caption. The card itself carries no day-0-only
+   copy (its "Tonight's dream" title, "Ready when your dream is" caption
+   etc. are already scenario-neutral) — any actual first-ever-night framing
+   lives entirely OUTSIDE this card (hero-tonight's own d1line, the ritual
+   module's first-claim eyebrow), gated by isFirstEverNight there, untouched
+   by this generalization. Every OTHER Tonight state (unlogged, logged via
+   "No recall" only — day-0 or not, there is no dream to embed) is
+   completely untouched — out of scope per this tracker item. .day0card/
+   #day0-card/#d0-* naming is legacy from the original day-0-only ship and
+   kept as-is (internal implementation detail, not user-facing) rather than
+   a repo-wide rename for a comment-only generalization. --- */
+.day0card{ margin-bottom:28px; }
+.day0card .dreamvideo{
+  position:relative; height:min(34vh, 280px); width:auto; max-width:100%; margin:0 auto;
+  aspect-ratio:9/16; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.14);
+  cursor:pointer; background:var(--home-raise2);
+}
+.day0card .dv-media{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.day0card .dreamvideo::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, rgba(0,0,0,.32) 0%, transparent 18%, transparent 78%, rgba(0,0,0,.34) 100%);
+}
+.day0card .playbadge{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.7); opacity:0; z-index:1;
+  width:52px; height:52px; border-radius:50%;
+  background:rgba(12,10,26,.55); border:1.5px solid rgba(255,255,255,.75);
+  display:flex; align-items:center; justify-content:center; color:#fff;
+  transition:opacity .5s ease, transform .5s ease;
+}
+.day0card .dreamvideo.ready .playbadge{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+.day0card .playbadge .icon{ width:20px; height:20px; margin-left:3px; }
+/* the forming veil — shimmer sweep + progress arc + caption, crossfades
+   away once the video is ready (funnel-end-mock's own .video-forming/
+   .form-sweep/.form-arc/.form-caption, ported verbatim). */
+.day0card .video-forming{
+  position:absolute; inset:0; z-index:2; overflow:hidden; transition:opacity .6s ease;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.4), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.34), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.day0card .dreamvideo.ready .video-forming{ opacity:0; pointer-events:none; }
+.day0card .form-sweep{
+  position:absolute; inset:-10%;
+  background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.07) 46%, rgba(207,200,255,.14) 50%, rgba(255,255,255,.07) 54%, transparent 66%);
+  animation:day0FormSweep 2.6s ease-in-out infinite alternate;
+}
+.day0card .form-arc{
+  position:absolute; left:50%; top:44%; width:34px; height:34px; margin:-17px 0 0 -17px;
+  animation:day0ArcSpin 1.6s linear infinite;
+}
+.day0card .form-arc circle{ fill:none; stroke:rgba(234,231,251,.85); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28; }
+.day0card .form-caption{
+  position:absolute; left:0; right:0; bottom:12px; text-align:center;
+  font:700 14px var(--font-body); letter-spacing:.01em; color:#cfc8ea;
+  text-shadow:0 1px 6px rgba(12,10,26,.8);
+}
+@keyframes day0FormSweep{
+  0%{ transform:translateX(-70%) skewX(-12deg); }
+  100%{ transform:translateX(70%) skewX(-12deg); }
+}
+@keyframes day0ArcSpin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce){
+  .day0card .form-sweep, .day0card .form-arc{ animation:none !important; }
+}
+.day0card .watchpill{
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; margin-top:10px;
+  background:transparent; border:1px solid rgba(255,255,255,.22); color:var(--home-soft);
+  border-radius:99px; padding:10px 6px; cursor:pointer;
+  font:700 12.5px var(--font-body); -webkit-tap-highlight-color:transparent;
+}
+.day0card .watchpill .icon{ width:13px; height:13px; }
+.day0card .watchpill:active{ opacity:.75; }
+.day0card .dreamquote{
+  margin-top:12px; font-size:13px; line-height:1.5; color:var(--home-ink); font-weight:500;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.day0card .quietrow{
+  display:flex; align-items:center; justify-content:space-between; margin:16px 0 0; padding:0;
+  transition:opacity .3s ease;
+}
+.day0card .quietrow.waiting{ opacity:.45; }
+.day0card .quietlink{
+  display:flex; align-items:center; gap:4px;
+  background:none; border:none; cursor:pointer; padding:8px 3px; min-height:40px;
+  color:var(--home-soft); font:600 11.5px var(--font-body);
+  white-space:nowrap; -webkit-tap-highlight-color:transparent;
+}
+.day0card .quietlink:disabled{ cursor:default; }
+.day0card .quietlink .icon{ width:13px; height:13px; opacity:.9; flex:none; }
+.day0card .quietlink.livelink{ color:#a9e8cd; }
+.day0card .quietlink.danger .icon{ color:var(--danger); }
+@media (max-width:359px){
+  .day0card .quietlink{ gap:3px; padding:8px 1px; font-size:10.5px; }
+  .day0card .quietlink .icon{ width:12px; height:12px; }
+}
+.day0card .quiet-caption{
+  margin-top:6px; text-align:center;
+  font:700 11.5px var(--font-body); letter-spacing:.06em; text-transform:uppercase;
+  color:#6f6894;
+}
+
 /* --- 4 · CHAMBER hero (~330px) — the sage himself (assets/chamber-sage.jpg,
    violet night palette) rising from the right, the card's own nebula
    gradient blending into the art on the left; slow breathing aura behind
@@ -487,6 +611,43 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="home-greet-line" id="home-greet-line">Good evening</div>
       </div>
 
+      <!-- 3a · EMBEDDED DREAM'S-ROOM CARD — any account whose tonight entry
+           is a real dream, still generating or just finished (day-0 or
+           returning user alike — see this page's own style-block comment
+           above .day0card, and shouldShowRoomCard()/renderDay0Card() in the
+           script below). Hidden by default; shown/hidden opposite
+           #hero-tonight, never both at once. -->
+      <section class="hcard hero day0card" id="day0-card" data-card="day0dream" style="display:none;">
+        <div class="hcard-dt">Tonight's dream</div>
+
+        <div class="dreamvideo" id="d0-video" role="button" aria-label="Your dream is forming">
+          <div class="dv-fallback" id="d0-bg" style="position:absolute; inset:0;"></div>
+          <video class="dv-media" id="d0-video-el" muted loop playsinline autoplay style="display:none;"></video>
+          <img class="dv-media" id="d0-image-el" alt="" style="display:none;">
+          <div class="playbadge" id="d0-play-badge"><span class="icon" id="d0-play-icon"></span></div>
+          <div class="video-forming" id="d0-forming-veil">
+            <div class="form-sweep"></div>
+            <svg class="form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
+            <div class="form-caption">Your dream is forming…</div>
+          </div>
+        </div>
+
+        <button type="button" class="watchpill" id="d0-watch" hidden>
+          <span class="icon" id="d0-watch-icon"></span>
+          Watch your dream
+        </button>
+
+        <p class="dreamquote" id="d0-quote" dir="auto"></p>
+
+        <div class="quietrow waiting" id="d0-quiet">
+          <button type="button" class="quietlink" id="d0-publish" disabled title="Publish to Explore"><span class="icon" id="d0-publish-icon"></span><span id="d0-publish-label">Publish</span></button>
+          <button type="button" class="quietlink" id="d0-make-another" disabled><span class="icon" id="d0-make-another-icon"></span>Make another</button>
+          <button type="button" class="quietlink" id="d0-edit" disabled title="Edit Dream"><span class="icon" id="d0-edit-icon"></span>Edit</button>
+          <button type="button" class="quietlink danger" id="d0-delete" disabled title="Delete this dream"><span class="icon" id="d0-delete-icon"></span>Delete</button>
+        </div>
+        <div class="quiet-caption" id="d0-caption">Ready when your dream is</div>
+      </section>
+
       <!-- 3 · TONIGHT hero — the guided Wizard pill leads; Write/Speak/No
            recall are quiet links underneath it (founder amendment). -->
       <section class="hero-card hero-tonight" id="hero-tonight" data-card="tonight">
@@ -698,6 +859,28 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   var logStatus = DreamStore.getDreamLogStatus();
   var lastTokenStatus = null;
 
+  // ===== Embedded dream's-room card gate (tracker item for-product-build-
+  // ship-founder-go-08-01--ags710) — the state where the old "Logged
+  // tonight ✓" hero-tonight square is replaced by the embedded card:
+  // tonight's own entry is a REAL dream (still generating, or already
+  // finished) rather than a "No recall" check-in. Originally shipped
+  // scoped to isFirstEverNight (day-0) only; the founder generalized it
+  // the same day to EVERY account (Manager comment on the tracker item,
+  // "Both good to go") -- so this deliberately does NOT check
+  // isFirstEverNight anymore. A "No recall" night (day-0 or returning)
+  // keeps the ordinary hero-tonight.logged treatment untouched -- there is
+  // no dream to embed for that case. Single source of truth so
+  // renderTonightHero, renderDay0Card, and renderDreamsRow (which must not
+  // also show this exact dream as a My-dreams row tile) can never disagree
+  // with each other about which state the page is in. Day-0-only COPY
+  // (the "first ever" framing) stays gated separately by isFirstEverNight,
+  // entirely outside this card -- see hero-tonight's own d1line and the
+  // ritual module's first-claim eyebrow, both untouched by this function.
+  function shouldShowRoomCard(){
+    return logStatus.loggedToday &&
+      (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending');
+  }
+
   // ===== Tonight hero =====
   function renderTonightHero(){
     var section = document.getElementById('hero-tonight');
@@ -739,6 +922,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     pill.classList.toggle('pulse', !logged);
     links.hidden = logged;
     d1.hidden = logged || logStatus.hasEverLogged;
+
+    // The embedded dream's-room card (#day0-card, rendered by
+    // renderDay0Card below) takes over this hero's job entirely for the
+    // one state it owns -- never both on screen at once.
+    section.style.display = shouldShowRoomCard() ? 'none' : '';
   }
   renderTonightHero();
 
@@ -755,6 +943,144 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // mountBalanceChip already uses. Pulse migrates here from the Tonight
   // pill once tonight is logged (single-pulse rule, mock §3). =====
   var completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
+
+  // ===== Embedded dream's-room card (#day0-card) — tracker item
+  // for-product-build-ship-founder-go-08-01--ags710. Same element,
+  // transformed in place across forming -> ready (founder amendment
+  // pattern this codebase already established for the ritual module and
+  // the old Tonight hero) — never a re-render into a different DOM
+  // subtree, never a navigation. d0DreamId tracks which real dream id a
+  // tap should open once the card is tappable; null while still forming
+  // (nothing to open yet). =====
+  var d0DreamId = null;
+  function renderDay0CardForming(){
+    d0DreamId = null;
+    var frame = document.getElementById('d0-video');
+    frame.classList.remove('ready');
+    frame.setAttribute('aria-label', 'Your dream is forming');
+    document.getElementById('d0-watch').hidden = true;
+    document.getElementById('d0-quiet').classList.add('waiting');
+    document.getElementById('d0-caption').hidden = false;
+    Array.prototype.forEach.call(document.querySelectorAll('#d0-quiet .quietlink'), function(b){ b.disabled = true; });
+    var video = document.getElementById('d0-video-el');
+    var image = document.getElementById('d0-image-el');
+    video.removeAttribute('src'); video.style.display = 'none';
+    image.removeAttribute('src'); image.style.display = 'none';
+    document.getElementById('d0-bg').style.background = 'transparent';
+    var quoteText = (pendingJob && (pendingJob.storyText || pendingJob.caption)) || '';
+    document.getElementById('d0-quote').textContent = quoteText ? ('“' + quoteText + '”') : '';
+  }
+  function renderDay0CardReady(dream){
+    d0DreamId = dream.id;
+    var frame = document.getElementById('d0-video');
+    frame.classList.add('ready');
+    frame.setAttribute('aria-label', 'Play your dream video');
+    var video = document.getElementById('d0-video-el');
+    var image = document.getElementById('d0-image-el');
+    var watch = document.getElementById('d0-watch');
+    // Three-way video -> image -> gradient fallback, same priority as
+    // result.html's own render() -- see docs/IMAGE_GENERATION_SPEC.md §6.
+    if(dream.videoUrl){
+      video.src = dream.videoUrl;
+      video.style.display = 'block';
+      image.removeAttribute('src'); image.style.display = 'none';
+      watch.hidden = false;
+      document.getElementById('d0-bg').style.background = 'transparent';
+    } else if(dream.imageUrl){
+      video.removeAttribute('src'); video.style.display = 'none';
+      image.src = dream.imageUrl; image.style.display = 'block';
+      watch.hidden = true; // nothing to "watch" on a plain image
+      document.getElementById('d0-bg').style.background = 'transparent';
+    } else {
+      video.removeAttribute('src'); video.style.display = 'none';
+      image.removeAttribute('src'); image.style.display = 'none';
+      watch.hidden = true;
+      document.getElementById('d0-bg').style.background = DreamStore.gradientFor(dream);
+    }
+    document.getElementById('d0-quiet').classList.remove('waiting');
+    document.getElementById('d0-caption').hidden = true;
+    Array.prototype.forEach.call(document.querySelectorAll('#d0-quiet .quietlink'), function(b){ b.disabled = false; });
+    var quoteText = dream.storyText || dream.caption || '';
+    document.getElementById('d0-quote').textContent = quoteText ? ('“' + quoteText + '”') : '';
+    // Publish label mirrors result.html's own quiet-row state (§ render()) --
+    // "Publish" pre-publish, "Live on Explore" once published.
+    var pubBtn = document.getElementById('d0-publish');
+    var pubIcon = document.getElementById('d0-publish-icon');
+    var pubLabel = document.getElementById('d0-publish-label');
+    if(dream.isPublished){
+      pubIcon.innerHTML = window.Icons ? Icons.check : '';
+      pubLabel.textContent = 'Live on Explore';
+      pubBtn.classList.add('livelink');
+      pubBtn.title = 'View on Explore';
+    } else {
+      pubIcon.innerHTML = window.Icons ? Icons.globe : '';
+      pubLabel.textContent = 'Publish';
+      pubBtn.classList.remove('livelink');
+      pubBtn.title = 'Publish to Explore';
+    }
+  }
+  function renderDay0Card(){
+    var card = document.getElementById('day0-card');
+    if(!shouldShowRoomCard()){ card.style.display = 'none'; return; }
+    // An in-flight job's own live state takes priority over an already-
+    // completed dream, so the rare same-day second submission still shows
+    // as forming rather than silently jumping straight to the dream's
+    // ready state.
+    if(pendingJob){
+      card.style.display = '';
+      renderDay0CardForming();
+    } else if(completedDream){
+      card.style.display = '';
+      renderDay0CardReady(completedDream);
+    } else {
+      // Defensive: shouldShowRoomCard() implies loggedToday with a real
+      // dream, so one of the two above should always be true here -- hide
+      // rather than show a broken/empty card if that invariant is ever violated.
+      card.style.display = 'none';
+    }
+  }
+  renderDay0Card();
+
+  document.getElementById('d0-play-icon').innerHTML = window.Icons ? Icons.play : '';
+  document.getElementById('d0-watch-icon').innerHTML = window.Icons ? Icons.play : '';
+  document.getElementById('d0-make-another-icon').innerHTML = window.Icons ? Icons.plus : '';
+  document.getElementById('d0-edit-icon').innerHTML = window.Icons ? Icons.pencil : '';
+  document.getElementById('d0-delete-icon').innerHTML = window.Icons ? Icons.trash : '';
+
+  // Tapping the video/watch pill opens the FULL dream's room
+  // (result.html?id=...) -- this app's existing navigation to reach it.
+  // While still forming there is nothing to open yet; a tap there is a
+  // quiet, honest nudge toward the Chamber instead (which IS enterable
+  // immediately, per chamberTargetDreamId below), not a dead tap.
+  document.getElementById('d0-video').addEventListener('click', function(){
+    track('home_day0_card_tapped', { ready: !!d0DreamId });
+    if(d0DreamId){
+      location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+    } else {
+      showToast('Still forming — the Chamber is ready now, though.');
+    }
+  });
+  document.getElementById('d0-watch').addEventListener('click', function(e){
+    e.stopPropagation();
+    if(!d0DreamId) return;
+    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+  });
+  // The quiet row's four actions (Publish/Make another/Edit/Delete) all
+  // already have full, tested implementations on result.html itself
+  // (modals, the edit sheet, etc.) -- rather than duplicating that
+  // machinery here, each one opens the same dream's full room once it's
+  // enabled, landing the user exactly where that real action lives. This
+  // is what "the quiet row's buttons enable (become real, clickable)"
+  // means in practice for this embedded copy: real navigation, not a
+  // second, parallel set of action handlers.
+  ['d0-publish', 'd0-make-another', 'd0-edit', 'd0-delete'].forEach(function(id){
+    document.getElementById(id).addEventListener('click', function(){
+      if(!d0DreamId) return;
+      track('home_day0_card_quiet_action_tapped', { action: id.replace('d0-', '') });
+      location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+    });
+  });
+
   // The dream id the Chamber should open for, in priority order: a real
   // completed dream first, then a still-generating one (tracker item
   // for-product-funnel-ending-v2-founder-ins-tfuu0q — "Chamber readable
@@ -995,6 +1321,30 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var rowEl = document.getElementById('dreams-row');
     var emptyEl = document.getElementById('dreams-empty');
 
+    // The embedded #day0-card (tracker item for-product-build-ship-
+    // founder-go-08-01--ags710, generalized to every account the same day)
+    // IS whichever dream it's currently showing -- that exact dream must
+    // never ALSO appear as a tile down here. Filtered out by id (not "hide
+    // the whole row whenever the room card is active") so the rare case of
+    // a second same-day dream still gets its own tile here, same as any
+    // other day -- only the ONE dream #day0-card owns is ever excluded.
+    // Applies identically whether this account is day-0 or a long-time
+    // returning user -- shouldShowRoomCard() no longer distinguishes them.
+    var roomCardActive = shouldShowRoomCard();
+    var roomCardOwnedId = roomCardActive ? (pendingJob ? DreamStore.getPendingDreamId() : (completedDream ? completedDream.id : null)) : null;
+    var eligible = roomCardOwnedId ? myDreams.filter(function(d){ return d.id !== roomCardOwnedId; }) : myDreams;
+
+    // When #day0-card owns the ONLY dream this account has (the common
+    // day-0 case -- a returning user will almost always still have OTHER
+    // dreams left in `eligible`), there is nothing left to show here at
+    // all -- the whole section stays hidden entirely, matching the
+    // founder-approved mock's "No My-dreams row in this state — the top
+    // card IS the dream."
+    if(roomCardActive && !eligible.length){
+      section.style.display = 'none';
+      return;
+    }
+
     // A pending job counts as "something to show" even for an account
     // that's otherwise never logged anything real yet — getDreamLogStatus's
     // own hasEverLogged already folds a same-day pendingJob in (see that
@@ -1008,8 +1358,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
     section.style.display = '';
 
-    var recent = myDreams.slice(0, DREAMS_ROW_MAX);
-    if(!recent.length && !pendingJob){
+    var recent = eligible.slice(0, DREAMS_ROW_MAX);
+    // The generating tile only ever represents the SAME in-flight job
+    // #day0-card already shows forming while roomCardActive -- never
+    // duplicated here in that case, for a day-0 OR a returning account
+    // alike (the founder-approved existing-user mock: "NO duplicate
+    // forming tile"). Only a pending job outside the room card's scope
+    // (there isn't one — every pending job is owned by the card whenever
+    // it's showing) would ever lead the row instead.
+    var showGeneratingTile = !!pendingJob && !roomCardActive;
+    if(!recent.length && !showGeneratingTile){
       rowEl.style.display = 'none';
       emptyEl.style.display = 'block';
       return;
@@ -1022,7 +1380,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // The generating tile always leads (day-0 mock: "exactly ONE tile" —
     // for a returning user who already has completed dreams, this is the
     // ONE new addition, ahead of their existing gallery).
-    rowEl.innerHTML = (pendingJob ? generatingTileHTML() : '') + realTilesHtml;
+    rowEl.innerHTML = (showGeneratingTile ? generatingTileHTML() : '') + realTilesHtml;
 
     thumbVideoObserver.disconnect();
     Array.prototype.forEach.call(rowEl.querySelectorAll('.vcard-video'), function(v){ thumbVideoObserver.observe(v); });
@@ -1040,9 +1398,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // Re-reads logStatus (which itself reads the live pendingJob/myDreams
   // state — see getDreamLogStatus's own doc comment) and re-renders every
   // module whose state can change as a generation starts/finishes/fails:
-  // Tonight (logged tonight the moment a job exists), Chamber (its target
-  // dream id), the ritual module (streak/first-night copy + claim
-  // eyebrow), the My-dreams row (the generating tile itself), and the
+  // Tonight (logged tonight the moment a job exists — hidden entirely in
+  // favor of #day0-card for the forming-or-just-completed real-dream state,
+  // day-0 or returning user alike, see shouldShowRoomCard()), the embedded
+  // room card itself (forming -> ready, tracker item for-product-build-
+  // ship-founder-go-08-01--ags710), Chamber
+  // (its target dream id), the ritual module (streak/first-night copy +
+  // claim eyebrow), the My-dreams row (the generating tile itself, or
+  // hidden entirely while #day0-card owns this exact dream), and the
   // notify card (only shown while a job is actually in flight). Shared by
   // every place this page's pendingJob state can change: the initial
   // resume-on-load path, a fresh in-app/checkout-resume submission
@@ -1052,6 +1415,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function refreshHomeState(){
     logStatus = DreamStore.getDreamLogStatus();
     renderTonightHero();
+    renderDay0Card();
     renderChamberHero();
     renderRitualModule();
     renderDreamsRow();
@@ -1387,6 +1751,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     if(!result.ok) return;
     logStatus = DreamStore.getDreamLogStatus();
     renderTonightHero();
+    renderDay0Card();
     renderRitualModule();
     renderDreamsRow();
     showToast('Logged — no recall counts too.');

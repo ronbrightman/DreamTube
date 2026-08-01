@@ -164,7 +164,7 @@ test('js/store.js pollUntilDone: one transient network failure mid-poll is retri
     // finished tile in place (tracker item for-product-funnel-ending-v2-
     // founder-ins-tfuu0q -- no more redirect to result.html), proving this
     // was one continuous generation, not a fresh resubmission.
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 20000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 20000 });
 
     assert.equal(generateVideoCallCount, 0, 'a transient poll failure must never trigger a fresh generate-video submission -- the original in-flight job must be resumed, not resubmitted');
     assert.ok(statusCallCount >= 2, 'the poll must have retried past the first transient failure to reach the eventual done:true response');

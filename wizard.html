@@ -1291,15 +1291,149 @@
           return;
         }
         if(!checkResult.available){
-          continueBtn.disabled = false;
-          continueBtn.textContent = 'Continue';
-          errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+          // Seamless already-registered handoff (tracker item
+          // for-product-urgent-forensic-find-the-pro-fzgghg, item 1) --
+          // same reasoning and same continuation shape as start.html's own
+          // renderInPlaceLoginStep, see that function's doc comment for the
+          // full forensic writeup. This USED to leave the visitor stuck
+          // right here with only a "sign in instead" link to a whole
+          // separate page as their way out; both real returning users this
+          // product has ever had hit exactly this dead end.
+          track('signup_error_shown', { reason: 'already_registered' });
+          renderInPlaceLogin();
           return;
         }
         DreamStore.setDraft(draftPatch);
         next();
         return startPendingGeneration(submissionKey, comparisonKey, myToken);
       });
+
+      /**
+       * Swaps THIS Contact screen, in place, into a lightweight login
+       * prompt for an email check-email.js just reported as already
+       * registered -- see the already_registered branch above. On success,
+       * runs the exact same claim-pending-generation / adoptPendingGeneration
+       * / home.html handoff renderSignup's own successful-signup path uses
+       * (see that function below), reusing THIS click's already-computed
+       * submissionKey/comparisonKey/draftPatch -- so logging in here lands
+       * exactly where a fresh Contact+Signup completion would have, minus
+       * the redundant "create a new account" step this visitor doesn't need.
+       * Nested here (not a shared top-level function, unlike start.html's
+       * two call sites) because it needs direct closure access to this
+       * click's own submissionKey/comparisonKey/draftPatch/myToken --
+       * wizard.html's Signup step never re-runs check-email.js at all, so
+       * there is no second call site that would need this factored out.
+       */
+      function renderInPlaceLogin(){
+        backBtn.disabled = false;
+        track('returning_user_login_shown', {});
+
+        el.innerHTML =
+          '<div class="fn-headline">Welcome back</div>' +
+          '<div class="fn-microcopy">Looks like you already have a DreamTube account with this email — log in to keep going.</div>' +
+          '<input class="fn-field" id="contact-email" type="email" value="' + esc(contactEmail) + '" readonly style="opacity:.7;">' +
+          '<button type="button" class="fn-small-link" id="fn-login-change-email" style="margin:-6px 0 12px;">Not you? Change email</button>' +
+          '<div class="fn-field-pw-wrap">' +
+            '<input class="fn-field" id="fn-login-password" type="password" placeholder="Your password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">' +
+            '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
+          '</div>' +
+          '<div class="fn-err-text" id="contact-error"></div>' +
+          '<div class="fn-spacer"></div>' +
+          '<button class="fn-btn-primary" id="fn-login-continue" type="button">Log in</button>' +
+          // Escape hatch -- a wrong-password/forgotten-password visitor
+          // must never be trapped here either.
+          '<div class="fn-microcopy" style="text-align:center;"><a href="login.html" style="color:inherit;">Forgot your password, or need help signing in?</a></div>';
+
+        var loginPwToggle = document.getElementById('fn-pw-toggle');
+        var loginPwInput = document.getElementById('fn-login-password');
+        var loginContinueBtn = document.getElementById('fn-login-continue');
+        var loginErrEl = document.getElementById('contact-error');
+        loginPwToggle.innerHTML = Icons.eye;
+        loginPwToggle.addEventListener('click', function(){
+          var showing = loginPwInput.type === 'text';
+          loginPwInput.type = showing ? 'password' : 'text';
+          loginPwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+        });
+
+        document.getElementById('fn-login-change-email').addEventListener('click', function(){
+          // Same invalidation discipline as the topbar Back handler below
+          // -- an in-flight DreamStore.login() call must never silently
+          // establish a session for a screen the visitor already navigated
+          // away from.
+          signupAttemptToken++;
+          pendingGenerationToken++;
+          DreamStore.invalidatePendingSignup();
+          backBtn.disabled = false;
+          renderContact(el);
+        });
+
+        loginPwInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); loginContinueBtn.click(); } });
+        loginContinueBtn.addEventListener('click', function(){
+          var password = loginPwInput.value;
+          loginErrEl.textContent = '';
+          if(!password){
+            loginErrEl.textContent = 'Enter your password.';
+            track('returning_user_login_failed', { reason: 'missing_password' });
+            // Same mobile-webview keyboard-focus fix as renderSignup's own
+            // missing_password branch below -- refocus SYNCHRONOUSLY,
+            // inside this real click's own user gesture. See that
+            // function's doc comment for the full root-cause writeup
+            // (tracker item for-product-urgent-forensic-find-the-pro-fzgghg,
+            // item 2).
+            loginPwInput.focus();
+            return;
+          }
+
+          signupAttemptToken++;
+          var myLoginToken = signupAttemptToken;
+          loginContinueBtn.disabled = true;
+          loginContinueBtn.textContent = 'Logging in…';
+          backBtn.disabled = true;
+
+          DreamStore.login(contactEmail, password).then(function(result){
+            if(myLoginToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
+            if(!result.ok){
+              loginContinueBtn.disabled = false;
+              loginContinueBtn.textContent = 'Log in';
+              backBtn.disabled = false;
+              loginErrEl.textContent = result.error || 'Couldn’t log you in — try again.';
+              track('returning_user_login_failed', { reason: 'server_rejected' });
+              loginPwInput.focus();
+              return;
+            }
+            track('returning_user_login_succeeded', {});
+            flushStagedCharactersToStore();
+            if(assembled && assembled.characterIdsForGeneration.length && staged.subjectCharacterId){
+              DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
+            }
+            DreamStore.setDraft(draftPatch);
+            // Nothing was safe to bill before we knew this was really
+            // their account -- the already_registered branch above never
+            // called startPendingGeneration for this content. Now that a
+            // real password check just confirmed it, start it for real,
+            // reusing this click's own submissionKey/comparisonKey/myToken.
+            startPendingGeneration(submissionKey, comparisonKey, myToken).then(function(){
+              if(myLoginToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
+              if(pendingId && !pendingStartFailed){
+                fetch('/.netlify/functions/claim-pending-generation', {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
+                }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
+              }
+              if(pendingOperationName && !pendingStartFailed){
+                DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
+              }
+              track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
+              // Same funnel-ending-v2 destination a fresh signup reaches
+              // (renderSignup below) -- a returning visitor logging in here
+              // lands exactly where a fresh signup would have.
+              location.href = 'home.html?generate=1';
+            });
+          });
+        });
+
+        loginPwInput.focus();
+      }
     });
   }
 
@@ -1453,7 +1587,17 @@
       var password = pwInput.value;
       errEl.textContent = '';
       if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
-      if(!password){ errEl.textContent = 'Enter a password.'; return; }
+      // missing_password trap fix (tracker item
+      // for-product-urgent-forensic-find-the-pro-fzgghg, item 2) -- same
+      // fix, same reasoning, as start.html's own wireScreen13Fields
+      // (see that function's doc comment for the full root-cause writeup:
+      // a real user hit this exact error 17 times in a row without ever
+      // getting past it). This click IS a fresh, real user gesture --
+      // refocusing pwInput synchronously, right here, is the one thing
+      // virtually guaranteed to reliably raise the on-screen keyboard
+      // across platforms if it failed to appear after this screen's own
+      // async reveal.
+      if(!password){ errEl.textContent = 'Enter a password.'; track('signup_error_shown', { reason: 'missing_password' }); pwInput.focus(); return; }
 
       // Marks this click as the new current attempt -- see
       // signupAttemptToken's own comment above. Captured now, before the

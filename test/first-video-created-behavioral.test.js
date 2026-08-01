@@ -532,9 +532,13 @@ test('end-to-end: a brand-new account\'s real home.html fresh-generation flow fi
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
     // Resolves in place on home.html now (no more redirect to result.html,
-    // tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q) -- the
-    // My-dreams row's generating tile flips to a real finished tile.
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 8000 });
+    // tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q). A
+    // brand-new account's first-ever dream is exactly the day-0 scenario
+    // (tracker item for-product-build-ship-founder-go-08-01--ags710) --
+    // the embedded #day0-card owns this dream and flips forming -> ready
+    // in place, not the My-dreams row (which stays hidden entirely for
+    // this account -- see test/home-day0-dream-card-behavioral.test.js).
+    await page.waitForSelector('#d0-video.ready', { timeout: 8000 });
     await settle(function () {
       return fbqTrackCustomCalls(fbqCalls, 'FirstVideoCreated').length >= 1 &&
         conversionCalls.filter(function (b) { return b && b.event_name === 'FirstVideoCreated'; }).length >= 1;

@@ -325,7 +325,7 @@ async function driveFullEditDelta(page, dreamId, deltaText) {
   // back to result.html -- the edited dream's own tile resolves in place
   // in the My-dreams row.
   await page.waitForURL('**/home.html**', { timeout: 15000, waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+  await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
 }
 
 test('model rotation: a veo3.1-lite dream\'s edit routes to pixverse-v6, and modelUsed + editHistory are stamped on the resulting dream', async function (t) {

@@ -1775,7 +1775,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
     // generating tile resolving confirms the adopted job actually completed.
     await page.click('#fn-s14-continue');
     await page.waitForURL(/home\.html/, { timeout: 15000 });
-    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating)', { timeout: 15000 });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 15000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'must never re-submit generation after signup -- the whole point of adoptPendingGeneration');
     assert.ok(videoStatusCalls >= 1, 'home.html must actually resume polling the adopted job');
