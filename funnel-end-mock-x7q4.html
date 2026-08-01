@@ -40,9 +40,23 @@
   5. Claim: the approved claim-sheet demo with the +100 first-night
      bonus; the balance settles after claiming.
 
-  Exactly ONE pulsing element per view (home: Chamber pill; room: the
-  hero pill). Mock chrome is one dashed bar: ↺ restart journey /
-  ⏩ video ready.
+  SCENARIO TOGGLE (founder amendment, 2026-08-01): the mock chrome
+  switches between two scenarios sharing the same shelf DNA —
+  · "new · day 0" — everything above, unchanged.
+  · "existing user" — the founder's generalization: an established
+    member (streak 🔥 4 nights, balance ✦ 340) just logged tonight's
+    dream in-app and it's generating. The SAME embedded dream's-room
+    card sits at top in forming state (their new dream's quote, muted
+    quiet row, "ready when your dream is"); below it their normal full
+    shelf: Chamber hero (pulsing), ritual module (tonight's claim
+    already claimed — no button, just streak + balance), tip glance
+    strip, and a populated My-dreams row (3 thumbnails, NO duplicate
+    forming tile). ⏩ works the same: card comes alive, toast, tap
+    into the room.
+
+  Exactly ONE pulsing element per view in both scenarios (home: Chamber
+  pill; room: the hero pill). Mock chrome is one dashed bar: scenario
+  toggle / ↺ restart / ⏩ video ready.
 
   Static, self-contained: no app JS; all artwork is layered CSS
   gradients except the Chamber's sage art (assets/chamber-sage.jpg).
@@ -176,6 +190,9 @@ body{
   -webkit-tap-highlight-color:transparent;
 }
 .mockbtn:disabled{ opacity:.45; cursor:default; }
+.mockbtn.on{
+  background:rgba(157,144,255,.18); border-color:rgba(157,144,255,.6); color:#cfc8ff;
+}
 
 /* ===== view containers — one page, two views ===== */
 .view{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
@@ -326,6 +343,57 @@ body{
 }
 .ritual-balance:active{ opacity:.7; }
 .ritual-balance .gold{ color:var(--home-warn); }
+
+/* TIP glance strip (existing-user shelf) — flat, informational, NOT
+   tappable. Design grammar: no box, no border, no chevron, no button
+   affordance. Verbatim from morning-mock-x7q4.html. */
+.tipstrip{ margin-top:28px; display:flex; gap:12px; align-items:flex-start; padding:2px 2px; }
+.tipstrip .tipicon{ flex:0 0 22px; margin-top:2px; color:var(--home-warn); display:inline-flex; }
+.tip-title{ font-size:var(--t-body); font-weight:800; letter-spacing:-.01em; color:#d5d0ea; }
+.tip-title .tiplab{ color:var(--home-warn); letter-spacing:.08em; }
+.tip-line{ margin-top:5px; font-size:15px; font-weight:500; line-height:1.55; color:var(--home-soft); }
+
+/* My dreams (existing-user shelf) — populated row, NO forming tile here:
+   the embedded top card IS tonight's dream. Tokens from the approved
+   Night Shelf mocks. */
+.dreams{ margin-top:28px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.dreams-all:active{ opacity:.7; }
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  margin:0 -20px; padding:4px 20px 8px;
+  scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dthumb{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer;
+}
+.dthumb::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 50%, rgba(255,255,255,.6), transparent 60%);
+}
+.dthumb::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.dthumb:active{ transform:scale(.97); }
+.dthumb.t1{ background:radial-gradient(40px 40px at 74% 26%, rgba(255,230,176,.9), transparent 70%), radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%), linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040); }
+.dthumb.t2{ background:radial-gradient(70% 70% at 30% 30%, rgba(224,120,190,.5), transparent 68%), radial-gradient(60% 60% at 80% 76%, rgba(163,90,255,.45), transparent 65%), linear-gradient(150deg,#3a1350,#57155f 55%,#1c0d38); }
+.dthumb.t3{ background:radial-gradient(70% 70% at 70% 24%, rgba(120,220,200,.4), transparent 66%), radial-gradient(80% 80% at 20% 80%, rgba(60,120,220,.5), transparent 65%), linear-gradient(165deg,#0f2a4e,#14406b 55%,#0b1636); }
 
 /* quiet rows */
 .quietrows{ margin-top:32px; }
@@ -614,7 +682,9 @@ body{
   <div class="mockbar">
     <span class="mocklab">Mock</span>
     <div class="mockseg">
-      <button type="button" class="mockbtn" id="mock-restart">↺ restart journey</button>
+      <button type="button" class="mockbtn on" id="scen-day0">new · day 0</button>
+      <button type="button" class="mockbtn" id="scen-existing">existing user</button>
+      <button type="button" class="mockbtn" id="mock-restart">↺ restart</button>
       <button type="button" class="mockbtn" id="mock-ready">⏩ video ready</button>
     </div>
   </div>
@@ -652,7 +722,7 @@ body{
           Watch your dream
         </button>
 
-        <p class="dreamquote clamped">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn't scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.&rdquo;</p>
+        <p class="dreamquote clamped" id="hr-quote">&ldquo;I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn't scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.&rdquo;</p>
 
         <div class="quietrow waiting" id="hr-quiet">
           <button type="button" class="quietlink" id="hr-publish">
@@ -682,22 +752,46 @@ body{
         <div class="hero-scrim"></div>
         <div class="hero-content">
           <h2 class="hero-title">The Chamber</h2>
-          <p class="hero-sub">Your first reading is ready — no need to wait for the video.</p>
+          <p class="hero-sub" id="chamber-sub">Your first reading is ready — no need to wait for the video.</p>
           <button type="button" class="pill pulse" id="chamber-pill">Enter</button>
         </div>
       </section>
 
-      <!-- ritual module — first-claim welcome bonus (static warm glow) -->
+      <!-- ritual module — day 0: first-claim welcome bonus (static warm
+           glow); existing user: already claimed, just streak + balance -->
       <section class="ritual" id="ritual">
         <div class="ritual-head">
           <div>
-            <div class="ritual-big">🔥 Night 1</div>
-            <div class="ritual-sub">Your streak starts tonight.</div>
+            <div class="ritual-big" id="ritual-big">🔥 Night 1</div>
+            <div class="ritual-sub" id="ritual-sub">Your streak starts tonight.</div>
           </div>
           <span id="ritual-constel"></span>
         </div>
         <button type="button" class="ritual-claim" id="ritual-claim">Claim your +100 welcome tokens</button>
         <button type="button" class="ritual-balance" id="ritual-balance"><span class="gold">✦</span> 0 · Vault →</button>
+      </section>
+
+      <!-- TIP glance strip — existing-user shelf only -->
+      <aside class="tipstrip" id="tipstrip" aria-label="Tip" hidden>
+        <span class="tipicon"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5.6 5.6l1.7 1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18.4 5.6l-1.7 1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 15a5 5 0 0110 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        <div>
+          <div class="tip-title"><span class="tiplab">TIP</span> · How to remember tonight's dream</div>
+          <div class="tip-line">When you wake, stay still and replay the dream once before opening your eyes — then speak it.</div>
+        </div>
+      </aside>
+
+      <!-- My dreams — existing-user shelf only; the new dream is NOT here
+           (it's the embedded card at top — no duplicate forming tile) -->
+      <section class="dreams" id="dreams" hidden>
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <button type="button" class="dreams-all">All →</button>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb t1"></div>
+          <div class="dthumb t2"></div>
+          <div class="dthumb t3"></div>
+        </div>
       </section>
 
       <div class="quietrows">
@@ -819,9 +913,28 @@ body{
   // Mock-only interactivity — no app JS.
 
   // ---- journey state ----
+  var scenario = 'day0';    // 'day0' (funnel graduate) | 'existing' (established member)
   var videoReady = false;   // the fal.ai render finishing
   var readingDone = false;  // user entered the Chamber (flips the room's hero pill)
-  var claimed = false;      // +100 welcome bonus
+  var claimed = false;      // +100 welcome bonus (day 0 only)
+
+  // Per-scenario content — the SAME embedded-card pattern, two lives.
+  var SCEN = {
+    day0: {
+      quote: '“I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name. I wasn’t scared. I just kept rising, past the towers, toward a moon that felt close enough to touch.”',
+      chamberSub: 'Your first reading is ready — no need to wait for the video.',
+      ritualBig: '🔥 Night 1',
+      ritualSub: 'Your streak starts tonight.',
+      constel: 1
+    },
+    existing: {
+      quote: '“I was back in my childhood house, but every door opened onto the sea — and my grandmother was there, younger than I’d ever known her, waving me down toward the water.”',
+      chamberSub: 'Tonight’s reading is ready — no need to wait for the video.',
+      ritualBig: '🔥 4 nights',
+      ritualSub: 'Tonight’s +20 ✦ claimed',
+      constel: 3
+    }
+  };
   var readyTimer = null;
   var VIDEO_MS = 7000;
 
@@ -831,9 +944,17 @@ body{
     homeScroll: document.getElementById('home-scroll'),
     roomScroll: document.getElementById('room-scroll'),
     chamberPill: document.getElementById('chamber-pill'),
+    chamberSub: document.getElementById('chamber-sub'),
+    ritualBig: document.getElementById('ritual-big'),
+    ritualSub: document.getElementById('ritual-sub'),
     ritualConstel: document.getElementById('ritual-constel'),
     ritualClaim: document.getElementById('ritual-claim'),
     ritualBalance: document.getElementById('ritual-balance'),
+    tipstrip: document.getElementById('tipstrip'),
+    dreams: document.getElementById('dreams'),
+    hrQuote: document.getElementById('hr-quote'),
+    scenDay0: document.getElementById('scen-day0'),
+    scenExisting: document.getElementById('scen-existing'),
     hrVideo: document.getElementById('hr-video'),
     hrWatch: document.getElementById('hr-watch'),
     hrQuiet: document.getElementById('hr-quiet'),
@@ -937,10 +1058,16 @@ body{
     }
   });
 
-  // ---- claim demo: +100 welcome bonus ----
+  // ---- claim demo: +100 welcome bonus (day 0). Existing user already
+  //      claimed tonight — no button, the balance just sits there. ----
   function renderClaim(){
-    el.ritualClaim.hidden = claimed;
-    el.ritualBalance.innerHTML = '<span class="gold">✦</span> ' + (claimed ? 100 : 0) + ' · Vault →';
+    if(scenario === 'existing'){
+      el.ritualClaim.hidden = true;
+      el.ritualBalance.innerHTML = '<span class="gold">✦</span> 340 · Vault →';
+    } else {
+      el.ritualClaim.hidden = claimed;
+      el.ritualBalance.innerHTML = '<span class="gold">✦</span> ' + (claimed ? 100 : 0) + ' · Vault →';
+    }
   }
   function openSheet(){
     el.backdrop.classList.add('open');
@@ -1055,14 +1182,27 @@ body{
     showmore.textContent = clamped ? 'Show more' : 'Show less';
   });
 
-  // ---- restart journey ----
+  // ---- restart journey (per scenario) ----
   function startJourney(){
+    var s = SCEN[scenario];
     videoReady = false;
     readingDone = false;
     claimed = false;
     isPublished = false;
     muted = true;
     clearTimeout(readyTimer);
+    // scenario content — same embedded card, two lives
+    el.hrQuote.textContent = s.quote;
+    quote.textContent = s.quote;
+    el.chamberSub.textContent = s.chamberSub;
+    el.ritualBig.textContent = s.ritualBig;
+    el.ritualSub.textContent = s.ritualSub;
+    el.ritualConstel.innerHTML = renderConstellation(s.constel);
+    el.tipstrip.hidden = scenario !== 'existing';
+    el.dreams.hidden = scenario !== 'existing';
+    el.scenDay0.classList.toggle('on', scenario === 'day0');
+    el.scenExisting.classList.toggle('on', scenario === 'existing');
+    // forming state
     el.hrVideo.classList.remove('ready');
     el.hrVideo.setAttribute('aria-label', 'Your dream is forming');
     el.hrWatch.hidden = true;
@@ -1070,7 +1210,6 @@ body{
     el.hrCaption.hidden = false;
     el.mockReady.disabled = false;
     el.mockReady.textContent = '⏩ video ready';
-    el.ritualConstel.innerHTML = renderConstellation(1);
     renderClaim();
     renderMute();
     setPublishState(false);
@@ -1085,6 +1224,18 @@ body{
     readyTimer = setTimeout(markVideoReady, VIDEO_MS);
   }
   el.mockRestart.addEventListener('click', startJourney);
+
+  // ---- scenario toggle ----
+  el.scenDay0.addEventListener('click', function(){
+    if(scenario === 'day0') return;
+    scenario = 'day0';
+    startJourney();
+  });
+  el.scenExisting.addEventListener('click', function(){
+    if(scenario === 'existing') return;
+    scenario = 'existing';
+    startJourney();
+  });
 
   startJourney();
 </script>
