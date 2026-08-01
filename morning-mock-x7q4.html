@@ -10,14 +10,16 @@
 
   TAB A · Quiet Knock (direction A — capture-first):
     lock-screen push → create-style morning landing (CATCH IT / "What did
-    you dream?" / ● Start speaking / Write instead) → mock 3s listening
+    you dream?" / ● Start speaking / one quiet-link row "Write instead ·
+    Use the wizard" — founder amendment 2026-08-01: the wizard is the
+    third capture option; Speak stays the only hero) → mock 3s listening
     with waveform → "Caught it ✓" → the Night Shelf, logged state.
 
   TAB B · Dawn Shelf (direction B — the home owns the morning):
     same push → home re-skinned as morning: the Tonight hero in a DAWN
     treatment (night palette shifted to golds/ambers), eyebrow THIS
-    MORNING, "Still with you?", pulsing "🎙 Speak it" → same capture →
-    same logged shelf.
+    MORNING, "Still with you?", pulsing "🎙 Speak it", quiet links
+    Write · Wizard · No recall → same capture → same logged shelf.
 
   TAB C · WhatsApp: a generic dark chat-app mock (clearly a mock — no
     real branding) — morning message bubble with Speak / Type / No-recall
@@ -309,13 +311,7 @@ body{
 .capture-cta{ margin-top:30px; }
 .capture-cta .pill{ margin-top:0; }
 .pill .recdot{ color:#ff5d5d; margin-right:9px; font-size:14px; }
-.capture-write{
-  display:inline-block; margin-top:18px; padding:10px 12px; min-height:44px;
-  background:none; border:none; cursor:pointer;
-  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
-  -webkit-tap-highlight-color:transparent;
-}
-.capture-write:active{ opacity:.7; }
+.capture-cta .entryrow{ margin-top:12px; }
 /* listening state */
 .wave{ display:flex; align-items:center; justify-content:center; gap:4px; height:56px; }
 .wave i{
@@ -741,7 +737,10 @@ body{
         <p class="capture-sub">Half-asleep mumbling is fine.</p>
         <div class="capture-cta">
           <button type="button" class="pill pulse" id="capture-start"><span class="recdot">●</span>Start speaking</button>
-          <button type="button" class="capture-write" id="capture-write">Write instead</button>
+          <div class="entryrow">
+            <button type="button" class="entrylink" id="capture-write">Write instead</button><span class="dot">·</span>
+            <button type="button" class="entrylink" id="capture-wizard">Use the wizard</button>
+          </div>
         </div>
       </div>
       <div id="capture-listening" hidden>
@@ -776,6 +775,7 @@ body{
         </div>
         <div class="entryrow">
           <button type="button" class="entrylink" id="dawn-write">Write</button><span class="dot">·</span>
+          <button type="button" class="entrylink" id="dawn-wizard">Wizard</button><span class="dot">·</span>
           <button type="button" class="entrylink" id="dawn-norecall">No recall</button>
         </div>
       </section>
@@ -1096,11 +1096,19 @@ body{
     toast('Write panel — same free capture');
     advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
   });
+  document.getElementById('capture-wizard').addEventListener('click', function(){
+    toast('Wizard — guided, step by step');
+    advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
+  });
 
   // ---- screen 2b: the dawn shelf ----
   document.getElementById('dawn-speak').addEventListener('click', function(){ jumpTo('capture'); });
   document.getElementById('dawn-write').addEventListener('click', function(){
     toast('Write panel — same free capture');
+    advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
+  });
+  document.getElementById('dawn-wizard').addEventListener('click', function(){
+    toast('Wizard — guided, step by step');
     advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
   });
   document.getElementById('dawn-norecall').addEventListener('click', function(){
