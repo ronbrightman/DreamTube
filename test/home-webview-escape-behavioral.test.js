@@ -2,10 +2,13 @@
 //
 // Real browser-driven coverage for home.html's webview-escape card (ORPHAN
 // (b), rehomed from processing.html's #proc-nudge-card when tracker item
-// for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page) — an
-// elevated state of the existing "Add DreamTube to your phone" quiet row,
-// shown only when DreamStore.detectInAppWebviewHost() detects a real FB/IG
-// in-app browser UA, per home-mock5-day0-x7q4.html's .webview-card design.
+// for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page) —
+// Step 1 of the guided two-step install journey (Step 2, adding to the
+// home screen, now lives inside the Make-it-yours card's own install row —
+// tracker item for-product-build-ship-founder-approved--9ta1j0 superseded
+// the old plain "Add to phone" row this card used to elevate). Shown only
+// when DreamStore.detectInAppWebviewHost() detects a real FB/IG in-app
+// browser UA, per home-mock5-day0-x7q4.html's .webview-card design.
 //
 // The Android-intent://-URL / iOS-copy-link-with-persistent-note mechanics
 // (the real escape ACTIONS, ported verbatim from processing.html's own
@@ -110,9 +113,13 @@ async function checkCardFor(userAgent, expectHost) {
       await page.waitForSelector('#webview-card', { state: 'visible', timeout: 5000 });
       var title = await page.textContent('#webview-card-title');
       assert.match(title, new RegExp(expectHost), 'the webview card must name the actual detected host app (' + expectHost + '), got: ' + title);
-      // Mutual exclusivity: the plain "Add to phone" row must stay hidden
-      // whenever the elevated webview card is showing.
-      assert.equal(await page.locator('#install-qrow').isVisible(), false, 'the plain install row must never show alongside the elevated webview card');
+      // The Make-it-yours card (tracker item for-product-build-ship-
+      // founder-approved--9ta1j0) still shows alongside the webview card —
+      // copy-link/bookmark stay useful even inside a webview — but its own
+      // install row must redirect here rather than show impossible A2HS
+      // instructions (see the dedicated coverage in
+      // test/a2hs-install-nudge-journey-behavioral.test.js's webview test).
+      assert.equal(await page.locator('#mky').isVisible(), true, 'the Make-it-yours card stays visible alongside the webview-escape card');
     } else {
       assert.equal(await page.locator('#webview-card').isVisible(), false, 'a normal browser UA must never show the webview-escape card');
     }

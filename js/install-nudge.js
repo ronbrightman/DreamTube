@@ -144,11 +144,13 @@
 //   the ?bt= token IS the "just landed in a real browser" moment, so it's
 //   now explicitly labeled "Step 2 of 2" and made platform-aware in two new
 //   ways that used to leave a real gap. home.html itself doesn't call
-//   InstallNudge.init() (that would duplicate its own quiet row with a
-//   second floating card — exactly the "two competing prompts" this item
-//   says not to build) — instead its own installJourneyRow elevates the
-//   SAME row into a "Step 2 of 2" state right after a fresh session
-//   transfer, reusing buildAndroidMenuFallbackHtml/buildIOSOpenInSafariHtml/
+//   InstallNudge.init() (that would duplicate its own install surface with
+//   a second floating card — exactly the "two competing prompts" this item
+//   says not to build) — instead its own Make-it-yours card (tracker item
+//   for-product-build-ship-founder-approved--9ta1j0 moved this from the
+//   original install-qrow row onto that card's own install row) shows a
+//   "Step 2 of 2" eyebrow inside its expanded content right after a fresh
+//   session transfer, reusing buildAndroidMenuFallbackHtml/buildIOSOpenInSafariHtml/
 //   wireIOSOpenInSafari below (exported for exactly this reuse) rather than
 //   a second copy of this logic:
 //     - ANDROID WITHOUT A CAPTURED PROMPT: beforeinstallprompt is async/
@@ -636,17 +638,18 @@ window.InstallNudge = (function () {
     canOfferInstall: canOfferInstall,
     buildIOSGuidanceHtml: buildIOSGuidanceHtml,
     // Exported for tracker item for-product-install-first-door-founder-d-
-    // b60cls: home.html's own install-qrow/sheet (its "one system, not two
-    // competing prompts" install surface) reuses these same three Step 2
-    // builders/wirer rather than duplicating the Android-menu-fallback/
-    // iOS-open-in-Safari logic a second time — see home.html's own
-    // installJourneyRow for how. canOfferInstallForStep2 is exported
-    // alongside them for the same reason: installJourneyRow's own
-    // shouldShow() must use the broadened Step 2 check too (see that
-    // function's own doc comment above), not just the strict default —
-    // otherwise the row never becomes visible for a plain Android UA with
-    // no captured beforeinstallprompt, and the fallback builders below
-    // become unreachable.
+    // b60cls: home.html's own Make-it-yours install row (its "one system,
+    // not two competing prompts" install surface — tracker item for-
+    // product-build-ship-founder-approved--9ta1j0 moved this from the old
+    // install-qrow/sheet onto that card's accordion) reuses these same
+    // three Step 2 builders/wirer rather than duplicating the Android-
+    // menu-fallback/iOS-open-in-Safari logic a second time — see home.
+    // html's own renderMkyInstallExp for how. canOfferInstallForStep2 is
+    // exported alongside them for the same reason: a Step 2 caller must
+    // use the broadened check too, not just the strict default — otherwise
+    // the row never becomes visible for a plain Android UA with no
+    // captured beforeinstallprompt, and the fallback builders below become
+    // unreachable.
     canOfferInstallForStep2: canOfferInstallForStep2,
     buildAndroidMenuFallbackHtml: buildAndroidMenuFallbackHtml,
     buildIOSOpenInSafariHtml: buildIOSOpenInSafariHtml,

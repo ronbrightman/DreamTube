@@ -86,6 +86,15 @@
   ~52KB — see this item's own build notes — specifically because this is
   the one page with a real image payload and Meta/Instagram's in-app
   webview is a real, low-bandwidth audience for it).
+
+  "Home round 4" (tracker item for-product-build-ship-founder-approved--
+  9ta1j0, founder-approved 2026-08-01) layers five new pieces onto this
+  shelf without touching its existing modules: Tip of the day, Get
+  inspired, Consider publishing a dream, the Make-it-yours setup card
+  (supersedes the old add-to-phone quiet row), and TOKEN ICON A (replaces
+  the old "✦" glyph everywhere tokens render — the topbar chip also
+  returns, balance-only). Visual spec = home-mock5-x7q4.html; see each new
+  section's own comment below for the exact tracker/mock references.
 -->
 <style>
 :root{
@@ -164,10 +173,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 .home-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
 
-/* --- 1 · topbar: the logo only, left-aligned (founder amendment: no
-   token chip here anymore — that job lives in the ritual module's quiet
-   balance line now) --- */
-.home-topbar{ display:flex; align-items:center; padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 0; flex:none; }
+/* --- 1 · topbar: logo left, a compact balance-only token chip right
+   (tracker item for-product-build-ship-founder-approved--9ta1j0, "Home
+   round 4" amendment ② — the topbar chip RETURNS, balance-only; the claim
+   itself stays in the ritual module below, unchanged) --- */
+.home-topbar{ display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 20px 0; flex:none; }
 .home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
 .home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
 .home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
@@ -468,7 +478,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   -webkit-tap-highlight-color:transparent;
 }
 .ritual-balance:active{ opacity:.7; }
-.ritual-balance .gold{ color:var(--home-warn); }
+.gold{ color:var(--home-warn); }
 
 /* --- 6 · My dreams — 20px header + horizontal scroll-snap row, 150×100
    thumbnails, full-bleed right so the last tile is cut by the edge --- */
@@ -532,6 +542,191 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 @keyframes dgPulseText{ 0%,100%{ opacity:1; } 50%{ opacity:.6; } }
 @media (prefers-reduced-motion:reduce){ .dg-sweep,.dg-label{ animation:none !important; } }
 
+/* --- multi-dream badge (tracker item for-product-build-ship-founder-
+   approved--9ta1j0, "Home round 4" item 7 — the approved multi-dream-
+   per-night behavior). Lives on the embedded dream's-room card above
+   (#day0-card), not a separate hero-tonight square — the ags710
+   generalization already made the room card the ONLY "logged, real
+   dream" state in production; a "No recall" night (the one state that
+   still uses the plain hero-tonight.logged square) can never have more
+   than one same-day entry, so the chip never applies there. */
+.day0card .d0-chip{
+  position:absolute; top:10px; right:10px; z-index:3;
+  display:inline-flex; align-items:center; gap:5px;
+  font:700 11px var(--font-body); letter-spacing:.02em;
+  padding:5px 10px; border-radius:99px;
+  background:rgba(12,10,26,.6); border:1px solid rgba(75,211,155,.5); color:#bdf0d8;
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+
+/* ===== shared section header (20px) for the shelf's new list sections —
+   same rhythm/spacing as .dreams-head/.dreams-all above, factored out
+   under its own .sect/.sect-head/.sect-all names (tracker item for-
+   product-build-ship-founder-approved--9ta1j0) so the new sections don't
+   borrow classes whose CSS lives right next to the My-dreams-specific
+   markup it was written for. ===== */
+.sect{ margin-top:32px; }
+.sect-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.sect-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.sect-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px; text-decoration:none;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.sect-all:active{ opacity:.7; }
+
+/* --- ① TIP OF THE DAY — a calm full-width card: glance-class styling
+   (hairline, NO glow, no button look) but card-shaped since it's
+   tappable. Tap advances to the next unseen tip (see js/store.js's
+   getTipOfDayState/advanceTipOfDay). Ported verbatim from
+   home-mock5-x7q4.html's `.tipcard`. --- */
+.tipcard{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:linear-gradient(180deg, rgba(36,29,71,.42), rgba(24,19,46,.55));
+  border:1px solid rgba(157,144,255,.2); border-radius:24px;
+  padding:22px;
+  color:var(--home-ink); font-family:var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.tipcard:active{ transform:scale(.99); }
+.tip-body{ transition:opacity .18s ease; }
+.tip-body.fading{ opacity:0; }
+.tip-cat{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800;
+}
+.tip-text{ margin-top:9px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#dcd7f2; }
+.tip-more{ margin-top:14px; font-size:15px; font-weight:600; color:var(--home-soft); text-align:right; }
+
+/* --- ② GET INSPIRED / ③ CONSIDER PUBLISHING tiles (js/dream-cards.js's
+   feedTileHTML/unpublishedTileHTML) — same 150×100 snap-row DNA as
+   .dream-row-tile above, plus a caption snippet overlaid on the art and a
+   meta row underneath (other users' handle + like count for Get Inspired;
+   a "Private" badge + relative day label for Consider Publishing). Ported
+   from home-mock5-x7q4.html's `.itile`/`.isnip`/`.imeta`/`.pbadge`. --- */
+.insp-tile{
+  flex:0 0 150px; width:150px; scroll-snap-align:start;
+  background:none; border:none; padding:0; text-align:left; cursor:pointer;
+  font-family:var(--font-body); color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+.insp-tile:active .insp-thumb{ transform:scale(.97); }
+.insp-thumb{
+  position:relative; display:block; width:150px; height:100px; border-radius:14px;
+  overflow:hidden; border:1px solid rgba(255,255,255,.14); background:var(--home-raise2);
+}
+.insp-thumb .vcard-video, .insp-thumb .vcard-image, .insp-thumb .vcard-thumb-bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.insp-thumb::after{ /* footage scrim, matches My-dreams' own .dream-row-tile treatment */
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
+  background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55));
+}
+.insp-snip{
+  position:absolute; left:10px; right:8px; bottom:8px; z-index:2;
+  font:700 12px/1.35 var(--font-body); color:#efecff;
+  text-shadow:0 1px 6px rgba(12,10,26,.85);
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.insp-meta{
+  display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+  margin-top:7px; padding:0 2px;
+  font:600 12.5px var(--font-body); color:var(--home-soft);
+}
+.insp-hearts{ color:#e8a0b4; font-weight:700; flex:0 0 auto; }
+.insp-handle{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pbadge{
+  position:absolute; top:8px; left:8px; z-index:2;
+  display:inline-flex; align-items:center; gap:4px;
+  font:800 10.5px var(--font-body); letter-spacing:.05em; text-transform:uppercase;
+  padding:3px 9px; border-radius:99px;
+  background:rgba(12,10,26,.6); border:1px solid rgba(255,255,255,.25); color:#cfc8ea;
+}
+.pbadge .icon{ font-size:11px; width:1em; height:1em; }
+
+/* --- ④ MAKE IT YOURS — a real setup card: action-class but WARM, never
+   pulsing (tracker item for-product-build-ship-founder-approved--9ta1j0).
+   Supersedes the old add-to-phone quiet row. Accordion rows (one open at
+   a time). Ported verbatim from home-mock5-x7q4.html's `.mky*`. --- */
+.mky{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(224,170,90,.38); border-radius:24px;
+  padding:24px 22px;
+}
+.mky-title{ font-size:19px; font-weight:800; letter-spacing:-.01em; }
+.mky-rows{ margin-top:8px; }
+.mky-row{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:50px; padding:4px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#c8c2e2; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.mky-row:active{ opacity:.7; }
+.mky-row .qicon{ font-style:normal; font-size:17px; width:22px; text-align:center; }
+.mky-row .qlabel{ flex:1; }
+.mky-row .chev{ color:#6f6894; display:inline-flex; }
+.mky-row.primary{ color:var(--home-ink); font-weight:700; }
+.mky-row .done-check{ color:var(--home-ok); font-weight:800; margin-left:6px; }
+.mky-row .chev svg{ transition:transform .2s ease; }
+.mky-item.open .mky-row .chev svg{ transform:rotate(90deg); }
+.mky-exp{
+  overflow:hidden; max-height:0; opacity:0;
+  transition:max-height .28s ease, opacity .2s ease;
+  padding-left:33px; /* aligns under the row labels */
+}
+.mky-item.open .mky-exp{ max-height:480px; opacity:1; overflow-y:auto; }
+.mky-step{
+  font-size:15px; font-weight:500; line-height:1.55; color:var(--home-soft);
+  padding:2px 0 12px;
+}
+.mky-step b{ color:#c8c2e2; font-weight:700; }
+.mky-copied{
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:15px; font-weight:700; color:var(--home-ok);
+  padding:2px 0 6px;
+}
+.mky-reward{
+  margin-top:12px; font-size:15px; font-weight:600; color:#e8cfa4;
+}
+.mky-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:52px; margin-top:12px; padding:12px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.mky-claim:active{ transform:scale(.98); }
+.mky-claim:disabled{
+  background:rgba(224,170,90,.14); color:rgba(232,207,164,.45);
+  box-shadow:none; cursor:default;
+}
+.mky-claim:disabled:active{ transform:none; }
+.mky-done-line{ margin-top:14px; font:700 var(--t-body) var(--font-body); color:var(--home-ok); }
+.mky-done-note{ margin-top:6px; font-size:15px; font-weight:500; color:var(--home-soft); }
+/* the MKY install row's expanded content reuses js/install-nudge.js's own
+   .install-nudge-* builders verbatim (see css/styles.css for their base
+   styling) — this just gives that content the same left indent every
+   other .mky-exp child gets, and a real "Install" button matching this
+   card's own button language when a native prompt IS directly available. */
+.mky-exp .install-nudge-visual, .mky-exp .install-nudge-body, .mky-exp .install-nudge-note, .mky-exp .menu-row-replica{ margin-left:0; margin-right:0; }
+/* "Step 2 of 2" eyebrow — carried over from the old install-qrow's
+   identical treatment (tracker item for-product-install-first-door-
+   founder-d-b60cls) onto the MKY install row's own expanded content, for
+   the one load that just consumed a real ?bt= session-transfer token
+   (i.e. right after escaping the webview via the Step 1 card above). */
+.mky-step-eyebrow{ display:block; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#ffe0aa; opacity:.85; margin-bottom:6px; }
+.mky-inline-install-btn{
+  display:flex; align-items:center; justify-content:center; gap:7px; width:100%;
+  min-height:46px; margin-top:4px; padding:10px 14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 15px var(--font-body); -webkit-tap-highlight-color:transparent;
+}
+.mky-inline-install-btn:active{ transform:scale(.98); }
+.mky-webview-note{ font-size:15px; font-weight:500; line-height:1.55; color:var(--home-soft); padding:2px 0 12px; }
+
 /* --- ORPHAN (a), rehomed from processing.html's #push-ask-slot: the
    notify-me/push-prompt card, anchored right under the dreams row while a
    generation is in flight (js/push-subscribe.js's own doc comment already
@@ -542,16 +737,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 #notify-card-slot{ margin-top:16px; }
 
 /* --- ORPHAN (b), rehomed from processing.html's #proc-nudge-card +
-   js/install-nudge.js: the webview-escape nudge, folded into an ELEVATED
-   state of the existing "Add DreamTube to your phone" quiet row (mock
-   home-mock5-day0-x7q4.html's .webview-card) rather than a second nudge
-   surface. Shown only when DreamStore.detectInAppWebviewHost() is
-   non-null — the plain quiet row above stays hidden in that case (A2HS is
-   genuinely impossible inside a webview, see install-qrow's own
-   shouldShow() gate), so this never shows alongside it. --- */
+   js/install-nudge.js: the webview-escape nudge (Step 1 of 2, mock
+   home-mock5-day0-x7q4.html's .webview-card). Shown only when
+   DreamStore.detectInAppWebviewHost() is non-null. Step 2 (adding to the
+   home screen) now lives inside the Make-it-yours card's own install row
+   (tracker item for-product-build-ship-founder-approved--9ta1j0), which
+   shows a short redirect note in that same state instead of impossible
+   A2HS instructions — see this page's own renderMkyInstallExp(). --- */
 .webview-card{
   border:1px solid rgba(224,170,90,.4); border-radius:16px;
-  padding:14px 16px; margin:4px 0 0;
+  padding:14px 16px; margin:32px 0 0;
   background:linear-gradient(180deg, rgba(70,48,20,.28), rgba(36,29,71,.4));
 }
 .webview-head{ display:flex; align-items:center; gap:9px; }
@@ -575,35 +770,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    a separate label bolted on top. */
 .webview-steplabel{ font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#ffe0aa; opacity:.85; margin-bottom:5px; }
 
-/* --- 7 · quiet row — 52px, flat, no card chrome (Vault absorbed into
-   the ritual module's balance line above; only the add-to-phone nudge
-   remains here) --- */
-.quietrows{ margin-top:32px; }
-.qrow{
-  display:flex; align-items:center; gap:11px; width:100%;
-  min-height:52px; padding:6px 2px;
-  background:none; border:none; cursor:pointer; text-align:left;
-  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
-  -webkit-tap-highlight-color:transparent;
-}
-.qrow:active{ opacity:.7; }
-.qrow .qicon{ font-style:normal; font-size:17px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; color:var(--home-acc); }
-.qrow .qlabel{ flex:1; display:flex; flex-direction:column; justify-content:center; }
-.qrow .chev{ color:#6f6894; display:inline-flex; }
-/* Step 2 of 2 elevated state — tracker item for-product-install-first-
-   door-founder-d-b60cls. Shown only for the one load that just consumed a
-   real ?bt= session-transfer token (installJourneyRow's own
-   justEscapedWebview check) — the SAME row as always (never a second,
-   competing surface), just visually elevated into card chrome that
-   deliberately echoes .webview-card's own warm gradient/border right
-   above it, so Step 1 -> Step 2 reads as one continuous guided flow. */
-.qrow.qrow-elevated{
-  border:1px solid rgba(224,170,90,.4); border-radius:16px;
-  padding:10px 14px; margin-top:4px;
-  background:linear-gradient(180deg, rgba(70,48,20,.28), rgba(36,29,71,.4));
-}
-.qrow-eyebrow{ display:block; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#ffe0aa; opacity:.85; margin-bottom:2px; }
-
 .toast{ position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
 .toast.show{ opacity:1; transform:translate(-50%,0); }
 </style>
@@ -619,9 +785,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   <div class="home-fg">
     <div class="home-scroll">
 
-      <!-- 1 · topbar — logo only -->
+      <!-- 1 · topbar — logo left, balance-only token chip right -->
       <div class="home-topbar">
         <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+        <span id="home-tok-chip-slot"></span>
       </div>
 
       <!-- 2 · greeting -->
@@ -642,6 +809,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           <div class="dv-fallback" id="d0-bg" style="position:absolute; inset:0;"></div>
           <video class="dv-media" id="d0-video-el" muted loop playsinline autoplay style="display:none;"></video>
           <img class="dv-media" id="d0-image-el" alt="" style="display:none;">
+          <!-- the approved multi-dream badge (tracker item for-product-
+               build-ship-founder-approved--9ta1j0, item 7) -->
+          <span class="d0-chip" id="d0-chip" hidden></span>
           <div class="playbadge" id="d0-play-badge"><span class="icon" id="d0-play-icon"></span></div>
           <div class="video-forming" id="d0-forming-veil">
             <div class="form-sweep"></div>
@@ -714,7 +884,38 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         </div>
         <div class="ritual-claim-eyebrow" id="ritual-claim-eyebrow" hidden>🎁 First-night bonus</div>
         <button type="button" class="ritual-claim" id="ritual-claim" style="display:none;"></button>
-        <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="gold">✦</span> – · Vault →</a>
+        <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="tok-ico gold" id="ritual-balance-icon" aria-hidden="true"></span> – · Vault →</a>
+      </section>
+
+      <!-- NEW ① · TIP OF THE DAY (tracker item for-product-build-ship-
+           founder-approved--9ta1j0, "Home round 4") — supersedes the old
+           one-line tip strip (none existed separately from this section on
+           the shipped home.html — checked; nothing else to remove). The 10
+           approved tips are rendered by renderTip() below, verbatim from
+           home-mock5-x7q4.html. -->
+      <section class="sect" id="tipsect" data-card="tipoftheday">
+        <div class="sect-head">
+          <h2>Tip of the day</h2>
+        </div>
+        <button type="button" class="tipcard" id="tipcard" aria-label="Tip of the day — tap for another">
+          <span class="tip-body" id="tip-body">
+            <span class="tip-cat" id="tip-cat"></span>
+            <p class="tip-text" id="tip-text"></p>
+          </span>
+          <div class="tip-more">tap for another →</div>
+        </button>
+      </section>
+
+      <!-- NEW ② · GET INSPIRED — a horizontal carousel of ~6 recent public
+           dreams from the shared feed (js/dream-cards.js's feedTileHTML).
+           Hidden entirely until the feed loads and while empty (never an
+           empty-state placeholder for a carousel with nothing to show). -->
+      <section class="sect" id="inspired" data-card="inspired" style="display:none;">
+        <div class="sect-head">
+          <h2>Get inspired</h2>
+          <a class="sect-all" id="inspired-all" href="explore.html">Explore →</a>
+        </div>
+        <div class="dreams-row" id="inspired-row"></div>
       </section>
 
       <!-- 6 · My dreams — horizontal swipe row, shared js/dream-cards.js
@@ -741,43 +942,81 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            header comment) it. -->
       <div id="notify-card-slot"></div>
 
-      <!-- 7 · quiet row — add-to-phone nudge (Vault absorbed above), OR,
-           inside a detected FB/IG in-app webview (ORPHAN (b), rehomed from
-           processing.html's #proc-nudge-card + js/install-nudge.js), the
-           SAME row elevated into a webview-escape card instead — A2HS is
-           genuinely impossible inside that webview (installJourneyRow's
-           own shouldShow() gate below already hides the plain row there),
-           so the two never show together. Same persistence rule as before
-           for the plain row (tracker item for-product-a2hs-install-
-           nudge-3-founder-vcofk7): visible only while genuinely installable
-           AND not yet verified installed; no dismiss (X) — see
-           installJourneyRow below for why. -->
-      <div class="quietrows">
-        <!-- Step 2 of 2 eyebrow (tracker item for-product-install-first-
-             door-founder-d-b60cls) — hidden by default, shown by
-             installJourneyRow below only for the ONE load that just
-             consumed a real ?bt= session-transfer token (i.e. right after
-             escaping the webview via Step 1's .webview-card below), never
-             on an ordinary later visit -- see that function's own comment. -->
-        <button type="button" class="qrow" id="install-qrow" style="display:none;">
-          <i class="qicon" id="install-qrow-icon"></i>
-          <span class="qlabel">
-            <span class="qrow-eyebrow" id="install-qrow-eyebrow" style="display:none;">Step 2 of 2</span>
-            <span id="install-qrow-label">Add DreamTube to your phone</span>
-          </span>
-          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
-        </button>
-        <div class="webview-card" id="webview-card" style="display:none;">
-          <!-- Step 1 of 2 (tracker item for-product-install-first-door-
-               founder-d-b60cls) — the founder's guided two-step framing:
-               escape the webview here, then add-to-home-screen (the
-               install-qrow eyebrow above) right after landing. -->
-          <div class="webview-steplabel">Step 1 of 2</div>
-          <div class="webview-head"><span class="webview-dot" id="webview-card-icon"></span><span class="webview-title" id="webview-card-title"></span></div>
-          <div class="webview-body">Open DreamTube in your real browser to keep your dreams safe. Next up: add it to your phone like any other app.</div>
-          <button type="button" class="webview-btn" id="webview-card-btn"></button>
-          <div class="webview-note" id="webview-card-note" style="display:none;"></div>
+      <!-- NEW ③ · CONSIDER PUBLISHING — the account's own UNPUBLISHED
+           dreams (js/dream-cards.js's unpublishedTileHTML). Conditional:
+           the whole section is omitted (never an empty-state placeholder)
+           whenever there's nothing unpublished. -->
+      <section class="sect" id="unpub" data-card="considerpublishing" style="display:none;">
+        <div class="sect-head">
+          <h2>Consider publishing a dream</h2>
         </div>
+        <div class="dreams-row" id="unpub-row"></div>
+      </section>
+
+      <!-- NEW ④ · MAKE IT YOURS — a permanent setup card (tracker item
+           for-product-build-ship-founder-approved--9ta1j0) that supersedes
+           the old "Add DreamTube to your phone" quiet row entirely — same
+           real install mechanism (js/install-nudge.js/js/pwa.js), now an
+           accordion of 3 rows (install/copy-link/bookmark) plus a
+           verified-install +100 claim. Retires (hidden entirely) once
+           DreamStore.getInstallBonusClaimed() is true on a later visit —
+           see refreshMky() below. -->
+      <section class="mky" id="mky" data-card="makeityours">
+        <div id="mky-live">
+          <h2 class="mky-title">Make DreamTube yours</h2>
+          <div class="mky-rows">
+            <div class="mky-item" id="mky-item-install">
+              <button type="button" class="mky-row primary" id="mky-install-row" aria-expanded="false">
+                <i class="qicon">📲</i>
+                <span class="qlabel">Add to your home screen<span class="done-check" id="mky-install-check" hidden>✓</span></span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp" id="mky-install-exp"></div>
+            </div>
+            <div class="mky-item" id="mky-item-copy">
+              <button type="button" class="mky-row" id="mky-copy-row" aria-expanded="false">
+                <i class="qicon">🔗</i>
+                <span class="qlabel">Copy the link for your browser</span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp">
+                <div class="mky-copied" id="mky-copied" hidden>✓ Link copied</div>
+                <div class="mky-step">Open your browser and paste it there — dreamtube1.netlify.app comes with you.</div>
+              </div>
+            </div>
+            <div class="mky-item" id="mky-item-bookmark">
+              <button type="button" class="mky-row" id="mky-bookmark-row" aria-expanded="false">
+                <i class="qicon">⭐</i>
+                <span class="qlabel">Bookmark this page</span>
+                <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+              </button>
+              <div class="mky-exp" id="mky-bookmark-exp"></div>
+            </div>
+          </div>
+          <div class="mky-reward gold">Verified install unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <button type="button" class="mky-claim" id="mky-claim" disabled></button>
+        </div>
+        <div id="mky-done" hidden>
+          <div class="mky-done-line">Installed ✓ · +100 claimed</div>
+          <div class="mky-done-note">This card says goodbye — it won't be here next visit.</div>
+        </div>
+      </section>
+
+      <!-- ORPHAN (b), rehomed from processing.html's #proc-nudge-card +
+           js/install-nudge.js: the webview-escape nudge (Step 1 of 2 —
+           escape the webview first; Step 2, adding to the home screen,
+           now lives inside the Make-it-yours card's own install row
+           above). Shown only when DreamStore.detectInAppWebviewHost() is
+           non-null — A2HS is genuinely impossible inside that webview, so
+           the Make-it-yours install row shows a short redirect note there
+           instead (see buildInstallRowContent below) rather than
+           impossible instructions. -->
+      <div class="webview-card" id="webview-card" style="display:none;">
+        <div class="webview-steplabel">Step 1 of 2</div>
+        <div class="webview-head"><span class="webview-dot" id="webview-card-icon"></span><span class="webview-title" id="webview-card-title"></span></div>
+        <div class="webview-body">Open DreamTube in your real browser to keep your dreams safe. Next up: add it to your phone like any other app.</div>
+        <button type="button" class="webview-btn" id="webview-card-btn"></button>
+        <div class="webview-note" id="webview-card-note" style="display:none;"></div>
       </div>
 
     </div>
@@ -790,19 +1029,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
        .home-scroll's --nav-clearance padding above is what keeps the last
        row reachable. -->
   <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
-
-  <!-- "Add to home screen" guidance sheet — opened by the install quiet
-       row above. Standard .sheet-overlay/.sheet/.sheet-handle pattern
-       (js/sheet-dismiss.js wires tap-outside/drag-to-dismiss), same as
-       every other bottom sheet in this app. -->
-  <div class="sheet-overlay" id="install-sheet-overlay">
-    <div class="sheet">
-      <div class="sheet-handle"></div>
-      <div class="sheet-title">Add DreamTube to your home screen</div>
-      <div id="install-sheet-body"></div>
-      <button type="button" class="btn btn-ghost btn-block" id="install-sheet-close" style="margin-top:16px;">Close</button>
-    </div>
-  </div>
 
   <div class="toast" id="toast"></div>
 </div>
@@ -845,6 +1071,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'home' });
 
+  // Topbar balance-only token chip (tracker item for-product-build-ship-
+  // founder-approved--9ta1j0, amendment ② — the chip RETURNS to the
+  // topbar, balance-only; the claim stays in the ritual module). Same
+  // shared PurchaseSheet.mountBalanceChip({plain:true}) renderer create.
+  // html/style.html/result.html/explore.html/profile.html already use —
+  // rendered off the SAME getTokenStatus() fetch refreshTokenStatus below
+  // already makes for the ritual module, not a second network call.
+  var tokChip = PurchaseSheet.mountBalanceChip(document.getElementById('home-tok-chip-slot'), {
+    plain: true,
+    source: 'home_topbar'
+  });
+
   // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
   // every other page's inline script defines locally (see explore.html/
   // result.html). Deliberately neutral, home_*-prefixed event names — never
@@ -859,6 +1097,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+  // TOKEN ICON A (tracker item for-product-build-ship-founder-approved--
+  // 9ta1j0, "Home round 4" amendment ②) — the shared coin+play SVG that
+  // replaces the old tilted-square "✦" glyph everywhere tokens render on
+  // this page (topbar chip, ritual module, claim pill/sheet, reward-line
+  // copy). `extra` (e.g. 'gold') is an additional class for a tinted
+  // context (see css/styles.css's .gold utility) — plain contexts (a gold
+  // pill's own dark text) just inherit currentColor with no extra class.
+  function tok(extra){ return '<span class="tok-ico' + (extra ? ' ' + extra : '') + '" aria-hidden="true">' + (window.Icons ? Icons.token : '') + '</span>'; }
 
   // Mirrors style.html's/processing.html's own IMAGE_TOKEN_COST/
   // VIDEO_TOKEN_COST — needed here for the out-of-tokens purchase sheet's
@@ -1080,9 +1327,30 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       pubBtn.title = 'Publish to Explore';
     }
   }
+  // ===== The approved multi-dream badge (tracker item for-product-build-
+  // ship-founder-approved--9ta1j0, item 7 — "2 dreams tonight"). Counts
+  // this account's own real dreams created TODAY, plus a same-day pending
+  // job not yet reflected in myDreams (mirrors getDreamLogStatus's own
+  // pendingToday treatment) so the count is right the instant a 2nd
+  // generation is submitted, not just once it finishes. pendingJob and its
+  // own resulting completed dream never coexist in myDreams at once —
+  // onGenerationSettled always nulls pendingJob in the same tick it
+  // refreshes myDreams (see that function below) — so no double-count
+  // guard is needed between the two terms here. =====
+  function todaysDreamCount(){
+    var todayStr = new Date().toDateString();
+    var count = myDreams.filter(function(d){ return typeof d.createdAt === 'number' && new Date(d.createdAt).toDateString() === todayStr; }).length;
+    if(pendingJob && typeof pendingJob.startedAt === 'number' && new Date(pendingJob.startedAt).toDateString() === todayStr) count++;
+    return count;
+  }
+
   function renderDay0Card(){
     var card = document.getElementById('day0-card');
     if(!shouldShowRoomCard()){ card.style.display = 'none'; return; }
+    var chip = document.getElementById('d0-chip');
+    var n = todaysDreamCount();
+    chip.hidden = n < 2;
+    if(n >= 2) chip.textContent = '🌙 ' + n + ' dreams tonight';
     // An in-flight job's own live state takes priority over an already-
     // completed dream, so the rare same-day second submission still shows
     // as forming rather than silently jumping straight to the dream's
@@ -1315,13 +1583,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // for-product-funnel-ending-v2-founder-ins-tfuu0q) rather than a
       // plain bigger number with no explanation.
       eyebrow.hidden = amount <= 20;
-      btn.textContent = 'Claim +' + amount + ' ✦';
+      btn.innerHTML = 'Claim +' + amount + '&nbsp;' + tok();
       btn.style.display = 'flex';
     } else {
       btn.style.display = 'none';
       eyebrow.hidden = true;
     }
-    balance.innerHTML = '<span class="gold">✦</span> ' + tokenStatus.balance + ' · Vault →';
+    balance.innerHTML = tok('gold') + ' ' + tokenStatus.balance + ' · Vault →';
+    if(tokChip) PurchaseSheet.renderBalanceChip(tokChip, tokenStatus);
   }
 
   document.getElementById('ritual-claim').addEventListener('click', function(){
@@ -1398,7 +1667,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // Applies identically whether this account is day-0 or a long-time
     // returning user -- shouldShowRoomCard() no longer distinguishes them.
     var roomCardActive = shouldShowRoomCard();
-    var roomCardOwnedId = roomCardActive ? (pendingJob ? DreamStore.getPendingDreamId() : (completedDream ? completedDream.id : null)) : null;
+    var roomCardOwnedId = roomCardOwnedDreamId();
     var eligible = roomCardOwnedId ? myDreams.filter(function(d){ return d.id !== roomCardOwnedId; }) : myDreams;
 
     // When #day0-card owns the ONLY dream this account has (the common
@@ -1486,6 +1755,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     renderChamberHero();
     renderRitualModule();
     renderDreamsRow();
+    renderConsiderPublishing();
     refreshNotifyCard();
   }
 
@@ -1661,10 +1931,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   refreshNotifyCard();
 
-  // ===== ORPHAN (b) — the webview-escape nudge, folded into an ELEVATED
-  // state of the "Add DreamTube to your phone" quiet row (mock
+  // ===== ORPHAN (b) — the webview-escape nudge (Step 1 of 2 — mock
   // home-mock5-day0-x7q4.html's .webview-card), rehomed from
-  // processing.html's #proc-nudge-card. Real escape logic ported verbatim
+  // processing.html's #proc-nudge-card. Step 2 (adding to the home
+  // screen) now lives inside the Make-it-yours card's own install row
+  // (see mkyInstallRow below) rather than a second, separate quiet row —
+  // tracker item for-product-build-ship-founder-approved--9ta1j0
+  // superseded the old row entirely. Real escape logic ported verbatim
   // from that (now-removed) page's initInAppNudge/buildAndroidChromeIntentUrl/
   // copyLinkForBrowser — Android gets a real "open in Chrome" intent://
   // action; every other platform (practically always iOS, where an in-app
@@ -1714,13 +1987,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function refreshWebviewCard(){
     var host = window.DreamStore ? DreamStore.detectInAppWebviewHost() : null;
     var card = document.getElementById('webview-card');
-    var plainRow = document.getElementById('install-qrow');
     if(!host){ card.style.display = 'none'; return false; }
-    // The plain A2HS row is already hidden inside a detected webview
-    // (InstallNudge.canOfferInstall()'s own gate) — hidden again here
-    // defensively so the two can never render together even if that gate
-    // ever changes independently of this one.
-    plainRow.style.display = 'none';
     document.getElementById('webview-card-icon').innerHTML = window.Icons ? Icons.globe : '';
     document.getElementById('webview-card-title').textContent = "Viewing in " + host;
     var onAndroid = isAndroidUA();
@@ -1756,114 +2023,240 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   var inWebview = refreshWebviewCard();
 
-  // ===== "Add to home screen" quiet row — PERSISTENT until genuinely
-  // verified installed, never hidden by a mere dismiss (there is no
-  // dismiss action on this row at all, deliberately). Reuses
-  // js/install-nudge.js's canOfferInstall() (which, as of tracker item
-  // for-product-install-first-door-founder-d-b60cls, itself now excludes a
-  // genuinely DreamStore.getInstallVerified() account — centralized there
-  // rather than this row re-checking it separately, the way Wave 1's
-  // install journey card originally did) — only the visual container
-  // changed (a quiet row now, absorbing what used to be its own hcard).
-  // Skipped entirely inside a detected webview
-  // (refreshWebviewCard's own elevated card already owns that row's slot
-  // there — see this page's own header comment on why the two never show
-  // together).
-  //
-  // STEP 2 OF 2 (tracker item for-product-install-first-door-founder-d-
-  // b60cls): when this exact load just consumed a real ?bt= session-
-  // transfer token (justEscapedWebview below — i.e. the visitor just
-  // tapped through Step 1's .webview-card, above, into a real browser),
-  // this SAME row elevates into a highlighted "Step 2 of 2" state rather
-  // than staying the plain, easy-to-miss quiet row it is on an ordinary
-  // visit — deliberately not a second floating card (create.html/
-  // result.html's InstallNudge.init({trigger:'session-transfer'}) already
-  // covers that moment there); a second prompt on THIS page, which already
-  // has this exact row, would be the "two competing install prompts" this
-  // item explicitly says not to build. The elevated sheet content reuses
-  // js/install-nudge.js's exported Step 2 builders (Android menu fallback /
-  // iOS open-in-Safari) rather than a second copy of that logic. =====
-  (function installJourneyRow(){
-    var row = document.getElementById('install-qrow');
-    var overlay = document.getElementById('install-sheet-overlay');
-    var eyebrow = document.getElementById('install-qrow-eyebrow');
-    var wired = false;
-    var shownTracked = false;
-    var justEscapedWebview = !!(window.DreamStore && DreamStore.wasSessionJustTransferred());
-
-    function shouldShow(){
-      if(inWebview) return false;
-      if(!window.InstallNudge || !window.PwaInstall || !window.DreamStore) return false;
-      // Step 2 (just escaped a webview) uses the broadened
-      // canOfferInstallForStep2() so a plain Android UA with no captured
-      // beforeinstallprompt still shows this row -- openSheet's own
-      // showAndroidMenuFallback branch below exists precisely for that
-      // case, but is unreachable if the row itself never becomes visible.
-      return justEscapedWebview ? InstallNudge.canOfferInstallForStep2() : InstallNudge.canOfferInstall();
-    }
-
-    function refresh(){
-      var visible = shouldShow();
-      row.style.display = visible ? 'flex' : 'none';
-      row.classList.toggle('qrow-elevated', visible && justEscapedWebview);
-      eyebrow.style.display = (visible && justEscapedWebview) ? 'block' : 'none';
-      if(visible && justEscapedWebview && !shownTracked){
-        shownTracked = true;
-        track('install_nudge_shown', { platform: PwaInstall.isIOS() ? 'ios' : 'android', trigger: 'session-transfer', step: 2, surface: 'home_row' });
-      }
-    }
-
-    function closeSheet(){ overlay.classList.remove('open'); }
-
-    function openSheet(){
-      var body = document.getElementById('install-sheet-body');
-      var onIOS = PwaInstall.isIOS();
-      var iosKind = (typeof PwaInstall.iosBrowserKind === 'function') ? PwaInstall.iosBrowserKind() : 'safari';
-      var showIOSSafariRedirect = justEscapedWebview && onIOS && iosKind !== 'safari';
-      var showAndroidMenuFallback = justEscapedWebview && !onIOS && !PwaInstall.canPromptInstall();
-
-      if(showIOSSafariRedirect){
-        body.innerHTML = InstallNudge.buildIOSOpenInSafariHtml();
-        InstallNudge.wireIOSOpenInSafari('session-transfer', 'ios');
-      } else if(onIOS){
-        body.innerHTML = InstallNudge.buildIOSGuidanceHtml();
-      } else if(showAndroidMenuFallback){
-        body.innerHTML = InstallNudge.buildAndroidMenuFallbackHtml();
-      } else {
-        body.innerHTML =
-          '<div class="push-ask-body">One tap and you\'re set — open your dreams like any other app, no browser tabs.</div>' +
-          '<button type="button" class="btn btn-primary btn-block" id="install-sheet-android-btn" style="margin-top:14px;">Install <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>';
-        document.getElementById('install-sheet-android-btn').addEventListener('click', function(){
-          PwaInstall.promptInstall().then(function(outcome){
-            track('home_install_sheet_outcome', { outcome: outcome || 'unavailable', step: justEscapedWebview ? 2 : undefined });
-            if(outcome === 'accepted'){ closeSheet(); refresh(); }
-          });
-        });
-      }
-      overlay.classList.add('open');
-    }
-
-    function wireUp(){
-      if(wired) return;
-      wired = true;
-      document.getElementById('install-qrow-icon').innerHTML = window.Icons ? Icons.download : '';
-      row.addEventListener('click', function(){
-        track('home_install_card_tapped', { step: justEscapedWebview ? 2 : undefined });
-        openSheet();
-      });
-      document.getElementById('install-sheet-close').addEventListener('click', closeSheet);
-      SheetDismiss.wire(overlay, closeSheet);
-      window.addEventListener('appinstalled', refresh);
-    }
-
-    refresh();
-    if(row.style.display !== 'none') wireUp();
-
-    window.addEventListener('dreamtube:install-capability-changed', function(){
-      refresh();
-      if(row.style.display !== 'none') wireUp();
-    });
+  // ===== NEW ① · TIP OF THE DAY (tracker item for-product-build-ship-
+  // founder-approved--9ta1j0) — 10 approved tips verbatim from
+  // home-mock5-x7q4.html, stable ids so the seen-set survives any future
+  // reordering of this array. Unseen-first rotation, per-account, via
+  // js/store.js's getTipOfDayState/advanceTipOfDay (see that file's own
+  // doc comments for the full "why account-scoped" reasoning). =====
+  var TIPS = [
+    { id:'t1', cat:'Recall', text:'Stay still when you wake — replay the dream once before opening your eyes, then speak it.' },
+    { id:'t2', cat:'Recall', text:'Dreams fade fastest in the first minutes. Capture first, coffee second.' },
+    { id:'t3', cat:'Meaning', text:'Dreams usually replay feelings, not facts — ask what you felt, not what happened.' },
+    { id:'t4', cat:'Meaning', text:'A recurring dream is your mind circling something unfinished. The Chamber can help you read it.' },
+    { id:'t5', cat:'Why it matters', text:'People who log dreams typically start remembering more of them within a week or two.' },
+    { id:'t6', cat:'DreamTube', text:'Claim your free tokens every day — streaks add up faster than you think.' },
+    { id:'t7', cat:'DreamTube', text:'Watching other people’s dreams in Explore often unlocks your own recall.' },
+    { id:'t8', cat:'DreamTube', text:'Add DreamTube to your home screen for one-tap capture before the dream fades.' },
+    { id:'t9', cat:'Why it matters', text:'Dreams are how your unconscious speaks — reading them over time shows you patterns you’d never notice awake.' },
+    { id:'t10', cat:'DreamTube', text:'Publish a dream you love — it lives beyond your device, and likes will find it.' }
+  ];
+  var TIP_IDS = TIPS.map(function(t){ return t.id; });
+  function tipById(id){
+    var found = TIPS.filter(function(t){ return t.id === id; })[0];
+    return found || TIPS[0];
+  }
+  function renderTip(id){
+    var tip = tipById(id);
+    document.getElementById('tip-cat').textContent = tip.cat;
+    document.getElementById('tip-text').textContent = tip.text;
+  }
+  (function initTipOfDay(){
+    var tipState = DreamStore.getTipOfDayState();
+    var currentId = tipState.currentId || DreamStore.advanceTipOfDay(TIP_IDS);
+    renderTip(currentId);
   })();
+  document.getElementById('tipcard').addEventListener('click', function(){
+    var body = document.getElementById('tip-body');
+    track('home_tip_advanced', {});
+    body.classList.add('fading');
+    setTimeout(function(){
+      renderTip(DreamStore.advanceTipOfDay(TIP_IDS));
+      body.classList.remove('fading');
+    }, 180);
+  });
+
+  // ===== NEW ② · GET INSPIRED — ~6 recent public dreams from the shared
+  // feed, other users' only (never the signed-in account's own — those
+  // live in My dreams / Consider publishing instead). Hidden entirely
+  // until loaded, and while empty — no placeholder for a carousel with
+  // nothing in it. =====
+  function renderInspired(){
+    var section = document.getElementById('inspired');
+    DreamStore.getSharedFeed().then(function(feed){
+      var picks = feed.filter(function(d){ return !d.mine && !d.blockedByMe; }).slice(0, 6);
+      if(!picks.length){ section.style.display = 'none'; return; }
+      document.getElementById('inspired-row').innerHTML = picks.map(function(d){
+        return DreamCards.feedTileHTML(d, { gradient: DreamStore.gradientFor(d) });
+      }).join('');
+      section.style.display = '';
+      DreamCards.observeVideos();
+    }).catch(function(){ section.style.display = 'none'; });
+  }
+  renderInspired();
+  document.getElementById('inspired-row').addEventListener('click', function(e){
+    var tile = e.target.closest('.insp-tile');
+    if(!tile) return;
+    track('home_inspired_tile_tapped', {});
+    location.href = 'explore.html?id=' + encodeURIComponent(tile.dataset.dreamId);
+  });
+
+  // ===== NEW ③ · CONSIDER PUBLISHING — the account's own unpublished
+  // dreams; the whole section is omitted whenever there's nothing
+  // unpublished (never an empty-state placeholder), and never duplicates
+  // whichever dream #day0-card already owns (same exclusion
+  // renderDreamsRow already applies to the My-dreams row — factored into
+  // one shared helper here rather than two copies of the same id check). =====
+  function roomCardOwnedDreamId(){
+    if(!shouldShowRoomCard()) return null;
+    return pendingJob ? DreamStore.getPendingDreamId() : (completedDream ? completedDream.id : null);
+  }
+  function renderConsiderPublishing(){
+    var section = document.getElementById('unpub');
+    var ownedId = roomCardOwnedDreamId();
+    var unpub = myDreams.filter(function(d){
+      return !d.isPublished && (d.videoUrl || d.imageUrl) && d.id !== ownedId;
+    });
+    if(!unpub.length){ section.style.display = 'none'; return; }
+    document.getElementById('unpub-row').innerHTML = unpub.slice(0, 10).map(function(d){
+      return DreamCards.unpublishedTileHTML(d, { gradient: DreamStore.gradientFor(d), privateIcon: window.Icons ? Icons.lock : '' });
+    }).join('');
+    section.style.display = '';
+    DreamCards.observeVideos();
+  }
+  renderConsiderPublishing();
+  document.getElementById('unpub-row').addEventListener('click', function(e){
+    var tile = e.target.closest('.insp-tile');
+    if(!tile) return;
+    track('home_consider_publishing_tile_tapped', {});
+    location.href = 'result.html?id=' + encodeURIComponent(tile.dataset.dreamId);
+  });
+
+  // ===== NEW ④ · MAKE IT YOURS — supersedes the old "Add DreamTube to
+  // your phone" quiet row entirely (tracker item for-product-build-ship-
+  // founder-approved--9ta1j0). Same real capability-detect/copy logic as
+  // before (js/install-nudge.js/js/pwa.js), reused rather than
+  // duplicated — now inside an accordion (one row open at a time), plus a
+  // verified-install +100 claim gated on DreamStore.getInstallVerified().
+  //
+  // STEP 2 OF 2 (carried over from the old install-qrow, tracker item
+  // for-product-install-first-door-founder-d-b60cls): when this exact
+  // load just consumed a real ?bt= session-transfer token (i.e. the
+  // visitor just tapped through the webview-card's Step 1 above into a
+  // real browser), the install row's own expanded content shows the
+  // "Step 2 of 2" eyebrow and the broadened Step-2 fallback builders
+  // (Android menu fallback / iOS open-in-Safari) — same builders, just
+  // reached through this card's own accordion row now instead of a
+  // second floating sheet. =====
+  var mkyClaimedAtLoad = DreamStore.getInstallBonusClaimed();
+  var mkyJustClaimed = false;
+  var MKY_ITEMS = ['install', 'copy', 'bookmark'];
+
+  function toggleMky(which){
+    MKY_ITEMS.forEach(function(name){
+      var item = document.getElementById('mky-item-' + name);
+      var row = document.getElementById('mky-' + name + '-row');
+      var open = (name === which) && !item.classList.contains('open');
+      item.classList.toggle('open', open);
+      row.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  function renderMkyInstallExp(){
+    var exp = document.getElementById('mky-install-exp');
+    var justEscaped = !!(window.DreamStore && DreamStore.wasSessionJustTransferred());
+    var stepLabel = justEscaped ? '<div class="mky-step-eyebrow">Step 2 of 2</div>' : '';
+    var webviewHost = window.DreamStore ? DreamStore.detectInAppWebviewHost() : null;
+
+    if(webviewHost){
+      exp.innerHTML = stepLabel + '<div class="mky-webview-note">You’re viewing this inside ' + esc(webviewHost) + ' — use “Add DreamTube to your phone” above to open your real browser first, then come back here to finish this step.</div>';
+      return;
+    }
+    if(!window.PwaInstall || !window.InstallNudge){
+      exp.innerHTML = stepLabel + '<div class="mky-webview-note">Open this page in a mobile browser to install DreamTube.</div>';
+      return;
+    }
+    var onIOS = PwaInstall.isIOS();
+    var iosKind = (typeof PwaInstall.iosBrowserKind === 'function') ? PwaInstall.iosBrowserKind() : 'safari';
+    var showIOSSafariRedirect = justEscaped && onIOS && iosKind !== 'safari';
+    var showAndroidMenuFallback = justEscaped && !onIOS && !PwaInstall.canPromptInstall();
+
+    if(showIOSSafariRedirect){
+      exp.innerHTML = stepLabel + InstallNudge.buildIOSOpenInSafariHtml();
+      InstallNudge.wireIOSOpenInSafari('session-transfer', 'ios');
+    } else if(onIOS){
+      exp.innerHTML = stepLabel + InstallNudge.buildIOSGuidanceHtml();
+    } else if(showAndroidMenuFallback){
+      exp.innerHTML = stepLabel + InstallNudge.buildAndroidMenuFallbackHtml();
+    } else {
+      exp.innerHTML = stepLabel +
+        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Installing verifies your +100 ' + tok() + '.</div>' +
+        '<button type="button" class="mky-inline-install-btn" id="mky-inline-install-btn">Install <span class="icon" id="mky-inline-install-icon"></span></button>';
+      document.getElementById('mky-inline-install-icon').innerHTML = window.Icons ? Icons.download : '';
+      document.getElementById('mky-inline-install-btn').addEventListener('click', function(){
+        PwaInstall.promptInstall().then(function(outcome){
+          track('home_mky_install_outcome', { outcome: outcome || 'unavailable' });
+          if(outcome === 'accepted') refreshMky();
+        });
+      });
+    }
+  }
+
+  function renderMkyBookmarkExp(){
+    var exp = document.getElementById('mky-bookmark-exp');
+    var onIOS = window.PwaInstall && PwaInstall.isIOS();
+    exp.innerHTML = onIOS
+      ? '<div class="mky-step"><b>In Safari:</b> tap Share → <b>Add Bookmark</b>.</div>'
+      : '<div class="mky-step"><b>In Chrome:</b> tap ⋮ → <b>☆ (star)</b> to bookmark. On a computer: <b>⌘D / Ctrl+D</b>.</div>';
+  }
+
+  function refreshMky(){
+    var section = document.getElementById('mky');
+    if(mkyClaimedAtLoad && !mkyJustClaimed){
+      section.style.display = 'none'; // "This card says goodbye" -- gone entirely on a later visit
+      return;
+    }
+    section.style.display = '';
+    document.getElementById('mky-live').hidden = mkyJustClaimed;
+    document.getElementById('mky-done').hidden = !mkyJustClaimed;
+    if(mkyJustClaimed) return;
+
+    var installed = !!(window.DreamStore && DreamStore.getInstallVerified());
+    document.getElementById('mky-install-check').hidden = !installed;
+    var claimBtn = document.getElementById('mky-claim');
+    claimBtn.disabled = !installed;
+    claimBtn.innerHTML = 'Claim +100&nbsp;' + tok();
+    document.getElementById('mky-reward-icon').innerHTML = window.Icons ? Icons.token : '';
+    renderMkyInstallExp();
+    renderMkyBookmarkExp();
+  }
+
+  document.getElementById('mky-install-row').addEventListener('click', function(){
+    toggleMky('install');
+    track('home_mky_row_tapped', { row: 'install' });
+  });
+  document.getElementById('mky-copy-row').addEventListener('click', function(){
+    toggleMky('copy');
+    track('home_mky_row_tapped', { row: 'copy' });
+    if(document.getElementById('mky-item-copy').classList.contains('open')){
+      copyLinkForBrowser(function(){ document.getElementById('mky-copied').hidden = false; });
+    }
+  });
+  document.getElementById('mky-bookmark-row').addEventListener('click', function(){
+    toggleMky('bookmark');
+    track('home_mky_row_tapped', { row: 'bookmark' });
+  });
+  document.getElementById('mky-claim').addEventListener('click', function(){
+    if(this.disabled) return;
+    track('home_mky_claim_tapped', {});
+    DreamStore.claimInstallBonus().then(function(data){
+      mkyJustClaimed = true;
+      refreshMky();
+      if(data.granted){
+        showToast('+100 tokens added to your Vault');
+        refreshTokenStatus(false);
+      }
+    }).catch(function(){
+      showToast("Couldn't claim right now — try again in a moment.");
+    });
+  });
+
+  refreshMky();
+  // A verified install can land while this page is already open (Android's
+  // real `appinstalled` event, captured by js/pwa.js) — re-render so the
+  // claim button enables without needing a reload.
+  window.addEventListener('appinstalled', refreshMky);
+  window.addEventListener('dreamtube:install-capability-changed', refreshMky);
 
   // ===== Token status — reused, existing daily-claim mechanism (no new
   // claim logic here at all: js/store.js's getTokenStatus/claimDailyTokens

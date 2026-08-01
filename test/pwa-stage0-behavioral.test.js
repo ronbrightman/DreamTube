@@ -294,7 +294,7 @@ test('PwaInstall.iosBrowserKind() correctly distinguishes Safari from Chrome/Fir
   assert.equal(await kindFor('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/130.0.0.0 Mobile/15E148 Safari/605.1.15'), 'edge');
 });
 
-test('home.html\'s persistent install journey card also shows Chrome-specific guidance on Chrome-iOS (shared buildIOSGuidanceHtml dispatch)', async function (t) {
+test('home.html\'s Make-it-yours install row also shows Chrome-specific guidance on Chrome-iOS (shared buildIOSGuidanceHtml dispatch)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: CHROME_IOS_UA });
   try {
@@ -304,13 +304,13 @@ test('home.html\'s persistent install journey card also shows Chrome-specific gu
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
-    await page.click('#install-qrow');
-    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
+    await page.click('#mky-install-row');
+    await page.waitForSelector('#mky-item-install.open', { timeout: 5000 });
 
-    var sheetText = await page.textContent('#install-sheet-body');
-    assert.match(sheetText, /address bar/i, 'home.html\'s journey-card sheet must use the same Chrome-aware guidance, not a hardcoded Safari mock');
-    assert.doesNotMatch(sheetText, /•••/, 'must not show Safari\'s "•••" mock inside Chrome');
+    var expText = await page.textContent('#mky-install-exp');
+    assert.match(expText, /address bar/i, 'home.html\'s install row must use the same Chrome-aware guidance, not a hardcoded Safari mock');
+    assert.doesNotMatch(expText, /•••/, 'must not show Safari\'s "•••" mock inside Chrome');
   } finally {
     await context.close();
   }

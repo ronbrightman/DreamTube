@@ -177,6 +177,19 @@
     // user" convention), rather than a wholly new figure — keeps it
     // instantly legible as "person" + "not allowed" together. Same
     // convention as every other entry here.
-    userX: svg('<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
+    userX: svg('<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+
+    // TOKEN ICON A — coin + play triangle (tracker item for-product-build-
+    // ship-founder-approved--9ta1j0, "Home round 4", founder-approved
+    // home-mock5-x7q4.html). Replaces the old tilted-square "✦" glyph
+    // EVERYWHERE tokens render (topbar chip, ritual module, claim pill/
+    // sheet, reward-line copy, this app's other token surfaces) — ported
+    // verbatim from the mock's own TOKS.a inline SVG (three candidates
+    // were shown live in the mock; the founder's approved default was A).
+    // Same 24x24/currentColor convention as every other entry here, sized
+    // via the wrapping element's own font-size/line-height at each call
+    // site (see css/styles.css's .tok-ico utility) rather than a fixed
+    // pixel size baked in here.
+    token: svg('<circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M9.6 8.1v7.8l6.8-3.9z" fill="currentColor"/>')
   };
 })();

@@ -312,7 +312,7 @@ test('create.html Step 2, Android WITHOUT a captured beforeinstallprompt: falls 
   }
 });
 
-test('home.html Step 2 (own install-qrow), Android WITHOUT a captured beforeinstallprompt: the row elevates to "Step 2 of 2" and its sheet shows the menu fallback, not a dead end', async function (t) {
+test('home.html Step 2 (own Make-it-yours install row), Android WITHOUT a captured beforeinstallprompt: expanding the row shows "Step 2 of 2" and the menu fallback, not a dead end', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_ANDROID_CHROME_UA });
   try {
@@ -322,17 +322,19 @@ test('home.html Step 2 (own install-qrow), Android WITHOUT a captured beforeinst
     var username = 'homeandroidstep2' + Math.random().toString(36).slice(2, 8);
     await gotoWithFreshSessionTransfer(page, '/home.html', username);
 
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
-    var hasElevated = await page.locator('#install-qrow.qrow-elevated').count();
-    assert.equal(hasElevated, 1, 'the SAME row must elevate into the Step 2 state, not spawn a second floating card');
-    var eyebrowText = await page.textContent('#install-qrow-eyebrow');
+    // Tracker item for-product-build-ship-founder-approved--9ta1j0 folded
+    // the old install-qrow's own Step 2 elevation into this card's install
+    // row instead of a second floating sheet -- SAME builders, reached
+    // through the accordion now.
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
+    await page.click('#mky-install-row');
+    await page.waitForSelector('#mky-item-install.open', { timeout: 2000 });
+    var eyebrowText = await page.textContent('#mky-install-exp .mky-step-eyebrow');
     assert.match(eyebrowText, /Step 2 of 2/);
 
-    await page.click('#install-qrow');
-    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 2000 });
-    assert.equal(await page.locator('#install-sheet-body #install-sheet-android-btn').count(), 0, 'must not offer a fake real-install button with nothing captured');
-    var sheetLabel = await page.textContent('#install-sheet-body .menu-row-replica-label');
-    assert.match(sheetLabel, /Install app/i);
+    assert.equal(await page.locator('#mky-install-exp #install-sheet-android-btn').count(), 0, 'must not offer a fake real-install button with nothing captured');
+    var expLabel = await page.textContent('#mky-install-exp .menu-row-replica-label');
+    assert.match(expLabel, /Install app/i);
   } finally {
     await context.close();
   }
@@ -415,7 +417,7 @@ test('profile.html repeat-visit trigger, iPhone on Chrome: KEEPS the existing Ch
   }
 });
 
-test('home.html Step 2 (own install-qrow), iPhone on Chrome: the sheet also redirects to Safari, same builders as the floating card', async function (t) {
+test('home.html Step 2 (own Make-it-yours install row), iPhone on Chrome: expanding the row also redirects to Safari, same builders as the floating card', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: CHROME_IOS_UA, permissions: ['clipboard-read', 'clipboard-write'] });
   try {
@@ -425,16 +427,16 @@ test('home.html Step 2 (own install-qrow), iPhone on Chrome: the sheet also redi
     var username = 'homeioschromestep2' + Math.random().toString(36).slice(2, 8);
     await gotoWithFreshSessionTransfer(page, '/home.html', username);
 
-    await page.waitForSelector('#install-qrow.qrow-elevated', { state: 'visible', timeout: 5000 });
-    await page.click('#install-qrow');
-    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 2000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
+    await page.click('#mky-install-row');
+    await page.waitForSelector('#mky-item-install.open', { timeout: 2000 });
 
-    var href = await page.getAttribute('#install-sheet-body #install-nudge-open-safari', 'href');
+    var href = await page.getAttribute('#mky-install-exp #install-nudge-open-safari', 'href');
     // x-safari-http:// is correct for this local http test server -- see
     // the sibling assertion above for the full reasoning.
     assert.match(href, /^x-safari-https?:\/\//);
-    var sheetText = await page.textContent('#install-sheet-body');
-    assert.doesNotMatch(sheetText, /address bar/i);
+    var expText = await page.textContent('#mky-install-exp');
+    assert.doesNotMatch(expText, /address bar/i);
   } finally {
     await context.close();
   }

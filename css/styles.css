@@ -241,16 +241,38 @@ body{
    theme exactly (#eae7fb/rgba(157,144,255,.32)/#9d90ff). */
 .night-dock-item.active{ color:#eae7fb; }
 .night-dock-item:active{ transform:scale(.92); }
+/* ===== ROUND-4 DOCK REBALANCE (tracker item for-product-build-ship-
+   founder-approved--9ta1j0, "Home round 4", founder-approved
+   home-mock5-x7q4.html) — the Home tab is always visually prominent and
+   softly glowing, and the center "+" shrinks from a filled 44px disc to a
+   quiet 40px gradient ring. Both ported verbatim from the mock's own Bar A
+   CSS onto this ONE shared renderer (js/bottom-nav.js) so every page with
+   a bottom nav (home/explore/result/profile) picks up the change
+   consistently, per the founder's own "main page should entice" call.
+
+   Home's rule is deliberately keyed off #nav-home (the stable id
+   js/bottom-nav.js's mount() always renders for the Home destination),
+   not .active — the whole point is inviting a visitor BACK to Home from
+   wherever else they already are (Explore/Profile/Result), not just
+   styling whichever tab happens to be the current page's own. Home is
+   also always the .active tab on home.html itself, so this one rule
+   already covers that state too — no separate .active-specific layer
+   needed on top. */
+#nav-home{ width:72px; }
+#nav-home .nav-icon{ font-size:26px; color:#cfc8ff; filter:drop-shadow(0 0 8px rgba(157,144,255,.85)); }
+#nav-home .night-dock-label{ font-size:11px; color:#cfc8ff; }
 .night-dock-create{
-  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
-  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  width:40px; height:40px; border-radius:50%; flex:none; cursor:pointer;
+  border:1.5px solid transparent;
+  background:linear-gradient(#151027,#151027) padding-box, var(--gradient-ig) border-box;
+  color:rgba(255,255,255,.92); text-decoration:none;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  box-shadow:none;
   transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
   -webkit-tap-highlight-color:transparent;
 }
-.night-dock-create .icon{ font-size:24px; }
-.night-dock-create:hover{ filter:brightness(1.06); }
+.night-dock-create .icon{ font-size:20px; }
+.night-dock-create:hover{ filter:brightness(1.12); }
 .night-dock-create:active{ transform:scale(.94); }
 /* Avatar-as-Profile-icon (the YouTube "You" treatment) — the same Me
    character photo/initial the page's own identity header shows (where
@@ -977,10 +999,21 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .token-chip-balance{ font-size:13px; font-weight:800; color:var(--text-primary); white-space:nowrap;}
 .token-chip-cta{ font-size:11px; font-weight:800; color:#fff; white-space:nowrap; border-left:1px solid rgba(255,255,255,.35); padding-left:8px;}
 
+/* ===== Shared token-icon wrapper (tracker item for-product-build-ship-
+   founder-approved--9ta1j0, "Home round 4" — TOKEN ICON A). Sizes
+   Icons.token's inline SVG off the wrapping element's own font-size,
+   exactly like a glyph would, instead of a fixed pixel size — the same
+   `width:1em;height:1em` trick home-mock5-x7q4.html's own `.tok` class
+   uses. Any spot that renders the token icon (the topbar chip below, the
+   ritual module, the claim pill/sheet, Make-it-yours' reward line) wraps
+   it in this class rather than re-deriving the sizing rule per call site. */
+.tok-ico{ display:inline-flex; width:1em; height:1em; vertical-align:-0.12em; flex:0 0 auto; }
+.tok-ico svg{ width:100%; height:100%; display:block; }
+
 /* ===== Plain balance chip — js/purchase-sheet.js's mountBalanceChip
    `plain:true` variant (tracker item
    for-product-build-founder-approved-2026--to6ew2, Part 5).
-   A quiet outlined pill reading "✦ 240 · Shop", and nothing else.
+   A quiet outlined pill reading "[token icon] 240 · Shop", and nothing else.
    Deliberately has NO claimable/low/healthy state rules at all: the
    founder's Profile-restyle spec removed every claim mechanic from that
    page (home.html is the sole claim/ritual surface now), so there is
@@ -990,7 +1023,7 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    emits the markup, exactly as .token-chip-compact does. */
 .token-chip-plain{ padding:7px 14px; gap:6px; background:var(--surface-alt); border:1px solid var(--border-strong);}
 .token-chip-plain .token-chip-balance{ font-size:12.5px;}
-.token-chip-plain .token-chip-star{ font-size:12px; line-height:1;}
+.token-chip-plain .token-chip-star{ font-size:12px; color:var(--accent-value);}
 .token-chip-plain .token-chip-sep{ font-size:12px; color:var(--text-faint); font-weight:400;}
 .token-chip-plain .token-chip-cta{ border-left:none; padding-left:0; color:var(--text-muted);}
 

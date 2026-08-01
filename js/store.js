@@ -4768,6 +4768,127 @@
     },
 
     /**
+     * Per-account "Make DreamTube yours" install-bonus claimed flag
+     * (tracker item for-product-build-ship-founder-approved--9ta1j0, "Home
+     * round 4"). The real, once-ever grant of the +100 token reward lives
+     * server-side (claim-install-bonus.js -> lib/entitlements.js's
+     * applyAchievementGrant, the SAME idempotent once-per-account-per-id
+     * marker pattern FIRST_CLAIM_BONUS_AMOUNT/the achievement ledger
+     * already use) — this is only a LOCAL mirror of "did this account's
+     * claim already land," so home.html can render the card's done-state
+     * (and, on a later visit, hide the card entirely — per the mock's own
+     * "This card says goodbye — it won't be here next visit") without an
+     * extra network round trip on every load. Scoped to
+     * state.accounts[key], the same per-account (not device-level, not a
+     * bare localStorage key) pattern getInstallVerified/noRecallDates
+     * already use above — see tracker item
+     * recurring-pattern-new-features-re-introd-dhfty9 for exactly the
+     * mistake (an unscoped localStorage dedup key on a shared browser)
+     * this is written to avoid repeating.
+     */
+    getInstallBonusClaimed: function () {
+      if (!state.user) return false;
+      var account = state.accounts[state.user.username.toLowerCase()];
+      return !!(account && account.installBonusClaimed);
+    },
+    markInstallBonusClaimed: function () {
+      if (!state.user) return;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return;
+      account.installBonusClaimed = true;
+      persist();
+    },
+
+    /**
+     * Claims the "Make DreamTube yours" verified-install +100 token bonus
+     * — thin wrapper around POST claim-install-bonus.js, same shape as
+     * claimDailyTokens above. The server enforces the real once-per-account
+     * grant (lib/entitlements.js's applyAchievementGrant); this call is
+     * only reachable from the UI once DreamStore.getInstallVerified() is
+     * already true (home.html's own gate on the claim button — a verified
+     * standalone-launch signal, "client-attested is an accepted signal at
+     * this reward size" per the tracker item), so THIS function doesn't
+     * re-check installVerified itself — same division of responsibility
+     * claimDailyTokens has with its own server-side cooldown.
+     *
+     * Resolves `{ granted: true, balance }` on a fresh grant, or
+     * `{ granted: false }` if this account already claimed it (a safe,
+     * expected no-op, not an error — mirrors applyAchievementGrant's own
+     * `granted:false` semantics) — either way marks the local
+     * installBonusClaimed mirror above so the card retires. Resolves
+     * `{ granted: false }` with no network call when there's no logged-in
+     * account or no email on file, matching claimDailyTokens' identical
+     * "nothing to key a claim on" guard.
+     */
+    claimInstallBonus: function () {
+      var email = currentAccountEmail();
+      if (!email) return Promise.resolve({ granted: false });
+      return fetch('/.netlify/functions/claim-install-bonus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) throw new Error(data.error);
+          if (state.user) { // mark the local mirror regardless of granted:true/false -- both mean "this account is done claiming"
+            var key = state.user.username.toLowerCase();
+            var account = state.accounts[key];
+            if (account) { account.installBonusClaimed = true; persist(); }
+          }
+          return data;
+        });
+    },
+
+    /**
+     * Per-account "Tip of the day" rotation state (tracker item
+     * for-product-build-ship-founder-approved--9ta1j0). Home.html owns the
+     * actual tip CONTENT (the 10 approved tips, verbatim from
+     * home-mock5-x7q4.html) — this only persists which ones this account
+     * has already seen, so store.js doesn't need to hardcode copy it
+     * doesn't own. Scoped to state.accounts[key], same per-account pattern
+     * as every other field on this doc block (see
+     * recurring-pattern-new-features-re-introd-dhfty9 above).
+     *
+     * Returns `{ currentId, seenIds }` — `currentId` is null the very
+     * first time this account has ever seen the card (nothing shown yet);
+     * home.html calls advanceTipOfDay once to seed a real first tip in
+     * that case, the same "unseen-first" pick advanceTipOfDay always makes
+     * from a seenIds:[] start.
+     */
+    getTipOfDayState: function () {
+      if (!state.user) return { currentId: null, seenIds: [] };
+      var account = state.accounts[state.user.username.toLowerCase()];
+      if (!account) return { currentId: null, seenIds: [] };
+      return { currentId: account.tipCurrentId || null, seenIds: (account.tipsSeenIds || []).slice() };
+    },
+    /**
+     * Advances to the next UNSEEN tip and persists it as this account's
+     * current one. `allTipIds` is the caller's own full, ordered list of
+     * tip ids (home.html's TIPS array) — passed in rather than hardcoded
+     * here, since this file doesn't own the tip content. Unseen-first: the
+     * first id in `allTipIds` not yet in the account's seen set wins; once
+     * every id has been seen, the cycle restarts (seenIds resets to just
+     * the freshly-shown tip) rather than leaving the rotation stuck.
+     * Returns the new currentId, or null if not logged in.
+     */
+    advanceTipOfDay: function (allTipIds) {
+      if (!state.user || !Array.isArray(allTipIds) || !allTipIds.length) return null;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      if (!account) return null;
+      var seen = account.tipsSeenIds || [];
+      var unseen = allTipIds.filter(function (id) { return seen.indexOf(id) === -1; });
+      var pool = unseen.length ? unseen : allTipIds; // every tip already seen this cycle -- restart
+      var nextId = pool[0];
+      account.tipsSeenIds = unseen.length ? seen.concat([nextId]) : [nextId];
+      account.tipCurrentId = nextId;
+      persist();
+      return nextId;
+    },
+
+    /**
      * Device-level, per-page-key visit counter — used by
      * js/install-nudge.js to gate the install nudge's "repeat visitor on
      * result.html/profile.html" trigger (tracker.html's home-screen-

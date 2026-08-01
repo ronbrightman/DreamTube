@@ -663,7 +663,7 @@
     if (opts.plain) {
       slotEl.innerHTML =
         '<a class="token-chip token-chip-plain" id="topbar-token-chip" href="shop.html?source=' + encodeURIComponent(source) + '">' +
-        '<span class="token-chip-star" aria-hidden="true">✦</span>' +
+        '<span class="token-chip-star tok-ico" aria-hidden="true">' + (window.Icons ? Icons.token : '✦') + '</span>' +
         '<span class="token-chip-balance" id="topbar-token-chip-balance">–</span>' +
         '<span class="token-chip-sep" aria-hidden="true">·</span>' +
         '<span class="token-chip-cta">Shop</span></a>';

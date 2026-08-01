@@ -360,7 +360,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 
       <div class="settings-section">
         <div class="section-label">Tokens</div>
-        <a class="btn btn-secondary btn-block shop-cta-btn" href="shop.html" id="account-shop-link"><span class="shop-cta-star" aria-hidden="true">✦</span> Token shop</a>
+        <a class="btn btn-secondary btn-block shop-cta-btn" href="shop.html" id="account-shop-link"><span class="shop-cta-star tok-ico" id="account-shop-link-icon" aria-hidden="true"></span> Token shop</a>
       </div>
 
       <!-- FAQ (tracker.html's idea-faq-section item) — static, no backend
@@ -1584,6 +1584,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   // today), so it's treated as sensitive — the button copy above this
   // already says to keep it safe.
   document.getElementById('export-backup-icon').innerHTML = Icons.download;
+  // TOKEN ICON A (tracker item for-product-build-ship-founder-approved--
+  // 9ta1j0) — replaces the old "✦" glyph on the Token shop row.
+  document.getElementById('account-shop-link-icon').innerHTML = Icons.token;
   document.getElementById('export-backup-btn').addEventListener('click', function(){
     var backup = DreamStore.getAccountBackup();
     if(!backup) return;

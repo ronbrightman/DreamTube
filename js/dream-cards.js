@@ -254,6 +254,75 @@
     return '<a class="' + cls + '" href="result.html?id=' + esc(d.id) + '"' + idAttr + '>' + media + '</a>';
   }
 
+  /**
+   * "Get inspired" tile (home.html, tracker item for-product-build-ship-
+   * founder-approved--9ta1j0, "Home round 4") — a public dream from the
+   * shared feed (DreamStore.getSharedFeed()), the same 150×100 dthumb DNA
+   * as dreamRowTileHTML above but with a caption snippet overlaid on the
+   * art plus the OTHER user's handle + like count underneath, matching
+   * home-mock5-x7q4.html's `.itile`/`.isnip`/`.imeta`. A distinct builder
+   * from dreamRowTileHTML rather than an options-flag on it: that one is
+   * deliberately media-only (home's own My-dreams row has no caption/
+   * handle to show for the signed-in account's OWN dreams), this one
+   * always needs both.
+   *
+   * Renders a <button>, not an <a href="explore.html?...">, because
+   * tapping opens the SAME dream inside the current tab's own Explore
+   * entry (home.html wires the click) rather than a plain navigation —
+   * mirrors the mock's own tap-to-toast demo, just wired to a real
+   * location.href in production. `data-dream-id` is what the caller's
+   * delegated click handler reads.
+   */
+  function feedTileHTML(d, opts) {
+    opts = opts || {};
+    var gradient = opts.gradient || '';
+    var media = d.videoUrl
+      ? '<video class="vcard-video" src="' + esc(d.videoUrl) + '" muted loop playsinline preload="metadata"></video>'
+      : d.imageUrl
+        ? '<img class="vcard-image" src="' + esc(d.imageUrl) + '" alt="">'
+        : '<div class="vcard-thumb-bg" style="background:' + gradient + '"></div>';
+    var likes = typeof d.likes === 'number' ? d.likes : 0;
+    var handle = (typeof window !== 'undefined' && window.DreamStore && DreamStore.displayHandle)
+      ? DreamStore.displayHandle(d.ownerHandle)
+      : (d.ownerHandle || '');
+    var snippet = d.caption || d.storyText || '';
+    return '<button type="button" class="insp-tile" data-dream-id="' + esc(d.id) + '">' +
+      '<span class="insp-thumb">' + media +
+        (snippet ? '<span class="insp-snip">' + esc(snippet) + '</span>' : '') +
+      '</span>' +
+      '<span class="insp-meta"><span class="insp-handle">' + esc(handle) + '</span>' +
+      '<span class="insp-hearts">&#9825; ' + formatCount(likes) + '</span></span>' +
+    '</button>';
+  }
+
+  /**
+   * "Consider publishing a dream" tile (same tracker item as feedTileHTML
+   * above) — one of the signed-in account's own UNPUBLISHED dreams, same
+   * tile DNA as feedTileHTML but with a "Private" badge over the art
+   * (home-mock5-x7q4.html's `.pbadge`) instead of a caption snippet, and a
+   * relative day label (reuses relativeDayLabel above) instead of a
+   * handle/heart-count row — there's no "other user" or like count to show
+   * for the owner's own still-private dream.
+   */
+  function unpublishedTileHTML(d, opts) {
+    opts = opts || {};
+    var gradient = opts.gradient || '';
+    var media = d.videoUrl
+      ? '<video class="vcard-video" src="' + esc(d.videoUrl) + '" muted loop playsinline preload="metadata"></video>'
+      : d.imageUrl
+        ? '<img class="vcard-image" src="' + esc(d.imageUrl) + '" alt="">'
+        : '<div class="vcard-thumb-bg" style="background:' + gradient + '"></div>';
+    var when = relativeDayLabel(d.createdAt, opts.now);
+    var snippet = d.caption || d.storyText || '';
+    return '<button type="button" class="insp-tile" data-dream-id="' + esc(d.id) + '">' +
+      '<span class="insp-thumb">' + media +
+        '<span class="pbadge"><span class="icon">' + (opts.privateIcon || '') + '</span>Private</span>' +
+        (snippet ? '<span class="insp-snip">' + esc(snippet) + '</span>' : '') +
+      '</span>' +
+      (when ? '<span class="insp-meta"><span class="insp-handle">' + esc(when) + '</span></span>' : '') +
+    '</button>';
+  }
+
   // ==========================================================================
   // Browser-only: the grid's video-preview observer.
   // ==========================================================================
@@ -297,6 +366,8 @@
     slotHTML: slotHTML,
     slotsHTML: slotsHTML,
     dreamRowTileHTML: dreamRowTileHTML,
+    feedTileHTML: feedTileHTML,
+    unpublishedTileHTML: unpublishedTileHTML,
     observeVideos: observeVideos
   };
 

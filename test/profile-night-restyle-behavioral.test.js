@@ -329,9 +329,14 @@ test('profile.html: the night theme is really applied — #0c0a1a theme-color, s
     // reworded — must not exist anywhere on the page.
     assert.equal(await page.locator('.profile-caption').count(), 0, 'the "This is you in your dreams" caption must be gone entirely');
 
-    // The plain chip's own shape, per the mock: "✦ 240 · Shop".
+    // The plain chip's own shape, per the mock: "[token icon] 240 · Shop"
+    // — TOKEN ICON A (tracker item for-product-build-ship-founder-
+    // approved--9ta1j0) replaced the old "✦" text glyph with an inline
+    // SVG, so the chip's own innerText (SVG text nodes are empty) now
+    // reads as just the balance + label.
     var chip = await page.locator('#topbar-token-chip').innerText();
-    assert.match(chip.replace(/\s+/g, ' '), /✦ 240 · Shop/);
+    assert.match(chip.replace(/\s+/g, ' '), /240 · Shop/);
+    assert.equal(await page.locator('#topbar-token-chip .token-chip-star svg').count(), 1, 'expected the real inline token-icon SVG, not the old text glyph');
   } finally {
     await context.close();
   }
@@ -490,10 +495,13 @@ test('profile.html: the night dock renders as the anchored bar the mock specifie
     assert.equal(activeHref, 'profile.html');
 
     // The "+" sits IN the row (not protruding above it, which is Bar B)
-    // and is a real 44px gradient circle.
+    // and is a quiet 40px gradient RING (tracker item for-product-build-
+    // ship-founder-approved--9ta1j0's "Home round 4" DOCK REBALANCE --
+    // shrunk from the original 44px filled disc so the Home tab reads as
+    // the more enticing destination instead).
     var plus = await page.locator('.night-dock-create').boundingBox();
     var dock = await page.locator('.night-dock').boundingBox();
-    assert.ok(Math.abs(plus.width - 44) < 1.5 && Math.abs(plus.height - 44) < 1.5, 'the create button must be 44x44, got ' + plus.width + 'x' + plus.height);
+    assert.ok(Math.abs(plus.width - 40) < 1.5 && Math.abs(plus.height - 40) < 1.5, 'the create button must be 40x40, got ' + plus.width + 'x' + plus.height);
     assert.ok(plus.y >= dock.y - 1, 'the create button must sit inside the bar, not protrude above it');
     var plusBg = await page.locator('.night-dock-create').evaluate(function (el) { return getComputedStyle(el).backgroundImage; });
     assert.match(plusBg, /linear-gradient/, 'the create button keeps the app\'s one gradient treatment');

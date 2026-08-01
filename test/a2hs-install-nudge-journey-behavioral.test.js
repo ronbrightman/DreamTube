@@ -201,12 +201,19 @@ test('install nudge (iOS Safari): real visual aid matching Safari\'s actual tool
 });
 
 // ===================================================================
-// 2. Capability-detect-and-hide — problem 2, applied to the NEW homepage
-//    journey card (the small card's own webview/platform gating already
-//    has coverage in test/pwa-stage0-behavioral.test.js).
+// 2. Capability-detect-and-adapt — problem 2, applied to the Make-it-
+//    yours card (tracker item for-product-build-ship-founder-approved--
+//    9ta1j0, "Home round 4"), which SUPERSEDES the old #install-qrow
+//    single-row journey card these tests used to exercise. Unlike that
+//    row, the Make-it-yours card itself is never hidden for a platform/
+//    webview reason (copy-link and bookmark stay genuinely actionable
+//    everywhere) — only its own install row's expanded content and the
+//    +100 claim button adapt to what's actually possible right now (the
+//    small nudge card's own webview/platform gating keeps its separate
+//    coverage in test/pwa-stage0-behavioral.test.js, untouched).
 // ===================================================================
 
-test('homepage journey card: hidden inside a detected in-app webview even though the account is otherwise iOS-eligible', async function (t) {
+test('Make-it-yours card: still shown inside a detected in-app webview (copy-link/bookmark stay useful), but the install row shows a redirect note instead of impossible instructions, and the claim stays disabled', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: FB_IOS_UA });
   try {
@@ -216,16 +223,18 @@ test('homepage journey card: hidden inside a detected in-app webview even though
     var username = 'homewebview' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.nav-icon', { timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
-    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.equal(display, 'none', 'must never show the A2HS journey card inside a detected in-app webview');
+    assert.equal(await page.locator('#mky-claim').isDisabled(), true, 'A2HS is impossible inside a webview -- the claim must stay disabled');
+    await page.click('#mky-install-row');
+    var expText = await page.textContent('#mky-install-exp');
+    assert.match(expText, /real browser/i, 'must redirect to the webview-escape card above, not show broken A2HS instructions');
   } finally {
     await context.close();
   }
 });
 
-test('homepage journey card: hidden on a platform with nothing real to offer (desktop, no beforeinstallprompt captured, not iOS)', async function (t) {
+test('Make-it-yours card: still shown on a platform with nothing real to offer (desktop, no beforeinstallprompt captured, not iOS) -- the claim stays disabled but the card itself is not hidden', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext(); // default desktop Chromium UA, no beforeinstallprompt ever fires in this test harness
   try {
@@ -235,18 +244,18 @@ test('homepage journey card: hidden on a platform with nothing real to offer (de
     var username = 'homedesktop' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.nav-icon', { timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
-    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.equal(display, 'none', 'must never show the journey card when there is nothing actionable to offer');
+    assert.equal(await page.locator('#mky-claim').isDisabled(), true, 'not yet installed -- the claim must stay disabled');
+    assert.equal(await page.locator('#mky-item-copy').count(), 1, 'copy-link stays offered regardless of A2HS capability');
   } finally {
     await context.close();
   }
 });
 
-test('homepage journey card: a beforeinstallprompt that arrives AFTER this script already ran (Android/Chrome\'s real, common timing) still makes the card appear and become clickable in the SAME page load, not just on a later reload (review finding)', async function (t) {
+test('Make-it-yours card: a beforeinstallprompt that arrives AFTER this script already ran (Android/Chrome\'s real, common timing) makes a real "Install" button appear inside the install row once it\'s expanded, in the SAME page load', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext(); // default desktop Chromium UA -- beforeinstallprompt never fires on its own in this test harness, so this is genuinely simulating the "not yet available" starting state
+  var context = await browser.newContext(); // default desktop Chromium UA -- beforeinstallprompt never fires on its own in this test harness
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
@@ -254,18 +263,11 @@ test('homepage journey card: a beforeinstallprompt that arrives AFTER this scrip
     var username = 'homelateprompt' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.nav-icon', { timeout: 5000 });
-
-    // Confirms the starting state genuinely has nothing to offer yet --
-    // this test would be meaningless if the card were already visible.
-    var initialDisplay = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.equal(initialDisplay, 'none', 'must start hidden -- nothing captured yet, same as the desktop-with-nothing-to-offer case');
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
     // Dispatches a REAL beforeinstallprompt-shaped event through the actual
-    // window listener js/pwa.js registers -- not a stub of canOfferInstall
-    // itself -- so this exercises the genuine code path: pwa.js's real
-    // listener sets its real deferredPrompt AND dispatches the real
-    // dreamtube:install-capability-changed event this fix listens for.
+    // window listener js/pwa.js registers -- not a stub -- so this exercises
+    // the genuine code path.
     await page.evaluate(function () {
       var fakeEvent = new Event('beforeinstallprompt', { cancelable: true });
       fakeEvent.prompt = function () {};
@@ -273,18 +275,14 @@ test('homepage journey card: a beforeinstallprompt that arrives AFTER this scrip
       window.dispatchEvent(fakeEvent);
     });
 
-    // The card must appear WITHOUT a reload, and its own click wiring
-    // (which the pre-fix code only ever attached if the card was already
-    // visible on the very first synchronous pass) must actually work.
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 2000 });
-    await page.click('#install-qrow');
-    await page.waitForSelector('#install-sheet-overlay.open', { timeout: 2000 });
+    await page.click('#mky-install-row');
+    await page.waitForSelector('#mky-inline-install-btn', { state: 'visible', timeout: 2000 });
   } finally {
     await context.close();
   }
 });
 
-test('homepage journey card: hidden once the account is genuinely verified installed', async function (t) {
+test('Make-it-yours card: an already genuinely verified-installed account (not yet claimed) still shows the card, with the check mark on the install row and the claim button enabled', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -294,20 +292,21 @@ test('homepage journey card: hidden once the account is genuinely verified insta
     var username = 'homeverified' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username, { installVerified: true });
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.nav-icon', { timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
-    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.equal(display, 'none', 'a genuinely verified-installed account must never see the journey card again');
+    assert.equal(await page.locator('#mky-install-check').isHidden(), false, 'a verified-installed account must see the check mark on the install row');
+    assert.equal(await page.locator('#mky-claim').isDisabled(), false, 'a verified-installed account must be able to claim the +100 bonus');
   } finally {
     await context.close();
   }
 });
 
 // ===================================================================
-// 3. Persistence — problem 3 (one-shot disappearance)
+// 3. Persistence — problem 3 (one-shot disappearance), applied to the
+//    Make-it-yours card's own claimed-state persistence.
 // ===================================================================
 
-test('homepage journey card: shown for an iOS-eligible, not-yet-verified account, has no dismiss control, and stays visible across a reload', async function (t) {
+test('Make-it-yours card: shown for a not-yet-installed, not-yet-claimed account, has no dismiss control, and stays visible across a reload', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -318,24 +317,21 @@ test('homepage journey card: shown for an iOS-eligible, not-yet-verified account
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
-    // Deliberately has no X/dismiss control -- unlike every other nudge card
-    // in this app. The Night Shelf rebuild (tracker item for-product-build-
-    // ship-founder-go-07-31--vtsyg3) made the whole row itself the one
-    // button (no nested "See how" sub-button anymore) -- so the absence of
-    // a dismiss control is now "no nested button at all inside it".
-    var dismissCount = await page.locator('#install-qrow button').count();
-    assert.equal(dismissCount, 0, 'the persistent journey row must have no dismiss control (or any nested button) at all');
+    // Deliberately has no X/dismiss control anywhere on the card -- unlike
+    // every other nudge card in this app.
+    var dismissCount = await page.locator('#mky .install-nudge-x, #mky [aria-label="Dismiss"]').count();
+    assert.equal(dismissCount, 0, 'the Make-it-yours card must have no dismiss control at all');
 
     await safeGoto(page, baseUrl + '/home.html'); // reload, same browser/account
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
   } finally {
     await context.close();
   }
 });
 
-test('homepage journey card: dismissing the SMALL nudge card elsewhere never hides the persistent homepage card', async function (t) {
+test('Make-it-yours card: dismissing the SMALL nudge card elsewhere never hides the Make-it-yours card', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -355,9 +351,27 @@ test('homepage journey card: dismissing the SMALL nudge card elsewhere never hid
     var dismissed = await page.evaluate(function () { return DreamStore.getInstallNudgeDismissed(); });
     assert.equal(dismissed, true, 'sanity check: the small card\'s own device-level dismiss flag really is now set');
 
-    // The persistent homepage card must be UNAFFECTED by that flag.
+    // The Make-it-yours card must be UNAFFECTED by that flag.
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('Make-it-yours card: disappears entirely on a later visit once the +100 bonus has already been claimed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    var username = 'homealreadyclaimed' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username, { installVerified: true, installBonusClaimed: true });
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('.nav-icon', { timeout: 5000 });
+
+    assert.equal(await page.locator('#mky').isVisible(), false, 'the card must be gone entirely once this account already claimed the bonus, per the mock\'s own "won\'t be here next visit"');
   } finally {
     await context.close();
   }
@@ -367,7 +381,7 @@ test('homepage journey card: dismissing the SMALL nudge card elsewhere never hid
 // 4. Real verified-completion signal — the other half of problem 3
 // ===================================================================
 
-test('standalone-mode page load marks getInstallVerified() true for the signed-in account, and the journey card is already hidden on that same load', async function (t) {
+test('standalone-mode page load marks getInstallVerified() true for the signed-in account, and the Make-it-yours claim button is already enabled on that same load', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -384,8 +398,7 @@ test('standalone-mode page load marks getInstallVerified() true for the signed-i
     var verified = await page.evaluate(function () { return DreamStore.getInstallVerified(); });
     assert.equal(verified, true, 'a standalone-mode load for a signed-in account must mark getInstallVerified() true');
 
-    var display = await page.locator('#install-qrow').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.equal(display, 'none', 'the journey card must already be hidden on the very same standalone load that verified it');
+    assert.equal(await page.locator('#mky-claim').isDisabled(), false, 'the claim must already be enabled on the very same standalone load that verified it');
   } finally {
     await context.close();
   }
@@ -409,7 +422,7 @@ test('standalone-mode marking is idempotent and never fires for a signed-OUT loa
   }
 });
 
-test('appinstalled event marks getInstallVerified() true and immediately hides the visible journey card in the SAME session', async function (t) {
+test('appinstalled event marks getInstallVerified() true and immediately enables the Make-it-yours claim button in the SAME session', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_IOS_SAFARI_UA });
   try {
@@ -420,15 +433,17 @@ test('appinstalled event marks getInstallVerified() true and immediately hides t
     await seedUser(page, username);
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('#install-qrow', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#mky', { state: 'visible', timeout: 5000 });
 
     var verifiedBefore = await page.evaluate(function () { return DreamStore.getInstallVerified(); });
     assert.equal(verifiedBefore, false);
+    assert.equal(await page.locator('#mky-claim').isDisabled(), true);
 
     await page.evaluate(function () { window.dispatchEvent(new Event('appinstalled')); });
 
     await page.waitForFunction(function () {
-      return getComputedStyle(document.getElementById('install-qrow')).display === 'none';
+      var btn = document.getElementById('mky-claim');
+      return btn && !btn.disabled;
     }, null, { timeout: 5000 });
 
     var verifiedAfter = await page.evaluate(function () { return DreamStore.getInstallVerified(); });
