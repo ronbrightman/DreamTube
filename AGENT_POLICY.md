@@ -140,11 +140,40 @@ of this pipeline (yet).
 4. **design** produces a product spec plus 1-2 visual/UX directions for the chosen idea.
 5. **Human approves a design direction.** ← approval gate
 6. **build** implements the approved idea + design on a feature branch, autonomously.
-7. **review** independently checks build's finished work.
+7. **review** independently checks build's finished work (see "Definition
+   of done: build" below for one specific thing it checks).
 8. If review fails it, build fixes the flagged issues and resubmits; review re-checks.
    Repeat until review passes. **This build ↔ review loop is fully autonomous —
    no human needed in between.**
 9. **Human approves the final merge to `main` / anything going live.** ← approval gate
+
+## Definition of done: build
+
+Added per tracker item `for-product-build-founder-directed-produ-miyfp4`
+(founder-directed, 2026-08-01), which also built the two things this rule
+depends on: `test/prod-smoke/` (a production smoke-regression suite,
+separate from `test/*.test.js` — see that directory's own `README.md`)
+and `docs/TEST_REGISTRY.md` (a living feature/surface → test-coverage →
+known-gaps map).
+
+**A feature merge is not done until it has updated
+`docs/TEST_REGISTRY.md`'s relevant row(s)** — either adding a new row/
+citation for coverage the merge just added, or correcting an existing
+row's "Covered by"/"Gaps" columns to reflect what actually changed (a
+feature that used to be a gap and now has a test, a test that got
+deleted/renamed, a surface that got removed entirely). This is part of
+`build`'s own definition of done for any change that touches app
+behavior — the same "actually exercise the feature end-to-end" bar
+`build.md` already holds itself to, just extended to keeping the written
+record of coverage honest, not only the code and its tests. A pure doc/
+comment/config-only change with no behavioral coverage implications can
+skip this — the rule is about keeping the registry accurate, not about
+touching it on every commit regardless of relevance.
+
+`review` verifies this happened as part of its own checklist (see
+`.claude/agents/review.md`) — a behavioral change with no corresponding
+`docs/TEST_REGISTRY.md` update is a legitimate review finding, the same
+category as a behavioral change with no real test evidence attached.
 
 ## Post-launch: the ab-test-creator loop
 

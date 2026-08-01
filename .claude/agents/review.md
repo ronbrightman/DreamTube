@@ -55,6 +55,15 @@ spec it was supposed to implement, check three things:
    called for that's missing, anything implemented differently than
    specified without a clear justification, and anything implemented
    that wasn't in the spec at all (scope creep is worth flagging too).
+4. **Test registry hygiene** (see `AGENT_POLICY.md`'s "Definition of
+   done: build" section) — for any change that touches actual app
+   behavior (not a pure doc/comment/config fix), check whether
+   `docs/TEST_REGISTRY.md` was updated to reflect it: a new row/citation
+   for coverage the branch just added, or an existing row corrected for
+   what changed. A behavioral change that added real tests but never
+   touched this file is a legitimate finding — the same category as a
+   behavioral change with no real test evidence attached, just about the
+   written record of coverage rather than the coverage itself.
 
 ## This codebase's actual gotchas — check for these specifically
 

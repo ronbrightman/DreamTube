@@ -125,6 +125,20 @@ proceed without stopping to ask, as long as it stays on the branch.
   This app has a long history of subtle regressions that only showed up
   under real interaction (stale in-memory state after navigation,
   timing races, tap-target sizing) — don't skip this step.
+- **Update `docs/TEST_REGISTRY.md` as part of the same merge** for any
+  change that touches actual app behavior (see `AGENT_POLICY.md`'s
+  "Definition of done: build" section) — add a row/citation for new
+  coverage, or correct an existing row for what changed. `review` checks
+  this happened; a behavioral change with no corresponding registry
+  update is a legitimate review finding. Skip this for a pure doc/
+  comment/config-only change with no coverage implications.
+- **This repo also has `test/prod-smoke/`** (`npm run smoke:prod`) — a
+  separate, thin suite that hits a REAL origin (default production) with
+  real network calls, no mocking except the generation-money surface. It
+  runs on its own schedule, not on every branch — don't add to it for an
+  ordinary feature branch unless the change is specifically about one of
+  the flows it already covers (see that directory's own `README.md`);
+  ordinary new coverage belongs in `test/*.test.js` as usual.
 
 ## Reading and writing tracker.html
 

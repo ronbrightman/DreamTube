@@ -141,3 +141,18 @@ still runs under mock mode, that default (both flags unset) behavior is
 completely unchanged, that `GENERATION_TEST_DURATION` correctly overrides
 the real call's `duration` parameter, and that mock mode wins if both flags
 are ever set at once.
+
+## Production smoke tests (real origin, no mocked backend)
+
+`npm test` above (`test/*.test.js`) is this repo's main suite — mocked
+backend, runs against a local static server. Separately,
+`test/prod-smoke/` (`npm run smoke:prod`) hits a REAL origin (default the
+live production site) with real network calls and no backend mocking,
+except the generation-money surface (still zero fal.ai cost, mocked
+client-side regardless of origin) — see that directory's own `README.md`
+for what it covers, why it's safe to run daily against production, and
+how to point it at a different origin. It is NOT part of `npm test` and
+is not meant to run on every branch/PR.
+
+See also `docs/TEST_REGISTRY.md` for the living map of which feature maps
+to which test file(s), across both suites, including known gaps.
