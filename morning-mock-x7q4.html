@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Temp founder mock (Manager, 2026-08-01) — unlinked, delete after decision.
+
+  THE MORNING CAPTURE RITUAL — one page, three channel/experience options
+  (Manager/research/2026-08-01-morning-capture-ritual-spec.md §1.2–§1.4,
+  Part 2 directions A/B, plus a WhatsApp-channel variant):
+
+  TAB A · Quiet Knock (direction A — capture-first):
+    lock-screen push → create-style morning landing (CATCH IT / "What did
+    you dream?" / ● Start speaking / Write instead) → mock 3s listening
+    with waveform → "Caught it ✓" → the Night Shelf, logged state.
+
+  TAB B · Dawn Shelf (direction B — the home owns the morning):
+    same push → home re-skinned as morning: the Tonight hero in a DAWN
+    treatment (night palette shifted to golds/ambers), eyebrow THIS
+    MORNING, "Still with you?", pulsing "🎙 Speak it" → same capture →
+    same logged shelf.
+
+  TAB C · WhatsApp: a generic dark chat-app mock (clearly a mock — no
+    real branding) — morning message bubble with Speak / Type / No-recall
+    link-buttons → the same Quiet Knock landing → logged shelf.
+
+  Every journey ends on the logged Night Shelf, which also carries the
+  NEW TIP MODULE — a flat informational glance strip between the ritual
+  module and My dreams ("TIP · How to remember tonight's dream"), per the
+  design grammar: no box, no button, not tappable.
+
+  Exactly ONE pulsing element per view (knock/chat: none; capture: the
+  Start-speaking pill; dawn shelf: the Speak-it pill; logged shelf: the
+  Chamber's Enter pill — the claim keeps its STATIC warm glow, never a
+  pulse). Mock chrome: dashed two-row bar — tab switcher + step chips + ↺.
+
+  Static, self-contained: no app JS; all artwork is layered CSS gradients
+  except the Chamber's sage art (assets/chamber-sage.jpg). Visual tokens
+  are verbatim from the approved Night Shelf mocks (home-mock4-x7q4.html),
+  which took them from home.html / profile.html.
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Morning ritual mock — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+:root{
+  --bg-app:#0c0a1a;
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+  --danger:#FF3040;
+  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
+  --font-body:'Manrope',sans-serif;
+  --nav-clearance:calc(60px + env(safe-area-inset-bottom,0px));
+  /* Night Shelf type scale — nothing below 15px; eyebrows 12px */
+  --t-display:28px;
+  --t-hero:26px;
+  --t-section:20px;
+  --t-action:18px;
+  --t-body:16px;
+  --t-eyebrow:12px;
+}
+html,body{ height:100%; }
+body{
+  font-family:var(--font-body);
+  background:#060512;
+  color:var(--home-ink);
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ===== phone shell ===== */
+#app{
+  position:relative; width:100%; max-width:480px; margin:0 auto;
+  height:100dvh;
+  background:var(--bg-app); overflow:hidden;
+}
+@media (min-width:560px){
+  body{ padding-bottom:28px; }
+  #app{
+    height:min(844px, calc(100dvh - 110px)); margin-top:18px; border-radius:36px;
+    box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06);
+  }
+}
+
+/* ===== the living night sky (verbatim tokens from home.html) ===== */
+#app{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+.home-aurora{
+  position:absolute; left:-30%; right:-30%; top:-4%; height:220px; z-index:0; pointer-events:none;
+  background:linear-gradient(115deg, rgba(75,211,155,.12), rgba(157,144,255,.16) 45%, rgba(224,120,190,.1));
+  filter:blur(28px); border-radius:50%;
+  animation:homeAurora 13s ease-in-out infinite alternate;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@keyframes homeAurora{ from{ transform:translateX(-14px) skewX(-6deg); opacity:.6; } to{ transform:translateX(18px) skewX(5deg); opacity:.9; } }
+@keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
+@keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
+@keyframes waveBar{ 0%,100%{ height:8px; opacity:.55; } 50%{ height:var(--h,34px); opacity:1; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe,.wave i{ animation:none !important; }
+}
+
+/* ===== mock chrome — tab switcher + step chips. Deliberately dev-looking
+   (dashed hairline, tiny type) so it can't be mistaken for product UI. ===== */
+.mockbar{
+  position:absolute; left:0; right:0; top:0; z-index:40;
+  padding:calc(env(safe-area-inset-top,0px) + 6px) 10px 6px;
+  background:rgba(6,5,18,.9);
+  border-bottom:1px dashed rgba(157,144,255,.4);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+.mockrow{ display:flex; align-items:center; gap:4px; }
+.mockrow + .mockrow{ margin-top:4px; }
+.mocklab{
+  flex:0 0 30px; font:800 8.5px var(--font-body); letter-spacing:.12em;
+  text-transform:uppercase; color:#6f6894;
+}
+.mockbtn{
+  flex:1; padding:5px 2px; border-radius:7px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22);
+  color:#8f88b3; font:700 10.5px var(--font-body); white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;
+}
+.mockbtn.on{ background:rgba(157,144,255,.22); border-color:rgba(157,144,255,.6); color:var(--home-ink); }
+.mockbtn.restart{ flex:0 0 34px; }
+
+/* ===== view containers — one shell, five screens ===== */
+.view{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.mock-top-pad{ padding-top:calc(env(safe-area-inset-top,0px) + 66px); }
+
+/* =========================================================================
+   SCREEN · THE KNOCK — a lock-screen-style push notification
+   ========================================================================= */
+.view-notif{
+  align-items:stretch; justify-content:flex-start;
+  background:
+    radial-gradient(60px 60px at 78% 24%, rgba(255,236,190,.9), rgba(255,220,158,.4) 55%, transparent 74%),
+    radial-gradient(90% 50% at 20% 100%, rgba(255,150,100,.22), transparent 65%),
+    radial-gradient(100% 60% at 60% 100%, rgba(120,90,220,.25), transparent 70%),
+    linear-gradient(178deg,#151038 0%,#241a52 55%,#3a2350 82%,#59304e 100%);
+}
+.view-notif::before{ /* faint stars on the wallpaper */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background-image:
+    radial-gradient(1.2px 1.2px at 14% 16%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 34% 9%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.3px 1.3px at 58% 14%, rgba(207,200,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 84% 34%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 24% 40%, rgba(255,255,255,.5), transparent 60%);
+}
+.view-notif::after{ /* the screen just lit up — gentle dim vignette */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 30%, transparent 40%, rgba(6,5,18,.5));
+}
+.lock-inner{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; padding:calc(env(safe-area-inset-top,0px) + 84px) 20px calc(env(safe-area-inset-bottom,0px) + 18px); }
+.lock-date{ margin-top:14px; text-align:center; font-size:17px; font-weight:600; color:rgba(234,231,251,.92); text-shadow:0 1px 10px rgba(12,10,26,.5); }
+.lock-clock{ margin-top:2px; text-align:center; font-size:78px; font-weight:600; letter-spacing:-.02em; color:#fff; text-shadow:0 2px 20px rgba(12,10,26,.45); }
+.notif-card{
+  margin-top:26px; width:100%; text-align:left; cursor:pointer;
+  background:rgba(38,33,66,.62); border:1px solid rgba(255,255,255,.12);
+  border-radius:22px; padding:14px 16px;
+  backdrop-filter:blur(16px) saturate(1.3); -webkit-backdrop-filter:blur(16px) saturate(1.3);
+  box-shadow:0 12px 34px -12px rgba(0,0,0,.55);
+  color:var(--home-ink); font-family:var(--font-body);
+}
+.notif-card:active{ transform:scale(.985); }
+.notif-head{ display:flex; align-items:center; gap:8px; }
+.notif-appicon{
+  width:20px; height:20px; border-radius:5px; flex:0 0 20px;
+  background:#0c0a1a url(data:image/png;base64,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) center/76% no-repeat;
+}
+.notif-app{ font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:rgba(234,231,251,.7); flex:1; }
+.notif-when{ font-size:12px; font-weight:600; color:rgba(234,231,251,.55); }
+.notif-title{ margin-top:9px; font-size:16px; font-weight:800; letter-spacing:-.01em; color:#fff; }
+.notif-body{ margin-top:3px; font-size:15px; font-weight:500; line-height:1.4; color:rgba(234,231,251,.85); }
+.lock-bottom{ margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.lock-hint{ font-size:15px; font-weight:600; color:rgba(234,231,251,.55); }
+.lock-homebar{ width:120px; height:5px; border-radius:3px; background:rgba(255,255,255,.55); }
+
+/* =========================================================================
+   SCREEN · WHATSAPP-STYLE CHAT (generic dark chat mock — clearly a mock)
+   ========================================================================= */
+.view-wa{ background:#0b141a; }
+.wa-header{
+  position:relative; z-index:2; display:flex; align-items:center; gap:10px;
+  padding:10px 14px 10px 10px; background:#1f2c34;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.wa-back{ color:#aebac1; display:flex; align-items:center; }
+.wa-avatar{
+  width:38px; height:38px; border-radius:50%; flex:0 0 38px;
+  background:#0c0a1a url(data:image/png;base64,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) center/72% no-repeat;
+  border:1px solid rgba(255,255,255,.1);
+}
+.wa-name{ flex:1; min-width:0; }
+.wa-name b{ display:flex; align-items:center; gap:5px; font-size:16px; font-weight:700; color:#e9edef; }
+.wa-check{
+  display:inline-flex; width:15px; height:15px; border-radius:50%; background:#00a884;
+  align-items:center; justify-content:center; flex:0 0 15px;
+}
+.wa-check svg{ width:9px; height:9px; }
+.wa-status{ font-size:12.5px; color:#8696a0; margin-top:1px; }
+.wa-icons{ display:flex; gap:20px; color:#aebac1; }
+.wa-chat{
+  flex:1; min-height:0; overflow-y:auto; position:relative;
+  padding:16px 14px calc(env(safe-area-inset-bottom,0px) + 78px);
+  background:
+    radial-gradient(1.5px 1.5px at 12% 22%, rgba(255,255,255,.045), transparent 60%),
+    radial-gradient(1.5px 1.5px at 44% 8%, rgba(255,255,255,.04), transparent 60%),
+    radial-gradient(1.5px 1.5px at 78% 30%, rgba(255,255,255,.045), transparent 60%),
+    radial-gradient(1.5px 1.5px at 28% 52%, rgba(255,255,255,.04), transparent 60%),
+    radial-gradient(1.5px 1.5px at 64% 68%, rgba(255,255,255,.045), transparent 60%),
+    radial-gradient(1.5px 1.5px at 88% 84%, rgba(255,255,255,.04), transparent 60%),
+    #0b141a;
+  background-size:340px 320px, 340px 320px, 340px 320px, 340px 320px, 340px 320px, 340px 320px, auto;
+}
+.wa-daychip{
+  width:max-content; margin:0 auto 14px; padding:5px 12px; border-radius:8px;
+  background:#182229; color:#8696a0; font-size:12.5px; font-weight:600;
+}
+.wa-bubble{
+  position:relative; max-width:88%; background:#1f2c34; border-radius:12px;
+  border-top-left-radius:4px; padding:10px 12px 8px;
+  box-shadow:0 1px 2px rgba(0,0,0,.35);
+}
+.wa-text{ font-size:15px; line-height:1.45; color:#e9edef; font-weight:500; }
+.wa-time{ margin-top:4px; text-align:right; font-size:11.5px; color:#8696a0; }
+.wa-btns{ margin-top:10px; border-top:1px solid rgba(134,150,160,.22); }
+.wa-btn{
+  display:flex; align-items:center; justify-content:center; gap:7px; width:100%;
+  min-height:46px; padding:10px 6px; cursor:pointer;
+  background:none; border:none; border-bottom:1px solid rgba(134,150,160,.22);
+  color:#53bdeb; font:700 15px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.wa-btn:last-child{ border-bottom:none; }
+.wa-btn:active{ opacity:.7; }
+.wa-inputbar{
+  position:absolute; left:0; right:0; bottom:0; z-index:2;
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px calc(env(safe-area-inset-bottom,0px) + 10px);
+  background:#0b141a;
+}
+.wa-field{
+  flex:1; min-height:44px; display:flex; align-items:center;
+  background:#1f2c34; border-radius:22px; padding:0 16px;
+  color:#8696a0; font-size:15px; font-weight:500;
+}
+.wa-mic{
+  width:44px; height:44px; border-radius:50%; flex:0 0 44px;
+  background:#00a884; color:#0b141a; border:none;
+  display:flex; align-items:center; justify-content:center; font-size:19px;
+}
+
+/* =========================================================================
+   SCREEN · THE MORNING LANDING — create-style capture (CATCH IT)
+   ========================================================================= */
+.view-capture{ justify-content:center; }
+.capture-inner{
+  position:relative; z-index:1;
+  padding:calc(env(safe-area-inset-top,0px) + 70px) 24px calc(env(safe-area-inset-bottom,0px) + 40px);
+  display:flex; flex-direction:column; justify-content:center; flex:1; min-height:0;
+  text-align:center;
+}
+.capture-eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.14em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800;
+}
+.capture-title{ margin-top:10px; font-size:var(--t-display); font-weight:800; letter-spacing:-.02em; line-height:1.15; }
+.capture-sub{ margin-top:10px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.capture-cta{ margin-top:30px; }
+.capture-cta .pill{ margin-top:0; }
+.pill .recdot{ color:#ff5d5d; margin-right:9px; font-size:14px; }
+.capture-write{
+  display:inline-block; margin-top:18px; padding:10px 12px; min-height:44px;
+  background:none; border:none; cursor:pointer;
+  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.capture-write:active{ opacity:.7; }
+/* listening state */
+.wave{ display:flex; align-items:center; justify-content:center; gap:4px; height:56px; }
+.wave i{
+  width:4px; border-radius:3px; background:var(--home-acc); height:10px;
+  animation:waveBar 1.1s ease-in-out infinite;
+  box-shadow:0 0 8px rgba(157,144,255,.5);
+}
+.listening-line{ margin-top:16px; font-size:var(--t-action); font-weight:800; letter-spacing:-.01em; }
+.listening-hint{ margin-top:8px; font-size:15px; font-weight:500; color:var(--home-soft); }
+
+/* =========================================================================
+   SCREENS · THE SHELVES (dawn morning-home + logged home) — Night Shelf DNA
+   ========================================================================= */
+.home-scroll{
+  flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top,0px) + 66px) 20px calc(var(--nav-clearance) + 32px);
+}
+.home-topbar{ display:flex; align-items:center; padding:12px 0 0; }
+.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
+.home-logo i{ font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px; background:url(data:image/png;base64,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) center/contain no-repeat; }
+.home-logo em{ font-style:normal; background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.home-greet{ padding:26px 0 22px; }
+.home-greet-line{ font-size:var(--t-display); font-weight:800; color:var(--home-ink); letter-spacing:-.02em; }
+
+/* ===== hero card DNA (approved treatment, radius 24) ===== */
+.hero-card{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.55); color:var(--home-ink);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(157,144,255,.34);
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:22px;
+}
+.hero-stars, .hero-scrim, .chamber-breathe{ position:absolute; inset:0; pointer-events:none; }
+.hero-content{ position:relative; z-index:1; }
+.eyebrow{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6);
+}
+.hero-title{
+  font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2;
+  text-shadow:0 2px 12px rgba(12,10,26,.55);
+}
+.hero-sub{ margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea; text-shadow:0 1px 8px rgba(12,10,26,.55); }
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pulse{ animation:homePulse 2.6s ease-in-out infinite; }
+.entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
+.entryrow .dot{ color:#8b83b3; font-size:14px; }
+.entrylink{
+  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
+  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+  -webkit-tap-highlight-color:transparent;
+}
+.entrylink:active{ opacity:.7; }
+
+/* --- THE DAWN HERO (tab B) — the Tonight hero's night scene shifted to
+   first light: low warm sun, amber horizon glow, violet night still
+   hanging on up top, last stars fading --- */
+.hero-dawn{
+  min-height:clamp(360px, 51vh, 460px);
+  border-color:rgba(255,196,120,.55);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 26px -4px rgba(255,180,100,.3);
+  background:
+    radial-gradient(64px 64px at 26% 72%, rgba(255,226,150,1), rgba(255,196,110,.55) 55%, transparent 76%),
+    radial-gradient(220px 160px at 26% 76%, rgba(255,176,96,.5), transparent 70%),
+    radial-gradient(130% 55% at 50% 102%, rgba(255,140,84,.42), transparent 66%),
+    radial-gradient(80% 40% at 78% 88%, rgba(255,120,130,.28), transparent 65%),
+    radial-gradient(100% 60% at 70% 10%, rgba(120,90,220,.3), transparent 70%),
+    linear-gradient(174deg,#241a4e 0%,#4a2a5e 40%,#8a4152 70%,#b96b45 100%);
+}
+.hero-dawn .hero-stars{ /* the last few stars, dim, upper third only */
+  background-image:
+    radial-gradient(1.2px 1.2px at 14% 10%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1px 1px at 38% 6%, rgba(255,255,255,.4), transparent 60%),
+    radial-gradient(1.3px 1.3px at 60% 12%, rgba(207,200,255,.5), transparent 60%),
+    radial-gradient(1px 1px at 82% 8%, rgba(255,255,255,.35), transparent 60%),
+    radial-gradient(1.1px 1.1px at 26% 22%, rgba(255,255,255,.3), transparent 60%);
+}
+.hero-dawn .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(30,14,26,.5)); }
+.hero-dawn .eyebrow{ color:#ffe0b8; }
+.hero-dawn .hero-sub{ color:#f4dcc8; }
+.hero-dawn .pill{ background:#ffcf8e; color:#2a1606; }
+.hero-dawn .pill.pulse{ animation-name:dawnPulse; }
+@keyframes dawnPulse{ 0%,100%{ box-shadow:0 0 6px rgba(255,196,120,.45); } 50%{ box-shadow:0 0 18px rgba(255,196,120,.95); } }
+.hero-dawn .entrylink{ color:#f4dcc8; }
+.hero-dawn .entryrow .dot{ color:#c9977e; }
+
+/* --- TONIGHT hero, logged (final shelf) — approved night scene + ok tint --- */
+.hero-tonight{
+  min-height:clamp(300px, 40vh, 380px);
+  background:
+    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
+    radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
+    radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
+    linear-gradient(172deg,#0f1840 0%,#1a2158 46%,#0b1234 100%);
+  border-color:rgba(75,211,155,.5);
+  box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24);
+}
+.hero-tonight .hero-stars{
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 14%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 26% 8%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 50% 12%, rgba(207,200,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 40% 28%, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 88% 38%, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 62% 34%, rgba(207,200,255,.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 18% 44%, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1px 1px at 74% 52%, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
+}
+.hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+.hero-tonight .hero-title{ color:#bdf0d8; }
+.loggedquote{
+  margin-top:8px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#cfc8ea;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+  text-shadow:0 1px 8px rgba(12,10,26,.55);
+}
+.bringlink{
+  display:inline-flex; align-items:center; margin-top:8px; padding:8px 0; min-height:40px;
+  background:none; border:none; cursor:pointer;
+  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
+  text-shadow:0 1px 8px rgba(12,10,26,.6);
+  -webkit-tap-highlight-color:transparent;
+  position:relative; z-index:1;
+}
+.bringlink:active{ opacity:.7; }
+
+/* --- CHAMBER hero --- */
+.hero-chamber{
+  margin-top:28px;
+  min-height:330px;
+  background:
+    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
+    url(assets/chamber-sage.jpg) 0% 14% / 140% auto no-repeat,
+    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+.hero-chamber .hero-stars{
+  background-image:
+    radial-gradient(1.2px 1.2px at 10% 18%, rgba(255,255,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 26% 10%, rgba(207,200,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 18% 40%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 8% 56%, rgba(224,170,255,.55), transparent 60%);
+}
+.chamber-breathe{
+  background:radial-gradient(46% 40% at 64% 24%, rgba(157,144,255,.26), transparent 72%);
+  animation:chamberBreathe 6s ease-in-out infinite;
+}
+.hero-chamber .hero-scrim{ background:linear-gradient(180deg, transparent 42%, rgba(12,10,26,.66) 96%); }
+
+/* --- ritual module --- */
+.ritual{
+  margin-top:28px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px;
+}
+.ritual-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ritual-big{ font-size:var(--t-hero); font-weight:800; letter-spacing:-.01em; line-height:1.2; }
+.ritual-sub{ margin-top:7px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.ritual .constel{ flex:0 0 84px; }
+.constel line{ stroke:rgba(207,200,255,.28); stroke-width:1; stroke-dasharray:2 3; }
+.constel line.lit{ stroke:rgba(255,224,170,.75); stroke-dasharray:none; }
+.constel .st{ fill:rgba(207,200,255,.28); }
+.constel .st.lit{ fill:#ffe0aa; }
+.ritual-claim{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  box-shadow:0 0 20px -4px rgba(224,170,90,.65);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-claim:active{ transform:scale(.98); }
+.ritual-balance{
+  display:block; margin-top:14px; padding:6px 0; min-height:32px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.ritual-balance:active{ opacity:.7; }
+.ritual-balance .gold{ color:var(--home-warn); }
+
+/* --- NEW · the TIP glance strip — flat, informational, NOT tappable.
+   Design grammar: no box, no border, no chevron, no button affordance. --- */
+.tipstrip{ margin-top:28px; display:flex; gap:12px; align-items:flex-start; padding:2px 2px; }
+.tipstrip .tipicon{ flex:0 0 22px; margin-top:2px; color:var(--home-warn); display:inline-flex; }
+.tip-title{ font-size:var(--t-body); font-weight:800; letter-spacing:-.01em; color:#d5d0ea; }
+.tip-title .tiplab{ color:var(--home-warn); letter-spacing:.08em; }
+.tip-line{ margin-top:5px; font-size:15px; font-weight:500; line-height:1.55; color:var(--home-soft); }
+
+/* --- My dreams --- */
+.dreams{ margin-top:28px; }
+.dreams-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+.dreams-head h2{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.dreams-all{
+  background:none; border:none; cursor:pointer; padding:6px 0 6px 12px;
+  color:var(--home-soft); font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.dreams-all:active{ opacity:.7; }
+.dreams-row{
+  display:flex; gap:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+  margin:0 -20px; padding:4px 20px 8px;
+  scrollbar-width:none;
+}
+.dreams-row::-webkit-scrollbar{ display:none; }
+.dthumb{
+  flex:0 0 150px; width:150px; height:100px; border-radius:14px;
+  border:1px solid rgba(255,255,255,.14); scroll-snap-align:start;
+  position:relative; overflow:hidden; cursor:pointer;
+}
+.dthumb::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 50%, rgba(255,255,255,.6), transparent 60%);
+}
+.dthumb::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 55%, rgba(12,10,26,.4));
+}
+.dthumb:active{ transform:scale(.97); }
+.dthumb.t1{ background:radial-gradient(40px 40px at 74% 26%, rgba(255,230,176,.9), transparent 70%), radial-gradient(90% 90% at 16% 88%, rgba(83,140,255,.45), transparent 62%), linear-gradient(160deg,#2b1a5e,#3d1e72 55%,#141040); }
+.dthumb.t2{ background:radial-gradient(70% 70% at 30% 30%, rgba(224,120,190,.5), transparent 68%), radial-gradient(60% 60% at 80% 76%, rgba(163,90,255,.45), transparent 65%), linear-gradient(150deg,#3a1350,#57155f 55%,#1c0d38); }
+.dthumb.t3{ background:radial-gradient(70% 70% at 70% 24%, rgba(120,220,200,.4), transparent 66%), radial-gradient(80% 80% at 20% 80%, rgba(60,120,220,.5), transparent 65%), linear-gradient(165deg,#0f2a4e,#14406b 55%,#0b1636); }
+.dthumb.t4{ background:radial-gradient(48px 48px at 26% 30%, rgba(255,200,150,.75), transparent 70%), radial-gradient(80% 80% at 80% 80%, rgba(180,80,200,.4), transparent 66%), linear-gradient(155deg,#40204e,#5e2a54 55%,#221038); }
+.dthumb.t5{ background:radial-gradient(70% 70% at 60% 70%, rgba(90,200,255,.35), transparent 66%), radial-gradient(70% 70% at 24% 20%, rgba(163,90,255,.5), transparent 68%), linear-gradient(160deg,#221457,#2c2a7a 55%,#101040); }
+.dthumb.t6{ background:radial-gradient(44px 44px at 70% 60%, rgba(255,240,200,.7), transparent 72%), radial-gradient(90% 90% at 12% 30%, rgba(224,120,190,.35), transparent 65%), linear-gradient(158deg,#33124a,#4c1a5e 55%,#180c34); }
+
+/* --- quiet rows --- */
+.quietrows{ margin-top:28px; }
+.qrow{
+  display:flex; align-items:center; gap:11px; width:100%;
+  min-height:52px; padding:6px 2px;
+  background:none; border:none; cursor:pointer; text-align:left;
+  color:#d5d0ea; font:600 var(--t-body) var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.qrow:active{ opacity:.7; }
+.qrow .qicon{ font-style:normal; font-size:17px; width:22px; text-align:center; }
+.qrow .qlabel{ flex:1; }
+.qrow .chev{ color:#6f6894; display:inline-flex; }
+
+/* ===== Bar A — the anchored night dock (verbatim from profile.html) ===== */
+.night-dock{
+  position:absolute; left:0; right:0; bottom:0; z-index:9;
+  height:calc(60px + env(safe-area-inset-bottom,0px)); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; align-items:center; justify-content:space-around;
+  background:rgba(12,10,26,.72);
+  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+  border-top:1px solid rgba(157,144,255,.22);
+}
+@supports not (backdrop-filter:blur(1px)){
+  .night-dock{ background:rgba(12,10,26,.95); }
+}
+.night-dock-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:64px; min-height:44px;
+  color:#8f88b3; font:700 10px var(--font-body); letter-spacing:.02em;
+  text-decoration:none; cursor:pointer; transition:color .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-item .nav-icon{ font-size:22px; display:block; }
+.night-dock-item.active{ color:var(--home-ink); }
+.night-dock-item:active{ transform:scale(.92); }
+.night-dock-create{
+  width:44px; height:44px; border-radius:50%; flex:none; cursor:pointer;
+  background:var(--gradient-ig); color:#fff; border:none; text-decoration:none;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
+  transition:transform .15s cubic-bezier(.34,1.56,.64,1), filter .15s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.night-dock-create .icon{ font-size:24px; }
+.night-dock-create:active{ transform:scale(.94); }
+.night-dock-avatar{
+  width:22px; height:22px; border-radius:50%; overflow:hidden; background:#2a2350;
+  border:1.5px solid var(--home-line);
+  display:flex; align-items:center; justify-content:center;
+  font-style:normal; font-weight:800; font-size:9.5px; color:var(--home-ink);
+}
+.nav-icon-badge-wrap{ position:relative; display:inline-flex; }
+.icon{ display:inline-flex; width:1em; height:1em; }
+
+/* ===== toast ===== */
+.toast{
+  position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px);
+  transform:translate(-50%,10px); z-index:30;
+  background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink);
+  padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease;
+  max-width:88%; text-align:center; white-space:nowrap;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+
+/* ===== mock claim sheet ===== */
+.sheet-backdrop{
+  position:absolute; inset:0; z-index:50; background:rgba(6,5,18,.62);
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.sheet-backdrop.open{ opacity:1; pointer-events:auto; }
+.claim-sheet{
+  position:absolute; left:0; right:0; bottom:0; z-index:51;
+  background:rgba(24,19,46,.98); border:1px solid var(--home-line); border-bottom:none;
+  border-radius:22px 22px 0 0; padding:24px 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  transform:translateY(105%); transition:transform .25s ease;
+}
+.claim-sheet.open{ transform:translateY(0); }
+.claim-title{ font-size:var(--t-section); font-weight:800; letter-spacing:-.01em; }
+.claim-title .gold{ color:var(--home-warn); }
+.claim-sub{ margin-top:6px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:var(--home-soft); }
+.claim-pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:18px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206;
+  font:800 var(--t-action) var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent;
+}
+.claim-pill:active{ transform:scale(.98); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Sky layers — decorative, behind the shelf/capture views -->
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
+  <div class="home-aurora"></div>
+
+  <!-- MOCK CHROME — tab switcher + journey steps, not product UI -->
+  <div class="mockbar">
+    <div class="mockrow">
+      <span class="mocklab">Mock</span>
+      <button type="button" class="mockbtn on" data-tab="a">A · Quiet Knock</button>
+      <button type="button" class="mockbtn" data-tab="b">B · Dawn Shelf</button>
+      <button type="button" class="mockbtn" data-tab="c">C · WhatsApp</button>
+    </div>
+    <div class="mockrow">
+      <span class="mocklab">Step</span>
+      <div class="mockrow" id="step-seg" style="flex:1; gap:4px;"></div>
+      <button type="button" class="mockbtn restart" id="mock-restart" title="Restart journey">↺</button>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 1 · THE KNOCK (tabs A + B) ================= -->
+  <div class="view view-notif" id="view-notif">
+    <div class="lock-inner">
+      <div class="lock-date">Saturday, August 1</div>
+      <div class="lock-clock">7:02</div>
+      <button type="button" class="notif-card" id="notif-card" aria-label="Open DreamTube">
+        <div class="notif-head">
+          <span class="notif-appicon"></span>
+          <span class="notif-app">DreamTube</span>
+          <span class="notif-when">now</span>
+        </div>
+        <div class="notif-title">Good morning — what did you dream?</div>
+        <div class="notif-body">It's already fading. 20 seconds — just speak it.</div>
+      </button>
+      <div class="lock-bottom">
+        <div class="lock-hint">tap the knock to answer it</div>
+        <div class="lock-homebar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 1c · THE CHAT (tab C) ================= -->
+  <div class="view view-wa" id="view-wa" hidden>
+    <div class="mock-top-pad" style="background:#0b141a;"></div>
+    <div class="wa-header">
+      <span class="wa-back"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+      <span class="wa-avatar"></span>
+      <div class="wa-name">
+        <b>DreamTube <span class="wa-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#0b141a" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span></b>
+        <div class="wa-status">online</div>
+      </div>
+      <div class="wa-icons">
+        <svg width="21" height="21" viewBox="0 0 24 24"><path d="M15 10l6-4v12l-6-4v3a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1h10a1 1 0 011 1v2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3h3l2 5-2.5 1.5a12 12 0 006 6L16 13l5 2v3a2 2 0 01-2 2A16 16 0 014 5a2 2 0 012-2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/></svg>
+      </div>
+    </div>
+    <div class="wa-chat">
+      <div class="wa-daychip">TODAY</div>
+      <div class="wa-bubble">
+        <div class="wa-text">Good morning Ron ☀️ What did you dream? It's already fading — tap below and just speak it.</div>
+        <div class="wa-btns">
+          <button type="button" class="wa-btn" id="wa-speak">🎙 Speak your dream</button>
+          <button type="button" class="wa-btn" id="wa-type">✍️ Type it</button>
+          <button type="button" class="wa-btn" id="wa-norecall">😴 No recall — still counts</button>
+        </div>
+        <div class="wa-time">7:02 AM</div>
+      </div>
+      <div class="wa-inputbar">
+        <div class="wa-field">Message</div>
+        <button type="button" class="wa-mic" aria-label="Voice message"><svg width="19" height="19" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M5 11a7 7 0 0014 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 2 · THE MORNING LANDING (all tabs) ================= -->
+  <div class="view view-capture" id="view-capture" hidden>
+    <div class="capture-inner">
+      <div id="capture-idle">
+        <div class="capture-eyebrow">Catch it</div>
+        <h1 class="capture-title">What did you dream?</h1>
+        <p class="capture-sub">Half-asleep mumbling is fine.</p>
+        <div class="capture-cta">
+          <button type="button" class="pill pulse" id="capture-start"><span class="recdot">●</span>Start speaking</button>
+          <button type="button" class="capture-write" id="capture-write">Write instead</button>
+        </div>
+      </div>
+      <div id="capture-listening" hidden>
+        <div class="wave" aria-hidden="true">
+          <i style="--h:26px; animation-delay:0s"></i><i style="--h:40px; animation-delay:.12s"></i><i style="--h:18px; animation-delay:.24s"></i><i style="--h:46px; animation-delay:.06s"></i><i style="--h:30px; animation-delay:.3s"></i><i style="--h:50px; animation-delay:.18s"></i><i style="--h:22px; animation-delay:.36s"></i><i style="--h:44px; animation-delay:.09s"></i><i style="--h:34px; animation-delay:.27s"></i><i style="--h:52px; animation-delay:.15s"></i><i style="--h:24px; animation-delay:.33s"></i><i style="--h:42px; animation-delay:.03s"></i><i style="--h:28px; animation-delay:.21s"></i><i style="--h:48px; animation-delay:.39s"></i><i style="--h:20px; animation-delay:.12s"></i><i style="--h:36px; animation-delay:.3s"></i>
+        </div>
+        <div class="listening-line">Listening…</div>
+        <div class="listening-hint">Just mumble — we'll catch it.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SCREEN 2b · THE DAWN SHELF (tab B) ================= -->
+  <div class="view" id="view-dawn" hidden>
+    <div class="home-scroll" id="dawn-scroll">
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      </div>
+      <div class="home-greet">
+        <div class="home-greet-line">Good morning, Ron.</div>
+      </div>
+
+      <!-- the Tonight hero wearing its dawn treatment — carries this view's single pulse -->
+      <section class="hero-card hero-dawn">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">This morning</div>
+          <h1 class="hero-title">Still with you?</h1>
+          <p class="hero-sub">It's fading — say it before it's gone</p>
+          <button type="button" class="pill pulse" id="dawn-speak">🎙 Speak it</button>
+        </div>
+        <div class="entryrow">
+          <button type="button" class="entrylink" id="dawn-write">Write</button><span class="dot">·</span>
+          <button type="button" class="entrylink" id="dawn-norecall">No recall</button>
+        </div>
+      </section>
+
+      <!-- Chamber hero — NO pulse here (the Speak-it pill owns this view's pulse) -->
+      <section class="hero-card hero-chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub">Your reading awaits.</p>
+          <button type="button" class="pill" id="dawn-chamber">Enter</button>
+        </div>
+      </section>
+
+      <!-- ritual module — morning-unlogged: claim available, static warm glow -->
+      <section class="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big">🔥 3 nights</div>
+            <div class="ritual-sub">2 of 3 this week</div>
+          </div>
+          <span id="dawn-constel"></span>
+        </div>
+        <button type="button" class="ritual-claim" id="dawn-claim">Claim +20 ✦</button>
+        <button type="button" class="ritual-balance" id="dawn-balance"><span class="gold">✦</span> 120 · Vault →</button>
+      </section>
+
+      <section class="dreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <button type="button" class="dreams-all">All →</button>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb t1"></div>
+          <div class="dthumb t2"></div>
+          <div class="dthumb t3"></div>
+          <div class="dthumb t4"></div>
+          <div class="dthumb t5"></div>
+          <div class="dthumb t6"></div>
+        </div>
+      </section>
+
+      <div class="quietrows">
+        <button type="button" class="qrow">
+          <i class="qicon">📲</i><span class="qlabel">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="night-dock" aria-label="Main">
+      <a class="night-dock-item active" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+      <a class="night-dock-item" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+      <a class="night-dock-create" href="#" onclick="return false" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+      <a class="night-dock-item" href="#" onclick="return false">
+        <div class="nav-icon-badge-wrap" aria-hidden="true">
+          <i class="night-dock-avatar">Y</i>
+        </div><span class="night-dock-label">Profile</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- ================= SCREEN 3 · THE LOGGED SHELF (all tabs end here) ================= -->
+  <div class="view" id="view-shelf" hidden>
+    <div class="home-scroll" id="shelf-scroll">
+      <div class="home-topbar">
+        <div class="home-logo"><i></i>Dream<em>Tube</em></div>
+      </div>
+      <div class="home-greet">
+        <div class="home-greet-line">Good morning, Ron.</div>
+      </div>
+
+      <!-- Tonight hero — logged transform (in place): ok tint, quote, upsell link -->
+      <section class="hero-card hero-tonight">
+        <div class="hero-stars"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <div class="eyebrow">Tonight</div>
+          <h1 class="hero-title">Logged tonight ✓</h1>
+          <p class="loggedquote" id="shelf-quote">&ldquo;I was back in my childhood house, but every door opened onto the sea.&rdquo;</p>
+          <button type="button" class="bringlink" id="shelf-bring">Bring it to life →</button>
+        </div>
+      </section>
+
+      <!-- Chamber hero — carries this view's SINGLE pulse -->
+      <section class="hero-card hero-chamber">
+        <div class="hero-stars"></div>
+        <div class="chamber-breathe"></div>
+        <div class="hero-scrim"></div>
+        <div class="hero-content">
+          <h2 class="hero-title">The Chamber</h2>
+          <p class="hero-sub">Your reading awaits.</p>
+          <button type="button" class="pill pulse" id="shelf-chamber">Enter</button>
+        </div>
+      </section>
+
+      <!-- ritual module — streak ticked; the overnight claim is the reward
+           (STATIC warm glow, never a pulse) -->
+      <section class="ritual">
+        <div class="ritual-head">
+          <div>
+            <div class="ritual-big">🔥 4 nights</div>
+            <div class="ritual-sub">3 of 3 this week</div>
+          </div>
+          <span id="shelf-constel"></span>
+        </div>
+        <button type="button" class="ritual-claim" id="shelf-claim">Claim +20 ✦</button>
+        <button type="button" class="ritual-balance" id="shelf-balance"><span class="gold">✦</span> 120 · Vault →</button>
+      </section>
+
+      <!-- NEW · TIP glance strip — flat + informational, not tappable -->
+      <aside class="tipstrip" aria-label="Tip">
+        <span class="tipicon"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5.6 5.6l1.7 1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18.4 5.6l-1.7 1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 15a5 5 0 0110 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M3 18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        <div>
+          <div class="tip-title"><span class="tiplab">TIP</span> · How to remember tonight's dream</div>
+          <div class="tip-line">When you wake, stay still and replay the dream once before opening your eyes — then speak it.</div>
+        </div>
+      </aside>
+
+      <section class="dreams">
+        <div class="dreams-head">
+          <h2>My dreams</h2>
+          <button type="button" class="dreams-all">All →</button>
+        </div>
+        <div class="dreams-row">
+          <div class="dthumb t1"></div>
+          <div class="dthumb t2"></div>
+          <div class="dthumb t3"></div>
+          <div class="dthumb t4"></div>
+          <div class="dthumb t5"></div>
+          <div class="dthumb t6"></div>
+        </div>
+      </section>
+
+      <div class="quietrows">
+        <button type="button" class="qrow">
+          <i class="qicon">📲</i><span class="qlabel">Add DreamTube to your phone</span>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="night-dock" aria-label="Main">
+      <a class="night-dock-item active" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Home</span></a>
+      <a class="night-dock-item" href="#" onclick="return false"><div class="nav-icon icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg></div><span class="night-dock-label">Explore</span></a>
+      <a class="night-dock-create" href="#" onclick="return false" aria-label="Create"><span class="icon"><svg width="1em" height="1em" viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></a>
+      <a class="night-dock-item" href="#" onclick="return false">
+        <div class="nav-icon-badge-wrap" aria-hidden="true">
+          <i class="night-dock-avatar">Y</i>
+        </div><span class="night-dock-label">Profile</span>
+      </a>
+    </nav>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- mock claim sheet -->
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="claim-sheet" id="claim-sheet" role="dialog" aria-label="Daily bonus" aria-hidden="true">
+    <div class="claim-title"><span class="gold">✦</span> Daily bonus</div>
+    <p class="claim-sub">+20 tokens for coming back this morning.</p>
+    <button type="button" class="claim-pill" id="claim-pill">Claim 20 ✦</button>
+  </div>
+</div>
+
+<script>
+  // Mock-only interactivity — no app JS.
+
+  // ---- constellation (home.html's renderConstellation, 84×46) ----
+  function renderConstellation(lit){
+    lit = Math.max(0, Math.min(3, lit));
+    var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
+    var line1 = lit >= 2 ? 'lit' : '', line2 = lit >= 3 ? 'lit' : '';
+    return '<svg class="constel" width="84" height="46" viewBox="0 0 84 46" aria-hidden="true">' +
+      '<line class="' + line1 + '" x1="12" y1="34" x2="42" y2="12"/>' +
+      '<line class="' + line2 + '" x1="42" y1="12" x2="72" y2="28"/>' +
+      '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
+      '<path class="st' + l2 + '" d="M42 6l1.8 4.2L48 12l-4.2 1.8L42 18l-1.8-4.2L36 12l4.2-1.8z"/>' +
+      '<path class="st' + l3 + '" d="M72 22l1.8 4.2L78 28l-4.2 1.8L72 34l-1.8-4.2L66 28l4.2-1.8z"/>' +
+    '</svg>';
+  }
+  document.getElementById('dawn-constel').innerHTML = renderConstellation(2);
+  document.getElementById('shelf-constel').innerHTML = renderConstellation(3);
+
+  var views = {
+    notif: document.getElementById('view-notif'),
+    wa: document.getElementById('view-wa'),
+    capture: document.getElementById('view-capture'),
+    dawn: document.getElementById('view-dawn'),
+    shelf: document.getElementById('view-shelf')
+  };
+
+  // The three journeys — each an ordered list of screens.
+  var JOURNEYS = {
+    a: [ {v:'notif',  label:'1 knock'},   {v:'capture', label:'2 capture'}, {v:'shelf', label:'3 shelf'} ],
+    b: [ {v:'notif',  label:'1 knock'},   {v:'dawn',    label:'2 morning'}, {v:'capture', label:'3 capture'}, {v:'shelf', label:'4 shelf'} ],
+    c: [ {v:'wa',     label:'1 chat'},    {v:'capture', label:'2 capture'}, {v:'shelf', label:'3 shelf'} ]
+  };
+  var tab = 'a';
+  var stepIdx = 0;
+  var claimed = false;
+  var noRecall = false;
+  var listenTimer = null, advanceTimer = null;
+  var toastTimer = null;
+
+  var toastEl = document.getElementById('toast');
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2000);
+  }
+
+  var captureIdle = document.getElementById('capture-idle');
+  var captureListening = document.getElementById('capture-listening');
+  function resetCapture(){
+    clearTimeout(listenTimer); clearTimeout(advanceTimer);
+    captureIdle.hidden = false;
+    captureListening.hidden = true;
+  }
+
+  var stepSeg = document.getElementById('step-seg');
+  function renderSteps(){
+    stepSeg.innerHTML = '';
+    JOURNEYS[tab].forEach(function(s, i){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mockbtn' + (i === stepIdx ? ' on' : '');
+      b.textContent = s.label;
+      b.addEventListener('click', function(){ setStep(i); });
+      stepSeg.appendChild(b);
+    });
+  }
+
+  function renderShelfQuote(){
+    var q = document.getElementById('shelf-quote');
+    var bring = document.getElementById('shelf-bring');
+    if(noRecall){
+      q.textContent = '😴 No recall — still counts.';
+      bring.hidden = true;
+    } else {
+      q.innerHTML = '&ldquo;I was back in my childhood house, but every door opened onto the sea.&rdquo;';
+      bring.hidden = false;
+    }
+  }
+
+  function renderClaims(){
+    ['dawn','shelf'].forEach(function(p){
+      document.getElementById(p + '-claim').hidden = claimed;
+      document.getElementById(p + '-balance').innerHTML =
+        '<span class="gold">✦</span> ' + (claimed ? 140 : 120) + ' · Vault →';
+    });
+  }
+
+  function setStep(i){
+    stepIdx = Math.max(0, Math.min(JOURNEYS[tab].length - 1, i));
+    var target = JOURNEYS[tab][stepIdx].v;
+    resetCapture();
+    closeSheet();
+    Object.keys(views).forEach(function(k){ views[k].hidden = (k !== target); });
+    if(target === 'shelf'){ renderShelfQuote(); document.getElementById('shelf-scroll').scrollTop = 0; }
+    if(target === 'dawn'){ document.getElementById('dawn-scroll').scrollTop = 0; }
+    renderSteps();
+  }
+  function nextStep(){ setStep(stepIdx + 1); }
+  function jumpTo(viewName){
+    var idx = -1;
+    JOURNEYS[tab].forEach(function(s, i){ if(s.v === viewName) idx = i; });
+    if(idx >= 0) setStep(idx);
+  }
+  function restart(){
+    claimed = false; noRecall = false;
+    clearTimeout(toastTimer);
+    toastEl.classList.remove('show');
+    renderClaims();
+    setStep(0);
+  }
+
+  // ---- mockbar: tabs + restart ----
+  document.querySelectorAll('.mockbtn[data-tab]').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('.mockbtn[data-tab]').forEach(function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      tab = b.dataset.tab;
+      restart();
+    });
+  });
+  document.getElementById('mock-restart').addEventListener('click', restart);
+
+  // ---- screen 1: the knock ----
+  document.getElementById('notif-card').addEventListener('click', nextStep);
+
+  // ---- screen 1c: the chat ----
+  document.getElementById('wa-speak').addEventListener('click', function(){ jumpTo('capture'); });
+  document.getElementById('wa-type').addEventListener('click', function(){
+    jumpTo('capture');
+    toast('Write panel — typing counts the same');
+  });
+  document.getElementById('wa-norecall').addEventListener('click', function(){
+    noRecall = true;
+    toast('😴 No recall logged — still counts');
+    advanceTimer = setTimeout(function(){ jumpTo('shelf'); }, 900);
+  });
+
+  // ---- screen 2: capture ----
+  function finishCapture(){
+    toast('Caught it ✓');
+    advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
+  }
+  document.getElementById('capture-start').addEventListener('click', function(){
+    captureIdle.hidden = true;
+    captureListening.hidden = false;
+    listenTimer = setTimeout(finishCapture, 3000);
+  });
+  document.getElementById('capture-write').addEventListener('click', function(){
+    toast('Write panel — same free capture');
+    advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
+  });
+
+  // ---- screen 2b: the dawn shelf ----
+  document.getElementById('dawn-speak').addEventListener('click', function(){ jumpTo('capture'); });
+  document.getElementById('dawn-write').addEventListener('click', function(){
+    toast('Write panel — same free capture');
+    advanceTimer = setTimeout(function(){ noRecall = false; jumpTo('shelf'); }, 900);
+  });
+  document.getElementById('dawn-norecall').addEventListener('click', function(){
+    noRecall = true;
+    toast('😴 No recall logged — still counts');
+    advanceTimer = setTimeout(function(){ jumpTo('shelf'); }, 900);
+  });
+  document.getElementById('dawn-chamber').addEventListener('click', function(){
+    toast('Opening the Chamber…');
+  });
+
+  // ---- screen 3: the logged shelf ----
+  document.getElementById('shelf-chamber').addEventListener('click', function(){
+    toast('Opening the Chamber…');
+  });
+  document.getElementById('shelf-bring').addEventListener('click', function(){
+    toast('Style picker — tokens meter the video');
+  });
+
+  // ---- claim sheet demo (shared by dawn + shelf) ----
+  var backdrop = document.getElementById('sheet-backdrop');
+  var sheet = document.getElementById('claim-sheet');
+  function openSheet(){
+    backdrop.classList.add('open');
+    sheet.classList.add('open');
+    sheet.setAttribute('aria-hidden','false');
+  }
+  function closeSheet(){
+    backdrop.classList.remove('open');
+    sheet.classList.remove('open');
+    sheet.setAttribute('aria-hidden','true');
+  }
+  document.getElementById('dawn-claim').addEventListener('click', openSheet);
+  document.getElementById('shelf-claim').addEventListener('click', openSheet);
+  document.getElementById('claim-pill').addEventListener('click', function(){
+    claimed = true;
+    closeSheet();
+    renderClaims(); // button gone, balance settles: ✦ 140
+  });
+  backdrop.addEventListener('click', closeSheet);
+
+  renderClaims();
+  restart();
+</script>
+</body>
+</html>
