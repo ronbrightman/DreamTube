@@ -37,6 +37,23 @@
   .ml-sweep-panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:18px; }
   .ml-sweep-log{ font-size:11.5px; color:var(--text-muted); line-height:1.6; white-space:pre-wrap; margin-top:10px; max-height:160px; overflow-y:auto; }
   .ml-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+
+  /* Lightbox (tracker for-product-media-library-clicking-a-vid-bnlcus) —
+     tapping a grid card opens the REAL media full-size: unmuted+controls
+     for video, a bigger <img> for images. Centered full-viewport overlay,
+     not a bottom sheet, so this is deliberately its own small set of
+     rules rather than reusing .sheet/.sheet-overlay from css/styles.css
+     (see the JS wiring below for why js/sheet-dismiss.js's tap-outside
+     handling IS reused despite that). */
+  .ml-lightbox-overlay{ position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center; padding:28px; background:rgba(0,0,0,.92); }
+  .ml-lightbox-overlay.open{ display:flex; }
+  .ml-lightbox-content{ max-width:100%; max-height:100%; display:flex; }
+  .ml-lightbox-media{ display:block; max-width:100%; max-height:calc(100dvh - 56px); border-radius:14px; background:#000; }
+  /* Sibling of .ml-lightbox-content, not nested inside it — fixed to the
+     overlay's own corner so it stays put regardless of the media's
+     rendered size (a narrow-but-tall video would otherwise push a
+     content-relative close button off past the overlay's own padding). */
+  .ml-lightbox-close{ position:absolute; top:14px; right:14px; background:rgba(255,255,255,.12); z-index:1; }
 </style>
 </head>
 <body>
@@ -136,8 +153,18 @@
   </div>
 </div>
 
+<!-- Lightbox (tracker for-product-media-library-clicking-a-vid-bnlcus) —
+     one shared overlay, its media element built fresh per-open in JS
+     below rather than pre-declared here, since which tag (video vs img)
+     and its src depend on which card was tapped. -->
+<div class="ml-lightbox-overlay" id="ml-lightbox-overlay">
+  <button type="button" class="icon-btn ml-lightbox-close" id="ml-lightbox-close" aria-label="Close"></button>
+  <div class="ml-lightbox-content" id="ml-lightbox-content"></div>
+</div>
+
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheet-dismiss.js"></script>
 <script src="js/pwa.js"></script>
 <script>
   document.getElementById('ml-back').innerHTML = Icons.back;
@@ -242,7 +269,14 @@
     var mediaEl = item.mediaType === 'image'
       ? '<img class="vcard-image" loading="lazy" src="' + esc(item.url) + '" alt="">'
       : '<video class="vcard-video" muted playsinline preload="none" data-src="' + esc(item.url) + '"></video>';
-    return '<div class="vcard" style="cursor:default;">' +
+    // data-media-url/-type carry the REAL source for the lightbox (tracker
+    // for-product-media-library-clicking-a-vid-bnlcus) — the in-grid
+    // <video> itself is muted/preload=none/lazily-src'd (thumbnail-safe by
+    // design, see the IntersectionObserver below), so the lightbox always
+    // reads item.url directly rather than depending on whatever that
+    // element's own .src happens to be at click time (e.g. not yet
+    // lazy-loaded, or scrolled past and unobserved).
+    return '<div class="vcard" data-media-url="' + esc(item.url) + '" data-media-type="' + esc(item.mediaType) + '">' +
       '<div class="vcard-thumb ml-vcard-thumb">' +
         mediaEl +
         '<span class="ml-badge status-' + item.status + '">' + STATUS_LABEL[item.status] + '</span>' +
@@ -297,6 +331,98 @@
     gridEl.innerHTML = filtered.map(cardHTML).join('');
     Array.prototype.forEach.call(gridEl.querySelectorAll('.vcard-video'), function (v) { lazyVideoObserver.observe(v); });
   }
+
+  // ===== Lightbox (tracker for-product-media-library-clicking-a-vid-bnlcus)
+  // — founder repro: the grid renders muted/preload=none video cards with a
+  // lazy-load observer, but nothing was ever wired to a click. Tapping a
+  // card (or its containing .vcard, since the visible tap target is the
+  // whole card, not just the <video>/<img> pixel) now opens the real media
+  // full-size: an unmuted <video controls> for video, a plain bigger <img>
+  // for images. Delegated on #ml-grid (not per-card listeners) because the
+  // grid's innerHTML is fully replaced on every renderGrid() call.
+  //
+  // Images get the same lightbox treatment as videos for consistency (this
+  // grid mixes both media types under one filter set, and a tap that does
+  // nothing on an image card right next to a video card that now DOES
+  // respond would be its own confusing inconsistency) — kept intentionally
+  // trivial (just a bigger <img>) since the founder's own report and "at
+  // minimum" bar were specifically about video/audio.
+  //
+  // Close handling: esc-to-close is wired directly below (one `keydown`
+  // listener, trivial). Tap-outside-to-close instead reuses
+  // js/sheet-dismiss.js's SheetDismiss.wire() rather than a bespoke
+  // `click` listener, because that module's tap-outside path already
+  // solves a real bug this exact shape can hit — the "same-spot re-tap"
+  // case (see that file's own header comment, tracker
+  // for-product-urgent-founder-posthog-recor-75ob70): the tap that OPENS
+  // the lightbox lands at the same screen coordinates the overlay backdrop
+  // now covers, so a double-fired click (common in in-app browser
+  // webviews) can register as an immediate tap-outside and close the
+  // lightbox a few dozen ms after it opened. wire() only needs the
+  // overlay + a close callback; it looks for an `opts.sheetEl`/`.sheet`
+  // child to ALSO wire drag-to-dismiss, but this lightbox isn't a bottom
+  // sheet (it's centered, opens instantly, has no drag affordance in this
+  // spec) — none exists here, so wire() wires tap-outside only and no-ops
+  // the drag portion (see that file's own `if (!sheetEl) return;`), which
+  // is exactly the subset this overlay needs.
+  var lightboxOverlay = document.getElementById('ml-lightbox-overlay');
+  var lightboxContent = document.getElementById('ml-lightbox-content');
+  var lightboxCloseBtn = document.getElementById('ml-lightbox-close');
+  lightboxCloseBtn.innerHTML = Icons.close;
+  var lightboxMediaEl = null; // the live <video>/<img> currently in the lightbox, so close() can stop playback and release it
+
+  function closeLightbox() {
+    if (!lightboxOverlay.classList.contains('open')) return;
+    lightboxOverlay.classList.remove('open');
+    if (lightboxMediaEl) {
+      if (lightboxMediaEl.tagName === 'VIDEO') {
+        lightboxMediaEl.pause();
+        lightboxMediaEl.removeAttribute('src');
+        lightboxMediaEl.load(); // stop any in-flight buffering of the full-size source
+      }
+      lightboxMediaEl.remove();
+      lightboxMediaEl = null;
+    }
+  }
+
+  function openLightbox(url, mediaType) {
+    if (!url) return;
+    closeLightbox(); // defensive — should never already be open, but never stack two media elements
+    var el;
+    if (mediaType === 'image') {
+      el = document.createElement('img');
+      el.className = 'ml-lightbox-media';
+      el.alt = '';
+      el.src = url;
+    } else {
+      el = document.createElement('video');
+      el.className = 'ml-lightbox-media';
+      el.controls = true;
+      el.playsInline = true;
+      el.autoplay = true;
+      // Deliberately NOT muted — the in-grid <video> is muted by design
+      // (autoplay-safe thumbnail), and this lightbox is the one explicit
+      // user action ("I want to actually watch this") that should play
+      // with real sound and native controls, per the tracker item's own
+      // "at minimum toggles play/pause with sound" bar.
+      el.src = url;
+    }
+    lightboxContent.appendChild(el);
+    lightboxMediaEl = el;
+    lightboxOverlay.classList.add('open');
+  }
+
+  lightboxCloseBtn.addEventListener('click', closeLightbox);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && lightboxOverlay.classList.contains('open')) closeLightbox();
+  });
+  if (window.SheetDismiss) SheetDismiss.wire(lightboxOverlay, closeLightbox);
+
+  document.getElementById('ml-grid').addEventListener('click', function (e) {
+    var card = e.target.closest('.vcard');
+    if (!card) return;
+    openLightbox(card.getAttribute('data-media-url'), card.getAttribute('data-media-type'));
+  });
 
   function loadData() {
     return fetch('/.netlify/functions/admin-media-library-data', {
