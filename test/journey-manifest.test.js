@@ -102,9 +102,14 @@ test('JOURNEY_MANIFEST.md: wizard.html\'s actual SCREEN_RENDERERS sequence match
 
 test('JOURNEY_MANIFEST.md: index.html\'s "Get Started" CTA still routes into wizard.html, the documented Journey 2 entry point', function () {
   var source = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  // ?entry=index (tracker item for-product-urgent-founder-repro-index-g-
+  // c6boa9) is a deliberate marker, not a route change -- wizard.html's
+  // returning-visitor guard reads it to distinguish an explicit
+  // Get-Started click (proceed) from a direct/bookmarked hit (still
+  // bounced to index.html) -- see that guard's own doc comment.
   assert.match(
     source,
-    /href="wizard\.html"/,
+    /href="wizard\.html(\?entry=index)?"/,
     'index.html no longer links "Get Started" straight to wizard.html -- this is the documented Journey 2 entry seam in docs/JOURNEY_MANIFEST.md. If this routing changed deliberately, update the manifest\'s Journey 2 table to match.'
   );
 });

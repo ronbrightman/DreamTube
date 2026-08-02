@@ -404,6 +404,69 @@ test('BUG 2 regression: wizard.html, visited directly while logged out on a brow
   }
 });
 
+test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6boa9): a returning-but-logged-out visitor who explicitly clicks "Get Started" on index.html proceeds into wizard.html -- must NOT bounce straight back to index.html a second time', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      // Same stale-but-logged-out state as the BUG 2 regression above --
+      // this visitor already saw index.html's own "Log in" link and chose
+      // Get Started anyway, an informed choice the guard has no business
+      // overriding a second time.
+      var state = {
+        user: null,
+        accounts: { staleoriginuser2: { password: 'testpass1', email: 'staleoriginuser2@example.com' } },
+        dreams: [],
+        pendingJob: null,
+        draft: { caption: '', storyText: '', style: null, sourceDreamId: null, characterIds: [] }
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    await safeGoto(page, baseUrl + '/index.html');
+    await page.click('a.btn-primary');
+    await page.waitForURL(/\/wizard\.html/, { timeout: 5000 });
+
+    var bodyText = await page.evaluate(function () { return document.body.innerText; });
+    assert.match(bodyText, /Who.s the dream about\?/, 'an explicit Get-Started click must reach the wizard\'s first question, not bounce back to index.html');
+
+    // The ?entry=index marker must not linger in the address bar once read.
+    var url = new URL(page.url());
+    assert.equal(url.searchParams.get('entry'), null, 'the entry=index marker must be stripped from the URL after being consumed');
+  } finally {
+    await page.close();
+  }
+});
+
+test('BUG 3 regression, control: a DIRECT/bookmarked hit to wizard.html (no ?entry=index marker) with the same stale account history still bounces to index.html -- the marker-based fix must not reopen BUG 2', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var state = {
+        user: null,
+        accounts: { staleoriginuser3: { password: 'testpass1', email: 'staleoriginuser3@example.com' } },
+        dreams: [],
+        pendingJob: null,
+        draft: { caption: '', storyText: '', style: null, sourceDreamId: null, characterIds: [] }
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForURL(/\/index\.html$/, { timeout: 5000 });
+
+    var bodyText = await page.locator('.welcome-body').innerText();
+    assert.match(bodyText, /already have an account\?/i, 'a direct hit with no entry marker must still bounce to the welcome/choice screen');
+  } finally {
+    await page.close();
+  }
+});
+
 test('BUG 2 regression, control: wizard.html, visited directly while logged out on a GENUINELY brand-new browser (no local account history at all), still renders the pre-signup wizard normally -- this fix must not affect real first-time visitors', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

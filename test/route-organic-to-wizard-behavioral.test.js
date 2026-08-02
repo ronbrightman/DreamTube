@@ -85,17 +85,22 @@ test('index.html: organic/direct visitor -- the "Get Started" CTA links straight
   try {
     await safeGoto(page, baseUrl + '/index.html');
 
+    // ?entry=index (tracker item for-product-urgent-founder-repro-index-g-
+    // c6boa9) is a deliberate marker, not a route change -- wizard.html's
+    // returning-visitor guard reads it to let an explicit Get-Started
+    // click proceed even with stale local account history, see that
+    // guard's own doc comment.
     var href = await page.getAttribute('a.btn-primary.btn-block', 'href');
-    assert.equal(href, 'wizard.html', '"Get Started" must point at wizard.html, not start.html or the external dreamtube-growth funnel');
+    assert.equal(href, 'wizard.html?entry=index', '"Get Started" must point at wizard.html, not start.html or the external dreamtube-growth funnel');
 
     // Follow the link for real and confirm it actually lands on wizard.html
     // (not just that the href string looks right) -- clicking through is
     // what a real organic/direct visitor does.
     await Promise.all([
-      page.waitForURL(/wizard\.html$/, { waitUntil: 'domcontentloaded' }),
+      page.waitForURL(/wizard\.html/, { waitUntil: 'domcontentloaded' }),
       page.click('a.btn-primary.btn-block')
     ]);
-    assert.match(page.url(), /\/wizard\.html$/, 'clicking "Get Started" from index.html must land on wizard.html');
+    assert.match(page.url(), /\/wizard\.html/, 'clicking "Get Started" from index.html must land on wizard.html');
   } finally {
     await page.close();
   }
