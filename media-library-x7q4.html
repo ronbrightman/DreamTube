@@ -41,14 +41,32 @@
 </head>
 <body>
 
-<div id="app">
+<div id="app" class="scroll-shell">
   <div class="topbar">
     <a class="icon-btn" id="ml-back" href="admin.html"></a>
     <div class="topbar-logo" style="font-size:15px;">Media Library</div>
     <div style="width:36px;"></div>
   </div>
 
-  <div class="px" style="flex:1;">
+  <!-- Desktop-scroll fix (founder got stuck at the fold on a desktop
+       viewport): #app gets a fixed height + overflow:hidden once desktop's
+       phone-frame styling kicks in (css/styles.css's own
+       @media(min-width:560px) rule), and body is flex+stretch at that same
+       breakpoint, so a bare #app with no internal scroll region has NOTHING
+       that can scroll once its content (this grid, especially once loaded
+       with many items) is taller than one viewport — content past the fold
+       is simply clipped, with no scrollbar anywhere. On a narrow/mobile
+       viewport this was invisible because #app there is plain block flow
+       and the whole document scrolls normally, so it never got caught.
+       tracker.html (another long-content owner-only page) already
+       establishes the fix for this exact shape: #app gets `scroll-shell`
+       (css/styles.css's own `#app.scroll-shell{ height:100dvh; }`, giving
+       #app a definite height on every viewport, not just desktop) and the
+       actually-scrollable region moves to a `.scroll-area` div between the
+       fixed topbar and the content (`.scroll-area{ flex:1; min-height:0;
+       overflow-y:auto; }`) — same pattern applied here. -->
+  <div class="scroll-area">
+  <div class="px">
     <div class="admin-row-sub" id="ml-version-line" style="display:none; margin-bottom:16px; padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--border); font-size:11.5px; line-height:1.5;"></div>
 
     <!-- Unauthorized / not-logged-in state -->
@@ -94,12 +112,27 @@
         <select class="ml-select" id="ml-filter-account">
           <option value="">All accounts</option>
         </select>
+        <!-- Published/Private filter (tracker item
+             for-product-media-library-founder-feedba-wnr3iw): the backend
+             already returns both private and published media in one array
+             (each item carries an `isPublished` boolean — see
+             admin-media-library-data.js's own itemsForRecord) and the grid
+             already badges each card "Published"/"Private" (cardHTML
+             below) — this was genuinely just a missing filter control, not
+             a missing data source; verified by reading
+             admin-media-library-data.js/dream-store.js before building. -->
+        <select class="ml-select" id="ml-filter-published">
+          <option value="">All (published + private)</option>
+          <option value="published">Published only</option>
+          <option value="private">Private only</option>
+        </select>
         <button type="button" class="btn btn-ghost" id="ml-refresh-btn" style="width:auto; padding:8px 16px;">Refresh</button>
       </div>
 
       <div class="video-grid" id="ml-grid"></div>
       <div class="ml-empty" id="ml-empty" style="display:none;">No media matches this filter.</div>
     </div>
+  </div>
   </div>
 </div>
 
@@ -241,9 +274,12 @@
   function renderGrid() {
     var statusFilter = document.getElementById('ml-filter-status').value;
     var accountFilter = document.getElementById('ml-filter-account').value;
+    var publishedFilter = document.getElementById('ml-filter-published').value;
     var filtered = allItems.filter(function (it) {
       if (statusFilter && it.status !== statusFilter) return false;
       if (accountFilter && it.ownerHandle !== accountFilter) return false;
+      if (publishedFilter === 'published' && !it.isPublished) return false;
+      if (publishedFilter === 'private' && it.isPublished) return false;
       return true;
     });
     // Newest first — most useful default for "did the thing I just made
@@ -310,6 +346,7 @@
   });
   document.getElementById('ml-filter-status').addEventListener('change', renderGrid);
   document.getElementById('ml-filter-account').addEventListener('change', renderGrid);
+  document.getElementById('ml-filter-published').addEventListener('change', renderGrid);
 
   // ===== Backfill sweep (admin-backfill-media-rehost.js) — drives the
   // paginated sweep to completion (accounts phase, then the feed phase),
