@@ -226,3 +226,143 @@ test('passwordless arm: a genuinely undeliverable email is rejected inline, matc
     await context.close();
   }
 });
+
+// ===========================================================================
+// SECURITY FIX regression (round-2 review finding): an already-registered
+// email must NEVER grant instant access -- it must show a code-entry step,
+// and only a correct code (via login-with-email-code.js) actually signs
+// the visitor in. This is the real end-to-end proof the client-side half
+// of the fix works, not just the server-side unit tests in
+// test/passwordless-signup.test.js.
+// ===========================================================================
+
+test('passwordless arm SECURITY FIX: an already-registered email shows a code step instead of instantly signing in -- no username/authToken ever reaches the page for that response', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await enablePasswordlessArm(page);
+    await mockGetFeed(page, []);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-x', operationName: 'fal:fake-model:req-x' }) });
+    });
+    // The server response an ALREADY-REGISTERED email actually gets, post-fix
+    // -- no authToken, no username, ever.
+    await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, created: false, pendingVerification: true }) });
+    });
+
+    await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
+    await page.waitForSelector('#fn-email', { timeout: 8000 });
+    await page.fill('#fn-email', 'existingowner@example.com');
+    await page.click('#fn-s13-continue');
+
+    // Must land on the code step, never advance to screen 14.
+    await page.waitForSelector('#fn-login-code', { timeout: 8000 });
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0, 'must never reach the pricing screen off a bare, unproven email match');
+
+    // Confirm this browser genuinely has no session at all yet.
+    var loggedIn = await page.evaluate(function () { return !!DreamStore.getCurrentUser(); });
+    assert.equal(loggedIn, false, 'SECURITY: a bare email match must never sign the visitor in');
+  } finally {
+    await context.close();
+  }
+});
+
+test('passwordless arm SECURITY FIX: entering the CORRECT mailed code (via login-with-email-code.js) completes the login, does NOT fire CompleteRegistration (this is a login, not a new signup), and reaches screen 14', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await enablePasswordlessArm(page);
+    await mockGetFeed(page, []);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-y', operationName: 'fal:fake-model:req-y' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    });
+    await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, created: false, pendingVerification: true }) });
+    });
+    var loginCalls = [];
+    await page.route('**/.netlify/functions/login-with-email-code', function (route) {
+      loginCalls.push(JSON.parse(route.request().postData() || '{}'));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'realowner', email: 'existingowner@example.com', authToken: 'fake-login-token' }) });
+    });
+    var conversions = [];
+    await page.route('**/.netlify/functions/track-conversion', function (route) {
+      conversions.push(JSON.parse(route.request().postData() || '{}'));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
+    await page.waitForSelector('#fn-email', { timeout: 8000 });
+    await page.fill('#fn-email', 'existingowner@example.com');
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-login-code', { timeout: 8000 });
+
+    await page.fill('#fn-login-code', '482913');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
+    assert.equal(loginCalls.length, 1);
+    assert.equal(loginCalls[0].code, '482913');
+    assert.equal(loginCalls[0].email, 'existingowner@example.com');
+
+    var registrations = conversions.filter(function (c) { return c.event_name === 'CompleteRegistration'; });
+    assert.equal(registrations.length, 0, 'a code-completed LOGIN must never fire CompleteRegistration -- same rule every other login path in this file already follows');
+
+    var handle = await page.evaluate(function () { var u = DreamStore.getCurrentUser(); return u && u.handle; });
+    assert.equal(handle, '@realowner');
+  } finally {
+    await context.close();
+  }
+});
+
+test('passwordless arm SECURITY FIX: a WRONG code shows an inline error and does not sign in or advance', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await enablePasswordlessArm(page);
+    await mockGetFeed(page, []);
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-z', operationName: 'fal:fake-model:req-z' }) });
+    });
+    await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, created: false, pendingVerification: true }) });
+    });
+    await page.route('**/.netlify/functions/login-with-email-code', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'E4: invalid_code' }) });
+    });
+
+    await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
+    await page.waitForSelector('#fn-email', { timeout: 8000 });
+    await page.fill('#fn-email', 'existingowner@example.com');
+    await page.click('#fn-s13-continue');
+    await page.waitForSelector('#fn-login-code', { timeout: 8000 });
+
+    await page.fill('#fn-login-code', '000000');
+    await page.click('#fn-s13-continue');
+
+    await page.waitForSelector('#fn-signup-error:not(:empty)', { timeout: 5000 });
+    assert.equal(await page.locator('#fn-s14-continue').count(), 0);
+    var loggedIn = await page.evaluate(function () { return !!DreamStore.getCurrentUser(); });
+    assert.equal(loggedIn, false);
+  } finally {
+    await context.close();
+  }
+});

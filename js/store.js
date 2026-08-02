@@ -17,26 +17,35 @@
 //   signupPasswordless(email) -> Promise, POST /.netlify/functions/register-
 //       account-passwordless (tracker item for-product-build-passwordless-
 //       signup-fo-at2fko) — the founder-decided passwordless entry path: no
-//       password field, ever. Username is derived server-side; the account
-//       is created (or, if this email already has one, resolved/logged
-//       into) and the caller is signed in immediately, with
-//       `emailVerified:false` on a genuinely new account until a later,
-//       deferred verification (see verifyEmailCode/resendVerificationCode
-//       below and js/email-verify-sheet.js) — never blocking at signup
-//       time. Falls back to a LOCAL-ONLY account (same "server
+//       password field, ever. Username is derived server-side. A genuinely
+//       NEW email creates the account and signs the caller in immediately,
+//       with `emailVerified:false` until a later, deferred verification
+//       (see verifyEmailCode/resendVerificationCode below and
+//       js/email-verify-sheet.js) — never blocking at signup time. An
+//       ALREADY-REGISTERED email does NOT sign the caller in — see
+//       loginWithEmailCode below and this method's own SECURITY FIX doc
+//       comment for why a bare email match must never grant access to an
+//       existing account. Falls back to a LOCAL-ONLY account (same "server
 //       unreachable" degrade signup() already has) if the network call
-//       itself can't be completed — the local fallback's account is marked
-//       `emailVerified:true` (see commitLocalPasswordlessSignup's own
+//       itself can't be completed at all — the local fallback's account is
+//       marked `emailVerified:true` (see commitLocalPasswordlessSignup's own
 //       comment for why: with no server round trip, no code was ever sent
 //       to gate against, so treating it as verified is the "under-gate"
 //       side of this feature's own stated default).
+//   loginWithEmailCode(email,code) -> Promise, POST /.netlify/functions/
+//       login-with-email-code — completes signupPasswordless's "resolve an
+//       existing account" branch: a genuine LOGIN (no prior session), only
+//       granted once the server confirms the mailed 6-digit code actually
+//       matches.
 //   getAccountEmailVerified() -> local read of the signed-in account's own
 //       cached `emailVerified` (refreshed on every signup/login response)
 //       — lets UI (js/email-verify-sheet.js) decide whether to ever bother
 //       prompting, with no network call.
 //   verifyEmailCode(code) -> Promise, POST /.netlify/functions/verify-
 //       email-code {authToken, code} — the explicit "type the code back
-//       in" half of deferred verification.
+//       in" half of deferred verification for an ALREADY-signed-in,
+//       unverified account (not to be confused with loginWithEmailCode
+//       above, which establishes a session in the first place).
 //   resendVerificationCode() -> Promise, POST /.netlify/functions/resend-
 //       verification-code {authToken}.
 //   login(usernameOrEmail,password)  -> Promise, POST /.netlify/functions/account-login
@@ -3215,8 +3224,38 @@
     /**
      * Passwordless signup (tracker item for-product-build-passwordless-
      * signup-fo-at2fko) — see this file's own header comment for the full
-     * feature summary. Returns a Promise of { ok:true, user } or
-     * { ok:false, error }. No password is ever sent, required, or stored.
+     * feature summary. Returns a Promise of one of:
+     *   { ok:true, user }                      — a brand-new account, or the
+     *                                             offline-fallback branch;
+     *                                             signed in immediately.
+     *   { ok:true, pendingVerification:true, email } — the email already has
+     *                                             an account. NO session is
+     *                                             established (see the
+     *                                             SECURITY FIX note below) —
+     *                                             the caller must show a
+     *                                             "check your email" step
+     *                                             and call
+     *                                             loginWithEmailCode(email,
+     *                                             code) once the visitor has
+     *                                             the code, or wait for a
+     *                                             link click.
+     *   { ok:false, error }                    — a real rejection.
+     * No password is ever sent, required, or stored.
+     *
+     * SECURITY FIX (round-2 review finding, real, fixed 2026-08-02): this
+     * used to commit a local session straight off ANY ok:true response,
+     * including a resolve-into-an-existing-account one — server-side,
+     * register-account-passwordless.js used to mint a real authToken for
+     * that existing account with zero proof the caller controlled its
+     * inbox (a one-request account takeover, closed server-side — see that
+     * file's own header comment for the full incident writeup). Even after
+     * that server-side fix, this client function still needed its own
+     * fix: `pendingVerification:true` is also `ok:true`, and blindly
+     * routing every `ok:true` through commitLocalPasswordlessSignupIfCurrent
+     * would have tried to sign in with `data.username === undefined` (a
+     * TypeError waiting to happen, since that branch never sends a
+     * username at all now) — checked FIRST, explicitly, below.
+     *
      * Shares signupCallSeq with signup() above (see
      * commitLocalPasswordlessSignupIfCurrent's own doc comment) — a
      * password-path signup() call and a signupPasswordless() call racing
@@ -3238,6 +3277,13 @@
       }).then(function (res) {
         return res.json();
       }).then(function (data) {
+        // Checked BEFORE the generic `data.ok` branch below — see this
+        // method's own SECURITY FIX doc comment for why order matters
+        // here. No local state is touched at all on this branch: there is
+        // no session to commit yet.
+        if (data && data.ok && data.pendingVerification) {
+          return { ok: true, pendingVerification: true, email: email };
+        }
         if (data && data.ok) {
           return commitLocalPasswordlessSignupIfCurrent(mySignupSeq, data.username, email, data.authToken, data.emailVerified, !!data.created);
         }
@@ -3256,6 +3302,69 @@
         var username = deriveLocalUsernameForPasswordlessFallback(email);
         return commitLocalPasswordlessSignupIfCurrent(mySignupSeq, username, email, null, true, true);
       }
+    },
+
+    /**
+     * Completes the "resolve into an existing account" half of
+     * signupPasswordless (tracker item for-product-build-passwordless-
+     * signup-fo-at2fko's SECURITY FIX — see that method's own doc comment
+     * for the full incident writeup). POSTs the mailed 6-digit code to
+     * login-with-email-code.js — a genuine LOGIN (this device has no prior
+     * session at all), which only ever mints a real authToken once the
+     * server confirms the code actually matches what was mailed to that
+     * address. Returns a Promise of { ok:true, user } or { ok:false,
+     * error }. A successful call also implicitly verifies the account
+     * (checking a real code IS ownership proof — same rule verify-email-
+     * code.js's own success path already follows), so no separate
+     * verification step is ever needed afterward.
+     *
+     * Materializes/updates the local `accounts` entry the same way login()
+     * does (brand-new-to-this-device vs. already-known-locally), including
+     * awaiting reconcilePrivateDreamsFromServer() before resolving — same
+     * "a login is exactly what webview-storage-wipe recovery looks like"
+     * reasoning login()'s own doc comment gives for why that isn't
+     * fire-and-forget here either.
+     */
+    loginWithEmailCode: function (email, code) {
+      email = (email || '').trim();
+      code = (code || '').trim();
+      if (!code) return Promise.resolve({ ok: false, error: 'Enter the code from your email.' });
+
+      return fetch('/.netlify/functions/login-with-email-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, code: code })
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (!data || !data.ok || !data.username) {
+          var err = (data && data.error) || '';
+          if (err.indexOf('too_many_attempts') !== -1) return { ok: false, error: 'Too many tries — request a fresh code and try again.' };
+          return { ok: false, error: "That code didn't match — try again." };
+        }
+        var key = data.username.toLowerCase();
+        if (!state.accounts[key]) {
+          // Same brand-new-to-this-device placeholder shape login() itself
+          // materializes — no password (this is, and stays, a passwordless
+          // account), emailVerified true (a real code check just proved
+          // ownership).
+          state.accounts[key] = { password: null, email: (data.email || '').toLowerCase(), emailVerified: true };
+        } else {
+          state.accounts[key].password = null;
+          if (data.email) state.accounts[key].email = data.email.toLowerCase();
+          state.accounts[key].emailVerified = true;
+        }
+        var username = pinLegacyRenameIdentity(key, data.username);
+        clearLikesTrackingState();
+        state.user = { handle: '@' + username, username: username, authToken: data.authToken || null };
+        persist();
+        identifyForAnalytics(username);
+        return reconcilePrivateDreamsFromServer().then(function () {
+          return { ok: true, user: state.user };
+        });
+      }).catch(function () {
+        return { ok: false, error: "Couldn't reach the server — try again." };
+      });
     },
 
     /**

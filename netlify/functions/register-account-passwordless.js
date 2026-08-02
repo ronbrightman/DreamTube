@@ -9,38 +9,76 @@
 // `null`, the same already-accepted shape a Facebook-Login-only account
 // uses — see lib/account-store.js's header comment).
 //
-// IDENTITY RESOLUTION — deliberately mirrors facebook-oauth-callback.js's
-// resolveIdentity (email is the one source of truth for "does this person
-// already have an account"), just without any fbUserId step:
-//   1. getByEmail hit  -> RESOLVE (log into) that existing account. No new
-//      account, no new verification email forced on top of whatever
-//      verification state that account already has — see below.
+// SECURITY FIX (round-2 review finding, real, fixed 2026-08-02 — read
+// before changing anything below): an earlier version of this file
+// resolved an already-registered email to its existing account AND minted
+// a fully usable authToken for it, with ZERO proof the caller controls
+// that inbox. That is a complete, one-request account takeover — anyone
+// who knows a victim's public email address (every DreamTube handle's
+// email is not itself public, but this endpoint doesn't check anything
+// AT ALL, so it doesn't matter) gets a real session for that account.
+//
+// The header comment this file shipped with actually said the quiet part
+// out loud and got it wrong: "mirrors facebook-oauth-callback.js's
+// resolveIdentity" — that comparison does NOT hold. Facebook's OAuth
+// handshake proves email ownership via Facebook's own servers (a
+// server-to-server code exchange + Graph API call, see that file's own
+// SECURITY BOUNDARY comment) BEFORE resolveIdentity ever runs. This
+// endpoint has no equivalent proof step — it trusted the raw client-
+// supplied email string directly, which is not proof of anything.
+//
+// The founder's own "instantly in, no inbox check at the wall" spec
+// describes a genuinely NEW signup (branch 2 below) — there is nothing to
+// protect yet on a brand-new account, so no proof is needed before it's
+// usable. It does NOT mean typing someone ELSE's already-registered email
+// should grant instant access to THEIR account.
+//
+// CORRECTED IDENTITY RESOLUTION:
+//   1. getByEmail hit  -> RESOLVE, but do NOT mint a session. A fresh
+//      code + implicit-verification link are sent to that account's real
+//      email (same lib/verification-email-sender.js call the create
+//      branch uses), and the response carries NO authToken/username at
+//      all — { ok:true, created:false, pendingVerification:true }. The
+//      caller must actually prove they control that inbox via one of:
+//        - login-with-email-code.js: POST {email, code} -> mints a real
+//          session ONLY once the mailed code checks out.
+//        - verify-email-link.js: clicking the mailed link both verifies
+//          AND (as of this fix) mints a session-transfer token for
+//          whatever device clicks it — see that file's own header
+//          comment.
+//      This is the exact same "prove ownership via a mailed code/link,
+//      THEN get a session" mechanism this feature already built for
+//      deferred verification — reused here as the actual access-control
+//      gate for an existing account, not invented fresh.
 //   2. getByEmail miss -> CREATE a brand-new account: username derived via
 //      lib/derive-username.js (the same server-side derivation
 //      facebook-oauth-callback.js already uses for "we have an email but
-//      need a username"), password:null, emailVerified:false. Then fires
-//      the verification-code email (lib/verification-email-sender.js),
-//      fire-and-forget — see the FIRE-AND-FORGET note below.
-// Either branch mints a fresh lib/account-auth-token.js token and lets the
-// caller straight into the app — "instantly in" applies to BOTH a genuine
-// first-time signup and a returning passwordless visitor typing their
-// email again, since there's no password step to distinguish them at.
+//      need a username"), password:null, emailVerified:false. THIS branch
+//      alone mints a real authToken immediately and sends the
+//      verification email fire-and-forget (see the FIRE-AND-FORGET note
+//      below) — "instantly in" applies here, and only here, because
+//      there is nothing pre-existing this request could be hijacking.
 //
-// FIRE-AND-FORGET EMAIL SEND: the verification email is sent AFTER the
-// account is created but the response is NOT held up waiting for Resend —
-// same "never let email delivery block a real product action" discipline
-// as lib/first-dream-email-sender.js. The send is still AWAITED (not a
-// bare unresolved promise) so a real error is logged, but only after the
-// account genuinely exists and mints its token; nothing about a slow or
-// failed Resend call can prevent or delay the signup itself.
+// FIRE-AND-FORGET EMAIL SEND (branch 2 only): the verification email is
+// sent AFTER the account is created but the response is NOT held up
+// waiting for Resend — same "never let email delivery block a real
+// product action" discipline as lib/first-dream-email-sender.js. The send
+// is still AWAITED (not a bare unresolved promise) so a real error is
+// logged, but only after the account genuinely exists and mints its
+// token; nothing about a slow or failed Resend call can prevent or delay
+// the signup itself. Branch 1's send is likewise awaited-for-logging-only,
+// but happens BEFORE anything privileged is returned (there is nothing
+// privileged returned on branch 1 either way).
 //
 // Response shapes:
-//   200 { ok:true, username, email, authToken, created, emailVerified }
-//     — created:true only on branch 2 above (a genuinely new account);
-//       emailVerified mirrors the resolved/created account's own current
-//       state (false for a fresh signup, whatever it already was for a
-//       resolved existing one) so the client can decide locally whether to
-//       ever bother prompting for a code later.
+//   200 { ok:true, created:true, username, email, authToken, emailVerified:false }
+//     — branch 2, a genuinely new account. Only shape that ever carries
+//       authToken/username.
+//   200 { ok:true, created:false, pendingVerification:true }
+//     — branch 1, an existing account was found. No authToken, no
+//       username — the client must now show a "check your email" step
+//       (see start.html's renderScreen13Passwordless) and call
+//       login-with-email-code.js or wait for a link click.
 //   200 { ok:false, error: 'E6: no_available_username' } — see
 //       lib/derive-username.js's own fail-closed contract; effectively
 //       unreachable in practice (8 collision retries on a truly random
@@ -72,7 +110,8 @@
 //                                write race account-store.js's own header
 //                                comment documents as accepted elsewhere;
 //                                a retried signup for the same email just
-//                                resolves as a login on the next attempt)
+//                                resolves as a pending-verification response
+//                                on the next attempt)
 
 var accountStore = require('./lib/account-store');
 var deriveUsername = require('./lib/derive-username');
@@ -137,41 +176,46 @@ exports.handler = async function (event) {
 
   try {
     var existing = await accountStore.getByEmail(event, email);
-    var resolved;
+
+    // Branch 1 — RESOLVE, but never mint a session here. See header
+    // comment's SECURITY FIX section for the full "why". A fresh code +
+    // link are sent (this account may never have completed verification,
+    // or its original code may be long expired/lost); the caller must
+    // prove ownership via login-with-email-code.js or the mailed link
+    // before getting anything usable.
     if (existing) {
-      resolved = { ok: true, record: existing, created: false };
-    } else {
-      resolved = await createPasswordlessAccount(event, email);
-      if (!resolved.ok) {
-        var code = resolved.error === 'no_available_username' ? 'E6: no_available_username' : 'E7: server_error';
-        return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
-      }
+      await verificationEmailSender.sendVerificationEmail(event, {
+        username: existing.username,
+        email: existing.email
+      });
+      return { statusCode: 200, body: JSON.stringify({ ok: true, created: false, pendingVerification: true }) };
     }
 
-    var authToken = await accountAuthToken.mintToken(event, resolved.record.username);
+    // Branch 2 — CREATE. Nothing pre-existing to protect, so this is the
+    // one case that's genuinely "instantly in".
+    var created = await createPasswordlessAccount(event, email);
+    if (!created.ok) {
+      var code = created.error === 'no_available_username' ? 'E6: no_available_username' : 'E7: server_error';
+      return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };
+    }
+
+    var authToken = await accountAuthToken.mintToken(event, created.record.username);
 
     // Fire-and-forget send, AWAITED for logging only — see header comment.
-    // Only ever sent for a genuinely brand-new, still-unverified account:
-    // a RESOLVED (existing) account never gets a surprise re-send just for
-    // typing its email into the wall again — if it wants a fresh code it
-    // uses the explicit resend-verification-code.js endpoint instead (see
-    // that file's own header comment).
-    if (resolved.created) {
-      await verificationEmailSender.sendVerificationEmail(event, {
-        username: resolved.record.username,
-        email: resolved.record.email
-      });
-    }
+    await verificationEmailSender.sendVerificationEmail(event, {
+      username: created.record.username,
+      email: created.record.email
+    });
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         ok: true,
-        username: resolved.record.username,
-        email: resolved.record.email,
+        created: true,
+        username: created.record.username,
+        email: created.record.email,
         authToken: authToken,
-        created: !!resolved.created,
-        emailVerified: resolved.record.emailVerified !== false
+        emailVerified: false
       })
     };
   } catch (e) {

@@ -98,32 +98,87 @@ test('register-account-passwordless: a brand-new email creates a password-less, 
   });
 });
 
-test('register-account-passwordless: a SECOND submit for the same email RESOLVES (logs into) the existing account rather than erroring or duplicating', async function () {
+// ===========================================================================
+// SECURITY (round-2 review finding, fixed): a bare POST of an email that
+// already has a real account used to RESOLVE that account and mint a
+// fully usable authToken with ZERO proof the caller actually controls that
+// inbox — full account takeover via one unauthenticated request, no code,
+// no link click, nothing. Founder's "instantly in, no inbox check at the
+// wall" language covers a genuinely NEW signup (branch 2, nothing to
+// protect yet) — it was never meant to also mean "typing someone ELSE's
+// already-registered email grants instant access to THEIR account". The
+// resolve branch now sends a fresh code/link (same mechanism as a new
+// signup) and returns NO authToken/username at all — the caller must prove
+// ownership via login-with-email-code.js (the code) or verify-email-link.js
+// (the link) before getting a real session. See that file's own header
+// comment for the corrected design.
+// ===========================================================================
+
+test('register-account-passwordless: a SECOND submit for the same email RESOLVES the account but grants NO usable session -- no authToken, no username, until ownership is actually proven', async function () {
   return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
     installFetchSpy(true);
     var handler = require('../netlify/functions/register-account-passwordless').handler;
     var first = await handler(reqEvent({ body: { email: 'bram@example.com' } }));
     var firstBody = JSON.parse(first.body);
     assert.equal(firstBody.created, true);
+    assert.ok(firstBody.authToken, 'the genuine creator, on THEIR OWN first submit, is instantly in -- this is the one case the founder\'s "instantly in" language actually covers');
 
     var second = await handler(reqEvent({ body: { email: 'bram@example.com' } }));
     var secondBody = JSON.parse(second.body);
     assert.equal(secondBody.ok, true);
     assert.equal(secondBody.created, false, 'a second submit for an already-registered email must resolve, not create a duplicate');
-    assert.equal(secondBody.username, firstBody.username);
-    assert.ok(secondBody.authToken);
-    assert.notEqual(secondBody.authToken, firstBody.authToken, 'each resolve still mints its own fresh token');
+    assert.equal(secondBody.pendingVerification, true);
+    assert.equal(secondBody.authToken, undefined, 'THE FIX: a bare resolve must never hand back a usable authToken');
+    assert.equal(secondBody.username, undefined, 'THE FIX: a bare resolve must never hand back the account\'s username either');
   });
 });
 
-test('register-account-passwordless: never sends a verification email on a RESOLVE (existing account), only on a genuine create', async function () {
+// THE ACTUAL ATTACK SCENARIO (what the vulnerable version's own test above
+// used to fail to exercise: a DIFFERENT caller than the account's real
+// owner, not just "the same person submitting twice").
+test('SECURITY: an attacker who does not own an existing account\'s inbox gets NO usable access by simply POSTing that email -- no account takeover', async function () {
+  return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    installFetchSpy(true);
+    var handler = require('../netlify/functions/register-account-passwordless').handler;
+    // The real owner signs up once, genuinely, on their own device.
+    var victimSignup = await handler(reqEvent({ body: { email: 'victim@example.com' } }));
+    var victimBody = JSON.parse(victimSignup.body);
+    assert.equal(victimBody.created, true);
+    assert.ok(victimBody.authToken);
+
+    // An attacker, on a COMPLETELY different request (no code, no link,
+    // nothing but knowledge of the victim's public email address), submits
+    // the exact same email to this same endpoint.
+    var attackerAttempt = await handler(reqEvent({ body: { email: 'victim@example.com' } }));
+    var attackerBody = JSON.parse(attackerAttempt.body);
+
+    // The attacker must get NOTHING usable: no authToken to forge requests
+    // with, no username confirmation.
+    assert.equal(attackerBody.authToken, undefined, 'SECURITY: the attacker must never receive a usable authToken for the victim\'s account');
+    assert.equal(attackerBody.username, undefined);
+
+    // Prove it's not just "the field is missing from the response" --
+    // confirm no NEW token was even minted server-side that the attacker
+    // could have captured some other way. account-auth-token.js has no
+    // "list all tokens for a username" API, so the strongest available
+    // proof is behavioral: the victim's OWN original token must still be
+    // the only valid one, and it must still resolve to the victim's
+    // account, completely undisturbed by the attacker's request.
+    var accountAuthToken = require('../netlify/functions/lib/account-auth-token');
+    var victimTokenStillValid = await accountAuthToken.verifyToken(fakeEvent({ method: 'POST' }), victimBody.authToken);
+    assert.equal(victimTokenStillValid.ok, true);
+    assert.equal(victimTokenStillValid.username, 'victim');
+  });
+});
+
+test('register-account-passwordless: a RESOLVE (existing account) sends a FRESH verification email every time it is submitted -- this is now the actual access mechanism, not a bonus', async function () {
   return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
     var sentCalls = installFetchSpy(true);
     var handler = require('../netlify/functions/register-account-passwordless').handler;
     await handler(reqEvent({ body: { email: 'cleo@example.com' } }));
     assert.equal(sentCalls.length, 1);
     await handler(reqEvent({ body: { email: 'cleo@example.com' } }));
-    assert.equal(sentCalls.length, 1, 'the resolve branch must not trigger a second send');
+    assert.equal(sentCalls.length, 2, 'a resolve must send a fresh code every time -- it is the only way back in without a session');
   });
 });
 
@@ -289,9 +344,104 @@ test('resend-verification-code: is a no-op (not an error) for an already-verifie
   });
 });
 
+// ===== login-with-email-code.js (the real access-control gate for a RESOLVE) =====
+
+test('login-with-email-code: the real mailed code grants a genuine session for a resolved (already-registered) account -- the actual fix for the account-takeover bug', async function () {
+  return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    installFetchSpy(true);
+    var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+    // First submit -- creates the account, this device is genuinely signed
+    // in with a real token.
+    var first = await registerHandler(reqEvent({ body: { email: 'omar@example.com' } }));
+    var firstBody = JSON.parse(first.body);
+    assert.equal(firstBody.created, true);
+
+    // A SECOND submit (e.g. a different device, or this same one after
+    // clearing storage) resolves but grants nothing yet.
+    var second = await registerHandler(reqEvent({ body: { email: 'omar@example.com' } }));
+    var secondBody = JSON.parse(second.body);
+    assert.equal(secondBody.pendingVerification, true);
+    assert.equal(secondBody.authToken, undefined);
+
+    // The real code from the SECOND (most recent) send -- register-
+    // account-passwordless.js's resolve branch always mails a fresh one.
+    var sentCalls = await (async function () {
+      return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+        // Trigger one more resend and capture it, matching this file's own
+        // established "read the code straight off the sender" convention
+        // (see the verify-email-code tests above) -- can't brute-force it.
+        var calls = installFetchSpy(true);
+        await registerHandler(reqEvent({ body: { email: 'omar@example.com' } }));
+        return calls;
+      });
+    })();
+    var code = /(\d{6})/.exec(sentCalls[0].body.html)[1];
+
+    var loginHandler = require('../netlify/functions/login-with-email-code').handler;
+    var res = await loginHandler(reqEvent({ body: { email: 'omar@example.com', code: code } }));
+    var body = JSON.parse(res.body);
+    assert.equal(body.ok, true);
+    assert.equal(body.username, 'omar');
+    assert.ok(body.authToken);
+
+    var accountStore = require('../netlify/functions/lib/account-store');
+    var acct = await accountStore.getByUsername(fakeEvent({ method: 'POST' }), 'omar');
+    assert.equal(acct.emailVerified, true, 'a successful code login also verifies the account, same as verify-email-code.js\'s own success path');
+  });
+});
+
+test('login-with-email-code: a wrong code is rejected (E4), and an email with no account at all is rejected the SAME way (never distinguishes -- no enumeration)', async function () {
+  var signup = await signUpPasswordless('priya@example.com');
+  var loginHandler = require('../netlify/functions/login-with-email-code').handler;
+
+  var wrongCode = await loginHandler(reqEvent({ body: { email: 'priya@example.com', code: '000000' } }));
+  var wrongBody = JSON.parse(wrongCode.body);
+  assert.equal(wrongBody.ok, false);
+  assert.match(wrongBody.error, /^E4: invalid_code/);
+
+  var noSuchAccount = await loginHandler(reqEvent({ body: { email: 'nobody-registered-xyz@example.com', code: '123456' } }));
+  var noSuchBody = JSON.parse(noSuchAccount.body);
+  assert.equal(noSuchBody.ok, false);
+  assert.match(noSuchBody.error, /^E4: invalid_code/, 'must be the exact same error shape as a wrong code -- never reveal whether an email has an account');
+});
+
+test('login-with-email-code: too many wrong guesses is rejected as E5', async function () {
+  var signup = await signUpPasswordless('quinnzz@example.com');
+  var loginHandler = require('../netlify/functions/login-with-email-code').handler;
+  var emailVerificationStore = require('../netlify/functions/lib/email-verification-store');
+
+  var last;
+  for (var i = 0; i < emailVerificationStore.MAX_CODE_ATTEMPTS + 1; i++) {
+    last = await loginHandler(reqEvent({ body: { email: 'quinnzz@example.com', code: '000000' } }));
+  }
+  assert.match(JSON.parse(last.body).error, /^E5: too_many_attempts/);
+});
+
+test('login-with-email-code: rejects missing fields and non-POST methods', async function () {
+  var handler = require('../netlify/functions/login-with-email-code').handler;
+  var missing = await handler(reqEvent({ body: { email: 'someone@example.com' } }));
+  assert.equal(missing.statusCode, 400);
+  assert.match(JSON.parse(missing.body).error, /^E3: missing_fields/);
+
+  var wrongMethod = await handler(fakeEvent({ method: 'GET' }));
+  assert.equal(wrongMethod.statusCode, 405);
+});
+
+test('login-with-email-code: rate-limited after MAX_EMAIL_CODE_LOGIN_ATTEMPTS_PER_IP_PER_DAY requests from one IP', async function () {
+  return withEnv({ MAX_EMAIL_CODE_LOGIN_ATTEMPTS_PER_IP_PER_DAY: '2' }, async function () {
+    var handler = require('../netlify/functions/login-with-email-code').handler;
+    var ip = '10.44.8.8';
+    await handler(fakeEvent({ method: 'POST', ip: ip, body: { email: 'a@example.com', code: '000000' } }));
+    await handler(fakeEvent({ method: 'POST', ip: ip, body: { email: 'a@example.com', code: '000000' } }));
+    var third = await handler(fakeEvent({ method: 'POST', ip: ip, body: { email: 'a@example.com', code: '000000' } }));
+    assert.equal(third.statusCode, 429);
+    assert.match(JSON.parse(third.body).error, /^E6: rate_limited/);
+  });
+});
+
 // ===== verify-email-link.js (implicit verification) =====
 
-test('verify-email-link: clicking the link marks the account verified with no code and no signed-in session required, then 302s onward', async function () {
+test('verify-email-link: clicking the link marks the account verified with no code and no prior session required, then 302s onward to home.html', async function () {
   var signup = await signUpPasswordless('kira@example.com');
   var record = await readCodeFromStore(signup.username);
   var linkToken = record.linkToken;
@@ -302,11 +452,45 @@ test('verify-email-link: clicking the link marks the account verified with no co
   var res = await handler(fakeEvent({ method: 'GET', query: { token: linkToken } }));
   assert.equal(res.statusCode, 302);
   assert.match(res.headers.Location, /verified=1/);
-  assert.match(res.headers.Location, /\/profile\.html/);
+  assert.match(res.headers.Location, /\/home\.html/, 'redirects to home.html by default -- the one page that actually consumes the bt= session-transfer token below');
 
   var accountStore = require('../netlify/functions/lib/account-store');
   var acct = await accountStore.getByUsername(fakeEvent({ method: 'POST' }), signup.username);
   assert.equal(acct.emailVerified, true);
+});
+
+test('verify-email-link: clicking the link ALSO grants a real, usable session on the clicking device (closes the account-takeover gap -- the link is now the only way back in for a resolved/pending-verification account with no session anywhere)', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+
+  return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    installFetchSpy(true);
+    // First submit: creates the account, but pretend this browser then lost
+    // its own local session entirely (e.g. a different device opens the
+    // email) -- the ONLY thing this second "device" has is the mailed link.
+    await registerHandler(reqEvent({ body: { email: 'noor2@example.com' } }));
+    var record = await readCodeFromStore('noor2');
+
+    var linkHandler = require('../netlify/functions/verify-email-link').handler;
+    var res = await linkHandler(fakeEvent({ method: 'GET', query: { token: record.linkToken } }));
+    var location = new URL(res.headers.Location);
+    var bt = location.searchParams.get('bt');
+    assert.ok(bt, 'the redirect must carry a real session-transfer token');
+
+    // Consume it exactly the way js/store.js's
+    // consumeSessionTransferTokenFromUrlSync actually does, via the real
+    // verify-session-transfer.js endpoint -- proves this is a genuinely
+    // usable, real session grant, not just a token sitting unused in a URL.
+    var consumeHandler = require('../netlify/functions/verify-session-transfer').handler;
+    var consumed = await consumeHandler(fakeEvent({ method: 'POST', body: { token: bt } }));
+    var consumedBody = JSON.parse(consumed.body);
+    assert.equal(consumedBody.ok, true);
+    assert.equal(consumedBody.username, 'noor2');
+    assert.ok(consumedBody.authToken);
+
+    var acct = await accountStore.getByUsername(fakeEvent({ method: 'POST' }), 'noor2');
+    assert.equal(acct.emailVerified, true);
+  });
 });
 
 test('verify-email-link: an unknown/already-used token redirects with an error slug, not a crash, and verifies nothing', async function () {
@@ -337,7 +521,7 @@ test('verify-email-link: an open-redirect attempt via `redirect` is rejected -- 
   assert.equal(res.statusCode, 302);
   // Falls back to the safe default rather than honoring the attacker-
   // controlled absolute URL.
-  assert.match(res.headers.Location, /\/profile\.html/);
+  assert.match(res.headers.Location, /\/home\.html/);
   assert.doesNotMatch(res.headers.Location, /evil\.example\.com/);
 });
 

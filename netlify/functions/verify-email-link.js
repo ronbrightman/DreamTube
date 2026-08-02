@@ -24,22 +24,45 @@
 // nothing about verifying an email's ownership requires the CURRENT
 // device to also be logged in.
 //
+// SESSION ON SUCCESS (added alongside the register-account-passwordless.js
+// security fix — tracker item for-product-build-passwordless-signup-fo-
+// at2fko): a successful verify now ALSO mints a lib/session-transfer-
+// token.js token and appends it to the redirect as `?bt=`, exactly the
+// mechanism facebook-oauth-callback.js already uses once IT has confirmed
+// a real identity via Facebook's own servers (see that file's own
+// resolveIdentity + redirect call). Trusted here for the exact same
+// reason: verifyLinkToken above is itself the proof of ownership (the
+// browser could only have reached this handler at all by dereferencing a
+// token that was mailed to the real inbox) — this is not a new, weaker
+// trust boundary, it's the SAME one that already gates markEmailVerified
+// two lines below, just also used to grant a session now that this
+// feature actually needs one gated behind it (see register-account-
+// passwordless.js's own header comment for the account-takeover this
+// closes: a bare email POST no longer mints a session on its own, so the
+// mailed link needs to be able to grant one itself, or the "click a link
+// to log in" half of this feature would have no way to ever complete).
+//
 // `redirect` (optional): a same-app-relative path to land on after
-// verifying — defaults to /profile.html (an already-authenticated app
-// page whose own login gate handles "not signed in on this exact device"
-// the same way it does for any other direct link into the app — see
-// lib/first-dream-email-sender.js's own header comment on why that page is
-// the right generic landing spot). Validated with the exact same
-// isSafeRedirectPath open-redirect guard create-checkout-session-dodo.js
-// already established (same reasoning: a relative-path-only check that
-// never has to trust this function's own derivation of its origin from
-// request headers) — duplicated here rather than factored into a shared
-// module, matching this codebase's existing per-file small-helper
-// convention (see create-checkout-session-dodo.js's own header comment for
-// why redirect-safety helpers stay local rather than centralized).
+// verifying — defaults to /home.html specifically because that page (like
+// start.html/create.html/result.html) already calls
+// DreamStore.consumeSessionTransferTokenFromUrlSync() on load, which is
+// what actually turns the `?bt=` token above into a real local session —
+// profile.html does NOT call that function, so a caller-supplied
+// `redirect` to a page that never consumes `bt` will (silently, same
+// "never a visible error" posture as an expired token) just fail to
+// establish a session on that device, exactly like an ordinary expired/
+// unconsumed session-transfer token anywhere else in this codebase.
+// Validated with the exact same isSafeRedirectPath open-redirect guard
+// create-checkout-session-dodo.js already established (same reasoning: a
+// relative-path-only check that never has to trust this function's own
+// derivation of its origin from request headers) — duplicated here rather
+// than factored into a shared module, matching this codebase's existing
+// per-file small-helper convention (see create-checkout-session-dodo.js's
+// own header comment for why redirect-safety helpers stay local rather
+// than centralized).
 //
 // Error slugs (surfaced as ?verify_error=<slug> on the redirect; a
-// successful verify instead carries ?verified=1):
+// successful verify instead carries ?verified=1&bt=<session-transfer-token>):
 //   E1 method_not_allowed     — verb other than GET (a real 405, no
 //                                redirect — a browser link click is always
 //                                a GET; only a misconfigured caller hits
@@ -49,6 +72,7 @@
 
 var emailVerificationStore = require('./lib/email-verification-store');
 var accountStore = require('./lib/account-store');
+var sessionTransferToken = require('./lib/session-transfer-token');
 
 var REDIRECT_PATH_RE = /^\/(?!\/)/;
 var REDIRECT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -81,7 +105,7 @@ exports.handler = async function (event) {
   }
 
   var query = event.queryStringParameters || {};
-  var destination = isSafeRedirectPath(query.redirect) ? query.redirect : '/profile.html';
+  var destination = isSafeRedirectPath(query.redirect) ? query.redirect : '/home.html';
 
   var token = (query.token || '').trim();
   if (!token) {
@@ -94,5 +118,17 @@ exports.handler = async function (event) {
   }
 
   await accountStore.markEmailVerified(event, resolved.username);
-  return redirect(event, destination, { verified: '1' });
+
+  // See header comment's "SESSION ON SUCCESS" section — this is what lets
+  // the mailed link actually complete a login for an account that had NO
+  // prior session anywhere (register-account-passwordless.js's RESOLVE
+  // branch). account lookup is only to get the email session-transfer-
+  // token.js's createToken wants alongside the username; a missing record
+  // here would be a genuine data inconsistency (verifyLinkToken just
+  // resolved this exact username), so `null` is a safe, harmless fallback
+  // rather than something worth failing the whole request over.
+  var account = await accountStore.getByUsername(event, resolved.username);
+  var transferToken = await sessionTransferToken.createToken(event, resolved.username, (account && account.email) || null);
+
+  return redirect(event, destination, { verified: '1', bt: transferToken });
 };
