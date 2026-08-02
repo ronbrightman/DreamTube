@@ -66,6 +66,16 @@ browser tests use (`/opt/pw-browsers/chromium`) — no separate install.
 4. **Publish, then unpublish** the dream — real `publish-dream.js`/
    `unpublish-dream.js` round trips against the real shared feed.
 5. **A bottom-dock nav walk** — home → explore → create → profile → home.
+6. **Real media serving** (`media-serving.test.js`) — a plain HTTP check
+   (no browser) that video-file.mjs/image-file.mjs actually serve a real
+   stored file (200 + the right content-type, or a valid redirect) against
+   a known-good fixture key, plus a clean-404 check for an unknown key.
+   Exists specifically to catch a regression class the mocked
+   `test/media-file-functions.test.js` structurally cannot see — see that
+   file's own header comment for the full "why" (tracker item
+   for-product-add-a-prod-smoke-assertion-f-bqt2sh, following up on
+   for-product-urgent-reopen-video-repair-p-cyp8np's module-load-crash
+   incident).
 
 ## Safety — why this is safe to run daily against real production
 
