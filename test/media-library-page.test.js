@@ -339,3 +339,133 @@ test('desktop viewport: page content past the fold is reachable by scrolling (no
 
   await page.close();
 });
+
+// ===== Lightbox (tracker for-product-media-library-clicking-a-vid-bnlcus,
+// founder repro 08-02): the grid rendered muted/preload=none video cards
+// with a lazy-load observer, but NO click handler existed at all — tapping
+// a card was a no-op by omission. Fixed with a shared #ml-lightbox-overlay
+// opened via event delegation on #ml-grid; see media-library-x7q4.html's
+// own inline comments for the close-handling design (esc via a direct
+// listener, tap-outside reused from js/sheet-dismiss.js's SheetDismiss.wire
+// for its same-spot re-tap guard). =====
+
+async function unlockGrid(page, items) {
+  await mockDataEndpoint(page, items);
+  await seedUser(page);
+  await safeGoto(page, baseUrl + '/media-library-x7q4.html');
+  await page.fill('#ml-gate-password', 'realownerpassword');
+  await page.click('#ml-gate-submit');
+  await page.waitForSelector('#ml-content', { state: 'visible', timeout: 5000 });
+}
+
+test('tapping a video card opens a lightbox with a real, unmuted, controls-enabled <video> using the item\'s real url', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS); // d1 (@alice) is the first-rendered video, sorted newest-first
+
+  await page.click('#ml-grid .vcard:first-child');
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+
+  var video = page.locator('#ml-lightbox-content video');
+  await assert.doesNotReject(video.waitFor({ state: 'attached', timeout: 5000 }));
+  var props = await video.evaluate(function (el) {
+    return { muted: el.muted, hasControls: el.controls, src: el.getAttribute('src') };
+  });
+  assert.equal(props.muted, false, 'lightbox video is unmuted, unlike the in-grid muted thumbnail');
+  assert.equal(props.hasControls, true, 'lightbox video has native controls');
+  assert.equal(props.src, '/.netlify/functions/video-file?key=d1', 'uses the real item url, not whatever the (possibly not-yet-lazy-loaded) in-grid <video>.src happened to be');
+
+  await page.close();
+});
+
+test('tapping an image card opens a lightbox with a plain bigger <img> of the real url', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS);
+
+  // d3 (@alice image, lost-expired) is the oldest -> last card when sorted newest-first.
+  await page.click('#ml-grid .vcard:last-child');
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+  var img = page.locator('#ml-lightbox-content img');
+  var src = await img.getAttribute('src');
+  assert.equal(src, 'https://fal.media/y.png');
+
+  await page.close();
+});
+
+test('the close button closes the lightbox and removes the media element (stops playback)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS);
+
+  await page.click('#ml-grid .vcard:first-child');
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+  await page.click('#ml-lightbox-close');
+  // state:'attached' (not the default 'visible') — a closed overlay is
+  // `display:none`, so it can never satisfy a 'visible' wait; it's always
+  // attached to the DOM though, just without/with the `open` class.
+  await page.waitForSelector('#ml-lightbox-overlay:not(.open)', { state: 'attached', timeout: 5000 });
+  var mediaCount = await page.locator('#ml-lightbox-content video, #ml-lightbox-content img').count();
+  assert.equal(mediaCount, 0, 'the media element is removed on close, not just hidden');
+
+  await page.close();
+});
+
+test('pressing Escape closes the lightbox', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS);
+
+  await page.click('#ml-grid .vcard:first-child');
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#ml-lightbox-overlay:not(.open)', { state: 'attached', timeout: 5000 });
+
+  await page.close();
+});
+
+test('tapping the darkened backdrop outside the media closes the lightbox', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS);
+
+  await page.click('#ml-grid .vcard:first-child');
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+  // Click a corner of the viewport, well clear of the centered media and
+  // of the card's own original tap position (avoids the same-spot re-tap
+  // guard in js/sheet-dismiss.js, which is about a real product bug, not
+  // this test — this click is a genuinely different, deliberate spot).
+  await page.mouse.click(4, 4);
+  await page.waitForSelector('#ml-lightbox-overlay:not(.open)', { state: 'attached', timeout: 5000 });
+
+  await page.close();
+});
+
+test('clicking inside the lightbox media itself does not close it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await unlockGrid(page, SAMPLE_ITEMS);
+
+  await page.click('#ml-grid .vcard:last-child'); // image card — no native controls to intercept the click
+  await page.waitForSelector('#ml-lightbox-overlay.open', { timeout: 5000 });
+  // dispatchEvent rather than a real Playwright click — the img's `src`
+  // (https://fal.media/...) is a fake fixture URL this test never mocks a
+  // response for, so it never gets real intrinsic dimensions to satisfy
+  // Playwright's own click-actionability (visibility) check. Dispatching
+  // the click event directly still exercises the exact same app logic
+  // (SheetDismiss's overlay listener checking e.target) without depending
+  // on real image bytes loading.
+  await page.locator('#ml-lightbox-content img').dispatchEvent('click');
+  // Give any (incorrect) close handling a moment to fire before asserting it didn't.
+  await page.waitForTimeout(150);
+  var stillOpen = await page.locator('#ml-lightbox-overlay.open').count();
+  assert.equal(stillOpen, 1, 'the lightbox stays open when the media itself is tapped');
+
+  await page.close();
+});
