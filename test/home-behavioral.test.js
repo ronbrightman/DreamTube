@@ -633,6 +633,110 @@ test('home.html: the ritual module\'s quiet balance line shows the real token ba
   }
 });
 
+test('home.html: the bonus-tokens countdown lives INSIDE the ritual module (not a separate element), shows "Next N free tokens in Xh Ym" when not yet claimable, and is hidden entirely once claimable -- tracker item for-product-bonus-tokens-countdown-vanis-qm96xc', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 340, claimable: false, nextClaimAt: Date.now() + (6 * 3600000) + (12 * 60000), dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page, { dreams: [] });
+
+    await page.waitForSelector('#ritual-countdown', { state: 'visible', timeout: 5000 });
+    var text = await page.textContent('#ritual-countdown');
+    assert.equal(text, 'Next 20 free tokens in 6h 12m');
+
+    // It's a real descendant of the ritual module itself (#ritual), not a
+    // sibling element bolted on elsewhere on the page -- the founder's own
+    // explicit direction was integrating it INTO the streak/claim module
+    // "so claim timing and streak live together in one place."
+    var insideRitual = await page.evaluate(function () {
+      var ritual = document.getElementById('ritual');
+      var countdown = document.getElementById('ritual-countdown');
+      return !!(ritual && countdown && ritual.contains(countdown));
+    });
+    assert.equal(insideRitual, true, '#ritual-countdown must be a descendant of #ritual');
+  } finally {
+    await context.close();
+  }
+
+  var context2 = await newMobileContext();
+  try {
+    var page2 = await context2.newPage();
+    await blockThirdParty(page2);
+    await mockTokenStatus(page2, { balance: 340, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page2, { dreams: [] });
+
+    await page2.waitForSelector('#ritual-claim', { state: 'visible', timeout: 5000 });
+    assert.equal(await page2.locator('#ritual-countdown').isHidden(), true, 'the countdown must be hidden while claimable -- the claim button occupies that spot instead');
+  } finally {
+    await context2.close();
+  }
+});
+
+test('home.html: the bonus-tokens countdown ticks live while the page stays open, and re-fetches (rather than getting stuck on "now") once nextClaimAt actually passes', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.clock.install({ time: Date.now() });
+
+    var fetchCount = 0;
+    var becameClaimable = false;
+    var startNextClaimAt = Date.now() + 90000; // 90s out
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      fetchCount++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(
+        becameClaimable
+          ? { balance: 340, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 1 }
+          : { balance: 340, claimable: false, nextClaimAt: startNextClaimAt, dailyClaimAmount: 20, streak: 1 }
+      ) });
+    });
+    await seedHomeUser(page, { dreams: [] });
+    await page.waitForSelector('#ritual-countdown', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.textContent('#ritual-countdown'), 'Next 20 free tokens in 2m');
+    assert.equal(fetchCount, 1, 'sanity: one fetch on load');
+
+    // First 60s tick: nextClaimAt (90s out) hasn't passed yet -- the
+    // countdown must tick down to a smaller number purely by re-rendering
+    // the already-cached tokenStatus, with NO extra network call.
+    await page.clock.fastForward(60000);
+    assert.equal(await page.textContent('#ritual-countdown'), 'Next 20 free tokens in 1m');
+    assert.equal(fetchCount, 1, 'ticking down before expiry must not re-fetch');
+
+    // Second 60s tick (120s total elapsed) crosses the 90s nextClaimAt --
+    // this must trigger a real re-fetch so the claim button can actually
+    // appear, rather than the countdown sitting stuck showing "now" forever.
+    becameClaimable = true;
+    await page.clock.fastForward(60000);
+    await page.waitForSelector('#ritual-claim', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#ritual-countdown').isHidden(), true, 'once claimable, the countdown yields its spot back to the claim button');
+    assert.ok(fetchCount >= 2, 'crossing nextClaimAt must trigger a real re-fetch, got ' + fetchCount + ' fetch(es)');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: the bonus-tokens countdown stays hidden (never shows blank/garbage text) when tokenStatus has no nextClaimAt, e.g. a degraded response', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 0, claimable: false, nextClaimAt: null, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page, { dreams: [] });
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('ritual-balance');
+      return el && /0 · Vault/.test(el.textContent);
+    }, null, { timeout: 5000 });
+    assert.equal(await page.locator('#ritual-countdown').isHidden(), true);
+  } finally {
+    await context.close();
+  }
+});
+
 test('home.html: the daily claim lives in the ritual module as a real 56px button when claimable, opens the existing claim sheet, and disappears once claimed', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();

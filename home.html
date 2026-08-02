@@ -513,6 +513,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   -webkit-tap-highlight-color:transparent;
 }
 .ritual-claim:active{ transform:scale(.98); }
+/* Bonus-tokens countdown (tracker item
+   for-product-bonus-tokens-countdown-vanis-qm96xc, founder feedback: the
+   countdown had quietly dropped out of a "Home round N" rebuild and needed
+   to come back INSIDE the ritual module rather than as a separate element,
+   so claim timing and streak live together in one place). Shown ONLY in
+   the not-yet-claimable state, in the exact spot the claim button occupies
+   when claimable -- same top margin as .ritual-claim so the module doesn't
+   visually jump between the two states. */
+.ritual-countdown{
+  margin-top:18px; font-size:13px; font-weight:600; line-height:1.4;
+  color:var(--home-soft);
+}
 /* quiet balance line → Vault (shop.html) */
 .ritual-balance{
   display:block; margin-top:14px; padding:6px 0; min-height:32px;
@@ -934,6 +946,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         </div>
         <div class="ritual-claim-eyebrow" id="ritual-claim-eyebrow" hidden>🎁 First-night bonus</div>
         <button type="button" class="ritual-claim" id="ritual-claim" style="display:none;"></button>
+        <div class="ritual-countdown" id="ritual-countdown" hidden></div>
         <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="tok-ico gold" id="ritual-balance-icon" aria-hidden="true"></span> – · Vault →</a>
       </section>
 
@@ -1733,7 +1746,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var btn = document.getElementById('ritual-claim');
     var balance = document.getElementById('ritual-balance');
     var eyebrow = document.getElementById('ritual-claim-eyebrow');
-    if(!tokenStatus){ btn.style.display = 'none'; eyebrow.hidden = true; return; }
+    var countdown = document.getElementById('ritual-countdown');
+    if(!tokenStatus){ btn.style.display = 'none'; eyebrow.hidden = true; countdown.hidden = true; return; }
     if(tokenStatus.claimable){
       var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
       // First-claim bonus (FOUNDER_PRINCIPLES.md / lib/entitlements.js's
@@ -1745,9 +1759,27 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       eyebrow.hidden = amount <= 20;
       btn.innerHTML = 'Claim +' + amount + '&nbsp;' + tok();
       btn.style.display = 'flex';
+      countdown.hidden = true;
     } else {
       btn.style.display = 'none';
       eyebrow.hidden = true;
+      // Bonus-tokens countdown (tracker item
+      // for-product-bonus-tokens-countdown-vanis-qm96xc) — re-added here,
+      // integrated INTO the ritual module rather than as a separate
+      // element, per the founder's own explicit direction ("so claim
+      // timing and streak live together in one place"). Same copy/format
+      // shop.html's #shop-countdown already uses
+      // (PurchaseSheet.formatTokenCountdown's "3h 12m"/"42m"/"now" shape —
+      // reusing the shared export rather than yet another local copy of
+      // it), just relocated into this module. Ticks live via the
+      // setInterval below rather than staying a static page-load string.
+      var waitAmount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
+      if(tokenStatus.nextClaimAt){
+        countdown.textContent = 'Next ' + waitAmount + ' free tokens in ' + PurchaseSheet.formatTokenCountdown(tokenStatus.nextClaimAt);
+        countdown.hidden = false;
+      } else {
+        countdown.hidden = true;
+      }
     }
     balance.innerHTML = tok('gold') + ' ' + tokenStatus.balance + ' · Vault →';
     if(tokChip) PurchaseSheet.renderBalanceChip(tokChip, tokenStatus);
@@ -2448,6 +2480,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }).catch(function(){ /* leave whatever was last rendered — never block the page on this */ });
   }
   refreshTokenStatus(true);
+
+  // ===== Bonus-tokens countdown tick (tracker item
+  // for-product-bonus-tokens-countdown-vanis-qm96xc) — the ritual module's
+  // "Next N free tokens in Xh Ym" line needs to actually count down while
+  // the page stays open, not render a static string at load time. Same
+  // 60s-interval pattern shop.html's own #shop-countdown already
+  // established (see that file's own setInterval comment): re-render every
+  // tick off the same cached lastTokenStatus (no network call — a plain
+  // re-format of already-known data), and once the countdown reaches "now"
+  // (nextClaimAt has passed), re-fetch for real so the claim button
+  // actually appears instead of the countdown sitting stuck on "now"
+  // forever. =====
+  setInterval(function(){
+    if(lastTokenStatus && !lastTokenStatus.claimable && lastTokenStatus.nextClaimAt && lastTokenStatus.nextClaimAt <= Date.now()){
+      refreshTokenStatus(false);
+    } else {
+      renderRitualClaim(lastTokenStatus);
+    }
+  }, 60000);
 
   // ===== Tonight hero entry points — reuse create.html's own Write/Speak
   // affordances (no reinvention); "No recall" is the one genuinely
