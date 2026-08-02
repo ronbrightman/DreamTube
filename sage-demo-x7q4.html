@@ -5,7 +5,7 @@ html{background:#0c0a1a}body{font-family:Manrope,system-ui,sans-serif;color:#eae
 h1{font-size:19px;font-weight:800;margin:0 0 4px}
 p.sub{color:#a49dc4;font-size:14px;line-height:1.5;margin:0 0 14px}
 .stage{position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(157,144,255,.45);box-shadow:0 0 28px -6px rgba(157,144,255,.4);cursor:pointer}
-video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;display:block}
+video{width:100%;display:block}
 .cap{position:absolute;left:10px;right:10px;bottom:12px;text-align:center;pointer-events:none}
 .cap span{display:inline;background:rgba(12,10,26,.72);color:#fff;font-size:16.5px;line-height:1.5;font-weight:700;padding:3px 9px;border-radius:8px;box-decoration-break:clone;-webkit-box-decoration-break:clone;text-shadow:0 1px 3px rgba(0,0,0,.8)}
 .playov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(12,10,26,.35);transition:opacity .3s}
@@ -24,7 +24,7 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
   <button class="modelbtn" id="mb-rich" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Full lips · $0.28</button>
   <button class="modelbtn" id="mb-muse" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Budget lips · $0.16</button>
 </div>
-<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A: he speaks the opening with real lips, then raises his book over them while his voice reads on — your book idea. 2¢ per reading.</p>
+<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A, desk edition: a fixed spoken greeting with real lips (made once — so readings are free), then he raises the tome and his voice reads YOUR dream behind it, eyes on you.</p>
 <div class="stage" id="stage">
   <video id="v" src="sage-optiona-x7q4.mp4" playsinline preload="auto"></video>
   <div class="cap" id="cap"></div>
@@ -34,14 +34,16 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
 <p class="note">Demo v3: reading at 0.8× pace, frame cropped so text sits above the fold (founder notes 08-02). sync-lipsync + Kokoro; caption timings mapped to the audio's real pauses. Production would generate this per reading.</p>
 <script>
 var CUES=[
- [0.31,"Ah... the desert."],
- [1.67,"You walked a long way through burning sand, and still — you reached the water."],
- [6.25,"Listen to what your dream is telling you."],
- [8.41,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
- [13.36,"And the oasis... the oasis is not luck."],
- [16.06,"Your own footprints led there."],
- [17.55,"You are closer to what you seek than you believe."],
- [20.49,"Tonight, notice what you reach for... and let yourself arrive."]
+ [0.31,"Ah... come closer, dreamer."],
+ [3.46,"Sit with me... and let us see what the night has brought you."],
+ [7.05,"Ah... the desert."],
+ [8.40,"You walked a long way through burning sand, and still — you reached the water."],
+ [12.70,"Listen to what your dream is telling you."],
+ [14.88,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
+ [19.83,"And the oasis... the oasis is not luck."],
+ [22.53,"Your own footprints led there."],
+ [24.02,"You are closer to what you seek than you believe."],
+ [26.96,"Tonight, notice what you reach for... and let yourself arrive."]
 ];
 var v=document.getElementById('v'),cap=document.getElementById('cap'),ov=document.getElementById('ov'),plabel=document.getElementById('plabel');
 document.getElementById('stage').addEventListener('click',function(){
@@ -51,7 +53,7 @@ document.getElementById('stage').addEventListener('click',function(){
 v.addEventListener('timeupdate',function(){
   var t=v.currentTime,line='';
   for(var i=0;i<CUES.length;i++){if(t>=CUES[i][0])line=CUES[i][1];}
-  if(t>24.0)line='';
+  if(t>30.3)line='';
   if(cap.textContent!==line)cap.innerHTML=line?'<span>'+line+'</span>':'';
 });
 v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
