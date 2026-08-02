@@ -161,6 +161,11 @@
 //   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
 //       — the retention email ("your dream is ready") — see that function's own header comment.
 //       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
+//   saveThumbnailBestEffort(dreamId, imageDataUrl) -> fire-and-forget, POST
+//       /.netlify/functions/upload-dream-thumbnail — persists a client-captured video-frame-1
+//       still (result.html draws the <video> element to a <canvas>) as this dream's imageUrl,
+//       so the retention email above can show a real thumbnail instead of its flat-color
+//       fallback — see netlify/functions/upload-dream-thumbnail.js's own header comment.
 //   verifyOwnerBypass() -> Promise, POST /.netlify/functions/verify-owner-bypass — real
 //       password re-check for the currently signed-in account; on success, stores a
 //       short-lived owner generation-rate-limit bypass token locally (see
@@ -5321,8 +5326,83 @@
             caption: dream.caption,
             style: dream.style,
             videoUrl: dream.videoUrl,
-            mediaType: dream.mediaType || 'video'
+            mediaType: dream.mediaType || 'video',
+            // imageUrl (tracker item for-product-dream-ready-email-real-
+            // first-qr9fbj) -- whatever this dream's OWN imageUrl already
+            // is at the moment this fires, which is usually still null
+            // (see saveThumbnailBestEffort below's own doc comment on the
+            // race this loses most of the time) -- optional/cosmetic, see
+            // lib/first-dream-email-sender.js's "REAL THUMBNAIL" comment.
+            imageUrl: dream.imageUrl || null
           })
+        }).catch(function () { /* best-effort, must never break the app */ });
+      } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Best-effort client-side "frame 1" thumbnail capture (tracker item
+     * for-product-dream-ready-email-real-first-qr9fbj — founder request: a
+     * real first-frame image in the "your dream is ready" retention email
+     * instead of the flat colored placeholder banner). result.html owns
+     * drawing the <video> element's own already-decoded current frame to a
+     * <canvas> and encoding it (once autoplay has genuinely advanced past
+     * a moment, avoiding a black pre-decode frame — see that file's own
+     * capture IIFE for exactly when) — this function owns everything past
+     * that: the upload, the local dream.imageUrl write, and the existing
+     * dream-sync upsert, mirroring sendFirstDreamEmailBestEffort's own
+     * split of responsibility above (HTML owns the DOM-specific bit,
+     * store.js owns the network/state bit).
+     *
+     * Server-side frame extraction was ruled out (impractical inside a
+     * Netlify Function) and a second paid fal image-generation call per
+     * video was ruled out (real ongoing spend not worth it for a cosmetic
+     * email detail) — see the tracker item's own investigation notes. This
+     * is inherently best-effort and RACY against the retention email
+     * itself: the automatic send (mark-generation-completed.js) fires
+     * server-side the instant generation completes, almost always well
+     * before any client has loaded this far into result.html to capture a
+     * frame — see lib/first-dream-email-sender.js's own buildHtml for the
+     * flat-color fallback that stays in place for exactly that case. Only
+     * the client-triggered send-first-dream-email.js fallback path (fired
+     * moments AFTER this same page has already had a chance to capture)
+     * realistically benefits from this in practice.
+     *
+     * Every failure mode here (not signed in, dream not found/not this
+     * account's own, imageUrl already set, upload-dream-thumbnail.js
+     * rejecting/erroring, a network failure) is a silent, harmless no-op
+     * — never throws, never surfaces anything to the user. A dream that
+     * never gets a captured thumbnail simply keeps using the color-banner
+     * fallback forever, the same honest degrade every other best-effort
+     * call in this file already accepts.
+     */
+    saveThumbnailBestEffort: function (dreamId, imageDataUrl) {
+      if (!state.user || !state.user.authToken || !dreamId || !imageDataUrl) return;
+      var dream = findDream(dreamId);
+      if (!dream || dream.ownerHandle !== state.user.handle || dream.imageUrl) return;
+      try {
+        fetch('/.netlify/functions/upload-dream-thumbnail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ authToken: state.user.authToken, dreamId: dreamId, imageDataUrl: imageDataUrl })
+        }).then(function (res) {
+          return res.json().catch(function () { return null; });
+        }).then(function (body) {
+          if (!body || !body.ok || !body.url) return;
+          // Re-resolve + re-check fresh, not the closed-over `dream` above
+          // — the round trip could have raced an edit/regenerate/delete,
+          // or a second tab's own concurrent capture already won. Same
+          // defensive re-check discipline as this file's other best-effort
+          // setters (e.g. finalizeDream's own idempotent-redundant guard).
+          var d = findDream(dreamId);
+          if (!d || d.ownerHandle !== state.user.handle || d.imageUrl) return;
+          d.imageUrl = body.url;
+          d.updatedAt = Date.now();
+          persist();
+          if (!d.isPublished) {
+            syncPrivateDreamBestEffort(d);
+          } else {
+            syncPublishedDreamToFeed(d);
+          }
         }).catch(function () { /* best-effort, must never break the app */ });
       } catch (e) { /* best-effort, must never break the app */ }
     },

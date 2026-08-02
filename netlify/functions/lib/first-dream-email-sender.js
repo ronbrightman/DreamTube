@@ -61,6 +61,27 @@
 // `{ operationName }`) means this automatic send needs no new client-
 // trusted input at all at that exact choke point.
 //
+// REAL THUMBNAIL (added 2026-08-02, tracker item
+// for-product-dream-ready-email-real-first-qr9fbj, founder request — a
+// real first-frame image instead of the flat STYLE_COLORS banner below):
+// `opts.imageUrl` is the SAME best-effort/optional-content class as
+// caption/style above, not identity — an account's own dream.imageUrl
+// (see js/store.js's DreamStore.saveThumbnailBestEffort for how that
+// field gets populated: result.html captures the video element's own
+// first real frame to a <canvas> client-side and uploads it, since
+// there's no thumbnail field anywhere in fal's veo3.1 result payload and
+// a second paid fal image-generation call per video isn't worth it for a
+// cosmetic email detail). buildHtml falls back to the flat-color banner
+// whenever it's absent — which is EXPECTED to be most of the time for the
+// automatic path specifically: mark-generation-completed.js has no
+// dreamId at all at its choke point (`dreamId: null` below), so it has no
+// way to look up a dream's imageUrl even when one exists, let alone when
+// the race against the client capturing one hasn't resolved yet (the
+// automatic send fires the instant generation completes server-side,
+// almost always before the client has even loaded this page). Only the
+// client-triggered send-first-dream-email.js path — which has the actual
+// dream object on hand — can realistically supply a real thumbnail today.
+//
 // PostHog event: fires 'first_dream_email_sent' server-side (via
 // lib/posthog-capture.js, the same server-side-capture pattern
 // dodo-webhook.js's firePurchaseConversion already established for
@@ -104,8 +125,34 @@ function profileUrl(event) {
   return 'https://' + host + '/profile.html';
 }
 
+/**
+ * Resolves `url` (a dream's imageUrl, which may be a relative durable
+ * `/.netlify/functions/image-file?key=...` url — see lib/media-rehost.js's
+ * own durableUrl — or an already-absolute one) to something an email
+ * client can actually load, which must always be a full https:// url —
+ * unlike an in-app <img>, an email has no document base url to resolve a
+ * relative one against. Returns null (never a broken/relative src) when
+ * there's no url to resolve, or no host to resolve a relative one against
+ * (the same defensive host-empty-string fallback profileUrl above already
+ * accepts).
+ */
+function absoluteImageUrl(event, url) {
+  if (typeof url !== 'string' || !url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
+  if (!host) return null;
+  return 'https://' + host + (url.charAt(0) === '/' ? url : '/' + url);
+}
+
 function buildHtml(opts) {
-  var bannerColor = colorForStyle(opts.style);
+  // Real thumbnail when one's on hand (see this file's own header comment
+  // "REAL THUMBNAIL" paragraph) -- falls back to the original flat
+  // STYLE_COLORS banner otherwise, same visual weight/footprint (160px
+  // tall, same border-radius/margin) so the rest of the email's layout is
+  // unaffected either way.
+  var media = opts.imageUrl
+    ? '<img src="' + esc(opts.imageUrl) + '" width="480" alt="" style="display:block;width:100%;max-width:480px;height:160px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />'
+    : '<div style="height:160px;border-radius:14px;background:' + colorForStyle(opts.style) + ';margin-bottom:18px;"></div>';
   // COPY FIX (tracker.html's for-product-bug-founder-affects-all-funn-
   // 0efe7t, gap #5): this used to read "Your first dream is ready to
   // watch." here, but the ONLY guard behind this send is
@@ -129,7 +176,7 @@ function buildHtml(opts) {
     : 'Your dream is ready to watch.';
   return (
     '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
-    '<div style="height:160px;border-radius:14px;background:' + bannerColor + ';margin-bottom:18px;"></div>' +
+    media +
     '<p style="font-size:16px;">' + readyLine + '</p>' +
     '<p><a href="' + opts.profileUrl + '" style="display:inline-block;padding:12px 22px;background:#000;color:#fff;border-radius:24px;text-decoration:none;font-weight:600;">View my dreams</a></p>' +
     '<p style="color:#666;font-size:13px;">Loved it? <a href="' + opts.createUrl + '">Make another dream</a> — it only takes a minute.</p>' +
@@ -178,6 +225,10 @@ async function reportSkip(username, email, reason, auto) {
  *   dreamId   (optional) — purely for the guard's own bookkeeping record
  *   caption/style (optional) — cosmetic personalization only, see header
  *             comment on why the automatic path omits these
+ *   imageUrl  (optional) — cosmetic real-thumbnail content, same class as
+ *             caption/style above (see header comment's "REAL THUMBNAIL"
+ *             paragraph) — resolved to an absolute url internally
+ *             (absoluteImageUrl) before ever reaching buildHtml
  *
  * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
  * send, or { ok:true, sent:false, skipped:<reason> } for every other case
@@ -236,7 +287,8 @@ async function sendIfEligible(event, opts) {
     caption: opts.caption,
     style: opts.style,
     profileUrl: profileUrl(event),
-    createUrl: 'https://' + host + '/create.html'
+    createUrl: 'https://' + host + '/create.html',
+    imageUrl: absoluteImageUrl(event, opts.imageUrl)
   });
 
   try {
@@ -283,4 +335,4 @@ async function sendIfEligible(event, opts) {
   return { ok: true, sent: true };
 }
 
-module.exports = { sendIfEligible, buildHtml, profileUrl };
+module.exports = { sendIfEligible, buildHtml, profileUrl, absoluteImageUrl };

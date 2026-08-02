@@ -1576,6 +1576,59 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     });
   })();
 
+  // ===== Client-side "frame 1" thumbnail capture (tracker item
+  // for-product-dream-ready-email-real-first-qr9fbj, founder request) =====
+  // Backs a real image in the "your dream is ready" retention email
+  // (instead of its flat colored placeholder banner) — see
+  // js/store.js's DreamStore.saveThumbnailBestEffort for the upload/
+  // local-state/sync half of this feature; this IIFE owns only the
+  // DOM-specific bit (drawing the already-decoded <video> frame to a
+  // <canvas>) since that can't live in store.js.
+  //
+  // Owner-only (isMyDream) — a viewer who isn't this dream's own account
+  // must never trigger a capture here: DreamStore.saveThumbnailBestEffort
+  // itself also re-checks ownership before ever using the result, but
+  // dream-sync.js's own resolveOwnerHandle would otherwise silently
+  // attach a bogus private-dream record under the VIEWER's own account
+  // for someone else's dream content — see that file's header comment.
+  //
+  // WHY 'timeupdate' + a small currentTime threshold, not 'loadeddata'
+  // alone: 'loadeddata' only guarantees the frame at currentTime 0 is
+  // decoded, and a generated video's very first frame is sometimes
+  // black/blank (a real, observed class of "first frame" issue, not
+  // hypothetical). The <video> above already autoplays muted/looped the
+  // instant it has a src (see the ambient-preview IIFE just above), so by
+  // the time 'timeupdate' reports currentTime past a small threshold, a
+  // genuine mid-clip frame is already the one actually decoded and on
+  // screen — captured with zero visible seek/jump, since nothing is being
+  // manipulated that autoplay wasn't already doing on its own. If
+  // autoplay is blocked for any reason, currentTime never advances and
+  // this simply never fires — an honest degrade, same as every other
+  // best-effort step in this feature.
+  (function(){
+    var video = document.getElementById('result-video');
+    var CAPTURE_AFTER_SECONDS = 0.1;
+    var attempted = false;
+    function maybeCapture(){
+      if(attempted) return;
+      if(!isMyDream || !dream || !dream.videoUrl || dream.imageUrl) return;
+      if(video.currentTime < CAPTURE_AFTER_SECONDS) return;
+      if(video.readyState < 2) return; // HAVE_CURRENT_DATA -- a real decoded frame, not just metadata
+      attempted = true;
+      try {
+        var w = video.videoWidth || 480;
+        var h = video.videoHeight || 270;
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        DreamStore.saveThumbnailBestEffort(dream.id, dataUrl);
+      } catch (e) { /* best-effort -- a canvas taint/decode error must never affect playback */ }
+    }
+    video.addEventListener('timeupdate', maybeCapture);
+  })();
+
   // ===== Fullscreen dream playback (founder amendment, 2026-07-31) =====
   // Tapping the video card, the in-video play badge, or the external
   // "Watch your dream" pill all open the SAME real <video> element
