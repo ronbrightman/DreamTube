@@ -283,10 +283,10 @@ this code did not, and could not, create the Dodo account itself).
 |---|---|---|
 | `DODO_API_KEY` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Dodo's bearer API key. Used to create Checkout Sessions; also passed to the SDK client `dodo-webhook.js` constructs (not actually used for signature verification itself, but the SDK constructor requires *some* value). |
 | `DODO_WEBHOOK_SECRET` | `dodo-webhook.js` | The signing key Dodo gives you when you register the webhook endpoint. Used to verify an incoming payload genuinely came from Dodo (Standard Webhooks signature, never trust an unverified payload). |
-| `DODO_PRODUCT_PACK_099` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | The Dodo product id (`pdt_...`) for the 300-token/$0.99 one-time-purchase starter product. No amount or id is hardcoded anywhere in this code. |
-| `DODO_PRODUCT_PACK_199` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 500-token/$1.99 pack. |
-| `DODO_PRODUCT_PACK_499` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 1500-token/$4.99 pack ("Most popular" on `shop.html`). |
-| `DODO_PRODUCT_PACK_999` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 4000-token/$9.99 pack ("Best value" on `shop.html`). |
+| `DODO_PRODUCT_PACK_STARTER300` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | The Dodo product id (`pdt_...`) for the 300-token/$0.99 one-time-purchase starter product. No amount or id is hardcoded anywhere in this code. |
+| `DODO_PRODUCT_PACK_SMALL500` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 500-token/$1.99 pack. |
+| `DODO_PRODUCT_PACK_MEDIUM1500` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 1500-token/$4.99 pack ("Most popular" on `shop.html`). |
+| `DODO_PRODUCT_PACK_LARGE4000` | `create-checkout-session-dodo.js`, `dodo-webhook.js` | Same, for the 4000-token/$9.99 pack ("Best value" on `shop.html`). |
 | `DODO_ENVIRONMENT` | both | `live_mode` (default) or `test_mode` — passed straight to the Dodo SDK client. Leave unset once real payments should actually go through. |
 
 **Old env vars, now unused (safe to leave set or remove):**
@@ -312,8 +312,8 @@ that pack refuses to sell, via the existing `E6` guard) until then.
    300 tokens at $0.99, 500 tokens at $1.99, 1500 tokens at $4.99, 4000
    tokens at $9.99 (or whatever amount/price is currently live on
    `shop.html` — keep them matched by hand, nothing enforces it). Copy
-   their product ids into `DODO_PRODUCT_PACK_099` / `DODO_PRODUCT_PACK_199`
-   / `DODO_PRODUCT_PACK_499` / `DODO_PRODUCT_PACK_999`.
+   their product ids into `DODO_PRODUCT_PACK_STARTER300` / `DODO_PRODUCT_PACK_SMALL500`
+   / `DODO_PRODUCT_PACK_MEDIUM1500` / `DODO_PRODUCT_PACK_LARGE4000`.
 2. **Copy the Dodo API key** into `DODO_API_KEY`.
 3. **Register the webhook endpoint** in the Dodo dashboard, pointing at
    `https://<your-site>/.netlify/functions/dodo-webhook`, subscribed to at
