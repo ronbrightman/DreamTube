@@ -332,7 +332,7 @@
   // locally and flushed into real DreamStore characters the moment signup
   // succeeds, via flushStagedCharactersToStore below.
   // ===================================================================
-  var staged = { characters: [], subjectCharacterId: null };
+  var staged = { characters: [], subjectCharacterIds: [] };
   var charEditingId = null;
   var charSubMode = 'describe';
   var charPendingPhotoDataUrl = null;
@@ -346,12 +346,13 @@
   var charSheetToken = 0;
 
   // Non-character subject state ("A stranger" / "An animal or creature" /
-  // "No people" / "+ Something else"). Single-active-subject model (see
-  // this file's own design note below renderSubject) -- exactly ONE of
-  // {a staged+selected character} OR {one of these} is "the" subject at a
-  // time, resolved into WizardChips.assembleCaption's subjectKey/character/
-  // subjectOtherText inputs at hand-off time.
-  var subjectOtherKind = null; // 'stranger' | 'animal' | 'none' | 'other' | null
+  // "No people" / "+ Something else"). Multi-select model (see this file's
+  // own design note below renderSubject) -- staged.subjectCharacterIds
+  // (any number of staged characters) and subjectOtherKind (at most ONE of
+  // these four, still single-select among themselves) compose TOGETHER,
+  // resolved into WizardChips.assembleCaption's `subjects` array input at
+  // hand-off time (see currentChipFields below).
+  var subjectOtherKind = null; // 'stranger' | 'animal' | 'none' | 'other' | null -- single-select among these four only
   var subjectOtherText = '';
 
   function resizeImageFile(file, maxDim, quality){
@@ -398,19 +399,41 @@
   }
   function localDeleteCharacter(id){
     staged.characters = staged.characters.filter(function(c){ return c.id !== id; });
-    if(staged.subjectCharacterId === id) staged.subjectCharacterId = null;
+    var idx = staged.subjectCharacterIds.indexOf(id);
+    if(idx !== -1) staged.subjectCharacterIds.splice(idx, 1);
   }
 
-  /** Called once, right after real signup succeeds — turns staged local characters into real DreamStore characters and remaps the chosen subject character onto its real id. */
+  /**
+   * Toggles a single character's selection independently of every other
+   * currently-selected character or the separate subjectOtherKind chip --
+   * tapping an already-selected chip deselects just that one; tapping an
+   * unselected one adds it. See this file's own design note below
+   * renderSubject for why this replaced the old single-active-subject model.
+   */
+  function toggleSubjectCharacter(id){
+    var idx = staged.subjectCharacterIds.indexOf(id);
+    if(idx === -1) staged.subjectCharacterIds.push(id); else staged.subjectCharacterIds.splice(idx, 1);
+  }
+
+  /**
+   * Called once, right after real signup (or an in-place login for an
+   * already-registered email, see renderInPlaceLogin below) succeeds —
+   * turns staged local characters into real DreamStore characters and
+   * remaps every id in staged.subjectCharacterIds (now potentially more
+   * than one) onto its real id. Returns the id map itself so callers can
+   * also remap any OTHER already-computed local id they're separately
+   * holding (see both call sites' own comment on why that's needed --
+   * assembled.characterIdsForGeneration was computed before this flush and
+   * still holds local ids until each caller re-maps it with this).
+   */
   function flushStagedCharactersToStore(){
     var idMap = {};
     staged.characters.forEach(function(c){
       var result = DreamStore.saveCharacter({ isSelf: c.isSelf, name: c.name, description: c.description, photoDataUrl: c.photoDataUrl || null });
       if(result.ok) idMap[c.id] = result.character.id;
     });
-    if(staged.subjectCharacterId && idMap[staged.subjectCharacterId]){
-      staged.subjectCharacterId = idMap[staged.subjectCharacterId];
-    }
+    staged.subjectCharacterIds = staged.subjectCharacterIds.map(function(id){ return idMap[id] || id; });
+    return idMap;
   }
 
   function openCharSheet(mode, existing){
@@ -459,7 +482,47 @@
   // ===================================================================
   // Step 1 — Subject ("Who's the dream about?")
   //
-  // DESIGN NOTE (judgment call, flagged per this task's own instruction):
+  // DESIGN NOTE, round 2 (superseding the single-active-subject model
+  // below) — tracker item for-product-wizard-characters-step-is-si-paxp07,
+  // founder repro 2026-08-02: "in the wizard, choosing Me and then adding
+  // another character (e.g. a stranger) UNCHECKS Me -- the step behaves as
+  // one-choice when a dream can contain multiple characters (Me AND
+  // someone known AND a stranger). Founder intent = multi-select." This is
+  // an explicit, dated override of the judgment call made below when this
+  // step first shipped — that call turned out to directly contradict how
+  // the founder actually wants to use his own product, confirmed by a live
+  // repro, not a hypothetical. The single-active-subject reasoning is left
+  // in place (not deleted) immediately below for the historical record —
+  // this codebase's own convention for a design that changed, per this
+  // task's instructions — but it no longer describes current behavior.
+  //
+  // NEW MODEL: every staged character chip (Me + each "Someone I know")
+  // toggles INDEPENDENTLY — tapping a selected chip deselects only that
+  // one; any number can be selected at once (staged.subjectCharacterIds).
+  // The four "other" chips (stranger/animal/none/other, #subject-other-row)
+  // stay a SEPARATE single-select group among THEMSELVES (subjectOtherKind,
+  // unchanged type/shape) — picking one still only ever has at most one of
+  // those four active — but that group now COMPOSES with the multi-select
+  // characters rather than being mutually exclusive with them. This exact
+  // shape was chosen (not the alternative of also multi-selecting the
+  // "other" row itself) because it's what the founder's own worked example
+  // literally describes: "Me AND someone known AND a stranger" is TWO
+  // staged characters (Me + someone known) selected together, PLUS "a
+  // stranger" — itself one of the four "other" chips — picked ALONGSIDE
+  // them as a third, additional element, not a fully-independent multi-
+  // select applied to the other-chips row too (nothing in the founder's
+  // wording implies wanting e.g. "a stranger" AND "an animal" AND "no
+  // people" all active together, which still has no coherent combined
+  // meaning — the same problem the superseded reasoning below correctly
+  // identified, just scoped now to only that one row instead of the whole
+  // step). See currentChipFields below for how this composes into
+  // WizardChips.assembleCaption's new `subjects` array input, and that
+  // module's own doc comment for why the array shape (vs. touching
+  // assembleCaption's existing singular contract, still used unchanged by
+  // create.html's own separate single-select "Build it" subject step) was
+  // the less invasive of the two options this task flagged.
+  //
+  // ── Superseded reasoning (kept for the record, no longer current) ──
   // the spec calls this row "multi-select," but "A stranger" / "An animal
   // or creature" / "No people — just a place/thing" are semantically
   // mutually exclusive with each other AND with picking a real character
@@ -487,7 +550,7 @@
     if(!row) return;
     var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
     var html = staged.characters.map(function(c){
-      return charChipHTML(c, staged.subjectCharacterId === c.id);
+      return charChipHTML(c, staged.subjectCharacterIds.indexOf(c.id) !== -1);
     }).join('');
     if(!hasSelf) html += '<div class="char-chip-add" id="subj-add-self"><span class="icon">' + Icons.userPlus + '</span> Me</div>';
     html += '<div class="char-chip-add" id="subj-add-other"><span class="icon">' + Icons.plus + '</span> Someone I know</div>';
@@ -615,8 +678,12 @@
         document.getElementById('char-error').textContent = result.error;
         return;
       }
-      staged.subjectCharacterId = result.character.id;
-      subjectOtherKind = null;
+      // Saving (whether adding a brand-new character or editing an
+      // existing one) ensures that character ends up selected -- ADDING to
+      // the multi-select set (never clearing subjectOtherKind or any other
+      // already-selected character) rather than replacing whatever else
+      // was selected, matching the new toggle model above.
+      if(staged.subjectCharacterIds.indexOf(result.character.id) === -1) staged.subjectCharacterIds.push(result.character.id);
       closeCharSheet();
       renderSubjectChips();
     });
@@ -658,15 +725,17 @@
       }
       var chip = e.target.closest('[data-char-select]');
       if(!chip) return;
-      staged.subjectCharacterId = chip.dataset.charSelect;
-      subjectOtherKind = null;
+      toggleSubjectCharacter(chip.dataset.charSelect);
       renderSubjectChips();
     });
     document.getElementById('subject-other-row').addEventListener('click', function(e){
       var chip = e.target.closest('.fn-chip');
       if(!chip) return;
+      // Single-select among these four ONLY -- deliberately does NOT touch
+      // staged.subjectCharacterIds, so any already-selected character chips
+      // stay selected (composes with them, see this file's design note
+      // above renderSubject).
       subjectOtherKind = subjectOtherKind === chip.dataset.subjOther ? null : chip.dataset.subjOther;
-      staged.subjectCharacterId = null;
       renderSubjectChips();
       if(subjectOtherKind === 'other') document.getElementById('subject-other-input').focus();
     });
@@ -935,18 +1004,32 @@
   // ===================================================================
   var assembled = null; // { caption, characterIdsForGeneration }
 
-  /** Same chip-selection fields assembleCaption below takes, minus camera/POV/character-description/style — shared with buildDeterministicStory, which has no use for those (see js/wizard-chips.js's own doc comment). */
+  /**
+   * Same chip-selection fields assembleCaption below takes, minus camera/
+   * POV/character-description/style — shared with buildDeterministicStory,
+   * which has no use for those (see js/wizard-chips.js's own doc comment).
+   *
+   * Builds WizardChips' new `subjects` array (see that module's own doc
+   * comment) from every currently-selected character
+   * (staged.subjectCharacterIds, multi-select) plus at most one active
+   * "other" chip (subjectOtherKind, still single-select among just those
+   * four) — see this file's design note above renderSubject for why these
+   * two compose rather than staying mutually exclusive. The singular
+   * subjectKey/character/subjectOtherText fields are also still supplied
+   * (subjectKey:'none') purely as assembleCaption/buildDeterministicStory's
+   * own documented fallback for the case where `subjects` ends up empty
+   * (nothing selected at all, e.g. the step was skipped) — ignored
+   * entirely whenever `subjects` is non-empty.
+   */
   function currentChipFields(){
-    var subjectKey = 'none';
-    var character = null;
-    if(staged.subjectCharacterId){
-      character = staged.characters.filter(function(c){ return c.id === staged.subjectCharacterId; })[0] || null;
-      subjectKey = character && character.isSelf ? 'me' : 'someone';
-    } else if(subjectOtherKind){
-      subjectKey = subjectOtherKind;
-    }
+    var subjects = staged.subjectCharacterIds.map(function(id){
+      var c = staged.characters.filter(function(x){ return x.id === id; })[0];
+      return c ? { subjectKey: c.isSelf ? 'me' : 'someone', character: c, subjectOtherText: '' } : null;
+    }).filter(Boolean);
+    if(subjectOtherKind) subjects.push({ subjectKey: subjectOtherKind, character: null, subjectOtherText: subjectOtherText });
     return {
-      subjectKey: subjectKey, character: character, subjectOtherText: subjectOtherText,
+      subjects: subjects,
+      subjectKey: 'none', character: null, subjectOtherText: subjectOtherText,
       placeKey: settingPlaceKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: actionKey, actionOtherText: actionOtherText, pov: povOn,
       moodKey: moodKey, moodOtherText: moodOtherText
@@ -1083,14 +1166,25 @@
   // claim/adopt/next() -- see renderSignup below.
   var pendingGenerationPromise = Promise.resolve();
 
+  /**
+   * Resolves EVERY id in assembled.characterIdsForGeneration (now
+   * potentially more than one, since Subject went multi-select — tracker
+   * item for-product-wizard-characters-step-is-si-paxp07) into the
+   * resolved-character shape generate-video.js's buildPrompt expects.
+   * Previously only ever read characterIdsForGeneration[0] — harmless
+   * while at most one id could ever exist, but would have silently
+   * dropped every character past the first the moment multi-select shipped
+   * if left unchanged.
+   */
   function resolveCharactersForGeneration(){
     if(!assembled || !assembled.characterIdsForGeneration.length) return [];
-    var id = assembled.characterIdsForGeneration[0];
-    var c = staged.characters.filter(function(x){ return x.id === id; })[0];
-    if(!c) return [];
-    var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
-    if(c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
-    return [resolved];
+    return assembled.characterIdsForGeneration.map(function(id){
+      var c = staged.characters.filter(function(x){ return x.id === id; })[0];
+      if(!c) return null;
+      var resolved = { name: c.name, description: c.description, isSelf: !!c.isSelf };
+      if(c.isSelf && c.photoDataUrl) resolved.photoDataUrl = c.photoDataUrl;
+      return resolved;
+    }).filter(Boolean);
   }
 
   /**
@@ -1453,11 +1547,24 @@
               return;
             }
             track('returning_user_login_succeeded', {});
-            flushStagedCharactersToStore();
-            if(assembled && assembled.characterIdsForGeneration.length && staged.subjectCharacterId){
-              DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
-            }
+            var loginIdMap = flushStagedCharactersToStore();
             DreamStore.setDraft(draftPatch);
+            // Re-point draft.characterIds at the now-real (flushed) id(s) --
+            // draftPatch above still carries whatever
+            // assembled.characterIdsForGeneration held when it was built,
+            // BEFORE this flush (one or more "local..." staged ids). Must
+            // run AFTER the setDraft(draftPatch) call directly above, not
+            // before it (review finding on this exact block: it used to run
+            // BEFORE, so this fixup got immediately clobbered right back to
+            // the stale local id(s) by draftPatch's own characterIds field
+            // the very next line) -- matches renderSignup's own equivalent
+            // fixup further below, which has always run with nothing after
+            // it to re-clobber it. See resolveCharactersForGeneration's own
+            // comment for why this is no longer safe to assume is at most
+            // one id.
+            if(assembled && assembled.characterIdsForGeneration.length){
+              DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return loginIdMap[id] || id; }) });
+            }
             // Nothing was safe to bill before we knew this was really
             // their account -- the already_registered branch above never
             // called startPendingGeneration for this content. Now that a
@@ -1706,16 +1813,21 @@
             errEl.textContent = err;
             return;
           }
-          flushStagedCharactersToStore();
-          // Update the draft's characterIds to the now-real (flushed) id,
-          // in case the earlier pre-signup generation call already baked
-          // a "local..." staged id into what it sent server-side -- the
-          // server call itself only ever sent resolved character fields
-          // (name/description/photo), never the id, so this is purely for
-          // any LOCAL dream metadata display, not a correctness issue for
-          // the in-flight generation itself.
-          if(assembled && assembled.characterIdsForGeneration.length && staged.subjectCharacterId){
-            DreamStore.setDraft({ characterIds: [staged.subjectCharacterId] });
+          var signupIdMap = flushStagedCharactersToStore();
+          // Update the draft's characterIds to the now-real (flushed)
+          // id(s), in case the earlier pre-signup generation call already
+          // baked one or more "local..." staged ids into what it sent
+          // server-side -- the server call itself only ever sent resolved
+          // character fields (name/description/photo), never the id, so
+          // this is purely for any LOCAL dream metadata display AND for
+          // home.html's own fallback fresh-generation path (used when
+          // there's no pendingJob to resume, e.g. pendingStartFailed) --
+          // that path DOES read draft.characterIds directly, so this must
+          // stay a real, resolvable id, not a correctness no-op. Now maps
+          // every id (previously assumed at most one -- see
+          // resolveCharactersForGeneration's own comment on that).
+          if(assembled && assembled.characterIdsForGeneration.length){
+            DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return signupIdMap[id] || id; }) });
           }
           // Waits for the (already in-flight, possibly already settled)
           // pending-generation call to settle before reading pendingId/

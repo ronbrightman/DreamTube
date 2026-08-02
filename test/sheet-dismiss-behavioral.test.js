@@ -711,6 +711,57 @@ test('wizard.html character sheet: a genuine tap-outside well after opening stil
 });
 
 // ============================================================================
+// 7c. Multi-select toggle (tracker item
+// for-product-wizard-characters-step-is-si-paxp07, founder repro
+// 2026-08-02) through a NORMAL (non-adversarial) sheet open -- this exact
+// Subject-step character sheet was also the originally-reported instance
+// of the 75ob70 rapid-re-tap fix directly above, so a future change to
+// either area (this multi-select toggle, or SheetDismiss's own tap-
+// outside/rapid-re-tap guard) could silently reintroduce a conflict
+// between them without a test covering both together. This test opens the
+// sheet with a single, ordinary click (75ob70's own rapid-re-tap coverage
+// above already proves the adversarial case separately) and confirms the
+// underlying multi-select selection state (staged.subjectCharacterIds +
+// subjectOtherKind, see wizard.html's own design note above renderSubject)
+// still toggles correctly once the sheet has opened/closed normally through
+// it -- i.e. saving a character via this sheet, opened by a plain tap,
+// adds it to the selection without touching any other current selection.
+// ============================================================================
+
+test('wizard.html character sheet: opened via a normal (non-adversarial) tap, saving a character still ADDS it to the multi-select subject set without unchecking an already-selected "other" chip -- the exact founder repro (Me + a stranger both stay selected)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
+
+    // Select "A stranger" FIRST (an ordinary tap, no character sheet involved).
+    await page.click('#subject-other-row [data-subj-other="stranger"]');
+    assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true);
+
+    // Now open the "Me" character sheet with a single, ordinary tap (not
+    // the rapid-re-tap pattern the 75ob70 tests above exercise), fill in a
+    // description, and save.
+    await page.click('#subj-add-self');
+    await waitForSheetSettled(page, '#sheet-character-overlay');
+    await page.fill('#char-desc-input', 'a woman in her 40s with short brown hair');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    // The just-saved "Me" chip must be selected...
+    var meSelected = await page.locator('.char-chip.selected .chip-edit-area[data-char-edit]').count();
+    assert.equal(meSelected, 1, 'the newly-saved "Me" character must be selected after saving through a normally-opened sheet');
+    // ...AND "A stranger" must STILL be selected too -- this is the exact
+    // founder-reported bug: adding a character used to uncheck it.
+    assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true, '"A stranger" must remain selected after adding a character through the sheet -- founder repro: it used to get unchecked');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
 // 8. start.html — Advanced > Characters sheet
 // REMOVED (not replaced): start.html's Advanced > Characters screen and its
 // character sheet were removed outright 2026-07-31 (tracker item

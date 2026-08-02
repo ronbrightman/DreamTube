@@ -326,6 +326,102 @@ test('ACTION_DEFAULT_VISIBLE_KEYS still leaves every other chip in ACTION_CHIPS 
   });
 });
 
+// ── Multi-select subject (`input.subjects`) — tracker item
+// for-product-wizard-characters-step-is-si-paxp07, founder repro
+// 2026-08-02: "choosing Me and then adding another character (e.g. a
+// stranger) UNCHECKS Me... Founder intent = multi-select." wizard.html's
+// Subject step now toggles any number of staged characters + at most one
+// "other" chip (stranger/animal/none/other) independently and composes
+// them together into this new `subjects` array input. Singular
+// subjectKey/character/subjectOtherText coverage above is left completely
+// untouched (still exercised, still passing) — these tests cover ONLY the
+// new array shape, which create.html's own single-select "Build it" step
+// never uses.
+
+test('assembleCaption: `subjects` array with a single entry matches the singular subjectKey/character/subjectOtherText path byte-for-byte (backward-compat sanity check)', function () {
+  var viaArray = WizardChips.assembleCaption({
+    subjects: [{ subjectKey: 'stranger' }],
+    actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic'
+  });
+  var viaSingular = WizardChips.assembleCaption({
+    subjectKey: 'stranger', actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic'
+  });
+  assert.equal(viaArray.caption, viaSingular.caption);
+  assert.deepEqual(viaArray.characterIdsForGeneration, viaSingular.characterIdsForGeneration);
+});
+
+test('assembleCaption: founder\'s own worked example -- Me (described) + "Someone I know" (Alex, described) + "A stranger" all selected together produces ONE joined subject clause naming all three, and neither described character\'s id rides along (avoids doubling their description via generate-video.js\'s own buildPrompt)', function () {
+  var result = WizardChips.assembleCaption({
+    subjects: [
+      { subjectKey: 'me', character: { id: 'me1', isSelf: true, name: '', description: 'a woman in her 30s, curly brown hair' } },
+      { subjectKey: 'someone', character: { id: 'alex1', isSelf: false, name: 'Alex', description: 'tall with curly red hair' } },
+      { subjectKey: 'stranger' }
+    ],
+    actionKey: 'flying', moodKey: 'dreamy', style: 'Cinematic'
+  });
+  assert.match(result.caption, /^aerial wide shot of me, a woman in her 30s, curly brown hair, Alex, tall with curly red hair and a stranger, flying,/);
+  assert.deepEqual(result.characterIdsForGeneration, []);
+});
+
+test('assembleCaption: a PHOTO "Me" character combined with a described "Someone I know" and "A stranger" -- the photo character contributes no caption phrase (joined clause skips it) but DOES ride along in characterIdsForGeneration; the described character does the opposite (phrase, no id)', function () {
+  var result = WizardChips.assembleCaption({
+    subjects: [
+      { subjectKey: 'me', character: { id: 'me2', isSelf: true, name: '', description: '', photoDataUrl: 'data:image/jpeg;base64,xyz' } },
+      { subjectKey: 'someone', character: { id: 'alex2', isSelf: false, name: 'Alex', description: 'tall with curly red hair' } },
+      { subjectKey: 'stranger' }
+    ],
+    actionKey: 'flying', moodKey: 'dreamy', style: 'Cinematic'
+  });
+  assert.equal(result.caption.indexOf('data:image'), -1);
+  assert.match(result.caption, /^aerial wide shot of Alex, tall with curly red hair and a stranger,/, 'the photo character contributes no phrase of its own -- the joined clause has only the two non-photo subjects');
+  assert.deepEqual(result.characterIdsForGeneration, ['me2'], 'only the photo character\'s id rides along -- Alex\'s description is already baked into the caption text');
+});
+
+test('assembleCaption: a two-character selection ("Me" + "Someone I know", no "other" chip) joins with "and", no trailing/leading artifacts', function () {
+  var result = WizardChips.assembleCaption({
+    subjects: [
+      { subjectKey: 'me', character: { id: 'me3', isSelf: true, name: '', description: '' } },
+      { subjectKey: 'someone', character: { id: 'sam1', isSelf: false, name: 'Sam', description: 'short with glasses' } }
+    ],
+    actionKey: 'exploring', moodKey: 'peaceful', style: 'Cinematic'
+  });
+  assert.match(result.caption, /of me and Sam, short with glasses,/);
+});
+
+test('assembleCaption: an empty `subjects` array falls back to the singular path exactly as if `subjects` were never passed at all (e.g. the Subject step was skipped -- nothing selected)', function () {
+  var result = WizardChips.assembleCaption({ subjects: [], actionKey: 'flying', moodKey: 'dreamy', style: 'Cinematic' });
+  assert.match(result.caption, /of the dream,/);
+  assert.deepEqual(result.characterIdsForGeneration, []);
+});
+
+test('buildDeterministicStory: `subjects` array with a single entry matches the singular path byte-for-byte (backward-compat sanity check)', function () {
+  var viaArray = WizardChips.buildDeterministicStory({ subjects: [{ subjectKey: 'stranger' }], actionKey: 'exploring', placeKey: 'nature', sceneryTime: 'Night', moodKey: 'mysterious' });
+  var viaSingular = WizardChips.buildDeterministicStory({ subjectKey: 'stranger', actionKey: 'exploring', placeKey: 'nature', sceneryTime: 'Night', moodKey: 'mysterious' });
+  assert.equal(viaArray, viaSingular);
+});
+
+test('buildDeterministicStory: founder\'s own worked example -- Me + Alex + "a stranger" reads as one natural "with X, Y and Z" clause', function () {
+  var story = WizardChips.buildDeterministicStory({
+    subjects: [
+      { subjectKey: 'me' },
+      { subjectKey: 'someone', character: { name: 'Alex' } },
+      { subjectKey: 'stranger' }
+    ],
+    actionKey: 'flying', moodKey: 'dreamy'
+  });
+  assert.equal(story, 'I was with Alex and a stranger, flying, feeling dreamy and surreal.');
+});
+
+test('buildDeterministicStory: "Me" alone (no other subject) reads exactly like the plain, no-subject-descriptor case -- explicit "me" contributes nothing extra on its own', function () {
+  var story = WizardChips.buildDeterministicStory({ subjects: [{ subjectKey: 'me' }], actionKey: 'flying', moodKey: 'dreamy' });
+  assert.equal(story, 'I was flying, feeling dreamy and surreal.');
+});
+
+test('buildDeterministicStory: "Me" + "A stranger" (no named "someone") still reads "with a stranger" -- explicit Me presence upgrades the wording from the singular path\'s bare "I was a stranger" (which reads as narrator-becomes-stranger) to the correct "I was WITH a stranger"', function () {
+  var story = WizardChips.buildDeterministicStory({ subjects: [{ subjectKey: 'me' }, { subjectKey: 'stranger' }], actionKey: 'exploring', moodKey: 'peaceful' });
+  assert.equal(story, 'I was with a stranger, exploring somewhere new, feeling peaceful.');
+});
+
 test('assembleCaption: with a place chosen, the connector still joins the action phrase to the place phrase correctly (with-place case unaffected by the no-place fix)', function () {
   // flying+sky is the pre-existing "spec worked example" test above --
   // this adds direct with-place coverage for a couple of the OTHER

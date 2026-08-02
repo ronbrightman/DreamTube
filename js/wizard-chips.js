@@ -201,6 +201,27 @@
     return (mood && mood.lighting) || MOOD_CHIPS.filter(function (m) { return m.key === DEFAULT_MOOD; })[0].lighting;
   }
 
+  // ── Multi-select subject support (tracker item
+  //    for-product-wizard-characters-step-is-si-paxp07, founder repro
+  //    2026-08-02) — see this module's own subjectPhraseAndCharacterId/
+  //    assembleCaption/buildDeterministicStory doc comments below for how
+  //    the singular vs. `subjects`-array input shapes coexist.
+  /**
+   * Natural-language joiner ("A" / "A and B" / "A, B and C") for combining
+   * more than one subject phrase/descriptor fragment into a single clause.
+   * Used by both assembleCaption and buildDeterministicStory below once a
+   * caller passes multiple subjects (wizard.html's Step 1, since the
+   * founder's 2026-08-02 repro/intent: "Me AND someone known AND a
+   * stranger" all selected together).
+   */
+  function joinNaturalList(items) {
+    var list = (items || []).filter(Boolean);
+    if (!list.length) return '';
+    if (list.length === 1) return list[0];
+    if (list.length === 2) return list[0] + ' and ' + list[1];
+    return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+  }
+
   /**
    * Builds the subject phrase + decides which (if any) character id should
    * ride along on the actual generation request — see the header comment
@@ -241,6 +262,26 @@
    *   subjectKey: 'me'|'someone'|'stranger'|'animal'|'none'|'other'
    *   character: resolved character object (see above), only for me/someone
    *   subjectOtherText: string, only for subjectKey==='other'
+   *   subjects: OPTIONAL array of { subjectKey, character, subjectOtherText }
+   *     entries (each shaped exactly like the three singular fields above),
+   *     for a MULTI-select subject (wizard.html's Step 1, tracker item
+   *     for-product-wizard-characters-step-is-si-paxp07 — the founder's own
+   *     repro/intent, "Me AND someone known AND a stranger" all selected
+   *     together). When this is a non-empty array it takes over subject
+   *     resolution ENTIRELY and the three singular fields above are
+   *     ignored: each entry is resolved exactly as the singular path would
+   *     (same subjectPhraseAndCharacterId, same "photo character contributes
+   *     no caption phrase but DOES ride in characterIdsForGeneration; a
+   *     described character contributes a phrase but NOT an id" rule, kept
+   *     byte-identical per-entry), their non-empty phrases are joined into
+   *     one natural clause ("me, Alex and a stranger"), and their character
+   *     ids are all collected into characterIdsForGeneration (now
+   *     potentially more than one — every existing caller of this array,
+   *     start-pending-generation.js's buildPrompt down through
+   *     generate-video.js, already accepts an arbitrary-length characters
+   *     list). When omitted or empty, behavior is 100% unchanged from
+   *     before this array existed — this is how create.html's "Build it"
+   *     retrofit (still single-select) keeps working untouched.
    *   placeKey: one of SETTING_PLACE_CHIPS[].key, or null
    *   placeOtherText: string, only for placeKey==='other'
    *   sceneryTime: 'Day'|'Night'|null
@@ -272,7 +313,18 @@
     var camera = inferCamera(actionKey, !!input.pov, moodKey);
     var lighting = inferLighting(moodKey, input.sceneryTime || null);
 
-    var subjectResult = subjectPhraseAndCharacterId(input.subjectKey, input.character, input.subjectOtherText);
+    var subjectResult;
+    if (Array.isArray(input.subjects) && input.subjects.length) {
+      var perSubject = input.subjects.map(function (s) {
+        return subjectPhraseAndCharacterId(s.subjectKey, s.character, s.subjectOtherText);
+      });
+      subjectResult = {
+        phrase: joinNaturalList(perSubject.map(function (r) { return r.phrase; }).filter(Boolean)),
+        characterIds: perSubject.map(function (r) { return r.characterId; }).filter(Boolean)
+      };
+    } else {
+      subjectResult = subjectPhraseAndCharacterId(input.subjectKey, input.character, input.subjectOtherText);
+    }
 
     var actionChip = ACTION_CHIPS.filter(function (a) { return a.key === actionKey; })[0];
     var defaultActionChip = ACTION_CHIPS.filter(function (a) { return a.key === DEFAULT_ACTION; })[0];
@@ -324,7 +376,7 @@
 
     return {
       caption: caption,
-      characterIdsForGeneration: subjectResult.characterId ? [subjectResult.characterId] : []
+      characterIdsForGeneration: subjectResult.characterIds || (subjectResult.characterId ? [subjectResult.characterId] : [])
     };
   }
 
@@ -379,6 +431,10 @@
    * POV/character-description/style are meaningless here, a human "what
    * happened in the dream" sentence has no camera or rendering style).
    * Pure and synchronous — no network call, never fails.
+   *
+   * Also accepts the same optional multi-select `input.subjects` array as
+   * assembleCaption (see that function's own doc comment) — when non-empty
+   * it takes over subject resolution entirely, exactly as it does there.
    */
   function buildDeterministicStory(input) {
     input = input || {};
@@ -389,7 +445,38 @@
     // "I" alone is the whole subject, same as assembleCaption's own
     // subjectPhraseAndCharacterId treating those as the plain/no-op case.
     var subjectDescriptor = null;
-    if (input.subjectKey === 'someone') {
+    if (Array.isArray(input.subjects) && input.subjects.length) {
+      // Multi-select: collect a plain-text fragment per non-'me'/'none'
+      // subject (no "with " prefix baked in yet -- 'someone' contributes
+      // just the name, matching the singular branch's un-prefixed name
+      // before "with " is added below), then join them naturally. `hasPerson`
+      // decides whether the joined fragment gets a "with " prefix at all --
+      // true whenever a real person (an explicit 'me', or a named 'someone')
+      // is ALSO among the selected subjects, since "I was a stranger, ..."
+      // (the singular branch's own existing wording for stranger/animal/
+      // other alone, preserved as-is below) reads as "I became a stranger,"
+      // while "I was WITH a stranger, ..." is the correct reading once a
+      // person is confirmed present alongside them -- e.g. the founder's own
+      // "Me AND someone known AND a stranger" example.
+      var fragments = [];
+      var hasPerson = false;
+      input.subjects.forEach(function (s) {
+        if (s.subjectKey === 'me') { hasPerson = true; return; }
+        if (s.subjectKey === 'someone') {
+          hasPerson = true;
+          fragments.push((s.character && (s.character.name || '').trim()) || 'someone I know');
+        } else if (s.subjectKey === 'stranger') {
+          fragments.push('a stranger');
+        } else if (s.subjectKey === 'animal') {
+          fragments.push('an animal or creature');
+        } else if (s.subjectKey === 'other' && s.subjectOtherText && s.subjectOtherText.trim()) {
+          fragments.push(s.subjectOtherText.trim());
+        }
+        // 'none' contributes nothing, same as the singular branch.
+      });
+      var joinedFragments = joinNaturalList(fragments);
+      subjectDescriptor = joinedFragments ? (hasPerson ? 'with ' + joinedFragments : joinedFragments) : null;
+    } else if (input.subjectKey === 'someone') {
       var name = (input.character && (input.character.name || '').trim()) || 'someone I know';
       subjectDescriptor = 'with ' + name;
     } else if (input.subjectKey === 'stranger') {
