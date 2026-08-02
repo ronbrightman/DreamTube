@@ -2,32 +2,32 @@
 <html lang="en">
 <head>
 <!--
-  Temp founder mock (Manager, 2026-08-01) — unlinked, delete after decision.
+  Temp founder mock (Manager, 2026-08-02) — unlinked, delete after decision.
 
-  LOGO RETOUCH options — the current asset (assets/logo-v2.png) retouched
-  toward the purple night palette, six treatments side by side (A–F).
-  Look-and-pick page: nothing here is tappable.
+  LOGO ROUND 2 — SERIOUS NIGHT VARIANTS. Founder verdict on the live v3
+  logo (seen on the index.html welcome screen): too shiny light purple,
+  too "chicky" — pull it toward the serious, nocturnal colors of the rest
+  of the page (deep navy #0c0a1a, muted violet #9d90ff accents). This
+  replaces round 1 (the A–F retouch grid) whose decision already shipped
+  as logo-v3.
 
-  All treatments are CSS-only on the real raster — no AI regeneration, the
-  wordmark stays the original pixels. Technique notes:
-  - logo-v2.png is an OPAQUE BLACK SQUARE (no alpha channel), so a normal
-    CSS drop-shadow would glow the square, not the mark. Every variant
-    renders the image with mix-blend-mode:screen (black contributes
-    nothing on the night sky), and glows are built from (a) a blurred
-    duplicate of the same image, also screen-blended, so the bloom follows
-    the mark's actual silhouette, and (b) a soft radial halo behind it.
-  - The purple shift is filter:hue-rotate() — it maps the pink→violet and
-    the orange→pink/magenta (warmth kept in the highlights), leaves the
-    white "dream" white and the black background black.
-  - See variant F's honesty note: a hue-rotate can only ROTATE the
-    existing gradient, not art-direct it; a true violet/indigo re-color
-    with hand-placed warm highlights needs the source re-exported (ideally
-    with transparency). These mocks are faithful to what CSS can ship
-    today.
+  Three variants (S1/S2/S3), each rendered on an EXACT replica of the
+  welcome screen he was looking at (index.html + css/styles.css values
+  verbatim: 220px .wm-visual tile, "Your dreams come alive." headline,
+  lavender Get Started button), plus the current v3 as reference.
+
+  Colors only, geometry identical — all treatments are CSS filters on the
+  real assets/logo-v3.png raster, no regeneration. Because it's a single
+  raster, the image is stacked three times with clip-path regions (the
+  crescent mark / "dream" / "tube") so each region gets its own precise
+  filter — e.g. S1 can hold "no pink anywhere" in both the mark AND the
+  "tube" wordmark. The regions tile back together seamlessly on the black
+  square. Production would ship the pick as a proper re-exported PNG;
+  these filters are the faithful preview.
 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Logo retouch options — DreamTube</title>
+<title>Logo round 2 — serious night variants — DreamTube</title>
 <meta name="theme-color" content="#0c0a1a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,33 +35,24 @@
 <style>
 *{ box-sizing:border-box; margin:0; padding:0; }
 :root{
-  --bg-app:#0c0a1a;
-  --home-raise:rgba(36,29,71,.88);
-  --home-raise2:rgba(24,19,46,.92);
-  --home-ink:#eae7fb;
-  --home-soft:#a49dc4;
+  --idx-ink:#eae7fb; --idx-soft:#a49dc4; --idx-acc:#9d90ff;
   --home-line:rgba(157,144,255,.32);
-  --home-acc:#9d90ff;
-  --home-warn:#e0aa5a;
-  --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
-  --gradient-violet:linear-gradient(135deg,#7b5cff,#a35aff 55%,#e078be);
   --font-body:'Manrope',sans-serif;
 }
+html{ background:#0d0a1e; }
 body{
   font-family:var(--font-body);
   background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e);
-  color:var(--home-ink);
-  min-height:100vh;
-  position:relative;
+  color:var(--idx-ink);
+  min-height:100vh; position:relative;
   -webkit-tap-highlight-color:transparent;
 }
-/* the living night sky */
 .sky{ position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
 .sky-bg{
   position:absolute; inset:0;
   background:
-    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
-    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.3), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.2), transparent 55%);
 }
 .sky-stars{
   position:absolute; inset:-40px;
@@ -73,173 +64,101 @@ body{
     radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
     radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
   background-size:260px 240px;
-  animation:drift 70s linear infinite, twinkle 4.5s ease-in-out infinite;
+  animation:twinkle 4.5s ease-in-out infinite;
 }
-@keyframes drift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
 @keyframes twinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
 @media (prefers-reduced-motion:reduce){ .sky-stars{ animation:none; } }
 
-.wrap{ position:relative; z-index:1; max-width:1160px; margin:0 auto; padding:34px 20px 80px; }
+.wrap{ position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:34px 20px 80px; }
 .page-eyebrow{
   font-size:12px; letter-spacing:.12em; text-transform:uppercase;
   color:#cfc8ff; font-weight:800; margin-bottom:8px;
 }
 h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
-.page-sub{ margin-top:8px; font-size:16px; line-height:1.5; color:var(--home-soft); max-width:640px; }
+.page-sub{ margin-top:8px; font-size:16px; line-height:1.5; color:var(--idx-soft); max-width:660px; }
 
-/* ===== variant grid ===== */
 .grid{
   margin-top:30px;
-  display:grid; grid-template-columns:1fr; gap:28px;
+  display:grid; grid-template-columns:1fr; gap:28px; justify-items:center;
 }
-@media (min-width:760px){ .grid{ grid-template-columns:1fr 1fr; } }
-@media (min-width:1100px){ .grid{ grid-template-columns:1fr 1fr 1fr; } }
+@media (min-width:800px){ .grid{ grid-template-columns:1fr 1fr; } }
+@media (min-width:1520px){ .grid{ grid-template-columns:1fr 1fr 1fr 1fr; } }
 
-.vcard{
-  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
-  border:1px solid rgba(157,144,255,.22); border-radius:24px;
-  padding:22px 20px; overflow:hidden;
-}
+.vcol{ width:100%; max-width:390px; }
 .vhead{ display:flex; align-items:baseline; gap:10px; }
 .vletter{
-  flex:0 0 auto; width:30px; height:30px; border-radius:9px;
-  display:flex; align-items:center; justify-content:center;
+  flex:0 0 auto; min-width:34px; height:30px; padding:0 8px; border-radius:9px;
+  display:inline-flex; align-items:center; justify-content:center;
   background:rgba(157,144,255,.16); border:1px solid var(--home-line);
-  color:#cfc8ff; font-size:15px; font-weight:800;
+  color:#cfc8ff; font-size:14px; font-weight:800;
   transform:translateY(4px);
 }
-.vname{ font-size:20px; font-weight:800; letter-spacing:-.01em; }
-.vdesc{ margin-top:8px; font-size:15px; line-height:1.5; color:var(--home-soft); min-height:66px; }
+.vname{ font-size:19px; font-weight:800; letter-spacing:-.01em; }
+.vdesc{ margin-top:7px; font-size:15px; line-height:1.5; color:var(--idx-soft); min-height:88px; }
 
-/* ===== the large stage (icon at 160px) =====
-   The asset is an opaque black square → mix-blend-mode:screen sinks the
-   black into the night sky; blooms are blurred screen-blended duplicates
-   so the glow follows the mark, never the square. */
-.stage{
-  position:relative; height:230px; margin-top:16px; border-radius:16px;
-  background:linear-gradient(175deg,#151030,#0e0b22 70%,#0c0a1e);
-  border:1px solid rgba(255,255,255,.07);
+/* ===== the phone frame: EXACT welcome screen (index.html + styles.css) ===== */
+.frame{
+  margin-top:14px; height:700px; border-radius:36px; overflow:hidden;
+  background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 30px 70px -24px rgba(0,0,0,.6);
+}
+.welcome-body{
+  height:100%;
+  display:flex; flex-direction:column; justify-content:space-between; align-items:center;
+  padding:56px 28px 40px; text-align:center;
+}
+.wm-copy{ font-weight:800; font-size:24px; line-height:1.3; color:var(--idx-ink); }
+.wm-copy i{ font-style:normal; }
+.wm-subcopy{ font-size:14px; color:var(--idx-soft); margin-top:8px; }
+.wm-foot{ width:100%; display:flex; flex-direction:column; gap:14px; }
+.btn-primary{
+  font-family:var(--font-body); font-weight:700; font-size:14.5px; border:none;
+  border-radius:100px; padding:15px 20px; width:100%;
   display:flex; align-items:center; justify-content:center;
-  overflow:hidden; isolation:isolate;
+  background:var(--idx-acc); color:#fff;
+  box-shadow:0 12px 26px -10px rgba(157,144,255,.45);
+  text-decoration:none; cursor:default;
 }
-.stage-stars{
-  position:absolute; inset:0; pointer-events:none;
-  background-image:
-    radial-gradient(1.2px 1.2px at 12% 22%, rgba(255,255,255,.8), transparent 60%),
-    radial-gradient(1px 1px at 84% 16%, rgba(207,200,255,.7), transparent 60%),
-    radial-gradient(1px 1px at 22% 78%, rgba(255,255,255,.45), transparent 60%),
-    radial-gradient(1.3px 1.3px at 76% 82%, rgba(255,255,255,.55), transparent 60%),
-    radial-gradient(1px 1px at 55% 10%, rgba(207,200,255,.5), transparent 60%);
+.link-text{
+  font-size:13px; color:var(--idx-soft); text-align:center;
+  text-decoration:underline; text-underline-offset:3px;
 }
-.logo-stack{ position:relative; width:160px; height:160px; }
-.logo-stack img{
-  position:absolute; inset:0; width:160px; height:160px;
-  mix-blend-mode:screen;
-}
-.logo-sharp{ z-index:3; }
-/* silhouette-following bloom: blurred duplicate, screen-blended */
-.logo-bloom{ z-index:2; opacity:.85; }
-/* soft ambient halo behind everything */
-.halo{
-  position:absolute; left:50%; top:50%; width:300px; height:300px;
-  transform:translate(-50%,-50%); z-index:1; pointer-events:none;
-  background:radial-gradient(circle, rgba(157,144,255,.28) 0%, rgba(157,144,255,.12) 42%, transparent 68%);
-}
-/* variant filters */
-.f-purple{ filter:hue-rotate(-62deg) saturate(1.08); }
-.bloom-violet{ filter:hue-rotate(-70deg) saturate(1.35) blur(15px); }
-.bloom-purple{ filter:hue-rotate(-62deg) saturate(1.25) blur(15px); }
-/* E — moon-accent: violet rim light hugging the crescent + sparkle behind.
-   Ring sits behind the screen-blended logo, at the mark's circle
-   (the crescent circle ≈ centered 50%/38% of the square, r ≈ 27%). */
-.rim{
-  position:absolute; left:50%; top:38%; width:96px; height:96px; z-index:1;
-  transform:translate(-50%,-50%); border-radius:50%; pointer-events:none;
-  box-shadow:0 0 18px 6px rgba(157,144,255,.55), inset 0 0 14px 4px rgba(157,144,255,.35);
-}
-.sparkle{
-  position:absolute; inset:0; z-index:1; pointer-events:none;
-  background-image:
-    radial-gradient(1.6px 1.6px at 30% 18%, rgba(207,200,255,.95), transparent 60%),
-    radial-gradient(1.2px 1.2px at 68% 12%, rgba(157,144,255,.85), transparent 60%),
-    radial-gradient(1.8px 1.8px at 80% 40%, rgba(255,255,255,.8), transparent 60%),
-    radial-gradient(1.2px 1.2px at 16% 48%, rgba(157,144,255,.75), transparent 60%),
-    radial-gradient(1.4px 1.4px at 42% 70%, rgba(207,200,255,.6), transparent 60%),
-    radial-gradient(1.2px 1.2px at 74% 74%, rgba(255,255,255,.5), transparent 60%);
-}
+.link-text a{ color:var(--idx-ink); text-decoration:underline; cursor:default; }
 
-/* ===== in-context strip: 18px topbar wordmark + the dock, per variant ===== */
-.ctx{
-  position:relative; margin-top:14px; height:170px; border-radius:16px;
-  background:linear-gradient(180deg,#171233,#100d20 60%,#0d0a1e);
-  border:1px solid rgba(255,255,255,.07);
-  overflow:hidden; isolation:isolate;
-  display:flex; flex-direction:column; justify-content:space-between;
+/* ===== the logo: 3 clip-path regions of the SAME raster, per-region filters.
+   Region splits (measured on the 1254px source): wordmark top edge ≈64.5%
+   down; "tube" starts ≈59% across. The regions tile back seamlessly on the
+   black square — geometry is untouched, only colors move. ===== */
+.wm-visual{
+  position:relative; width:220px; height:220px; border-radius:38px; margin:18px auto;
+  overflow:hidden; background:#000;
+  box-shadow:0 12px 32px -8px rgba(0,0,0,.6);
+  flex:0 0 auto;
 }
-.ctx-stars{
-  position:absolute; inset:0; pointer-events:none;
-  background-image:
-    radial-gradient(1px 1px at 70% 30%, rgba(255,255,255,.6), transparent 60%),
-    radial-gradient(1.2px 1.2px at 30% 55%, rgba(207,200,255,.55), transparent 60%),
-    radial-gradient(1px 1px at 86% 60%, rgba(255,255,255,.4), transparent 60%);
+.wm-visual img{
+  position:absolute; inset:0; width:100%; height:100%; display:block;
 }
-.ctx-topbar{ position:relative; display:flex; align-items:center; padding:16px 16px 0; }
-.home-logo{ font-weight:800; font-size:18px; color:var(--home-ink); letter-spacing:-.01em; display:flex; align-items:center; }
-.home-logo .mark{
-  font-style:normal; width:22px; height:22px; flex:0 0 22px; margin-right:7px;
-  background:url(data:image/png;base64,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) center/contain no-repeat;
-}
-.home-logo em{
-  font-style:normal;
-  background:linear-gradient(90deg,#f2205e,#fb2a24 55%,#fe8224);
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-}
-/* topbar variant treatments (the topbar icon is RGBA, so drop-shadow
-   follows its real silhouette — unlike the big square asset) */
-.tb-glow .mark{ filter:drop-shadow(0 0 5px rgba(157,144,255,.65)); }
-.tb-purple .mark{ filter:hue-rotate(-62deg) saturate(1.08); }
-.tb-purple.tb-glow .mark{ filter:hue-rotate(-62deg) saturate(1.08) drop-shadow(0 0 5px rgba(157,144,255,.65)); }
-.tb-purple em{ background:var(--gradient-violet); -webkit-background-clip:text; background-clip:text; }
-.tb-glowtext em{ filter:drop-shadow(0 0 7px rgba(157,144,255,.55)); }
-/* mini dock — Home active + the create button carrying the mark's gradient */
-.ctx-dock{
-  position:relative;
-  height:54px; display:flex; align-items:center; justify-content:space-around;
-  background:rgba(12,10,26,.72);
-  backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
-  border-top:1px solid rgba(157,144,255,.22);
-}
-.dock-item{
-  display:flex; flex-direction:column; align-items:center; gap:3px;
-  width:58px; color:#8f88b3; font-size:9.5px; font-weight:700; letter-spacing:.02em;
-}
-.dock-item svg{ width:20px; height:20px; display:block; }
-.dock-item.active{ color:var(--home-ink); }
-.dock-create{
-  width:38px; height:38px; border-radius:50%; flex:none;
-  background:var(--gradient-ig); color:#fff;
-  display:flex; align-items:center; justify-content:center;
-  box-shadow:0 6px 16px -6px rgba(253,29,29,.35);
-}
-.dock-create.violet{
-  background:var(--gradient-violet);
-  box-shadow:0 6px 16px -6px rgba(131,58,180,.5);
-}
-.dock-create svg{ width:20px; height:20px; }
+.l-mark{ clip-path:inset(0 0 35.5% 0); }
+.l-dream{ clip-path:inset(64.5% 41% 0 0); }
+.l-tube{ clip-path:inset(64.5% 0 0 59%); }
+/* subtle silhouette glow (S3) — blurred duplicate of the mark region only */
+.l-glow{ clip-path:inset(0 0 35.5% 0); filter:blur(14px); opacity:.5; }
 
-/* ===== honesty note (F) ===== */
-.note-card .vdesc{ min-height:0; }
-.note-body{
-  margin-top:14px; font-size:15px; line-height:1.55; color:var(--home-soft);
-  border-left:2px solid var(--home-warn); padding-left:14px;
-}
-.note-body b{ color:var(--home-ink); }
-.recommend{
-  margin-top:30px; padding:18px 20px; border-radius:16px;
-  background:rgba(157,144,255,.1); border:1px dashed rgba(157,144,255,.4);
-  font-size:15px; line-height:1.55; color:#cfc8ff;
-}
-.recommend b{ color:var(--home-ink); }
+/* --- Current (v3, reference) — no filters --- */
+
+/* --- S1 · deep indigo → muted violet, no pink anywhere --- */
+.s1 .l-mark{ filter:hue-rotate(-30deg) saturate(.62) brightness(.9); }
+.s1 .l-tube{ filter:hue-rotate(-42deg) saturate(.5) brightness(1.0); }
+
+/* --- S2 · near-monochrome silver-white, faint violet edge; "tube" ≈ #9d90ff --- */
+.s2 .l-mark{ filter:grayscale(1) brightness(1.5) sepia(.32) saturate(1.9) hue-rotate(202deg); }
+.s2 .l-tube{ filter:hue-rotate(-40deg) saturate(.42) brightness(1.08); }
+
+/* --- S3 · deep violet → soft blue-lilac, cooler, subtle glow --- */
+.s3 .l-mark{ filter:hue-rotate(-55deg) saturate(.7) brightness(.98); }
+.s3 .l-tube{ filter:hue-rotate(-55deg) saturate(.55) brightness(1.02); }
+.s3 .l-glow{ filter:hue-rotate(-55deg) saturate(.9) blur(14px); }
 </style>
 </head>
 <body>
@@ -247,141 +166,98 @@ h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
 <div class="sky"><div class="sky-bg"></div><div class="sky-stars"></div></div>
 
 <div class="wrap">
-  <div class="page-eyebrow">Founder mock · look &amp; pick</div>
-  <h1>Logo retouch options</h1>
-  <p class="page-sub">The current asset (<code>assets/logo-v2.png</code>), retouched toward the purple night palette with CSS only — no regeneration, the wordmark stays the original pixels. Each option shows the icon large, then in real app chrome: the 18px topbar wordmark over the night sky, and the dock with the mark's gradient on the create button.</p>
+  <div class="page-eyebrow">Founder mock · round 2 · look &amp; pick</div>
+  <h1>Logo — serious night variants</h1>
+  <p class="page-sub">Round 2 after the verdict on the live logo: less candy, more nocturnal — pulled toward the deep navy and muted violet the rest of the page already speaks. Colors only, geometry identical, shown on the exact welcome screen. Pick one and it ships as a proper re-exported asset.</p>
 
   <div class="grid">
 
-    <!-- A · Original -->
-    <section class="vcard">
-      <div class="vhead"><span class="vletter">A</span><h2 class="vname">Original</h2></div>
-      <p class="vdesc">Reference — the asset exactly as it ships today: pink→orange mark, no glow.</p>
-      <div class="stage"><div class="stage-stars"></div>
-        <div class="logo-stack">
-          <img class="logo-sharp" src="assets/logo-v2.png" alt="Original DreamTube logo">
+    <!-- Current v3 — reference -->
+    <div class="vcol">
+      <div class="vhead"><span class="vletter">Now</span><h2 class="vname">Current (v3)</h2></div>
+      <p class="vdesc">Reference — the live violet→hot-pink mark that read "too shiny, too chicky".</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="Current DreamTube logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
         </div>
-      </div>
-      <div class="ctx"><div class="ctx-stars"></div>
-        <div class="ctx-topbar">
-          <div class="home-logo"><i class="mark"></i>Dream<em>Tube</em></div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
         </div>
-        <div class="ctx-dock">
-          <div class="dock-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Home</div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>Explore</div>
-          <div class="dock-create"><svg viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Profile</div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
         </div>
-      </div>
-    </section>
+      </div></div>
+    </div>
 
-    <!-- B · Violet glow -->
-    <section class="vcard">
-      <div class="vhead"><span class="vletter">B</span><h2 class="vname">Violet glow</h2></div>
-      <p class="vdesc">Original colors untouched; a soft <code>#9d90ff</code> halo plus a violet bloom that follows the mark's silhouette (a blurred, hue-shifted duplicate — never a square shadow).</p>
-      <div class="stage"><div class="stage-stars"></div>
-        <div class="logo-stack">
-          <div class="halo"></div>
-          <img class="logo-bloom bloom-violet" src="assets/logo-v2.png" alt="" aria-hidden="true">
-          <img class="logo-sharp" src="assets/logo-v2.png" alt="DreamTube logo with violet glow">
+    <!-- S1 -->
+    <div class="vcol s1">
+      <div class="vhead"><span class="vletter">S1</span><h2 class="vname">Deep indigo → muted violet</h2></div>
+      <p class="vdesc">The crescent runs deep indigo into the app's own muted violet (≈#5b4bc4 → #9d90ff); "tube" sits in the same muted violet. No pink anywhere, no shine.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="S1 — indigo to muted violet logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
         </div>
-      </div>
-      <div class="ctx tb-glow"><div class="ctx-stars"></div>
-        <div class="ctx-topbar">
-          <div class="home-logo"><i class="mark"></i>Dream<em>Tube</em></div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
         </div>
-        <div class="ctx-dock">
-          <div class="dock-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Home</div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>Explore</div>
-          <div class="dock-create"><svg viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Profile</div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
         </div>
-      </div>
-    </section>
+      </div></div>
+    </div>
 
-    <!-- C · Purple-shifted -->
-    <section class="vcard">
-      <div class="vhead"><span class="vletter">C</span><h2 class="vname">Purple-shifted</h2></div>
-      <p class="vdesc">The gradient rotated into the night palette — pink becomes violet, orange becomes warm magenta (the warmth survives in the highlights). No glow. "dream" stays crisp white.</p>
-      <div class="stage"><div class="stage-stars"></div>
-        <div class="logo-stack">
-          <img class="logo-sharp f-purple" src="assets/logo-v2.png" alt="Purple-shifted DreamTube logo">
+    <!-- S2 -->
+    <div class="vcol s2">
+      <div class="vhead"><span class="vletter">S2</span><h2 class="vname">Silver moon</h2></div>
+      <p class="vdesc">Near-monochrome silver-white crescent with a faint violet cast — a real moon, the most serious and premium read. Only "tube" keeps color, in the app's #9d90ff.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="S2 — silver-white moon logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
         </div>
-      </div>
-      <div class="ctx tb-purple"><div class="ctx-stars"></div>
-        <div class="ctx-topbar">
-          <div class="home-logo"><i class="mark"></i>Dream<em>Tube</em></div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
         </div>
-        <div class="ctx-dock">
-          <div class="dock-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Home</div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>Explore</div>
-          <div class="dock-create violet"><svg viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Profile</div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
         </div>
-      </div>
-    </section>
+      </div></div>
+    </div>
 
-    <!-- D · Purple-shifted + glow -->
-    <section class="vcard">
-      <div class="vhead"><span class="vletter">D</span><h2 class="vname">Purple-shifted + glow</h2></div>
-      <p class="vdesc">C's night-palette gradient plus B's silhouette bloom and soft halo — the mark reads as a glowing moon in the night sky. The likely winner.</p>
-      <div class="stage"><div class="stage-stars"></div>
-        <div class="logo-stack">
-          <div class="halo"></div>
-          <img class="logo-bloom bloom-purple" src="assets/logo-v2.png" alt="" aria-hidden="true">
-          <img class="logo-sharp f-purple" src="assets/logo-v2.png" alt="Purple-shifted DreamTube logo with glow">
+    <!-- S3 -->
+    <div class="vcol s3">
+      <div class="vhead"><span class="vletter">S3</span><h2 class="vname">Deep violet → blue-lilac</h2></div>
+      <p class="vdesc">Still colorful, but cooler and nocturnal — deep violet falling into a soft blue-lilac, with a whisper of glow. The middle path between today's logo and S2.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-glow" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-mark" src="assets/logo-v3.png" alt="S3 — deep violet to blue-lilac logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
         </div>
-      </div>
-      <div class="ctx tb-purple tb-glow tb-glowtext"><div class="ctx-stars"></div>
-        <div class="ctx-topbar">
-          <div class="home-logo"><i class="mark"></i>Dream<em>Tube</em></div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
         </div>
-        <div class="ctx-dock">
-          <div class="dock-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Home</div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>Explore</div>
-          <div class="dock-create violet"><svg viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Profile</div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
         </div>
-      </div>
-    </section>
-
-    <!-- E · Moon-accent -->
-    <section class="vcard">
-      <div class="vhead"><span class="vletter">E</span><h2 class="vname">Moon-accent</h2></div>
-      <p class="vdesc">Original colors kept; a subtle violet rim light hugs the crescent and a faint sparkle field sits behind it — the pink moon in a purple night, no recolor.</p>
-      <div class="stage"><div class="stage-stars"></div>
-        <div class="logo-stack">
-          <div class="sparkle"></div>
-          <div class="rim"></div>
-          <img class="logo-sharp" src="assets/logo-v2.png" alt="DreamTube logo with violet rim light and sparkle">
-        </div>
-      </div>
-      <div class="ctx tb-glow tb-glowtext"><div class="ctx-stars"></div>
-        <div class="ctx-topbar">
-          <div class="home-logo"><i class="mark"></i>Dream<em>Tube</em></div>
-        </div>
-        <div class="ctx-dock">
-          <div class="dock-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M5 9.5V21h5v-6h4v6h5V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Home</div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M16.24 7.76L14.12 14.12L7.76 16.24L9.88 9.88Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/></svg>Explore</div>
-          <div class="dock-create"><svg viewBox="0 0 24 24"><path d="M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <div class="dock-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>Profile</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- F · Honesty note -->
-    <section class="vcard note-card">
-      <div class="vhead"><span class="vletter">F</span><h2 class="vname">What CSS can't do</h2></div>
-      <p class="vdesc">The limits of retouching this raster in the browser — so the pick is made with open eyes.</p>
-      <div class="note-body">
-        <p><b>The purple shift (C/D) is a rotation, not a repaint.</b> <code>hue-rotate</code> spins the whole existing gradient at once — we can land the pink on violet and keep the orange as warm magenta, but we can't hold a true orange highlight AND a violet body in the same image. If the founder wants violet/indigo with genuinely orange-warm highlights, the source asset needs re-exporting with those colors.</p>
-        <p style="margin-top:10px"><b>The asset has no transparency</b> (opaque black square), so glows are built from blurred duplicates + halos, which look right on dark night backgrounds — everywhere the app lives — but the same trick won't survive on a light surface (app-store listing, email header). A re-export with an alpha channel fixes both limits at once.</p>
-      </div>
-    </section>
+      </div></div>
+    </div>
 
   </div>
-
-  <div class="recommend"><b>Recommendation: D — purple-shifted + glow.</b> It moves the mark fully into the app's night palette while the bloom makes it read as the moon the product already leans on; B is the safe fallback if brand recognition of the pink-orange matters more right now.</div>
 </div>
 
 </body>
