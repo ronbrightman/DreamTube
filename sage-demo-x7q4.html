@@ -26,7 +26,7 @@ video{width:100%;display:block}
 </div>
 <p class="sub" style="font-size:12.5px;margin-top:-6px">Option A, desk edition: a fixed spoken greeting with real lips (made once — so readings are free), then he raises the tome and his voice reads YOUR dream behind it, eyes on you.</p>
 <div class="stage" id="stage">
-  <video id="v" src="sage-optiona-v14-x7q4.mp4" playsinline preload="auto"></video>
+  <video id="v" src="sage-optiona-v15-x7q4.mp4" playsinline preload="auto"></video>
   <div class="cap" id="cap"></div>
   <div class="playov" id="ov"><div class="pbtn"></div><div class="plabel" id="plabel">▶ Hear the reading</div></div>
 </div>
@@ -58,7 +58,7 @@ v.addEventListener('timeupdate',function(){
 });
 v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
 var BTNS=[document.getElementById('mb-opta'),document.getElementById('mb-rich'),document.getElementById('mb-muse')];
-var SRCS=['sage-optiona-v14-x7q4.mp4','sage-lipsync-x7q4.mp4','sage-lipsync-muse-x7q4.mp4'];
+var SRCS=['sage-optiona-v15-x7q4.mp4','sage-lipsync-x7q4.mp4','sage-lipsync-muse-x7q4.mp4'];
 BTNS.forEach(function(btn,i){
   btn.addEventListener('click',function(){
     v.pause();ov.classList.remove('off');cap.innerHTML='';plabel.textContent='▶ Hear the reading';
