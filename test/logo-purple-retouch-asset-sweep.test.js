@@ -189,6 +189,20 @@ test('index.html: welcome-screen watermark image points at logo-v3.png', functio
 });
 
 // ===========================================================================
+// 2b. Logo round 2 (tracker item for-product-logo-round-2-founder-replace-
+//     lhn1rh): the "Tube" wordmark text gradient in home.html must also be
+//     purple, not the pre-retouch red-orange -- reuses logo-mock-x7q4.html's
+//     own already-designed --gradient-violet value (see home.html's own
+//     comment at this rule for the full reasoning).
+// ===========================================================================
+
+test('home.html: the "Tube" wordmark gradient is the violet treatment, not the old red-orange one', function () {
+  var source = fs.readFileSync(path.join(ROOT, 'home.html'), 'utf8');
+  assert.match(source, /\.home-logo em\{[^}]*linear-gradient\(135deg,#7b5cff,#a35aff 55%,#e078be\)/, 'home.html .home-logo em should use the violet wordmark gradient');
+  assert.doesNotMatch(source, /\.home-logo em\{[^}]*#f2205e/, 'the old red-orange wordmark gradient must not still be present');
+});
+
+// ===========================================================================
 // 3. Repo-wide sweep: the OLD filenames appear nowhere except the one
 //    documented, deliberate exception (the founder decision mock).
 // ===========================================================================
