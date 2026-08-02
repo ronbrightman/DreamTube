@@ -330,12 +330,44 @@ test('desktop viewport: page content past the fold is reachable by scrolling (no
   // ...and reachable by scrolling the internal scroll area (not the
   // document, which the scroll-shell pattern deliberately does not use).
   await scrollArea.evaluate(function (el) { el.scrollTop = el.scrollHeight; });
+  // page.waitForFunction's real signature is (pageFunction, arg, options) --
+  // this predicate takes no arguments, so `null` fills that slot and the
+  // timeout must go in the third position. A previous version of this test
+  // passed { timeout: 5000 } as the second positional argument, which
+  // Playwright silently accepted as `arg` (unused, since the predicate
+  // takes no parameters) rather than as options, so the intended 5000ms
+  // never actually applied and this always ran with Playwright's default
+  // 30000ms instead. Fixed to actually pass an explicit timeout in the
+  // right place.
+  //
+  // KNOWN CONTENTION-SENSITIVE TEST, not a product bug: this assertion is
+  // already condition-based (waitForFunction, no fixed sleep) and passes
+  // reliably every time run alone or alongside a handful of other files
+  // (8/8 isolated re-runs across two separate investigations). It has twice
+  // been the sole failure in a full `node --test test/*.test.js` run on
+  // this sandbox (a 4-CPU box where ~85 of ~187 test files each launch a
+  // real headless Chromium instance and node:test schedules files with
+  // concurrency by default) -- once exceeding a 30000ms default, then once
+  // exceeding an already-bumped 45000ms explicit budget. Both failures were
+  // a genuine timeout on real layout/scroll settling, not a race in this
+  // test's own waiting logic, and this test's own DOM work (rendering +
+  // measuring 60 grid cards) is heavier than most of this file's other
+  // assertions, making it more exposed than most when dozens of concurrent
+  // Chromium processes are starving each other for CPU. Chasing an
+  // ever-larger timeout doesn't fix this (it already failed against a
+  // budget 9x the originally-intended one) and an unbounded timeout would
+  // just make a real future hang here fail slowly instead of fast -- so
+  // this is left as a known, occasional full-suite flake with this comment
+  // as the explanation, per this session's own established pattern of
+  // contention-only failures that don't reproduce in isolation. If this
+  // starts failing in isolation too, that's a real regression -- treat it
+  // as one.
   await page.waitForFunction(function () {
     var el = document.querySelector('#ml-grid .vcard:last-child');
     if (!el) return false;
     var r = el.getBoundingClientRect();
     return r.top >= 0 && r.bottom <= window.innerHeight;
-  }, { timeout: 5000 });
+  }, null, { timeout: 45000 });
 
   await page.close();
 });

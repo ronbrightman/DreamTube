@@ -381,6 +381,15 @@ test('profile.html Settings: a stale in-flight send from an ABANDONED compose se
 
     // 4. The new (support) session can still be sent normally afterward.
     await page.click('#support-send-btn');
+    // Same condition-based wait as step 1 -- the click's resulting fetch
+    // reaching this test's page.route() interception is async relative to
+    // page.click() resolving, so releaseNext() must not assume the second
+    // request has already landed in pendingRoutes just because the click
+    // happened. Without this wait, under enough scheduling delay (e.g. a
+    // contended full-suite run) releaseNext() can run before the request
+    // arrives and throw "no pending request" -- a race in this test's own
+    // orchestration, not a product bug.
+    await waitFor(function () { return mock.calls.length === 2; });
     await mock.releaseNext();
     await page.waitForSelector('#support-success', { state: 'visible' });
     assert.equal(mock.calls.length, 2);
