@@ -426,11 +426,23 @@ test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6
     });
 
     await safeGoto(page, baseUrl + '/index.html');
-    await page.click('a.btn-primary');
-    await page.waitForURL(/\/wizard\.html/, { timeout: 5000 });
-
-    var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /Who.s the dream about\?/, 'an explicit Get-Started click must reach the wizard\'s first question, not bounce back to index.html');
+    // Promise.all, not sequential awaits (test/route-organic-to-wizard-
+    // behavioral.test.js's own established pattern for this exact click):
+    // arms the URL wait BEFORE the click fires, so a fast client-side
+    // redirect can't complete and settle before this test starts
+    // listening for it.
+    await Promise.all([
+      page.waitForURL(/\/wizard\.html/, { timeout: 5000 }),
+      page.click('a.btn-primary')
+    ]);
+    // waitForFunction (polls/retries), not a one-shot page.evaluate read --
+    // the URL settling on wizard.html and wizard.html's own JS having
+    // actually rendered its first screen are two different moments; a
+    // bare evaluate() has no auto-wait and can read the DOM in the gap
+    // between them (real full-suite-load flake observed here once).
+    await page.waitForFunction(function () {
+      return /Who.s the dream about\?/.test(document.body.innerText);
+    }, { timeout: 5000 });
 
     // The ?entry=index marker must not linger in the address bar once read.
     var url = new URL(page.url());
