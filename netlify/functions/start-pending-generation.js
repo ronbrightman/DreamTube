@@ -305,19 +305,26 @@ exports.handler = async function (event) {
 
   var condensed = await promptCondenser.condenseIfNeeded(caption, process.env.GEM_API_KEY);
   if (condensed.error) console.warn('start-pending-generation: prompt-condenser: ' + condensed.error);
-  // Cheap generation profile (tracker item for-product-cheap-generation-
-  // profile-for-yz2ina) — same silent owner/IL audio-off forcing as
-  // generate-video.js's own handler (see genVideo.resolveGenerationProfile
-  // for the full mechanism), reused rather than reimplemented so the two
-  // submission paths can never drift apart. Unlike generate-video.js, this
-  // endpoint has no client-facing audio toggle to combine with (wizard.html/
-  // start.html's pre-signup funnels never send one — see this file's own
-  // header comment on why this stays a separate, simpler path) — the base
-  // "audio on unless the caption was condensed" behavior is UNCHANGED, this
-  // only adds the same silent override on top of it.
+  // Generation profile classifier (tracker item for-product-cheap-
+  // generation-profile-for-yz2ina) — reused from generate-video.js (see
+  // genVideo.resolveGenerationProfile) purely for cost-attribution logging,
+  // same as that file's own handler — no longer affects generate_audio
+  // (see that function's own doc comment for the full history).
   var generationProfileResult = genVideo.resolveGenerationProfile(email, event);
   console.log('start-pending-generation: generation_profile=' + generationProfileResult.profile);
-  var generateAudio = !condensed.wasCondensed && !generationProfileResult.forceAudioOff;
+  // generateAudio is UNCONDITIONALLY false — tracker item for-product-
+  // turn-off-audio-dialogue-gene-ooeyoj, founder directive 2026-08-02 (see
+  // the identical override and full "why" in generate-video.js's own
+  // handler, right above its own `var generateAudio = false;` line). This
+  // endpoint computes generateAudio independently from generate-video.js
+  // (it's a separate pre-signup submission path with no client-facing
+  // audio toggle of its own — wizard.html/start.html never send one) rather
+  // than importing a shared value, so it needs this override applied here
+  // too rather than inheriting it for free; this used to read
+  // `!condensed.wasCondensed && !generationProfileResult.forceAudioOff`
+  // (audio on by default unless condensed or the now-retired owner/IL
+  // force-off) — see git history on this line for that older logic.
+  var generateAudio = false;
 
   var prompt = genVideo.buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace);
   var selfPhoto = characters.filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];

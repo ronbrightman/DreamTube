@@ -1,20 +1,22 @@
 // test/start-pending-generation-audio-force.test.js
 //
-// Covers start-pending-generation.js's half of tracker item for-product-
-// cheap-generation-profile-for-yz2ina (Part B): this path resolves the
-// same generation profile generate-video.js's own handler does (see
-// genVideo.resolveGenerationProfile, reused here rather than
-// reimplemented) so the two submission paths can never drift apart.
+// Covers start-pending-generation.js's own audio decision, which used to
+// track generate-video.js's own history exactly (see the tracker items
+// listed in that file's own audio-toggle test for the full lineage) but is
+// a genuinely separate computation — it has no client-facing audio toggle
+// to combine with (Part A is style.html-only; wizard.html/start.html's
+// pre-signup funnels never send one), so it needed its own fix when the
+// contract changed, not just a shared import.
 //
-// The profile's audio-off FORCING was retired by founder directive on
-// 2026-07-29 ("Regarding Sound for Israel don't disable it just leave it
-// the same for everyone, including myself") — resolveGenerationProfile
-// now always returns forceAudioOff:false and the profile label survives
-// for cost-attribution logging only. What this file pins today is
-// therefore the absence of any override: generate_audio is decided purely
-// by the pre-existing "audio on unless the caption was condensed" rule,
-// identically for owner, Israel-geo, and everyone else. (This file has no
-// client-facing audio toggle to combine with — Part A is style.html-only.)
+// CURRENT CONTRACT (tracker item for-product-turn-off-audio-dialogue-gene-
+// ooeyoj, founder directive 2026-08-02): generate_audio is UNCONDITIONALLY
+// false here too, regardless of OWNER_EMAIL, geo, or whether the caption
+// was condensed. This was a real gap caught while implementing that
+// directive — generate-video.js's own three-way AND was replaced with a
+// flat `false`, but this file independently re-derived generateAudio
+// (`!condensed.wasCondensed && !generationProfileResult.forceAudioOff`)
+// and would otherwise have kept generating audio (and possible invented
+// lip-synced dialogue) for every pre-signup wizard/start.html generation.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -86,29 +88,15 @@ test.beforeEach(async function () {
 });
 test.after(function () { global.fetch = realFetch; delete process.env.OWNER_EMAIL; });
 
-test('standard (non-owner, non-IL) request keeps the pre-existing "audio on unless condensed" default — a short caption gets generate_audio:true, unaffected', async function () {
+test('standard (non-owner, non-IL) request: generate_audio is false — a short, un-condensed caption used to get generate_audio:true here, no longer', async function () {
   var calls = installFetchSpy();
   var res = await handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('US') } }));
   assert.equal(res.statusCode, 200);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].body.generate_audio, true);
+  assert.equal(calls[0].body.generate_audio, false);
 });
 
-// ----- The owner/IL audio force-off is RETIRED (founder directive
-// 2026-07-29: "Regarding Sound for Israel don't disable it just leave it
-// the same for everyone, including myself" — see
-// genVideo.resolveGenerationProfile, which now always returns
-// forceAudioOff:false). test/generate-video-audio-toggle.test.js was
-// updated to pin that new contract on generate-video.js's own path at the
-// time; THIS file was missed and kept asserting the removed behavior, so
-// these two tests have been failing deterministically on main ever since
-// — red on every full-suite run, in isolation too. Rewritten here to pin
-// the same contract this path actually has: audio is decided purely by
-// the "on unless the caption was condensed" rule, identically for owner,
-// Israel-geo, and everyone else; the profile label survives for
-// cost-attribution logging only.
-
-test('OWNER_EMAIL match no longer forces generate_audio:false — audio is unaffected, and the response shape/status is unchanged', function () {
+test('OWNER_EMAIL match: generate_audio is false, and the response shape/status is unchanged', function () {
   return withEnv({ OWNER_EMAIL: 'wizarduser@example.com' }, async function () {
     var calls = installFetchSpy();
     var res = await handler(genEvent({}));
@@ -116,30 +104,44 @@ test('OWNER_EMAIL match no longer forces generate_audio:false — audio is unaff
     var data = JSON.parse(res.body);
     assert.ok(data.pendingId);
     assert.match(data.operationName, /^fal:/);
-    assert.equal(calls[0].body.generate_audio, true);
+    assert.equal(calls[0].body.generate_audio, false);
   });
 });
 
-test('resolveGenerationProfile still labels the owner for cost attribution on this path, without forcing audio off', function () {
+test('resolveGenerationProfile still labels the owner for cost-attribution logging on this path, and no longer returns a forceAudioOff field', function () {
   return withEnv({ OWNER_EMAIL: '  WizardUser@Example.com  ' }, async function () {
     var profile = genVideo.resolveGenerationProfile('wizarduser@example.com', fakeEvent({}));
     assert.equal(profile.profile, 'cheap_owner');
-    assert.equal(profile.forceAudioOff, false);
+    assert.equal('forceAudioOff' in profile, false);
   });
 });
 
-test('an Israel-geo request keeps generate_audio:true, same as everyone else', function () {
+test('an Israel-geo request: generate_audio is false, same as everyone else', function () {
   var calls = installFetchSpy();
   return handler(genEvent({ headers: { 'x-nf-geo': geoHeaderFor('IL') } })).then(function (res) {
     assert.equal(res.statusCode, 200);
-    assert.equal(calls[0].body.generate_audio, true);
+    assert.equal(calls[0].body.generate_audio, false);
   });
 });
 
-test('a malformed x-nf-geo header fails open (generate_audio stays true) rather than silently forcing the cheap path', async function () {
+test('a malformed x-nf-geo header: generate_audio is still false (the unconditional override doesn\'t depend on geo parsing)', async function () {
   var calls = installFetchSpy();
   await handler(genEvent({ headers: { 'x-nf-geo': 'garbage-not-base64-json' } }));
-  assert.equal(calls[0].body.generate_audio, true);
+  assert.equal(calls[0].body.generate_audio, false);
+});
+
+test('a self-photo (reference-to-video) submission on this path is also generate_audio:false', function () {
+  var calls = installFetchSpy();
+  return handler(genEvent({
+    body: {
+      characterIds: null,
+      characters: [{ name: 'Me', isSelf: true, photoDataUrl: 'data:image/png;base64,AAAA' }]
+    }
+  })).then(function (res) {
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.generate_audio, false);
+  });
 });
 
 test('mediaType:"image" requests are untouched by this profile entirely (no generate_audio concept for a still image)', function () {

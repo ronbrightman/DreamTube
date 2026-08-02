@@ -1,29 +1,29 @@
 // test/audio-toggle-behavioral.test.js
 //
-// Real browser-driven coverage for tracker item for-product-audio-on-off-
-// choice-at-creat-dyyr98 (founder-approved 2026-07-28) — style.html's
-// audio/music toggle placed just under the existing image-vs-video
-// segmented toggle. (Its sibling coverage of processing.html's media-aware
-// wait-screen checklist copy was removed along with that page — tracker
-// item for-product-funnel-ending-v2-founder-ins-tfuu0q — see the note
-// further down this file where those three tests used to be.) Run at a
-// mobile viewport (see test.before below), same discipline as
-// image-generation-style-toggle-behavioral.test.js. Covers:
-//   1. Audio defaults OFF on load; the music-style picker is hidden.
-//   2. Turning it on reveals the four music presets with "Dreamy"
-//      pre-selected; picking a different preset updates the selection.
-//   3. Switching to Image hides the whole audio section entirely
-//      (capability-detect-and-hide, not disabled-looking).
-//   4. End to end: generating with audio on sends { audioOn: true,
-//      musicStyle } to generate-video.js; the untouched default sends
-//      { audioOn: false }. Token cost stays 100 either way.
-//   5. The wait-screen checklist's caption list includes "Composing the
-//      soundtrack…" only when audio is actually on for this generation,
-//      never for Image regardless of audio state.
-//   6. "Generate Again" (Edit Dream) and the "Turn this into a video"
-//      upsell — pre-existing features with no audio picker of their own —
-//      keep their old always-audio-on behavior, not the new default-off
-//      (review finding, this branch's own regenerateDream fix).
+// Real browser-driven coverage, originally for tracker item for-product-
+// audio-on-off-choice-at-creat-dyyr98 (founder-approved 2026-07-28) —
+// style.html's audio/music toggle placed just under the existing
+// image-vs-video segmented toggle.
+//
+// As of tracker item for-product-turn-off-audio-dialogue-gene-ooeyoj
+// (founder directive 2026-08-02), generate-video.js/start-pending-
+// generation.js force generate_audio:false unconditionally server-side —
+// the toggle can no longer actually turn audio on, so this file now covers
+// its DISABLED state instead of its old interactive one:
+//   1. The toggle renders disabled (not just visually off) and its sub-text
+//      says audio is unavailable; the music-style picker never shows.
+//   2. Clicking the disabled toggle has no effect (no click handler at
+//      all — this is a real disabled control, not just default-off).
+//   3. Switching to Image still hides the whole audio section entirely,
+//      same as before this directive (capability-detect-and-hide).
+//   4. End to end: generating always sends { audioOn: false } to
+//      generate-video.js regardless of anything a user could attempt in
+//      the UI. Token cost stays 100.
+//   5. "Generate Again" (Edit Dream) and the "Turn this into a video"
+//      upsell still send their own old audioOn:true on the wire (js/
+//      store.js's regenerateDream — deliberately left as inert,
+//      trivially-reversible plumbing per the tracker item's own
+//      instruction) even though the server now silently ignores it.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -107,7 +107,7 @@ function newMobileContext() {
   return browser.newContext({ viewport: MOBILE_VIEWPORT });
 }
 
-test('style.html: audio defaults off, music picker hidden, and the section disappears entirely on Image', async function (t) {
+test('style.html: audio toggle renders disabled with an unavailable note, music picker never shows, and the section disappears entirely on Image', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -118,18 +118,22 @@ test('style.html: audio defaults off, music picker hidden, and the section disap
     await reachStyleScreen(page, 'A dream about drifting through a quiet forest');
 
     var toggleOn = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('on'); });
+    var toggleDisabled = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('disabled'); });
     var ariaChecked = await page.getAttribute('#audio-toggle', 'aria-checked');
-    assert.equal(toggleOn, false, 'audio must default OFF');
+    var ariaDisabled = await page.getAttribute('#audio-toggle', 'aria-disabled');
+    assert.equal(toggleOn, false, 'audio must be off');
+    assert.equal(toggleDisabled, true, 'the control must render disabled, not just default-off — it can never be turned on anymore');
     assert.equal(ariaChecked, 'false');
-    assert.match(await page.textContent('#audio-toggle-sub'), /Off/);
-    assert.equal(await page.isVisible('#music-style-row'), false, 'the music-style picker must stay hidden while audio is off');
+    assert.equal(ariaDisabled, 'true');
+    assert.match(await page.textContent('#audio-toggle-sub'), /Unavailable/i, 'the sub-text must tell the user audio isn\'t available, not just say "Off"');
+    assert.equal(await page.isVisible('#music-style-row'), false, 'the music-style picker must never show now that audio can never be on');
 
-    // ----- Video -> Image: the whole audio section disappears -----
+    // ----- Video -> Image: the whole audio section still disappears entirely, unchanged from before -----
     await page.click('.media-type-btn[data-media-type="image"]');
     assert.equal(await page.isVisible('#audio-toggle-row'), false, 'audio has no meaning for a still image and must be hidden entirely, not shown-disabled');
     assert.equal(await page.isVisible('#music-style-row'), false);
 
-    // ----- Back to Video: reappears, still off (state preserved, not reset to "on") -----
+    // ----- Back to Video: reappears, still disabled/off -----
     await page.click('.media-type-btn[data-media-type="video"]');
     assert.equal(await page.isVisible('#audio-toggle-row'), true);
     var stillOff = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('on'); });
@@ -139,7 +143,7 @@ test('style.html: audio defaults off, music picker hidden, and the section disap
   }
 });
 
-test('style.html: turning audio on reveals the four music presets ("Dreamy" pre-selected), and picking a different one updates the selection', async function (t) {
+test('style.html: clicking the disabled audio toggle has no effect at all — it never turns on, the music picker never appears', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -149,31 +153,24 @@ test('style.html: turning audio on reveals the four music presets ("Dreamy" pre-
     await seedLoggedInUserAt(page, 'audiopickertester', '/create.html');
     await reachStyleScreen(page, 'A dream about a carnival at midnight');
 
-    await page.click('#audio-toggle');
+    // force:true bypasses Playwright's actionability check (which would
+    // otherwise refuse to click a pointer-events:none element) — this is
+    // deliberately simulating "what if something still dispatched a click"
+    // rather than relying solely on the CSS to keep this test honest; there
+    // is no click listener on #audio-toggle anymore at all (see style.html),
+    // so even a forced click must be a genuine no-op.
+    await page.click('#audio-toggle', { force: true });
     var toggleOnNow = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('on'); });
-    assert.equal(toggleOnNow, true);
-    assert.equal(await page.getAttribute('#audio-toggle', 'aria-checked'), 'true');
-    assert.match(await page.textContent('#audio-toggle-sub'), /On/);
-    assert.equal(await page.isVisible('#music-style-row'), true);
-
-    var dreamySelected = await page.locator('.opt-chip[data-music-style="dreamy"]').evaluate(function (el) { return el.classList.contains('selected'); });
-    assert.equal(dreamySelected, true, '"Dreamy" is the sensible default preset once audio is turned on');
-
-    await page.click('.opt-chip[data-music-style="cinematic"]');
-    var cinematicSelected = await page.locator('.opt-chip[data-music-style="cinematic"]').evaluate(function (el) { return el.classList.contains('selected'); });
-    var dreamyStillSelected = await page.locator('.opt-chip[data-music-style="dreamy"]').evaluate(function (el) { return el.classList.contains('selected'); });
-    assert.equal(cinematicSelected, true);
-    assert.equal(dreamyStillSelected, false, 'only one music preset can be active at a time');
-
-    // ----- Turning audio back off hides the picker again (selection itself is untouched underneath) -----
-    await page.click('#audio-toggle');
-    assert.equal(await page.isVisible('#music-style-row'), false);
+    assert.equal(toggleOnNow, false, 'the toggle must never turn on, even if something manages to dispatch a click on it');
+    assert.equal(await page.getAttribute('#audio-toggle', 'aria-checked'), 'false');
+    assert.match(await page.textContent('#audio-toggle-sub'), /Unavailable/i);
+    assert.equal(await page.isVisible('#music-style-row'), false, 'the music picker must never appear — there is nothing left that can reveal it');
   } finally {
     await context.close();
   }
 });
 
-test('end to end: generating with audio ON sends { audioOn: true, musicStyle } to generate-video.js, and completes normally', async function (t) {
+test('end to end: generating always sends { audioOn: false } to generate-video.js — there is no way left in the UI to send true', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -195,8 +192,10 @@ test('end to end: generating with audio ON sends { audioOn: true, musicStyle } t
     await seedLoggedInUserAt(page, 'audioontester', '/create.html');
     await reachStyleScreen(page, 'A dream about sailing through the stars');
     await page.click('.style-card[data-style="Cinematic"]');
-    await page.click('#audio-toggle');
-    await page.click('.opt-chip[data-music-style="upbeat"]');
+    // Attempt the old on-turning interaction anyway (force:true — see the
+    // disabled-click test above) to prove even a determined attempt can't
+    // get audio turned on end to end.
+    await page.click('#audio-toggle', { force: true });
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
 
@@ -207,8 +206,8 @@ test('end to end: generating with audio ON sends { audioOn: true, musicStyle } t
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
-    assert.equal(generateVideoCalls[0].audioOn, true);
-    assert.equal(generateVideoCalls[0].musicStyle, 'upbeat');
+    assert.equal(generateVideoCalls[0].audioOn, false);
+    assert.equal(generateVideoCalls[0].musicStyle, undefined, 'musicStyle should not even be sent when audioOn is false');
     assert.equal(generateVideoCalls[0].caption, 'A dream about sailing through the stars');
   } finally {
     await context.close();
@@ -277,6 +276,15 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
   // Again" click on a freshly-seeded dream (draft state never touched the
   // new audio toggle at all) and asserts the resulting generate-video POST
   // still carries audioOn:true.
+  //
+  // UPDATE 2026-08-02 (tracker item for-product-turn-off-audio-dialogue-
+  // gene-ooeyoj): this assertion is now purely about the CLIENT wire
+  // payload, not the real server outcome — generate-video.js ignores
+  // audioOn entirely and forces generate_audio:false unconditionally
+  // regardless of what's sent here (see that file's own tests). Kept
+  // exactly as-is deliberately: the tracker item's own instruction is to
+  // leave this plumbing intact and inert, not rip it out, so this test
+  // still proves that plumbing hasn't silently changed shape.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
