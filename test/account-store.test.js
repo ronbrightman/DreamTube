@@ -563,3 +563,82 @@ test('account-login: a real cross-device flow — register via one "device" call
   assert.equal(loginBody.ok, true);
   assert.equal(loginBody.username, 'mona');
 });
+
+// ===== whatsappNumber (tracker item for-product-build-whatsapp-morning-
+//       captu-skez3n, step 3) =====
+
+test('account-store: normalizeWhatsappNumber accepts a real E.164 number, tolerates common pasted formatting, and rejects garbage', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+
+  assert.equal(accountStore.normalizeWhatsappNumber('+15551234567'), '+15551234567');
+  assert.equal(accountStore.normalizeWhatsappNumber('+1 (555) 123-4567'), '+15551234567', 'spaces/parens/dashes are stripped before validating');
+  assert.equal(accountStore.normalizeWhatsappNumber('  +44 20 7946 0958  '), '+442079460958', 'surrounding whitespace is trimmed too');
+
+  assert.equal(accountStore.normalizeWhatsappNumber(''), '');
+  assert.equal(accountStore.normalizeWhatsappNumber('5551234567'), '', 'no leading + / country code -- rejected, not silently assumed');
+  assert.equal(accountStore.normalizeWhatsappNumber('+0123456789'), '', 'a leading zero after the + is not a valid country-code digit');
+  assert.equal(accountStore.normalizeWhatsappNumber('not a number'), '');
+  assert.equal(accountStore.normalizeWhatsappNumber(null), '', 'non-string input never throws, just reports invalid');
+});
+
+test('account-store: setWhatsappNumber saves a normalized number onto an existing account', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'nina', password: 'hunter22', email: 'nina@example.com' });
+
+  var result = await accountStore.setWhatsappNumber(event, 'nina', '+1 (555) 000-1111');
+  assert.equal(result.ok, true);
+  assert.equal(result.record.whatsappNumber, '+15550001111');
+
+  var reread = await accountStore.getByUsername(event, 'nina');
+  assert.equal(reread.whatsappNumber, '+15550001111');
+});
+
+test('account-store: setWhatsappNumber rejects an unusable number without touching the existing record', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'oscar', password: 'hunter22', email: 'oscar@example.com' });
+  await accountStore.setWhatsappNumber(event, 'oscar', '+15551234567');
+
+  var result = await accountStore.setWhatsappNumber(event, 'oscar', 'not-a-number');
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'invalid_number');
+
+  var reread = await accountStore.getByUsername(event, 'oscar');
+  assert.equal(reread.whatsappNumber, '+15551234567', 'a rejected write must never clobber a previously-saved valid number');
+});
+
+test('account-store: setWhatsappNumber returns not_found for a username with no account', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+
+  var result = await accountStore.setWhatsappNumber(event, 'nobody-here', '+15551234567');
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'not_found');
+});
+
+test('account-store: setWhatsappNumber with an empty value CLEARS the field entirely (opt-out), rather than storing an empty string', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'paula', password: 'hunter22', email: 'paula@example.com' });
+  await accountStore.setWhatsappNumber(event, 'paula', '+15551234567');
+
+  var cleared = await accountStore.setWhatsappNumber(event, 'paula', '');
+  assert.equal(cleared.ok, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(cleared.record, 'whatsappNumber'), false, 'the field must be absent, not an empty string -- same shape send-whatsapp-morning-capture.js\'s scan relies on');
+
+  var reread = await accountStore.getByUsername(event, 'paula');
+  assert.equal(reread.whatsappNumber, undefined);
+});
+
+test('account-store: setWhatsappNumber preserves every other pre-existing field (e.g. fbUserId) it doesn\'t itself touch', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var event = fakeEvent({ method: 'POST' });
+  await accountStore.createAccount(event, { username: 'quinn', password: 'hunter22', email: 'quinn@example.com', fbUserId: '9988776655' });
+
+  await accountStore.setWhatsappNumber(event, 'quinn', '+15551234567');
+
+  var reread = await accountStore.getByUsername(event, 'quinn');
+  assert.equal(reread.fbUserId, '9988776655');
+  assert.equal(reread.email, 'quinn@example.com');
+});
