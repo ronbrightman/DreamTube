@@ -94,6 +94,22 @@
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 //   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
 //   E9 starter_already_used   — pack099 requested, but this account has already completed a pack purchase before (hasMadeFirstPurchase) — the one-time starter offer is no longer available to it
+//   E10 email_not_verified    — gate list, item 1 (tracker item for-product-
+//                                build-passwordless-signup-fo-at2fko,
+//                                founder's own explicit "no purchases" for
+//                                an unverified account — see
+//                                lib/account-store.js's GATE LIST header
+//                                comment). Checked against the account
+//                                registered under the request's own `email`
+//                                (shop.html requires being signed in before
+//                                it ever calls this, and always sends the
+//                                logged-in account's own email — see that
+//                                file's purchasePack). No matching account
+//                                at all is NOT this error (falls through to
+//                                whatever Dodo itself does with an
+//                                unrecognized-but-well-formed email) —
+//                                under-gate, never over-gate, same as every
+//                                other reader of this field.
 //
 // ── Open-redirect guard on successUrl/cancelUrl (security fix, added for
 //    tracker item for-product-build-out-of-tokens-purchase-2y8hyw) ──
@@ -134,6 +150,7 @@ function isSafeRedirectPath(candidate) {
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
 var entitlements = require('./lib/entitlements');
+var accountStore = require('./lib/account-store');
 var normalizeEmail = entitlements.normalizeEmail;
 
 // Token amount per pack — mirrors the pricing shown in shop.html ("The
@@ -212,6 +229,16 @@ exports.handler = async function (event) {
     if (tokenStatus && tokenStatus.hasMadeFirstPurchase) {
       return { statusCode: 400, body: JSON.stringify({ error: 'E9: starter_already_used' }) };
     }
+  }
+
+  // Gate list, item 1 — see this file's own E10 doc comment above and
+  // lib/account-store.js's GATE LIST header comment. Checked for every
+  // pack, not just pack099 (unlike the starter-pack check above, this
+  // isn't about a one-time offer — it's "no purchases at all" for an
+  // unverified account, per the founder's own instruction).
+  var payingAccount = await accountStore.getByEmail(event, email);
+  if (payingAccount && payingAccount.emailVerified === false) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'E10: email_not_verified' }) };
   }
 
   // shop.html is the real checkout entry point (unlike the original

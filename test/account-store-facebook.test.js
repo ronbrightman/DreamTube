@@ -42,7 +42,11 @@ test('account-store: an account created WITHOUT fbUserId has exactly the record 
   var event = evt();
   var created = await accountStore.createAccount(event, { username: 'plainuser', password: 'plainpassword', email: 'plain@example.com' });
   assert.equal(created.ok, true);
-  assert.deepEqual(Object.keys(created.record).sort(), ['email', 'password', 'updatedAt', 'username']);
+  // `emailVerified` (tracker item for-product-build-passwordless-signup-fo-
+  // at2fko) is now always present on a freshly-created record — defaults to
+  // `true` for any caller (like this one) that doesn't pass it explicitly,
+  // see account-store.js's own GATE LIST header comment for why.
+  assert.deepEqual(Object.keys(created.record).sort(), ['email', 'emailVerified', 'password', 'updatedAt', 'username']);
   assert.equal(Object.prototype.hasOwnProperty.call(created.record, 'fbUserId'), false);
   assert.equal(await accountStore.getByFacebookUserId(event, '123'), null);
 });

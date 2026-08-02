@@ -118,9 +118,26 @@
 //                                   correctly-typed image data URL (wrong
 //                                   type, malformed, or over
 //                                   AVATAR_MAX_BYTES decoded size)
+//   E8 email_not_verified       — the verified token's own account has
+//                                   `emailVerified === false` (tracker item
+//                                   for-product-build-passwordless-signup-
+//                                   fo-at2fko's gate list — see
+//                                   lib/account-store.js's own GATE LIST
+//                                   header comment for the full "why
+//                                   publish specifically"). Same 200/
+//                                   ok:false "business outcome" shape as E5
+//                                   — js/store.js's syncPublishedDreamToFeed
+//                                   call site is fire-and-forget today (see
+//                                   that function's own doc comment), so
+//                                   this degrades exactly like every other
+//                                   failure mode there: the dream stays
+//                                   published in the account's own local/
+//                                   private view, it just doesn't reach the
+//                                   shared cross-account feed yet.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var accountAuthToken = require('./lib/account-auth-token');
+var accountStore = require('./lib/account-store');
 
 function stripAt(handle) {
   var s = (typeof handle === 'string' ? handle : '').trim();
@@ -204,6 +221,16 @@ exports.handler = async function (event) {
   // auth.username here.
   if (stripAt(ownerHandle).toLowerCase() !== auth.username.toLowerCase()) {
     return { statusCode: 403, body: JSON.stringify({ error: 'E6: owner_mismatch' }) };
+  }
+
+  // Gate list, item 2 — see this file's own E8 doc comment above and
+  // account-store.js's GATE LIST header comment. `=== false` specifically,
+  // never `!record.emailVerified` — an account this field predates, or
+  // whose record somehow can't be read, must never be blocked from
+  // publishing over it (under-gate, never over-gate).
+  var account = await accountStore.getByUsername(event, auth.username);
+  if (account && account.emailVerified === false) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E8: email_not_verified' }) };
   }
 
   try {

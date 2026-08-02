@@ -309,7 +309,14 @@ async function createFacebookAccount(event, fbUserId, email, name) {
     username: derived.username,
     password: null,
     email: email,
-    fbUserId: fbUserId
+    fbUserId: fbUserId,
+    // emailVerified: true (tracker item for-product-build-passwordless-
+    // signup-fo-at2fko) — Facebook's own /me endpoint only ever returns a
+    // CONFIRMED email (see fetchFacebookProfile's own comment), so this
+    // account's email ownership is already genuinely established via
+    // Facebook's OAuth handshake, not merely assumed. See account-store.js's
+    // GATE LIST header comment for the full "why" behind this field.
+    emailVerified: true
   });
   if (!created.ok) return { outcome: 'error', error: created.error };
   return { outcome: 'signup', record: created.record, created: true, name: name || null };

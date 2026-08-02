@@ -385,6 +385,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/email-verify-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('shop-back').innerHTML = Icons.back;
@@ -557,7 +558,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         // staying visible offering something the server will keep
         // refusing.
         var isStarterAlreadyUsed = !!(err && err.message && err.message.indexOf('E9') === 0);
-        showToast(isStarterAlreadyUsed ? "That welcome offer's already been used on this account" : "Checkout isn't available right now — try again soon");
+        // E10 email_not_verified (tracker item for-product-build-
+        // passwordless-signup-fo-at2fko's gate list, "no purchases" for an
+        // unverified account) — a real, actionable outcome: unlike every
+        // other rejection here, this one has a real fix the visitor can do
+        // right now, so open the same deferred-verification sheet home.html
+        // uses (js/email-verify-sheet.js) rather than a dead-end toast.
+        var isEmailNotVerified = !!(err && err.message && err.message.indexOf('E10') === 0);
+        if(isEmailNotVerified && window.EmailVerifySheet){
+          EmailVerifySheet.show({ source: 'purchase_blocked' });
+        } else {
+          showToast(isStarterAlreadyUsed ? "That welcome offer's already been used on this account" : "Checkout isn't available right now — try again soon");
+        }
         if(isStarterAlreadyUsed) loadBalance(false);
       });
   }
