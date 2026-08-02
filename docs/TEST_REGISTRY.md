@@ -128,6 +128,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | First-dream retention email | `test/automatic-first-dream-email.test.js`, `test/send-first-dream-email.test.js`, `test/first-dream-email-store.test.js` | — |
 | FirstVideoCreated conversion event + durable markers (`mark-generation-completed.js`, `consume-generation-marker.js`) | `test/first-video-created-behavioral.test.js`, `test/first-video-created-explore-resume-behavioral.test.js`, `test/generation-completion-marker.test.js`, `test/retention-email-first-video-behavioral.test.js` | — |
 | Web push (daily-claim-available, dedup) | `test/send-daily-claim-pushes.test.js`, `test/push-dedup-store.test.js`, `test/push-subscription-store.test.js` | — |
+| Morning Capture Ritual — WhatsApp channel (opt-in field, `save-whatsapp-number.js`, `send-whatsapp-morning-capture.js`, per-day dedup) — tracker item `for-product-build-whatsapp-morning-captu-skez3n` | `test/account-store.test.js` (whatsappNumber field), `test/save-whatsapp-number.test.js`, `test/send-whatsapp-morning-capture.test.js`, `test/whatsapp-morning-capture-opt-in-behavioral.test.js` | Cannot exercise a real Meta send — no live `WHATSAPP_ACCESS_TOKEN`/approved template in this sandbox, same honest-degrade limitation `test/send-daily-claim-pushes.test.js` already accepts for real push delivery. No email/push sibling channel exists yet for this same ritual (this is currently the only channel) — see `send-whatsapp-morning-capture.js`'s own header comment. |
 | Meta CAPI / conversion tracking (`track-conversion.js`) | `test/meta-capi.test.js`, `test/meta-capi-behavioral.test.js`, `test/funnel-meta-attribution-cookies-behavioral.test.js` | — |
 | PostHog identity/test-traffic tagging | `test/posthog-identity-merge-behavioral.test.js`, `test/posthog-test-traffic-tagging-behavioral.test.js`, `test/server-analytics-containment.test.js` | — |
 | Support/feedback inbox (`submit-support-message.js`, `get-support-messages.js`) | `test/support-feedback.test.js`, `test/support-feedback-behavioral.test.js` | Whether `get-support-messages.js` (the admin-read side) has its OWN direct handler-level test, vs. only being exercised indirectly through the behavioral submit flow, should be spot-checked next time this row is touched |
@@ -150,6 +151,12 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | **Live, real-origin, end-to-end smoke coverage** (as opposed to mocked-backend coverage) | `test/prod-smoke/*.test.js` (this file's own registry entry) | Intentionally narrow — see `test/prod-smoke/README.md`. Does NOT cover: payments/checkout, Facebook Login, admin/owner tooling, transcription, interpretation/Chamber, push notifications, or most retention email paths. Those stay covered only by the mocked `test/*.test.js` suite. |
 
 ## Last reconciled
+
+2026-08-02, alongside tracker item `for-product-build-whatsapp-morning-captu-
+skez3n`: added the Morning Capture Ritual's WhatsApp channel (`whatsappNumber`
+account field, `save-whatsapp-number.js`'s profile.html Settings opt-in,
+`send-whatsapp-morning-capture.js`'s daily scheduled sender + per-day dedup
+via `lib/push-dedup-store.js`) — see the Retention row above.
 
 2026-08-02, alongside tracker item
 `for-product-owner-media-library-page-fou-1fwxaw`: added own-storage media

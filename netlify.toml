@@ -35,3 +35,13 @@
 # reconcile-fal-cost.js's own header comment for why).
 [functions."reconcile-fal-cost"]
   schedule = "@daily"
+
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# tracker item for-product-build-whatsapp-morning-captu-skez3n (the
+# Morning Capture Ritual's WhatsApp channel). Fires once daily at a single
+# fixed UTC hour -- see send-whatsapp-morning-capture.js's own SCHEDULING
+# header comment for why (no per-user timezone on file yet, a known
+# simplification) and for this file's own inline schedule() wrapper this
+# mirrors.
+[functions."send-whatsapp-morning-capture"]
+  schedule = "0 13 * * *"

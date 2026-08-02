@@ -352,6 +352,42 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
       </div>
 
+      <!-- Morning WhatsApp reminder (tracker item for-product-build-whatsapp-
+           morning-captu-skez3n, step 3) — a NEW, existing-user Settings opt-in,
+           deliberately placed here rather than reviving wizard.html's own
+           long-PARKED signup-time WhatsApp field (see that field's own comment
+           in wizard.html, and tracker items for-product-hide-the-whatsapp-
+           field-in-w-clu9ju / for-ron-reminder-complete-the-whatsapp-c-9mz857
+           for why it was hidden in the first place: it asked a brand-new
+           visitor for a phone number mid-signup with nothing downstream able
+           to use it yet, real funnel-friction risk for zero payoff at the
+           time). That reasoning about SIGNUP-TIME friction doesn't apply to an
+           already-signed-in user opening Settings on their own — same lower-
+           friction "ask an existing user, not a brand-new one" precedent this
+           app already follows for its other reminder channel (js/push-
+           subscribe.js's push permission ask fires contextually, from inside
+           the app, never during signup either) — so this is the lower-risk
+           place to add the ask now that send-whatsapp-morning-capture.js
+           actually exists to use it. Writes to a server-side account field
+           (lib/account-store.js's `whatsappNumber`, via save-whatsapp-
+           number.js) — DIFFERENT from, and never synced with, the wizard's
+           long-parked field (pending-dreams.js's one-shot `whatsapp`), which
+           stays exactly as parked as before this change. Clearing the field
+           and hitting Save again opts back out (save-whatsapp-number.js
+           deletes the field entirely on an empty submit, rather than storing
+           an empty string). -->
+      <div class="settings-section">
+        <div class="section-label">Morning reminder</div>
+        <div class="auth-sub" style="margin-bottom:10px;">Get a WhatsApp nudge each morning to capture last night's dream before it fades. Optional — add your number (with country code) to turn it on.</div>
+        <input class="field" id="whatsapp-number-input" placeholder="WhatsApp number, e.g. +1 555 123 4567" type="tel" autocomplete="tel" dir="auto">
+        <div class="err-text" id="whatsapp-error"></div>
+        <div class="auth-notice" id="whatsapp-success" style="display:none;">
+          <span class="icon" id="whatsapp-success-icon"></span>
+          <span id="whatsapp-success-text">Saved.</span>
+        </div>
+        <button class="btn btn-primary btn-block" id="whatsapp-save-btn">Save</button>
+      </div>
+
       <div class="settings-section">
         <div class="section-label">Your data</div>
         <div class="auth-sub" style="margin-bottom:10px;">Your dreams currently live only on this device (your account itself works from anywhere) — export a backup so you can restore them if this browser's storage is ever cleared.</div>
@@ -1198,13 +1234,45 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   });
 
   document.getElementById('account-success-icon').innerHTML = Icons.mail;
+  document.getElementById('whatsapp-success-icon').innerHTML = Icons.check;
   var accountOverlay = document.getElementById('sheet-account-overlay');
+
+  // ===== Morning WhatsApp reminder (tracker item for-product-build-
+  // whatsapp-morning-captu-skez3n) — see this section's own comment in the
+  // markup above for why this lives here, in Settings, rather than
+  // reviving wizard.html's parked signup-time field. =====
+  //
+  // Guards a prefill fetch that's still in flight against a stale write:
+  // if Settings is closed and reopened (or the sheet's whole render
+  // re-runs) before the GET resolves, an older in-flight response must
+  // never overwrite whatever the fresher openAccountSheet() call already
+  // put in the field — same "bump a token, ignore a stale resolve" shape
+  // supportComposeToken already uses just below for the support panel.
+  var whatsappRequestToken = 0;
+  function loadWhatsappNumber(){
+    var input = document.getElementById('whatsapp-number-input');
+    input.value = '';
+    var user = DreamStore.getCurrentUser();
+    if(!user || !user.username) return;
+    var token = ++whatsappRequestToken;
+    fetch('/.netlify/functions/save-whatsapp-number?username=' + encodeURIComponent(user.username))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(token !== whatsappRequestToken) return; // a later openAccountSheet() call already superseded this fetch
+        input.value = (data && data.whatsappNumber) || '';
+      })
+      .catch(function(){ /* best-effort prefill only -- leave the field blank on a network hiccup, same fail-open posture as the owner-check fetch below */ });
+  }
+
   function openAccountSheet(){
     var user = DreamStore.getCurrentUser();
     document.getElementById('account-username').value = user ? user.username : '';
     document.getElementById('account-email-input').value = DreamStore.getAccountEmail() || '';
     document.getElementById('account-error').textContent = '';
     document.getElementById('account-success').style.display = 'none';
+    document.getElementById('whatsapp-error').textContent = '';
+    document.getElementById('whatsapp-success').style.display = 'none';
+    loadWhatsappNumber();
     ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
     renderBlockedAccounts();
     // Always reopen Settings with the support/feedback compose panel
@@ -1238,6 +1306,39 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     }
     err.textContent = '';
     document.getElementById('account-success').style.display = 'flex';
+  });
+
+  document.getElementById('whatsapp-save-btn').addEventListener('click', function(){
+    var whatsappErr = document.getElementById('whatsapp-error');
+    var whatsappSuccess = document.getElementById('whatsapp-success');
+    whatsappErr.textContent = '';
+    whatsappSuccess.style.display = 'none';
+
+    var user = DreamStore.getCurrentUser();
+    if(!user || !user.username){
+      whatsappErr.textContent = 'Sign in to save a reminder number.';
+      return;
+    }
+
+    var raw = document.getElementById('whatsapp-number-input').value.trim();
+    fetch('/.netlify/functions/save-whatsapp-number', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user.username, whatsappNumber: raw })
+    }).then(function(res){
+      return res.json().catch(function(){ return null; });
+    }).then(function(data){
+      if(!data || !data.ok){
+        whatsappErr.textContent = (data && data.error === 'E4: invalid_number')
+          ? 'Enter a valid number with country code, e.g. +1 555 123 4567.'
+          : 'Something went wrong saving that — try again.';
+        return;
+      }
+      document.getElementById('whatsapp-success-text').textContent = data.whatsappNumber ? 'Saved.' : 'Turned off.';
+      whatsappSuccess.style.display = 'flex';
+    }).catch(function(){
+      whatsappErr.textContent = 'Network error — try again.';
+    });
   });
 
   // ===== Owner-only manual top-up =====

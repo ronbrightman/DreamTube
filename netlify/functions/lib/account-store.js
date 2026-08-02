@@ -84,6 +84,21 @@
 // established without a password on hand), which is what a
 // Facebook-Login-only account has.
 //
+// SECOND OPTIONAL FIELD (tracker item for-product-build-whatsapp-morning-
+// captu-skez3n, steps 3-4): `whatsappNumber`, an E.164-normalized phone
+// number (see normalizeWhatsappNumber below), present only on accounts
+// that have opted in to the daily "morning capture" WhatsApp reminder from
+// profile.html's Settings sheet (see save-whatsapp-number.js). Same
+// purely-additive shape as `fbUserId` — absent on every account that has
+// never opted in, no migration needed. This is a DIFFERENT field from
+// pending-dreams.js's `whatsapp` (an abandoned-cart re-engagement address
+// captured once, mid-signup, for a single fire-and-forget message — see
+// that file's own header comment and lib/whatsapp-client.js's) — that one
+// was never an account field at all, and this one is never read by
+// dream-webhook.js. See send-whatsapp-morning-capture.js's own header
+// comment for the full "why a second, separate WhatsApp integration"
+// writeup.
+//
 // Username/email are both normalized (trim + lowercase) before ever being
 // used as a key, exactly like every other identity check in this codebase:
 // js/store.js's own accounts object is already keyed by lowercased
@@ -170,6 +185,25 @@ function normalizeFacebookUserId(fbUserId) {
 
 function store() {
   return getStore({ name: STORE_NAME });
+}
+
+/**
+ * Normalizes a WhatsApp opt-in number to E.164 (a leading '+' followed by
+ * 8-15 digits, first digit non-zero — the shape the WhatsApp Cloud API's
+ * own `to` field expects, and what send-whatsapp-morning-capture.js sends
+ * as-is with no further reformatting). Strips spaces/dashes/parens/dots a
+ * user might paste in (e.g. "+1 (555) 123-4567") before validating, same
+ * "be lenient about pasted formatting, strict about the stored shape"
+ * approach normalizeFacebookUserId above takes for a differently-shaped
+ * id. Returns '' for anything empty, non-string, or that still doesn't
+ * look like a real international number after stripping — callers treat
+ * '' as "no usable number" and refuse to save it, exactly like
+ * normalizeFacebookUserId('') already gates the "f:" index.
+ */
+function normalizeWhatsappNumber(value) {
+  if (typeof value !== 'string') return '';
+  var stripped = value.trim().replace(/[\s\-().]/g, '');
+  return /^\+[1-9]\d{7,14}$/.test(stripped) ? stripped : '';
 }
 
 /**
@@ -479,10 +513,53 @@ async function deleteAccount(event, username) {
   return { ok: true };
 }
 
+/**
+ * Sets (or clears, when `whatsappNumber` is falsy/empty) the WhatsApp
+ * morning-capture opt-in number on an EXISTING account — the write side of
+ * save-whatsapp-number.js. Unlike createAccount/applyPasswordReset, this
+ * never creates a record: reaching here means the account should already
+ * exist (the client is signed in). Returns:
+ *   { ok:true, record }             — saved (or cleared) successfully.
+ *   { ok:false, error:'not_found' } — no account under that username.
+ *   { ok:false, error:'invalid_number' } — `whatsappNumber` was non-empty
+ *     but didn't survive normalizeWhatsappNumber.
+ *
+ * An empty/falsy `whatsappNumber` DELETES the field from the record
+ * entirely (rather than storing `''`) — same "absent means never
+ * opted-in/linked" shape as `fbUserId`, so a cleared opt-in is
+ * indistinguishable from one that was never set, and
+ * send-whatsapp-morning-capture.js's own scan (`if (!record.whatsappNumber)
+ * continue`) treats both identically with no special-casing.
+ */
+async function setWhatsappNumber(event, username, whatsappNumber) {
+  var key = normalizeUsername(username);
+  if (!key) return { ok: false, error: 'not_found' };
+  connectLambda(event);
+  var s = store();
+
+  var record = await s.get('u:' + key, { type: 'json' });
+  if (!record) return { ok: false, error: 'not_found' };
+
+  var raw = typeof whatsappNumber === 'string' ? whatsappNumber.trim() : '';
+  var updated;
+  if (!raw) {
+    updated = Object.assign({}, record);
+    delete updated.whatsappNumber;
+  } else {
+    var normalized = normalizeWhatsappNumber(raw);
+    if (!normalized) return { ok: false, error: 'invalid_number' };
+    updated = Object.assign({}, record, { whatsappNumber: normalized });
+  }
+  updated.updatedAt = Date.now();
+  await s.setJSON('u:' + key, updated);
+  return { ok: true, record: updated };
+}
+
 module.exports = {
   STORE_NAME,
   normalizeUsername,
   normalizeFacebookUserId,
+  normalizeWhatsappNumber,
   getByUsername,
   getByEmail,
   getByFacebookUserId,
@@ -490,5 +567,6 @@ module.exports = {
   linkFacebookUserId,
   verifyLogin,
   applyPasswordReset,
+  setWhatsappNumber,
   deleteAccount
 };
