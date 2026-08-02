@@ -1116,9 +1116,16 @@ test('result.html: mute (the only remaining video chip) and the relocated Share 
       }
     );
     assert.equal(boxes.length, 2, 'expected mute + the relocated share pill, and nothing else');
+    // 0.1px epsilon: .heroshare's CSS already declares min-height:32px
+    // explicitly (result.html) -- the shortfall observed here (e.g.
+    // 31.999969482421875) is Chromium's own sub-pixel layout float
+    // rounding on a border-box element with a 1px border, not a real,
+    // perceptible tap-target regression. A strict >=32 comparison makes
+    // this assertion fail on exactly the intended value.
+    var TAP_TARGET_EPSILON = 0.1;
     boxes.forEach(function (b) {
       assert.ok(b.width > 0 && b.height > 0, b.id + ' should have a real, non-collapsed box at 320px');
-      assert.ok(b.width >= 32 && b.height >= 32, b.id + ' should stay a real tap target at 320px (got ' + b.width + 'x' + b.height + ')');
+      assert.ok(b.width >= 32 - TAP_TARGET_EPSILON && b.height >= 32 - TAP_TARGET_EPSILON, b.id + ' should stay a real tap target at 320px (got ' + b.width + 'x' + b.height + ')');
     });
     // Not over the video and not overlapping each other -- different
     // regions of the card entirely now (mute over the video, share in the
