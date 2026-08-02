@@ -98,8 +98,76 @@
     // Only fires when the click TARGET is the overlay element itself —
     // any click that bubbles up from inside .sheet has e.target set to
     // whatever was actually tapped inside it, never the overlay.
+    //
+    // SAME-SPOT RE-TAP GUARD (tracker item
+    // for-product-urgent-founder-posthog-recor-75ob70, founder repro via a
+    // real PostHog session recording: tapping "Me"/"Someone I know" on
+    // wizard.html's Subject step visibly did nothing — the sheet never
+    // appeared to open). Root cause: `.sheet-overlay` is
+    // `position:absolute; inset:0` over the WHOLE page (its nearest
+    // positioning ancestor is #app), and `.sheet-overlay.open` flips
+    // `pointer-events:auto` the INSTANT the `.open` class is added — not
+    // once the `.sheet` panel has actually finished its .3s slide-up
+    // transition into view. The opening tap's trigger button (e.g.
+    // #subj-add-self) sits at the same screen coordinates the overlay's
+    // backdrop now covers. A rapid second tap at that SAME spot — an
+    // impatient real user re-tapping because nothing visibly happened
+    // yet, or a double-fired click from an in-app browser's touch/click
+    // handling (this app's paid traffic is dominated by the Facebook/
+    // Instagram in-app WebKit webview) — lands with e.target === overlayEl
+    // (the .sheet itself hasn't slid up over that spot yet) and was
+    // immediately treated as an intentional tap-OUTSIDE-to-dismiss,
+    // closing the sheet a few dozen ms after it opened. To a real user
+    // (and to a PostHog session recording), a sheet that opens and closes
+    // within ~50ms, before its own opening transition is even visually
+    // underway, reads as "nothing happened" — confirmed via a real
+    // Playwright repro: two touchscreen.tap() calls ~30ms apart at the
+    // SAME coordinates opened then immediately re-closed the sheet (see
+    // test/sheet-dismiss-behavioral.test.js's "rapid re-tap" section).
+    //
+    // ROUND 2 FIX: an earlier version of this fix ignored ANY tap-outside
+    // within a flat time window (TRANSITION_FALLBACK_MS) of the most
+    // recent open — too blunt. test/out-of-tokens-purchase-sheet-
+    // behavioral.test.js has several genuinely-intentional tap-outside-
+    // to-dismiss clicks that happen well within that same window (e.g.
+    // "dismissing the sheet right after tapping Buy" clicks the backdrop
+    // corner (5,5) immediately after opening, on purpose) — a flat time
+    // window can't tell that apart from this bug's actual shape, which
+    // isn't really about TIMING, it's about the second tap landing at the
+    // SAME PLACE as whatever opened the sheet. Fixed instead by comparing
+    // POSITION: track the coordinates of the most recent click anywhere
+    // that did NOT target this overlay (i.e. the last click "outside" in
+    // the DOM sense, which is normally either the trigger button itself,
+    // or -- once the user has clicked anything inside the open sheet,
+    // e.g. #ps-buy-btn -- that inner element instead, which is exactly
+    // what naturally distinguishes a real dismiss-elsewhere from a same-
+    // spot re-tap: any real interaction with the sheet's own content
+    // moves this tracked point away from the original trigger's
+    // coordinates). A tap-outside click is only swallowed as a probable
+    // duplicate of that SAME physical tap when it lands within
+    // SAME_TAP_RADIUS_PX of that point AND within a generous
+    // SAME_TAP_MAX_AGE_MS window (defense-in-depth against the
+    // vanishingly unlikely case of a genuinely new, deliberate tap
+    // coincidentally landing on the exact same old coordinates much
+    // later) — normal tap-outside dismissals (elsewhere on the backdrop,
+    // or after interacting with the sheet's own content) are unaffected
+    // regardless of how soon after opening they happen.
+    var SAME_TAP_RADIUS_PX = 48; // roughly one comfortable tap-target's worth of finger/coordinate jitter
+    var SAME_TAP_MAX_AGE_MS = 2000;
+    var lastOutsideClick = null; // {x, y, t} of the most recent click whose target was NOT this overlay
+    document.addEventListener('click', function (e) {
+      if (e.target === overlayEl) return; // that's this listener's own concern below, not "outside" from its own point of view
+      lastOutsideClick = { x: e.clientX, y: e.clientY, t: Date.now() };
+    }, true);
+
     overlayEl.addEventListener('click', function (e) {
-      if (e.target === overlayEl) onDismiss();
+      if (e.target !== overlayEl) return;
+      if (lastOutsideClick && (Date.now() - lastOutsideClick.t) < SAME_TAP_MAX_AGE_MS) {
+        var dx = e.clientX - lastOutsideClick.x;
+        var dy = e.clientY - lastOutsideClick.y;
+        if (Math.sqrt(dx * dx + dy * dy) < SAME_TAP_RADIUS_PX) return; // looks like the same physical tap re-landing on the just-opened backdrop, not a deliberate dismiss elsewhere
+      }
+      onDismiss();
     });
 
     if (!sheetEl) return; // nothing to drag — tap-outside above still works
