@@ -217,6 +217,56 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
   }
 });
 
+// Tracker item wizard-html-signup-typed-fn-username-is--iy3w6t: the typed
+// #fn-username value used to be validated (min 3 chars) then silently
+// discarded, with the real account name always derived from the email
+// instead -- confusing, since username is a real identity field (shown
+// back on profile.html's account-username field, used for login). Fixed
+// to honor what the user actually typed (sanitized the same way the
+// email-derived fallback always was: lowercased, non-alphanumeric
+// stripped -- see wizard.html's sanitizeUsername).
+test('wizard.html: signup honors the typed #fn-username value as the real account username, not a silently-discarded decoy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'typed-username-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    // Deliberately typed with characters sanitizeUsername strips (spaces,
+    // punctuation, mixed case) to prove the SAME typed value drives the
+    // real account name, not a coincidental match.
+    await page.fill('#fn-username', 'Dream Walker!');
+    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.click('#fn-signup-continue');
+
+    // Signup lands directly on home.html (funnel-ending-v2) -- wait for
+    // that navigation before reading window.DreamStore, or the read races
+    // the navigation and hits a destroyed execution context.
+    await page.waitForURL(/home\.html/, { timeout: 15000 });
+    await page.waitForFunction(function () {
+      var u = window.DreamStore && window.DreamStore.getCurrentUser();
+      return !!(u && u.username);
+    }, null, { timeout: 10000 });
+    var username = await page.evaluate(function () { return window.DreamStore.getCurrentUser().username; });
+    assert.equal(username, 'dreamwalker', 'the real account username must be the sanitized form of what the user actually typed, not derived from their email');
+  } finally {
+    await page.close();
+  }
+});
+
 // WhatsApp toggle/field PARKED (founder decision 2026-07-28, tracker item
 // for-product-hide-the-whatsapp-field-in-w-clu9ju) -- mirrors
 // test/ui-behavioral.test.js's own parked-camera/scenery-screens tests

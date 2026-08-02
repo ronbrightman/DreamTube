@@ -1492,14 +1492,33 @@
   // (non-test) usage there is no UI path to trigger either case while an
   // attempt is still in flight in the first place.
   var signupAttemptToken = 0;
+  // Left untouched, byte-for-byte-logic-identical to before (and to
+  // start.html's/lib/derive-username.js's own copies) -- test/account-
+  // store-facebook.test.js regex-extracts this exact function body out of
+  // the page source and evals it standalone to cross-check the three
+  // copies agree, so it can't be refactored to call a sibling helper.
   function deriveUsernameBase(email){
     var local = (email.split('@')[0] || '').toLowerCase();
     var sanitized = local.replace(/[^a-z0-9]/g, '');
     if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
     return sanitized.slice(0, 20) || 'dreamer';
   }
-  function attemptSignup(email, password, cb){
-    var base = deriveUsernameBase(email);
+  // The #fn-username field the user actually typed (tracker iy3w6t -- it
+  // used to be validated then silently discarded, with the real account
+  // name always derived from email instead) goes through this same
+  // sanitization, kept as its own function (not reused by
+  // deriveUsernameBase above -- see that function's own comment) so a
+  // typed "John Doe!" lands on the same kind of lowercase-alphanumeric
+  // username the rest of the account system (account-store.js's
+  // normalizeUsername, login) expects.
+  function sanitizeUsername(raw){
+    var lower = (raw || '').toLowerCase();
+    var sanitized = lower.replace(/[^a-z0-9]/g, '');
+    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
+    return sanitized.slice(0, 20) || 'dreamer';
+  }
+  function attemptSignup(email, password, username, cb){
+    var base = username ? sanitizeUsername(username) : deriveUsernameBase(email);
     var attempts = 0;
     var MAX_ATTEMPTS = 8;
     function tryUsername(username){
@@ -1616,7 +1635,7 @@
       // for why the token check still matters even so.
       backBtn.disabled = true;
       setTimeout(function(){
-        attemptSignup(contactEmail, password, function(ok, err, superseded){
+        attemptSignup(contactEmail, password, username, function(ok, err, superseded){
           // Stale -- a newer Signup attempt has since started (or this
           // one was superseded some other way). Discard everything,
           // including navigation: touching continueBtn/errEl here would
