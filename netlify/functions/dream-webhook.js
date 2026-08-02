@@ -81,6 +81,7 @@ var falWebhookVerify = require('./lib/fal-webhook-verify');
 var pendingDreams = require('./lib/pending-dreams');
 var pendingDreamToken = require('./lib/pending-dream-token');
 var whatsappClient = require('./lib/whatsapp-client');
+var mediaRehost = require('./lib/media-rehost');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
@@ -174,7 +175,25 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ ok: true }) };
     }
 
-    var videoUrl = body.payload.video.url;
+    var rawVideoUrl = body.payload.video.url;
+
+    // Best-effort re-host into our own Blobs storage (lib/media-rehost.js
+    // — tracker item for-product-owner-media-library-page-fou-1fwxaw's
+    // corrected scope) — this webhook is a GENUINELY SEPARATE completion
+    // path from video-status.js's checkFalStatus (see that file's own
+    // header comment: this is fal's only real webhook target in this app,
+    // wired only to the funnel's pre-signup abandoned-dream flow, and
+    // hands back a raw fal video URL directly in the payload, never
+    // touching video-status.js at all) — so it must call this same
+    // re-host step independently, keyed by the SAME requestId shape
+    // video-status.js uses (fal's own request_id, unique per job), so a
+    // dream that happens to complete through both a webhook AND a client
+    // poll (shouldn't normally happen for this path, but see this file's
+    // own idempotency notes elsewhere) can never double-store. Never
+    // throws, never blocks the webhook ack on failure — see that module's
+    // own header comment.
+    var rehost = await mediaRehost.rehostBestEffort(event, 'video', rawVideoUrl, body.request_id);
+    var videoUrl = rehost.ok ? rehost.url : rawVideoUrl;
 
     // The ONLY safe gate for "is it OK to send the re-engagement email" —
     // see the header comment and lib/pending-dreams.js's own doc comment

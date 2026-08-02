@@ -70,8 +70,9 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 |---|---|---|
 | `generate-video.js` (prompt build, guardrails, model rotation/config, tokens, Turnstile) | `test/generate-video-build-prompt.test.js`, `test/generate-video-model-rotation.test.js`, `test/generate-video-model-config.test.js`, `test/generate-video-tokens.test.js`, `test/generate-video-turnstile.test.js`, `test/generate-video-audio-toggle.test.js`, `test/generate-video-image-to-video.test.js` | — |
 | `GENERATION_MOCK_MODE` / `GENERATION_TEST_DURATION` themselves | `test/generate-video-mock.test.js`, `test/video-status-mock.test.js` | — |
-| `generate-image.js` / `image-status.js` | `test/generate-image.test.js`, `test/image-status.test.js`, `test/image-status-refund.test.js`, `test/image-generation-style-toggle-behavioral.test.js`, `test/image-generation-turn-into-video-behavioral.test.js` | — |
-| `video-status.js` (polling, refunds, model-agnostic) | `test/video-status-mock.test.js`, `test/video-status-model-agnostic.test.js`, `test/video-status-refund.test.js` | — |
+| `generate-image.js` / `image-status.js` | `test/generate-image.test.js`, `test/image-status.test.js`, `test/image-status-refund.test.js`, `test/image-generation-style-toggle-behavioral.test.js`, `test/image-generation-turn-into-video-behavioral.test.js`, `test/image-status-rehost.test.js` | — |
+| `video-status.js` (polling, refunds, model-agnostic) | `test/video-status-mock.test.js`, `test/video-status-model-agnostic.test.js`, `test/video-status-refund.test.js`, `test/video-status-rehost.test.js` | — |
+| Own-storage media re-host on completion (`lib/media-rehost.js`, `lib/media-status.js`, `video-file.mjs`, `image-file.mjs`) — tracker item `for-product-owner-media-library-page-fou-1fwxaw` | `test/media-rehost.test.js`, `test/media-status.test.js`, `test/media-file-functions.test.js`, `test/video-status-rehost.test.js`, `test/image-status-rehost.test.js`, `test/dream-webhook.test.js` (the funnel webhook's own separate re-host path) | Best-effort by design (see `lib/media-rehost.js`'s header comment) — a re-host failure is expected to leave the fal URL in place, covered explicitly, not a gap. No live `FAL_KEY`/real fal media in this sandbox to confirm actual byte-for-byte fidelity against a real fal response — mocked fetch responses only, same limitation this codebase's other fal-adjacent tests already accept. |
 | Edit-delta mechanism (`realign-dream-prompt.js`, the edit sheet) | `test/edit-mechanism-behavioral.test.js`, `test/realign-dream-prompt.test.js` | — |
 | Edit/regen forming-state + stale-completion race guard | `test/edit-regeneration-forming-state-behavioral.test.js` | — |
 | Edit/regen forming veil + reload persistence, live on a real deployed origin (the i2yzqo regression class) | `test/prod-smoke/session.test.js` (test 5) | — |
@@ -132,6 +133,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 |---|---|---|
 | Paywall toggle | `test/admin-paywall-toggle.test.js` | — |
 | tracker.html (`get/add/update/delete-tracker-item.js`) | `test/tracker.test.js`, `test/tracker-behavioral.test.js`, `test/tracker-comments-behavioral.test.js`, `test/tracker-reviewed-behavioral.test.js`, `test/tracker-speak-behavioral.test.js`, `test/tracker-waiting-for-behavioral.test.js` | — |
+| Media library page + backfill sweep (`media-library-x7q4.html`, `admin-backfill-media-rehost.js`, `admin-media-library-data.js`) — tracker item `for-product-owner-media-library-page-fou-1fwxaw` | `test/admin-backfill-media-rehost.test.js` (auth, idempotency, pagination across the accounts→feed phases, per-field re-host outcomes), `test/admin-media-library-data.test.js` (auth, item shape, status classification matching `lib/media-status.js` directly, both/neither-media-field edge cases), `test/media-library-page.test.js` (Playwright: gate → unlock → grid render → filters) | Both admin endpoints are unpaginated on the FEED side and the data-listing endpoint is unpaginated on the accounts side too (documented in each file's own header comment as an accepted "fine at current scale" tradeoff, same posture `send-daily-claim-pushes.js` already established) — would need real pagination if the account base grows large. |
 
 ## Cross-cutting / infrastructure
 
@@ -143,6 +145,14 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | **Live, real-origin, end-to-end smoke coverage** (as opposed to mocked-backend coverage) | `test/prod-smoke/*.test.js` (this file's own registry entry) | Intentionally narrow — see `test/prod-smoke/README.md`. Does NOT cover: payments/checkout, Facebook Login, admin/owner tooling, transcription, interpretation/Chamber, push notifications, or most retention email paths. Those stay covered only by the mocked `test/*.test.js` suite. |
 
 ## Last reconciled
+
+2026-08-02, alongside tracker item
+`for-product-owner-media-library-page-fou-1fwxaw`: added own-storage media
+re-hosting (video-status.js/image-status.js/dream-webhook.js completion
+paths, `lib/media-rehost.js`, `lib/media-status.js`, `image-file.mjs`), the
+owner-only backfill sweep (`admin-backfill-media-rehost.js`), and the owner
+media library page + its data endpoint (`media-library-x7q4.html`,
+`admin-media-library-data.js`) — see the rows above.
 
 2026-08-01, alongside tracker item
 `for-product-build-founder-directed-produ-miyfp4` (founder-directed,

@@ -28,6 +28,7 @@
 var entitlements = require('./lib/entitlements');
 var accountStore = require('./lib/account-store');
 var posthogCapture = require('./lib/posthog-capture');
+var mediaRehost = require('./lib/media-rehost');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 
@@ -178,7 +179,7 @@ function checkMockStatus(operationName) {
 }
 
 /** Active path. */
-async function checkFalImageStatus(model, requestId, falKey) {
+async function checkFalImageStatus(model, requestId, falKey, event) {
   var appBase = falAppBase(model);
   var statusRes = await fetch(FAL_API_BASE + '/' + appBase + '/requests/' + requestId + '/status', {
     headers: { 'Authorization': 'Key ' + falKey }
@@ -219,7 +220,14 @@ async function checkFalImageStatus(model, requestId, falKey) {
     return { statusCode: 200, done: true, error: 'E508: no_image_in_response' };
   }
 
-  return { statusCode: 200, done: true, imageUrl: imageUrl };
+  // Best-effort re-host into our own Blobs storage — see
+  // video-status.js's checkFalStatus own identical comment and
+  // lib/media-rehost.js's header comment for the full reasoning
+  // (never throws, never blocks this response on failure).
+  var rehost = await mediaRehost.rehostBestEffort(event, 'image', imageUrl, requestId);
+  var finalImageUrl = rehost.ok ? rehost.url : imageUrl;
+
+  return { statusCode: 200, done: true, imageUrl: finalImageUrl, durable: rehost.ok };
 }
 
 exports.handler = async function (event) {
@@ -247,7 +255,7 @@ exports.handler = async function (event) {
         return { statusCode: 500, body: JSON.stringify({ error: 'E510: missing_api_key' }) };
       }
       var parts = name.split(':');
-      result = await checkFalImageStatus(parts[1], parts[2], falKey);
+      result = await checkFalImageStatus(parts[1], parts[2], falKey, event);
     } else {
       return { statusCode: 400, body: JSON.stringify({ error: 'E502: name_required' }) };
     }

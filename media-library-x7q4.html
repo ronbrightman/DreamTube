@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Media Library — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-v3.png">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v3.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  /* Utilitarian owner tool — deliberately not a design-polish pass (per
+     this feature's own tracker item: "Night styling fine but utilitarian
+     is OK — it's an owner tool"). Reuses .video-grid/.vcard/.vcard-thumb
+     from css/styles.css (the same grid Explore/Profile already use) rather
+     than inventing a new grid system, plus a handful of small local rules
+     for the parts that ARE genuinely new here: filters, status badges, and
+     the backfill-sweep progress panel. */
+  .ml-summary{ display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 18px; }
+  .ml-stat{ flex:1; min-width:84px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+  .ml-stat-num{ font-size:18px; font-weight:800; }
+  .ml-stat-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
+  .ml-filters{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .ml-select{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 10px; color:var(--text-primary); font-family:var(--font-body); font-size:12.5px; flex:1; min-width:120px; }
+  .ml-badge{ position:absolute; left:6px; top:6px; font-size:9px; font-weight:800; padding:3px 7px; border-radius:6px; letter-spacing:.02em; color:#000; }
+  .ml-badge.status-re-hosted-durable{ background:var(--accent-growth); }
+  .ml-badge.status-still-on-fal{ background:var(--accent-value); }
+  .ml-badge.status-lost-expired{ background:var(--danger); color:#fff; }
+  .ml-expiry{ position:absolute; right:6px; top:6px; font-size:9px; font-weight:700; padding:2px 6px; border-radius:6px; background:rgba(0,0,0,.65); color:#fff; }
+  .ml-vcard-thumb{ background:var(--surface-alt); }
+  .ml-owner{ font-size:11px; color:var(--text-faint); }
+  .ml-sweep-panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:18px; }
+  .ml-sweep-log{ font-size:11.5px; color:var(--text-muted); line-height:1.6; white-space:pre-wrap; margin-top:10px; max-height:160px; overflow-y:auto; }
+  .ml-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <a class="icon-btn" id="ml-back" href="admin.html"></a>
+    <div class="topbar-logo" style="font-size:15px;">Media Library</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <div class="px" style="flex:1;">
+    <div class="admin-row-sub" id="ml-version-line" style="display:none; margin-bottom:16px; padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--border); font-size:11.5px; line-height:1.5;"></div>
+
+    <!-- Unauthorized / not-logged-in state -->
+    <div id="ml-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+      <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="ml-unauthorized-icon"></div>
+      <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+    </div>
+
+    <!-- Real-password gate (never a bare client-trusted claim — see
+         admin-media-library-data.js's own header comment). Requires an
+         actual re-entry of the owner's password every time this page
+         loads, matching admin.html's diagnose-rename-conflict panel's own
+         bar, not the lighter client-cached-email check admin.html's
+         paywall toggle uses (this page can read every real account's
+         media, a materially more sensitive read). -->
+    <div id="ml-gate" style="display:none;">
+      <div class="auth-sub">Enter the owner account's real password to load every account's media and its storage status.</div>
+      <input class="field" id="ml-gate-source" type="text" placeholder="Username or email" autocomplete="username" dir="auto">
+      <input class="field" id="ml-gate-password" type="password" placeholder="Password" autocomplete="current-password">
+      <button type="button" class="btn btn-primary btn-block" id="ml-gate-submit">Unlock</button>
+      <div class="err-text" id="ml-gate-error" style="margin-top:4px;"></div>
+    </div>
+
+    <!-- Main content, shown once the gate above succeeds -->
+    <div id="ml-content" style="display:none;">
+
+      <div class="ml-sweep-panel">
+        <div class="choice-title" style="margin-bottom:4px;">Backfill sweep</div>
+        <div class="admin-row-sub" style="margin:0 0 10px;">Re-hosts any dream still only on fal (private + published) into our own storage. Safe to re-run — anything already durably hosted is skipped. Every new generation is re-hosted automatically now; this is only for dreams made before that shipped.</div>
+        <button type="button" class="btn btn-ghost" id="ml-sweep-btn" style="width:auto; padding:8px 16px;">Run backfill sweep</button>
+        <div class="ml-sweep-log" id="ml-sweep-log" style="display:none;"></div>
+      </div>
+
+      <div class="ml-summary" id="ml-summary"></div>
+
+      <div class="ml-filters">
+        <select class="ml-select" id="ml-filter-status">
+          <option value="">All statuses</option>
+          <option value="re-hosted-durable">Re-hosted (durable)</option>
+          <option value="still-on-fal">Still on fal</option>
+          <option value="lost-expired">Lost (expired)</option>
+        </select>
+        <select class="ml-select" id="ml-filter-account">
+          <option value="">All accounts</option>
+        </select>
+        <button type="button" class="btn btn-ghost" id="ml-refresh-btn" style="width:auto; padding:8px 16px;">Refresh</button>
+      </div>
+
+      <div class="video-grid" id="ml-grid"></div>
+      <div class="ml-empty" id="ml-empty" style="display:none;">No media matches this filter.</div>
+    </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script>
+  document.getElementById('ml-back').innerHTML = Icons.back;
+  document.getElementById('ml-unauthorized-icon').innerHTML = Icons.lock;
+
+  // ===== Release visibility (same pattern as admin.html) =====
+  (function loadVersionLine() {
+    var el = document.getElementById('ml-version-line');
+    fetch('/version.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.commitSha) return;
+        var when = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time';
+        var msg = data.shortMessage ? ' — "' + data.shortMessage + '"' : '';
+        el.textContent = (data.version || data.commitSha.slice(0, 7)) + ' · built ' + when + msg;
+        el.style.display = 'block';
+      })
+      .catch(function () { /* stays hidden — debugging aid, not a feature */ });
+  })();
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=media-library-x7q4.html'; }
+
+  var gateEl = document.getElementById('ml-gate');
+  var unauthorizedEl = document.getElementById('ml-unauthorized');
+  var contentEl = document.getElementById('ml-content');
+  var gateSourceEl = document.getElementById('ml-gate-source');
+  var gatePasswordEl = document.getElementById('ml-gate-password');
+  var gateSubmitBtn = document.getElementById('ml-gate-submit');
+  var gateErrorEl = document.getElementById('ml-gate-error');
+
+  var gateSourceEmail = DreamStore.getAccountEmail();
+  gateSourceEl.value = user.handle ? user.handle.replace(/^@/, '') : '';
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    gateEl.style.display = 'none';
+    contentEl.style.display = 'none';
+  }
+
+  // A logged-in account with no email on file at all can never be the
+  // owner — same short-circuit admin.html's own gate uses — no point
+  // showing a password box that can only ever fail.
+  if (!gateSourceEmail) {
+    showUnauthorized();
+  } else {
+    gateEl.style.display = 'block';
+  }
+
+  // ===== Real credentials, stored ONLY in memory for this page's session
+  // (never persisted) — reused by the backfill-sweep button below so the
+  // founder doesn't have to re-type the password for every paginated
+  // sweep call. =====
+  var creds = null;
+  var allItems = [];
+
+  function renderSummary(items) {
+    var counts = { 're-hosted-durable': 0, 'still-on-fal': 0, 'lost-expired': 0 };
+    items.forEach(function (it) { if (counts[it.status] !== undefined) counts[it.status]++; });
+    var el = document.getElementById('ml-summary');
+    el.innerHTML = [
+      { label: 'Total media', num: items.length },
+      { label: 'Re-hosted', num: counts['re-hosted-durable'] },
+      { label: 'Still on fal', num: counts['still-on-fal'] },
+      { label: 'Lost (expired)', num: counts['lost-expired'] }
+    ].map(function (s) {
+      return '<div class="ml-stat"><div class="ml-stat-num">' + s.num + '</div><div class="ml-stat-label">' + s.label + '</div></div>';
+    }).join('');
+  }
+
+  function populateAccountFilter(items) {
+    var select = document.getElementById('ml-filter-account');
+    var current = select.value;
+    var handles = Array.from(new Set(items.map(function (it) { return it.ownerHandle; }).filter(Boolean))).sort();
+    select.innerHTML = '<option value="">All accounts</option>' +
+      handles.map(function (h) { return '<option value="' + esc(h) + '">' + esc(h) + '</option>'; }).join('');
+    if (handles.indexOf(current) !== -1) select.value = current;
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var STATUS_LABEL = {
+    're-hosted-durable': 'Durable',
+    'still-on-fal': 'On fal',
+    'lost-expired': 'Lost'
+  };
+
+  function expiryText(item) {
+    if (item.status !== 'still-on-fal') return '';
+    if (item.protectedByNoExpiryHeader) return 'no known expiry';
+    if (item.daysUntilExpiry === 0) return 'expiring today';
+    return '~' + item.daysUntilExpiry + 'd left';
+  }
+
+  function cardHTML(item) {
+    var when = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'unknown date';
+    var expiry = expiryText(item);
+    var mediaEl = item.mediaType === 'image'
+      ? '<img class="vcard-image" loading="lazy" src="' + esc(item.url) + '" alt="">'
+      : '<video class="vcard-video" muted playsinline preload="none" data-src="' + esc(item.url) + '"></video>';
+    return '<div class="vcard" style="cursor:default;">' +
+      '<div class="vcard-thumb ml-vcard-thumb">' +
+        mediaEl +
+        '<span class="ml-badge status-' + item.status + '">' + STATUS_LABEL[item.status] + '</span>' +
+        (expiry ? '<span class="ml-expiry">' + esc(expiry) + '</span>' : '') +
+        '<span class="priv' + (item.isPublished ? ' pub' : '') + '">' + (item.isPublished ? 'Published' : 'Private') + '</span>' +
+      '</div>' +
+      '<div class="vcard-title">' + esc(item.ownerHandle || 'unknown') + '</div>' +
+      '<div class="vcard-meta">' + esc(item.mediaType) + ' · ' + esc(when) + '</div>' +
+    '</div>';
+  }
+
+  // Lazy video loading (Intersection Observer — mirrors home.html's own
+  // thumbVideoObserver pattern for its dream-row strip, adapted here to
+  // set `src` on first appearance rather than play/pause, since this grid
+  // has far more items on screen at once than a horizontal strip and
+  // should never eagerly download every video up front).
+  var lazyVideoObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      var video = entry.target;
+      if (video.dataset.src && !video.src) {
+        video.preload = 'metadata';
+        video.src = video.dataset.src;
+      }
+      lazyVideoObserver.unobserve(video);
+    });
+  }, { threshold: 0.1, rootMargin: '200px' });
+
+  function renderGrid() {
+    var statusFilter = document.getElementById('ml-filter-status').value;
+    var accountFilter = document.getElementById('ml-filter-account').value;
+    var filtered = allItems.filter(function (it) {
+      if (statusFilter && it.status !== statusFilter) return false;
+      if (accountFilter && it.ownerHandle !== accountFilter) return false;
+      return true;
+    });
+    // Newest first — most useful default for "did the thing I just made
+    // land somewhere durable" style spot-checking.
+    filtered.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+
+    var gridEl = document.getElementById('ml-grid');
+    var emptyEl = document.getElementById('ml-empty');
+    if (!filtered.length) {
+      gridEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    gridEl.innerHTML = filtered.map(cardHTML).join('');
+    Array.prototype.forEach.call(gridEl.querySelectorAll('.vcard-video'), function (v) { lazyVideoObserver.observe(v); });
+  }
+
+  function loadData() {
+    return fetch('/.netlify/functions/admin-media-library-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds)
+    }).then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.ok) {
+        throw new Error((result.data && result.data.error) || 'load_failed');
+      }
+      allItems = result.data.items;
+      renderSummary(allItems);
+      populateAccountFilter(allItems);
+      renderGrid();
+    });
+  }
+
+  gateSubmitBtn.addEventListener('click', function () {
+    gateErrorEl.textContent = '';
+    var usernameOrEmail = gateSourceEl.value.trim();
+    var password = gatePasswordEl.value;
+    if (!usernameOrEmail || !password) {
+      gateErrorEl.textContent = 'Enter a username/email and password.';
+      return;
+    }
+    gateSubmitBtn.disabled = true;
+    creds = { usernameOrEmail: usernameOrEmail, password: password };
+    loadData().then(function () {
+      gateSubmitBtn.disabled = false;
+      gateEl.style.display = 'none';
+      contentEl.style.display = 'block';
+    }).catch(function (err) {
+      gateSubmitBtn.disabled = false;
+      creds = null;
+      var msg = (err && err.message) || '';
+      gateErrorEl.textContent = msg.indexOf('E5') === 0 || msg === 'forbidden'
+        ? "Couldn't verify — check the username/email and password (must be the owner account's real credentials)."
+        : "Couldn't reach the server — check your connection and try again.";
+    });
+  });
+
+  document.getElementById('ml-refresh-btn').addEventListener('click', function () {
+    if (!creds) return;
+    loadData().catch(function () { /* stays on the last-good render */ });
+  });
+  document.getElementById('ml-filter-status').addEventListener('change', renderGrid);
+  document.getElementById('ml-filter-account').addEventListener('change', renderGrid);
+
+  // ===== Backfill sweep (admin-backfill-media-rehost.js) — drives the
+  // paginated sweep to completion (accounts phase, then the feed phase),
+  // logging progress as it goes, then refreshes the grid above so the
+  // founder can visually confirm "sorted and done" in the same place, per
+  // this feature's own tracker item. =====
+  var sweepBtn = document.getElementById('ml-sweep-btn');
+  var sweepLogEl = document.getElementById('ml-sweep-log');
+
+  function sweepLog(line) {
+    sweepLogEl.style.display = 'block';
+    sweepLogEl.textContent += (sweepLogEl.textContent ? '\n' : '') + line;
+    sweepLogEl.scrollTop = sweepLogEl.scrollHeight;
+  }
+
+  function sweepOnce(cursor) {
+    return fetch('/.netlify/functions/admin-backfill-media-rehost', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, creds, { cursor: cursor }))
+    }).then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.ok) throw new Error((result.data && result.data.error) || 'sweep_failed');
+      return result.data;
+    });
+  }
+
+  function runSweep(cursor) {
+    return sweepOnce(cursor).then(function (data) {
+      sweepLog('[' + data.phase + '] scanned ' + (data.scannedAccounts || 0) + ' account(s)/' + data.scannedMediaItems + ' item(s) — rehosted ' + data.rehosted + ', already durable ' + data.alreadyDurable + ', failed ' + data.failed);
+      if (data.done) return;
+      return runSweep(data.nextCursor);
+    });
+  }
+
+  sweepBtn.addEventListener('click', function () {
+    if (!creds) return;
+    sweepBtn.disabled = true;
+    sweepLogEl.textContent = '';
+    runSweep(undefined).then(function () {
+      sweepLog('Done — refreshing grid…');
+      return loadData();
+    }).then(function () {
+      sweepLog('Grid refreshed.');
+      sweepBtn.disabled = false;
+    }).catch(function (err) {
+      sweepLog('Stopped: ' + ((err && err.message) || 'unknown error'));
+      sweepBtn.disabled = false;
+    });
+  });
+</script>
+</body>
+</html>

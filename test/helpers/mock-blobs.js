@@ -44,6 +44,19 @@
 
 var stores = {};
 
+// Per-store metadata map (storeName -> Map(key -> metadata object)) for the
+// binary set()/getMetadata()/getWithMetadata() trio below — kept SEPARATE
+// from `stores` (which backs get()/setJSON()) rather than folding metadata
+// into the same map's values, since the two call-shapes never mix for any
+// one store name in this codebase today (dreamtube-videos/dreamtube-images
+// are ONLY ever written via set()+read via getWithMetadata(), every other
+// store is ONLY ever JSON via get()/setJSON()) — added for
+// lib/media-rehost.js/video-file.mjs/image-file.mjs (tracker item
+// for-product-owner-media-library-page-fou-1fwxaw), mirroring the real
+// @netlify/blobs SDK's own Store.getMetadata/getWithMetadata/set (see
+// node_modules/@netlify/blobs/dist/main.cjs).
+var metaStores = {};
+
 // Per-store read overrides, for tests simulating a hazard the plain
 // synchronous in-memory Map can't otherwise reproduce (e.g. Blobs' lack
 // of a read-your-own-write guarantee, or a read that never converges
@@ -88,6 +101,11 @@ var etagCounter = 0;
 function storeFor(name) {
   if (!stores[name]) stores[name] = new Map();
   return stores[name];
+}
+
+function metaStoreFor(name) {
+  if (!metaStores[name]) metaStores[name] = new Map();
+  return metaStores[name];
 }
 
 function fakeGetStore(opts) {
@@ -142,6 +160,39 @@ function fakeGetStore(opts) {
     },
     delete: async function (key) {
       map.delete(key);
+      metaStoreFor(name).delete(key);
+    },
+    // Binary write, mirroring real @netlify/blobs' Store.set(key, data,
+    // {metadata}) — see this file's header comment on `metaStores`. `data`
+    // is stored as-is (an ArrayBuffer/Buffer in every real call site this
+    // mock supports) — nothing here re-encodes it, same as the real SDK.
+    set: async function (key, data, options) {
+      var override = writeOverrides[name];
+      if (override) {
+        override.callCount++;
+        var err = override.fn(key, data, override.callCount);
+        if (err) throw (err instanceof Error ? err : new Error(String(err)));
+      }
+      map.set(key, data);
+      metaStoreFor(name).set(key, (options && options.metadata) || {});
+    },
+    // Mirrors real @netlify/blobs' Store.getMetadata(key): { etag,
+    // metadata } if the key exists (via either set() or setJSON()), null
+    // if not — see this file's header comment.
+    getMetadata: async function (key) {
+      if (!map.has(key)) return null;
+      return { etag: 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
+    },
+    // Mirrors real @netlify/blobs' Store.getWithMetadata(key, {type}):
+    // { data, etag, metadata } if the key exists, null if not. `type` is
+    // ignored here (unlike the real SDK, which converts based on it) —
+    // every real call site in this codebase (video-file.mjs/image-file.mjs)
+    // just hands `data` straight to a Response constructor, which accepts
+    // the raw ArrayBuffer/Buffer this mock already stores just as well as
+    // it would a real stream.
+    getWithMetadata: async function (key) {
+      if (!map.has(key)) return null;
+      return { data: map.get(key), etag: 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
     },
     // Minimal stand-in for real @netlify/blobs' list() — added for
     // tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5's
@@ -243,6 +294,7 @@ function seed(storeName, key, value) {
 /** Clears all fake store state, including any read/write/result overrides. Call between tests. */
 function reset() {
   stores = {};
+  metaStores = {};
   readOverrides = {};
   writeOverrides = {};
   resultOverrides = {};

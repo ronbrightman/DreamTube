@@ -244,3 +244,83 @@ test('missing RESEND_API_KEY: still marks ready/notified, logs and skips the ema
   var updated = await pendingDreams.get({}, record.id);
   assert.equal(updated.status, 'notified');
 });
+
+// ----- Best-effort re-host (tracker item
+// for-product-owner-media-library-page-fou-1fwxaw): this webhook is a
+// GENUINELY SEPARATE completion path from video-status.js's checkFalStatus
+// (see this file's own header comment) and must independently re-host the
+// video it receives directly in the payload, keyed by the fal request_id. -----
+
+test('a successful completion re-hosts the video and stores the DURABLE url on the pending record, not fal\'s raw one', async function () {
+  var record = await pendingDreams.create({}, { email: 'rehost@example.com', caption: 'a dream', style: 'Cinematic' });
+  var bytes = new ArrayBuffer(12);
+  global.fetch = async function (url) {
+    if (String(url).indexOf('jwks') !== -1) return { ok: true, status: 200, json: async function () { return { keys: [publicJwk()] }; } };
+    if (String(url) === 'https://cdn.fal/finished.mp4') {
+      return {
+        ok: true, status: 200,
+        headers: { get: function (name) { return name.toLowerCase() === 'content-type' ? 'video/mp4' : null; } },
+        arrayBuffer: async function () { return bytes; }
+      };
+    }
+    return { ok: true, status: 200, json: async function () { return {}; } };
+  };
+
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', request_id: 'req-webhook-rehost-1', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.videoUrl, '/.netlify/functions/video-file?key=req-webhook-rehost-1');
+
+  var { getStore } = require('@netlify/blobs');
+  var stored = await getStore({ name: 'dreamtube-videos' }).getWithMetadata('req-webhook-rehost-1');
+  assert.equal(stored.data, bytes);
+});
+
+test('when the re-host download fails, the pending record still gets fal\'s raw url -- never blocks the webhook ack or the claim flow', async function () {
+  var record = await pendingDreams.create({}, { email: 'rehostfail@example.com', caption: 'a dream', style: 'Cinematic' });
+  global.fetch = async function (url) {
+    if (String(url).indexOf('jwks') !== -1) return { ok: true, status: 200, json: async function () { return { keys: [publicJwk()] }; } };
+    if (String(url) === 'https://cdn.fal/finished.mp4') return { ok: false, status: 500 };
+    return { ok: true, status: 200, json: async function () { return {}; } };
+  };
+
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', request_id: 'req-webhook-rehost-fail', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.videoUrl, 'https://cdn.fal/finished.mp4');
+});
+
+test('an already-claimed record also gets the RE-HOSTED url in its bookkeeping-only update', async function () {
+  var record = await pendingDreams.create({}, { email: 'claimedrehost@example.com', caption: 'a dream', style: 'Cinematic' });
+  await pendingDreams.markClaimed({}, record.id);
+  var bytes = new ArrayBuffer(6);
+  global.fetch = async function (url) {
+    if (String(url).indexOf('jwks') !== -1) return { ok: true, status: 200, json: async function () { return { keys: [publicJwk()] }; } };
+    if (String(url) === 'https://cdn.fal/finished.mp4') {
+      return {
+        ok: true, status: 200,
+        headers: { get: function (name) { return name.toLowerCase() === 'content-type' ? 'video/mp4' : null; } },
+        arrayBuffer: async function () { return bytes; }
+      };
+    }
+    return { ok: true, status: 200, json: async function () { return {}; } };
+  };
+
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', request_id: 'req-webhook-rehost-claimed', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.status, 'claimed');
+  assert.equal(updated.videoUrl, '/.netlify/functions/video-file?key=req-webhook-rehost-claimed');
+});

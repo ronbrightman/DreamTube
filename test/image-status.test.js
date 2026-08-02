@@ -15,12 +15,22 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 
+// image-status.js's checkFalImageStatus now attempts a best-effort re-host
+// into Blobs (lib/media-rehost.js — tracker item
+// for-product-owner-media-library-page-fou-1fwxaw) once it resolves a real
+// imageUrl, so this file needs a working Blobs mock like every other test
+// exercising checkFalImageStatus's success path — installed BEFORE
+// image-status.js is required, per this mock's own documented usage.
+var mockBlobs = require('./helpers/mock-blobs');
+mockBlobs.install();
+
 var { fakeEvent } = require('./helpers/fake-event');
 var handler = require('../netlify/functions/image-status').handler;
 
 var realFetch = global.fetch;
 
 test.beforeEach(function () {
+  mockBlobs.reset();
   global.fetch = function () { throw new Error('image-status.js should not call fetch unless a test explicitly stubs it'); };
   delete process.env.FAL_KEY;
 });
@@ -108,6 +118,13 @@ test('the resolved mock imageUrl is a real, reachable, publicly-hosted image', {
 
 // ----- Active (real fal) path -----
 
+// NOTE: this stub's responses have no arrayBuffer() method, so any test
+// below that reaches a real imageUrl also exercises the new best-effort
+// re-host attempt (lib/media-rehost.js) hitting that same generic branch
+// for the download itself -- it fails closed (see that module's own
+// never-throws contract) and body.imageUrl stays exactly the raw fal url
+// these tests already assert on. Re-host success/failure behavior itself
+// is covered separately (test/media-rehost.test.js).
 function stubStatusThenResult(statusBody, resultBody, resultOk) {
   var calls = [];
   global.fetch = async function (url) {

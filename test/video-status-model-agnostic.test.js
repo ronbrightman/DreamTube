@@ -22,12 +22,22 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 
+// video-status.js's checkFalStatus now attempts a best-effort re-host into
+// Blobs (lib/media-rehost.js — tracker item
+// for-product-owner-media-library-page-fou-1fwxaw) once it resolves a real
+// videoUrl, so this file needs a working Blobs mock like every other test
+// that exercises checkFalStatus's success path — installed BEFORE
+// video-status.js is required, per this mock's own documented usage.
+var mockBlobs = require('./helpers/mock-blobs');
+mockBlobs.install();
+
 var { fakeEvent } = require('./helpers/fake-event');
 var handler = require('../netlify/functions/video-status').handler;
 
 var realFetch = global.fetch;
 
 test.beforeEach(function () {
+  mockBlobs.reset();
   process.env.FAL_KEY = 'test-fal-key';
 });
 
@@ -35,6 +45,23 @@ test.after(function () {
   global.fetch = realFetch;
   delete process.env.FAL_KEY;
 });
+
+/**
+ * The re-host attempt fetches the resolved videoUrl too (a THIRD fetch call
+ * beyond the status/result pair every test here already expects) — since
+ * stubFalCompleted's own generic response has no arrayBuffer() method, that
+ * attempt harmlessly fails closed (see lib/media-rehost.js's own
+ * never-throws contract) and body.videoUrl stays exactly the raw fal url
+ * these tests already assert on. Re-host behavior itself is covered
+ * separately (test/media-rehost.test.js, test/video-status-rehost.test.js)
+ * — this file's own job is purely falAppBase's model-string handling, so
+ * assertions below filter the recorded urls down to just the real fal API
+ * calls ("/requests/") before checking shape, rather than asserting on the
+ * raw call count.
+ */
+function falApiUrlsOnly(urls) {
+  return urls.filter(function (u) { return u.indexOf('/requests/') !== -1; });
+}
 
 function statusEvent(name) {
   return fakeEvent({ method: 'GET', query: { name: name } });
@@ -58,7 +85,7 @@ test('a fal-ai/veo3.1/lite operationName (the new default) polls fal-ai/veo3.1, 
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/lite:req-abc'));
   assert.equal(res.statusCode, 200);
   assert.equal(JSON.parse(res.body).done, true);
-  assert.deepEqual(urls, [
+  assert.deepEqual(falApiUrlsOnly(urls), [
     'https://queue.fal.run/fal-ai/veo3.1/requests/req-abc/status',
     'https://queue.fal.run/fal-ai/veo3.1/requests/req-abc'
   ], 'the variant segment ("lite") must be dropped from the polling URL, not hardcoded to "fast" or carried through as-is');
@@ -68,19 +95,19 @@ test('a fal-ai/veo3.1/fast/reference-to-video operationName (unchanged Me-photo 
   var urls = stubFalCompleted();
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast/reference-to-video:req-ref-1'));
   assert.equal(res.statusCode, 200);
-  assert.ok(urls.every(function (u) { return u.indexOf('/fal-ai/veo3.1/requests/req-ref-1') !== -1; }), JSON.stringify(urls));
+  assert.ok(falApiUrlsOnly(urls).every(function (u) { return u.indexOf('/fal-ai/veo3.1/requests/req-ref-1') !== -1; }), JSON.stringify(urls));
 });
 
 test('a fal-ai/veo3.1/fast/image-to-video operationName (unchanged upsell path) still polls the same fal-ai/veo3.1 app base', async function () {
   var urls = stubFalCompleted();
   var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast/image-to-video:req-img-1'));
   assert.equal(res.statusCode, 200);
-  assert.ok(urls.every(function (u) { return u.indexOf('/fal-ai/veo3.1/requests/req-img-1') !== -1; }), JSON.stringify(urls));
+  assert.ok(falApiUrlsOnly(urls).every(function (u) { return u.indexOf('/fal-ai/veo3.1/requests/req-img-1') !== -1; }), JSON.stringify(urls));
 });
 
 test('an entirely invented model string is still handled purely structurally (owner/alias segments), proving this is not a hardcoded-model allowlist', async function () {
   var urls = stubFalCompleted();
   var res = await handler(statusEvent('fal:some-owner/some-future-model/some-variant:req-future-1'));
   assert.equal(res.statusCode, 200);
-  assert.ok(urls.every(function (u) { return u.indexOf('/some-owner/some-future-model/requests/req-future-1') !== -1; }), JSON.stringify(urls));
+  assert.ok(falApiUrlsOnly(urls).every(function (u) { return u.indexOf('/some-owner/some-future-model/requests/req-future-1') !== -1; }), JSON.stringify(urls));
 });

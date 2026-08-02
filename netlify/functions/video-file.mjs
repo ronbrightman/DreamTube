@@ -5,8 +5,25 @@
 // the classic exports.handler format, since only streaming responses can
 // exceed the ~6MB synchronous payload limit that broke the old approach
 // of returning video bytes directly from video-status.js.
-
-import { getStore } from '@netlify/blobs';
+//
+// @netlify/blobs is loaded via createRequire (CommonJS), not a plain ESM
+// `import`, even though this file is itself ESM (Netlify's own requirement
+// for a streaming function) — deliberately: this codebase's dominant
+// convention is require()'d, self-contained functions (see CLAUDE.md), and
+// @netlify/blobs' own package.json exports a genuinely SEPARATE physical
+// file for its "import" condition (dist/main.js) vs. its "require"
+// condition (dist/main.cjs) — two different module instances Node's own
+// loader would otherwise never unify. test/helpers/mock-blobs.js's
+// require.cache-swap technique (used by every other Blobs-backed function
+// in this codebase's test suite) only ever patches the CJS entry, so a
+// plain ESM `import` here would silently bypass it entirely in tests
+// (confirmed while adding test/media-file-functions.test.js — a real
+// MissingBlobsEnvironmentError from the genuine, unmocked package). Same
+// getStore function either way at runtime; this just keeps it on the one
+// module identity the rest of the app's mocking already covers.
+import { createRequire } from 'module';
+var require = createRequire(import.meta.url);
+var { getStore } = require('@netlify/blobs');
 
 export default async (req) => {
   var key = new URL(req.url).searchParams.get('key');

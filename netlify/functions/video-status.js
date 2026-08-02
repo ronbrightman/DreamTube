@@ -26,6 +26,7 @@ var { connectLambda, getStore } = require('@netlify/blobs');
 var entitlements = require('./lib/entitlements');
 var accountStore = require('./lib/account-store');
 var posthogCapture = require('./lib/posthog-capture');
+var mediaRehost = require('./lib/media-rehost');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 var VEO_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -202,7 +203,7 @@ function checkMockStatus(operationName) {
 }
 
 /** Active path. */
-async function checkFalStatus(model, requestId, falKey) {
+async function checkFalStatus(model, requestId, falKey, event) {
   var appBase = falAppBase(model);
   var statusRes = await fetch(FAL_API_BASE + '/' + appBase + '/requests/' + requestId + '/status', {
     headers: { 'Authorization': 'Key ' + falKey }
@@ -251,7 +252,20 @@ async function checkFalStatus(model, requestId, falKey) {
     return { statusCode: 200, done: true, error: 'E208: no_video_in_response' };
   }
 
-  return { statusCode: 200, done: true, videoUrl: videoUrl };
+  // Best-effort re-host into our own Blobs storage (lib/media-rehost.js —
+  // tracker item for-product-owner-media-library-page-fou-1fwxaw's
+  // corrected scope). Keyed by requestId (already unique per job, no new
+  // id needed). NEVER throws and NEVER blocks this response on failure —
+  // a failed/skipped re-host just means the caller gets fal's own videoUrl
+  // back exactly as before this feature existed; see that module's own
+  // header comment for the full "never break the user-facing flow"
+  // reasoning. This covers every signed-in video generation path (fresh,
+  // regenerate, reference-to-video, image-to-video) since they all funnel
+  // through this same checkFalStatus call.
+  var rehost = await mediaRehost.rehostBestEffort(event, 'video', videoUrl, requestId);
+  var finalVideoUrl = rehost.ok ? rehost.url : videoUrl;
+
+  return { statusCode: 200, done: true, videoUrl: finalVideoUrl, durable: rehost.ok };
 }
 
 /** Unused fallback path — the original Veo integration, storing the result via Netlify Blobs. */
@@ -327,7 +341,7 @@ exports.handler = async function (event) {
         return { statusCode: 500, body: JSON.stringify({ error: 'E210: missing_api_key' }) };
       }
       var parts = name.split(':');
-      result = await checkFalStatus(parts[1], parts[2], falKey);
+      result = await checkFalStatus(parts[1], parts[2], falKey, event);
     } else {
       var apiKey = process.env.GEM_API_KEY;
       if (!apiKey) {
