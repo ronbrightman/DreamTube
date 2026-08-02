@@ -1,5 +1,13 @@
 # Shop Palette & Visual Redesign Spec — calming the token shop's red/hot look
 
+> **SUPERSEDED 2026-08-02** — shop.html was rebuilt entirely as "The Vault"
+> (tracker item for-product-build-ship-today-founder-app-zn9zyy,
+> founder-approved), replacing the page structure this spec targeted and
+> retiring the "best value" pack palette A/B test described below (§9) —
+> the new design fixes each pack card's color directly, with nothing left
+> to vary between two variants. Kept here for historical reference only;
+> nothing in this document describes shop.html's current behavior.
+
 **Status:** design pass complete, decision made. Ron's call (2026-07-24, in
 chat): don't pick one direction — run **both as an in-product A/B test** and
 let real purchase data decide instead of guessing. Now in build. See §9 for

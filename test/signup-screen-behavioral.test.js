@@ -89,7 +89,7 @@ function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
-/** Reads every posthog call made during this page load straight out of the PostHog stub's own pending-call queue (window.posthog is the array itself until array.js loads and drains it -- blocked here by blockThirdParty). Same technique as test/shop-palette-variant-behavioral.test.js and test/first-video-created-behavioral.test.js. */
+/** Reads every posthog call made during this page load straight out of the PostHog stub's own pending-call queue (window.posthog is the array itself until array.js loads and drains it -- blocked here by blockThirdParty). Same technique as test/first-video-created-behavioral.test.js. */
 function readPostHogCalls(page) {
   return page.evaluate(function () {
     var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];

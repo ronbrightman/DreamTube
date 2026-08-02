@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<title>Token shop — DreamTube</title>
-<meta name="theme-color" content="#000000">
+<title>The Vault — DreamTube</title>
+<meta name="theme-color" content="#0c0a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="DreamTube">
@@ -48,149 +48,333 @@
     fbq('track', 'PageView');
   }
 </script>
+
+<!--
+  "The Vault" — shop.html rebuilt per shop-mock-x7q4.html (founder-approved
+  2026-08-02, tracker item for-product-build-ship-today-founder-app-zn9zyy),
+  replacing the previous 3-pack (pack100/300/700) lineup + its +50%
+  first-purchase-bonus callout entirely. New SKU ladder: $0.99/300 tokens
+  one-time starter (pack099), $1.99/500 (pack199), $4.99/1500 "Most
+  popular" (pack499), $9.99/4000 "Best value" (pack999) — see
+  create-checkout-session-dodo.js's own header comment for the full
+  no-grandfathering reasoning behind these fresh pack ids.
+
+  Night Shelf palette (--home-* vars + the living night-sky background),
+  verbatim from the approved home.html/profile.html mocks, same convention
+  those two pages already use (page-scoped override of css/styles.css's
+  shared --bg-app + a local <style> block for page-specific classes,
+  reusing shared .topbar/.icon-btn/.toast structure with local color
+  overrides — see profile.html's own <style> block for the reference
+  shape). The shop's own previous palette (a live A/B test between a
+  periwinkle-blue and warm-gold "best value" pack border,
+  docs/SHOP_PALETTE_REDESIGN_SPEC.md) is RETIRED along with the whole page
+  structure it targeted — the new design fixes each badge's color
+  directly (no experiment), so running the old two-variant assignment on
+  top of it would just be dead code with nothing left to vary.
+
+  The daily free-claim mechanism itself (balance, countdown, claim button —
+  #shop-balance/#shop-countdown/#shop-claim-btn/#shop-claim-label) is
+  UNCHANGED from before this redesign — same ids, same DreamStore calls,
+  same server-side entitlements — only re-skinned to fit this page's new
+  visual language, per this task's own "don't touch the daily-claim UI"
+  scope.
+-->
+<style>
+:root{
+  --bg-app:#0c0a1a; /* overrides css/styles.css's shared #000 for THIS page only — #app reads this variable already */
+  --home-raise:rgba(36,29,71,.88);
+  --home-raise2:rgba(24,19,46,.92);
+  --home-ink:#eae7fb;
+  --home-soft:#a49dc4;
+  --home-line:rgba(157,144,255,.32);
+  --home-acc:#9d90ff;
+  --home-warn:#e0aa5a;
+  --home-ok:#4bd39b;
+}
+body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(--home-ink); }
+#app{ overflow:hidden; position:relative; }
+
+/* ===== the living night sky (verbatim from home.html/profile.html) ===== */
+.home-bg{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(130% 60% at 25% 0%, rgba(131,58,180,.35), transparent 60%),
+    radial-gradient(110% 60% at 82% 45%, rgba(90,60,190,.25), transparent 55%);
+}
+.home-stars-a,.home-stars-b{ position:absolute; inset:-40px; z-index:0; pointer-events:none; }
+.home-stars-a{
+  background-image:
+    radial-gradient(1.2px 1.2px at 20px 34px, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 110px 80px, rgba(255,255,255,.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 200px 50px, rgba(207,200,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 60px 150px, rgba(255,255,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 170px 190px, rgba(255,255,255,.75), transparent 60%),
+    radial-gradient(1px 1px at 240px 130px, rgba(207,200,255,.6), transparent 60%);
+  background-size:260px 240px;
+  animation:homeDrift 70s linear infinite, homeTwinkle 4.5s ease-in-out infinite;
+}
+.home-stars-b{
+  background-image:
+    radial-gradient(1px 1px at 40px 60px, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.3px 1.3px at 140px 30px, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1px 1px at 90px 200px, rgba(255,255,255,.45), transparent 60%),
+    radial-gradient(1.2px 1.2px at 220px 170px, rgba(255,255,255,.65), transparent 60%),
+    radial-gradient(1px 1px at 15px 120px, rgba(207,200,255,.5), transparent 60%);
+  background-size:250px 230px;
+  animation:homeDrift 110s linear infinite reverse, homeTwinkle 6s ease-in-out .8s infinite;
+}
+@keyframes homeDrift{ from{ transform:translate3d(0,0,0); } to{ transform:translate3d(-60px,24px,0); } }
+@keyframes homeTwinkle{ 0%,100%{ opacity:.95; } 50%{ opacity:.5; } }
+@media (prefers-reduced-motion:reduce){
+  .home-stars-a,.home-stars-b{ animation:none !important; }
+}
+
+/* ===== page chrome ===== */
+.shop-fg{ position:relative; z-index:1; display:flex; flex-direction:column; height:100%; min-height:0; }
+.topbar-logo{ color:var(--home-ink); }
+.icon-btn{
+  background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4); color:var(--home-ink);
+  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+}
+.icon-btn:hover{ background:rgba(22,18,44,.75); border-color:var(--home-acc); }
+.shop-topbar-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:36px; padding:6px 14px; border-radius:99px;
+  background:rgba(24,19,46,.8); border:1px solid rgba(224,170,90,.45);
+  color:var(--home-ink); font:800 15px var(--font-body);
+}
+.shop-topbar-chip .gold{ color:var(--home-warn); }
+
+.shop-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 20px calc(env(safe-area-inset-bottom,0px) + 40px); }
+
+.shop-head{ padding:6px 0 22px; }
+.shop-eyebrow{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#cfc8ff; font-weight:800; margin-bottom:6px; }
+.shop-title{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
+.shop-sub{ margin-top:8px; font-size:16px; font-weight:500; line-height:1.5; color:var(--home-soft); }
+.shop-sub b{ color:var(--home-ink); }
+
+/* ===== HERO — the one-time welcome offer, the brightest object on the page ===== */
+.hero-offer{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  padding:24px 22px;
+  border:1px solid rgba(224,170,90,.6);
+  background:
+    radial-gradient(52px 52px at 82% 14%, rgba(255,236,190,.95), rgba(255,220,158,.4) 55%, transparent 74%),
+    radial-gradient(140px 140px at 82% 14%, rgba(255,222,164,.28), transparent 70%),
+    radial-gradient(95% 70% at 8% 100%, rgba(120,80,220,.4), transparent 64%),
+    linear-gradient(168deg,#241348 0%,#31175e 48%,#160c36 100%);
+  box-shadow:0 4px 24px -6px rgba(0,0,0,.55), 0 0 34px -4px rgba(224,170,90,.4);
+}
+.hero-offer .hero-stars{
+  position:absolute; inset:0; pointer-events:none;
+  background-image:
+    radial-gradient(1.3px 1.3px at 10% 16%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 30% 8%, rgba(255,224,170,.8), transparent 60%),
+    radial-gradient(1.2px 1.2px at 54% 14%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 44% 30%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1px 1px at 68% 40%, rgba(207,200,255,.55), transparent 60%),
+    radial-gradient(1.2px 1.2px at 16% 46%, rgba(255,255,255,.6), transparent 60%);
+}
+.hero-offer .hero-content{ position:relative; z-index:1; }
+.offer-eyebrow{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#ffe0aa; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6); }
+.offer-title{ font-size:26px; font-weight:800; letter-spacing:-.01em; line-height:1.2; text-shadow:0 2px 12px rgba(12,10,26,.55); }
+.offer-anchor{ margin-top:10px; font-size:18px; font-weight:800; }
+.offer-anchor s{ color:var(--home-soft); font-weight:700; margin-right:8px; }
+.offer-anchor .now{ color:#ffe0aa; }
+.offer-sub{ margin-top:6px; font-size:16px; font-weight:500; line-height:1.5; color:#cfc8ea; }
+
+.pill{
+  display:flex; align-items:center; justify-content:center; width:100%;
+  min-height:56px; margin-top:16px; padding:14px;
+  border:none; border-radius:99px; cursor:pointer;
+  font:800 18px var(--font-body); letter-spacing:.01em;
+  -webkit-tap-highlight-color:transparent; font-family:var(--font-body);
+  position:relative; z-index:1;
+}
+.pill:active{ transform:scale(.98); }
+.pill:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
+.pill-gold{ background:var(--home-warn); color:#1c1206; box-shadow:0 0 24px -4px rgba(224,170,90,.7); }
+.pill-violet{ background:var(--home-acc); color:#0c0a1a; }
+.pill-quiet{ background:rgba(255,255,255,.06); color:var(--home-ink); border:1px solid rgba(255,255,255,.28); }
+.redirect-cue{ margin-top:10px; text-align:center; font-size:15px; font-weight:500; color:var(--home-soft); }
+
+/* ===== trust row ===== */
+.trustrow{ margin-top:16px; padding:0 2px; display:flex; flex-direction:column; gap:8px; }
+.trustline{ display:flex; align-items:flex-start; gap:9px; font-size:15px; font-weight:600; line-height:1.4; color:var(--home-soft); }
+.trustline .tick{ color:var(--home-ok); flex:0 0 auto; font-weight:800; }
+.trust-glyphs{ display:flex; align-items:center; gap:8px; margin-top:2px; color:#6f6894; }
+.trust-glyphs svg{ width:26px; height:18px; display:block; }
+.trust-glyphs span{ font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+
+/* ===== token packs ===== */
+.packs{ margin-top:32px; }
+.packs h2{ font-size:20px; font-weight:800; letter-spacing:-.01em; margin-bottom:14px; }
+.pack-card{
+  position:relative; border-radius:24px; overflow:hidden;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22);
+  padding:22px; margin-top:14px;
+}
+.pack-card:first-of-type{ margin-top:0; }
+.pack-card.popular{ border-color:rgba(157,144,255,.6); box-shadow:0 0 22px -6px rgba(157,144,255,.35); }
+.pack-card.best{ border-color:rgba(224,170,90,.55); box-shadow:0 0 22px -6px rgba(224,170,90,.3); }
+.pack-badge{
+  position:absolute; top:16px; right:16px;
+  font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:800;
+  padding:5px 12px; border-radius:99px;
+}
+.pack-badge.popular{ background:rgba(157,144,255,.2); border:1px solid rgba(157,144,255,.55); color:#cfc8ff; }
+.pack-badge.best{ background:rgba(224,170,90,.16); border:1px solid rgba(224,170,90,.55); color:#ffe0aa; }
+.pack-dreams{ font-size:20px; font-weight:800; letter-spacing:-.01em; }
+.pack-tokens{ margin-top:6px; font-size:16px; font-weight:500; color:var(--home-soft); }
+.pack-value{ margin-top:4px; font-size:15px; font-weight:700; color:#cfc8ff; }
+.pack-card.best .pack-value{ color:#ffe0aa; }
+.pack-card .pill{ min-height:56px; margin-top:16px; }
+
+/* ===== free daily claim card — kept as a trust signal, UNCHANGED behavior ===== */
+.freecard{
+  margin-top:32px;
+  background:linear-gradient(180deg, rgba(36,29,71,.5), rgba(24,19,46,.62));
+  border:1px solid rgba(157,144,255,.22); border-radius:24px;
+  padding:24px 22px; text-align:center;
+}
+.freecard h2{ font-size:20px; font-weight:800; letter-spacing:-.01em; }
+.freecard p{ margin-top:7px; font-size:16px; font-weight:500; line-height:1.5; color:var(--home-soft); }
+.freecard-balance{ font-size:36px; font-weight:800; line-height:1.1; color:var(--home-ink); margin-top:16px; }
+.freecard-balance-sub{ font-size:13px; color:var(--home-soft); margin-top:2px; }
+.freecard .claim-inline-btn{ margin-top:14px; }
+.freecard-countdown{ font-size:13px; color:var(--home-soft); margin-top:8px; }
+.footnote{ margin-top:24px; text-align:center; font-size:15px; font-weight:500; line-height:1.5; color:#8f88b3; }
+</style>
 </head>
 <body>
 
 <div id="app" class="scroll-shell">
-  <div class="topbar">
-    <a class="icon-btn" id="shop-back" href="profile.html"></a>
-    <div class="topbar-logo" style="font-size:16px;">Token shop</div>
-    <div style="width:36px;"></div>
-  </div>
+  <div class="home-bg"></div>
+  <div class="home-stars-a"></div>
+  <div class="home-stars-b"></div>
 
-  <div class="px" style="flex:1; padding-bottom:30px; overflow-y:auto; min-height:0;">
-    <!-- Cost/daily-claim banner — this is the app's own "pricing screen"
-         equivalent (pricing.html was removed; the funnel's screen 14 says
-         something similar pre-signup). Store-launch copy sweep (tracker
-         item for-product-store-launch-copy-sweep-purc-m6xhkx): this used
-         to lead with "Free during beta — no card needed" directly above
-         three live Buy buttons -- a real, live contradiction once Dodo
-         Payments checkout actually went live (founder launched the store
-         2026-07-27). Replaced with the plain cost facts instead: what a
-         generation actually costs, and that free tokens still exist.
-         Numbers here (100/10 per generation, 20/day) must match
-         lib/entitlements.js's real VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/
-         DAILY_CLAIM_AMOUNT — see that file for the authoritative
-         constants. The per-generation costs are static (they don't vary
-         per account), but the daily-claim number DOES vary now (100 on
-         an account's first-ever claim, 20 after — see the
-         daily-claim-first-claim-bonus doc block in lib/entitlements.js),
-         so #shop-cost-banner-claim-amount below is rendered live off
-         tokenStatus in renderBalance(), same as #shop-cap-note further
-         below — a review finding on the daily-claim-first-claim-bonus
-         branch: this banner's claim number was still a bare hardcoded
-         "20" text node while the nearly-identical #shop-cap-note a few
-         lines below was already live, so the two contradicted each other
-         on a real first-claim day.
-
-         COPY SWEEP (2026-07-28, daily-claim switch, tracker item
-         for-product-build-the-daily-token-claim--fngrwd): used to say
-         "Free tokens refill daily — up to 200 banked" — both the
-         "refill... automatically" framing AND the ceiling number are gone
-         now that the daily +20 must be actively claimed (no more silent
-         drip, no more ceiling — see lib/entitlements.js's own doc block). -->
-    <div class="auth-notice" id="shop-cost-banner">
-      <span class="icon" id="shop-cost-icon"></span>
-      <span><b>Videos cost 100 tokens, images 10.</b> Claim <span id="shop-cost-banner-claim-amount">20</span> free tokens once a day, and top up below any time.</span>
+  <div class="shop-fg">
+    <div class="topbar">
+      <a class="icon-btn" id="shop-back" href="profile.html"></a>
+      <div class="topbar-logo" style="font-size:16px;">The Vault</div>
+      <div class="shop-topbar-chip"><span class="gold">✦</span> <span id="shop-topbar-balance">–</span></div>
     </div>
 
-    <div class="token-balance-card">
-      <div class="token-balance-inner">
-        <div class="token-balance-amt" id="shop-balance">–</div>
-        <div class="token-balance-sub">tokens available</div>
-        <button type="button" class="claim-inline-btn" id="shop-claim-btn" style="display:none; margin:10px 0 0;"><span id="shop-claim-label"></span></button>
-        <div class="token-balance-sub" id="shop-countdown"></div>
+    <div class="shop-scroll" id="shop-scroll">
+
+      <div class="shop-head">
+        <div class="shop-eyebrow">Token shop</div>
+        <h1 class="shop-title">The Vault</h1>
+        <!-- Cost/daily-claim summary — this page's own "pricing screen"
+             equivalent. Numbers here (100/10 per generation) must match
+             lib/entitlements.js's real VIDEO_TOKEN_COST/IMAGE_TOKEN_COST —
+             see VIDEO_TOKEN_COST/IMAGE_TOKEN_COST below (this page's own
+             small local copy, same "no shared browser module" convention
+             every other page's copy of these constants already follows).
+             The claim-amount number DOES vary per account (100 on an
+             account's first-ever claim, 20 after — see
+             lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), so
+             #shop-cost-banner-claim-amount is rendered live off
+             tokenStatus in renderBalance(), same as #shop-cap-note near
+             the free-claim card below. -->
+        <p class="shop-sub" id="shop-cost-banner"><b>Videos cost 100 tokens, images 10.</b> Claim <span id="shop-cost-banner-claim-amount">20</span> free tokens once a day, and top up below any time.</p>
       </div>
-    </div>
 
-    <div class="section-label" style="padding:0;">Token packs (optional)</div>
-    <!-- First-purchase bonus callout (Token Economy C, founder-approved
-         2026-07-26 night; promoted to this prominent callout per tracker
-         item for-product-shop-first-purchase-50-bonus-bzx2d4, founder
-         feedback 2026-07-27: the original static ".auth-sub" line styled
-         this like fine print even though it's this page's single
-         strongest purchase motivator — the research that introduced the
-         bonus called it the most proven payer-conversion lever). A
-         one-time +50% tokens on a user's FIRST successful pack purchase
-         ever, applied server-side by lib/entitlements.js's
-         creditTokenPackAmountOnce (see that file).
+      <!-- HERO · one-time welcome offer (pack099) — shown only once the
+           server confirms this account has never bought a pack before
+           (hasMadeFirstPurchase === false, strict check — see
+           renderBalance() below for why this fails toward HIDDEN, never
+           shown, on a missing/unresolved field). Content (dreams/tokens
+           counts, exact price) is computed from PACK_INFO.pack099 below,
+           never hand-typed, so it can never drift from what
+           create-checkout-session-dodo.js/dodo-webhook.js actually
+           charge/credit. The crossed-out "$2.99" anchor price is pure
+           marketing framing (not derived from any real prior price this
+           account paid) — same anchoring device the approved mock uses. -->
+      <section class="hero-offer" id="shop-hero-offer" style="display:none;">
+        <div class="hero-stars"></div>
+        <div class="hero-content">
+          <div class="offer-eyebrow">Welcome offer · one time only</div>
+          <h2 class="offer-title" id="hero-offer-title">Your first dreams — 99¢</h2>
+          <div class="offer-anchor"><s>$2.99</s><span class="now">$0.99</span></div>
+          <p class="offer-sub" id="hero-offer-sub">300 tokens · or 30 dream images</p>
+          <button type="button" class="pill pill-gold" id="shop-buy-pack099" data-pack="pack099">Pay $0.99 — one-time</button>
+          <div class="redirect-cue">Taking you to our secure payment page</div>
+        </div>
+      </section>
 
-         This USED to be static copy that didn't try to detect whether
-         this particular visitor had already used the bonus, reasoning
-         that doing so "would need an extra server round trip just for a
-         sub-headline" — that reasoning no longer holds: shop.html already
-         calls get-token-status.js on every load for the balance display
-         above, and lib/entitlements.js's getTokenStatus now returns a
-         `hasMadeFirstPurchase` boolean on that SAME response (see that
-         file's doc comment), so this costs no extra round trip. Hidden by
-         default in markup and only revealed by the script below once that
-         field comes back false — showing "+50% on your first pack" to a
-         visitor who already redeemed it would be false advertising per
-         the founder's own words, so a fetch failure or a
-         missing/undefined field fails toward NOT showing this rather than
-         the old unconditional display. Palette-aware (see
-         .first-purchase-callout / .shop-variant-a / .shop-variant-b in
-         css/styles.css) so it reads as part of whichever accent direction
-         this visitor's shop-palette A/B assignment already put them in,
-         rather than introducing a third, un-tested color into that live
-         experiment. -->
-    <div class="first-purchase-callout" id="shop-first-purchase-callout" style="display:none;">
-      <div class="first-purchase-callout-headline">+50% bonus tokens on your first pack</div>
-      <div class="first-purchase-callout-sub">Automatically applied at checkout — first pack only, no code needed.</div>
-    </div>
-
-    <!-- All three packs call the live Dodo Payments checkout (see the
-         header comment in the script block below) — no longer disabled
-         "Coming soon" placeholders. data-pack identifies which one to
-         POST to create-checkout-session-dodo.js. Framing on each card
-         states what the tokens buy in BOTH media types (1 video = 100
-         tokens, 1 image = 10 tokens — see style.html's own IMAGE_TOKEN_COST/
-         VIDEO_TOKEN_COST) since either media type can be generated from
-         the same balance. Token amounts per pack doubled from the original
-         Token Economy C lineup by the pack-enrichment change (founder-
-         approved 2026-07-28, same prices) — see the "Pricing" comment
-         further down in this file's script block for the full note. -->
-    <div class="token-pack-card">
-      <div class="token-pack-row">
-        <div class="token-pack-amt">200 tokens</div>
-        <div class="token-pack-price">$2.99</div>
+      <!-- trust row -->
+      <div class="trustrow">
+        <div class="trustline"><span class="tick">✓</span> One-time purchase — no subscription</div>
+        <div class="trustline"><span class="tick">✓</span> Secure checkout</div>
+        <div class="trustline"><span class="tick">✓</span> Didn't work? We refund.</div>
+        <div class="trust-glyphs" aria-hidden="true">
+          <svg viewBox="0 0 26 18"><rect x="1" y="1" width="24" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h24" stroke="currentColor" stroke-width="1.5"/></svg>
+          <svg viewBox="0 0 26 18"><rect x="1" y="1" width="24" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="10" cy="9" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="16" cy="9" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+          <svg viewBox="0 0 26 18"><rect x="3" y="1" width="20" height="16" rx="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 6a5 5 0 0110 0" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="13" cy="10" r="1.6" fill="currentColor"/></svg>
+          <span>Cards · wallets</span>
+        </div>
       </div>
-      <div class="token-pack-sub">200 tokens = 2 videos or 20 images.</div>
-      <button class="btn btn-primary btn-block" id="shop-buy-pack100" data-pack="pack100">Buy</button>
-    </div>
 
-    <div class="token-pack-card popular">
-      <div class="token-pack-badge token-pack-badge-popular">Most popular</div>
-      <div class="token-pack-row">
-        <div class="token-pack-amt">600 tokens</div>
-        <div class="token-pack-price">$7.99</div>
+      <!-- token packs, low to high — pack099 (starter) never appears here,
+           only ever in the hero above; the other three always show,
+           regardless of hasMadeFirstPurchase. Dreams/tokens/value copy on
+           each card is computed at load time from PACK_INFO (see
+           renderPackCards() below), not hardcoded, per this task's own
+           "compute this from the pack's token count" instruction. -->
+      <section class="packs">
+        <h2>Token packs</h2>
+
+        <div class="pack-card" data-pack-card="pack199">
+          <div class="pack-dreams" id="pack199-dreams"></div>
+          <div class="pack-tokens" id="pack199-tokens"></div>
+          <div class="pack-value" id="pack199-value"></div>
+          <button type="button" class="pill pill-quiet" id="shop-buy-pack199" data-pack="pack199"></button>
+        </div>
+
+        <div class="pack-card popular" data-pack-card="pack499">
+          <div class="pack-badge popular">Most popular</div>
+          <div class="pack-dreams" id="pack499-dreams"></div>
+          <div class="pack-tokens" id="pack499-tokens"></div>
+          <div class="pack-value" id="pack499-value"></div>
+          <button type="button" class="pill pill-violet" id="shop-buy-pack499" data-pack="pack499"></button>
+        </div>
+
+        <div class="pack-card best" data-pack-card="pack999">
+          <div class="pack-badge best">Best value</div>
+          <div class="pack-dreams" id="pack999-dreams"></div>
+          <div class="pack-tokens" id="pack999-tokens"></div>
+          <div class="pack-value" id="pack999-value"></div>
+          <button type="button" class="pill pill-quiet" id="shop-buy-pack999" data-pack="pack999"></button>
+        </div>
+      </section>
+
+      <!-- trust row again, at the decision point -->
+      <div class="trustrow">
+        <div class="trustline"><span class="tick">✓</span> One-time purchase — no subscription</div>
+        <div class="trustline"><span class="tick">✓</span> Secure checkout · receipt to your email</div>
+        <div class="trustline"><span class="tick">✓</span> Didn't work? We refund.</div>
       </div>
-      <div class="token-pack-sub">600 tokens = 6 videos or 60 images.</div>
-      <button class="btn btn-primary btn-block" id="shop-buy-pack300" data-pack="pack300">Buy</button>
+
+      <!-- free daily claim card — kept exactly as before this redesign,
+           same ids/DreamStore calls/entitlements.js mechanism, just
+           re-skinned to this page's new palette. NOT part of this
+           task's scope (paid packs only). -->
+      <section class="freecard">
+        <h2>Free tokens, every night</h2>
+        <p>Claim free tokens once a day — no card, no catch. Buying is only for when you want more dreams sooner.</p>
+        <div class="freecard-balance" id="shop-balance">–</div>
+        <div class="freecard-balance-sub">tokens available</div>
+        <button type="button" class="claim-inline-btn" id="shop-claim-btn" style="display:none;"><span id="shop-claim-label"></span></button>
+        <div class="freecard-countdown" id="shop-countdown"></div>
+      </section>
+
+      <div class="footnote" id="shop-trust-line">Secure checkout via Dodo Payments — one-time purchase, no subscription — receipt to your email.</div>
+      <div class="footnote" id="shop-cap-note">Free tokens: 20 claimable once a day. Buy a pack any time for more, right when you need it.</div>
+      <div class="footnote">Tokens are yours to spend on any dream — videos or images. Tokens never expire.</div>
+
     </div>
-
-    <div class="token-pack-card best">
-      <div class="token-pack-badge">Best value</div>
-      <div class="token-pack-row">
-        <div class="token-pack-amt">1400 tokens</div>
-        <div class="token-pack-price">$14.99</div>
-      </div>
-      <div class="token-pack-sub">1400 tokens = 14 videos or 140 images.</div>
-      <button class="btn btn-primary btn-block" id="shop-buy-pack700" data-pack="pack700">Buy</button>
-    </div>
-
-    <!-- Trust line (store-launch copy sweep, tracker item
-         for-product-store-launch-copy-sweep-purc-m6xhkx) — the buy
-         buttons above went live with real Dodo Payments checkout with no
-         reassurance copy anywhere near them about what "Buy" actually
-         does (real checkout, real card, real receipt). Static text, not
-         provider-conditional: Dodo Payments is the founder's chosen and
-         approved processor (see AGENT_POLICY.md's escalation policy) and
-         is the only live path create-checkout-session-dodo.js actually
-         wires these buttons to today. -->
-    <div class="auth-sub" style="margin-top:8px; text-align:center;" id="shop-trust-line">Secure checkout via Dodo Payments — one-time purchase, no subscription — receipt to your email.</div>
-
-    <div class="auth-sub" style="margin-top:8px;" id="shop-cap-note">Free tokens: 20 claimable once a day. Buy a pack any time for more, right when you need it.</div>
   </div>
 </div>
 
@@ -202,55 +386,17 @@
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script>
-  // ============================================================================
-  // Shop palette A/B test — docs/SHOP_PALETTE_REDESIGN_SPEC.md §8
-  // ----------------------------------------------------------------------------
-  // No in-app A/B assignment mechanism exists elsewhere in this codebase, so
-  // this is a small, local, additive assignment layer rather than a shared
-  // one. Sticky per-browser (not per-account): sampled once via
-  // Math.random() < 0.5 the first time this page loads with no stored
-  // variant, persisted in localStorage, and never reassigned after that —
-  // every later visit from this browser reads the same stored value. Applied
-  // as a body-level class (shop-variant-a / shop-variant-b) that
-  // css/styles.css's .shop-variant-a/.shop-variant-b rules key off of for
-  // just the "best value" pack's border/badge color; everything else on the
-  // page is identical between variants (see the shared baseline fix in that
-  // same CSS section).
-  // ============================================================================
-  var SHOP_VARIANT_KEY = 'dreamtube_shop_variant';
-  var shopVariant = localStorage.getItem(SHOP_VARIANT_KEY);
-  if(shopVariant !== 'a' && shopVariant !== 'b'){
-    shopVariant = Math.random() < 0.5 ? 'a' : 'b';
-    localStorage.setItem(SHOP_VARIANT_KEY, shopVariant);
-  }
-  document.body.classList.add('shop-variant-' + shopVariant);
-
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   document.getElementById('shop-back').innerHTML = Icons.back;
-  document.getElementById('shop-cost-icon').innerHTML = Icons.check;
 
   // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
   // every other page's inline funnel script already defines locally (see
-  // result.html/start.html/wizard.html) — this page didn't have one yet. =====
+  // result.html/start.html/wizard.html). =====
   function track(name, props){
     if(window.posthog && typeof window.posthog.capture === 'function'){
       try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
     }
   }
-
-  // Registers shop_palette_variant on every load (using the persisted value,
-  // not just on first assignment — simpler and idempotent) so it rides along
-  // on every later PostHog event/person property from this browser, including
-  // whatever fires on a completed Dodo purchase. As of 2026-07-24, shop.html
-  // itself doesn't fire any purchase-completion PostHog event on
-  // ?checkout=success (only a toast + balance re-poll — see
-  // handleCheckoutReturn below); register() still runs on that later page
-  // load same as any other, so if/when a purchase-conversion event is added
-  // here this property will already be attached.
-  if(window.posthog && typeof window.posthog.register === 'function'){
-    try{ posthog.register({ shop_palette_variant: shopVariant }); }catch(e){ /* analytics must never break the app */ }
-  }
-  track('shop_palette_variant_shown', { variant: shopVariant });
 
   // tracker item for-product-build-out-of-tokens-purchase-2y8hyw — the
   // out-of-tokens purchase sheet's own "See all packs" link and the
@@ -264,49 +410,84 @@
   track('store_viewed', { source: shopEntrySource });
 
   // ============================================================================
-  // Token packs — wired to the live Dodo Payments checkout
+  // Token packs — "The Vault" (founder-approved 2026-08-02, tracker item
+  // for-product-build-ship-today-founder-app-zn9zyy) — wired to the live
+  // Dodo Payments checkout.
   // ----------------------------------------------------------------------------
   // Dodo Payments is the founder's chosen + approved processor (see
   // AGENT_POLICY.md's escalation policy for why that choice itself needed
-  // human sign-off, and the tracker for the "approved + live" decision
-  // record) — create-checkout-session-dodo.js creates a one-time-purchase
-  // Checkout Session for whichever pack was clicked, and this redirects
-  // the browser there. Tokens are NOT granted here or by that function —
-  // only dodo-webhook.js, on Dodo's own signed payment.succeeded
-  // confirmation, actually credits the balance. That's the durable source
-  // of truth; a client-side "I just paid" signal can't be trusted (see
-  // that file's header comment).
+  // human sign-off) — create-checkout-session-dodo.js creates a
+  // one-time-purchase Checkout Session for whichever pack was clicked, and
+  // this redirects the browser there. Tokens are NOT granted here or by
+  // that function — only dodo-webhook.js, on Dodo's own signed
+  // payment.succeeded confirmation, actually credits the balance. That's
+  // the durable source of truth; a client-side "I just paid" signal can't
+  // be trusted (see that file's header comment).
   //
-  // All three buttons call the same purchasePack() below with their own
-  // data-pack ("pack100"/"pack300"/"pack700"). A failure here (most
-  // likely: Dodo's real API key/product-id env vars aren't configured in
-  // this environment yet — see docs/PAYWALL_SETUP.md's "what a human
-  // still needs to do" checklist) degrades to a toast and a re-enabled
-  // button, never a stuck/broken UI, same "flag, don't fake it" rule this
-  // file followed while the buttons were still disabled placeholders.
+  // Every buy button (hero + 3 pack cards) calls the same purchasePack()
+  // below with its own data-pack ("pack099"/"pack199"/"pack499"/
+  // "pack999"). A failure here (most likely: Dodo's real API key/
+  // product-id env vars aren't configured in this environment yet — see
+  // docs/PAYWALL_SETUP.md's "what a human still needs to do" checklist,
+  // or pack099's E9 one-time-already-used guard) degrades to a toast and
+  // a re-enabled button, never a stuck/broken UI.
   //
-  // Pricing (pack enrichment, founder-approved 2026-07-28, "go for A" —
-  // doubled every pack's token contents from the original Token Economy C
-  // amounts, same prices, a repricing sweep after the veo3.1/lite cost
-  // cut): 200 tokens for $2.99, 600 tokens for $7.99 (badged "Most
-  // popular"), 1400 tokens for $14.99 (badged "Best value"). The internal
-  // names pack100/pack300/pack700 (and DODO_PRODUCT_PACK_100/_300/_700)
-  // deliberately kept their original "100/300/700" naming — only the
-  // token amount changed — so pack100 no longer literally means "100
-  // tokens" anywhere in this codebase; see
-  // create-checkout-session-dodo.js's PACK_TOKENS comment for the fuller
-  // naming-drift note. The actual amount charged is whatever the Dodo
-  // product behind DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/
-  // DODO_PRODUCT_PACK_700 is configured for — nothing here enforces these
-  // stay in sync; keep them matched by hand when setting up (or changing)
-  // those Dodo products. A user's first-ever successful pack purchase
-  // additionally credits +50% tokens, applied server-side by
-  // dodo-webhook.js/lib/entitlements.js — see this page's own "First
-  // pack" note above the cards; not reflected in PACK_INFO below, which
-  // mirrors the BASE pack tokens shown on each price tag (used only for
-  // the purchase_completed analytics event's `tokens` property, not for
-  // crediting — crediting is entirely server-side).
+  // Video/image per-generation costs — mirrors lib/entitlements.js's real
+  // VIDEO_TOKEN_COST (implicit: 100 tokens = one generation, see that
+  // file's token-economy doc block) / generate-image.js's real
+  // IMAGE_TOKEN_COST. Used below purely to COMPUTE each pack's
+  // dreams/images counts and per-dream value — never to charge/credit
+  // anything (that's entirely server-side) — so a pack's displayed copy
+  // can never drift out of sync with its own token count the way a
+  // hand-typed "N videos" line could.
   // ============================================================================
+  var VIDEO_TOKEN_COST = 100;
+  var IMAGE_TOKEN_COST = 10;
+
+  // Mirrors the pricing in create-checkout-session-dodo.js/dodo-webhook.js
+  // exactly (kept as its own copy rather than a shared import — this
+  // codebase has no bundler/require for browser code, see js/store.js's
+  // header comment — same "one small local map, not a shared module"
+  // convention this page already followed). Fresh pack ids (pack099/199/
+  // 499/999) — see that file's header comment for the full
+  // no-grandfathering reasoning (never reuse the old pack100/300/700
+  // names, even at a similar price point).
+  var PACK_INFO = {
+    pack099: { tokens: 300, price: 0.99 },
+    pack199: { tokens: 500, price: 1.99 },
+    pack499: { tokens: 1500, price: 4.99 },
+    pack999: { tokens: 4000, price: 9.99 }
+  };
+  var STARTER_PACK_ID = 'pack099';
+  var PACK_ORDER = ['pack099', 'pack199', 'pack499', 'pack999'];
+
+  function fmtPrice(price){ return '$' + price.toFixed(2); }
+
+  /** Renders every pack card's dreams/tokens/value copy + exact-total buy-button label, computed from PACK_INFO — see this file's own header comment on why this is computed, not hardcoded. Runs once at load (PACK_INFO never changes at runtime). */
+  function renderPackCards(){
+    PACK_ORDER.forEach(function(pack){
+      var info = PACK_INFO[pack];
+      var dreams = Math.round(info.tokens / VIDEO_TOKEN_COST);
+      var images = Math.round(info.tokens / IMAGE_TOKEN_COST);
+      var buyBtn = document.getElementById('shop-buy-pack' + pack.slice(4));
+      if(pack === STARTER_PACK_ID){
+        // The hero's own copy, not a regular pack card — title/sub/button
+        // label all computed from PACK_INFO too, never hand-typed.
+        document.getElementById('hero-offer-title').textContent = 'Your first ' + dreams + ' dreams — ' + Math.round(info.price * 100) + '¢';
+        document.getElementById('hero-offer-sub').textContent = info.tokens + ' tokens · or ' + images + ' dream images';
+        if(buyBtn) buyBtn.textContent = 'Pay ' + fmtPrice(info.price) + ' — one-time';
+        return;
+      }
+      var dreamsEl = document.getElementById(pack + '-dreams');
+      var tokensEl = document.getElementById(pack + '-tokens');
+      var valueEl = document.getElementById(pack + '-value');
+      if(dreamsEl) dreamsEl.textContent = dreams + ' dream videos';
+      if(tokensEl) tokensEl.textContent = info.tokens + ' tokens · or ' + images + ' dream images';
+      if(valueEl) valueEl.textContent = fmtPrice(info.price / dreams) + ' per dream';
+      if(buyBtn) buyBtn.textContent = 'Pay ' + fmtPrice(info.price);
+    });
+  }
+  renderPackCards();
 
   function showToast(msg){
     var t = document.getElementById('toast');
@@ -319,19 +500,6 @@
   // ?checkout=success return — see purchasePack()'s doc comment on why this
   // exists at all.
   var PENDING_PURCHASE_KEY = 'dreamtube_pending_purchase';
-
-  // Mirrors the pricing shown in this page's own markup above (200
-  // tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99) — kept as one small
-  // local map right next to purchasePack rather than re-deriving/
-  // hardcoding these numbers a second time somewhere disconnected from the
-  // visible price tags (same "one local helper, not a shared module"
-  // convention as this file's own formatTokenCountdown). See the "Token
-  // packs" header comment above for where these numbers came from.
-  var PACK_INFO = {
-    pack100: { tokens: 200, price: 2.99 },
-    pack300: { tokens: 600, price: 7.99 },
-    pack700: { tokens: 1400, price: 14.99 }
-  };
 
   function purchasePack(pack, button){
     var email = DreamStore.getAccountEmail();
@@ -348,7 +516,7 @@
     button.disabled = true;
     button.textContent = 'Redirecting…';
 
-    track('checkout_started', { source: shopEntrySource, pack: pack });
+    track('checkout_started', { source: shopEntrySource, pack: pack, tokens: PACK_INFO[pack].tokens, value: PACK_INFO[pack].price });
 
     fetch('/.netlify/functions/create-checkout-session-dodo', {
       method: 'POST',
@@ -369,34 +537,47 @@
           // ?checkout=success return trip's Purchase fire shares the SAME
           // event_id as dodo-webhook.js's own server-side Purchase fire —
           // see that function's comment and docs/EVENT_TAXONOMY.md's
-          // Purchase entry for the full dedup mechanics (P0 reporting
-          // instrumentation, tracker item
-          // for-product-phase-1-reporting-instrument-kjlh46).
-          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price, eventId: data.eventId || null }));
+          // Purchase entry for the full dedup mechanics. `starter` mirrors
+          // dodo-webhook.js's own server-side Purchase event's flag
+          // (tracker item for-product-build-ship-today-founder-app-zn9zyy,
+          // item 5) so growth can measure starter-pack conversion
+          // specifically from this client-side fire too.
+          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price, starter: pack === STARTER_PACK_ID, eventId: data.eventId || null }));
         } catch(e) { /* sessionStorage unavailable (e.g. private mode) — worst case the return trip just won't fire the conversion events */ }
         location.href = data.url;
       })
-      .catch(function(){
+      .catch(function(err){
         button.disabled = false;
         button.textContent = originalLabel;
-        showToast("Checkout isn't available right now — try again soon");
+        // pack099's E9 (starter already used) is a real, expected outcome
+        // (e.g. this account bought a pack in another tab moments ago, or
+        // just re-clicked a hero that hadn't refreshed yet) — give it its
+        // own clearer copy rather than the generic try-again-soon message,
+        // and refresh tokenStatus so the hero hides itself instead of
+        // staying visible offering something the server will keep
+        // refusing.
+        var isStarterAlreadyUsed = !!(err && err.message && err.message.indexOf('E9') === 0);
+        showToast(isStarterAlreadyUsed ? "That welcome offer's already been used on this account" : "Checkout isn't available right now — try again soon");
+        if(isStarterAlreadyUsed) loadBalance(false);
       });
   }
 
-  document.getElementById('shop-buy-pack100').addEventListener('click', function(){ purchasePack('pack100', this); });
-  document.getElementById('shop-buy-pack300').addEventListener('click', function(){ purchasePack('pack300', this); });
-  document.getElementById('shop-buy-pack700').addEventListener('click', function(){ purchasePack('pack700', this); });
+  PACK_ORDER.forEach(function(pack){
+    var btn = document.getElementById('shop-buy-pack' + pack.slice(4));
+    if(btn) btn.addEventListener('click', function(){ purchasePack(pack, this); });
+  });
 
+  var topbarBalanceEl = document.getElementById('shop-topbar-balance');
+  var heroOfferEl = document.getElementById('shop-hero-offer');
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
   var capNoteEl = document.getElementById('shop-cap-note');
   var costBannerClaimAmountEl = document.getElementById('shop-cost-banner-claim-amount');
-  var firstPurchaseCalloutEl = document.getElementById('shop-first-purchase-callout');
   var claimBtn = document.getElementById('shop-claim-btn');
   var claimLabel = document.getElementById('shop-claim-label');
   var tokenStatus = null;
 
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — same shape as profile.html/style.html/result.html/processing.html's own copy of this (no shared JS module in this codebase, see js/store.js's header comment). */
+  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — same shape as profile.html/style.html/result.html's own copy of this (no shared JS module in this codebase, see js/store.js's header comment). */
   function formatTokenCountdown(nextClaimAt){
     if(nextClaimAt == null) return '';
     var ms = nextClaimAt - Date.now();
@@ -410,13 +591,12 @@
   function renderBalance(){
     if(!tokenStatus) return;
     balanceEl.textContent = tokenStatus.balance;
+    topbarBalanceEl.textContent = tokenStatus.balance;
     var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
-    // 2026-07-28 daily-claim switch (tracker item
-    // for-product-build-the-daily-token-claim--fngrwd): the old lazy
-    // +20/24h drip (and its ≥200 ceiling — see the old atCeiling branch
-    // this replaced) is gone entirely. The daily +20 is now an active
-    // claim (below), never automatic — this countdown just tells a
-    // non-claimable visitor when they'll next be ABLE to claim.
+    // The daily +20 (or +100 on a genuine first-ever claim) is an ACTIVE
+    // claim, never automatic — this countdown just tells a non-claimable
+    // visitor when they'll next be ABLE to claim (see
+    // lib/entitlements.js's own doc block).
     countdownEl.textContent = tokenStatus.claimable ? '' : (tokenStatus.nextClaimAt ? ('Next ' + amount + ' free tokens claimable in ' + formatTokenCountdown(tokenStatus.nextClaimAt)) : '');
     if(tokenStatus.claimable){
       claimLabel.textContent = 'Claim ' + amount + ' free tokens';
@@ -426,60 +606,48 @@
       claimBtn.style.display = 'none';
     }
     // Reads the daily-claim amount live off tokenStatus (see
-    // lib/entitlements.js's DAILY_CLAIM_AMOUNT, 20 as of the 2026-07-28
-    // daily-claim switch) rather than a hardcoded number — a review
-    // finding on the image-generation branch: this line, plus
-    // profile.html's own copy of the same line, both hardcoded "100" and
-    // went stale silently the moment that constant changed, since neither
-    // is scoped to the image feature at all. No ceiling number anymore —
-    // see the doc block on this page's #shop-cost-banner above for why.
+    // lib/entitlements.js's DAILY_CLAIM_AMOUNT) rather than a hardcoded
+    // number — a recurring bug class this codebase has hit before
+    // (tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy).
     capNoteEl.textContent = 'Free tokens: ' + amount + ' claimable once a day. Buy a pack any time for more, right when you need it.';
     costBannerClaimAmountEl.textContent = amount;
 
-    // First-purchase bonus callout (tracker item
-    // for-product-shop-first-purchase-50-bonus-bzx2d4) — only ever shown
-    // when the server explicitly returns hasMadeFirstPurchase === false.
-    // Deliberately a strict === check, NOT a truthiness/negation check:
-    // `!tokenStatus.hasMadeFirstPurchase` would treat a missing/undefined
-    // field (an old/degraded response shape) the same as an explicit
-    // false — i.e. SHOW the claim — which is exactly backwards from the
-    // fail-toward-not-claiming posture this callout needs. Only a
-    // response that positively confirms "no purchase yet" reveals it;
-    // true, undefined, or anything else all resolve to hidden, the same
-    // posture as loadBalance()'s own .catch() below leaving tokenStatus
-    // (and so this callout, hidden by default in markup) untouched on a
-    // fetch failure. Re-evaluated on every renderBalance() call (including
-    // the periodic re-fetch below), so if this visitor's first purchase
-    // completes while the page is still open, the next refresh correctly
-    // hides the now-used offer instead of continuing to show a claim
-    // that's no longer true.
-    firstPurchaseCalloutEl.style.display = (tokenStatus.hasMadeFirstPurchase === false) ? '' : 'none';
+    // Welcome-offer hero (pack099) — shown ONLY when the server explicitly
+    // confirms this account has never completed a pack purchase before
+    // (hasMadeFirstPurchase === false, strict check, NOT `!hasMadeFirstPurchase`).
+    // A missing/undefined field (an old/degraded response shape) must fail
+    // toward HIDDEN, same "never advertise something that might not be
+    // true" posture the old first-purchase-bonus callout this hero
+    // replaces already followed. create-checkout-session-dodo.js's own E9
+    // guard is the real enforcement either way — this is purely about not
+    // showing a stale/wrong offer, not the security boundary.
+    heroOfferEl.style.display = (tokenStatus.hasMadeFirstPurchase === false) ? '' : 'none';
   }
   function loadBalance(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
       tokenStatus = status;
       renderBalance();
-      // Auto-open ONCE per day when claimable (tracker item
-      // for-product-build-the-daily-token-claim--fngrwd, item 4) — the
-      // inline claim button above stays the fallback if dismissed.
+      // Auto-open ONCE per day when claimable — the inline claim button
+      // above stays the fallback if dismissed.
       if(autoOpen){
         PurchaseSheet.maybeAutoOpenClaimSheet(status, {
           source: 'shop_auto_open',
           onClaimed: function(){ loadBalance(false); }
         });
       }
-    }).catch(function(){ balanceEl.textContent = '–'; countdownEl.textContent = ''; });
+    }).catch(function(){ balanceEl.textContent = '–'; topbarBalanceEl.textContent = '–'; countdownEl.textContent = ''; });
   }
   loadBalance(true);
 
   /**
-   * The balance card's own inline "Claim N free tokens" button —
+   * The free-claim card's own inline "Claim N free tokens" button —
    * DreamStore.claimDailyTokens() is the exact same server call as the
-   * dedicated claim sheet/chip, just rendered inline here since the
-   * balance card already IS this page's own token status surface (no need
-   * to pop a second sheet on top of the page whose entire purpose is
-   * showing token status). daily_claim_completed fires ONLY on the real
-   * server-confirmed response, never optimistically.
+   * dedicated claim sheet/chip, just rendered inline here since this card
+   * already IS this page's own token status surface (no need to pop a
+   * second sheet on top of the page whose entire purpose is showing token
+   * status). daily_claim_completed fires ONLY on the real server-confirmed
+   * response, never optimistically. UNCHANGED behavior from before this
+   * redesign — this task is scoped to the paid packs, not the daily-claim UI.
    */
   claimBtn.addEventListener('click', function(){
     claimBtn.disabled = true;
@@ -506,8 +674,7 @@
   // showing "now" without ever revealing the claim button, since nothing
   // else refreshes tokenStatus. Re-fetch in that case. Once already
   // claimable, no need to keep re-fetching every tick — that state is
-  // genuinely stable until the user claims (no ceiling-style edge case
-  // here, unlike the old drip mechanism).
+  // genuinely stable until the user claims.
   setInterval(function(){
     if(tokenStatus && !tokenStatus.claimable && tokenStatus.nextClaimAt && tokenStatus.nextClaimAt <= Date.now()) loadBalance(true);
     else renderBalance();
@@ -554,12 +721,12 @@
       // param alone is NOT trusted as proof of a real purchase — it's a
       // plain URL anyone could visit by hand (a stale bookmark, a shared
       // link, or just typing it in) with no payment ever having happened,
-      // and firing a spoofable Purchase event would corrupt both the
-      // shop_palette_variant A/B readout and real Meta ad spend decisions.
-      // The marker is consumed (read + removed) unconditionally, exactly
-      // like result.html's dreamtube_just_generated_id pattern, so a reload
-      // of this same success page — the marker already gone — never re-fires
-      // it. Token crediting itself is untouched by any of this: it happens
+      // and firing a spoofable Purchase event would corrupt real Meta ad
+      // spend decisions. The marker is consumed (read + removed)
+      // unconditionally, exactly like result.html's
+      // dreamtube_just_generated_id pattern, so a reload of this same
+      // success page — the marker already gone — never re-fires it. Token
+      // crediting itself is untouched by any of this: it happens
       // server-side, independently, off Dodo's own signed webhook (see the
       // header comment above) — these events are analytics-only.
       try {
@@ -578,6 +745,10 @@
           // session-dodo.js's response omitted it for any reason) — in
           // that case each side just falls back to its own independent id,
           // same as before this instrumentation existed.
+          // starter mirrors the marker's own field (set at buy-click time
+          // above); falls back to a plain pack-id check for a marker
+          // created before this field existed.
+          var starter = typeof pending.starter === 'boolean' ? pending.starter : pending.pack === STARTER_PACK_ID;
           // Build props with a real object key only when an eventId
           // actually exists -- `$insert_id: undefined` would still be an
           // OWN enumerable property on the object (unlike a key that's
@@ -585,7 +756,7 @@
           // codebase's own pre-existing purchase-conversion test caught
           // it) breaks a strict deep-equal check on the exact PostHog
           // properties shape.
-          var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' };
+          var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD', starter: starter };
           if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
           track('purchase_completed', purchaseProps);
           fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);

@@ -49,24 +49,30 @@ growth-owned).
   ceiling): 100 tokens on an account's very first-ever claim, 20 on
   every claim after that. Dodo Payments is the chosen, live payment
   provider — checkout + webhook + idempotent crediting all merged and
-  tested. Pack enrichment (2026-07-28, founder-approved, same prices):
-  200 tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99 (doubled from
-  the original 100/300/700 lineup after the veo3.1/lite cost cut below
-  — internal pack100/pack300/pack700 identifiers and Dodo product env
-  vars kept their original names, only the credited amount changed)
-  plus a one-time +50% first-purchase bonus. A standard video
-  generation now defaults to fal-ai/veo3.1/lite (~80% cheaper than the
-  prior Fast default, env-configurable revert); reference-to-video
+  tested. **Shop rebuilt as "The Vault" (2026-08-02, founder-approved,
+  tracker item for-product-build-ship-today-founder-app-zn9zyy):** new
+  4-pack SKU ladder — $0.99/300 tokens (one-time-per-account starter,
+  pack099), $1.99/500 (pack199), $4.99/1500 "Most popular" (pack499),
+  $9.99/4000 "Best value" (pack999) — REPLACES the previous
+  pack100/pack300/pack700 lineup (200/600/1400 tokens, $2.99/$7.99/
+  $14.99) and its +50% first-purchase bonus entirely. Fresh pack ids and
+  fresh `DODO_PRODUCT_PACK_099/_199/_499/_999` env vars (no
+  grandfathering of the old names/ids) — **needs Ron's own action** to
+  create the 4 new one-time-purchase products in Dodo's dashboard and
+  set those 4 env vars in Netlify before this pack ladder can actually
+  sell anything (until then each pack degrades independently via the
+  existing E6 missing-product-id guard). The old
+  `DODO_PRODUCT_PACK_100/_300/_700` env vars are no longer read by
+  anything — safe to leave set or retire in Dodo's dashboard. A standard
+  video generation now defaults to fal-ai/veo3.1/lite (~80% cheaper than
+  the prior Fast default, env-configurable revert); reference-to-video
   (Me-photo) and image-to-video stay on Fast. **The store went LIVE
   with real money 2026-07-27** — Dodo is processing real charges.
-  Still needs **Ron's own** action to rename the 3 Dodo dashboard
-  products to match the new doubled pack amounts (founder action, not
-  something this session can do).
-- **Shop palette A/B test:** the token shop's red/hot visual palette
-  (founder feedback) was redesigned into two calmer directions, shipped
-  as a live 50/50 in-product A/B test (not a founder pick-one) with a
-  real Purchase conversion event feeding PostHog so it can actually be
-  scored by variant, not just exposure.
+- **Shop palette A/B test:** RETIRED as part of the "The Vault" rebuild
+  above — the new fixed design has nothing left to vary between two
+  color directions, so the old 50/50 in-product A/B assignment (and its
+  Purchase-conversion-by-variant scoring) was removed along with the
+  page structure it targeted.
 - **Accounts:** real server-side accounts (was previously
   localStorage/per-browser only) — login, signup, forgot-password all
   work cross-device now.
@@ -92,10 +98,13 @@ growth-owned).
   place); a CSS bug that let several pages scroll past their real
   content; various stale-copy/hardcoded-number fixes after constants
   changed elsewhere.
-- **Test suite:** 673 tests across 52 files, run before and after every
-  merge. One test (`shop-palette-variant-behavioral.test.js`) is
-  known-flaky under full-parallel-suite load only (never in isolation)
-  — logged as a low-priority cleanup, not a real bug.
+- **Test suite:** run before and after every merge (file/test counts grow
+  with every feature, see `docs/TEST_REGISTRY.md` for the living map
+  rather than a point-in-time number here). The old known-flaky-under-
+  full-suite-load test (`shop-palette-variant-behavioral.test.js`) no
+  longer exists — retired 2026-08-02 along with the shop palette A/B test
+  it covered (see "The Vault" shop redesign below), so this is moot now,
+  not fixed.
 
 ## Known open issues / gaps
 

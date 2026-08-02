@@ -1,7 +1,8 @@
 // test/shop-behavioral.test.js
 //
-// Real browser-driven coverage for shop.html's Dodo Payments checkout
-// wiring: clicking a token-pack button posts to
+// Real browser-driven coverage for shop.html ("The Vault", founder-approved
+// 2026-08-02, tracker item for-product-build-ship-today-founder-app-zn9zyy)'s
+// Dodo Payments checkout wiring: clicking a token-pack button posts to
 // create-checkout-session-dodo.js and redirects the browser to the
 // returned URL on success; a failure (the realistic case until real Dodo
 // env vars exist — see docs/PAYWALL_SETUP.md) re-enables the button and
@@ -58,7 +59,7 @@ function blockThirdParty(page) {
 
 function mockTokenStatus(page, status) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(status || { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, hasMadeFirstPurchase: true }) });
   });
 }
 
@@ -90,25 +91,53 @@ async function seedShopPage(page, email) {
   await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
 }
 
-test('all three token-pack buttons are enabled and say "Buy" (no longer disabled "Coming soon")', async function (t) {
+test('all four pack buttons are enabled and state their exact price ("Pay $X.XX"), not a generic "Buy"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page);
+    // hasMadeFirstPurchase: false so the hero (pack099) is visible too.
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, hasMadeFirstPurchase: false });
     await seedShopPage(page);
 
-    var pack100 = page.locator('#shop-buy-pack100');
-    var pack300 = page.locator('#shop-buy-pack300');
-    var pack700 = page.locator('#shop-buy-pack700');
-    await assert.doesNotReject(pack100.waitFor({ state: 'visible', timeout: 5000 }));
-    assert.equal(await pack100.isDisabled(), false);
-    assert.equal(await pack300.isDisabled(), false);
-    assert.equal(await pack700.isDisabled(), false);
-    assert.equal((await pack100.textContent()).trim(), 'Buy');
-    assert.equal((await pack300.textContent()).trim(), 'Buy');
-    assert.equal((await pack700.textContent()).trim(), 'Buy');
+    var pack099 = page.locator('#shop-buy-pack099');
+    var pack199 = page.locator('#shop-buy-pack199');
+    var pack499 = page.locator('#shop-buy-pack499');
+    var pack999 = page.locator('#shop-buy-pack999');
+    await assert.doesNotReject(pack099.waitFor({ state: 'visible', timeout: 5000 }));
+    assert.equal(await pack099.isDisabled(), false);
+    assert.equal(await pack199.isDisabled(), false);
+    assert.equal(await pack499.isDisabled(), false);
+    assert.equal(await pack999.isDisabled(), false);
+    assert.match((await pack099.textContent()).trim(), /Pay \$0\.99/);
+    assert.match((await pack199.textContent()).trim(), /Pay \$1\.99/);
+    assert.match((await pack499.textContent()).trim(), /Pay \$4\.99/);
+    assert.match((await pack999.textContent()).trim(), /Pay \$9\.99/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the welcome-offer hero (pack099) is hidden once hasMadeFirstPurchase is true, and only pack199/499/999 remain', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, hasMadeFirstPurchase: true });
+    await seedShopPage(page);
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-balance');
+      return el && el.textContent === '50';
+    }, null, { timeout: 5000 });
+
+    var heroVisible = await page.isVisible('#shop-hero-offer');
+    assert.equal(heroVisible, false, 'the one-time starter hero must not show to an account that already bought a pack');
+    // The starter button itself only exists inside the hero -- confirm it's
+    // not duplicated as a regular pack card elsewhere on the page either.
+    assert.equal(await page.locator('#shop-buy-pack099').count(), 1, 'the starter button element exists exactly once (inside the now-hidden hero), never duplicated as a visible card');
   } finally {
     await context.close();
   }
@@ -129,10 +158,10 @@ test('clicking a pack button posts {email, pack} and redirects to the returned c
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_test' }) });
     });
 
-    await page.click('#shop-buy-pack700');
+    await page.click('#shop-buy-pack999');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
 
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack700' });
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack999' });
   } finally {
     await context.close();
   }
@@ -151,7 +180,8 @@ test('a failed checkout-session call re-enables the button and shows a toast, ne
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E2: missing_api_key' }) });
     });
 
-    var button = page.locator('#shop-buy-pack100');
+    var button = page.locator('#shop-buy-pack199');
+    var originalLabel = (await button.textContent()).trim();
     await button.click();
 
     await page.waitForFunction(function () {
@@ -160,9 +190,40 @@ test('a failed checkout-session call re-enables the button and shows a toast, ne
     }, null, { timeout: 5000 });
 
     assert.equal(await button.isDisabled(), false);
-    assert.equal((await button.textContent()).trim(), 'Buy');
+    assert.equal((await button.textContent()).trim(), originalLabel);
     // Never actually navigated away on a failed checkout-session call.
     assert.match(page.url(), /shop\.html/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a starter-already-used (E9) failure shows the specific "welcome offer already used" toast, not the generic try-again copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // hasMadeFirstPurchase: false so the hero (and its pack099 button) is
+    // visible to click, even though the server will refuse it (simulates
+    // a race: another tab completed a purchase moments ago).
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, hasMadeFirstPurchase: false });
+    await seedShopPage(page);
+
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'E9: starter_already_used' }) });
+    });
+
+    await page.waitForSelector('#shop-buy-pack099', { state: 'visible', timeout: 5000 });
+    await page.click('#shop-buy-pack099');
+
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show');
+    }, null, { timeout: 5000 });
+
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /already been used/i);
   } finally {
     await context.close();
   }
@@ -224,7 +285,7 @@ test('an account with no email on file gets a clear inline message instead of a 
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://example.com', sessionId: 'x' }) });
     });
 
-    await page.click('#shop-buy-pack100');
+    await page.click('#shop-buy-pack199');
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
       return t && t.classList.contains('show');
@@ -233,6 +294,32 @@ test('an account with no email on file gets a clear inline message instead of a 
     assert.equal(calledCheckout, false, 'must not call the checkout endpoint with no email to send');
     var toastText = await page.textContent('#toast');
     assert.match(toastText, /add an email/i);
+  } finally {
+    await context.close();
+  }
+});
+
+test('per-pack dreams/tokens/value copy is computed correctly on each card', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, hasMadeFirstPurchase: true });
+    await seedShopPage(page);
+    await page.waitForSelector('#pack199-dreams', { timeout: 5000 });
+
+    assert.equal((await page.textContent('#pack199-dreams')).trim(), '5 dream videos');
+    assert.equal((await page.textContent('#pack199-tokens')).trim(), '500 tokens · or 50 dream images');
+    assert.equal((await page.textContent('#pack199-value')).trim(), '$0.40 per dream');
+
+    assert.equal((await page.textContent('#pack499-dreams')).trim(), '15 dream videos');
+    assert.equal((await page.textContent('#pack499-tokens')).trim(), '1500 tokens · or 150 dream images');
+    assert.equal((await page.textContent('#pack499-value')).trim(), '$0.33 per dream');
+
+    assert.equal((await page.textContent('#pack999-dreams')).trim(), '40 dream videos');
+    assert.equal((await page.textContent('#pack999-tokens')).trim(), '4000 tokens · or 400 dream images');
+    assert.equal((await page.textContent('#pack999-value')).trim(), '$0.25 per dream');
   } finally {
     await context.close();
   }

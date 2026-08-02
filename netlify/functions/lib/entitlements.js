@@ -61,12 +61,37 @@
 // firstPackPurchaseAt: epoch-ms timestamp stamped the first time this email
 // ever completes a token-pack credit, by creditTokenPackAmountOnce — unlike
 // appliedTokenPackPaymentIds this is NEVER pruned, since its whole job is
-// to durably answer "has this account ever bought a pack before" for the
-// one-time +50% first-purchase bonus (see creditTokenPackAmountOnce below).
-// Deliberately its own field rather than reusing
-// appliedTokenPackPaymentIds.length — that array is transient by design
-// (pruned back to empty in steady state), so it can't answer "ever", only
-// "currently mid-flight".
+// to durably answer "has this account ever bought a pack before". Deliberately
+// its own field rather than reusing appliedTokenPackPaymentIds.length — that
+// array is transient by design (pruned back to empty in steady state), so it
+// can't answer "ever", only "currently mid-flight".
+//
+// REPURPOSED 2026-08-02 (tracker item
+// for-product-build-ship-today-founder-app-zn9zyy, "The Vault" shop
+// redesign): this field/its derived `hasMadeFirstPurchase` boolean used to
+// exist purely to gate the one-time +50% first-purchase bonus (Token
+// Economy C, 2026-07-26) — that bonus mechanic is RETIRED entirely as of
+// this change (creditTokenPackAmountOnce no longer applies any multiplier;
+// see FIRST_PURCHASE_BONUS_MULTIPLIER's old doc comment, removed). The SAME
+// signal is reused for a different purpose: the shop's new $0.99 starter
+// pack (pack099) is a one-time-per-account welcome offer, and is refused
+// server-side (create-checkout-session-dodo.js's E9 guard) once this
+// account has ever completed ANY pack purchase — not specifically "have
+// they bought the starter before" as a narrower signal would ask. This
+// deliberately keeps `firstPackPurchaseAt` stamped by ANY pack's first
+// credit (unchanged from before), not a new/renamed "has this account
+// bought the starter specifically" marker: the welcome-offer framing is
+// "your first purchase ever, whatever it is" (matching shop.html's hero
+// welcome-offer copy and the out-of-tokens sheet's contextual pack
+// choice), not "you haven't happened to buy pack099 yet" — someone who
+// already bought a $9.99 pack has already had their "first purchase"
+// moment and should see the $1.99 fallback offer, not the discounted
+// starter a second time. Introducing a second, narrower field (e.g.
+// "hasUsedStarterAt") would let an account buy the $9.99 pack, still see
+// the $0.99 starter as if brand new, and buy it too — undermining the
+// "one welcome-offer-shaped moment per account" intent the founder
+// approved. See create-checkout-session-dodo.js's own doc comment for the
+// server-side enforcement this decision feeds.
 //
 // ============================================================================
 // TOKEN ECONOMY — replaces the old quota/subscription-entitlement model
@@ -123,13 +148,14 @@
 // kept for that same reason, even though nothing in this codebase calls it
 // today. The Dodo Payments backend (create-checkout-session-dodo.js /
 // dodo-webhook.js), by contrast, is now LIVE and wired to shop.html's
-// 3-pack one-time token-pack purchases (pack100/pack300/pack700 — see
+// 4-pack "Token shop" ladder (pack099/pack199/pack499/pack999 — see
 // create-checkout-session-dodo.js) — see creditTokenPackOnce
 // below, which is what dodo-webhook.js actually calls on a confirmed
 // payment. It does not touch `active`/`plan` at all (that's a subscription
 // concept); a token-pack purchase is a straight balance credit via
-// addTokens, plus a one-time +50% first-purchase bonus (see
-// creditTokenPackAmountOnce's `firstPackPurchaseAt` handling below).
+// addTokens — see creditTokenPackAmountOnce's `firstPackPurchaseAt`
+// handling below for what that field is used for now (starter-pack
+// one-time gating, not a bonus).
 //
 // tokens.balance: the email's current spendable token count. Never goes
 // negative (spendTokens floors at 0). No ceiling of any kind (the old
@@ -546,17 +572,23 @@ async function syncTokens(event, email, opts) {
  * as 0) for the UI's own countdown, same "epoch-ms the client formats
  * itself" shape the old nextGrantAt used.
  *
- * `hasMadeFirstPurchase` (added for tracker item
- * for-product-shop-first-purchase-50-bonus-bzx2d4): true once this email
- * has ever completed a token-pack purchase (derived from
- * `!!tokens.firstPackPurchaseAt` — see syncTokens/creditTokenPackAmountOnce
- * for where that's stamped). shop.html uses this to decide whether the
- * first-purchase +50% bonus callout is still a true claim for this
- * visitor — showing it to someone who already used the bonus would be
- * false advertising. Deliberately exposes only this derived boolean, never
- * the raw `firstPackPurchaseAt` timestamp itself, since the UI has no
- * legitimate use for the actual purchase time and there's no reason to
- * leak more than it needs. Untouched by the daily-claim switch.
+ * `hasMadeFirstPurchase`: true once this email has ever completed a
+ * token-pack purchase (derived from `!!tokens.firstPackPurchaseAt` — see
+ * syncTokens/creditTokenPackAmountOnce for where that's stamped).
+ * REPURPOSED 2026-08-02 ("The Vault" shop redesign, tracker item
+ * for-product-build-ship-today-founder-app-zn9zyy) — originally gated the
+ * one-time +50% first-purchase bonus callout (now retired entirely, see
+ * this file's header comment on `firstPackPurchaseAt`); now gates the
+ * $0.99 starter pack's one-time-per-account eligibility instead: shop.html
+ * hides the welcome-offer hero once this is true, and
+ * create-checkout-session-dodo.js independently refuses a starter-pack
+ * checkout server-side (E9) for the same reason — showing/selling the
+ * discounted starter to someone who already bought a pack would undercut
+ * the "one welcome moment per account" intent. Deliberately exposes only
+ * this derived boolean, never the raw `firstPackPurchaseAt` timestamp
+ * itself, since the UI has no legitimate use for the actual purchase time
+ * and there's no reason to leak more than it needs. Untouched by the
+ * daily-claim switch.
  *
  * Optional 3rd arg `opts` is forwarded as-is to syncTokens — see that
  * function's own doc comment for `opts.ownerBypass`. This does NOT change
@@ -1321,41 +1353,29 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * read available at that exact instant.
  *
  * ----------------------------------------------------------------------
- * FIRST-PURCHASE BONUS (+50%, Token Economy C, founder-approved 2026-07-26)
+ * firstPackPurchaseAt STAMPING (no bonus attached — retired 2026-08-02)
  * ----------------------------------------------------------------------
- * `amount` here is always the pack's BASE token count (resolved by
- * dodo-webhook.js's resolvePackTokens, unaware of any bonus) — this
- * function is what actually decides, per call, whether the account's
- * `firstPackPurchaseAt` field is already set. If it is not, this is (as
- * far as this record can tell) the email's first-ever completed pack
- * purchase, so `amount` is bumped by FIRST_PURCHASE_BONUS_MULTIPLIER
- * before being added to the balance, and `firstPackPurchaseAt` is stamped
- * in the SAME write — deliberately the same atomic-single-write reasoning
- * as `appliedTokenPackPaymentIds` above: whether the bonus applies and the
- * credit that depends on that decision must never be allowed to disagree
- * with each other, so they're decided and written together, not as two
- * separate facts that could each independently fail to land.
- *
- * This is why the bonus decision lives HERE (inside the retryingWrite's
- * `mutate`, re-read fresh on every attempt) rather than being computed
- * once by the caller and passed in: a resume of an interrupted earlier
- * attempt re-reads the CURRENT record state on each try, so it can never
- * apply a bonus decision that's gone stale relative to what's actually
- * been committed.
- *
- * Known, accepted residual race (same class this file's header comment
- * already accepts elsewhere): two genuinely concurrent FIRST purchases
- * under DIFFERENT payment_ids for the same brand-new email (e.g. two
- * pack purchases within the same Blobs propagation window) could each
- * read `firstPackPurchaseAt` as unset and each apply the bonus once —
- * dedup here is per-payment, not a per-email lock, same as
- * appliedTokenPackPaymentIds' own dedup. Narrow, real-money-adjacent but
- * bounded to a single extra bonus application in a genuinely rare timing
- * window, not unbounded double-crediting; revisit only if actually
- * observed in practice, same posture this file already takes on its
- * other documented residual races.
+ * `amount` here is always the pack's plain base token count (resolved by
+ * dodo-webhook.js's resolvePackTokens) — this function credits it
+ * verbatim, no multiplier. Previously (Token Economy C, founder-approved
+ * 2026-07-26 through 2026-08-02) a not-yet-set `firstPackPurchaseAt`
+ * bumped `amount` by a one-time +50% first-purchase bonus
+ * (FIRST_PURCHASE_BONUS_MULTIPLIER); that mechanic is RETIRED entirely as
+ * of the "The Vault" shop redesign (tracker item
+ * for-product-build-ship-today-founder-app-zn9zyy, founder-approved
+ * 2026-08-02) — a discounted $0.99 one-time starter pack replaces it as
+ * this shop's welcome-offer lever instead (see create-checkout-session-
+ * dodo.js's E9 guard). `firstPackPurchaseAt` itself is NOT retired —
+ * it's still stamped here, in the SAME write as the balance credit
+ * (deliberately atomic, same reasoning as `appliedTokenPackPaymentIds`
+ * above), because `hasMadeFirstPurchase` (its derived read, see
+ * getTokenStatus) is now what gates starter-pack eligibility instead of a
+ * bonus — see this file's header comment on `firstPackPurchaseAt` for the
+ * full repurposing rationale. Still decided fresh on every retryingWrite
+ * attempt (`rec.firstPackPurchaseAt || Date.now()`, never computed once by
+ * the caller) so a resumed interrupted attempt always reflects the
+ * CURRENT record state rather than a stale pre-loop snapshot.
  */
-var FIRST_PURCHASE_BONUS_MULTIPLIER = 1.5;
 
 /**
  * Chooses the base `{balance, lastClaimAt, streak}` a single retryingWrite
@@ -1454,8 +1474,12 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
       var rec = existing || { email: key };
       var appliedList = rec.appliedTokenPackPaymentIds || [];
       if (appliedList.indexOf(paymentId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
-      var isFirstPurchase = !rec.firstPackPurchaseAt;
-      var creditAmount = isFirstPurchase ? Math.round(amount * FIRST_PURCHASE_BONUS_MULTIPLIER) : amount;
+      // No first-purchase bonus multiplier anymore (retired 2026-08-02 —
+      // see this function's own doc comment) — `amount` is credited
+      // verbatim. `firstPackPurchaseAt` is still stamped below regardless
+      // of whether this happens to be this email's first purchase, purely
+      // so `hasMadeFirstPurchase` can gate starter-pack eligibility.
+      var creditAmount = amount;
       var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
       var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + creditAmount);
       return Object.assign({}, rec, {
@@ -2422,6 +2446,5 @@ module.exports = {
   DAILY_CLAIM_AMOUNT,
   FIRST_CLAIM_BONUS_AMOUNT,
   CLAIM_COOLDOWN_MS,
-  STREAK_CONTINUITY_MS,
-  FIRST_PURCHASE_BONUS_MULTIPLIER
+  STREAK_CONTINUITY_MS
 };

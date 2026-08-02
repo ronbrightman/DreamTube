@@ -49,11 +49,14 @@ test.beforeEach(function () {
  * dodo-webhook.test.js's seedZeroBalance.
  *
  * ALSO stamps `firstPackPurchaseAt` in the past, so this account is
- * treated as already having a completed pack purchase on file — isolates
- * these dedup/race/exhaustion-focused tests from the separate +50%
- * first-purchase bonus (see creditTokenPackAmountOnce), which has its own
- * dedicated tests further down using seedZeroBalanceNoPriorPurchase
- * instead.
+ * treated as already having a completed pack purchase on file — a
+ * realistic default record shape. Since the old +50% first-purchase
+ * bonus is retired (2026-08-02, "The Vault" shop redesign — see
+ * creditTokenPackAmountOnce's own doc comment), this no longer changes
+ * the CREDITED AMOUNT (every credit is the plain base amount regardless
+ * of this field now); `firstPackPurchaseAt` is kept seeded here purely
+ * because it's still a real, always-present field on a purchased
+ * account's record.
  */
 async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, {
@@ -62,7 +65,7 @@ async function seedZeroBalance(email) {
   });
 }
 
-/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used only by the first-purchase-bonus tests, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. No lastClaimAt seeded either -- one caller below (the daily-claim survival test) needs this account genuinely claimable, and the rest don't care about claim timing at all. */
+/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase, no firstPackPurchaseAt) — used by the "firstPackPurchaseAt gets stamped" tests further down, plus the daily-claim survival test that needs this account genuinely claimable. No lastClaimAt seeded either. */
 async function seedZeroBalanceNoPriorPurchase(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0 } });
 }
@@ -323,15 +326,14 @@ test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returne
   try {
     // Deliberately brand-new/unseeded: syncTokens (called first, inside
     // creditTokenPackAmountOnce) applies the one-time 320-token signup
-    // grant as part of this very call. This account also has no
-    // firstPackPurchaseAt on file (genuinely brand-new to purchasing, not
-    // just to tokens), so the +50% first-purchase bonus applies too —
-    // 100 base x 1.5 = 150 credited, not a plain 100.
+    // grant as part of this very call. No bonus multiplier applies
+    // regardless of purchase history (retired 2026-08-02, "The Vault"
+    // shop redesign) — the credit is always the plain base amount.
     var applyResult = await entitlements.creditTokenPackAmountOnce({}, 'staleread@example.com', 'pay_stale_read', 100);
     assert.equal(applyResult.ok, true);
 
     var record = await entitlements.getEntitlement({}, 'staleread@example.com');
-    assert.equal(record.tokens.balance, 320 + 150, "balance must be 320 (signup grant, from syncTokens' own in-memory return value) + 150 (this credit, bonused 1.5x as a first purchase) — a buggy re-read-based implementation would compute 0 + 150 = 150 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 100, "balance must be 320 (signup grant, from syncTokens' own in-memory return value) + 100 (this credit) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
   } finally {
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
   }
@@ -444,50 +446,54 @@ test('concurrent races on DIFFERENT payment_ids for the same email both go throu
   assert.equal(results[1].credited, true);
 });
 
-// ----- First-purchase bonus (+50%, Token Economy C, founder-approved
-// 2026-07-26 night) — direct unit coverage of creditTokenPackOnce /
-// creditTokenPackAmountOnce's own first-purchase decision. See
-// dodo-webhook.test.js for the same behavior exercised through the real
-// webhook handler end-to-end. -----
+// ----- No first-purchase bonus, ever (retired 2026-08-02, "The Vault"
+// shop redesign, tracker item for-product-build-ship-today-founder-app-
+// zn9zyy) — direct unit coverage of creditTokenPackOnce /
+// creditTokenPackAmountOnce's own crediting decision, and that
+// firstPackPurchaseAt is still stamped even though nothing reads it for a
+// bonus anymore (it's repurposed to gate the shop's $0.99 starter pack's
+// one-time eligibility at checkout-creation time instead — see
+// create-checkout-session-dodo.js). See dodo-webhook.test.js for the same
+// behavior exercised through the real webhook handler end-to-end. -----
 
-test("creditTokenPackOnce credits 1.5x on a brand-new-to-purchasing email's first pack, and stamps firstPackPurchaseAt", async function () {
+test("creditTokenPackOnce credits the plain base amount on a brand-new-to-purchasing email's first pack (no bonus), and stamps firstPackPurchaseAt", async function () {
   await seedZeroBalanceNoPriorPurchase('unitbonus@example.com');
   var result = await entitlements.creditTokenPackOnce({}, 'unitbonus@example.com', 'pay_unit_bonus', 100);
   assert.equal(result.credited, true);
 
   var record = await entitlements.getEntitlement({}, 'unitbonus@example.com');
-  assert.equal(record.tokens.balance, 150, '100 base x 1.5 first-purchase bonus');
-  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must be stamped');
+  assert.equal(record.tokens.balance, 100, 'plain base amount, no +50% bonus — that mechanic is retired');
+  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must still be stamped (repurposed for starter-pack one-time gating)');
 });
 
-test('a SECOND distinct payment_id from the same email does not get the bonus again — plain base tokens only', async function () {
+test('a SECOND distinct payment_id from the same email also credits the plain base amount — no multiplier on either purchase', async function () {
   await seedZeroBalanceNoPriorPurchase('unitsecond@example.com');
   await entitlements.creditTokenPackOnce({}, 'unitsecond@example.com', 'pay_unit_second_a', 100);
   var afterFirst = await entitlements.getEntitlement({}, 'unitsecond@example.com');
-  assert.equal(afterFirst.tokens.balance, 150, 'first purchase gets the bonus');
+  assert.equal(afterFirst.tokens.balance, 100, 'first purchase credits the plain base amount');
 
   await entitlements.creditTokenPackOnce({}, 'unitsecond@example.com', 'pay_unit_second_b', 100);
   var afterSecond = await entitlements.getEntitlement({}, 'unitsecond@example.com');
-  assert.equal(afterSecond.tokens.balance, 250, '150 (bonused first purchase) + 100 (plain second purchase, no bonus) = 250');
+  assert.equal(afterSecond.tokens.balance, 200, '100 (first, plain) + 100 (second, plain) = 200 -- neither purchase gets a bonus');
 });
 
-test('an account already marked with a prior firstPackPurchaseAt (e.g. seedZeroBalance) never gets the bonus, even on payment_id it has never seen', async function () {
+test('an account already marked with a prior firstPackPurchaseAt (e.g. seedZeroBalance) credits the same plain base amount, same as a genuinely first purchase', async function () {
   await seedZeroBalance('alreadypurchased@example.com'); // stamps firstPackPurchaseAt in the past
   var result = await entitlements.creditTokenPackOnce({}, 'alreadypurchased@example.com', 'pay_already_purchased', 100);
   assert.equal(result.credited, true);
   var record = await entitlements.getEntitlement({}, 'alreadypurchased@example.com');
-  assert.equal(record.tokens.balance, 100, 'no bonus — this account already has a completed purchase on file');
+  assert.equal(record.tokens.balance, 100, 'plain base amount regardless of prior purchase history -- no bonus mechanic exists anymore');
 });
 
-test("creditTokenPackAmountOnce called directly also applies the first-purchase bonus (not just via creditTokenPackOnce's wrapper)", async function () {
+test("creditTokenPackAmountOnce called directly also credits only the plain base amount (not just via creditTokenPackOnce's wrapper)", async function () {
   await seedZeroBalanceNoPriorPurchase('directbonus@example.com');
   var result = await entitlements.creditTokenPackAmountOnce({}, 'directbonus@example.com', 'pay_direct_bonus', 100);
   assert.equal(result.ok, true);
   var record = await entitlements.getEntitlement({}, 'directbonus@example.com');
-  assert.equal(record.tokens.balance, 150);
+  assert.equal(record.tokens.balance, 100);
 });
 
-test('a redelivered (same payment_id) first-purchase event does not re-apply the bonus a second time', async function () {
+test('a redelivered (same payment_id) first-purchase event does not double-credit', async function () {
   await seedZeroBalanceNoPriorPurchase('redeliverbonus@example.com');
   var first = await entitlements.creditTokenPackOnce({}, 'redeliverbonus@example.com', 'pay_redeliver_bonus', 100);
   var second = await entitlements.creditTokenPackOnce({}, 'redeliverbonus@example.com', 'pay_redeliver_bonus', 100);
@@ -495,12 +501,16 @@ test('a redelivered (same payment_id) first-purchase event does not re-apply the
   assert.equal(second.credited, false, 'a redelivered event for an already-processed payment_id is a no-op');
 
   var record = await entitlements.getEntitlement({}, 'redeliverbonus@example.com');
-  assert.equal(record.tokens.balance, 150, 'exactly one bonused credit, not two');
+  assert.equal(record.tokens.balance, 100, 'exactly one plain credit, not two');
 });
 
-// ----- getTokenStatus's hasMadeFirstPurchase (tracker item
-// for-product-shop-first-purchase-50-bonus-bzx2d4) — the client-facing
-// derived boolean shop.html's first-purchase-bonus callout keys off of.
+// ----- getTokenStatus's hasMadeFirstPurchase — the client-facing derived
+// boolean. Originally gated the now-retired +50% first-purchase-bonus
+// callout; as of 2026-08-02 ("The Vault" shop redesign, tracker item
+// for-product-build-ship-today-founder-app-zn9zyy) it instead gates the
+// $0.99 starter pack's one-time-per-account eligibility (shop.html's
+// welcome-offer hero, create-checkout-session-dodo.js's E9 guard) — see
+// lib/entitlements.js's own doc comments for the full repurposing story.
 // Confirms firstPackPurchaseAt (a top-level field on the entitlement
 // record, stamped by creditTokenPackAmountOnce above — NOT a field inside
 // record.tokens) actually flows through syncTokens into getTokenStatus's
@@ -584,8 +594,9 @@ test('getTokenStatus keeps returning hasMadeFirstPurchase: true across a later d
 test("a genuinely concurrent claimDailyTokens write is NOT reverted by creditTokenPackAmountOnce's own retry loop (real concurrency, not sequential awaits)", async function () {
   var email = 'purchaseraceclaim@example.com';
   var pastCooldown = Date.now() - (entitlements.CLAIM_COOLDOWN_MS + 60000);
-  // firstPackPurchaseAt already set so the +50% first-purchase bonus
-  // doesn't complicate this race-focused test's arithmetic.
+  // firstPackPurchaseAt already set, matching a realistic already-purchased
+  // account's record shape -- doesn't change the credited amount either
+  // way (no bonus mechanic exists anymore), kept for realism only.
   await entitlements.setEntitlement({}, email, {
     tokens: { balance: 100, lastClaimAt: pastCooldown, streak: 3 },
     firstClaimAt: pastCooldown - 1000,
@@ -621,7 +632,7 @@ test("a genuinely concurrent claimDailyTokens write is NOT reverted by creditTok
   assert.equal(results[1].claimed, true, 'the concurrent claim must still succeed too');
 
   var record = await entitlements.getEntitlement({}, email);
-  assert.equal(record.tokens.balance, 100 + entitlements.DAILY_CLAIM_AMOUNT + 50, 'both the claim (+20) and the pack credit (+50, no first-purchase bonus since firstPackPurchaseAt was already set) must land -- the bug this fix closes would silently discard the claim, leaving only 100 + 50 = 150');
+  assert.equal(record.tokens.balance, 100 + entitlements.DAILY_CLAIM_AMOUNT + 50, 'both the claim (+20) and the plain +50 pack credit (no bonus multiplier exists anymore) must land -- the bug this fix closes would silently discard the claim, leaving only 100 + 50 = 150');
   assert.notEqual(record.tokens.lastClaimAt, pastCooldown, "the concurrent claim's fresh lastClaimAt must survive -- the bug this fix closes would silently revert it back to the pre-claim value");
   assert.equal(record.tokens.streak, 4, "the concurrent claim's bumped streak (3 -> 4) must survive, not get reverted back to 3");
 });

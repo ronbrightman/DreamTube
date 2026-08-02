@@ -542,11 +542,10 @@
    *
    * Deliberately does NOT touch the feed-backfill/persistent-storage
    * "have I already done this" flags or the genuinely device-level prefs
-   * (dreamtube_sound_on, dreamtube_dod_seen_id, shop.html's own
-   * dreamtube_shop_variant) — none of those are this account's data (see
-   * backfillSharedFeed's own "safe to run again" comment, and
-   * getSoundPref's "like a volume setting" comment), so an account
-   * deletion has no more reason to touch them than logging out already
+   * (dreamtube_sound_on, dreamtube_dod_seen_id) — none of those are this
+   * account's data (see backfillSharedFeed's own "safe to run again"
+   * comment, and getSoundPref's "like a volume setting" comment), so an
+   * account deletion has no more reason to touch them than logging out already
    * does.
    *
    * DOES clear the PostHog pre-account marker (clearPreAccountMarker,
@@ -5174,8 +5173,9 @@
       // here — there's no identity to claim anything against with no email
       // on file. hasMadeFirstPurchase is unconditionally false here too —
       // no email on file means no identity that could have ever completed
-      // a purchase, so shop.html's first-purchase-bonus callout is safe to
-      // show (see that page's own script for how it uses this field).
+      // a purchase, so shop.html's welcome-offer hero (the one-time $0.99
+      // starter pack) is safe to show (see that page's own script for how
+      // it uses this field).
       if (!email) return Promise.resolve({ balance: 0, claimable: false, nextClaimAt: null, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: false });
       return fetch('/.netlify/functions/get-token-status?email=' + encodeURIComponent(email))
         .then(function (res) { return res.json(); })

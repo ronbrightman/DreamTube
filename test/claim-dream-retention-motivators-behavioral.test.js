@@ -17,8 +17,8 @@
 //      friction in front of the maybe-later exit.
 //
 // Follows test/funnel-distinct-id-behavioral.test.js's/
-// shop-palette-variant-behavioral.test.js's approach of reading PostHog
-// calls straight out of the stub's own pending-call queue (window.posthog
+// test/first-video-created-behavioral.test.js's approach of reading
+// PostHog calls straight out of the stub's own pending-call queue (window.posthog
 // stays the pre-init stub array the whole test, since blockThirdParty
 // aborts the real array.js bundle load) -- more reliable here than a
 // monkeypatch, see those files' header comments for why.
@@ -287,8 +287,7 @@ test('a logged-in visitor whose email matches the pending dream never sees the s
     await mockVerifyPendingClaim(page, READY_RESPONSE);
 
     // Log in as the matching account first (same localStorage-seeding
-    // convention as test/shop-palette-variant-behavioral.test.js's
-    // seedShopPage).
+    // convention as test/shop-behavioral.test.js's seedShopPage).
     await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
     await page.evaluate(function () {
       var raw = localStorage.getItem('dreamtube_state_v1');

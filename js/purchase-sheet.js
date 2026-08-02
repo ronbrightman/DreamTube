@@ -78,23 +78,34 @@
 
   // ==========================================================================
   // Pure logic (no DOM) — token packs, arithmetic, countdown formatting.
-  // Mirrors shop.html's own PACK_INFO (pack enrichment, founder-approved
-  // 2026-07-28, "go for A": 200/$2.99, 600/$7.99, 1400/$14.99 — doubled
-  // from the original Token Economy C amounts at the same prices; internal
-  // names pack100/pack300/pack700 unchanged, so pack100 no longer literally
-  // means "100 tokens" — see create-checkout-session-dodo.js's PACK_TOKENS
-  // comment for the full naming-drift note). Kept as its own copy rather
-  // than a shared import (this codebase has no bundler/require for browser
-  // code — see js/store.js's header comment) — same "one small local map,
-  // not a shared module" convention shop.html's own PACK_INFO comment
-  // already documents.
+  // Mirrors shop.html's own PACK_INFO ("The Vault" shop redesign,
+  // founder-approved 2026-08-02, tracker item
+  // for-product-build-ship-today-founder-app-zn9zyy: $0.99/300 one-time
+  // starter, $1.99/500, $4.99/1500 "Most popular", $9.99/4000 "Best
+  // value" — REPLACES the old pack100/pack300/pack700 lineup and its
+  // +50% first-purchase bonus entirely; fresh pack ids, never reusing the
+  // old ones — see create-checkout-session-dodo.js's PACK_TOKENS comment
+  // for the full no-grandfathering reasoning). Kept as its own copy
+  // rather than a shared import (this codebase has no bundler/require for
+  // browser code — see js/store.js's header comment) — same "one small
+  // local map, not a shared module" convention shop.html's own PACK_INFO
+  // comment already documents.
   // ==========================================================================
   var PACK_INFO = {
-    pack100: { tokens: 200, price: 2.99 },
-    pack300: { tokens: 600, price: 7.99 },
-    pack700: { tokens: 1400, price: 14.99 }
+    pack099: { tokens: 300, price: 0.99 },
+    pack199: { tokens: 500, price: 1.99 },
+    pack499: { tokens: 1500, price: 4.99 },
+    pack999: { tokens: 4000, price: 9.99 }
   };
-  var PACK_ORDER = ['pack100', 'pack300', 'pack700'];
+  var PACK_ORDER = ['pack099', 'pack199', 'pack499', 'pack999'];
+
+  // pack099 is the one-time-per-account starter — see
+  // create-checkout-session-dodo.js's header comment for the server-side
+  // enforcement (this sheet's own contextual pack choice below is a UX
+  // nicety on TOP of that server-side gate, not a substitute for it: even
+  // if this sheet somehow offered pack099 to an ineligible account, the
+  // server would still refuse the checkout with E9).
+  var STARTER_PACK_ID = 'pack099';
 
   // Flat cost of one image generation — mirrors generate-image.js's own
   // server-side IMAGE_TOKEN_COST (that file is the real source of truth;
@@ -107,23 +118,28 @@
   var IMAGE_TOKEN_COST = 10;
 
   /**
-   * The "one-tap purchase of the smallest sufficient pack" logic: the
-   * cheapest pack whose token amount alone covers the shortfall. In
-   * practice, since every generation costs at most 100 tokens (video) or
-   * 10 (image) and balance is never negative, `neededTokens` never
-   * exceeds 100 — so pack100 (200 tokens as of the pack-enrichment change)
-   * is always sufficient today. Written generally (not hardcoded to
-   * pack100) so this stays correct if a future, larger-cost action is
-   * ever added without anyone having to remember to revisit this specific
-   * function, AND so it automatically tracks PACK_INFO's token amounts
-   * rather than a second hardcoded copy of them.
+   * The out-of-tokens sheet's "single contextual offer" pack choice
+   * (founder spec, tracker item
+   * for-product-build-ship-today-founder-app-zn9zyy, §5(c)): the $0.99
+   * starter (pack099) if this account has never bought a pack before
+   * (`!hasMadeFirstPurchase`), otherwise the $1.99 pack (pack199) — never
+   * the two larger packs, and never the starter a second time. Within
+   * whichever of those an account is eligible for, picks the cheapest one
+   * that alone covers the shortfall (same "smallest sufficient" shape the
+   * old pickSmallestSufficientPack used, generalized rather than
+   * hardcoded to "always pack099/pack199" so this stays correct if a
+   * future, larger-cost action is ever added — in practice, since every
+   * generation costs at most 100 tokens (video) or 10 (image) and both
+   * eligible packs' token counts comfortably exceed that, this always
+   * resolves to the very first eligible pack today).
    */
-  function pickSmallestSufficientPack(neededTokensAmount) {
-    for (var i = 0; i < PACK_ORDER.length; i++) {
-      var key = PACK_ORDER[i];
+  function pickContextualPack(neededTokensAmount, hasMadeFirstPurchase) {
+    var eligibleOrder = hasMadeFirstPurchase ? PACK_ORDER.slice(1) : PACK_ORDER; // drop the starter once this account has ever bought a pack
+    for (var i = 0; i < eligibleOrder.length; i++) {
+      var key = eligibleOrder[i];
       if (PACK_INFO[key].tokens >= neededTokensAmount) return key;
     }
-    return PACK_ORDER[PACK_ORDER.length - 1]; // largest pack — best available, even if not technically "sufficient"
+    return eligibleOrder[eligibleOrder.length - 1]; // best eligible available, even if not technically "sufficient"
   }
 
   /** How many more tokens are needed to cover `cost` from `balance` — never negative. */
@@ -506,6 +522,13 @@
               tokens: packInfo.tokens,
               price: packInfo.price,
               eventId: data.eventId || null,
+              // Carried through to the eventual purchase_completed fire
+              // (see fireSuccessPurchaseEvents below) so growth can
+              // measure starter-pack conversion specifically — mirrors
+              // dodo-webhook.js's own server-side Purchase event's
+              // `starter` flag (tracker item
+              // for-product-build-ship-today-founder-app-zn9zyy, item 5).
+              starter: pack === STARTER_PACK_ID,
               purchaseFlow: 'blocked_action',
               source: opts.source || 'blocked_action',
               mediaType: opts.mediaType || null,
@@ -590,7 +613,17 @@
     var balance = typeof opts.balance === 'number' ? opts.balance : 0;
     var cost = typeof opts.cost === 'number' ? opts.cost : 100;
     var need = neededTokens(balance, cost);
-    var pack = pickSmallestSufficientPack(need);
+    // Single contextual offer (see pickContextualPack's own doc comment):
+    // starter if this account hasn't used it yet, else the $1.99 pack. A
+    // missing/undefined tokenStatus (shouldn't happen in practice — every
+    // real call site passes the getTokenStatus() response — but this sheet
+    // must never crash over it) fails toward `hasMadeFirstPurchase: false`
+    // (offer the starter) rather than `true`: withholding a real discount
+    // from an eligible buyer over a missing field is a worse failure mode
+    // than occasionally re-offering it, and the E9 server-side guard is
+    // the actual enforcement backstop either way.
+    var hasMadeFirstPurchase = !!(opts.tokenStatus && opts.tokenStatus.hasMadeFirstPurchase);
+    var pack = pickContextualPack(need, hasMadeFirstPurchase);
     var packInfo = PACK_INFO[pack];
     var mediaLabel = opts.mediaType === 'image' ? 'image' : 'video';
 
@@ -1110,7 +1143,14 @@
    */
   function fireSuccessPurchaseEvents(pending) {
     if (!pending) return;
-    var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD' };
+    // `starter` mirrors dodo-webhook.js's own server-side Purchase event
+    // (tracker item for-product-build-ship-today-founder-app-zn9zyy, item
+    // 5) — read from the marker if present (every purchase made through
+    // THIS sheet after this change stamps it, see wireBuyButton above),
+    // falling back to a plain pack-id check for a marker created before
+    // this field existed, rather than omitting the property outright.
+    var starter = typeof pending.starter === 'boolean' ? pending.starter : pending.pack === STARTER_PACK_ID;
+    var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD', starter: starter };
     if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
     trackLocal('purchase_completed', purchaseProps);
     if (typeof window.fireMetaConversion === 'function') {
@@ -1187,9 +1227,11 @@
 
   var PurchaseSheet = {
     PACK_INFO: PACK_INFO,
+    PACK_ORDER: PACK_ORDER,
+    STARTER_PACK_ID: STARTER_PACK_ID,
     PENDING_PURCHASE_KEY: PENDING_PURCHASE_KEY,
     LOW_BALANCE_THRESHOLD: LOW_BALANCE_THRESHOLD,
-    pickSmallestSufficientPack: pickSmallestSufficientPack,
+    pickContextualPack: pickContextualPack,
     neededTokens: neededTokens,
     formatTokenCountdown: formatTokenCountdown,
     waitLineText: waitLineText,
