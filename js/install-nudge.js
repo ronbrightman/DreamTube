@@ -198,6 +198,17 @@
 //   centralized here rather than left as home.html's own separate extra
 //   check, so every consumer gets the same "already verified, stop asking"
 //   behavior for free).
+//
+// ===== 2026-08-02 revision (tracker item for-product-build-ship-today-
+// founder-app-zn9zyy, founder amendment comment) =====
+// Copy-only fix: the small nudge card's own head already says "Add
+// DreamTube to your home screen", but the fallback CTA button underneath
+// it (used when neither an iOS guidance path nor the Android menu-
+// fallback path applies — i.e. a captured beforeinstallprompt or desktop)
+// said "Install" — the same "install" vs "add to your home screen"
+// naming split the founder flagged on home.html's Make-it-yours card.
+// Unified to "Add to home screen" here too. Button id/behavior (still
+// calls the real PwaInstall.promptInstall()) unchanged.
 window.InstallNudge = (function () {
   /** Fire-and-forget PostHog capture, same guarded shape as every other page's own local track() helper (see result.html/shop.html) — this module is shared across pages, so it gets its own copy rather than depending on one page's local function existing. */
   function track(name, props) {
@@ -575,7 +586,7 @@ window.InstallNudge = (function () {
     } else {
       bodyHtml =
         '<div class="install-nudge-body">One tap and you\'re set — open your dreams like any other app, no browser tabs.</div>' +
-        '<button type="button" class="install-nudge-btn" id="install-nudge-action">Install <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>';
+        '<button type="button" class="install-nudge-btn" id="install-nudge-action">Add to home screen <span class="icon">' + (window.Icons ? Icons.download : '') + '</span></button>';
     }
 
     card.innerHTML =

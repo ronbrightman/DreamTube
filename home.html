@@ -239,7 +239,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    moon top-right + blue/violet nebula (the result mock's .dreamvideo
    palette, card-sized), tiny stars, bottom scrim; content bottom-anchored --- */
 .hero-tonight{
-  min-height:clamp(360px, 51vh, 460px);
+  min-height:clamp(436px, 54vh, 460px);
   background:
     radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
     radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
@@ -261,6 +261,40 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
 }
 .hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+
+/* founder round 2 (2026-08-02, tracker item for-product-build-ship-today-
+   founder-app-zn9zyy, founder amendment comment) — a barely-there dream
+   whisper above the Tonight eyebrow while the hero is unlogged; rotates
+   through a few lines on a slow 8s fade (copy + mechanism verbatim from
+   home-mock5-x7q4.html's own WHISPERS array / whisper-cycling code).
+   DELIBERATELY no streak-sky constellation here — the founder's own call
+   (the same constellation already shows on the ritual module tile below,
+   "exactly the same"; showing it twice on one screen is duplication), so
+   this hero keeps only the moon (the existing .hero-tonight background
+   glow, untouched) plus this one whisper line. min-height bumped from
+   360px to 436px (was sized before this extra line existed, and the
+   flex column's justify-content:flex-end means all the added room lands
+   above the bottom-anchored content stack, exactly where the clearance
+   is needed) — specifically so the whisper never crowds the moon glow at
+   narrow/short viewports, the real overlap bug his screenshots showed.
+   Root-caused via real measurement, not guessed: the moon's own two
+   radial-gradients (top of this file's .hero-tonight background) are
+   centered at 15% from the card's top, so on the OLD 360-392px floor a
+   narrow viewport (which wraps the "What did you dream?" title to 2
+   lines, eating extra vertical space) left as little as ~109px between
+   the card's top and the whisper's own top edge — inside the moon's
+   ~134px-tall soft outer halo (the 150px-diameter, 30%-opacity radial).
+   436px (the new floor) leaves >150px of clearance in that same worst
+   case (2-line title + the Day-1 extra line), verified empirically
+   across 320-412px widths and 480-915px heights — see test/home-hero-
+   whisper-mky-copy-behavioral.test.js. */
+.whisper{
+  position:relative; z-index:1; margin-bottom:16px; pointer-events:none;
+  text-align:center; font-style:italic; font-size:15px; font-weight:500;
+  color:#cfc8ea; opacity:.55; text-shadow:0 1px 8px rgba(12,10,26,.6);
+  transition:opacity 1.2s ease;
+}
+.whisper.fade{ opacity:0; }
 
 /* Tonight's three quiet entry links, one centered 16px row */
 .entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
@@ -717,8 +751,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 /* the MKY install row's expanded content reuses js/install-nudge.js's own
    .install-nudge-* builders verbatim (see css/styles.css for their base
    styling) — this just gives that content the same left indent every
-   other .mky-exp child gets, and a real "Install" button matching this
-   card's own button language when a native prompt IS directly available. */
+   other .mky-exp child gets, and a real "Add to home screen" button
+   matching this card's own button language when a native prompt IS
+   directly available. */
 .mky-exp .install-nudge-visual, .mky-exp .install-nudge-body, .mky-exp .install-nudge-note, .mky-exp .menu-row-replica{ margin-left:0; margin-right:0; }
 /* "Step 2 of 2" eyebrow — carried over from the old install-qrow's
    identical treatment (tracker item for-product-install-first-door-
@@ -846,10 +881,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       </section>
 
       <!-- 3 · TONIGHT hero — the guided Wizard pill leads; Write/Speak/No
-           recall are quiet links underneath it (founder amendment). -->
+           recall are quiet links underneath it (founder amendment). Round
+           2 (tracker item for-product-build-ship-today-founder-app-zn9zyy,
+           founder amendment): moon + whisper only while unlogged, no
+           streak-sky stars (those already live on the ritual module tile
+           below, unchanged) — see the WHISPERS array/renderTonightHero()
+           below. -->
       <section class="hero-card hero-tonight" id="hero-tonight" data-card="tonight">
         <div class="hero-stars"></div>
         <div class="hero-scrim"></div>
+        <div class="whisper" id="tonight-whisper" aria-hidden="true"></div>
         <div class="hero-content">
           <div class="eyebrow">Tonight</div>
           <h1 class="hero-title" id="tonight-title">What did you dream?</h1>
@@ -1002,11 +1043,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               <div class="mky-exp" id="mky-bookmark-exp"></div>
             </div>
           </div>
-          <div class="mky-reward gold">Verified install unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <div class="mky-reward gold">Adding DreamTube to your home screen unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled></button>
         </div>
         <div id="mky-done" hidden>
-          <div class="mky-done-line">Installed ✓ · +100 claimed</div>
+          <div class="mky-done-line">Added to your phone ✓ · +100 claimed</div>
           <div class="mky-done-note">This card says goodbye — it won't be here next visit.</div>
         </div>
       </section>
@@ -1193,6 +1234,33 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending');
   }
 
+  // ===== The Tonight hero's dream whisper (tracker item for-product-
+  // build-ship-today-founder-app-zn9zyy, founder amendment) — 3 lines on a
+  // slow 8s fade, copy + cycling mechanism verbatim from home-mock5-x7q4.
+  // html's own WHISPERS array. Shown only while unlogged (mirrors the
+  // mock's own `el.whisper.hidden = logged`) -- renderTonightHero below
+  // toggles visibility; this interval just advances the text and skips
+  // silently while hidden, same pattern. =====
+  var WHISPERS = [
+    'Falling? Flying? A face you knew?',
+    'A door that wasn’t there before?',
+    'A place you’ve never been — but knew.'
+  ];
+  var whisperIdx = 0;
+  var reduceMotionForWhisper = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!reduceMotionForWhisper){
+    setInterval(function(){
+      var el = document.getElementById('tonight-whisper');
+      if(!el || el.hidden) return;
+      el.classList.add('fade');
+      setTimeout(function(){
+        whisperIdx = (whisperIdx + 1) % WHISPERS.length;
+        el.textContent = WHISPERS[whisperIdx];
+        el.classList.remove('fade');
+      }, 1250);
+    }, 8000);
+  }
+
   // ===== Tonight hero =====
   function renderTonightHero(){
     var section = document.getElementById('hero-tonight');
@@ -1201,9 +1269,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var pill = document.getElementById('tonight-pill');
     var links = document.getElementById('tonight-links');
     var d1 = document.getElementById('tonight-d1');
+    var whisper = document.getElementById('tonight-whisper');
     var logged = logStatus.loggedToday;
 
     section.classList.toggle('logged', logged);
+    whisper.hidden = logged;
+    if(!logged && !whisper.textContent){ whisper.textContent = WHISPERS[whisperIdx]; }
     title.textContent = logged ? 'Logged tonight ✓' : 'What did you dream?';
     if(logged){
       // Root-cause fix (Manager screenshot-verified bug (A), 2026-08-01,
@@ -2172,7 +2243,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       return;
     }
     if(!window.PwaInstall || !window.InstallNudge){
-      exp.innerHTML = stepLabel + '<div class="mky-webview-note">Open this page in a mobile browser to install DreamTube.</div>';
+      exp.innerHTML = stepLabel + '<div class="mky-webview-note">Open this page in a mobile browser to add DreamTube to your home screen.</div>';
       return;
     }
     var onIOS = PwaInstall.isIOS();
@@ -2189,8 +2260,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       exp.innerHTML = stepLabel + InstallNudge.buildAndroidMenuFallbackHtml();
     } else {
       exp.innerHTML = stepLabel +
-        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Installing verifies your +100 ' + tok() + '.</div>' +
-        '<button type="button" class="mky-inline-install-btn" id="mky-inline-install-btn">Install <span class="icon" id="mky-inline-install-icon"></span></button>';
+        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Adding it to your home screen verifies your +100 ' + tok() + '.</div>' +
+        '<button type="button" class="mky-inline-install-btn" id="mky-inline-install-btn">Add to home screen <span class="icon" id="mky-inline-install-icon"></span></button>';
       document.getElementById('mky-inline-install-icon').innerHTML = window.Icons ? Icons.download : '';
       document.getElementById('mky-inline-install-btn').addEventListener('click', function(){
         PwaInstall.promptInstall().then(function(outcome){
