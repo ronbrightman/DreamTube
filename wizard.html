@@ -271,6 +271,37 @@
   // own chip wizard retrofit covers the same chip-first experience there).
   if(DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
 
+  // Returning-but-currently-logged-out entry guard (tracker item
+  // for-product-life-origin-generate-handoff-founder-repro-8yc4wm, founder
+  // repro on dreamtube.life: logging out then "revisiting the site" landed
+  // straight on this wizard's first question, "Who's the dream about?",
+  // with no welcome/choice screen shown first — against docs/
+  // JOURNEY_MANIFEST.md's own Journey 2, where index.html's welcome
+  // screen always comes first). This wizard is purpose-built for a
+  // GENUINELY brand-new visitor (docs/JOURNEY_MANIFEST.md: "organic/
+  // direct visitors ... go straight into the pre-signup wizard.html
+  // dream-builder") — it has no concept of "resume" at all (`cur` above
+  // always starts at 0, DreamStore.clearDraft() below wipes any leftover
+  // draft unconditionally), so it was never vulnerable to resuming
+  // MID-funnel. The actual gap: DreamStore.hasLocalAccountHistory() (see
+  // that function's own doc comment) can be true here even while nobody
+  // is currently signed in — state.accounts survives logout() by design,
+  // so this exact browser/origin may already hold a real account from
+  // earlier in this same session (signed up, used the app, then logged
+  // out — precisely dreamtube.life's first-ever-on-this-origin scenario).
+  // Landing THAT visitor in a flow built to sign up a stranger, with no
+  // link back to logging into their real account anywhere on it, is a
+  // real, lossy entry-routing bug regardless of how they physically got
+  // here (a bookmark, browser history/autocomplete, or an old Add-to-
+  // Home-Screen shortcut from before they had an account all reach this
+  // same URL) — bounced back to index.html instead, whose "Already have
+  // an account? Log in" link is the correct next step for them. A
+  // genuinely first-time visitor (hasLocalAccountHistory() false) is
+  // completely unaffected — still reaches this wizard identically
+  // whether via index.html's "Get Started" or a direct hit, exactly as
+  // docs/JOURNEY_MANIFEST.md documents.
+  if(DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+
   DreamStore.clearDraft();
 
   // ===================================================================
