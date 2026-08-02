@@ -53,6 +53,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | Email deliverability/availability check (`check-email.js`) | `test/check-email.test.js`, `test/email-domain-check.test.js` | — |
 | Pending-generation adoption (`start-pending-generation.js`, `claim-pending-generation.js`, `pending-dreams.js`) | `test/pending-dreams.test.js`, `test/funnel-real-chain-behavioral.test.js`, `test/claim-and-verify-pending.test.js` | — |
 | A2HS / install nudge | `test/a2hs-install-nudge-journey-behavioral.test.js`, `test/install-first-door-behavioral.test.js` | — |
+| A2HS small nudge card (`js/install-nudge.js`) — "install" vs "add to your home screen" CTA-copy unification, matching its own head's phrasing | `test/home-hero-whisper-mky-copy-behavioral.test.js` | — |
 
 ## Home (`home.html`, 2026-08-01 module set)
 
@@ -60,7 +61,9 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 |---|---|---|
 | Overall page / round-4 rebuild | `test/home-behavioral.test.js`, `test/home-round4-behavioral.test.js` | — |
 | Day-0/active dream room card (`#day0-card`) | `test/home-day0-dream-card-behavioral.test.js`, `test/edit-regeneration-forming-state-behavioral.test.js` | — |
+| Tonight hero "empty sky" — moon + cycling whisper only, no streak-sky/constellation stars (dropped per founder amendment, tracker item `for-product-build-ship-today-founder-app-zn9zyy`; the ritual module's own constellation is unaffected, still covered below) — plus the whisper's own no-overlap-at-any-viewport guarantee | `test/home-hero-whisper-mky-copy-behavioral.test.js` | — |
 | Tip of the Day, Get Inspired, Consider Publishing, Make It Yours, ritual/streak module — as a set, live on a real deployed origin | `test/prod-smoke/session.test.js` (test 2) | Per-module deep behavioral coverage (copy variants, edge/empty states, exact interaction details) is NOT this suite's job — check for a dedicated `test/*.test.js` file per module before assuming full coverage; several of these modules (Get Inspired, ritual/streak beyond the daily claim itself) currently have **no dedicated `test/*.test.js` file** of their own — home-behavioral/home-round4-behavioral cover the page broadly, not module-by-module |
+| Make It Yours — "install" vs "add to your home screen" copy unification (reward line, done-state, inline install-row CTA + its supporting text, webview-fallback note) — tracker item `for-product-build-ship-today-founder-app-zn9zyy` | `test/home-hero-whisper-mky-copy-behavioral.test.js` | — |
 | Bottom dock (`js/bottom-nav.js`, "Bar A") | `test/barA-nav-rollout-behavioral.test.js` | — |
 | Webview escape nudge | `test/home-webview-escape-behavioral.test.js` | — |
 
