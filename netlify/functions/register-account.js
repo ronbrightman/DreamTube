@@ -140,7 +140,16 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'E9: rate_limited: too many signups from this network today, try again tomorrow' }) };
   }
 
-  var result = await accountStore.createAccount(event, { username: username, password: password, email: email });
+  // emailVerified: true (tracker item for-product-build-passwordless-
+  // signup-fo-at2fko, added alongside register-account-passwordless.js) —
+  // a real password signup here is NOT gated by the new deferred-
+  // verification mechanism that endpoint introduces; account-store.js's
+  // createAccount already defaults to `true` when this is omitted, so
+  // passing it explicitly here is redundant but deliberate — future
+  // readers of this file shouldn't have to go find that default to know
+  // this path was never meant to be gated. See account-store.js's own
+  // GATE LIST header comment for the full "why".
+  var result = await accountStore.createAccount(event, { username: username, password: password, email: email, emailVerified: true });
   if (!result.ok) {
     var code = result.error === 'email_taken' ? 'E8: email_taken' : 'E7: username_taken';
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code }) };

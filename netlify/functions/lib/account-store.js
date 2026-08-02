@@ -109,6 +109,60 @@
 // comment on why it reuses entitlements.js's normalizeEmail instead of
 // rolling its own).
 //
+// THIRD OPTIONAL FIELD (tracker item
+// for-product-build-passwordless-signup-fo-at2fko, founder-decided
+// passwordless-signup hybrid): `emailVerified`, a boolean gate a small,
+// named set of actions now check (see the GATE LIST doc block at the
+// bottom of this comment). Written explicitly by every account-creation
+// caller now — register-account.js and facebook-oauth-callback.js's
+// createFacebookAccount both pass `emailVerified: true` (a real password
+// signup and a Facebook-confirmed email are both treated as already
+// "verified enough" for gating purposes — see below); ONLY
+// register-account-passwordless.js ever passes `emailVerified: false` for
+// a genuinely brand-new account, since that is the one signup path whose
+// whole point is deferring a real ownership check. `createAccount` DEFAULTS
+// the field to `true` when a caller omits it entirely, precisely so this
+// addition can never silently regress any EXISTING caller/test that has no
+// idea this field exists — see the GATE LIST block for why "default to
+// verified" is also the deliberately safe interpretation everywhere this
+// field is later read, not just at creation.
+//
+// `emailBounced` (same feature): a boolean best-effort signal set by
+// lib/email-verification-store.js/resend-bounce-webhook.js when Resend
+// reports a hard (Permanent) bounce for this account's email on its FIRST
+// verification send — see that webhook's own header comment for the exact
+// "first send" scoping and why a soft/transient bounce is deliberately NOT
+// treated the same way. Purely informational today (nothing in this
+// codebase yet refuses to email/gate off of it) — a foundation for a later
+// pass to act on, not a gate itself.
+//
+// GATE LIST (founder's own instruction: "define the exact gate list in
+// build" — this is that list, the single source of truth for it; every
+// caller that checks `emailVerified` should point back here rather than
+// re-deriving its own scope):
+//   1. netlify/functions/create-checkout-session-dodo.js — a real-money
+//      purchase requires `emailVerified !== false` on the paying account
+//      (the one gate the founder named explicitly: "no purchases").
+//   2. netlify/functions/publish-dream.js — publishing a dream into the
+//      shared, cross-account public feed requires `emailVerified !== false`
+//      (the founder's own deferred-verification trigger list literally
+//      names "before publish" as one of the later moments to prompt for
+//      the code, which strongly implies publish is meant to be gated — a
+//      public feed is also this app's one real spam/trust surface, unlike
+//      e.g. generating a private dream).
+// Deliberately NOT gated (documented so a future pass doesn't assume this
+// was an oversight): generation itself (private dreams), browsing/likes,
+// blocking/reporting, WhatsApp opt-in, profile edits — none of these are a
+// real spam/trust/money surface the way a public feed post or a purchase
+// is, and gating them would only add friction with no real protective
+// value, contrary to the founder's own "never blocking the first-session
+// dream reveal" instruction. Every gate check reads `record.emailVerified
+// === false` specifically (never `!record.emailVerified`), so an
+// undefined/missing field — every account created before this feature
+// shipped, or by any future account-creation path that doesn't yet pass
+// the field — is treated as verified, not blocked. "Under-gate, never
+// over-gate" per this tracker item's own explicit build instruction.
+//
 // Two-key writes are NOT atomic — createAccount/applyPasswordReset each
 // write the "u:" record and the "e:" index in two separate Blobs calls, and
 // the installed @netlify/blobs SDK exposes no compare-and-swap/transaction
@@ -334,7 +388,14 @@ async function createAccount(event, account) {
   }
 
   await s.setJSON('e:' + email, key);
-  var record = { username: key, email: email, password: account.password, updatedAt: Date.now() };
+  var record = {
+    username: key, email: email, password: account.password, updatedAt: Date.now(),
+    // See header comment's THIRD OPTIONAL FIELD paragraph — defaults to
+    // `true` (verified) unless the caller explicitly passes `false`, so
+    // every EXISTING caller of this function (before this field existed)
+    // keeps behaving exactly as it always has.
+    emailVerified: account.emailVerified === false ? false : true
+  };
   // Only ever add the field (and its index) when there's a real value —
   // an account that has never touched Facebook Login keeps exactly the
   // record shape it has always had, with no `fbUserId` key at all.
@@ -555,6 +616,61 @@ async function setWhatsappNumber(event, username, whatsappNumber) {
   return { ok: true, record: updated };
 }
 
+/**
+ * Marks an EXISTING account's email as verified — the write side of
+ * verify-email-code.js/verify-email-link.js (tracker item
+ * for-product-build-passwordless-signup-fo-at2fko). Never creates a
+ * record: reaching here always means an account already exists (both
+ * callers resolve identity — via a verified authToken or a verified
+ * link/code token — before ever calling this). A no-op success (not an
+ * error) if the account is already verified or doesn't exist — this is
+ * called from best-effort/implicit-verification paths (e.g. clicking a
+ * link twice, or a stale token whose account was since deleted) where
+ * "nothing to do" and "did the thing" should look the same to the caller.
+ */
+async function markEmailVerified(event, username) {
+  var key = normalizeUsername(username);
+  if (!key) return { ok: false, error: 'not_found' };
+  connectLambda(event);
+  var s = store();
+
+  var record = await s.get('u:' + key, { type: 'json' });
+  if (!record) return { ok: false, error: 'not_found' };
+  if (record.emailVerified === true) return { ok: true, record: record }; // already verified — no-op
+
+  var updated = Object.assign({}, record, { emailVerified: true, updatedAt: Date.now() });
+  await s.setJSON('u:' + key, updated);
+  return { ok: true, record: updated };
+}
+
+/**
+ * Flags the account registered under `email` as having a bounced address
+ * — the write side of resend-bounce-webhook.js's own hard-bounce handling
+ * (see that file's header comment for the "first send only" / "Permanent
+ * bounces only" scoping decisions; this function itself just does the
+ * write once a caller has already decided a bounce counts). Resolves by
+ * EMAIL, not username — Resend's webhook payload only ever carries the
+ * recipient address, never this app's own account identity. Uses
+ * getByEmail's already-validated lookup (never a raw index read — see
+ * that function's own defense-in-depth comment), so a stale/orphaned "e:"
+ * index entry can never flag the wrong account. A no-op (not an error) if
+ * no account is registered under that email at all — Resend's bounce
+ * webhook fires for every send this app makes (verification emails today),
+ * and not every recipient is necessarily still a real account by the time
+ * a bounce is reported.
+ */
+async function markEmailBounced(event, email) {
+  var record = await getByEmail(event, email);
+  if (!record) return { ok: false, error: 'not_found' };
+  if (record.emailBounced === true) return { ok: true, record: record }; // already flagged — no-op
+
+  connectLambda(event);
+  var s = store();
+  var updated = Object.assign({}, record, { emailBounced: true, updatedAt: Date.now() });
+  await s.setJSON('u:' + record.username, updated);
+  return { ok: true, record: updated };
+}
+
 module.exports = {
   STORE_NAME,
   normalizeUsername,
@@ -568,5 +684,7 @@ module.exports = {
   verifyLogin,
   applyPasswordReset,
   setWhatsappNumber,
+  markEmailVerified,
+  markEmailBounced,
   deleteAccount
 };

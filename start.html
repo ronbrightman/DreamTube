@@ -477,10 +477,27 @@
   // currently-off flag" technique test/facebook-login-signup-behavioral.test.js
   // already uses for the Facebook Login placeholder-app-id flag -- never by
   // changing what ships here.
+  // THIRD ARM (tracker item for-product-build-passwordless-signup-fo-
+  // at2fko, founder-decided passwordless-signup hybrid, "email-wall fix
+  // #2" — sequenced after/alongside the 'reveal' arm above): 'passwordless'
+  // — see renderScreen13Passwordless's own header comment for the full
+  // "why". Deliberately its OWN, independent flag rather than folded into
+  // the 'unified'/'reveal' 50/50 split above — this is a different axis of
+  // the signup form entirely (password vs. no password at all), not a
+  // third arm of the SAME reveal-framing experiment, so it gets its own
+  // on/off switch a human can flip independently. When live, it takes
+  // priority over the reveal A/B below (checked first) rather than folding
+  // into a three-way split — the founder's own sequencing note ("after/
+  // with the reveal-wall build") leaves the exact relationship between the
+  // two experiments to whoever flips these flags live, not baked into a
+  // fixed ratio here.
+  var SIGNUP_PASSWORDLESS_LIVE = false;
   var SIGNUP_VARIANT_KEY = 'dreamtube_signup_variant';
   var SIGNUP_REVEAL_CHALLENGER_LIVE = false;
   var signupVariant;
-  if (SIGNUP_REVEAL_CHALLENGER_LIVE) {
+  if (SIGNUP_PASSWORDLESS_LIVE) {
+    signupVariant = 'passwordless';
+  } else if (SIGNUP_REVEAL_CHALLENGER_LIVE) {
     signupVariant = localStorage.getItem(SIGNUP_VARIANT_KEY);
     if (signupVariant !== 'unified' && signupVariant !== 'reveal') {
       signupVariant = Math.random() < 0.5 ? 'unified' : 'reveal';
@@ -1566,6 +1583,10 @@
       renderScreen13Reveal(el, headline);
       return;
     }
+    if(signupVariant === 'passwordless'){
+      renderScreen13Passwordless(el, headline);
+      return;
+    }
     renderScreen13EmailFirst(el, headline);
   }
 
@@ -2303,6 +2324,125 @@
     }
 
     renderEmailStep('');
+  }
+
+  // ===================================================================
+  // Screen 13, PASSWORDLESS variant (tracker item for-product-build-
+  // passwordless-signup-fo-at2fko, founder-decided hybrid, his own words:
+  // "at the wall the user types ONLY an email and is instantly in — no
+  // password field ever, no inbox check at the wall"). A genuinely NEW
+  // signup path, not a tweak of 'unified'/'reveal' — there is no password
+  // step here at all, ever, not even a deferred/optional one.
+  //
+  // MOCK-FIRST / FEATURE-FLAG GATE (same posture as the 'reveal' arm just
+  // above — see SIGNUP_PASSWORDLESS_LIVE's own doc comment near
+  // signupVariant's assignment): feature-flagged OFF, so real visitors
+  // never see this yet. The randomization/selection code is real, not
+  // commented out, so flipping it live later is a one-line change — see
+  // test/signup-passwordless-behavioral.test.js for how coverage exercises
+  // this arm today (same "rewrite the served file's currently-off
+  // constant via page.route()" technique test/signup-reveal-variant-
+  // behavioral.test.js/test/facebook-login-signup-behavioral.test.js
+  // already use).
+  //
+  // On submit: (1) the SAME deliverability check (check-email.js) every
+  // other arm already runs — a typo'd/undeliverable address is still worth
+  // catching before an account is created around it, even though there's
+  // no password step gating it; (2) DreamStore.signupPasswordless(email),
+  // which creates (or resolves an existing) account server-side with no
+  // password at all and signs the visitor straight in; (3) the SAME
+  // completeSignupAndAdvance continuation every other arm uses (spec's own
+  // "one shared continuation" instruction — see that function's own doc
+  // comment) — same claim-pending-generation call, same
+  // CompleteRegistration-at-the-same-depth pixel fire (only when this was
+  // a genuinely NEW account, mirroring attemptSignup's own "never fire on
+  // an existing-account resolve" rule — see DreamStore.signupPasswordless's
+  // own `created` return value), same advance to screen 14.
+  //
+  // DEFERRED-VERIFICATION SHEET, NOT SHOWN HERE: js/email-verify-sheet.js's
+  // own "next visit" trigger deliberately does NOT fire on this exact
+  // landing (see that file's own header comment) — the
+  // SHOWN_THIS_SESSION_KEY marker is set here, at the moment signup
+  // completes, specifically so home.html's own later check (same tab, same
+  // sessionStorage) sees "already offered" and stays silent on this first
+  // landing, never interrupting the first-session dream reveal the founder
+  // was explicit about protecting.
+  function renderScreen13Passwordless(el, headline){
+    var treatmentReassurance = isRecordMode
+      ? 'Free to start, no card needed — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready.'
+      : 'Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.';
+
+    el.innerHTML =
+      '<div class="fn-headline">' + headline + '</div>' +
+      computeProofStripHtml() +
+      '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + treatmentReassurance + '</div>' +
+      '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;">' +
+      '<div class="fn-err-text" id="fn-signup-error"></div>' +
+      '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">Send me my dream</button>' +
+      '<div class="fn-spacer"></div>';
+
+    var emailInput = document.getElementById('fn-email');
+    var errEl = document.getElementById('fn-signup-error');
+    var continueBtn = document.getElementById('fn-s13-continue');
+
+    function trySubmit(){
+      var email = emailInput.value.trim();
+      errEl.textContent = '';
+      maybeTrackEmailEntered(email);
+      if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; track('signup_error_shown', { reason: 'invalid_email', variant: signupVariant }); return; }
+
+      continueBtn.disabled = true;
+      backBtn.disabled = true;
+      continueBtn.textContent = 'Checking…';
+      signupAttemptToken++;
+      var myToken = signupAttemptToken;
+
+      checkEmailAvailable(email).then(function(checkResult){
+        if(myToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
+        if(!checkResult.deliverable){
+          continueBtn.disabled = false;
+          backBtn.disabled = false;
+          continueBtn.textContent = 'Send me my dream';
+          errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+          track('signup_error_shown', { reason: 'email_undeliverable', variant: signupVariant });
+          return;
+        }
+        // No "already registered" branch here, unlike 'unified'/'reveal' --
+        // an existing email is simply RESOLVED (logged into) by
+        // signupPasswordless server-side, with no password to check at
+        // all. See register-account-passwordless.js's own header comment.
+
+        var pendingPromise = (!isRecordMode) ? getOrStartPendingGeneration(email) : null;
+        continueBtn.textContent = 'Sending…';
+
+        DreamStore.signupPasswordless(email).then(function(result){
+          if(myToken !== signupAttemptToken) return; // stale -- see above
+          if(!result.ok){
+            continueBtn.disabled = false;
+            backBtn.disabled = false;
+            continueBtn.textContent = 'Send me my dream';
+            errEl.textContent = result.error || "Couldn't sign you in — try again.";
+            track('signup_error_shown', { reason: 'signup_failed', variant: signupVariant });
+            return;
+          }
+          if(result.created){
+            fireMetaConversion('CompleteRegistration', { email: email });
+          }
+          // See this function's own header comment's "DEFERRED-
+          // VERIFICATION SHEET, NOT SHOWN HERE" paragraph.
+          try { sessionStorage.setItem('dreamtube_email_verify_sheet_shown', '1'); } catch(e) { /* private mode etc -- worst case home.html offers it on this same landing too, a minor UX rough edge, not a correctness issue */ }
+          completeSignupAndAdvance(email, {
+            pendingPromise: pendingPromise || undefined,
+            isStale: function(){ return myToken !== signupAttemptToken; }
+          });
+        });
+      });
+    }
+
+    continueBtn.addEventListener('click', trySubmit);
+    emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmit(); } });
+    emailInput.addEventListener('blur', function(){ maybeTrackEmailEntered(emailInput.value.trim()); });
+    emailInput.focus();
   }
 
   // ===================================================================

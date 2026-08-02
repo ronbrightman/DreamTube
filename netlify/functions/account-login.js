@@ -163,5 +163,11 @@ exports.handler = async function (event) {
   // right place to hand back a durable proof-of-identity for block-user.js
   // to later verify, instead of that endpoint trusting a bare username.
   var authToken = await accountAuthToken.mintToken(event, result.record.username);
-  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email, authToken: authToken }) };
+  // emailVerified (tracker item for-product-build-passwordless-signup-fo-
+  // at2fko): lets js/store.js's login() keep its own local cache
+  // (getAccountEmailVerified) in sync across devices — e.g. an account
+  // verified via an implicit link click on one device should read as
+  // verified the next time it logs in on another. `!== false` mirrors
+  // every other reader of this field's own "under-gate" default.
+  return { statusCode: 200, body: JSON.stringify({ ok: true, username: result.record.username, email: result.record.email, authToken: authToken, emailVerified: result.record.emailVerified !== false }) };
 };

@@ -1091,6 +1091,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/email-verify-sheet.js"></script>
 <script src="js/interpreter-personas.js"></script>
 <script src="js/interpret-experience.js"></script>
 <!-- Push-subscribe ask (ORPHAN (a), rehomed from processing.html — see
@@ -1132,6 +1133,23 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     plain: true,
     source: 'home_topbar'
   });
+
+  // Deferred email-verification prompt (tracker item for-product-build-
+  // passwordless-signup-fo-at2fko) — the "next visit" trigger, the one
+  // scoped-in deferred-verification moment for this build (see js/email-
+  // verify-sheet.js's own header comment for the full trigger-scope
+  // writeup). No-ops entirely for a verified/password-based/logged-out
+  // account — see that module's maybeShowOnNextVisit for the full guard.
+  // A short setTimeout, not called synchronously at the top of boot() —
+  // this must never compete with the room card / day-0 reveal for the
+  // very first thing a returning visitor sees on this page; giving the
+  // page's own primary content a moment to render first, then offering
+  // this, matches the founder's "never blocking the... reveal" instruction
+  // in spirit even for a RETURN visit, not just the first-session one it
+  // literally names.
+  if (window.EmailVerifySheet) {
+    setTimeout(function () { EmailVerifySheet.maybeShowOnNextVisit(); }, 1200);
+  }
 
   // ===== Analytics helper — same guarded, fire-and-forget PostHog wrapper
   // every other page's inline script defines locally (see explore.html/

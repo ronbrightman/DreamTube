@@ -39,9 +39,9 @@ forwarding, etc.).
 | | |
 |---|---|
 | **Trigger** | A new account is created |
-| **Fires from** | `start.html`'s `attemptSignup()`; `login.html`'s `?mode=signup` submit handler |
+| **Fires from** | `start.html`'s `attemptSignup()`; `login.html`'s `?mode=signup` submit handler; `start.html`'s `renderScreen13Passwordless()` (the passwordless-signup arm, tracker item `for-product-build-passwordless-signup-fo-at2fko`, feature-flagged off — see `SIGNUP_PASSWORDLESS_LIVE`) |
 | **Vendors** | Meta Pixel (standard, `fbq('track', 'CompleteRegistration', ...)`) + Meta CAPI (via `track-conversion.js`) |
-| **Guard** | None beyond "signup succeeded" — `DreamStore.signup()` returning `{ ok: true }` is itself a natural one-time gate (a username can't sign up twice) |
+| **Guard** | None beyond "signup succeeded" — `DreamStore.signup()`/`DreamStore.signupPasswordless()` returning `{ ok: true }` is itself a natural one-time gate (a username/email can't sign up twice); the passwordless arm additionally only fires when the server confirms this was a genuinely NEW account (`result.created === true`), never on a resolve-into-an-existing-account, same "never on a login" rule the other two fire sites already follow. Fires at the exact same funnel depth as `attemptSignup()` — right after the account genuinely exists server-side, before advancing to screen 14 — deliberately unaffected by deferred email verification (verification never blocks or delays this fire, matching the reveal-wall spec's "CompleteRegistration fires at the same depth" requirement). |
 
 ### InitiateCheckout
 
