@@ -295,12 +295,32 @@
   // here (a bookmark, browser history/autocomplete, or an old Add-to-
   // Home-Screen shortcut from before they had an account all reach this
   // same URL) — bounced back to index.html instead, whose "Already have
-  // an account? Log in" link is the correct next step for them. A
-  // genuinely first-time visitor (hasLocalAccountHistory() false) is
-  // completely unaffected — still reaches this wizard identically
-  // whether via index.html's "Get Started" or a direct hit, exactly as
-  // docs/JOURNEY_MANIFEST.md documents.
-  if(DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  // an account? Log in" link is the correct next step for them.
+  //
+  // ROUND 2 FIX (tracker item for-product-urgent-founder-repro-index-g-
+  // c6boa9, founder repro: on dreamtube1.netlify.app, a returning-logged-
+  // out visitor's own explicit "Get Started" click on index.html bounced
+  // straight back to index.html again — reading as a broken loop). The
+  // guard above was unconditional, so it fired even when the visitor had
+  // JUST seen index.html's own "Already have an account? Log in" link and
+  // deliberately chose Get Started anyway (maybe they want a fresh
+  // account on a shared device, maybe they don't remember the old
+  // password and would rather not deal with it right now) — that's an
+  // informed choice this guard has no business overriding a second time.
+  // index.html's Get Started link now marks itself with ?entry=index; the
+  // guard only fires on its ABSENCE — i.e. still catches a direct/
+  // bookmarked/history hit straight to this URL (no marker), but an
+  // explicit click-through from index.html always proceeds. A genuinely
+  // first-time visitor (hasLocalAccountHistory() false) is unaffected
+  // either way, exactly as docs/JOURNEY_MANIFEST.md documents.
+  var cameFromIndexGetStarted = new URLSearchParams(location.search).get('entry') === 'index';
+  if(!cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  if(cameFromIndexGetStarted){
+    var __cleanParams = new URLSearchParams(location.search);
+    __cleanParams.delete('entry');
+    var __cleanQs = __cleanParams.toString();
+    history.replaceState(null, '', location.pathname + (__cleanQs ? '?' + __cleanQs : ''));
+  }
 
   DreamStore.clearDraft();
 

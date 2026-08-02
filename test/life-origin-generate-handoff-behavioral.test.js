@@ -404,6 +404,81 @@ test('BUG 2 regression: wizard.html, visited directly while logged out on a brow
   }
 });
 
+test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6boa9): a returning-but-logged-out visitor who explicitly clicks "Get Started" on index.html proceeds into wizard.html -- must NOT bounce straight back to index.html a second time', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      // Same stale-but-logged-out state as the BUG 2 regression above --
+      // this visitor already saw index.html's own "Log in" link and chose
+      // Get Started anyway, an informed choice the guard has no business
+      // overriding a second time.
+      var state = {
+        user: null,
+        accounts: { staleoriginuser2: { password: 'testpass1', email: 'staleoriginuser2@example.com' } },
+        dreams: [],
+        pendingJob: null,
+        draft: { caption: '', storyText: '', style: null, sourceDreamId: null, characterIds: [] }
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    await safeGoto(page, baseUrl + '/index.html');
+    // Promise.all, not sequential awaits (test/route-organic-to-wizard-
+    // behavioral.test.js's own established pattern for this exact click):
+    // arms the URL wait BEFORE the click fires, so a fast client-side
+    // redirect can't complete and settle before this test starts
+    // listening for it.
+    await Promise.all([
+      page.waitForURL(/\/wizard\.html/, { timeout: 5000 }),
+      page.click('a.btn-primary')
+    ]);
+    // waitForFunction (polls/retries), not a one-shot page.evaluate read --
+    // the URL settling on wizard.html and wizard.html's own JS having
+    // actually rendered its first screen are two different moments; a
+    // bare evaluate() has no auto-wait and can read the DOM in the gap
+    // between them (real full-suite-load flake observed here once).
+    await page.waitForFunction(function () {
+      return /Who.s the dream about\?/.test(document.body.innerText);
+    }, { timeout: 5000 });
+
+    // The ?entry=index marker must not linger in the address bar once read.
+    var url = new URL(page.url());
+    assert.equal(url.searchParams.get('entry'), null, 'the entry=index marker must be stripped from the URL after being consumed');
+  } finally {
+    await page.close();
+  }
+});
+
+test('BUG 3 regression, control: a DIRECT/bookmarked hit to wizard.html (no ?entry=index marker) with the same stale account history still bounces to index.html -- the marker-based fix must not reopen BUG 2', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var state = {
+        user: null,
+        accounts: { staleoriginuser3: { password: 'testpass1', email: 'staleoriginuser3@example.com' } },
+        dreams: [],
+        pendingJob: null,
+        draft: { caption: '', storyText: '', style: null, sourceDreamId: null, characterIds: [] }
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForURL(/\/index\.html$/, { timeout: 5000 });
+
+    var bodyText = await page.locator('.welcome-body').innerText();
+    assert.match(bodyText, /already have an account\?/i, 'a direct hit with no entry marker must still bounce to the welcome/choice screen');
+  } finally {
+    await page.close();
+  }
+});
+
 test('BUG 2 regression, control: wizard.html, visited directly while logged out on a GENUINELY brand-new browser (no local account history at all), still renders the pre-signup wizard normally -- this fix must not affect real first-time visitors', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
