@@ -42,9 +42,23 @@
       with fuller step-by-step instructions when tapped (one open at a
       time), like the add-to-home-screen row.
 
+  Founder round ② (2026-08-02) — fixing the EMPTY Tonight hero:
+    · The hero sky is the USER'S STREAK SKY: logged nights render as
+      gold-tinged stars (latest brightest, tiny "night N" label) joined
+      by faint constellation lines, one unlit slot waiting for tonight;
+      Day 1 = one lone waiting star, Week earned = warmer gold. Slow
+      drift/twinkle reuse the existing keyframes.
+    · A dream whisper under the moon — one barely-there 15px italic
+      line (~.55 opacity) cycling 3 prompts on an 8s fade; unlogged
+      states only.
+    · The ritual module KEEPS its streak constellation exactly as
+      approved here — the live home.html shipped without it (regression
+      being fixed separately); this mock remains the reference.
+
   Single-pulse rule holds: Tonight pill pulses while unlogged; once
   logged the pulse migrates to the Chamber's Enter pill. The new
-  sections NEVER pulse (claims glow statically at most).
+  sections NEVER pulse (claims glow statically at most; the streak
+  sky's drift/twinkle is ambient, same as the page's own stars).
 
   Mock chrome (dashed, dev-looking): row 1 = the §3 state switcher
   (Day 1 / Unlogged / Logged ✓ / Week earned); row 2 = round-4 toggles
@@ -150,7 +164,8 @@ body{
 @keyframes homePulse{ 0%,100%{ box-shadow:0 0 6px rgba(157,144,255,.45); } 50%{ box-shadow:0 0 18px rgba(157,144,255,.95); } }
 @keyframes chamberBreathe{ 0%,100%{ opacity:.35; } 50%{ opacity:.8; } }
 @media (prefers-reduced-motion:reduce){
-  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe{ animation:none !important; }
+  .home-stars-a,.home-stars-b,.home-aurora,.pulse,.chamber-breathe,
+  .streak-sky svg,.streak-sky .tw1,.streak-sky .tw2,.streak-sky .tw3,.streak-sky .tw4{ animation:none !important; }
 }
 
 /* ===== mock chrome — two dashed rows: §3 state switcher + round-4
@@ -272,6 +287,38 @@ body{
     radial-gradient(1.3px 1.3px at 34% 56%, rgba(207,200,255,.5), transparent 60%);
 }
 .hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
+
+/* founder round ② (2026-08-02) — the empty hero sky becomes the USER'S
+   STREAK SKY: their logged nights render as brighter gold-tinged stars
+   among the ambient ones, joined by faint constellation lines, with one
+   unlit slot waiting for tonight. Generated as inline SVG by
+   renderStreakSky(); drift + twinkle reuse the existing keyframes
+   (webview-light: opacity/transform only, no filters). */
+.streak-sky{ position:absolute; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+.streak-sky svg{ width:100%; height:100%; display:block; animation:homeDrift 90s ease-in-out infinite alternate; }
+.streak-sky .sline{ stroke:rgba(207,200,255,.18); stroke-width:1; stroke-dasharray:2 4; fill:none; }
+.streak-sky .sline.lit{ stroke:rgba(255,224,170,.38); }
+.streak-sky .sslot{ fill:rgba(207,200,255,.38); }
+.streak-sky .sstar{ fill:#ffe0aa; }
+.streak-sky .warm .sstar{ fill:#ffd894; }
+.streak-sky .shalo{ opacity:.55; }
+.streak-sky .slabel{
+  fill:rgba(207,200,255,.55); font:700 12px var(--font-body); letter-spacing:.04em;
+}
+.streak-sky .tw1{ animation:homeTwinkle 5s ease-in-out infinite; }
+.streak-sky .tw2{ animation:homeTwinkle 6.4s ease-in-out .9s infinite; }
+.streak-sky .tw3{ animation:homeTwinkle 5.6s ease-in-out 1.7s infinite; }
+.streak-sky .tw4{ animation:homeTwinkle 7s ease-in-out 2.4s infinite; }
+
+/* founder round ② — a barely-there dream whisper under the moon while
+   the hero is unlogged; rotates through 2-3 lines on a slow 8s fade. */
+.whisper{
+  position:relative; z-index:1; margin-bottom:16px; pointer-events:none;
+  text-align:center; font-style:italic; font-size:15px; font-weight:500;
+  color:#cfc8ea; opacity:.55; text-shadow:0 1px 8px rgba(12,10,26,.6);
+  transition:opacity 1.2s ease;
+}
+.whisper.fade{ opacity:0; }
 
 /* Tonight's three quiet entry links, one centered 16px row */
 .entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
@@ -714,6 +761,10 @@ body{
       <section class="hero-card hero-tonight" id="hero-tonight">
         <div class="hero-stars"></div>
         <div class="hero-scrim"></div>
+        <!-- founder round ② — the user's streak sky (rendered by JS) -->
+        <div class="streak-sky" id="streak-sky" aria-hidden="true"></div>
+        <!-- founder round ② — the dream whisper (unlogged only) -->
+        <div class="whisper" id="tonight-whisper" aria-hidden="true">Falling? Flying? A face you knew?</div>
         <span class="tchip" id="tonight-chip" hidden>🌙 2 dreams tonight</span>
         <div class="hero-content">
           <div class="eyebrow">Tonight</div>
@@ -964,6 +1015,8 @@ body{
     tonightLinks: document.getElementById('tonight-links'),
     tonightD1: document.getElementById('tonight-d1'),
     tonightChip: document.getElementById('tonight-chip'),
+    streakSky: document.getElementById('streak-sky'),
+    whisper: document.getElementById('tonight-whisper'),
     tonightThumb: document.getElementById('tonight-thumb'),
     tokChip: document.getElementById('tok-chip'),
     chamberSub: document.getElementById('chamber-sub'),
@@ -1115,6 +1168,71 @@ body{
     openSheet('install');
   });
 
+  // ---- founder round ② — the hero sky is the user's streak sky ----
+  // Their logged nights as gold stars joined by faint lines, plus one
+  // unlit slot waiting for tonight; the label sits by the brightest
+  // (latest) star. Same semantics as the ritual constellation below.
+  function skyStar(cx, cy, r){
+    return 'M' + cx + ' ' + (cy - r) +
+      'L' + (cx + r * .32) + ' ' + (cy - r * .32) +
+      'L' + (cx + r) + ' ' + cy +
+      'L' + (cx + r * .32) + ' ' + (cy + r * .32) +
+      'L' + cx + ' ' + (cy + r) +
+      'L' + (cx - r * .32) + ' ' + (cy + r * .32) +
+      'L' + (cx - r) + ' ' + cy +
+      'L' + (cx - r * .32) + ' ' + (cy - r * .32) + 'Z';
+  }
+  function renderStreakSky(lit, showSlot, warm, label, compact){
+    // compact = logged states: the content block is tall, so the
+    // constellation tucks into the top band beside the moon
+    var P = compact
+      ? [[48,116],[112,58],[178,96],[244,132]]
+      : [[62,148],[132,78],[210,132],[286,188]];
+    var total = Math.min(P.length, lit + (showSlot ? 1 : 0));
+    if(total === 0){ el.streakSky.innerHTML = ''; return; }
+    var s = '<svg viewBox="0 0 390 430" preserveAspectRatio="xMidYMid slice"><g' + (warm ? ' class="warm"' : '') + '>';
+    for(var i = 1; i < total; i++){
+      s += '<line class="sline' + (i < lit ? ' lit' : '') + '" x1="' + P[i-1][0] + '" y1="' + P[i-1][1] + '" x2="' + P[i][0] + '" y2="' + P[i][1] + '"/>';
+    }
+    for(var j = 0; j < total; j++){
+      var p = P[j];
+      if(j < lit){
+        var r = (j === lit - 1) ? 8 : 6.5; // the latest night shines brightest
+        s += '<g class="tw' + (j % 4 + 1) + '">' +
+          '<circle class="shalo" cx="' + p[0] + '" cy="' + p[1] + '" r="' + (warm ? 16 : 13) + '" fill="' + (warm ? 'rgba(255,216,148,.22)' : 'rgba(255,224,170,.16)') + '"/>' +
+          '<path class="sstar" d="' + skyStar(p[0], p[1], r) + '"/></g>';
+      } else {
+        s += '<path class="sslot" d="' + skyStar(p[0], p[1], 5.5) + '"/>';
+      }
+    }
+    if(label){
+      var lp = P[lit > 0 ? lit - 1 : 0];
+      s += '<text class="slabel" x="' + (lp[0] + 14) + '" y="' + (lp[1] - 10) + '">' + label + '</text>';
+    }
+    s += '</g></svg>';
+    el.streakSky.innerHTML = s;
+  }
+
+  // founder round ② — the dream whisper: 3 lines on a slow 8s fade
+  var WHISPERS = [
+    'Falling? Flying? A face you knew?',
+    'A door that wasn’t there before?',
+    'A place you’ve never been — but knew.'
+  ];
+  var whisperIdx = 0;
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!reduceMotion){
+    setInterval(function(){
+      if(el.whisper.hidden) return;
+      el.whisper.classList.add('fade');
+      setTimeout(function(){
+        whisperIdx = (whisperIdx + 1) % WHISPERS.length;
+        el.whisper.textContent = WHISPERS[whisperIdx];
+        el.whisper.classList.remove('fade');
+      }, 1250);
+    }, 8000);
+  }
+
   // §3 state table — the page NEVER reorders; modules transform in place.
   // Exactly ONE pulsing element per state (Tonight's pill while unlogged;
   // after logging, the pulse migrates to the Chamber's Enter pill).
@@ -1136,6 +1254,14 @@ body{
     el.tonightD1.hidden = state !== 'day1';
     el.tonightPill.classList.toggle('pulse', !logged);
     el.tonightChip.hidden = !logged; // the approved multi-dream badge
+
+    // founder round ② — streak sky grows with the streak; the whisper
+    // only breathes while tonight is still unlogged
+    if(state === 'day1'){ renderStreakSky(0, true, false, 'tonight'); }
+    else if(state === 'unlogged'){ renderStreakSky(3, true, false, 'night 3'); }
+    else if(state === 'logged'){ renderStreakSky(4, false, false, 'night 4', true); }
+    else { renderStreakSky(4, false, true, 'night 4', true); }
+    el.whisper.hidden = logged;
 
     // Chamber hero
     if(state === 'day1'){
