@@ -1194,9 +1194,60 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // onGenerationSettled below) so it can never wrongly pin the card in
   // forming after this attempt is actually done.
   var optimisticEditDreamId = null;
+  // Optimistic "a fresh, brand-new (non-edit) generation was just
+  // submitted" signal — tracker item for-product-life-origin-generate-
+  // handoff-founder-repro-8yc4wm (founder repro on dreamtube.life: tokens
+  // visibly charged, then Home showed the plain unlogged "What did you
+  // dream?" hero with no forming room-card at all, no trace of the
+  // generation anywhere). Root cause: shouldShowRoomCard()/renderDay0Card()
+  // below only ever treat a generation as "in flight" once the REAL
+  // pendingJob has landed in DreamStore — which requires
+  // handleFreshInAppGeneration's own network round trip (the POST to
+  // generate-video.js/generate-image.js) to resolve, a round trip
+  // pollForPendingJobToAppear only waits ~a few seconds for before giving
+  // up. optimisticEditDreamId above already solves exactly this problem
+  // for an EDIT of a dream that already exists (shouldShowRoomCard() is
+  // already true there, via that dream's own today-entry) — but a
+  // genuinely brand-new dream (no sourceDreamId, e.g. every ordinary
+  // style.html "Generate Video" tap) has NOTHING else making
+  // shouldShowRoomCard() true during that window, so the room card and
+  // the Tonight hero's "logged" state both stayed in their default
+  // unlogged shape for however long the round trip took — worst on a
+  // day-0 account (or, as here, an account's first-ever generation on
+  // THIS browser origin), where there's also no existing My-dreams row or
+  // other content to hint anything is happening: a totally blank-looking
+  // Home, even though the server had already charged real tokens.
+  // Cleared the moment the real pendingJob is observed or this attempt
+  // settles (see pollForPendingJobToAppear/onGenerationSettled below and
+  // beginOptimisticFreshGeneration/clearOptimisticFreshGeneration further
+  // down), same lifecycle as optimisticEditDreamId. Deliberately keyed off
+  // the SAME `generate=1 && !pendingJob` condition as optimisticEditDreamId
+  // (not a separate "only when NOT an edit" branch) — for an edit this is
+  // simply redundant with what shouldShowRoomCard() already returns via
+  // the owned dream, never wrong.
+  var optimisticFreshGenerationPending = false;
+  var optimisticFreshGenerationCaption = '';
   if (new URLSearchParams(location.search).get('generate') === '1' && !pendingJob) {
     var __freshDraft = DreamStore.getDraft();
     if (__freshDraft && __freshDraft.sourceDreamId) optimisticEditDreamId = __freshDraft.sourceDreamId;
+    optimisticFreshGenerationPending = true;
+    optimisticFreshGenerationCaption = (__freshDraft && (__freshDraft.storyText || __freshDraft.caption)) || '';
+  }
+  // Shared by handleFreshInAppGeneration (below, the ?generate=1 path
+  // above already primes this synchronously before first paint) and
+  // handleCheckoutReturn's onCredited (which can only know it needs this
+  // once the token-credit poll resolves, well after first paint — calls
+  // refreshHomeState() itself right after setting the flag so that path
+  // gets the same immediate, correct render instead of waiting on
+  // pollForPendingJobToAppear).
+  function beginOptimisticFreshGeneration(){
+    optimisticFreshGenerationPending = true;
+    var d = DreamStore.getDraft();
+    optimisticFreshGenerationCaption = (d && (d.storyText || d.caption)) || '';
+  }
+  function clearOptimisticFreshGeneration(){
+    optimisticFreshGenerationPending = false;
+    optimisticFreshGenerationCaption = '';
   }
 
   // ===== Greeting — one line, no date sub-line (founder amendment) =====
@@ -1230,8 +1281,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // entirely outside this card -- see hero-tonight's own d1line and the
   // ritual module's first-claim eyebrow, both untouched by this function.
   function shouldShowRoomCard(){
-    return logStatus.loggedToday &&
-      (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending');
+    // optimisticFreshGenerationPending (see its own doc comment above) —
+    // a fresh, brand-new generation submitted THIS load whose real
+    // pendingJob hasn't landed yet is treated as "logged tonight" too,
+    // exactly like a real pendingJob already is below, so the room card
+    // (and the Tonight hero it replaces) never show the plain unlogged
+    // state for a submission that's genuinely already in flight and
+    // already billed server-side.
+    return optimisticFreshGenerationPending || (logStatus.loggedToday &&
+      (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending'));
   }
 
   // ===== The Tonight hero's dream whisper (tracker item for-product-
@@ -1355,7 +1413,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // already on screen (the dream's own current text) rather than
     // blanking it; it self-corrects the moment the real pendingJob (with
     // whatever the edit actually changed it to) lands and re-renders.
-    var quoteText = (pendingJob && (pendingJob.storyText || pendingJob.caption)) || '';
+    // optimisticFreshGenerationCaption (see its own doc comment above)
+    // covers the OTHER optimistic case — a brand-new generation with no
+    // prior dream to fall back to at all — so that state isn't left
+    // blank either.
+    var quoteText = (pendingJob && (pendingJob.storyText || pendingJob.caption)) || optimisticFreshGenerationCaption || '';
     if (quoteText) document.getElementById('d0-quote').textContent = '“' + quoteText + '”';
   }
   function renderDay0CardReady(dream){
@@ -1441,7 +1503,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // showing that dream's stale pre-edit content as "ready" for that
     // whole round trip.
     var editingOwnedDream = !!(optimisticEditDreamId && completedDream && optimisticEditDreamId === completedDream.id);
-    if(pendingJob || editingOwnedDream){
+    if(pendingJob || editingOwnedDream || optimisticFreshGenerationPending){
       card.style.display = '';
       renderDay0CardForming();
     } else if(completedDream){
@@ -1842,6 +1904,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function onGenerationSettled(promise){
     promise.then(function(dream){
       optimisticEditDreamId = null;
+      clearOptimisticFreshGeneration();
       // A null dream (js/store.js's own stale-completion guard, tracker
       // item for-product-bug-founder-repro-edited-dre-jcasn1) means this
       // attempt was superseded by a newer edit/regenerate of the same dream
@@ -1871,6 +1934,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       fireFirstVideoCreatedIfEligible(dream);
     }).catch(function(err){
       optimisticEditDreamId = null;
+      clearOptimisticFreshGeneration();
       // err.superseded (js/store.js's own stale-completion guard) — this
       // attempt was superseded by a newer edit/regenerate of the same dream
       // before it failed; the newer attempt owns pendingJob now and is
@@ -1934,8 +1998,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               // submission in place, same "resubmit fresh from the draft"
               // call the checkout-return resume path and the ?generate=1
               // fresh-submission handler both already use.
+              //
+              // beginOptimisticFreshGeneration()+refreshHomeState() (see
+              // their own doc comments above) — this callback runs well
+              // after this page's own first paint, so without an explicit
+              // render here the room card would sit in its default
+              // unlogged shape for however long THIS submission's own
+              // round trip takes, same gap the ?generate=1 path fixes via
+              // its synchronous top-of-script priming instead.
+              beginOptimisticFreshGeneration();
+              refreshHomeState();
               onGenerationSettled(startFreshGenerationFromDraft());
-              pollForPendingJobToAppear(10);
+              pollForPendingJobToAppear(30);
             } : undefined
           });
         }).catch(function(){
@@ -2484,6 +2558,22 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    * typical round-trip) so the generating tile/notify-card appear as soon
    * as realistically possible, without inventing a second, fake local
    * pendingJob shape that could drift from the real one.
+   *
+   * The VISIBLE forming state (room card / Tonight hero) no longer
+   * actually depends on this poll succeeding at all — see
+   * optimisticFreshGenerationPending/optimisticEditDreamId above, both
+   * primed BEFORE this ever runs, so shouldShowRoomCard() is already
+   * correct from first paint regardless of how long the real pendingJob
+   * takes to land (tracker item for-product-life-origin-generate-handoff-
+   * founder-repro-8yc4wm). This poll's job now is the secondary "upgrade
+   * to the real job" nicety — Chamber/notify-card/roomCardOwnedDreamId
+   * all still key off the real pendingJob directly, not the optimistic
+   * flag, so they stay in their pre-job placeholder shape until this
+   * lands. 15s/30 tries (up from the original 10x400ms=4s) gives real
+   * production network latency (a cold Netlify Function, a slow fal.ai
+   * submission round trip) realistic room without leaving those secondary
+   * bits permanently stuck if it's slower still — onGenerationSettled's
+   * own eventual completion/failure is still the hard backstop either way.
    */
   function pollForPendingJobToAppear(triesLeft){
     if(pendingJob) return; // already showing (the task itself already settled, or a previous tick found it)
@@ -2491,11 +2581,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     if(job){
       pendingJob = job;
       optimisticEditDreamId = null; // the real job has landed -- no longer needed, see its own doc comment above
+      clearOptimisticFreshGeneration();
       refreshHomeState();
       return;
     }
     if(triesLeft <= 0) return;
-    setTimeout(function(){ pollForPendingJobToAppear(triesLeft - 1); }, 400);
+    setTimeout(function(){ pollForPendingJobToAppear(triesLeft - 1); }, 500);
   }
 
   // ===== Fresh in-app generation submission (tracker item
@@ -2522,8 +2613,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var rest = params.toString();
     history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
     if(pendingJob) return; // already resuming a real in-flight job above — never double-submit
+    // optimisticFreshGenerationPending was already primed synchronously
+    // at the top of this script (before ANY of this page's own first-paint
+    // render calls ran), from this exact same `generate=1 && !pendingJob`
+    // condition — see that block's own doc comment. No need to call
+    // beginOptimisticFreshGeneration()/refreshHomeState() again here; this
+    // load's first paint was already correct.
     onGenerationSettled(startFreshGenerationFromDraft());
-    pollForPendingJobToAppear(10);
+    pollForPendingJobToAppear(30);
   })();
 
   // Holds pollForCredit's own returned cancel() while a poll from the
@@ -2572,8 +2669,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         // codebase has been bitten before by trusting an invariant instead
         // of verifying it (review finding, funnel-ending-v2).
         if(pendingJob) return;
+        // Same reasoning as the out-of-tokens image-fallback call site
+        // above — this callback fires well after first paint (it waits on
+        // a real token-credit poll), so it needs its own explicit
+        // optimistic render rather than relying on any priming done at
+        // page-load time.
+        beginOptimisticFreshGeneration();
+        refreshHomeState();
         onGenerationSettled(startFreshGenerationFromDraft());
-        pollForPendingJobToAppear(10);
+        pollForPendingJobToAppear(30);
       },
       onTimeout: function(){
         activeCreditPollCancel = null;
