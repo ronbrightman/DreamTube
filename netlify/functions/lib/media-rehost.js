@@ -105,6 +105,30 @@
 // already well under any plausible size ceiling. Images are re-hosted
 // as-is, with fal's own reported content-type preserved. Left as a real,
 // documented scope cut for whoever eventually wires up auto-posting.
+//
+// `options.force` (added 2026-08-02, tracker item
+// for-product-urgent-reopen-video-repair-p-cyp8np): a record re-hosted
+// BEFORE the SIZE fix above ever shipped only ever got `{contentType}`
+// written as its metadata — no `sourceUrl`, no `byteLength` — since neither
+// field existed yet at write time. The "existing record" short-circuit just
+// above exists to make a normal call idempotent (see IDEMPOTENT header
+// paragraph), but for exactly this legacy-broken shape it's actively
+// counterproductive: it sees SOME metadata already on file and returns
+// success without ever looking at whether the record is actually broken.
+// admin-repair-oversized-media.js is the one caller that needs to bypass
+// this — it has already independently confirmed (by measuring the real
+// stored blob's byte length directly, no fal call needed for that part —
+// see that file's own header comment) that this specific key is genuinely
+// oversized-and-broken, and needs a real re-fetch+re-write to backfill the
+// sourceUrl/byteLength this file's normal path would have written the
+// first time. `{ force: true }` skips the existing-record short-circuit
+// entirely and always re-fetches sourceUrl + re-writes — same "same Blobs
+// key, so this legitimately overwrites the existing entry in place" shape
+// as an ordinary first-time re-host, just re-run deliberately instead of
+// skipped. No other caller passes this — every live completion path
+// (video-status.js/image-status.js/dream-webhook.js) and the general
+// backfill sweep (admin-backfill-media-rehost.js) all still want the plain
+// idempotent short-circuit, unchanged.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
@@ -131,13 +155,16 @@ function durableUrl(mediaType, key) {
  * Best-effort re-host of `sourceUrl` (a fal.ai media URL) into Blobs, keyed
  * by `key`. Returns { ok: true, url } (the new durable URL) on success,
  * { ok: false } on ANY failure or invalid input — NEVER throws. See header
- * comment for the full reasoning.
+ * comment for the full reasoning. `options.force` (default false) bypasses
+ * the existing-record idempotency short-circuit below — see this file's
+ * own "`options.force`" header comment for why/who uses it.
  */
-async function rehostBestEffort(event, mediaType, sourceUrl, key) {
+async function rehostBestEffort(event, mediaType, sourceUrl, key, options) {
   var storeName = STORE_NAMES[mediaType];
   if (!storeName || typeof sourceUrl !== 'string' || !sourceUrl || typeof key !== 'string' || !key) {
     return { ok: false };
   }
+  var force = !!(options && options.force);
 
   try {
     connectLambda(event);
@@ -149,8 +176,10 @@ async function rehostBestEffort(event, mediaType, sourceUrl, key) {
     // already-working small durable url never regresses. A record written
     // AFTER the gate always carries byteLength, so a second call for the
     // same key (a duplicate/retried completion) makes exactly the same
-    // servable/not-servable call the first one did.
-    var existing = await store.getMetadata(key);
+    // servable/not-servable call the first one did. Skipped entirely when
+    // `force` is set — see this file's own "`options.force`" header
+    // comment.
+    var existing = force ? null : await store.getMetadata(key);
     if (existing) {
       var existingMeta = existing.metadata || {};
       var existingOversized = typeof existingMeta.byteLength === 'number' && existingMeta.byteLength > MAX_STREAMABLE_BYTES;

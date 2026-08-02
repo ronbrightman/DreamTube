@@ -175,3 +175,53 @@ test('rehostBestEffort: a pre-existing record with no byteLength metadata (writt
   assert.equal(result.ok, true, 'no byteLength on file means "unknown", not "oversized" -- must not regress an already-working legacy durable url');
   assert.equal(result.url, '/.netlify/functions/video-file?key=req-legacy');
 });
+
+// `options.force` — tracker item for-product-urgent-reopen-video-repair-p-cyp8np
+// (admin-repair-oversized-media.js's own bypass for a legacy, genuinely
+// broken record). See this file's own header comment addition on `force`
+// for the full reasoning.
+
+test('rehostBestEffort: force bypasses the existing-record short-circuit and always re-fetches + re-writes', async function () {
+  var { getStore } = require('@netlify/blobs');
+  // A legacy broken record: metadata-only, no byteLength/sourceUrl, exactly
+  // what pre-fix code wrote for a genuinely oversized upload.
+  var big = new ArrayBuffer(mediaRehost.MAX_STREAMABLE_BYTES + 5);
+  await getStore({ name: 'dreamtube-videos' }).set('req-broken-legacy', big, { metadata: { contentType: 'video/mp4' } });
+
+  var fetchCalls = 0;
+  var freshBytes = new ArrayBuffer(4); // fal's current copy happens to now be small
+  global.fetch = async function (url) {
+    fetchCalls++;
+    assert.equal(url, 'https://fal.media/fresh.mp4');
+    return fakeMediaResponse(freshBytes, 'video/mp4');
+  };
+
+  var withoutForce = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/fresh.mp4', 'req-broken-legacy');
+  assert.equal(withoutForce.ok, true, 'without force, the existing (metadata-less) record short-circuits and is assumed safe');
+  assert.equal(fetchCalls, 0, 'without force, the source is never re-fetched');
+
+  var withForce = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/fresh.mp4', 'req-broken-legacy', { force: true });
+  assert.equal(withForce.ok, true);
+  assert.equal(fetchCalls, 1, 'force must re-fetch the fresh source url');
+
+  var stored = await getStore({ name: 'dreamtube-videos' }).getWithMetadata('req-broken-legacy');
+  assert.equal(stored.data, freshBytes, 'force must overwrite the stale oversized bytes with the freshly-fetched ones');
+  assert.equal(stored.metadata.byteLength, 4, 'force must backfill real byteLength metadata this time');
+  assert.equal(stored.metadata.sourceUrl, 'https://fal.media/fresh.mp4', 'force must backfill real sourceUrl metadata this time');
+});
+
+test('rehostBestEffort: force on a still-genuinely-oversized fresh fetch reports tooLargeToServe but still backfills sourceUrl/byteLength for the redirect fallback', async function () {
+  var { getStore } = require('@netlify/blobs');
+  await getStore({ name: 'dreamtube-videos' }).set('req-still-big', new ArrayBuffer(10), { metadata: { contentType: 'video/mp4' } });
+
+  var big = new ArrayBuffer(mediaRehost.MAX_STREAMABLE_BYTES + 1);
+  global.fetch = async function () { return fakeMediaResponse(big, 'video/mp4'); };
+
+  var result = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/still-big.mp4', 'req-still-big', { force: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.tooLargeToServe, true);
+
+  var stored = await getStore({ name: 'dreamtube-videos' }).getWithMetadata('req-still-big');
+  assert.equal(stored.metadata.byteLength, mediaRehost.MAX_STREAMABLE_BYTES + 1);
+  assert.equal(stored.metadata.sourceUrl, 'https://fal.media/still-big.mp4', 'redirect fallback can now use this even though streaming is still not possible');
+});
