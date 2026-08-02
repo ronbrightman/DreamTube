@@ -157,10 +157,26 @@ NEW_LOGO_FILES.forEach(function (fileName) {
   });
 });
 
+// assets/logo-v3.png itself is the ONE deliberate exception (same
+// documented carve-out as its text reference below): logo-mock-x7q4.html's
+// every tile -- Current/M1/M2/M3/S1 -- is a live CSS filter stacked on
+// THIS exact raster (<img class="l-mark" src="assets/logo-v3.png">, etc.),
+// and that mock is explicitly not this migration's to touch (per the
+// tracker item's own delete-after-purpose note). Deleting the underlying
+// file would silently break every image on that page (404s), defeating
+// its whole remaining purpose -- the founder comparing the live deployed
+// M1 result against this exact mock before confirming. Its sibling sizes
+// (v3-192/512/maskable*) are NOT referenced by the mock (it only ever
+// uses the single full-size raster, scaled via CSS) and stay retired.
 OLD_LOGO_FILES.forEach(function (fileName) {
-  test('assets/' + fileName + ' (pre-M1 v3 asset) no longer exists on disk', function () {
+  var isMockDependency = fileName === 'logo-v3.png';
+  test('assets/' + fileName + (isMockDependency ? ' (kept -- logo-mock-x7q4.html\'s own reference raster, see comment above)' : ' (pre-M1 v3 asset) no longer exists on disk'), function () {
     var p = path.join(ROOT, 'assets', fileName);
-    assert.ok(!fs.existsSync(p), 'expected assets/' + fileName + ' to be retired (deleted), found it still on disk -- old logo asset was not fully swept');
+    if (isMockDependency) {
+      assert.ok(fs.existsSync(p), 'expected assets/' + fileName + ' to still exist -- logo-mock-x7q4.html\'s tiles all reference it directly and that file is deliberately not this migration\'s to rewrite');
+    } else {
+      assert.ok(!fs.existsSync(p), 'expected assets/' + fileName + ' to be retired (deleted), found it still on disk -- old logo asset was not fully swept');
+    }
   });
 });
 
