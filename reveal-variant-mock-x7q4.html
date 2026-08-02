@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  Founder review mock — screen 13 'reveal' challenger (tracker item
+  for-product-build-now-email-wall-fix-1-n-6qvebd). Unlinked, static,
+  self-contained (no app JS, no DreamStore, no network calls) — same
+  "*-mock-x7q4.html" review-artifact convention as home-mock5-x7q4.html /
+  logo-mock-x7q4.html / shop-mock-x7q4.html / funnel-end-mock-x7q4.html.
+  Delete after the founder makes a go/no-go call on flipping
+  SIGNUP_REVEAL_CHALLENGER_LIVE in start.html.
+
+  WHAT THIS IS: the actual markup/CSS from start.html's real, working
+  'reveal' variant (renderScreen13Reveal / .fn-forming-frame and friends —
+  see that file's own doc comments for the full reasoning), reproduced
+  here verbatim so this can be reviewed in isolation, with the mock chrome
+  below driving through its states without needing a live funnel session,
+  real signup, or a real fal.ai generation in flight. The REAL variant is
+  live-tested (test/signup-reveal-variant-behavioral.test.js) against
+  start.html itself — this file is for visual/copy review only, not a
+  second implementation.
+
+  Background: 70% of visitors bounce AT THE SIGHT of this screen (72
+  reach it, 22 pass) — visitors who already engaged with the funnel (typed
+  a dream, ran the quiz) complete at 90%+ once they commit. The rediagnosis
+  is presentation, not form mechanics — this challenger shows the
+  visitor's own dream FORMING live on the wall itself, with a
+  never-"Sign up" button and a save-framing reassurance line, verified true
+  against how this screen's own generate-during-signup seam actually
+  behaves (capture happens the moment the email step passes — BEFORE the
+  password field, let alone signup completion — and dream-webhook.js's
+  retention email reaches an abandoner regardless).
+
+  MOCK CHROME (dashed bar, bottom): step (email / password), and whether a
+  preview happens to already be available (almost never in real traffic —
+  see tryShowFormingPreview's own doc comment in start.html — shown here
+  purely so the graceful-degradation path is reviewable too).
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Screen 13 'reveal' challenger mock — DreamTube</title>
+<meta name="theme-color" content="#120A1C">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Georgia&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; background:#0b0712; }
+body{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif; display:flex; flex-direction:column; align-items:center; }
+
+/* ===== Phone frame, purely for review context — not part of the real app ===== */
+.phone{
+  width:min(420px, 100vw); height:100dvh; max-height:900px; margin:0 auto;
+  position:relative; overflow:hidden; box-shadow:0 0 0 1px rgba(255,255,255,.05);
+}
+
+/* ===== Verbatim funnel tokens/styles from start.html's own <style> block —
+   'night' phase values (PHASES.night) applied directly, since screen 13
+   always renders on 'night' (see start.html's PHASE_BY_STEP). ===== */
+#app.funnel-app{
+  --fn-ink:#FFFFFF; --fn-ink-soft:#D8CFEC; --fn-ink-faint:#9B8FB8;
+  --fn-card:#221530; --fn-line:rgba(255,255,255,0.14);
+  --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
+  --fn-accent-solid:#7C82C4;
+  --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
+  --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+  background:radial-gradient(120% 65% at 50% 10%, rgba(131,58,180,0.45), transparent 65%), linear-gradient(160deg,#120A1C,#1B0F2B 55%,#0F0817);
+  height:100%; display:flex; flex-direction:column;
+}
+#app.funnel-app .fn-btn-primary{ background:#fff; color:#221d2c; box-shadow:none;}
+
+.fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
+.fn-back{ width:34px; height:34px; border-radius:50%; flex:none; background:var(--fn-card); border:1px solid var(--fn-line); color:var(--fn-ink); display:flex; align-items:center; justify-content:center; font-size:16px;}
+.fn-topbar-spacer{ width:34px; flex:none;}
+.fn-progress{ flex:1; display:flex; gap:4px;}
+.fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--fn-line); display:block;}
+.fn-progress i.now{ background:var(--fn-ink);}
+
+.fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); overflow-y:auto; min-height:0; color:var(--fn-ink);}
+.fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-0.005em; line-height:1.25; margin-bottom:10px; color:var(--fn-ink);}
+.fn-spacer{ flex:1;}
+
+.fn-proof-strip{ display:flex; align-items:center; gap:9px; padding:11px 13px; border-radius:100px; background:#fff; border:1px solid rgba(58,51,80,0.1); margin-bottom:16px;}
+.fn-proof-strip .avatars{ display:flex;}
+.fn-proof-strip .avatars i{ width:23px; height:23px; border-radius:50%; background:var(--fn-accent-grad); border:2px solid #fff; margin-left:-9px; display:block;}
+.fn-proof-strip .avatars i:first-child{ margin-left:0;}
+.fn-proof-strip span{ font-size:11.5px; font-weight:700; color:#6E6480;}
+
+.fn-price-note{ font-size:14px; font-weight:600; color:var(--fn-ink); text-align:center; margin:2px 0 14px; line-height:1.45;}
+
+textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--fn-ink); font-size:15px; width:100%; margin-bottom:12px; display:block;}
+input.fn-field::placeholder{ color:var(--fn-ink-faint);}
+.fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
+.fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
+.fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--fn-ink-faint); font-size:15px;}
+
+.fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
+.fn-btn-primary{ background:var(--fn-accent-grad); color:#fff; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 26px -10px rgba(141,111,184,.5); cursor:pointer; font-family:var(--fn-font-body);}
+.fn-small-link{ background:none; border:none; color:var(--fn-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer; display:block;}
+.fn-body-copy{ font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px; color:var(--fn-ink-soft); line-height:1.5;}
+.fn-body-copy a{ color:inherit;}
+
+/* ===== The forming veil — verbatim from start.html's own .fn-forming-frame
+   block (see that file's <style> comment right above it for the full
+   provenance: home.html's day0card, itself ported from
+   funnel-end-mock-x7q4.html). ===== */
+.fn-forming-frame{
+  position:relative; height:118px; border-radius:16px; overflow:hidden; margin-bottom:16px;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.35), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.30), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.fn-forming-still{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:blur(20px) saturate(1.15) brightness(.82); transform:scale(1.15); background:linear-gradient(135deg,#7c5cff,#4d8dff 55%,#f3c08c); }
+.fn-forming-frame .fn-form-sweep{
+  position:absolute; inset:-10%;
+  background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.09) 46%, rgba(207,200,255,.16) 50%, rgba(255,255,255,.09) 54%, transparent 66%);
+  animation:fnFormSweep 2.6s ease-in-out infinite alternate;
+}
+.fn-forming-frame .fn-form-arc{ position:absolute; left:50%; top:36%; width:30px; height:30px; margin:-15px 0 0 -15px; animation:fnArcSpin 1.6s linear infinite;}
+.fn-forming-frame .fn-form-arc circle{ fill:none; stroke:rgba(255,255,255,.9); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28;}
+.fn-forming-frame .fn-form-caption{ position:absolute; left:0; right:0; bottom:11px; text-align:center; font-size:12.5px; font-weight:700; letter-spacing:.01em; color:#e7e2fb; text-shadow:0 1px 6px rgba(12,10,26,.8);}
+@keyframes fnFormSweep{ 0%{ transform:translateX(-70%) skewX(-12deg);} 100%{ transform:translateX(70%) skewX(-12deg);} }
+@keyframes fnArcSpin{ to{ transform:rotate(360deg);} }
+@media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc{ animation:none !important;} }
+
+/* ===== Mock-only chrome (dashed bar) — not part of the real app ===== */
+.mockbar{
+  position:relative; z-index:5; width:min(420px,100vw); margin:0 auto;
+  border-top:1px dashed rgba(255,255,255,.25); background:#0b0712; color:#cfc8ea;
+  padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px)); font-size:12px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center;
+}
+.mockbar button{
+  font:700 12px var(--fn-font-body,inherit); padding:7px 12px; border-radius:100px;
+  border:1px solid rgba(255,255,255,.25); background:rgba(255,255,255,.06); color:#eae7fb; cursor:pointer;
+}
+.mockbar button.on{ background:#7C82C4; border-color:#7C82C4; color:#fff;}
+.mocklabel{ opacity:.6; margin-right:2px;}
+</style>
+</head>
+<body>
+
+<div id="app" class="funnel-app">
+  <div class="fn-topbar">
+    <button class="fn-back" aria-label="Back">‹</button>
+    <div class="fn-progress" id="fnProgress"><i class="now"></i><i></i></div>
+    <div class="fn-topbar-spacer"></div>
+  </div>
+  <div class="fn-screen" id="fnScreen"></div>
+</div>
+
+<div class="mockbar">
+  <span class="mocklabel">Step:</span>
+  <button type="button" id="mb-step-email" class="on">Email</button>
+  <button type="button" id="mb-step-password">Password</button>
+  <span class="mocklabel" style="margin-left:10px;">Preview:</span>
+  <button type="button" id="mb-preview-off" class="on">Anticipation-only (typical)</button>
+  <button type="button" id="mb-preview-on">Blurred still available (rare)</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var el = document.getElementById('fnScreen');
+  var step = 'email';
+  var previewAvailable = false;
+
+  // Same real, never-fake-count proof strip start.html computes off the
+  // real shared feed — a plausible static number for this mock only.
+  var proofStripHtml = '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>1,842 dreams brought to life this month</span></div>';
+
+  var formingCaption = 'Your dream is forming…';
+  var reassurance = 'Your dream is saving to your email — it’ll be waiting even if you close this window.';
+  var headline = 'Where should we send your first dream?';
+
+  function formingFrameHtml(){
+    return '<div class="fn-forming-frame" role="img" aria-label="' + formingCaption + '">' +
+      '<div class="fn-forming-still" style="display:' + (previewAvailable ? 'block' : 'none') + ';"></div>' +
+      '<div class="fn-form-sweep"></div>' +
+      '<svg class="fn-form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>' +
+      '<div class="fn-form-caption">' + formingCaption + '</div>' +
+    '</div>';
+  }
+
+  function renderEmailStep(){
+    el.innerHTML =
+      '<div class="fn-headline">' + headline + '</div>' +
+      formingFrameHtml() +
+      proofStripHtml +
+      '<div class="fn-price-note">' + reassurance + '</div>' +
+      '<input class="fn-field" type="email" placeholder="you@email.com" value="">' +
+      '<div class="fn-err-text"></div>' +
+      '<button class="fn-btn-primary" type="button">Continue</button>' +
+      '<div class="fn-spacer"></div>';
+  }
+
+  function renderPasswordStep(){
+    el.innerHTML =
+      '<div class="fn-headline">' + headline + '</div>' +
+      formingFrameHtml() +
+      proofStripHtml +
+      '<div class="fn-price-note">' + reassurance + '</div>' +
+      '<input class="fn-field" type="email" value="dreamer@example.com" readonly style="color:var(--fn-ink-soft); cursor:default;">' +
+      '<button type="button" class="fn-small-link">Change email</button>' +
+      '<div class="fn-field-pw-wrap">' +
+        '<input class="fn-field" type="password" placeholder="Create a password">' +
+        '<button type="button" class="fn-field-pw-toggle">👁</button>' +
+      '</div>' +
+      '<div class="fn-err-text"></div>' +
+      '<button class="fn-btn-primary" type="button">Send me my dream</button>' +
+      '<div class="fn-body-copy">By signing up, you agree to our <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</div>' +
+      '<div class="fn-spacer"></div>';
+  }
+
+  function render(){
+    if(step === 'email') renderEmailStep(); else renderPasswordStep();
+  }
+
+  document.getElementById('mb-step-email').addEventListener('click', function(){
+    step = 'email';
+    document.getElementById('mb-step-email').classList.add('on');
+    document.getElementById('mb-step-password').classList.remove('on');
+    render();
+  });
+  document.getElementById('mb-step-password').addEventListener('click', function(){
+    step = 'password';
+    document.getElementById('mb-step-password').classList.add('on');
+    document.getElementById('mb-step-email').classList.remove('on');
+    render();
+  });
+  document.getElementById('mb-preview-off').addEventListener('click', function(){
+    previewAvailable = false;
+    document.getElementById('mb-preview-off').classList.add('on');
+    document.getElementById('mb-preview-on').classList.remove('on');
+    render();
+  });
+  document.getElementById('mb-preview-on').addEventListener('click', function(){
+    previewAvailable = true;
+    document.getElementById('mb-preview-on').classList.add('on');
+    document.getElementById('mb-preview-off').classList.remove('on');
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
