@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  DESIGN MOCK (not wired into the app) — value-preview gating (Direction A)
+  + deferred-password (Direction B), for wizard.html Step 7 "Contact" and
+  Step 8 "Signup". Built for the tracker item covering the 72->22
+  email-capture-wall bounce. Visual tokens are verbatim from wizard.html's
+  own #app.funnel-app theme and home.html's .day0card .video-forming
+  "forming veil" (itself ported from the founder-approved
+  funnel-end-mock-x7q4.html). Static, self-contained, no app JS reused —
+  same "unlinked, delete after decision" posture as that mock.
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Contact/Signup wall mock — DreamTube</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{ box-sizing:border-box; margin:0; padding:0; }
+[hidden]{ display:none !important; }
+html,body{ height:100%; }
+body{ background:#060512; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif; -webkit-tap-highlight-color:transparent; }
+
+/* ===== phone shell, verbatim tokens from wizard.html #app.funnel-app ===== */
+#app{
+  position:relative; width:100%; max-width:420px; margin:0 auto; height:100dvh;
+  --fn-ink:#FFFFFF; --fn-ink-soft:#C9C4DA; --fn-ink-faint:#8A84A0;
+  --fn-card:rgba(255,255,255,0.08); --fn-line:rgba(255,255,255,0.14);
+  --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
+  --fn-accent-solid:#7C82C4;
+  --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
+  --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+  background:linear-gradient(160deg,#211B33,#14121F 55%,#0A0912);
+  font-family:var(--fn-font-body); color:var(--fn-ink); overflow:hidden;
+  display:flex; flex-direction:column;
+}
+@media (min-width:460px){
+  body{ display:flex; align-items:center; justify-content:center; padding:24px 0; }
+  #app{ height:min(860px, calc(100dvh - 48px)); border-radius:36px; box-shadow:0 40px 90px -24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.06); }
+}
+
+/* ===== mock chrome — dev-only journey controls, same convention as
+   funnel-end-mock-x7q4.html's .mockbar (dashed, tiny type, never
+   mistakable for product UI) ===== */
+.mockbar{ flex:none; padding:8px 10px; background:rgba(6,5,18,.92); border-bottom:1px dashed rgba(157,144,255,.4); display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.mocklab{ font:800 8px var(--fn-font-body); letter-spacing:.1em; text-transform:uppercase; color:#6f6894; padding-right:2px; }
+.mockbtn{ padding:5px 9px; border-radius:7px; cursor:pointer; background:rgba(255,255,255,.05); border:1px solid rgba(157,144,255,.22); color:#8f88b3; font:700 10px var(--fn-font-body); }
+.mockbtn.on{ background:rgba(157,144,255,.2); border-color:rgba(157,144,255,.65); color:#cfc8ff; }
+.mocksep{ width:100%; height:0; }
+
+/* ===== funnel topbar, verbatim from wizard.html ===== */
+.fn-topbar{ display:flex; align-items:center; gap:10px; padding:16px 20px 4px; flex:none; }
+.fn-back{ width:34px; height:34px; border-radius:50%; flex:none; background:var(--fn-card); border:1px solid var(--fn-line); color:var(--fn-ink); display:flex; align-items:center; justify-content:center; }
+.fn-progress{ flex:1; display:flex; gap:4px; }
+.fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--fn-line); display:block; }
+.fn-progress i.done{ background:var(--fn-ink); opacity:.55; }
+.fn-progress i.now{ background:var(--fn-ink); }
+
+.fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px 24px; overflow-y:auto; min-height:0; }
+.fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-.005em; line-height:1.25; margin-bottom:10px; }
+.fn-microcopy{ font-size:12.5px; color:var(--fn-ink-faint); margin:-4px 0 16px; line-height:1.5; }
+.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; color:var(--fn-ink); font-size:15px; width:100%; margin-bottom:12px; display:block; font-family:var(--fn-font-body); }
+.fn-field::placeholder{ color:var(--fn-ink-faint); }
+.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent; }
+.fn-field[disabled]{ opacity:.7; }
+.fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px; }
+.fn-spacer{ flex:1; }
+.fn-btn-primary{ background:#fff; color:#221d2c; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; cursor:pointer; font-family:var(--fn-font-body); }
+.fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; }
+.fn-body-copy{ font-size:14.5px; color:var(--fn-ink-soft); line-height:1.55; margin-bottom:18px; }
+
+/* ===== DREAM PREVIEW CARD — Direction A's signature element. Idle state:
+   the app's own violet/star gradient + quote, no motion (nothing claims
+   generation has started before it has). Forming state: home.html's
+   .video-forming shimmer-sweep + spinning-arc treatment, ported verbatim,
+   only ever shown once startPendingGeneration has actually fired. ===== */
+.dpc{
+  position:relative; width:100%; min-height:190px; border-radius:18px; overflow:hidden;
+  border:1px solid rgba(157,144,255,.4); margin-bottom:20px;
+  background:
+    radial-gradient(70% 70% at 28% 26%, rgba(163,90,255,.32), transparent 68%),
+    radial-gradient(60% 60% at 80% 78%, rgba(83,140,255,.26), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+  display:flex; flex-direction:column; justify-content:flex-end; padding:16px;
+  transition:box-shadow .4s ease;
+}
+.dpc-eyebrow{ position:absolute; top:14px; left:16px; font:800 10.5px var(--fn-font-body); letter-spacing:.1em; text-transform:uppercase; color:#cfc8ff; }
+.dpc-stars{ position:absolute; inset:0; pointer-events:none;
+  background-image:
+    radial-gradient(1.2px 1.2px at 18% 30%, rgba(255,255,255,.85), transparent 60%),
+    radial-gradient(1px 1px at 44% 16%, rgba(255,255,255,.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 72% 26%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 60% 62%, rgba(255,255,255,.5), transparent 60%),
+    radial-gradient(1.1px 1.1px at 88% 50%, rgba(255,255,255,.6), transparent 60%);
+}
+.dpc-quote{ position:relative; z-index:1; font-size:13.5px; line-height:1.5; color:#eae7fb; font-weight:500; text-shadow:0 1px 6px rgba(12,10,26,.6);
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.dpc-idle-badge{ position:relative; z-index:1; display:inline-flex; align-items:center; gap:6px; margin-bottom:8px; font:700 11.5px var(--fn-font-body); color:#cfc8ea; opacity:.85; }
+.dpc-idle-badge .dot{ width:6px; height:6px; border-radius:50%; background:#cfc8ea; }
+
+/* forming veil (verbatim tokens from home.html .day0card .video-forming) */
+.dpc-veil{ position:absolute; inset:0; z-index:2; overflow:hidden; opacity:0; transition:opacity .6s ease; pointer-events:none;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.4), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.34), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.dpc.forming .dpc-veil{ opacity:1; }
+.dpc-sweep{ position:absolute; inset:-10%; background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.07) 46%, rgba(207,200,255,.14) 50%, rgba(255,255,255,.07) 54%, transparent 66%); animation:dpcSweep 2.6s ease-in-out infinite alternate; }
+.dpc-arc{ position:absolute; left:50%; top:40%; width:34px; height:34px; margin:-17px 0 0 -17px; animation:dpcSpin 1.6s linear infinite; }
+.dpc-arc circle{ fill:none; stroke:rgba(234,231,251,.85); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28; }
+.dpc-caption{ position:absolute; left:0; right:0; bottom:14px; text-align:center; font:700 14px var(--fn-font-body); letter-spacing:.01em; color:#cfc8ea; text-shadow:0 1px 6px rgba(12,10,26,.8); }
+@keyframes dpcSweep{ 0%{ transform:translateX(-70%) skewX(-12deg); } 100%{ transform:translateX(70%) skewX(-12deg); } }
+@keyframes dpcSpin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce){ .dpc-sweep, .dpc-arc{ animation:none !important; } }
+
+.dpc-compact{ min-height:150px; margin-bottom:22px; }
+.dpc-signup-caption{ position:relative; z-index:1; font-size:12px; color:#6f6894; font-weight:700; letter-spacing:.03em; margin-top:6px; }
+
+/* Direction B microcopy under the (now password-free) Continue button */
+.pw-defer-note{ font-size:12px; color:var(--fn-ink-faint); text-align:center; margin-top:10px; line-height:1.5; }
+.pw-defer-note b{ color:var(--fn-ink-soft); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="mockbar">
+    <span class="mocklab">Mock</span>
+    <button class="mockbtn on" id="m-idle">Contact · idle</button>
+    <button class="mockbtn" id="m-forming">Contact · forming</button>
+    <button class="mockbtn" id="m-signup">Signup</button>
+    <div class="mocksep"></div>
+    <span class="mocklab">Password</span>
+    <button class="mockbtn on" id="m-pw-required">B: required (today)</button>
+    <button class="mockbtn" id="m-pw-deferred">B: deferred</button>
+  </div>
+
+  <div class="fn-topbar">
+    <div class="fn-back">‹</div>
+    <div class="fn-progress" id="progress"></div>
+    <div style="width:34px;"></div>
+  </div>
+
+  <!-- ================= STEP 7 — CONTACT ================= -->
+  <div class="fn-screen" id="screen-contact">
+    <div class="fn-headline">Where should we send your dream?</div>
+    <div class="fn-microcopy">We'll email you your dream the moment it's ready — even if you don't finish signing up.</div>
+
+    <div class="dpc" id="dpc-contact">
+      <div class="dpc-stars"></div>
+      <div class="dpc-eyebrow">Your dream</div>
+      <div class="dpc-idle-badge" id="dpc-idle-badge"><span class="dot"></span>Ready to bring to life</div>
+      <div class="dpc-veil">
+        <div class="dpc-sweep"></div>
+        <svg class="dpc-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
+        <div class="dpc-caption">Your dream is forming…</div>
+      </div>
+      <div class="dpc-quote">"I was flying over a golden city at night — the rooftops were glowing like embers, and somewhere below, someone was calling my name."</div>
+    </div>
+
+    <input class="fn-field" type="email" placeholder="you@email.com" id="contact-email">
+    <div class="fn-err-text" id="contact-err"></div>
+    <div class="fn-spacer"></div>
+    <button class="fn-btn-primary" id="contact-continue">Continue</button>
+  </div>
+
+  <!-- ================= STEP 8 — SIGNUP ================= -->
+  <div class="fn-screen" id="screen-signup" hidden>
+    <div class="dpc dpc-compact forming" id="dpc-signup">
+      <div class="dpc-stars"></div>
+      <div class="dpc-eyebrow">Your dream</div>
+      <div class="dpc-veil" style="opacity:1;">
+        <div class="dpc-sweep"></div>
+        <svg class="dpc-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
+        <div class="dpc-caption">Your dream is forming…</div>
+      </div>
+    </div>
+    <div class="fn-headline">Save your spot</div>
+    <div class="fn-body-copy" id="signup-sub">Your dream is generating right now — create a quick account so it's here when you open the app. Free to start, 320 tokens on signup.</div>
+    <input class="fn-field" value="you@email.com" disabled>
+    <input class="fn-field" placeholder="Choose a username" id="signup-username">
+    <input class="fn-field" placeholder="Create a password" type="password" id="signup-password">
+    <div class="fn-err-text"></div>
+    <div class="fn-spacer"></div>
+    <button class="fn-btn-primary">Continue</button>
+    <div class="pw-defer-note" id="pw-defer-note" hidden>You can add a password anytime from <b>Settings</b> so you can sign in on other devices too.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var pwDeferred = false;
+
+  function setProgress(){
+    document.getElementById('progress').innerHTML = ''; // contact/signup are past the 6 core dots
+  }
+  setProgress();
+
+  function showContact(forming){
+    document.getElementById('screen-contact').hidden = false;
+    document.getElementById('screen-signup').hidden = true;
+    var card = document.getElementById('dpc-contact');
+    card.classList.toggle('forming', !!forming);
+    document.getElementById('dpc-idle-badge').style.display = forming ? 'none' : 'inline-flex';
+    var btn = document.getElementById('contact-continue');
+    btn.textContent = forming ? 'Starting your dream…' : 'Continue';
+    btn.disabled = !!forming;
+  }
+  function showSignup(){
+    document.getElementById('screen-contact').hidden = true;
+    document.getElementById('screen-signup').hidden = false;
+    applyPwMode();
+  }
+  function applyPwMode(){
+    document.getElementById('signup-password').style.display = pwDeferred ? 'none' : 'block';
+    document.getElementById('pw-defer-note').hidden = !pwDeferred;
+    document.getElementById('signup-sub').textContent = pwDeferred
+      ? 'Your dream is generating right now — save your spot with just a username so it\'s here when you open the app.'
+      : 'Your dream is generating right now — create a quick account so it\'s here when you open the app. Free to start, 320 tokens on signup.';
+  }
+
+  document.getElementById('m-idle').addEventListener('click', function(){ setActive('m-idle'); showContact(false); });
+  document.getElementById('m-forming').addEventListener('click', function(){ setActive('m-forming'); showContact(true); });
+  document.getElementById('m-signup').addEventListener('click', function(){ setActive('m-signup'); showSignup(); });
+  document.getElementById('m-pw-required').addEventListener('click', function(){ setActiveB('m-pw-required'); pwDeferred=false; applyPwMode(); });
+  document.getElementById('m-pw-deferred').addEventListener('click', function(){ setActiveB('m-pw-deferred'); pwDeferred=true; applyPwMode(); });
+
+  function setActive(id){
+    ['m-idle','m-forming','m-signup'].forEach(function(x){ document.getElementById(x).classList.toggle('on', x===id); });
+  }
+  function setActiveB(id){
+    ['m-pw-required','m-pw-deferred'].forEach(function(x){ document.getElementById(x).classList.toggle('on', x===id); });
+  }
+
+  // Real interaction: typing an email + tapping Continue transitions the
+  // card live, exactly as the real Contact-step handler would (fires the
+  // moment the real POST would fire, per the spec above).
+  document.getElementById('contact-continue').addEventListener('click', function(){
+    var email = document.getElementById('contact-email').value.trim();
+    var err = document.getElementById('contact-err');
+    if(!email || email.indexOf('@') === -1){ err.textContent = 'Enter a valid email address.'; return; }
+    err.textContent = '';
+    setActive('m-forming');
+    showContact(true);
+    setTimeout(function(){ setActive('m-signup'); showSignup(); }, 900);
+  });
+})();
+</script>
+</body>
+</html>
