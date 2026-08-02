@@ -54,6 +54,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | Journey 1 entry render, live on a real deployed origin | `test/prod-smoke/journey1-funnel-render.test.js` | Only checks screen 13 renders — doesn't complete a second full signup (see that file's own header comment for why) |
 | Journey 1 full flow (`start.html`) | `test/funnel-signup-navigation-token-guard-behavioral.test.js`, `test/funnel-meta-attribution-cookies-behavioral.test.js`, `test/facebook-login-signup-behavioral.test.js` | — |
 | Journey 2 full flow (`wizard.html`, organic) | `test/wizard-ui-behavioral.test.js`, `test/wizard-chips.test.js`, `test/wizard-action-chip-curation-behavioral.test.js`, `test/wizard-photo-upload-sheet-token-behavioral.test.js`, `test/record-mode-behavioral.test.js` | — |
+| Subject step (Step 1, "Who's the dream about?") multi-select — tracker item `for-product-wizard-characters-step-is-si-paxp07`, founder repro 2026-08-02: selecting a character then adding another used to UNCHECK the first (single-active-subject model treated as one-choice). Fixed to real independent toggles: any number of staged characters (`staged.subjectCharacterIds`) compose with at most one of the four "other" chips (`subjectOtherKind`, still single-select among just those four) — see `wizard.html`'s own design note above `renderSubject` for the full reasoning and `js/wizard-chips.js`'s doc comment for the new `subjects`-array input `assembleCaption`/`buildDeterministicStory` both accept (create.html's own separate single-select "Build it" subject step is unaffected — still uses the old singular fields, still covered above) | `test/wizard-chips.test.js` (unit-level `subjects`-array coverage: single-entry array matches the singular path byte-for-byte, the founder's own 3-subject worked example, a photo character combined with described characters — correct phrase/id split preserved per-entry, 2-subject "and" joining, empty-array fallback, `buildDeterministicStory`'s equivalent "with X, Y and Z" joining incl. the "me" + one-other "with" upgrade), `test/wizard-ui-behavioral.test.js` (3 tests: selecting Me + "Someone I know" + "A stranger" all stay selected together — the literal founder example; deselecting one of several via a toggle-off tap then re-selecting it via a DIRECT `#subject-chip-row` chip tap, independent of the character-sheet path; the full end-to-end trace — all three selections reaching the real `start-pending-generation.js` POST body's `caption`/`characters`/`characterIdsForGeneration`, not just DOM selected-state), `test/sheet-dismiss-behavioral.test.js` (section 7c — the same founder scenario exercised through a NORMALLY-opened character sheet, regression coverage for the interaction with the 75ob70 sheet-dismiss fix, since this exact step was that fix's own originally-reported instance) | — |
 | Entry-routing guard: a logged-out visitor with stale local account history (a browser that already held a real account, even after logout — `DreamStore.hasLocalAccountHistory()`) never lands mid-funnel/wizard, always the welcome/choice screen (`index.html`) instead — tracker item `for-product-life-origin-generate-handoff-founder-repro-8yc4wm` | `test/life-origin-generate-handoff-behavioral.test.js`, `test/route-organic-to-wizard-behavioral.test.js` (genuinely-first-time-visitor control case) | — |
 | Journey 2 full flow, live, real backend, real probe account | `test/prod-smoke/session.test.js` (test 1) | — |
 | Generate-during-signup real chain (client → real server handlers) | `test/funnel-real-chain-behavioral.test.js` | — |
@@ -161,6 +162,21 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | **Live, real-origin, end-to-end smoke coverage** (as opposed to mocked-backend coverage) | `test/prod-smoke/*.test.js` (this file's own registry entry) | Intentionally narrow — see `test/prod-smoke/README.md`. Does NOT cover: payments/checkout, Facebook Login, admin/owner tooling, transcription, interpretation/Chamber, push notifications, or most retention email paths. Those stay covered only by the mocked `test/*.test.js` suite. |
 
 ## Last reconciled
+
+2026-08-02, alongside tracker item `for-product-wizard-characters-step-is-si-
+paxp07` (founder repro): fixed `wizard.html`'s Subject step (Step 1) from a
+single-active-subject model to real independent multi-select toggles
+(`staged.subjectCharacterIds` + `subjectOtherKind` composing together), and
+extended `js/wizard-chips.js`'s `assembleCaption`/`buildDeterministicStory`
+with a new, backward-compatible `subjects`-array input to carry multiple
+selections all the way into the assembled generation prompt — see the
+Onboarding funnel row above for the full writeup and its test coverage.
+Also fixed a real, pre-existing bug found while touching this exact code
+path: the in-place-login (already-registered-email) branch's post-flush
+`draft.characterIds` id remap used to run BEFORE the `draftPatch` setDraft
+call that immediately overwrote it back to the stale pre-flush local id(s)
+— reordered to match the normal-signup branch's own (already-correct)
+ordering.
 
 2026-08-02, SECURITY FIX (round-2 independent review of tracker item
 `for-product-build-passwordless-signup-fo-at2fko`): closed a real account-

@@ -137,6 +137,199 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
   }
 });
 
+// ============================================================================
+// Subject step (Step 1) multi-select model -- tracker item
+// for-product-wizard-characters-step-is-si-paxp07, founder repro
+// 2026-08-02: "choosing Me and then adding another character (e.g. a
+// stranger) UNCHECKS Me -- the step behaves as one-choice when a dream can
+// contain multiple characters (Me AND someone known AND a stranger)."
+// Fixed to a real toggle model: any number of staged characters can be
+// selected at once (independent toggles), composed with at most one of the
+// four "other" chips (stranger/animal/none/other, still single-select
+// among just those four). See wizard.html's own design note above
+// renderSubject for the full reasoning, and
+// test/sheet-dismiss-behavioral.test.js's own section 7c for the same
+// scenario exercised through a normally-opened character sheet (the
+// interaction with the 75ob70 sheet-dismiss fix this exact step was
+// originally reported against).
+// ============================================================================
+
+async function stageDescribedCharacter(page, mode, name, description) {
+  await page.click(mode === 'self' ? '#subj-add-self' : '#subj-add-other');
+  await page.waitForSelector('#sheet-character-overlay.open');
+  if (mode !== 'self') await page.fill('#char-name-input', name);
+  await page.fill('#char-desc-input', description);
+  await page.click('#char-save-btn');
+  await page.waitForSelector('#sheet-character-overlay:not(.open)');
+}
+
+function charChipSelected(page, name) {
+  return page.evaluate(function (n) {
+    var areas = document.querySelectorAll('.char-chip .chip-edit-area[data-char-edit]');
+    for (var i = 0; i < areas.length; i++) {
+      if (areas[i].textContent.indexOf(n) !== -1) return areas[i].closest('.char-chip').classList.contains('selected');
+    }
+    return null;
+  }, name);
+}
+
+test('wizard.html Subject step: selecting Me, then "Someone I know" (Alex), then "A stranger" keeps ALL THREE selected at once -- the founder\'s own literal example ("Me AND someone known AND a stranger"), not a single-choice replace', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subject-chip-row');
+
+    await stageDescribedCharacter(page, 'self', null, 'a woman in her 30s, curly brown hair');
+    assert.equal(await charChipSelected(page, 'Me'), true, 'Me must be selected right after being staged');
+
+    await stageDescribedCharacter(page, 'other', 'Alex', 'tall with curly red hair');
+    assert.equal(await charChipSelected(page, 'Me'), true, 'Me must STILL be selected after adding Alex -- this is the exact founder-reported bug (adding a character used to uncheck Me)');
+    assert.equal(await charChipSelected(page, 'Alex'), true, 'Alex must be selected right after being staged');
+
+    await page.click('#subject-other-row [data-subj-other="stranger"]');
+    assert.equal(await charChipSelected(page, 'Me'), true, 'Me must remain selected after also picking "A stranger"');
+    assert.equal(await charChipSelected(page, 'Alex'), true, 'Alex must remain selected after also picking "A stranger"');
+    assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true, '"A stranger" must be selected');
+  } finally {
+    await page.close();
+  }
+});
+
+/** Clicks a staged character's chip BODY directly (the #subject-chip-row toggle path, data-char-select) -- NOT its edit-area/pencil (data-char-edit, which opens the sheet instead) and NOT via the character sheet's own Save button. Proves the direct chip-click multi-select toggle handler itself, independent of the sheet-save path. */
+function clickCharChipDirectly(page, name) {
+  return page.evaluate(function (n) {
+    var areas = document.querySelectorAll('.char-chip .chip-edit-area[data-char-edit]');
+    for (var i = 0; i < areas.length; i++) {
+      if (areas[i].textContent.indexOf(n) !== -1) {
+        var chip = areas[i].closest('.char-chip');
+        // Click the chip's own check area, not the edit-area itself
+        // (clicking inside .chip-edit-area would hit the [data-char-edit]
+        // branch of the click handler and open the sheet instead of
+        // toggling selection) -- .chip-check is the other direct child of
+        // the chip body, exactly the part a real tap on the chip (outside
+        // its name/pencil) would land on.
+        chip.querySelector('.chip-check').click();
+        return;
+      }
+    }
+  }, name);
+}
+
+test('wizard.html Subject step: deselecting one of several selected characters (a toggle-off tap) only affects that one character, leaving the others selected -- then re-selecting it via a DIRECT chip tap (the #subject-chip-row toggle handler itself, not the character sheet) adds it back without touching anyone else', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subject-chip-row');
+
+    await stageDescribedCharacter(page, 'self', null, 'a woman in her 30s, curly brown hair');
+    await stageDescribedCharacter(page, 'other', 'Alex', 'tall with curly red hair');
+    await stageDescribedCharacter(page, 'other', 'Sam', 'short with glasses');
+    assert.equal(await charChipSelected(page, 'Me'), true);
+    assert.equal(await charChipSelected(page, 'Alex'), true);
+    assert.equal(await charChipSelected(page, 'Sam'), true);
+
+    // Tap Alex's chip again (not its edit-area/pencil -- the chip body
+    // itself) to toggle her OFF.
+    await clickCharChipDirectly(page, 'Alex');
+
+    assert.equal(await charChipSelected(page, 'Me'), true, 'Me must remain selected after deselecting Alex');
+    assert.equal(await charChipSelected(page, 'Alex'), false, 'Alex must now be deselected (toggled off)');
+    assert.equal(await charChipSelected(page, 'Sam'), true, 'Sam must remain selected after deselecting Alex');
+
+    // Re-select Alex via a DIRECT chip tap (#subject-chip-row's own
+    // toggleSubjectCharacter click handler -- no character sheet reopened
+    // at all, unlike every other test in this file, which only ever adds
+    // a character through the sheet's Save button). Proves the chip-row
+    // click handler itself does a real independent multi-select toggle,
+    // not just "the sheet always adds," and that reselecting Alex doesn't
+    // disturb Me or Sam either.
+    await clickCharChipDirectly(page, 'Alex');
+    assert.equal(await charChipSelected(page, 'Me'), true, 'Me must remain selected after re-selecting Alex via a direct chip tap');
+    assert.equal(await charChipSelected(page, 'Alex'), true, 'Alex must be selected again after a direct chip tap (no sheet involved)');
+    assert.equal(await charChipSelected(page, 'Sam'), true, 'Sam must remain selected after re-selecting Alex via a direct chip tap');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know" with a description, and "A stranger") flow all the way into the real generation payload -- traced through to the start-pending-generation.js POST body, not just the UI\'s selected state', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-multi-1', operationName: 'fal:fake-model:req-multi-1' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subject-chip-row');
+
+    // "Me" via a real PHOTO (photo characters contribute their id to
+    // characterIdsForGeneration but no text phrase in the caption -- see
+    // js/wizard-chips.js's own header comment on why).
+    await page.click('#subj-add-self');
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.click('#char-mode-row [data-char-mode="photo"]');
+    var path = require('node:path');
+    await page.setInputFiles('#char-photo-input', path.join(__dirname, '..', 'assets', 'logo-v4.png'));
+    await page.waitForSelector('#char-photo-preview img');
+    await page.click('#char-save-btn');
+    await page.waitForSelector('#sheet-character-overlay:not(.open)');
+
+    // "Someone I know" (Alex) via a DESCRIPTION (contributes a caption
+    // phrase, but must NOT also ride along in characterIdsForGeneration --
+    // see js/wizard-chips.js's own doubled-description rule).
+    await stageDescribedCharacter(page, 'other', 'Alex', 'tall with curly red hair');
+
+    // "A stranger" composes alongside both of the above.
+    await page.click('#subject-other-row [data-subj-other="stranger"]');
+
+    await page.click('#fn-subject-continue');
+    await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'wizard-multi-subject-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.equal(startPendingCalls.length, 1);
+    var body = startPendingCalls[0];
+
+    // The assembled caption must mention Alex's description AND "a
+    // stranger" -- both non-photo subjects contribute a text phrase.
+    assert.match(body.caption, /Alex, tall with curly red hair/, 'Alex\'s description must be baked into the assembled caption');
+    assert.match(body.caption, /a stranger/, '"a stranger" must be part of the assembled subject phrase');
+    // The photo "Me" character contributes NO text phrase (its id rides
+    // along separately below) -- the caption must never leak the raw
+    // data: URL either way.
+    assert.doesNotMatch(body.caption, /data:image/);
+
+    // characterIdsForGeneration (and so payload.characters,
+    // payload.characterIdsForGeneration) must carry exactly the PHOTO
+    // character's id -- Alex's id must NOT be included (her description
+    // is already baked into the caption text; including her id too would
+    // double it up via generate-video.js's own buildPrompt).
+    assert.equal(body.characterIdsForGeneration.length, 1, 'exactly the photo character\'s id should ride along, not Alex\'s (already baked into the caption) and not "a stranger" (not a real character)');
+    assert.equal(body.characters.length, 1, 'payload.characters should carry exactly the one resolved photo character');
+    assert.equal(body.characters[0].isSelf, true);
+    assert.ok(body.characters[0].photoDataUrl, 'the resolved "Me" character must carry its real photo data URL through to the payload');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html: generate-during-signup — contact capture starts a pending generation BEFORE signup, and a successful signup adopts + resumes it straight through home.html with no second submission', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
