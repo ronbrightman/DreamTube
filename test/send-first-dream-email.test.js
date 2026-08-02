@@ -268,6 +268,74 @@ test('send-first-dream-email: a real registered account with a verified email ge
   });
 });
 
+// REAL THUMBNAIL (tracker item for-product-dream-ready-email-real-first-
+// qr9fbj, founder request 2026-08-02) -- see lib/first-dream-email-
+// sender.js's own "REAL THUMBNAIL" header comment. This client-triggered
+// path is the one call site that actually has the dream object (and
+// therefore its imageUrl) on hand, so it's the only realistic beneficiary
+// of a real thumbnail -- the automatic path's own coverage
+// (test/automatic-first-dream-email.test.js) documents why it can't.
+
+test('send-first-dream-email: a dream with a real imageUrl renders an <img> instead of the flat-color banner, resolved to an absolute url', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    var sentCalls = installFetchSpy(true);
+
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+    await handler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: dreamPayload({ imageUrl: '/.netlify/functions/image-file?key=thumb%3Anora%3Adream-1' })
+    }));
+
+    assert.equal(sentCalls.length, 1);
+    var html = sentCalls[0].body.html;
+    assert.match(html, /<img src="https:\/\/dreamtube1\.netlify\.app\/\.netlify\/functions\/image-file\?key=thumb%3Anora%3Adream-1"/, 'a relative durable image url must be resolved to an absolute https:// url an email client can actually load');
+    assert.doesNotMatch(html, /background:#[0-9a-fA-F]{6};margin-bottom:18px/, 'the flat-color banner div must not render when a real thumbnail is available');
+  });
+});
+
+test('send-first-dream-email: an already-absolute imageUrl is used as-is, not double-prefixed', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    var sentCalls = installFetchSpy(true);
+
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+    await handler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: dreamPayload({ imageUrl: 'https://fal.media/files/already-absolute.jpg' })
+    }));
+
+    assert.match(sentCalls[0].body.html, /<img src="https:\/\/fal\.media\/files\/already-absolute\.jpg"/);
+  });
+});
+
+test('send-first-dream-email: no imageUrl (the common case, especially right after generation) falls back to the original flat-color banner', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    var sentCalls = installFetchSpy(true);
+
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+    await handler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: dreamPayload() // no imageUrl field at all
+    }));
+
+    var html = sentCalls[0].body.html;
+    assert.doesNotMatch(html, /<img/, 'no imageUrl on the dream -- must fall back to the color banner, not an empty/broken <img>');
+    assert.match(html, /background:#22405c;margin-bottom:18px/, 'Cinematic style\'s own flat color, unchanged from before this feature');
+  });
+});
+
+test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative durable url against the request host, passes an absolute one through, and returns null with nothing to resolve against', function () {
+  var sender = require('../netlify/functions/lib/first-dream-email-sender');
+  var event = fakeEvent({ method: 'POST', headers: { host: 'dreamtube1.netlify.app' } });
+  assert.equal(sender.absoluteImageUrl(event, '/.netlify/functions/image-file?key=x'), 'https://dreamtube1.netlify.app/.netlify/functions/image-file?key=x');
+  assert.equal(sender.absoluteImageUrl(event, 'https://fal.media/x.jpg'), 'https://fal.media/x.jpg');
+  assert.equal(sender.absoluteImageUrl(event, null), null);
+  assert.equal(sender.absoluteImageUrl(event, ''), null);
+  assert.equal(sender.absoluteImageUrl(fakeEvent({ method: 'POST' }), '/relative'), null, 'no host on the event -- nothing safe to resolve a relative url against');
+});
+
 test('send-first-dream-email: never trusts a client-supplied email address — always resolves via the account store', function () {
   return withEnv(ENV, async function () {
     await registerAccount('nora', 'real-nora@example.com');

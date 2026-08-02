@@ -1,9 +1,14 @@
 // netlify/functions/send-first-dream-email.js
 //
-// POST { username, password, dreamId, caption, style, videoUrl, mediaType }
+// POST { username, password, dreamId, caption, style, videoUrl, mediaType,
+//        imageUrl }
 // -> sends the "your dream is ready" RETENTION email (day-1 -> day-2+
 // return), tracker.html's for-product-retention-email-send-user-th-eke9ra
-// item, founder-greenlit 2026-07-26 ("start now, before paywall").
+// item, founder-greenlit 2026-07-26 ("start now, before paywall"). imageUrl
+// (added 2026-08-02, tracker item
+// for-product-dream-ready-email-real-first-qr9fbj) is optional/cosmetic --
+// see lib/first-dream-email-sender.js's own "REAL THUMBNAIL" header
+// comment.
 //
 // AS OF 2026-07-27 (tracker.html's
 // for-product-activate-automatic-retention-4n74rw item, founder-approved
@@ -177,6 +182,13 @@ exports.handler = async function (event) {
   var videoUrl = payload.videoUrl;
   var caption = payload.caption;
   var style = payload.style;
+  // imageUrl (tracker item for-product-dream-ready-email-real-first-qr9fbj)
+  // -- same best-effort/optional-content class as caption/style above, see
+  // lib/first-dream-email-sender.js's own "REAL THUMBNAIL" header comment.
+  // Purely cosmetic: an absent/invalid value just means the email falls
+  // back to the flat-color banner, never rejected or treated as a
+  // malformed request.
+  var imageUrl = payload.imageUrl;
   var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
 
   if (!username || !password || !dreamId || !videoUrl) {
@@ -233,6 +245,7 @@ exports.handler = async function (event) {
       dreamId: dreamId,
       caption: caption,
       style: style,
+      imageUrl: imageUrl,
       auto: false
     });
 

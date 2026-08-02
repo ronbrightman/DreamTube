@@ -168,6 +168,15 @@ test('mark-generation-completed: a brand-new account\'s first verified video com
   assert.equal(spies.resendCalls.length, 1, 'expected exactly one automatic Resend send, with no client request to send-first-dream-email.js at all');
   assert.deepEqual(spies.resendCalls[0].body.to, ['autouser@example.com']);
   assert.match(spies.resendCalls[0].body.html, /href="https:\/\/dreamtube1\.netlify\.app\/profile\.html"/, 'the automatic email must link to profile.html too');
+  // REAL THUMBNAIL (tracker item for-product-dream-ready-email-real-first-
+  // qr9fbj) -- this automatic choke point has no dreamId at all (see
+  // maybeSendAutomaticFirstDreamEmail's own `dreamId: null` call), so it
+  // has no way to look up a real imageUrl even when the dream has one by
+  // now -- documents the accepted, known gap: the automatic path always
+  // falls back to the flat-color banner, never a real <img>. Only the
+  // client-triggered send-first-dream-email.js path (test/send-first-
+  // dream-email.test.js) can realistically supply a real thumbnail.
+  assert.doesNotMatch(spies.resendCalls[0].body.html, /<img/, 'the automatic path has no dreamId to look up an imageUrl with -- must always fall back to the color banner');
 
   assert.equal(spies.posthogCalls.length, 1, 'expected the first_dream_email_sent PostHog event to fire on the actual send');
   assert.equal(spies.posthogCalls[0].body.event, 'first_dream_email_sent');
