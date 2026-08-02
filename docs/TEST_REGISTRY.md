@@ -32,6 +32,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | Feature/surface | Covered by | Gaps |
 |---|---|---|
 | Signup (`register-account.js`, `js/store.js#signup`) | `test/signup-screen-behavioral.test.js`, `test/funnel-real-chain-behavioral.test.js`, `test/facebook-login-signup-behavioral.test.js`, `test/account-store.test.js`, `test/wizard-ui-behavioral.test.js` | — |
+| Screen 13 'reveal' challenger — forming veil, "Send me my dream" copy, save-framing reassurance, graceful preview degradation (tracker item `for-product-build-now-email-wall-fix-1-n-6qvebd`, mock-only — `SIGNUP_REVEAL_CHALLENGER_LIVE` is `false`) | `test/signup-reveal-variant-behavioral.test.js` | Not yet live in the real A/B (founder must approve the mock — `reveal-variant-mock-x7q4.html` — first); no PostHog experiment-readout coverage since nothing is actually splitting real traffic yet |
 | Login (`account-login.js`) | `test/account-store.test.js`, `test/rename-migration-login-behavioral.test.js`, `test/facebook-login-signup-behavioral.test.js`, `test/password-reset-account.test.js` | — |
 | Facebook Login / OAuth (`facebook-oauth-callback.js`, `facebook-complete-signup.js`) | `test/facebook-oauth-callback.test.js`, `test/facebook-login-signup-behavioral.test.js`, `test/account-store-facebook.test.js` | — |
 | Password reset (`request-password-reset.js`, `verify-password-reset.js`) | `test/password-reset-account.test.js` | — |

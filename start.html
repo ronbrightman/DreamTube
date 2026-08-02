@@ -305,6 +305,50 @@
   @keyframes fnspin{ to{ transform:rotate(360deg);} }
   @media (prefers-reduced-motion: reduce){ .fn-spin{ animation:none;} }
   .fn-loading-line{ font-size:13px; color:var(--phase-soft, var(--fn-ink-soft)); text-align:center; margin-bottom:6px;}
+
+  /* ===== Screen 13 'reveal' challenger (tracker item
+     for-product-build-now-email-wall-fix-1-n-6qvebd, currently mock-only --
+     see SIGNUP_REVEAL_CHALLENGER_LIVE's own doc comment) — the "your dream
+     is forming" veil shown live on the signup screen itself, directly above
+     the email/password fields. Same shimmer-sweep + spinning-arc + caption
+     technique home.html's own .day0card .video-forming/.form-sweep/
+     .form-arc/.form-caption already uses for an in-flight generation
+     (itself ported from funnel-end-mock-x7q4.html) — re-themed with the fn-
+     prefix this file's own class-naming convention requires (see this
+     style block's header comment) rather than reusing home.html's
+     day0card-scoped selectors verbatim, since screen 13 is a fixed-height
+     card, not a 9:16 video frame. ===== */
+  .fn-forming-frame{
+    position:relative; height:118px; border-radius:16px; overflow:hidden; margin-bottom:16px;
+    background:
+      radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.35), transparent 68%),
+      radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.30), transparent 65%),
+      linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+  }
+  /* Populated only on the rare chance a preview happens to already be
+     available (see tryShowFormingPreview's own doc comment below) — hidden
+     by default, so the anticipation-only shimmer/arc is what most visitors
+     ever see. Heavily blurred + scaled up (avoids a sharp blurred edge at
+     the frame) so this reads as an early glimpse, not a finished reveal. */
+  .fn-forming-still{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:blur(20px) saturate(1.15) brightness(.82); transform:scale(1.15); }
+  .fn-forming-frame .fn-form-sweep{
+    position:absolute; inset:-10%;
+    background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.09) 46%, rgba(207,200,255,.16) 50%, rgba(255,255,255,.09) 54%, transparent 66%);
+    animation:fnFormSweep 2.6s ease-in-out infinite alternate;
+  }
+  .fn-forming-frame .fn-form-arc{
+    position:absolute; left:50%; top:36%; width:30px; height:30px; margin:-15px 0 0 -15px;
+    animation:fnArcSpin 1.6s linear infinite;
+  }
+  .fn-forming-frame .fn-form-arc circle{ fill:none; stroke:rgba(255,255,255,.9); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28;}
+  .fn-forming-frame .fn-form-caption{
+    position:absolute; left:0; right:0; bottom:11px; text-align:center;
+    font-size:12.5px; font-weight:700; letter-spacing:.01em; color:#e7e2fb;
+    text-shadow:0 1px 6px rgba(12,10,26,.8);
+  }
+  @keyframes fnFormSweep{ 0%{ transform:translateX(-70%) skewX(-12deg);} 100%{ transform:translateX(70%) skewX(-12deg);} }
+  @keyframes fnArcSpin{ to{ transform:rotate(360deg);} }
+  @media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc{ animation:none !important;} }
 </style>
 
 <script src="js/icons.js"></script>
@@ -395,11 +439,56 @@
   // NOT the old 'b' -- this population also sees the (flag-gated)
   // Facebook button and the webview password hint neither old arm had,
   // so relabeling it 'b' would silently conflate two different
-  // populations under one value in any historical query. The NEXT
-  // challenger (per tracker item bkwhbe's own "growth's ab-test-creator
-  // should get the A/B once a challenger exists" note) reads 'unified'
-  // as its control arm's value.
-  var signupVariant = 'unified';
+  // populations under one value in any historical query.
+  //
+  // NEXT CHALLENGER (tracker item
+  // for-product-build-now-email-wall-fix-1-n-6qvebd, 2026-08-02): 'reveal'
+  // -- the wall becomes the reveal. Rediagnosis: 70% of visitors bounce AT
+  // THE SIGHT of this screen (72 reach it, 22 pass); visitors who already
+  // engaged with the funnel (typed a dream, ran the quiz) complete at 90%+
+  // once they commit, so the leak is presentation, not form mechanics. The
+  // 'reveal' arm (see renderScreen13Reveal below) shows the visitor's own
+  // dream FORMING live on this exact screen -- reusing the shimmer/arc
+  // "forming veil" convention home.html's own day0card already
+  // established (itself ported from funnel-end-mock-x7q4.html) -- with the
+  // email/password fields directly beneath it, a never-"Sign up" button
+  // ("Send me my dream"), and a save-framing reassurance line verified
+  // true against how this screen's own generate-during-signup seam and
+  // claim-pending-generation.js/dream-webhook.js retention email actually
+  // behave (see renderScreen13Reveal's own doc comment for that
+  // verification). Same email+password fields/validation as 'unified' --
+  // only the framing around the form changes.
+  //
+  // MOCK-FIRST GATE -- this tracker item's own explicit instruction: the
+  // founder must see this challenger (review/screenshot the standalone
+  // mock, see reveal-variant-mock-x7q4.html) before it goes live in a real
+  // split. Same additive, sticky, 50/50-Math.random(), localStorage-
+  // persisted assignment shape the ORIGINAL email-first A/B test used
+  // between 'a'/'b' (git history commit 9777300) and shop.html's own
+  // shop_palette_variant A/B test still uses today -- but gated behind
+  // SIGNUP_REVEAL_CHALLENGER_LIVE, currently false, so signupVariant
+  // resolves to 'unified' for every real visitor, no exceptions, until a
+  // human flips that one boolean after reviewing the mock. The
+  // randomization code path below is real (not commented out) so flipping
+  // it live later is a one-line change, not a rebuild -- test coverage
+  // (test/signup-reveal-variant-behavioral.test.js) exercises the 'reveal'
+  // arm today by rewriting this served file's SIGNUP_REVEAL_CHALLENGER_LIVE
+  // constant via page.route(), the same "rewrite the served file to flip a
+  // currently-off flag" technique test/facebook-login-signup-behavioral.test.js
+  // already uses for the Facebook Login placeholder-app-id flag -- never by
+  // changing what ships here.
+  var SIGNUP_VARIANT_KEY = 'dreamtube_signup_variant';
+  var SIGNUP_REVEAL_CHALLENGER_LIVE = false;
+  var signupVariant;
+  if (SIGNUP_REVEAL_CHALLENGER_LIVE) {
+    signupVariant = localStorage.getItem(SIGNUP_VARIANT_KEY);
+    if (signupVariant !== 'unified' && signupVariant !== 'reveal') {
+      signupVariant = Math.random() < 0.5 ? 'unified' : 'reveal';
+      localStorage.setItem(SIGNUP_VARIANT_KEY, signupVariant);
+    }
+  } else {
+    signupVariant = 'unified';
+  }
 
   // ===== Real social-proof count for screen 14 (pricing) =====
   // Replaces a hardcoded "12,400+ dreams brought to life this month" with
@@ -1414,6 +1503,24 @@
     pendingFacebookErrorSlug = null;
   }
 
+  /**
+   * Same real, never-fake count screen 14 already uses (see
+   * dreamsThisMonthCount's own doc comment above) — omitted entirely (not a
+   * placeholder number) if the feed fetch hasn't resolved yet or failed.
+   * Lifted out of renderScreen13EmailFirst's own closure (2026-08-02, the
+   * 'reveal' challenger) so BOTH screen-13 variants render the exact same
+   * proof strip from one implementation rather than two copies drifting —
+   * called fresh on every internal render (not cached once), same reasoning
+   * as before: the getSharedFeed() fetch populating dreamsThisMonthCount is
+   * still in flight for meaningfully more visitors on this early funnel
+   * step than on screen 14.
+   */
+  function computeProofStripHtml(){
+    return (dreamsThisMonthCount !== null) ?
+      ('<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>') :
+      '';
+  }
+
   function renderScreen13(el){
     // Facebook confirmed who this visitor is but gave us no email (spec
     // §2.4 / §3 step 3) — ask for exactly one field instead of the normal
@@ -1442,18 +1549,23 @@
 
     // Fired once per actual arrival at this screen: renderScreen13 runs
     // exactly once per navigation here (see render()/goToStep() below),
-    // even though renderScreen13EmailFirst then does its own internal,
+    // even though both variants' own renderers then do their own internal,
     // non-navigating DOM swap from the email step to the password step --
-    // that swap must NOT re-fire this. signupVariant is now a fixed
-    // 'unified' value (see its own doc comment above), kept on this event
-    // so existing PostHog dashboards/queries built on this property keep
-    // working, and so the next real A/B challenger has a stable 'variant'
-    // property to extend rather than a schema change to make.
+    // that swap must NOT re-fire this. signupVariant carries whichever arm
+    // this load resolved to (currently always 'unified' -- see that var's
+    // own doc comment above), kept on this event so existing PostHog
+    // dashboards/queries built on this property keep working, and so the
+    // 'reveal' challenger rides the exact same property with zero schema
+    // change once it's ever actually live.
     if(window.posthog && typeof window.posthog.register === 'function'){
       try{ posthog.register({ signup_email_first_variant: signupVariant }); }catch(e){ /* analytics must never break the funnel */ }
     }
     track('signup_email_first_variant_shown', { variant: signupVariant });
 
+    if(signupVariant === 'reveal'){
+      renderScreen13Reveal(el, headline);
+      return;
+    }
     renderScreen13EmailFirst(el, headline);
   }
 
@@ -1475,7 +1587,20 @@
    * since the email step's own check already passed it through -- see that
    * function's own doc comment for why it needs this at all.
    */
-  function wireScreen13Fields(goBackToEmailStep){
+  /**
+   * `labels` (added for the 'reveal' challenger, 2026-08-02 -- optional,
+   * defaults preserve the 'unified' control's exact prior copy) --
+   * { idle, submitting } button text for #fn-s13-continue's two states.
+   * 'unified' never passes this (idle:'Continue', submitting:'Creating
+   * your account…', unchanged). 'reveal' passes idle:'Send me my dream'
+   * (never "Sign up", per this challenger's own spec) and a matching
+   * submitting label -- see renderScreen13Reveal below. Every OTHER piece
+   * of this function (validation, token guards, network calls, tracking)
+   * is completely unchanged and identical for both callers.
+   */
+  function wireScreen13Fields(goBackToEmailStep, labels){
+    var idleLabel = (labels && labels.idle) || 'Continue';
+    var submittingLabel = (labels && labels.submitting) || 'Creating your account…';
     var pwToggle = document.getElementById('fn-pw-toggle');
     var pwInput = document.getElementById('fn-password');
     pwToggle.innerHTML = Icons.eye;
@@ -1551,7 +1676,7 @@
       var mySignupToken = signupAttemptToken;
 
       continueBtn.disabled = true;
-      continueBtn.textContent = 'Creating your account…';
+      continueBtn.textContent = submittingLabel;
       // Defense-in-depth alongside the token check below: with Back
       // blocked for the duration of this call, there is no UI path to
       // reach this screen fresh a second time while this attempt is
@@ -1603,7 +1728,7 @@
           if(mySignupToken !== signupAttemptToken) return; // stale -- same guard as attemptSignup's own callback below
           if(!checkResult.deliverable){
             continueBtn.disabled = false;
-            continueBtn.textContent = 'Continue';
+            continueBtn.textContent = idleLabel;
             backBtn.disabled = false;
             errEl.textContent = 'That email address doesn’t look right — check for a typo.';
             track('signup_error_shown', { reason: 'email_undeliverable', variant: signupVariant });
@@ -1657,7 +1782,7 @@
           if(mySignupToken !== signupAttemptToken || superseded) return;
           if(!ok){
             continueBtn.disabled = false;
-            continueBtn.textContent = 'Continue';
+            continueBtn.textContent = idleLabel;
             backBtn.disabled = false;
             errEl.textContent = err;
             // Generic bucket -- attemptSignup's own err string isn't
@@ -1761,21 +1886,9 @@
     var treatmentReassurance = isRecordMode
       ? 'Free to start, no card needed — you’ll record your dream right after this, then we’ll email it to you the moment it’s ready.'
       : 'Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.';
-    // Same real, never-fake count screen 14 already uses (see
-    // dreamsThisMonthCount's own doc comment above) — omitted entirely
-    // (not a placeholder number) if the feed fetch hasn't resolved yet or
-    // failed. Recomputed fresh on every internal render (not cached once
-    // in this outer closure) because the getSharedFeed() fetch that
-    // populates dreamsThisMonthCount is still in flight for meaningfully
-    // more visitors here than on screen 14 (this is an earlier funnel
-    // step) — caching the value at first-render time would freeze out the
-    // proof strip for the rest of the visitor's time on screen 13 even if
-    // the fetch resolves seconds later while they're still typing.
-    function computeProofStripHtml(){
-      return (dreamsThisMonthCount !== null) ?
-        ('<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>' + dreamsThisMonthCount.toLocaleString() + (dreamsThisMonthCount === 1 ? ' dream' : ' dreams') + ' brought to life this month</span></div>') :
-        '';
-    }
+    // computeProofStripHtml is the shared, outer-scope helper above
+    // (lifted out of this closure 2026-08-02 for the 'reveal' challenger --
+    // see its own doc comment) -- behavior here is unchanged.
 
     function renderEmailStep(prefillEmail){
       el.innerHTML =
@@ -1951,6 +2064,241 @@
         renderEmailStep(email);
       });
       wireScreen13Fields(function(){ renderEmailStep(email); });
+      document.getElementById('fn-password').focus();
+    }
+
+    renderEmailStep('');
+  }
+
+  // ===================================================================
+  // Screen 13 — the 'reveal' challenger (tracker item
+  // for-product-build-now-email-wall-fix-1-n-6qvebd, currently mock-only --
+  // see SIGNUP_REVEAL_CHALLENGER_LIVE's own doc comment above, and
+  // reveal-variant-mock-x7q4.html for the founder-facing standalone
+  // review artifact). Reuses EVERY piece of 'unified's own form mechanics
+  // completely unchanged -- same email-first sequencing (renderEmailStep
+  // <-> renderPasswordStep DOM swap), same checkEmailAvailable/
+  // getOrStartPendingGeneration capture-before-password-reveal timing, same
+  // wireScreen13Fields submission wiring (token guards, attemptSignup,
+  // completeSignupAndAdvance, the CompleteRegistration Pixel call at the
+  // exact same depth -- see that function's own comment, untouched here)
+  // -- only the FRAMING around the form changes, per this challenger's
+  // rediagnosis: 70% of visitors bounce AT THE SIGHT of this screen (72
+  // reach it, 22 pass), not on the form itself -- visitors who already
+  // engaged with the funnel (typed a dream, ran the quiz) complete at 90%+
+  // once they commit. Three visible differences from 'unified':
+  //   1. A live "your dream is forming" veil (formingFrameHtml/
+  //      tryShowFormingPreview below) sits above the fields on BOTH the
+  //      email step and the password step -- decorative continuity from
+  //      the quiz/caption the visitor already completed, never something
+  //      this screen blocks or waits on.
+  //   2. The submit button reads "Send me my dream", never "Sign up" (see
+  //      wireScreen13Fields' own `labels` param, used only by this
+  //      variant).
+  //   3. A save-framing reassurance line replaces 'unified's own "free to
+  //      start" line -- verified TRUE against how this screen's own
+  //      generate-during-signup seam actually behaves, not just written to
+  //      sound reassuring:
+  //        - getOrStartPendingGeneration(email) already fires the moment
+  //          the EMAIL step's own check-email.js check passes -- BEFORE
+  //          the password field ever appears, let alone before signup
+  //          completes (see renderEmailStep's tryAdvance below, identical
+  //          in spirit to 'unified's own).
+  //        - That call creates a real lib/pending-dreams.js record keyed
+  //          on this exact email (start-pending-generation.js).
+  //        - dream-webhook.js (fal's own completion webhook) sends the
+  //          "your dream is ready" email to that address the moment
+  //          generation finishes, REGARDLESS of whether this browser tab
+  //          is still open or signup ever completes -- claim-pending-
+  //          generation.js only ever SUPPRESSES that email for a visitor
+  //          who came back and finished signing up on their own; it is
+  //          never a precondition for the email to send in the first
+  //          place (see that file's own header comment). claim-dream.html
+  //          is the durable landing page for exactly a "closed the window"
+  //          visitor to come back and save the finished dream later.
+  //      So "saving to your email, waiting even if you close this window"
+  //      is accurate from the moment the email step's Continue succeeds --
+  //      NOT merely from screen load, and NOT contingent on signup ever
+  //      completing. isRecordMode is the one real exception: no pending
+  //      generation is ever started for Record-it (captionText is empty --
+  //      nothing exists yet to save; recording happens after signup, on
+  //      create.html), so that path gets its own, still-true copy instead,
+  //      matching 'unified's own isRecordMode-aware reassurance line
+  //      immediately above renderScreen13EmailFirst.
+  // ===================================================================
+
+  /**
+   * Markup for the forming veil -- see this file's <style> block, the
+   * ".fn-forming-frame..." comment right above those rules, for the visual
+   * convention this reuses (home.html's own day0card forming veil, itself
+   * ported from funnel-end-mock-x7q4.html). `caption` is the copy shown
+   * while purely anticipation-only, which is what the overwhelming
+   * majority of visitors will ever see (see tryShowFormingPreview's own
+   * doc comment on why). #fn-forming-still stays hidden (display:none, via
+   * inline style) until tryShowFormingPreview finds something to show.
+   */
+  function formingFrameHtml(caption){
+    return '<div class="fn-forming-frame" id="fn-forming-frame" role="img" aria-label="' + esc(caption) + '">' +
+      '<video class="fn-forming-still" id="fn-forming-still" muted loop playsinline style="display:none;"></video>' +
+      '<div class="fn-form-sweep"></div>' +
+      '<svg class="fn-form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>' +
+      '<div class="fn-form-caption">' + esc(caption) + '</div>' +
+    '</div>';
+  }
+
+  /**
+   * Best-effort, ONE-SHOT opportunistic check -- not a poll loop, never
+   * something this screen waits on (see this function's own call sites,
+   * always fired fire-and-forget right after a render or right after
+   * getOrStartPendingGeneration settles, never awaited by anything the
+   * visitor is blocked on). video-status.js has no "partial frame" concept,
+   * only done/not-done (see that file's own header comment) -- there is no
+   * separate frame-extraction feature anywhere in this codebase -- so
+   * "still frame" here means the finished video itself, rendered heavily
+   * blurred and muted via .fn-forming-still's own CSS (see the <style>
+   * block above), never a full, sharp reveal. In practice this will find
+   * nothing for the overwhelming majority of visitors: a real Veo
+   * generation takes 1-6 minutes (this codebase's own documented range),
+   * and this screen is reached/left in seconds -- exactly why this is a
+   * single opportunistic check, not a loop worth building, and exactly
+   * what "degrading gracefully to anticipation-only" (this feature's own
+   * spec) means in practice. Silently no-ops (leaves the anticipation-only
+   * veil exactly as it was) on a missing pendingOperationName, a detached
+   * DOM (the visitor already advanced past this render), a network
+   * failure, a timeout, or a not-yet-done status -- same resilient "never
+   * break the funnel over a decorative extra" posture as this file's other
+   * generation-adjacent best-effort calls (see startPendingGeneration's own
+   * doc comment).
+   */
+  function tryShowFormingPreview(){
+    if(!pendingOperationName) return;
+    if(!document.getElementById('fn-forming-still')) return;
+    var controller = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function(){ controller.abort(); }, 3000) : null;
+    fetch('/.netlify/functions/video-status?name=' + encodeURIComponent(pendingOperationName), controller ? { signal: controller.signal } : {})
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(timeoutId) clearTimeout(timeoutId);
+        if(!data || !data.done || !data.videoUrl) return;
+        var videoEl = document.getElementById('fn-forming-still'); // re-read -- the screen may have re-rendered since the fetch started
+        if(!videoEl) return;
+        videoEl.src = data.videoUrl;
+        videoEl.style.display = 'block';
+        videoEl.play().catch(function(){ /* autoplay can be blocked -- the blurred poster frame alone still reads fine */ });
+      })
+      .catch(function(){ if(timeoutId) clearTimeout(timeoutId); /* best-effort only -- see this function's own doc comment */ });
+  }
+
+  function renderScreen13Reveal(el, headline){
+    var formingCaption = isRecordMode ? 'Your dream is ready to record…' : 'Your dream is forming…';
+    // Save-framing reassurance -- see this function's OWN block comment
+    // above (right before formingFrameHtml) for the exact verification
+    // this claim is built on.
+    var revealReassurance = isRecordMode
+      ? 'Record it, then it’s saved — we’ll email your finished dream the moment it’s ready, even if you’ve moved on by then.'
+      : 'Your dream is saving to your email — it’ll be waiting even if you close this window.';
+    var submitLabels = { idle: 'Send me my dream', submitting: 'Sending your dream…' };
+
+    function renderEmailStep(prefillEmail){
+      el.innerHTML =
+        '<div class="fn-headline">' + headline + '</div>' +
+        formingFrameHtml(formingCaption) +
+        computeProofStripHtml() +
+        '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + revealReassurance + '</div>' +
+        facebookSignupButtonHtml() +
+        '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" style="margin-top:4px;" value="' + esc(prefillEmail || '') + '">' +
+        '<div class="fn-err-text" id="fn-signup-error"></div>' +
+        '<button class="fn-btn-primary" id="fn-s13-email-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
+        '<div class="fn-spacer"></div>';
+
+      tryShowFormingPreview();
+
+      var emailInput = document.getElementById('fn-email');
+      var errEl = document.getElementById('fn-signup-error');
+      var nextBtn = document.getElementById('fn-s13-email-continue');
+      // Same verify -> capture -> reveal sequence as 'unified's own
+      // tryAdvance (renderScreen13EmailFirst above) -- see that function's
+      // own doc comment for the full reasoning. Kept as its own copy here
+      // (not shared) so this variant can hook tryShowFormingPreview onto
+      // the capture step without threading a callback through 'unified's
+      // control-arm code, matching this codebase's page-local-script,
+      // per-variant-renderer precedent (see the original 'a'/'b' A/B, git
+      // history commit 9777300).
+      function tryAdvance(){
+        var email = emailInput.value.trim();
+        errEl.textContent = '';
+        maybeTrackEmailEntered(email);
+        if(!email || email.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; track('signup_error_shown', { reason: 'invalid_email', variant: signupVariant }); return; }
+
+        nextBtn.disabled = true;
+        nextBtn.textContent = 'Checking…';
+        var myEmailStepToken = signupAttemptToken;
+        checkEmailAvailable(email).then(function(checkResult){
+          if(myEmailStepToken !== signupAttemptToken) return; // stale -- navigated away (Back) while this was in flight
+          if(!checkResult.deliverable){
+            nextBtn.disabled = false;
+            nextBtn.textContent = 'Continue';
+            errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+            track('signup_error_shown', { reason: 'email_undeliverable', variant: signupVariant });
+            return;
+          }
+          if(!checkResult.available){
+            track('signup_error_shown', { reason: 'already_registered', variant: signupVariant });
+            renderInPlaceLoginStep(email, function(){ renderEmailStep(email); });
+            return;
+          }
+          // Capture, same timing as 'unified' -- see this function's own
+          // header comment for why the reassurance line above is true from
+          // exactly this point on. Chains tryShowFormingPreview() onto the
+          // SAME promise (not a second call) so the one-shot check runs
+          // right after pendingOperationName is actually known, rather
+          // than immediately (when it's guaranteed to still be null).
+          if(!isRecordMode) getOrStartPendingGeneration(email).then(function(){ tryShowFormingPreview(); });
+          renderPasswordStep(email);
+        });
+      }
+      nextBtn.addEventListener('click', tryAdvance);
+      emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); tryAdvance(); } });
+      emailInput.addEventListener('blur', function(){ maybeTrackEmailEntered(emailInput.value.trim()); });
+      wireFacebookSignupButton();
+      applyPendingFacebookError();
+      emailInput.focus();
+    }
+
+    function renderPasswordStep(email){
+      el.innerHTML =
+        '<div class="fn-headline">' + headline + '</div>' +
+        formingFrameHtml(formingCaption) +
+        computeProofStripHtml() +
+        '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + revealReassurance + '</div>' +
+        '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
+        '<button type="button" class="fn-small-link" id="fn-s13-change-email" style="margin:-6px 0 12px;">Change email</button>' +
+        '<div class="fn-field-pw-wrap">' +
+          // Same WEBVIEW PASSWORD MITIGATION attributes as 'unified's own
+          // password step -- see renderScreen13EmailFirst's own doc
+          // comment above for the full reasoning; unchanged here.
+          '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">' +
+          '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
+        '</div>' +
+        '<div class="fn-err-text" id="fn-signup-error"></div>' +
+        '<button class="fn-btn-primary" id="fn-s13-continue" type="button" style="margin-bottom:12px;">' + esc(submitLabels.idle) + '</button>' +
+        '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
+        '<div class="fn-spacer"></div>';
+
+      tryShowFormingPreview();
+
+      document.getElementById('fn-s13-change-email').addEventListener('click', function(){
+        // Same invalidation discipline as 'unified's own Change-email
+        // handler -- see renderScreen13EmailFirst's version for the full
+        // reasoning.
+        signupAttemptToken++;
+        DreamStore.invalidatePendingSignup();
+        backBtn.disabled = false;
+        renderEmailStep(email);
+      });
+      // Same shared submission wiring 'unified' uses -- only `submitLabels`
+      // differs (see wireScreen13Fields' own doc comment on that param).
+      wireScreen13Fields(function(){ renderEmailStep(email); }, submitLabels);
       document.getElementById('fn-password').focus();
     }
 
