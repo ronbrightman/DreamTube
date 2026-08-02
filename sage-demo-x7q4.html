@@ -24,7 +24,7 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
   <button class="modelbtn" id="mb-rich" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Full lips · $0.28</button>
   <button class="modelbtn" id="mb-muse" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Budget lips · $0.16</button>
 </div>
-<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A: his lips really speak the opening line, then he turns to the fire while his voice reads the rest — 2¢ per reading.</p>
+<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A: he speaks the opening with real lips, then raises his book over them while his voice reads on — your book idea. 2¢ per reading.</p>
 <div class="stage" id="stage">
   <video id="v" src="sage-optiona-x7q4.mp4" playsinline preload="auto"></video>
   <div class="cap" id="cap"></div>
@@ -34,14 +34,14 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
 <p class="note">Demo v3: reading at 0.8× pace, frame cropped so text sits above the fold (founder notes 08-02). sync-lipsync + Kokoro; caption timings mapped to the audio's real pauses. Production would generate this per reading.</p>
 <script>
 var CUES=[
- [0.37,"Ah... the desert."],
- [1.72,"You walked a long way through burning sand, and still — you reached the water."],
- [6.02,"Listen to what your dream is telling you."],
- [8.20,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
- [13.15,"And the oasis... the oasis is not luck."],
- [15.85,"Your own footprints led there."],
- [17.34,"You are closer to what you seek than you believe."],
- [20.28,"Tonight, notice what you reach for... and let yourself arrive."]
+ [0.31,"Ah... the desert."],
+ [1.67,"You walked a long way through burning sand, and still — you reached the water."],
+ [7.25,"Listen to what your dream is telling you."],
+ [9.41,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
+ [14.36,"And the oasis... the oasis is not luck."],
+ [17.06,"Your own footprints led there."],
+ [18.55,"You are closer to what you seek than you believe."],
+ [21.49,"Tonight, notice what you reach for... and let yourself arrive."]
 ];
 var v=document.getElementById('v'),cap=document.getElementById('cap'),ov=document.getElementById('ov'),plabel=document.getElementById('plabel');
 document.getElementById('stage').addEventListener('click',function(){
@@ -51,7 +51,7 @@ document.getElementById('stage').addEventListener('click',function(){
 v.addEventListener('timeupdate',function(){
   var t=v.currentTime,line='';
   for(var i=0;i<CUES.length;i++){if(t>=CUES[i][0])line=CUES[i][1];}
-  if(t>23.5)line='';
+  if(t>24.9)line='';
   if(cap.textContent!==line)cap.innerHTML=line?'<span>'+line+'</span>':'';
 });
 v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
