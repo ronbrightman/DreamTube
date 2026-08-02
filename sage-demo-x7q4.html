@@ -19,12 +19,14 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
 </style></head><body>
 <h1>The Sage reads your dream</h1>
 <p class="sub">Now really speaking — lips, face and expression synced to his voice, captions on the video. Tap to play (sound on).</p>
-<div style="display:flex;gap:8px;margin-bottom:12px">
-  <button class="modelbtn on" id="mb-rich" style="flex:1;padding:10px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:#9d90ff;color:#0c0a1a;font-weight:800;font-family:inherit;cursor:pointer">Model 1 · $0.28/reading</button>
-  <button class="modelbtn" id="mb-muse" style="flex:1;padding:10px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-family:inherit;cursor:pointer">Model 2 · $0.16/reading</button>
+<div style="display:flex;gap:6px;margin-bottom:12px">
+  <button class="modelbtn" id="mb-opta" style="flex:1.2;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:#9d90ff;color:#0c0a1a;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Option A · $0.02</button>
+  <button class="modelbtn" id="mb-rich" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Full lips · $0.28</button>
+  <button class="modelbtn" id="mb-muse" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Budget lips · $0.16</button>
 </div>
+<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A: his lips really speak the opening line, then he turns to the fire while his voice reads the rest — 2¢ per reading.</p>
 <div class="stage" id="stage">
-  <video id="v" src="sage-lipsync-x7q4.mp4" playsinline preload="auto"></video>
+  <video id="v" src="sage-optiona-x7q4.mp4" playsinline preload="auto"></video>
   <div class="cap" id="cap"></div>
   <div class="playov" id="ov"><div class="pbtn"></div><div class="plabel" id="plabel">▶ Hear the reading</div></div>
 </div>
@@ -53,14 +55,17 @@ v.addEventListener('timeupdate',function(){
   if(cap.textContent!==line)cap.innerHTML=line?'<span>'+line+'</span>':'';
 });
 v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
-var mbRich=document.getElementById('mb-rich'),mbMuse=document.getElementById('mb-muse');
-function pickModel(src,onBtn,offBtn){
-  v.pause();ov.classList.remove('off');cap.innerHTML='';plabel.textContent='▶ Hear the reading';
-  v.src=src;v.load();
-  onBtn.style.background='#9d90ff';onBtn.style.color='#0c0a1a';
-  offBtn.style.background='transparent';offBtn.style.color='#eae7fb';
-}
-mbRich.addEventListener('click',function(){pickModel('sage-lipsync-x7q4.mp4',mbRich,mbMuse);});
-mbMuse.addEventListener('click',function(){pickModel('sage-lipsync-muse-x7q4.mp4',mbMuse,mbRich);});
+var BTNS=[document.getElementById('mb-opta'),document.getElementById('mb-rich'),document.getElementById('mb-muse')];
+var SRCS=['sage-optiona-x7q4.mp4','sage-lipsync-x7q4.mp4','sage-lipsync-muse-x7q4.mp4'];
+BTNS.forEach(function(btn,i){
+  btn.addEventListener('click',function(){
+    v.pause();ov.classList.remove('off');cap.innerHTML='';plabel.textContent='▶ Hear the reading';
+    v.src=SRCS[i];v.load();
+    BTNS.forEach(function(b,j){
+      b.style.background=(i===j)?'#9d90ff':'transparent';
+      b.style.color=(i===j)?'#0c0a1a':'#eae7fb';
+    });
+  });
+});
 </script>
 </body></html>
