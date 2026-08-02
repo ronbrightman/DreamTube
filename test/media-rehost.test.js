@@ -122,3 +122,56 @@ test('rehostBestEffort: invalid input (missing sourceUrl/key/unknown mediaType) 
   assert.equal((await mediaRehost.rehostBestEffort({}, 'audio', 'https://fal.media/x.mp4', 'k')).ok, false);
   assert.equal(fetchCalls, 0);
 });
+
+// SIZE GATE — tracker item for-product-urgent-founder-repro-on-drea-uq3a36.
+// See lib/media-rehost.js's own "SIZE" header comment: video-file.mjs/
+// image-file.mjs are Netlify streaming functions with a documented 20 MB
+// response cap, so anything over MAX_STREAMABLE_BYTES must still be WRITTEN
+// (durability) but must NOT be handed out as the served url (would 502).
+
+test('rehostBestEffort: oversized media is still stored (durability) but reports ok:false/tooLargeToServe, keeping the caller on the source url', async function () {
+  var big = new ArrayBuffer(mediaRehost.MAX_STREAMABLE_BYTES + 1);
+  global.fetch = async function () { return fakeMediaResponse(big, 'video/mp4'); };
+  var result = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/big.mp4', 'req-big');
+  assert.equal(result.ok, false);
+  assert.equal(result.tooLargeToServe, true);
+
+  var { getStore } = require('@netlify/blobs');
+  var stored = await getStore({ name: 'dreamtube-videos' }).getWithMetadata('req-big');
+  assert.equal(stored.data, big, 'still written for durability even though it cannot be served back');
+  assert.equal(stored.metadata.byteLength, mediaRehost.MAX_STREAMABLE_BYTES + 1);
+  assert.equal(stored.metadata.sourceUrl, 'https://fal.media/big.mp4', 'source url recorded so a serving function can fall back to it');
+});
+
+test('rehostBestEffort: media exactly at the ceiling is fine; one byte over is not', async function () {
+  var exact = new ArrayBuffer(mediaRehost.MAX_STREAMABLE_BYTES);
+  global.fetch = async function () { return fakeMediaResponse(exact, 'video/mp4'); };
+  var result = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/exact.mp4', 'req-exact');
+  assert.equal(result.ok, true);
+  assert.equal(result.url, '/.netlify/functions/video-file?key=req-exact');
+});
+
+test('rehostBestEffort: a repeated call for an already-oversized key stays ok:false without re-fetching', async function () {
+  var fetchCalls = 0;
+  var big = new ArrayBuffer(mediaRehost.MAX_STREAMABLE_BYTES + 1);
+  global.fetch = async function () { fetchCalls++; return fakeMediaResponse(big, 'video/mp4'); };
+  var first = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/big.mp4', 'req-big-dup');
+  var second = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/big.mp4', 'req-big-dup');
+  assert.equal(first.ok, false);
+  assert.equal(second.ok, false);
+  assert.equal(second.tooLargeToServe, true);
+  assert.equal(fetchCalls, 1, 'the second call must not re-fetch the source -- getMetadata short-circuits it');
+});
+
+test('rehostBestEffort: a pre-existing record with no byteLength metadata (written before this size gate shipped) is assumed safe, not oversized', async function () {
+  global.fetch = async function () { return fakeMediaResponse(new ArrayBuffer(4), 'video/mp4'); };
+  // Simulate a legacy record: write directly via the mocked SDK's set(),
+  // bypassing rehostBestEffort entirely, with no byteLength/sourceUrl in
+  // metadata -- exactly what pre-fix code wrote.
+  var { getStore } = require('@netlify/blobs');
+  await getStore({ name: 'dreamtube-videos' }).set('req-legacy', new ArrayBuffer(4), { metadata: { contentType: 'video/mp4' } });
+
+  var result = await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/legacy.mp4', 'req-legacy');
+  assert.equal(result.ok, true, 'no byteLength on file means "unknown", not "oversized" -- must not regress an already-working legacy durable url');
+  assert.equal(result.url, '/.netlify/functions/video-file?key=req-legacy');
+});
