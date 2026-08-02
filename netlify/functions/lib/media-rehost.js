@@ -64,10 +64,36 @@
 // the fetch+write entirely if already present, mirroring video-status.js's
 // own legacy checkVeoStatus existing-key check.
 //
-// SIZE: no explicit cap — this only ever re-hosts OUR OWN just-generated
-// fal output (a trusted source, not an arbitrary user-supplied URL), and
-// fal's own media (short video clips, single images) is always well within
-// any Blobs per-object size Netlify actually enforces.
+// SIZE — CORRECTED 2026-08-02 (tracker item
+// for-product-urgent-founder-repro-on-drea-uq3a36): this comment used to
+// claim "no explicit cap ... fal's own media is always well within any
+// Blobs per-object size Netlify actually enforces." That was true for
+// WRITING into Blobs (no meaningful cap there) but wrong about what
+// matters: video-file.mjs/image-file.mjs — the only way anything stored
+// here is ever served back out — are Netlify "streaming" (V2,
+// Response-based) functions, and Netlify's own docs
+// (https://docs.netlify.com/build/functions/api/, "Streaming responses")
+// state plainly: "Streaming functions have a 60-second execution limit and
+// a 20 MB response size limit." A real fal-ai/veo3.1 8s/720p clip with
+// audio routinely exceeds that. Every dream re-hosted since the own-storage
+// cutover was silently switched to a URL that then 502'd for anyone trying
+// to actually watch it ("error decoding lambda response: unexpected end of
+// JSON input" — consistent with Netlify's own Lambda-response-streaming
+// adapter breaking on an oversized body, not a bug in this codebase's own
+// Blobs calls, which are correct per the installed SDK's types in both the
+// 8.x and 10.x majors — checked both, no relevant behavior difference).
+//
+// MAX_STREAMABLE_BYTES below gates this: anything over that ceiling still
+// gets WRITTEN to Blobs (durability doesn't stop mattering just because we
+// can't serve it back through our own endpoint today), but rehostBestEffort
+// returns { ok: false } for it so the caller keeps fal's own url — which
+// actually plays, and (for anything generated since commit a098b14) is
+// protected from fal's own expiry by FAL_NO_EXPIRY_HEADER (see
+// generate-video.js/generate-image.js) even though it isn't "our own
+// storage." video-file.mjs/image-file.mjs also carry a matching defensive
+// check (see their own header comments) as a second layer, in case
+// anything else ever writes into these stores without going through this
+// gate.
 //
 // JPEG NORMALIZATION (image dreams, tracker item's own nice-to-have, cited
 // from the original 0hpbm0 scope — Instagram publishing later needs JPEG
@@ -85,6 +111,16 @@ var { getStore, connectLambda } = require('@netlify/blobs');
 var STORE_NAMES = { video: 'dreamtube-videos', image: 'dreamtube-images' };
 var FILE_FUNCTIONS = { video: 'video-file', image: 'image-file' };
 var DEFAULT_CONTENT_TYPES = { video: 'video/mp4', image: 'image/jpeg' };
+
+// Netlify's documented hard ceiling for a streaming function's response —
+// see this file's header comment ("SIZE") for the full reasoning and the
+// exact doc quote. 18 MiB, not the full 20 MB: headroom for HTTP header
+// framing and for the "20 MB" figure's own decimal-vs-binary ambiguity —
+// this codebase would rather fall back to fal's own url a little early than
+// risk actually tripping the real ceiling. video-file.mjs/image-file.mjs
+// duplicate this same value (self-contained-file convention, see e.g.
+// image-file.mjs's own header comment) — if this ever changes, update both.
+var MAX_STREAMABLE_BYTES = 18 * 1024 * 1024;
 
 /** The durable, Blobs-backed URL for a given mediaType+key — see lib/media-status.js's isDurableUrl, which must recognize exactly this shape. */
 function durableUrl(mediaType, key) {
@@ -107,16 +143,38 @@ async function rehostBestEffort(event, mediaType, sourceUrl, key) {
     connectLambda(event);
     var store = getStore({ name: storeName });
 
-    // Idempotent — see header comment.
+    // Idempotent — see header comment. A record written BEFORE the size
+    // gate below existed has no metadata.byteLength at all; treated as
+    // "unknown, assumed safe" rather than "definitely oversized" so an
+    // already-working small durable url never regresses. A record written
+    // AFTER the gate always carries byteLength, so a second call for the
+    // same key (a duplicate/retried completion) makes exactly the same
+    // servable/not-servable call the first one did.
     var existing = await store.getMetadata(key);
-    if (existing) return { ok: true, url: durableUrl(mediaType, key) };
+    if (existing) {
+      var existingMeta = existing.metadata || {};
+      var existingOversized = typeof existingMeta.byteLength === 'number' && existingMeta.byteLength > MAX_STREAMABLE_BYTES;
+      return existingOversized ? { ok: false, tooLargeToServe: true } : { ok: true, url: durableUrl(mediaType, key) };
+    }
 
     var res = await fetch(sourceUrl);
     if (!res.ok) return { ok: false };
     var arrayBuffer = await res.arrayBuffer();
     var contentType = (res.headers && res.headers.get && res.headers.get('content-type')) || DEFAULT_CONTENT_TYPES[mediaType];
+    var byteLength = arrayBuffer.byteLength;
 
-    await store.set(key, arrayBuffer, { metadata: { contentType: contentType } });
+    // Stored regardless of size — durability (never depend solely on fal's
+    // own retention) still matters even for media too big to ever stream
+    // back through video-file.mjs/image-file.mjs on this platform.
+    // sourceUrl+byteLength are recorded so a SERVING function can fall back
+    // defensively too (see video-file.mjs/image-file.mjs's own comments).
+    await store.set(key, arrayBuffer, { metadata: { contentType: contentType, sourceUrl: sourceUrl, byteLength: byteLength } });
+
+    if (byteLength > MAX_STREAMABLE_BYTES) {
+      console.warn('media-rehost: ' + mediaType + ' key=' + key + ' is ' + byteLength + ' bytes, over the ' + MAX_STREAMABLE_BYTES + '-byte streaming-function ceiling — stored for durability, but NOT switching the served url (would 502 per this file\'s "SIZE" header comment). Caller keeps fal\'s own url.');
+      return { ok: false, tooLargeToServe: true };
+    }
+
     return { ok: true, url: durableUrl(mediaType, key) };
   } catch (e) {
     console.error('media-rehost: best-effort re-host failed for ' + mediaType + ' key=' + key, e);
@@ -124,4 +182,4 @@ async function rehostBestEffort(event, mediaType, sourceUrl, key) {
   }
 }
 
-module.exports = { rehostBestEffort, durableUrl, STORE_NAMES, FILE_FUNCTIONS };
+module.exports = { rehostBestEffort, durableUrl, STORE_NAMES, FILE_FUNCTIONS, MAX_STREAMABLE_BYTES };

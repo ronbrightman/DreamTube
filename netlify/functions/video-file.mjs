@@ -21,9 +21,33 @@
 // MissingBlobsEnvironmentError from the genuine, unmocked package). Same
 // getStore function either way at runtime; this just keeps it on the one
 // module identity the rest of the app's mocking already covers.
+//
+// SIZE GUARD (added 2026-08-02, tracker item
+// for-product-urgent-founder-repro-on-drea-uq3a36): Netlify's own docs
+// (https://docs.netlify.com/build/functions/api/, "Streaming responses")
+// state "Streaming functions have a 60-second execution limit and a 20 MB
+// response size limit" — this function IS exactly that kind of function, so
+// attempting to stream anything bigger 502s with an opaque
+// "error decoding lambda response: unexpected end of JSON input" (Netlify's
+// own Lambda-response-streaming adapter breaking on an oversized body, not
+// a bug in the Blobs call itself — its shape is correct against the
+// installed SDK's own types in both the 8.x and 10.x majors). The real fix
+// is upstream, in lib/media-rehost.js: it now gates on the same
+// MAX_STREAMABLE_BYTES ceiling and never hands out a durable url for
+// anything over it in the first place. What's below is a SECOND, defensive
+// layer for anything that reaches this store oversized anyway (a future
+// regression in that gate, a mis-set threshold, or any other path that
+// ever writes into this store without going through rehostBestEffort):
+// redirect to the ORIGINAL fal url recorded in metadata.sourceUrl at write
+// time, rather than attempting (and failing) to stream. Duplicated as a
+// literal, not required from lib/media-rehost.js, matching this codebase's
+// "each function self-contained" convention (see that module's own header
+// comment) — if it ever changes, update both.
 import { createRequire } from 'module';
 var require = createRequire(import.meta.url);
 var { getStore } = require('@netlify/blobs');
+
+var MAX_STREAMABLE_BYTES = 18 * 1024 * 1024;
 
 export default async (req) => {
   var key = new URL(req.url).searchParams.get('key');
@@ -43,7 +67,16 @@ export default async (req) => {
     });
   }
 
-  var contentType = (result.metadata && result.metadata.contentType) || 'video/mp4';
+  var metadata = result.metadata || {};
+  var contentType = metadata.contentType || 'video/mp4';
+
+  // Defense in depth — see header comment above. Should be unreachable in
+  // normal operation now that lib/media-rehost.js gates on the same
+  // threshold before ever handing out this url.
+  if (typeof metadata.byteLength === 'number' && metadata.byteLength > MAX_STREAMABLE_BYTES && metadata.sourceUrl) {
+    return Response.redirect(metadata.sourceUrl, 302);
+  }
+
   return new Response(result.data, {
     status: 200,
     headers: { 'Content-Type': contentType }

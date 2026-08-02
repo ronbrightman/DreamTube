@@ -77,3 +77,50 @@ test('image-file.mjs: streams back exactly what lib/media-rehost.js stored, with
   var buf = await res.arrayBuffer();
   assert.equal(buf.byteLength, 5);
 });
+
+// DEFENSE-IN-DEPTH SIZE GUARD — tracker item
+// for-product-urgent-founder-repro-on-drea-uq3a36. lib/media-rehost.js's own
+// gate is the real fix (it never hands out a durable url for oversized
+// media in the first place — see test/media-rehost.test.js), but a record
+// can still land here oversized via a path that writes into the store
+// directly (bypassing rehostBestEffort) -- these tests cover that fallback
+// so the platform's 20 MB streaming-response cap turns into a clean 302,
+// not an opaque 502.
+
+test('video-file.mjs: redirects to metadata.sourceUrl instead of streaming when metadata says the object is over the streaming ceiling', async function () {
+  var { getStore } = require('@netlify/blobs');
+  await getStore({ name: 'dreamtube-videos' }).set('vf-big', new ArrayBuffer(4), {
+    metadata: { contentType: 'video/mp4', sourceUrl: 'https://fal.media/big-source.mp4', byteLength: 30 * 1024 * 1024 }
+  });
+
+  var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
+  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-big'));
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), 'https://fal.media/big-source.mp4');
+});
+
+test('video-file.mjs: an object at/under the ceiling streams normally even though byteLength metadata is present', async function () {
+  var { getStore } = require('@netlify/blobs');
+  var bytes = new ArrayBuffer(6);
+  await getStore({ name: 'dreamtube-videos' }).set('vf-small', bytes, {
+    metadata: { contentType: 'video/mp4', sourceUrl: 'https://fal.media/small-source.mp4', byteLength: 6 }
+  });
+
+  var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
+  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-small'));
+  assert.equal(res.status, 200);
+  var buf = await res.arrayBuffer();
+  assert.equal(buf.byteLength, 6);
+});
+
+test('image-file.mjs: redirects to metadata.sourceUrl instead of streaming when metadata says the object is over the streaming ceiling', async function () {
+  var { getStore } = require('@netlify/blobs');
+  await getStore({ name: 'dreamtube-images' }).set('if-big', new ArrayBuffer(4), {
+    metadata: { contentType: 'image/png', sourceUrl: 'https://fal.media/big-source.png', byteLength: 30 * 1024 * 1024 }
+  });
+
+  var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
+  var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file?key=if-big'));
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), 'https://fal.media/big-source.png');
+});
