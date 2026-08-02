@@ -118,13 +118,35 @@
          Video-only concept -- hidden entirely (never just disabled-
          looking) whenever Image is selected, per FOUNDER_PRINCIPLES.md's
          "capability-detect and hide" lesson -- see updateMediaTypeUI()
-         below. -->
+         below.
+
+         DISABLED as of tracker item for-product-turn-off-audio-dialogue-
+         gene-ooeyoj (founder directive 2026-08-02): generate-video.js now
+         forces generate_audio:false unconditionally server-side, so this
+         toggle would silently no-op if left interactive -- same "don't
+         leave a control lying that claims to do something it can't"
+         discipline this codebase already applies elsewhere (e.g. the
+         admin.html paywall toggle's own .toggle-switch.disabled state).
+         Shown disabled-with-a-note rather than fully hidden (unlike the
+         image-mode case above, where audio has no meaning at all for a
+         still image and hiding communicates nothing) since this is a real,
+         user-visible behavior change on the video path specifically --
+         users who remember this toggle deserve to know why their video
+         came back silent rather than just losing the option with no
+         explanation. .toggle-switch.disabled (css/styles.css) already
+         exists (opacity .5, pointer-events:none) -- reused, not
+         reinvented. The underlying audioOn/musicStyle plumbing (payload
+         fields, js/store.js pass-through) is left fully intact and inert
+         per the tracker item's own instruction, so this is a trivial flip
+         back on if the founder ever reverses the directive -- see
+         updateAudioUI() below for where audioOn is now permanently pinned
+         false. -->
     <div class="choice-card" id="audio-toggle-row" style="cursor:default;">
       <div class="choice-text">
         <div class="choice-title">Audio &amp; music</div>
-        <div class="admin-row-sub" id="audio-toggle-sub">Off — no music or sound effects</div>
+        <div class="admin-row-sub" id="audio-toggle-sub">Unavailable — videos are generated silent for now</div>
       </div>
-      <div class="toggle-switch" id="audio-toggle" role="switch" aria-checked="false" aria-label="Audio and music"></div>
+      <div class="toggle-switch disabled" id="audio-toggle" role="switch" aria-checked="false" aria-disabled="true" aria-label="Audio and music (currently unavailable)"></div>
     </div>
     <div class="opt-chip-row" id="music-style-row" style="display:none; margin-bottom:14px;">
       <div class="opt-chip selected" data-music-style="dreamy">Dreamy</div>
@@ -260,37 +282,37 @@
   var mediaTypeRow = document.getElementById('media-type-row');
 
   // ===== Audio/music toggle (tracker: for-product-audio-on-off-choice-at-
-  // creat-dyyr98) — DEFAULT OFF, per founder decision. Video-only: hidden
-  // entirely whenever Image is selected (updateMediaTypeUI below), rather
-  // than shown-but-disabled — audio has no meaning for a still image.
+  // creat-dyyr98) — permanently pinned OFF as of tracker item for-product-
+  // turn-off-audio-dialogue-gene-ooeyoj (founder directive 2026-08-02):
+  // generate-video.js now forces generate_audio:false unconditionally
+  // server-side, so this control is non-functional and shown disabled (see
+  // the markup's own comment above for why disabled-with-a-note rather
+  // than hidden). audioOn is intentionally never reassigned anywhere below
+  // — no click handler flips it — so it stays false for the lifetime of
+  // this page load; musicStyle is left set but is never actually read
+  // anywhere now that currentDraftPatch() below only sends it when audioOn
+  // is true, which it never is.
   var audioOn = false;
-  var musicStyle = 'dreamy'; // only sent to the server once audioOn is true
+  var musicStyle = 'dreamy'; // inert — kept only so currentDraftPatch()'s shape is unchanged; never actually sent (see below)
   var audioToggleRow = document.getElementById('audio-toggle-row');
   var audioToggle = document.getElementById('audio-toggle');
   var audioToggleSub = document.getElementById('audio-toggle-sub');
   var musicStyleRow = document.getElementById('music-style-row');
 
   function updateAudioUI(){
-    audioToggle.classList.toggle('on', audioOn);
-    audioToggle.setAttribute('aria-checked', String(audioOn));
-    audioToggleSub.textContent = audioOn ? 'On — adds a music track to your video' : 'Off — no music or sound effects';
-    // Only ever visible when both the media type supports audio AND the
-    // toggle itself is on — updateMediaTypeUI (below) independently gates
-    // the media-type half of this, this function owns the audioOn half.
-    musicStyleRow.style.display = (audioOn && selectedMediaType !== 'image') ? 'flex' : 'none';
+    audioToggle.classList.remove('on');
+    audioToggle.setAttribute('aria-checked', 'false');
+    audioToggleSub.textContent = 'Unavailable — videos are generated silent for now';
+    // Always hidden — audioOn is permanently false, so there's never a
+    // music style to pick (see the doc comment above).
+    musicStyleRow.style.display = 'none';
   }
-  audioToggle.addEventListener('click', function(){
-    audioOn = !audioOn;
-    updateAudioUI();
-  });
-  musicStyleRow.addEventListener('click', function(e){
-    var chip = e.target.closest('.opt-chip');
-    if(!chip) return;
-    musicStyle = chip.dataset.musicStyle;
-    Array.prototype.forEach.call(musicStyleRow.querySelectorAll('.opt-chip'), function(c){
-      c.classList.toggle('selected', c.dataset.musicStyle === musicStyle);
-    });
-  });
+  // No click listener on audioToggle — the control is disabled (see the
+  // markup's .toggle-switch.disabled class, pointer-events:none) and
+  // there's nothing to toggle to now that audio is server-forced off
+  // unconditionally. musicStyleRow's own click listener is likewise
+  // removed — it's never shown (see updateAudioUI above), so there's
+  // nothing to click.
 
   function updateMediaTypeUI(){
     Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){

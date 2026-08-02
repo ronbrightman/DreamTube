@@ -4,17 +4,17 @@
 // -> kicks off a video generation job and returns an operationName the
 // client can poll via video-status.js.
 //
-// audioOn (optional, default false — tracker item for-product-audio-on-
-// off-choice-at-creat-dyyr98) is style.html's client-side audio/music
-// toggle. musicStyle (optional, only meaningful when audioOn is true) is
-// one of MUSIC_STYLE_MODIFIERS' keys below — a small fixed preset list
-// fed into the prompt as a modifier for Veo's own native audio
-// generation, not a separate music-generation call. The FINAL
-// generate_audio sent to fal is never audioOn taken as-is — see
-// generateAudio's own computation in the handler below, which can
-// independently override it to false (a condensed caption, or the
-// server-side owner/IL cost-control profile — see
-// resolveGenerationProfile) but never override it to true.
+// audioOn/musicStyle (both optional) are still accepted on the request body
+// for backward-compatible plumbing only — see js/store.js and style.html's
+// own comments — but as of tracker item for-product-turn-off-audio-
+// dialogue-gene-ooeyoj (founder directive 2026-08-02) they no longer have
+// any effect: generate_audio is now hardcoded false for every path below,
+// unconditionally, regardless of what audioOn sends. Two reasons, both from
+// the founder directly: (1) cost — audio-on bills meaningfully higher per
+// second than audio-off on every veo3.1 endpoint used here; (2) correctness
+// — Veo's native audio can include invented lip-synced dialogue the user
+// never wrote, which is unacceptable regardless of cost. See
+// generateAudio's own computation in the handler below.
 //
 // ownerBypassToken (optional) — see lib/owner-bypass.js and
 // verify-owner-bypass.js for how the founder obtains one (a real,
@@ -116,10 +116,12 @@ var STYLE_MODIFIERS = {
 // separate music-generation model/API call here). Only ever appended
 // when the final, server-computed generateAudio is true (see the
 // handler below) — telling the model "add cinematic music" when the
-// request is actually generate_audio:false would be meaningless. An
-// unrecognized/missing key (a stale client build, or Part B's owner/IL
-// force-off making musicStyle moot) is silently skipped rather than
-// guessed at, same permissive-fallback spirit as STYLE_MODIFIERS above.
+// request is actually generate_audio:false would be meaningless.
+// generateAudio is unconditionally false as of 2026-08-02 (tracker item
+// for-product-turn-off-audio-dialogue-gene-ooeyoj — see the handler
+// below), so in practice this map is currently always skipped — kept
+// in place rather than deleted since it's a trivial flip back on if
+// that directive is ever reversed.
 var MUSIC_STYLE_MODIFIERS = {
   dreamy: 'with a soft, dreamy ambient musical score',
   cinematic: 'with a sweeping, cinematic orchestral score',
@@ -308,10 +310,10 @@ function withWebhook(url, webhookUrl) {
  * (confirmed via fal.ai's model API docs, 2026-07-20 — not guessed; same
  * param name and default (true) on both this model and the reference-to-
  * video variant below). Defaults true (fal's own default) when the caller
- * doesn't pass one — only generate-video.js's handler ever passes false,
- * and only when the prompt caption was condensed (see
- * lib/prompt-condenser.js) — narrating a condensed version would voice
- * words the user never actually wrote.
+ * doesn't pass one, but as of 2026-08-02 both real callers (this file's own
+ * handler and start-pending-generation.js) always pass false now — see the
+ * `generateAudio` doc comment in the handler below (tracker item
+ * for-product-turn-off-audio-dialogue-gene-ooeyoj) for why.
  *
  * webhookUrl (optional, 5th arg): see withWebhook above — unused by every
  * call site in this file itself.
@@ -689,47 +691,46 @@ effectiveConfig.logEffectiveConfigOnce('generate-video', [
 ]);
 
 /**
- * Server-side "cheap generation profile" (tracker item for-product-cheap-
- * generation-profile-for-yz2ina, founder-approved 2026-07-28 — SCOPED to
- * the audio-off-forcing portion only; the budget-model-switch/shorter-
- * duration portion is explicitly out of scope here, blocked on a
- * still-running model-selection eval elsewhere in this pipeline). The
- * founder's own generations, and IL-geo traffic generally, are ~all
- * testing per his own tracker note — so when the request's resolved
- * email matches OWNER_EMAIL (same normalizeEmail-against-OWNER_EMAIL
- * pattern as admin-paywall-toggle.js/add-tracker-item.js — reused, not
- * reinvented) OR the request's geolocation resolves to Israel (lib/geo.js),
- * this forces generate_audio:false regardless of whatever the client's
- * own Part-A audio toggle asked for. Deliberately SILENT to the client —
- * no UI indication, no error — this is pure cost control on traffic
- * that's overwhelmingly the founder's own testing, not a user-facing
- * feature; the accepted tradeoff (founder explicit, per the tracker item)
- * is that any genuine non-testing IL user also gets the cheaper profile,
- * acceptable since IL is already excluded from every metric this app
- * tracks.
+ * Server-side generation-profile CLASSIFIER (tracker item for-product-
+ * cheap-generation-profile-for-yz2ina, founder-approved 2026-07-28). When
+ * the request's resolved email matches OWNER_EMAIL (same normalizeEmail-
+ * against-OWNER_EMAIL pattern as admin-paywall-toggle.js/add-tracker-item.js
+ * — reused, not reinvented) OR the request's geolocation resolves to Israel
+ * (lib/geo.js), this labels the request 'cheap_owner'/'cheap_il' purely for
+ * cost-attribution logging (see the call site below) — never sent to the
+ * client, never changes what's actually submitted to fal.
  *
  * A malformed/unreadable geo header (lib/geo.js's own fail-open contract)
- * resolves to "not Israel" here too — a geo-parsing hiccup can only ever
- * cost MORE (the standard, non-forced path), never silently under-bill a
- * non-owner/non-IL requester.
+ * resolves to "not Israel" here too.
  *
- * Returns { forceAudioOff, profile } — profile is 'cheap_owner' /
- * 'cheap_il' / 'standard', for cost-attribution logging only (see the
- * call site below) — never sent to the client, and this deliberately
- * touches NOTHING beyond generate_audio (not the model, not duration —
- * see this branch's own scope note above).
+ * HISTORY on the now-removed `forceAudioOff` field this function used to
+ * also return, for a future reader who runs into one of the two
+ * contradictory-looking founder quotes in git history and wonders which
+ * one is live: (1) 2026-07-28, this function's original form force-
+ * disabled audio specifically for owner/IL traffic as a silent cost
+ * control, honoring everyone else's own audio toggle; (2) 2026-07-29, the
+ * founder explicitly RETIRED that ("Regarding Sound for Israel don't
+ * disable it just leave it the same for everyone, including myself") —
+ * `forceAudioOff` was hardcoded false, so owner/IL got the same toggle-
+ * honoring behavior as every other requester; (3) 2026-08-02 (tracker item
+ * for-product-turn-off-audio-dialogue-gene-ooeyoj), the founder reversed
+ * course again in the OPPOSITE direction from (2) — not toward re-adding an
+ * owner/IL-specific force-off, but toward disabling audio unconditionally
+ * for EVERY requester (cost, and to stop invented lip-synced dialogue). That
+ * directive is implemented as a flat `generateAudio = false` in the handler
+ * below, which makes a per-profile `forceAudioOff` field meaningless — every
+ * profile forces audio off now, uniformly, so there's nothing left for this
+ * function to decide on that axis. The field was removed rather than kept
+ * around hardcoded to `true`/dead — this function now returns only
+ * `profile`, still useful for cost-attribution logging.
+ *
+ * Returns { profile } — 'cheap_owner' / 'cheap_il' / 'standard'.
  */
 function resolveGenerationProfile(email, event) {
   var ownerEmail = entitlements.normalizeEmail(process.env.OWNER_EMAIL);
   var isOwner = !!(ownerEmail && email && email === ownerEmail);
   var isIsrael = geo.resolveCountryCode(event) === 'IL';
   return {
-    // Founder directive 2026-07-29 ("Regarding Sound for Israel don't
-    // disable it just leave it the same for everyone, including
-    // myself"): the owner/IL audio force-off is retired — the client's
-    // audio toggle is honored identically for every requester. The
-    // profile label stays for cost-attribution logging only.
-    forceAudioOff: false,
     profile: isOwner ? 'cheap_owner' : (isIsrael ? 'cheap_il' : 'standard')
   };
 }
@@ -812,14 +813,11 @@ exports.handler = async function (event) {
     // call itself.
     sourceImageUrl = typeof payload.sourceImageUrl === 'string' && payload.sourceImageUrl.trim() ? payload.sourceImageUrl.trim() : null;
     // Audio/music toggle (tracker item for-product-audio-on-off-choice-at-
-    // creat-dyyr98, style.html's creation-flow toggle) — DEFAULT OFF: a
-    // missing/non-boolean-true value (every caller predating this feature,
-    // and any future caller that just forgets to send it) reads as off,
-    // matching the client's own default and keeping the cheaper cost the
-    // safe fallback rather than the more expensive one. musicStyle only
-    // ever matters when clientAudioOn is true (see the generateAudio/
-    // buildPrompt call below) — captured either way, harmlessly ignored
-    // otherwise.
+    // creat-dyyr98, style.html's creation-flow toggle) — still parsed for
+    // backward-compatible plumbing, but as of tracker item for-product-
+    // turn-off-audio-dialogue-gene-ooeyoj (2026-08-02) clientAudioOn no
+    // longer has any effect on generate_audio, which is now unconditionally
+    // false regardless — see the generateAudio line further down for why.
     clientAudioOn = payload.audioOn === true;
     musicStyle = typeof payload.musicStyle === 'string' ? payload.musicStyle.trim() : null;
     // Model-rotation request (docs/EDIT_MECHANISM_SPEC.md §2/§3.4) — only
@@ -901,15 +899,15 @@ exports.handler = async function (event) {
     ownerBypassActive = !!(bypassCheck.ok && email && bypassCheck.email === email);
   }
 
-  // Cheap generation profile (tracker item for-product-cheap-generation-
-  // profile-for-yz2ina) — resolved once, up front, so both the mock and
-  // real paths below see the identical forceAudioOff decision. See
-  // resolveGenerationProfile's own doc comment for the full mechanism.
-  // Logged here (rather than a PostHog event — see that function's own
-  // doc comment on why no existing server-side capture call exists in
-  // this file to attach the property to) purely for operational cost-
-  // attribution visibility, same "best-effort, never blocks the request"
-  // spirit as every other console.log/warn in this file.
+  // Generation profile classifier (tracker item for-product-cheap-
+  // generation-profile-for-yz2ina) — resolved once, up front, purely for
+  // cost-attribution logging (see resolveGenerationProfile's own doc
+  // comment; it no longer affects generate_audio — see the generateAudio
+  // line further down for that). Logged here (rather than a PostHog event
+  // — see that function's own doc comment on why no existing server-side
+  // capture call exists in this file to attach the property to) purely for
+  // operational cost-attribution visibility, same "best-effort, never
+  // blocks the request" spirit as every other console.log/warn in this file.
   var generationProfileResult = resolveGenerationProfile(email, event);
   console.log('generate-video: generation_profile=' + generationProfileResult.profile);
 
@@ -986,27 +984,40 @@ exports.handler = async function (event) {
     // visibility into how often this path is failing.
     console.warn('prompt-condenser: ' + condensed.error);
   }
-  // Narration would voice whatever the video's audio track says, and for
-  // a condensed prompt that's no longer the user's own words verbatim —
-  // there is no honest way to narrate a version of the text they didn't
-  // actually write. Only disabled when text was actually replaced
-  // (condensed.wasCondensed) — a short caption sent as-is, or a long one
-  // that failed to condense and fell back to the untouched original, both
-  // narrate the user's real words, so audio stays on for those exactly
-  // like before this change.
-  //
-  // clientAudioOn (style.html's toggle, default off — see the payload-
-  // parsing block above) is the PRIMARY gate as of this feature: audio is
-  // only ever on when the user actually asked for it. condensed.wasCondensed
-  // and generationProfileResult.forceAudioOff (Part B's silent owner/IL
-  // cost-control override, see resolveGenerationProfile above) can each
-  // independently turn it back off, never on — this is a three-way AND,
-  // not a priority order, so any one of them being true is enough to keep
-  // this a text-and-visuals-only generation.
-  var generateAudio = clientAudioOn && !condensed.wasCondensed && !generationProfileResult.forceAudioOff;
-  // Only fed to the model when audio is actually going to be on — see
+  // generateAudio is UNCONDITIONALLY false — tracker item for-product-
+  // turn-off-audio-dialogue-gene-ooeyoj, founder directive 2026-08-02. This
+  // replaces what used to be a three-way AND of clientAudioOn (style.html's
+  // toggle) && !condensed.wasCondensed && !generationProfileResult.forceAudioOff
+  // (see git history on this line for that older logic). Two independent
+  // reasons the founder gave, either one alone would be sufficient:
+  // (1) COST — on fal's veo3.1 endpoints, audio-on bills meaningfully
+  //     higher per second than audio-off (confirmed against fal's own
+  //     pricing, not guessed — see the FAL_MODEL_TEXT_TO_VIDEO comment
+  //     above for the exact $/s split).
+  // (2) CORRECTNESS — the founder watched a real generated dream where the
+  //     character lip-synced invented dialogue: words he never wrote, via
+  //     Veo's own native audio generation. There is no separate "dialogue
+  //     only" toggle on this model — audio and lip-synced dialogue both
+  //     ride on the same `generate_audio` flag — so forcing that flag off
+  //     is the only lever available and it's a hard requirement
+  //     independent of cost, not just a cost optimization.
+  // clientAudioOn/musicStyle are still read from the payload above and the
+  // style.html toggle that sends them still exists in the client (shown
+  // disabled with an explanatory note — see style.html) — left as inert,
+  // trivially-reversible plumbing per this codebase's standing "no dead
+  // code, but no silent throwaway either" convention, rather than ripped
+  // out. This line is now the ONLY place that decides generate_audio for
+  // every real call in this file (callFal/callFalReferenceToVideo/
+  // callFalImageToVideo/callFalPixverse, all four below) — and the
+  // identical override also lives in start-pending-generation.js, the one
+  // other real caller of these same fal functions (see that file's own
+  // comment on why it can't just import this variable).
+  var generateAudio = false;
+  // Always null now that generateAudio is always false — see
   // MUSIC_STYLE_MODIFIERS' own doc comment for why appending a music
-  // instruction to a silent generation would be meaningless.
+  // instruction to a silent generation would be meaningless. Kept as a
+  // ternary (rather than a flat null) so a future revert of the line above
+  // doesn't also require remembering to restore this one.
   var promptMusicStyle = generateAudio ? musicStyle : null;
 
   var prompt = buildPrompt(condensed.text, style, characters, cameraView, sceneryTime, sceneryPlace, promptMusicStyle);

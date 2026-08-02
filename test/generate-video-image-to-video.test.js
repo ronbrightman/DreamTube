@@ -72,13 +72,12 @@ test.after(function () {
 
 test('a sourceImageUrl request submits to fal-ai/veo3.1/fast/image-to-video with image_url set to it', async function () {
   var calls = installFetchSpy();
-  // No audioOn on this request -- tracker item for-product-audio-on-off-
-  // choice-at-creat-dyyr98 (founder-approved 2026-07-28) flipped the
-  // handler's own default from audio-on to audio-off for every path
-  // (text-to-video, reference-to-video, and this image-to-video upsell
-  // alike), so a caller that never mentions audioOn at all now gets
-  // generate_audio:false here -- see test/generate-video-audio-toggle.test.js
-  // for the full audioOn:true/false coverage this file doesn't duplicate.
+  // generate_audio is unconditionally false for every path in this file as
+  // of tracker item for-product-turn-off-audio-dialogue-gene-ooeyoj
+  // (founder directive 2026-08-02) -- audioOn is irrelevant now (this
+  // request doesn't even send it) -- see
+  // test/generate-video-audio-toggle.test.js for the full audioOn coverage
+  // this file doesn't duplicate.
   var res = await handler(genEvent({ body: { sourceImageUrl: SOURCE_IMAGE_URL } }));
   assert.equal(res.statusCode, 200);
   assert.equal(calls.length, 1);

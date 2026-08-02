@@ -4084,6 +4084,15 @@
      * a considered scope decision. Preserving the old always-on-unless-
      * condensed behavior here needs no founder sign-off, since it changes
      * nothing about what these two flows already did.
+     *
+     * UPDATE 2026-08-02 (tracker item for-product-turn-off-audio-dialogue-
+     * gene-ooeyoj): audioOn:true sent here is now a no-op — generate-
+     * video.js/start-pending-generation.js force generate_audio:false
+     * unconditionally server-side regardless of what any caller sends.
+     * Left as-is deliberately (not rewritten to audioOn:false) per that
+     * tracker item's own instruction to leave this plumbing intact and
+     * inert rather than rip it out — a trivial flip back on if the
+     * founder ever reverses the directive.
      */
     regenerateDream: function (id, patch) {
       return startGeneration(patch.caption, patch.style, {
