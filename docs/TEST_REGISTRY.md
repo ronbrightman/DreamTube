@@ -149,10 +149,26 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 |---|---|---|
 | Rate limiting (`lib/rate-limit.js`) | Exercised indirectly inside several endpoint tests (e.g. `test/check-email.test.js`, `test/claim-daily-tokens.test.js`) | No single dedicated `rate-limit.test.js` isolating the shared helper itself |
 | Netlify Blobs retry helper | `test/blobs-retry.test.js` | — |
+| Shared bottom-sheet dismissal (`js/sheet-dismiss.js` — tap-outside, drag-to-dismiss, wired into all 13 `.sheet-overlay` call sites app-wide) | `test/sheet-dismiss-behavioral.test.js` (per-instance five-point suite across profile.html/result.html/create.html/wizard.html/js/purchase-sheet.js, plus a dedicated rapid-re-tap-after-open regression — tracker item `for-product-urgent-founder-posthog-recor-75ob70`: a tap-outside click landing within the sheet's own opening transition window used to self-dismiss it immediately, reading as "the sheet never opens" on a real PostHog recording) | — |
 | Web push helper | covered via `test/push-dedup-store.test.js`/`test/push-subscription-store.test.js` and `test/helpers/mock-web-push.js` | — |
 | **Live, real-origin, end-to-end smoke coverage** (as opposed to mocked-backend coverage) | `test/prod-smoke/*.test.js` (this file's own registry entry) | Intentionally narrow — see `test/prod-smoke/README.md`. Does NOT cover: payments/checkout, Facebook Login, admin/owner tooling, transcription, interpretation/Chamber, push notifications, or most retention email paths. Those stay covered only by the mocked `test/*.test.js` suite. |
 
 ## Last reconciled
+
+2026-08-02, alongside tracker item `for-product-urgent-founder-posthog-recor-
+75ob70`: fixed `js/sheet-dismiss.js`'s tap-outside-to-close listener
+self-dismissing a sheet within ~50ms of its own open (a rapid re-tap at the
+trigger button's coordinates landing on the just-opened overlay backdrop,
+before the `.sheet` panel had visibly slid into view) — a same-position
+re-tap guard (not a flat time window, which regressed
+`test/out-of-tokens-purchase-sheet-behavioral.test.js`'s several
+genuinely-intentional immediate tap-outside-to-dismiss cases; see
+`js/sheet-dismiss.js`'s own comment for why position, not time, is the
+right signal) now ignores a tap-outside only when it lands within ~48px of
+the most recent click that happened somewhere else on the page. Also added
+the Cross-cutting/infrastructure row above for this shared module (which
+had no dedicated registry row despite already having its own
+`test/sheet-dismiss-behavioral.test.js` file).
 
 2026-08-02, alongside tracker item `for-product-dream-ready-email-real-first-
 qr9fbj`: added the retention email's real first-frame thumbnail (new

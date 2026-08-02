@@ -590,6 +590,127 @@ test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
 });
 
 // ============================================================================
+// 7b. Rapid re-tap immediately after opening must NOT self-dismiss (tracker
+// item for-product-urgent-founder-posthog-recor-75ob70, founder repro via a
+// real PostHog session recording: tapping "Me"/"Someone I know" on
+// wizard.html's Subject step visibly did nothing).
+//
+// Root cause: `.sheet-overlay` is `position:absolute; inset:0` over the
+// WHOLE page, and `.sheet-overlay.open` flips `pointer-events:auto` the
+// INSTANT the `.open` class is added -- not once the `.sheet` panel has
+// actually finished its .3s slide-up transition into view. The trigger
+// button (e.g. #subj-add-self) sits at the same screen coordinates the
+// overlay's own backdrop now covers. A second tap at that same spot
+// landing within roughly the transition window has e.target === the
+// overlay itself (the .sheet hasn't slid up over that spot yet), which
+// the OLD tap-outside-to-close listener treated as an immediate,
+// intentional dismiss -- closing the sheet a few dozen ms after it
+// opened, before a real user would ever perceive it opening at all.
+//
+// Fixed in js/sheet-dismiss.js itself (a shared module wired into every
+// .sheet-overlay app-wide, see this file's own header) by ignoring a
+// tap-outside click ONLY when it lands within ~48px of the most recent
+// click anywhere else on the page -- a same-POSITION guard, not a flat
+// time window. (Round 1 of this fix used a flat TRANSITION_FALLBACK_MS
+// time window instead, and regressed
+// test/out-of-tokens-purchase-sheet-behavioral.test.js's several
+// genuinely-intentional immediate tap-outside-to-dismiss clicks, e.g.
+// "dismissing the sheet right after tapping Buy" -- a flat time window
+// can't tell a same-spot accidental re-tap apart from a real, different-
+// location deliberate dismiss that just happens to also be fast. Position
+// is the correct signal: an intentional dismiss elsewhere on the backdrop,
+// or after interacting with the sheet's own content (which moves the
+// tracked "last outside click" point away from the trigger), is
+// unaffected regardless of timing -- see the explicit different-position-
+// but-still-fast test below.) Covered here against wizard.html's Subject
+// sheet, the exact founder-reported instance, but the fix (and this
+// regression coverage's intent) is app-wide.
+// ============================================================================
+
+async function tapTwiceRapidly(page, selector, gapMs) {
+  var box = await page.locator(selector).boundingBox();
+  var x = box.x + box.width / 2;
+  var y = box.y + box.height / 2;
+  await page.touchscreen.tap(x, y);
+  await page.waitForTimeout(gapMs);
+  await page.touchscreen.tap(x, y);
+}
+
+test('wizard.html character sheet ("Me"): a rapid second tap at the same spot (~30ms later, landing on the just-opened overlay backdrop before the sheet has visibly slid up) does not immediately close the sheet again', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-add-self');
+
+    await tapTwiceRapidly(page, '#subj-add-self', 30);
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop -- this is the exact founder-reported "sheet never opens" failure mode');
+  } finally {
+    await context.close();
+  }
+});
+
+test('wizard.html character sheet ("Someone I know"): same rapid-re-tap protection', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-add-other');
+
+    await tapTwiceRapidly(page, '#subj-add-other', 25);
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop');
+  } finally {
+    await context.close();
+  }
+});
+
+test('wizard.html character sheet: a genuine tap-outside at a DIFFERENT position, immediately (well within the old flat time window) after opening, still closes it -- proves the fix is position-based, not time-based', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-add-self');
+    await page.click('#subj-add-self');
+    // No settle wait -- dismiss immediately (same instant the .open class
+    // lands), but at a screen position far from #subj-add-self's own
+    // coordinates. A time-based grace period would have swallowed this;
+    // the position-based guard must not, since this is a real, different
+    // tap, not a duplicate of the one that opened the sheet.
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.mouse.click(370, 700);
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+test('wizard.html character sheet: a genuine tap-outside well after opening still closes it (the fix above must not disable tap-outside-to-close entirely)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-add-self');
+    await page.click('#subj-add-self');
+    await waitForSheetSettled(page, '#sheet-character-overlay');
+    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
+    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
+    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
 // 8. start.html — Advanced > Characters sheet
 // REMOVED (not replaced): start.html's Advanced > Characters screen and its
 // character sheet were removed outright 2026-07-31 (tracker item
