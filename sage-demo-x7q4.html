@@ -36,12 +36,12 @@ video{width:100%;aspect-ratio:9/12.8;object-fit:cover;object-position:top;displa
 var CUES=[
  [0.31,"Ah... the desert."],
  [1.67,"You walked a long way through burning sand, and still — you reached the water."],
- [7.25,"Listen to what your dream is telling you."],
- [9.41,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
- [14.36,"And the oasis... the oasis is not luck."],
- [17.06,"Your own footprints led there."],
- [18.55,"You are closer to what you seek than you believe."],
- [21.49,"Tonight, notice what you reach for... and let yourself arrive."]
+ [6.25,"Listen to what your dream is telling you."],
+ [8.41,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
+ [13.36,"And the oasis... the oasis is not luck."],
+ [16.06,"Your own footprints led there."],
+ [17.55,"You are closer to what you seek than you believe."],
+ [20.49,"Tonight, notice what you reach for... and let yourself arrive."]
 ];
 var v=document.getElementById('v'),cap=document.getElementById('cap'),ov=document.getElementById('ov'),plabel=document.getElementById('plabel');
 document.getElementById('stage').addEventListener('click',function(){
@@ -51,7 +51,7 @@ document.getElementById('stage').addEventListener('click',function(){
 v.addEventListener('timeupdate',function(){
   var t=v.currentTime,line='';
   for(var i=0;i<CUES.length;i++){if(t>=CUES[i][0])line=CUES[i][1];}
-  if(t>24.9)line='';
+  if(t>24.0)line='';
   if(cap.textContent!==line)cap.innerHTML=line?'<span>'+line+'</span>':'';
 });
 v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
