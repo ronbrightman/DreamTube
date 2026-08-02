@@ -74,7 +74,7 @@ test('a video dream -> og:image falls back to the static branded image (no poste
   }]);
   var res = await handler(getEvent({ id: 'd-video-1' }));
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v3\.png">/);
+  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png">/);
   assert.match(res.body, /<meta property="og:title" content="A dream about the ocean">/);
 });
 
@@ -84,7 +84,7 @@ test('a dream with mediaType "video" but a lingering imageUrl (post "Turn this i
     style: 'Cartoon', videoUrl: 'https://fal.media/files/v.mp4', imageUrl: 'https://fal.media/files/i.png', mediaType: 'video', likes: 0
   }]);
   var res = await handler(getEvent({ id: 'd-both-1' }));
-  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v3\.png">/);
+  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png">/);
 });
 
 test('caption/title values are HTML-escaped (a caption containing quotes/HTML must not break out of the meta tag or inject markup)', async function () {

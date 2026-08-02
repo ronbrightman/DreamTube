@@ -22,7 +22,7 @@ var path = require('node:path');
 var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
-var PHOTO_FIXTURE = path.join(__dirname, '..', 'assets', 'logo-v3.png');
+var PHOTO_FIXTURE = path.join(__dirname, '..', 'assets', 'logo-v4.png');
 
 var playwright = null;
 var unavailableReason = null;
