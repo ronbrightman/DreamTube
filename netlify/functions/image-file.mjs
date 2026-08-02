@@ -20,13 +20,26 @@
 
 import { createRequire } from 'module';
 var require = createRequire(import.meta.url);
-// blobs10 (the 10.x alias, see package.json + push-dedup-store.js): the
-// 8.x major fails to self-configure inside this modern Response-style
-// runtime, crashing before ANY handler logic ran -- the real reason every
-// serve attempt 502'd regardless of size (tracker cyp8np). 10.x
-// auto-detects the runtime context. mock-blobs.js patches both module
-// names, so tests keep working.
-var { getStore } = require('blobs10');
+// Bulletproof SDK loading (2026-08-02 night, tracker cyp8np): production
+// 502s persisted through BOTH the 8.x require and the blobs10 alias with
+// the crash upstream of handler logic -- i.e., the require itself dies at
+// module load in the deployed bundle (the bundler does not ship
+// createRequire'd deps for this function style the way the test runner
+// resolves them). Three-way fallback: the aliased CJS require (what the
+// test suite's require-cache mock patches), the plain CJS require, and
+// finally a dynamic ESM import (statically analyzable literal -- the
+// bundler ships @netlify/blobs' ESM entry for it, and it self-configures
+// in this runtime). First one that loads wins; the handler try/catch
+// below surfaces anything that still fails as a visible 500.
+var getStoreImpl = null;
+async function loadGetStore() {
+  if (getStoreImpl) return getStoreImpl;
+  try { getStoreImpl = require('blobs10').getStore; return getStoreImpl; } catch (e) {}
+  try { getStoreImpl = require('@netlify/blobs').getStore; return getStoreImpl; } catch (e) {}
+  var mod = await import('@netlify/blobs');
+  getStoreImpl = mod.getStore;
+  return getStoreImpl;
+}
 
 var MAX_STREAMABLE_BYTES = 18 * 1024 * 1024;
 
@@ -41,6 +54,7 @@ export default async (req) => {
 
   var result;
   try {
+    var getStore = await loadGetStore();
     var store = getStore('dreamtube-images');
     result = await store.getWithMetadata(key, { type: 'stream' });
   } catch (e) {
