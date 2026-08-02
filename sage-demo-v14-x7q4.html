@@ -70,4 +70,12 @@ BTNS.forEach(function(btn,i){
   });
 });
 </script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){
+  if(rs.length){Promise.all(rs.map(function(r){return r.unregister()})).then(function(){
+    if(!sessionStorage.getItem('swPurged')){sessionStorage.setItem('swPurged','1');
+      if(window.caches){caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).then(function(){location.reload()});}
+      else{location.reload();}
+    }});}});}
+</script>
 </body></html>
