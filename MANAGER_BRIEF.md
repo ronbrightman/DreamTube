@@ -56,7 +56,7 @@ growth-owned).
   $9.99/4000 "Best value" (pack999) — REPLACES the previous
   pack100/pack300/pack700 lineup (200/600/1400 tokens, $2.99/$7.99/
   $14.99) and its +50% first-purchase bonus entirely. Fresh pack ids and
-  fresh `DODO_PRODUCT_PACK_099/_199/_499/_999` env vars (no
+  fresh `DODO_PRODUCT_PACK_STARTER300/_199/_499/_999` env vars (no
   grandfathering of the old names/ids) — **needs Ron's own action** to
   create the 4 new one-time-purchase products in Dodo's dashboard and
   set those 4 env vars in Netlify before this pack ladder can actually

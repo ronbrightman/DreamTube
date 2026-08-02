@@ -148,18 +148,18 @@ test('shop.html: "one-time" / "no subscription" trust framing is present (unchan
 
 test('create-checkout-session-dodo.js: new pack ids map to fresh DODO_PRODUCT_PACK_* env vars, not the old ones', function () {
   var source = readText(path.join(ROOT, 'netlify', 'functions', 'create-checkout-session-dodo.js'));
-  assert.match(source, /DODO_PRODUCT_PACK_099/);
-  assert.match(source, /DODO_PRODUCT_PACK_199/);
-  assert.match(source, /DODO_PRODUCT_PACK_499/);
-  assert.match(source, /DODO_PRODUCT_PACK_999/);
+  assert.match(source, /DODO_PRODUCT_PACK_STARTER300/);
+  assert.match(source, /DODO_PRODUCT_PACK_SMALL500/);
+  assert.match(source, /DODO_PRODUCT_PACK_MEDIUM1500/);
+  assert.match(source, /DODO_PRODUCT_PACK_LARGE4000/);
 });
 
 test('dodo-webhook.js: new pack ids map to fresh DODO_PRODUCT_PACK_* env vars, not the old ones', function () {
   var source = readText(path.join(ROOT, 'netlify', 'functions', 'dodo-webhook.js'));
-  assert.match(source, /DODO_PRODUCT_PACK_099/);
-  assert.match(source, /DODO_PRODUCT_PACK_199/);
-  assert.match(source, /DODO_PRODUCT_PACK_499/);
-  assert.match(source, /DODO_PRODUCT_PACK_999/);
+  assert.match(source, /DODO_PRODUCT_PACK_STARTER300/);
+  assert.match(source, /DODO_PRODUCT_PACK_SMALL500/);
+  assert.match(source, /DODO_PRODUCT_PACK_MEDIUM1500/);
+  assert.match(source, /DODO_PRODUCT_PACK_LARGE4000/);
 });
 
 // ===========================================================================

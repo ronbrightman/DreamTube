@@ -142,12 +142,12 @@ var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 }
 // magic string.
 var STARTER_PACK_ID = 'pack099';
 
-/** Maps a pack id to its DODO_PRODUCT_PACK_* env var name — the authoritative, current product_id -> pack mapping every resolve* function below matches product_cart[0].product_id against first. */
+/** Maps a pack id to its DODO_PRODUCT_PACK_* env var name (the exact names Manager handed the founder to paste, 2026-08-02, tracker item for-product-ship-the-vault-shop-now-foun-23mk4c — this internal pack099/199/499/999 id stays as originally built, only the env var name was renamed to match what's actually configured) — the authoritative, current product_id -> pack mapping every resolve* function below matches product_cart[0].product_id against first. */
 var PACK_PRODUCT_ENV = {
-  pack099: 'DODO_PRODUCT_PACK_099',
-  pack199: 'DODO_PRODUCT_PACK_199',
-  pack499: 'DODO_PRODUCT_PACK_499',
-  pack999: 'DODO_PRODUCT_PACK_999'
+  pack099: 'DODO_PRODUCT_PACK_STARTER300',
+  pack199: 'DODO_PRODUCT_PACK_SMALL500',
+  pack499: 'DODO_PRODUCT_PACK_MEDIUM1500',
+  pack999: 'DODO_PRODUCT_PACK_LARGE4000'
 };
 
 /**

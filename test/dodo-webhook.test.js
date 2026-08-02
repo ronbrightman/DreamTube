@@ -139,10 +139,10 @@ function installAnalyticsFetchSpy(opts) {
 test.beforeEach(function () {
   mockBlobs.reset();
   process.env.DODO_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  process.env.DODO_PRODUCT_PACK_099 = 'pdt_pack099_test';
-  process.env.DODO_PRODUCT_PACK_199 = 'pdt_pack199_test';
-  process.env.DODO_PRODUCT_PACK_499 = 'pdt_pack499_test';
-  process.env.DODO_PRODUCT_PACK_999 = 'pdt_pack999_test';
+  process.env.DODO_PRODUCT_PACK_STARTER300 = 'pdt_pack099_test';
+  process.env.DODO_PRODUCT_PACK_SMALL500 = 'pdt_pack199_test';
+  process.env.DODO_PRODUCT_PACK_MEDIUM1500 = 'pdt_pack499_test';
+  process.env.DODO_PRODUCT_PACK_LARGE4000 = 'pdt_pack999_test';
   process.env.META_CAPI_ACCESS_TOKEN = REAL_META_TOKEN;
   // Default safe stub -- see the comment block above. Tests that care about
   // the actual analytics calls override this by calling
@@ -152,10 +152,10 @@ test.beforeEach(function () {
 
 test.after(function () {
   delete process.env.DODO_WEBHOOK_SECRET;
-  delete process.env.DODO_PRODUCT_PACK_099;
-  delete process.env.DODO_PRODUCT_PACK_199;
-  delete process.env.DODO_PRODUCT_PACK_499;
-  delete process.env.DODO_PRODUCT_PACK_999;
+  delete process.env.DODO_PRODUCT_PACK_STARTER300;
+  delete process.env.DODO_PRODUCT_PACK_SMALL500;
+  delete process.env.DODO_PRODUCT_PACK_MEDIUM1500;
+  delete process.env.DODO_PRODUCT_PACK_LARGE4000;
   delete process.env.META_CAPI_ACCESS_TOKEN;
   global.fetch = realFetch;
 });

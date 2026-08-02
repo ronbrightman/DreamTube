@@ -13,16 +13,26 @@
 // +50% first-purchase bonus entirely.
 //
 // NO-GRANDFATHERING RULE: pack099/199/499/999 (and the
-// DODO_PRODUCT_PACK_099/_199/_499/_999 env vars below) are DELIBERATELY
-// fresh identifiers, never reusing pack100/300/700 or
-// DODO_PRODUCT_PACK_100/300/700 — even though some price points land near
-// the old ones. This keeps every historical webhook/analytics record for
-// the OLD packs unambiguous (a past `pack300` event always means the old
-// 600-token/$7.99 pack, never gets silently reinterpreted as this new
-// lineup) and means the 4 new Dodo dashboard products the founder is
-// creating separately get their own fresh env vars, not a value swap
-// under an old name. Each pack degrades independently until its own env
-// var is set (E6 below) — same pattern the old lineup already followed.
+// DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 env vars
+// below) are DELIBERATELY fresh identifiers, never reusing pack100/300/700
+// or DODO_PRODUCT_PACK_100/300/700 — even though some price points land
+// near the old ones. This keeps every historical webhook/analytics record
+// for the OLD packs unambiguous (a past `pack300` event always means the
+// old 600-token/$7.99 pack, never gets silently reinterpreted as this new
+// lineup) and means the 4 new Dodo dashboard products the founder created
+// get their own fresh env vars, not a value swap under an old name. Each
+// pack degrades independently until its own env var is set (E6 below) —
+// same pattern the old lineup already followed.
+//
+// The env var NAMES themselves (STARTER300/SMALL500/MEDIUM1500/LARGE4000
+// rather than this file's own internal 099/199/499/999 pack ids) match
+// exactly what Manager handed the founder to paste into Netlify
+// (2026-08-02, tracker item for-product-ship-the-vault-shop-now-foun-
+// 23mk4c) — the internal pack099/199/499/999 identifiers stay as originally
+// built (already shipped, already tested, and more informative than a
+// size label since they encode the actual price), only this ENV VAR
+// mapping was renamed to match the real values already pasted, rather
+// than asking the founder to redo that paste under different names.
 //
 // pack099 (the $0.99 "starter" pack) is ONE-TIME PER ACCOUNT — see the
 // E9 guard below. It replaces the old +50% first-purchase bonus mechanic
@@ -80,7 +90,7 @@
 //   E3 invalid_json
 //   E4 email_and_pack_required
 //   E5 invalid_pack           — pack wasn't "pack099", "pack199", "pack499", or "pack999"
-//   E6 missing_product_id     — DODO_PRODUCT_PACK_099/_199/_499/_999 not configured for the requested pack
+//   E6 missing_product_id     — DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 not configured for the requested pack
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 //   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
 //   E9 starter_already_used   — pack099 requested, but this account has already completed a pack purchase before (hasMadeFirstPurchase) — the one-time starter offer is no longer available to it
@@ -152,10 +162,10 @@ var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 }
 var STARTER_PACK_ID = 'pack099';
 
 var PACK_PRODUCT_ENV = {
-  pack099: 'DODO_PRODUCT_PACK_099',
-  pack199: 'DODO_PRODUCT_PACK_199',
-  pack499: 'DODO_PRODUCT_PACK_499',
-  pack999: 'DODO_PRODUCT_PACK_999'
+  pack099: 'DODO_PRODUCT_PACK_STARTER300',
+  pack199: 'DODO_PRODUCT_PACK_SMALL500',
+  pack499: 'DODO_PRODUCT_PACK_MEDIUM1500',
+  pack999: 'DODO_PRODUCT_PACK_LARGE4000'
 };
 
 exports.handler = async function (event) {
