@@ -112,23 +112,20 @@ function getHeader(event, name) {
 // so this file has no compile-time dependency on that one; a mismatch
 // would only matter for the metadata fallback below, since the primary
 // path resolves the amount from the *current* DODO_PRODUCT_PACK_* env
-// vars, not from a hardcoded table). These are BASE tokens — the +50%
-// first-purchase bonus (see resolvePackTokens' caller below) is applied
-// separately, per-account, by lib/entitlements.js's
-// creditTokenPackAmountOnce, never baked into this table.
+// vars, not from a hardcoded table).
 //
-// Pack enrichment (founder-approved 2026-07-28, "go for A"): every pack's
-// token contents doubled at the same prices, a repricing sweep after the
-// veo3.1/lite cost cut. THIS IS THE ACTUAL CREDITING TABLE — the value
-// here (via resolvePackTokens below) is what a real webhook-confirmed
-// purchase credits onto the buyer's balance, so getting these three
-// numbers right matters more than anywhere else this amount is mirrored.
-// The internal names pack100/pack300/pack700 (and DODO_PRODUCT_PACK_100/
-// _300/_700, and the actual Dodo dashboard product ids) deliberately keep
-// their original "100/300/700" naming — only the token amount changed, not
-// the identifiers — so pack100 no longer literally means "100 tokens";
-// read it as "the first/cheapest pack" instead.
-var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
+// "The Vault" shop redesign (founder-approved 2026-08-02, tracker item
+// for-product-build-ship-today-founder-app-zn9zyy): THIS IS THE ACTUAL
+// CREDITING TABLE — the value here (via resolvePackTokens below) is what a
+// real webhook-confirmed purchase credits onto the buyer's balance, so
+// getting these four numbers right matters more than anywhere else this
+// amount is mirrored. Fresh pack ids (pack099/199/499/999), replacing
+// pack100/pack300/pack700 entirely — see create-checkout-session-dodo.js's
+// header comment for the full no-grandfathering reasoning (never reinterpret
+// an OLD pack100/300/700 webhook record as this new lineup). No more +50%
+// first-purchase bonus — retired along with the old lineup; see
+// lib/entitlements.js's creditTokenPackAmountOnce doc comment.
+var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
 
 // USD price per pack — same mirrored-copy reasoning as PACK_TOKENS above,
 // and same fallback role: create-checkout-session-dodo.js's own
@@ -136,18 +133,50 @@ var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
 // this local copy only matters if that metadata is ever missing (a
 // purchase made before this field existed) AND the product_id -> pack
 // mapping below also fails to resolve — see resolvePackPrice.
-var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
+var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 };
+
+// pack099 is the one-time starter SKU — see create-checkout-session-dodo.js's
+// header comment for the one-time-per-account enforcement (checked THERE,
+// before any charge happens, not here). Pulled out as a constant so
+// resolveIsStarterPack below reads as "is this the starter pack", not a
+// magic string.
+var STARTER_PACK_ID = 'pack099';
+
+/** Maps a pack id to its DODO_PRODUCT_PACK_* env var name — the authoritative, current product_id -> pack mapping every resolve* function below matches product_cart[0].product_id against first. */
+var PACK_PRODUCT_ENV = {
+  pack099: 'DODO_PRODUCT_PACK_099',
+  pack199: 'DODO_PRODUCT_PACK_199',
+  pack499: 'DODO_PRODUCT_PACK_499',
+  pack999: 'DODO_PRODUCT_PACK_999'
+};
 
 /**
- * Resolves how many BASE tokens a completed Payment should credit (before
- * any first-purchase bonus — see creditTokenPackAmountOnce, which decides
- * and applies that separately, per-account).
- *
- * Prefers matching the payment's product_cart[0].product_id against the
- * same DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700
- * env vars create-checkout-session-dodo.js uses to create the checkout in
- * the first place — this is the authoritative, current mapping and needs
- * no cooperation from the payload itself. Falls back to the metadata
+ * Resolves which pack id (pack099/199/499/999) a completed Payment's
+ * product_cart[0].product_id corresponds to, matching against the SAME
+ * DODO_PRODUCT_PACK_* env vars create-checkout-session-dodo.js used to
+ * create the checkout in the first place — the authoritative, current
+ * mapping, needing no cooperation from the payload itself. Returns
+ * undefined if nothing matches (e.g. those env vars were rotated between
+ * checkout creation and webhook delivery) — callers fall back to
+ * metadata in that case, same "don't guess" posture as resolvePackTokens/
+ * resolvePackPrice below.
+ */
+function resolvePackId(payment) {
+  var cart = payment.product_cart || [];
+  var productId = cart.length ? cart[0].product_id : undefined;
+  if (!productId) return undefined;
+  var packIds = Object.keys(PACK_PRODUCT_ENV);
+  for (var i = 0; i < packIds.length; i++) {
+    if (productId === process.env[PACK_PRODUCT_ENV[packIds[i]]]) return packIds[i];
+  }
+  return undefined;
+}
+
+/**
+ * Resolves how many BASE tokens a completed Payment should credit. Prefers
+ * matching the payment's product_cart[0].product_id against the current
+ * DODO_PRODUCT_PACK_* env vars (via resolvePackId above) — this is the
+ * authoritative, current mapping. Falls back to the metadata
  * create-checkout-session-dodo.js attached at checkout time
  * (dreamtube_tokens, a plain integer), for the case those env vars have
  * changed between checkout creation and webhook delivery. Returns
@@ -155,13 +184,8 @@ var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
  * determine what to credit" and does nothing, rather than guessing.
  */
 function resolvePackTokens(payment) {
-  var cart = payment.product_cart || [];
-  var productId = cart.length ? cart[0].product_id : undefined;
-  if (productId) {
-    if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_TOKENS.pack100;
-    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_TOKENS.pack300;
-    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_TOKENS.pack700;
-  }
+  var packId = resolvePackId(payment);
+  if (packId) return PACK_TOKENS[packId];
   var metaTokens = payment.metadata && payment.metadata.dreamtube_tokens;
   var parsed = typeof metaTokens === 'number' ? metaTokens : parseInt(metaTokens, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -173,25 +197,43 @@ function resolvePackTokens(payment) {
  * could have supplied, same "don't trust the client for money" reasoning
  * every other server-side amount in this codebase already follows. Mirrors
  * resolvePackTokens exactly: prefers matching product_cart[0].product_id
- * against the current DODO_PRODUCT_PACK_100/300/700 env vars (the
- * authoritative, current mapping), falling back to the
- * metadata.dreamtube_price create-checkout-session-dodo.js attached at
- * checkout time. Returns undefined if neither resolves — callers must
- * treat that as "can't determine what to report" and skip firing Purchase
- * entirely, rather than guess or send a zero/placeholder value that would
- * corrupt revenue reporting.
+ * against the current DODO_PRODUCT_PACK_* env vars (via resolvePackId),
+ * falling back to the metadata.dreamtube_price create-checkout-session-
+ * dodo.js attached at checkout time. Returns undefined if neither
+ * resolves — callers must treat that as "can't determine what to report"
+ * and skip firing Purchase entirely, rather than guess or send a
+ * zero/placeholder value that would corrupt revenue reporting.
  */
 function resolvePackPrice(payment) {
-  var cart = payment.product_cart || [];
-  var productId = cart.length ? cart[0].product_id : undefined;
-  if (productId) {
-    if (productId === process.env.DODO_PRODUCT_PACK_100) return PACK_PRICES.pack100;
-    if (productId === process.env.DODO_PRODUCT_PACK_300) return PACK_PRICES.pack300;
-    if (productId === process.env.DODO_PRODUCT_PACK_700) return PACK_PRICES.pack700;
-  }
+  var packId = resolvePackId(payment);
+  if (packId) return PACK_PRICES[packId];
   var metaPrice = payment.metadata && payment.metadata.dreamtube_price;
   var parsed = typeof metaPrice === 'number' ? metaPrice : parseFloat(metaPrice);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Resolves whether a completed Payment's pack is the one-time starter
+ * (pack099), for the Purchase conversion event's `starter` flag (tracker
+ * item for-product-build-ship-today-founder-app-zn9zyy, item 5 — "so
+ * growth can measure starter-pack conversion specifically"). Prefers the
+ * same authoritative product_cart[0].product_id match resolvePackId uses;
+ * falls back to metadata.dreamtube_starter (a real boolean, echoed back
+ * verbatim by Dodo — see create-checkout-session-dodo.js), then to
+ * metadata.dreamtube_pack === 'pack099' as a last resort. Always resolves
+ * to a real boolean (never undefined) — unlike resolvePackTokens/
+ * resolvePackPrice, an unresolvable case here fails toward `false` rather
+ * than skipping the whole event: `starter` is a nice-to-have analytics
+ * dimension on an event that's otherwise fully resolvable, not something
+ * worth losing the entire Purchase conversion over.
+ */
+function resolveIsStarterPack(payment) {
+  var packId = resolvePackId(payment);
+  if (packId) return packId === STARTER_PACK_ID;
+  var meta = payment.metadata || {};
+  if (typeof meta.dreamtube_starter === 'boolean') return meta.dreamtube_starter;
+  if (typeof meta.dreamtube_starter === 'string') return meta.dreamtube_starter === 'true';
+  return meta.dreamtube_pack === STARTER_PACK_ID;
 }
 
 /**
@@ -219,6 +261,13 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
     var eventId = (payment.metadata && payment.metadata.dreamtube_event_id) || crypto.randomBytes(16).toString('hex');
     var eventTimeMs = Date.now();
     var pack = payment.metadata && payment.metadata.dreamtube_pack;
+    // `starter` (tracker item for-product-build-ship-today-founder-app-
+    // zn9zyy, item 5): true only for the one-time $0.99 starter pack — see
+    // resolveIsStarterPack's own doc comment. Lets growth measure
+    // starter-pack conversion specifically from this same durable
+    // server-side event, without needing a second query joined against
+    // pack ids.
+    var starter = resolveIsStarterPack(payment);
 
     // distinct_id must match what the client's posthog.identify() used —
     // the account's raw username, not its email (see
@@ -237,6 +286,7 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
       timestamp: new Date(eventTimeMs).toISOString(),
       pack: pack,
       tokens: tokens,
+      starter: starter,
       $insert_id: eventId // PostHog's own dedup key -- see lib/posthog-capture.js header comment
     };
 

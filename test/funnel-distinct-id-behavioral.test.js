@@ -13,7 +13,7 @@
 // Purely additive -- absent the param, behavior is unchanged from before
 // this fix (no identify call, no functional difference).
 //
-// Follows test/shop-palette-variant-behavioral.test.js's approach of
+// Follows test/first-video-created-behavioral.test.js's approach of
 // reading PostHog calls straight out of the stub's own pending-call queue
 // (window.posthog stays the pre-init stub array the whole test, since
 // blockThirdParty aborts the real array.js bundle load) -- more reliable

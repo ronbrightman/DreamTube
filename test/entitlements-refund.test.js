@@ -159,10 +159,10 @@ test('refundedJobIds (per-email) and appliedTokenPackPaymentIds (per-email) are 
   await entitlements.refundTokensOnce({}, email, 'job_1', 100);
 
   var record = await entitlements.getEntitlement({}, email);
-  // creditTokenPackOnce delegates to creditTokenPackAmountOnce, which
-  // applies Token Economy C's one-time +50% first-purchase bonus for a
-  // brand-new email: 500 * 1.5 = 750, then +100 for the refund = 850.
-  assert.equal(record.tokens.balance, 850);
+  // No bonus multiplier (retired 2026-08-02, "The Vault" shop redesign):
+  // creditTokenPackOnce credits the plain 500, then +100 for the refund
+  // = 600.
+  assert.equal(record.tokens.balance, 600);
   // Both dedup lists are pruned to empty once each mechanism's own outer
   // marker commits -- neither ever contains the OTHER mechanism's id.
   assert.deepEqual(record.refundedJobIds, []);

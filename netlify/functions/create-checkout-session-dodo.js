@@ -2,16 +2,47 @@
 //
 // POST { email, pack } -> creates a Dodo Payments Checkout Session for a
 // one-time DreamTube token-pack purchase and returns { url } for the
-// client to redirect the browser to. `pack` is "pack100", "pack300", or
-// "pack700" (200 tokens / $2.99, 600 tokens / $7.99, 1400 tokens / $14.99
-// — pack enrichment, founder-approved 2026-07-28, doubled from the
-// original Token Economy C amounts at the same prices; internal names
-// unchanged, see PACK_TOKENS below — see shop.html). A user's first-ever
-// successful pack purchase additionally
-// credits +50% tokens — applied server-side by dodo-webhook.js /
-// lib/entitlements.js on the confirmed payment, nothing here needs to
-// know about it (this function only ever creates the checkout session,
-// see below).
+// client to redirect the browser to. `pack` is one of "pack099",
+// "pack199", "pack499", "pack999" (300 tokens / $0.99 one-time starter,
+// 500 tokens / $1.99, 1500 tokens / $4.99 "Most popular", 4000 tokens /
+// $9.99 "Best value" — see PACK_TOKENS below — see shop.html, "The
+// Vault"). This is the SKU ladder built for tracker item
+// for-product-build-ship-today-founder-app-zn9zyy (founder-approved
+// 2026-08-02, "ship people buying tokens today"), which REPLACES the
+// previous pack100/pack300/pack700 lineup (200/600/1400 tokens) and its
+// +50% first-purchase bonus entirely.
+//
+// NO-GRANDFATHERING RULE: pack099/199/499/999 (and the
+// DODO_PRODUCT_PACK_099/_199/_499/_999 env vars below) are DELIBERATELY
+// fresh identifiers, never reusing pack100/300/700 or
+// DODO_PRODUCT_PACK_100/300/700 — even though some price points land near
+// the old ones. This keeps every historical webhook/analytics record for
+// the OLD packs unambiguous (a past `pack300` event always means the old
+// 600-token/$7.99 pack, never gets silently reinterpreted as this new
+// lineup) and means the 4 new Dodo dashboard products the founder is
+// creating separately get their own fresh env vars, not a value swap
+// under an old name. Each pack degrades independently until its own env
+// var is set (E6 below) — same pattern the old lineup already followed.
+//
+// pack099 (the $0.99 "starter" pack) is ONE-TIME PER ACCOUNT — see the
+// E9 guard below. It replaces the old +50% first-purchase bonus mechanic
+// as this shop's welcome-offer lever: instead of a bonus on top of
+// whatever pack someone buys first, the discounted starter SKU itself
+// becomes unavailable once this account has ever completed any pack
+// purchase (see lib/entitlements.js's `firstPackPurchaseAt`/
+// `hasMadeFirstPurchase` doc comments for the full "why reuse this exact
+// signal, not a narrower one" reasoning). This is the ONLY server-side
+// enforcement point for the one-time rule: by the time a webhook fires,
+// real money has already changed hands, so refusing to credit at that
+// point would mean a paying customer gets nothing — refusing to even
+// CREATE the checkout session here, before any charge happens, is the
+// correct place to gate it. Known, accepted narrow race (same class this
+// codebase already accepts elsewhere, e.g. lib/entitlements.js's own
+// documented residual races): two genuinely concurrent starter-pack
+// checkout attempts from the same brand-new account, both created before
+// either payment completes, could both pass this check and both go on to
+// charge — bounded to a rare timing window, not something this pass adds
+// distributed locking to close.
 //
 // This function only creates the Checkout Session — it does not itself
 // grant any tokens. The credit is applied by dodo-webhook.js once Dodo
@@ -48,10 +79,11 @@
 //   E2 missing_api_key        — DODO_API_KEY not configured in this environment
 //   E3 invalid_json
 //   E4 email_and_pack_required
-//   E5 invalid_pack           — pack wasn't "pack100", "pack300", or "pack700"
-//   E6 missing_product_id     — DODO_PRODUCT_PACK_100/DODO_PRODUCT_PACK_300/DODO_PRODUCT_PACK_700 not configured for the requested pack
+//   E5 invalid_pack           — pack wasn't "pack099", "pack199", "pack499", or "pack999"
+//   E6 missing_product_id     — DODO_PRODUCT_PACK_099/_199/_499/_999 not configured for the requested pack
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 //   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
+//   E9 starter_already_used   — pack099 requested, but this account has already completed a pack purchase before (hasMadeFirstPurchase) — the one-time starter offer is no longer available to it
 //
 // ── Open-redirect guard on successUrl/cancelUrl (security fix, added for
 //    tracker item for-product-build-out-of-tokens-purchase-2y8hyw) ──
@@ -91,27 +123,19 @@ function isSafeRedirectPath(candidate) {
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
-var { normalizeEmail } = require('./lib/entitlements');
+var entitlements = require('./lib/entitlements');
+var normalizeEmail = entitlements.normalizeEmail;
 
-// Token amount per pack — mirrors the pricing already shown in shop.html
-// (200 tokens/$2.99, 600 tokens/$7.99, 1400 tokens/$14.99 — pack
-// enrichment, founder-approved 2026-07-28, "go for A": doubled every
-// pack's token contents at the same prices, a repricing sweep after the
-// veo3.1/lite cost cut. The internal names pack100/pack300/pack700 (and
-// DODO_PRODUCT_PACK_100/_300/_700 below) deliberately keep their original
-// "100/300/700" naming — renaming identifiers across the codebase and the
-// Dodo dashboard product ids was judged not worth it for a pure token-
-// amount change, so these names no longer describe their own token count;
-// treat pack100 as "the first/cheapest pack", not literally 100 tokens).
-// The actual dollar amount charged lives entirely on the Dodo product
-// configured for each env var below, not here; this amount is only used
-// for the metadata fallback dodo-webhook.js reads if its product_id ->
-// pack mapping ever changes after a purchase was made (see that file's
-// resolvePackTokens). Does NOT include the +50% first-purchase bonus —
-// that's decided and applied entirely server-side on the webhook's
-// crediting path (see lib/entitlements.js's creditTokenPackAmountOnce),
-// never known at checkout-creation time.
-var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
+// Token amount per pack — mirrors the pricing shown in shop.html ("The
+// Vault"): 300 tokens/$0.99 (one-time starter), 500 tokens/$1.99, 1500
+// tokens/$4.99 ("Most popular"), 4000 tokens/$9.99 ("Best value") —
+// founder-approved 2026-08-02, tracker item
+// for-product-build-ship-today-founder-app-zn9zyy. The actual dollar
+// amount charged lives entirely on the Dodo product configured for each
+// env var below, not here; this amount is only used for the metadata
+// fallback dodo-webhook.js reads if its product_id -> pack mapping ever
+// changes after a purchase was made (see that file's resolvePackTokens).
+var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
 
 // USD price per pack, mirrors shop.html's own PACK_INFO map — used only for
 // the metadata.dreamtube_price fallback below, the same "belt-and-
@@ -120,12 +144,18 @@ var PACK_TOKENS = { pack100: 200, pack300: 600, pack700: 1400 };
 // actual product_id against DODO_PRODUCT_PACK_* first (this is only the
 // fallback path), so this never needs to be the source of truth for what
 // Dodo actually charged.
-var PACK_PRICES = { pack100: 2.99, pack300: 7.99, pack700: 14.99 };
+var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 };
+
+// The one-time starter pack's own id — pulled out as a constant (rather
+// than a literal string check below) so the E9 guard reads as "the
+// starter pack", not a magic string repeated in two places.
+var STARTER_PACK_ID = 'pack099';
 
 var PACK_PRODUCT_ENV = {
-  pack100: 'DODO_PRODUCT_PACK_100',
-  pack300: 'DODO_PRODUCT_PACK_300',
-  pack700: 'DODO_PRODUCT_PACK_700'
+  pack099: 'DODO_PRODUCT_PACK_099',
+  pack199: 'DODO_PRODUCT_PACK_199',
+  pack499: 'DODO_PRODUCT_PACK_499',
+  pack999: 'DODO_PRODUCT_PACK_999'
 };
 
 exports.handler = async function (event) {
@@ -159,6 +189,19 @@ exports.handler = async function (event) {
   var productId = process.env[productEnvVar];
   if (!productId) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: ' + productEnvVar + ' not configured' }) };
+  }
+
+  // Starter one-time-per-account enforcement (see this file's header
+  // comment) — only ever checked for pack099, so every other pack incurs
+  // no extra read/latency. Reads the SAME signal the old +50%
+  // first-purchase bonus used to key off (hasMadeFirstPurchase, derived
+  // from firstPackPurchaseAt) — see lib/entitlements.js's doc comments on
+  // both for the full "why this exact field, not a new one" reasoning.
+  if (pack === STARTER_PACK_ID) {
+    var tokenStatus = await entitlements.getTokenStatus(event, email);
+    if (tokenStatus && tokenStatus.hasMadeFirstPurchase) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E9: starter_already_used' }) };
+    }
   }
 
   // shop.html is the real checkout entry point (unlike the original
@@ -241,7 +284,17 @@ exports.handler = async function (event) {
         dreamtube_pack: pack,
         dreamtube_tokens: PACK_TOKENS[pack],
         dreamtube_price: PACK_PRICES[pack],
-        dreamtube_event_id: eventId
+        dreamtube_event_id: eventId,
+        // Threaded through to dodo-webhook.js so its own Purchase
+        // conversion event can carry a `starter: true/false` flag (see
+        // that file's firePurchaseConversion) for growth to measure
+        // starter-pack conversion specifically — same "known at checkout
+        // creation, cheaper to carry through metadata than re-derive
+        // later" reasoning as every other dreamtube_* field here (mirrors
+        // dreamtube_tokens/dreamtube_price's own existing non-string
+        // metadata values, echoed back verbatim by Dodo on
+        // payment.succeeded).
+        dreamtube_starter: pack === STARTER_PACK_ID
       }
     });
 

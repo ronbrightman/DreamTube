@@ -58,13 +58,13 @@ function signedEvent(payloadObj, opts) {
  * behavior — it's covered by its own tests in entitlements-tokens.test.js
  * — this helper just keeps it out of these webhook-specific assertions.
  *
- * ALSO stamps `firstPackPurchaseAt` (in the past) so this account is
- * treated as already having completed a pack purchase before — this keeps
- * the tests in THIS file focused purely on crediting/dedup mechanics
- * without being confounded by the separate +50% first-purchase bonus (see
- * lib/entitlements.js's creditTokenPackAmountOnce), which has its own
- * dedicated tests further down. Same "isolate the thing this test is
- * actually checking" reasoning as the signup-grant isolation above.
+ * Also stamps `firstPackPurchaseAt` (in the past), matching what a real
+ * account with a prior purchase would already have on its record. This no
+ * longer changes the CREDITED AMOUNT (the +50% first-purchase bonus that
+ * used to key off this field is retired entirely — see
+ * lib/entitlements.js's creditTokenPackAmountOnce doc comment; every
+ * credit in this file is now the plain base token count regardless of
+ * this field), but is kept as a realistic default record shape.
  */
 async function seedZeroBalance(email) {
   await entitlements.setEntitlement({}, email, {
@@ -73,7 +73,7 @@ async function seedZeroBalance(email) {
   });
 }
 
-/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase) — used by the first-purchase-bonus tests below, where seedZeroBalance's own firstPackPurchaseAt seed would defeat the very thing being tested. */
+/** Seeds a genuinely brand-new-to-purchasing account (zero balance, no prior pack purchase, no firstPackPurchaseAt) — used by the "no bonus" / starter-flag tests below, which specifically care about a brand-new account's FIRST credit stamping this field for the first time. */
 async function seedZeroBalanceNoPriorPurchase(email) {
   await entitlements.setEntitlement({}, email, { tokens: { balance: 0, lastClaimAt: Date.now() } });
 }
@@ -86,7 +86,7 @@ function paymentPayload(overrides) {
     data: Object.assign(
       {
         payment_id: 'pay_test123',
-        product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+        product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
         customer: { customer_id: 'cus_test123', email: 'buyer@example.com', name: 'Test Buyer' },
         metadata: {},
         total_amount: 199,
@@ -139,9 +139,10 @@ function installAnalyticsFetchSpy(opts) {
 test.beforeEach(function () {
   mockBlobs.reset();
   process.env.DODO_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  process.env.DODO_PRODUCT_PACK_100 = 'pdt_pack100_test';
-  process.env.DODO_PRODUCT_PACK_300 = 'pdt_pack300_test';
-  process.env.DODO_PRODUCT_PACK_700 = 'pdt_pack700_test';
+  process.env.DODO_PRODUCT_PACK_099 = 'pdt_pack099_test';
+  process.env.DODO_PRODUCT_PACK_199 = 'pdt_pack199_test';
+  process.env.DODO_PRODUCT_PACK_499 = 'pdt_pack499_test';
+  process.env.DODO_PRODUCT_PACK_999 = 'pdt_pack999_test';
   process.env.META_CAPI_ACCESS_TOKEN = REAL_META_TOKEN;
   // Default safe stub -- see the comment block above. Tests that care about
   // the actual analytics calls override this by calling
@@ -151,9 +152,10 @@ test.beforeEach(function () {
 
 test.after(function () {
   delete process.env.DODO_WEBHOOK_SECRET;
-  delete process.env.DODO_PRODUCT_PACK_100;
-  delete process.env.DODO_PRODUCT_PACK_300;
-  delete process.env.DODO_PRODUCT_PACK_700;
+  delete process.env.DODO_PRODUCT_PACK_099;
+  delete process.env.DODO_PRODUCT_PACK_199;
+  delete process.env.DODO_PRODUCT_PACK_499;
+  delete process.env.DODO_PRODUCT_PACK_999;
   delete process.env.META_CAPI_ACCESS_TOKEN;
   global.fetch = realFetch;
 });
@@ -165,7 +167,7 @@ test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CA
 
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_analytics_1',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_analytics', email: 'purchaseanalytics@example.com' },
     metadata: { dreamtube_event_id: 'shared-evt-abc123' }
   })));
@@ -173,53 +175,70 @@ test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CA
 
   // Credit still landed independent of any of this.
   var record = await entitlements.getEntitlement({}, 'purchaseanalytics@example.com');
-  assert.equal(record.tokens.balance, 200);
+  assert.equal(record.tokens.balance, 300);
 
   assert.equal(spies.posthogCalls.length, 1, 'expected exactly one PostHog capture call');
   var phBody = spies.posthogCalls[0].body;
   assert.equal(phBody.api_key, analyticsConfig.POSTHOG_KEY);
   assert.equal(phBody.event, 'purchase_completed');
   assert.equal(phBody.distinct_id, 'purchaseanalyticsuser', 'distinct_id must be the account USERNAME, not the email, to match the client\'s posthog.identify()');
-  assert.equal(phBody.properties.value, 2.99);
+  assert.equal(phBody.properties.value, 0.99);
   assert.equal(phBody.properties.currency, 'USD');
   assert.ok(phBody.properties.timestamp, 'properties.timestamp should be present');
   assert.equal(phBody.properties.$insert_id, 'shared-evt-abc123', 'PostHog dedup key must match the shared event_id');
   assert.ok(phBody.timestamp, 'top-level timestamp should be present');
+  assert.equal(phBody.properties.starter, true, 'pack099 IS the starter pack');
 
   assert.equal(spies.metaCalls.length, 1, 'expected exactly one Meta CAPI call');
   var metaBody = spies.metaCalls[0].body;
   var metaEvent = metaBody.data[0];
   assert.equal(metaEvent.event_name, 'Purchase');
   assert.equal(metaEvent.event_id, 'shared-evt-abc123', 'Meta CAPI event_id must match the shared event_id used for PostHog dedup too');
-  assert.equal(metaEvent.custom_data.value, 2.99);
+  assert.equal(metaEvent.custom_data.value, 0.99);
   assert.equal(metaEvent.custom_data.currency, 'USD');
   assert.ok(metaEvent.event_time, 'event_time should be present');
 });
 
-test('pack300 resolves price 7.99 for the Purchase event', async function () {
+test('pack199 resolves price 1.99 for the Purchase event, and starter:false', async function () {
   await seedZeroBalance('purchase300@example.com');
   var spies = installAnalyticsFetchSpy();
   await handler(signedEvent(paymentPayload({
     payment_id: 'pay_analytics_300',
-    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack199_test', quantity: 1 }],
     customer: { customer_id: 'cus_300a', email: 'purchase300@example.com' },
     metadata: { dreamtube_event_id: 'evt-300' }
   })));
-  assert.equal(spies.posthogCalls[0].body.properties.value, 7.99);
-  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 7.99);
+  assert.equal(spies.posthogCalls[0].body.properties.value, 1.99);
+  assert.equal(spies.posthogCalls[0].body.properties.starter, false);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 1.99);
 });
 
-test('pack700 resolves price 14.99 for the Purchase event', async function () {
+test('pack499 resolves price 4.99 for the Purchase event, and starter:false', async function () {
+  await seedZeroBalance('purchase499@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_analytics_499',
+    product_cart: [{ product_id: 'pdt_pack499_test', quantity: 1 }],
+    customer: { customer_id: 'cus_499a', email: 'purchase499@example.com' },
+    metadata: { dreamtube_event_id: 'evt-499' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.value, 4.99);
+  assert.equal(spies.posthogCalls[0].body.properties.starter, false);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 4.99);
+});
+
+test('pack999 resolves price 9.99 for the Purchase event, and starter:false', async function () {
   await seedZeroBalance('purchase700@example.com');
   var spies = installAnalyticsFetchSpy();
   await handler(signedEvent(paymentPayload({
     payment_id: 'pay_analytics_700',
-    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack999_test', quantity: 1 }],
     customer: { customer_id: 'cus_700a', email: 'purchase700@example.com' },
     metadata: { dreamtube_event_id: 'evt-700' }
   })));
-  assert.equal(spies.posthogCalls[0].body.properties.value, 14.99);
-  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 14.99);
+  assert.equal(spies.posthogCalls[0].body.properties.value, 9.99);
+  assert.equal(spies.posthogCalls[0].body.properties.starter, false);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 9.99);
 });
 
 test('when metadata carries no dreamtube_event_id (a purchase predating this instrumentation), the Purchase event still fires with a freshly generated event_id shared between PostHog and Meta for THIS webhook fire', async function () {
@@ -227,7 +246,7 @@ test('when metadata carries no dreamtube_event_id (a purchase predating this ins
   var spies = installAnalyticsFetchSpy();
   var payload = paymentPayload({
     payment_id: 'pay_no_legacy_id',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_nl', email: 'nolegacyid@example.com' },
     metadata: {}
   });
@@ -246,7 +265,7 @@ test('distinct_id falls back to the normalized email when no matching account re
   var spies = installAnalyticsFetchSpy();
   await handler(signedEvent(paymentPayload({
     payment_id: 'pay_no_account',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_na', email: 'NoAccountRecord@Example.com' },
     metadata: { dreamtube_event_id: 'evt-no-account' }
   })));
@@ -258,13 +277,13 @@ test('a PostHog capture failure never blocks the token credit or the webhook\'s 
   var spies = installAnalyticsFetchSpy({ posthogFails: true });
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_posthog_down',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_phd', email: 'posthogdown@example.com' },
     metadata: { dreamtube_event_id: 'evt-ph-down' }
   })));
   assert.equal(res.statusCode, 200, 'a PostHog failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'posthogdown@example.com');
-  assert.equal(record.tokens.balance, 200, 'the token credit must still have landed');
+  assert.equal(record.tokens.balance, 300, 'the token credit must still have landed');
   assert.equal(spies.metaCalls.length, 1, 'the Meta CAPI call must still have been attempted independent of the PostHog failure');
 });
 
@@ -273,13 +292,13 @@ test('a Meta CAPI failure never blocks the token credit or the webhook\'s 200 re
   var spies = installAnalyticsFetchSpy({ metaFails: true });
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_meta_down',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_md', email: 'metadown@example.com' },
     metadata: { dreamtube_event_id: 'evt-meta-down' }
   })));
   assert.equal(res.statusCode, 200, 'a Meta CAPI failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'metadown@example.com');
-  assert.equal(record.tokens.balance, 200, 'the token credit must still have landed');
+  assert.equal(record.tokens.balance, 300, 'the token credit must still have landed');
   assert.equal(spies.posthogCalls.length, 1, 'the PostHog call must still have been attempted independent of the Meta failure');
 });
 
@@ -289,13 +308,13 @@ test('missing META_CAPI_ACCESS_TOKEN: PostHog still fires, Meta CAPI is skipped 
   var spies = installAnalyticsFetchSpy();
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_no_meta_token',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_nmt', email: 'nometatoken@example.com' },
     metadata: { dreamtube_event_id: 'evt-no-meta-token' }
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'nometatoken@example.com');
-  assert.equal(record.tokens.balance, 200);
+  assert.equal(record.tokens.balance, 300);
   assert.equal(spies.posthogCalls.length, 1, 'PostHog should still fire even without a Meta token configured');
   assert.equal(spies.metaCalls.length, 0, 'no Meta CAPI call should be attempted without an access token (lib/meta-capi.js returns ok:false before ever calling fetch)');
 });
@@ -320,7 +339,7 @@ test('a redelivered payment.succeeded event (same payment_id, already fully cred
   await seedZeroBalance('noreanalytics@example.com');
   var payload = paymentPayload({
     payment_id: 'pay_redelivered_analytics',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_ra', email: 'noreanalytics@example.com' },
     metadata: { dreamtube_event_id: 'evt-redelivered' }
   });
@@ -343,7 +362,7 @@ test('a redelivered payment.succeeded event (same payment_id, already fully cred
   assert.equal(spies2.metaCalls.length, 0, 'a redelivered, already-fully-processed payment must NOT re-fire the Meta CAPI Purchase event');
 
   var record = await entitlements.getEntitlement({}, 'noreanalytics@example.com');
-  assert.equal(record.tokens.balance, 200, 'balance must still only reflect a single credit');
+  assert.equal(record.tokens.balance, 300, 'balance must still only reflect a single credit');
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -381,45 +400,57 @@ test('signature signed with the wrong secret -> 400 E4', async function () {
 
 // ----- payment.succeeded -> token credit -----
 
-test('payment.succeeded for pack100 credits 200 tokens onto the buyer\'s balance (pack enrichment, 2026-07-28)', async function () {
+test('payment.succeeded for pack099 (starter) credits 300 tokens onto the buyer\'s balance', async function () {
   await seedZeroBalance('buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_abc',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_abc', email: 'Buyer@Example.com' }
   })));
   assert.equal(res.statusCode, 200);
 
   var record = await entitlements.getEntitlement({}, 'buyer@example.com');
-  assert.equal(record.tokens.balance, 200);
+  assert.equal(record.tokens.balance, 300);
   // A token-pack purchase is a pure balance credit — it must not touch the
   // subscription-era active/plan fields at all (they don't apply here).
   assert.equal(record.active, undefined);
   assert.equal(record.plan, undefined);
 });
 
-test('payment.succeeded for pack300 credits 600 tokens (pack enrichment, 2026-07-28)', async function () {
+test('payment.succeeded for pack199 credits 500 tokens', async function () {
   await seedZeroBalance('300buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_300',
-    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack199_test', quantity: 1 }],
     customer: { customer_id: 'cus_300', email: '300buyer@example.com' }
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '300buyer@example.com');
-  assert.equal(record.tokens.balance, 600);
+  assert.equal(record.tokens.balance, 500);
 });
 
-test('payment.succeeded for pack700 credits 1400 tokens (pack enrichment, 2026-07-28)', async function () {
+test('payment.succeeded for pack499 credits 1500 tokens', async function () {
+  await seedZeroBalance('499buyer@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_499',
+    product_cart: [{ product_id: 'pdt_pack499_test', quantity: 1 }],
+    customer: { customer_id: 'cus_499', email: '499buyer@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, '499buyer@example.com');
+  assert.equal(record.tokens.balance, 1500);
+});
+
+test('payment.succeeded for pack999 credits 4000 tokens', async function () {
   await seedZeroBalance('700buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_700',
-    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack999_test', quantity: 1 }],
     customer: { customer_id: 'cus_700', email: '700buyer@example.com' }
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '700buyer@example.com');
-  assert.equal(record.tokens.balance, 1400);
+  assert.equal(record.tokens.balance, 4000);
 });
 
 test('tokens stack onto an existing balance rather than replacing it', async function () {
@@ -427,25 +458,25 @@ test('tokens stack onto an existing balance rather than replacing it', async fun
   await entitlements.addTokens({}, 'stacker@example.com', 50);
   await handler(signedEvent(paymentPayload({
     payment_id: 'pay_stack',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_stack', email: 'stacker@example.com' }
   })));
   var record = await entitlements.getEntitlement({}, 'stacker@example.com');
-  assert.equal(record.tokens.balance, 250);
+  assert.equal(record.tokens.balance, 350, '50 (already there) + 300 (pack099 credit) = 350');
 });
 
 test('a redelivered payment.succeeded event (same payment_id) does not double-credit', async function () {
   await seedZeroBalance('redelivered@example.com');
   var payload = paymentPayload({
     payment_id: 'pay_redelivered',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_r', email: 'redelivered@example.com' }
   });
 
   var res1 = await handler(signedEvent(payload, { id: 'msg_first' }));
   assert.equal(res1.statusCode, 200);
   var afterFirst = await entitlements.getEntitlement({}, 'redelivered@example.com');
-  assert.equal(afterFirst.tokens.balance, 200);
+  assert.equal(afterFirst.tokens.balance, 300);
 
   // Dodo redelivers the identical event (same payment_id) under a
   // different webhook message id/timestamp — the payload's payment_id is
@@ -453,20 +484,20 @@ test('a redelivered payment.succeeded event (same payment_id) does not double-cr
   var res2 = await handler(signedEvent(payload, { id: 'msg_second' }));
   assert.equal(res2.statusCode, 200);
   var afterSecond = await entitlements.getEntitlement({}, 'redelivered@example.com');
-  assert.equal(afterSecond.tokens.balance, 200, 'balance must not double-credit on a redelivered event');
+  assert.equal(afterSecond.tokens.balance, 300, 'balance must not double-credit on a redelivered event');
 });
 
 test('email falls back to metadata.dreamtube_email when the customer block is missing', async function () {
   await seedZeroBalance('fallback@example.com');
   var payload = paymentPayload({
     payment_id: 'pay_fallback',
-    metadata: { dreamtube_email: 'fallback@example.com', dreamtube_pack: 'pack100', dreamtube_tokens: 200 }
+    metadata: { dreamtube_email: 'fallback@example.com', dreamtube_pack: 'pack099', dreamtube_tokens: 300 }
   });
   delete payload.data.customer;
   var res = await handler(signedEvent(payload));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'fallback@example.com');
-  assert.equal(record.tokens.balance, 200);
+  assert.equal(record.tokens.balance, 300);
 });
 
 test('token amount falls back to metadata.dreamtube_tokens when product_cart matches no configured pack', async function () {
@@ -547,7 +578,7 @@ test('creditTokenPackOnce genuinely exhausting its retries (not a legitimate alr
   try {
     var res = await handler(signedEvent(paymentPayload({
       payment_id: 'pay_exhaustion_webhook',
-      product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+      product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
       customer: { customer_id: 'cus_exhaustion', email: 'exhaustionwebhook@example.com' }
     })));
     assert.equal(res.statusCode, 500, 'genuine exhaustion must surface as a real 500, not a 200 that leaves Dodo believing the event was handled');
@@ -585,54 +616,61 @@ test('non-payment.succeeded event types (payment.failed, subscription.*, refund.
   assert.equal(await entitlements.getEntitlement({}, 'failedpay@example.com'), null);
 });
 
-// ----- First-purchase bonus (+50%, Token Economy C) -----
+// ----- No first-purchase bonus (retired 2026-08-02, "The Vault" redesign) -----
 //
-// A user's FIRST-EVER successful pack purchase credits 1.5x the pack's
-// base tokens; every purchase after that credits the plain base amount.
-// Uses seedZeroBalanceNoPriorPurchase (no firstPackPurchaseAt stamped) so
-// these accounts are genuinely eligible for the bonus, unlike every test
-// above (which deliberately seeds firstPackPurchaseAt in the past via
-// seedZeroBalance, to isolate THEIR assertions from this bonus).
+// The old +50% first-purchase bonus (Token Economy C) is gone entirely —
+// every pack credits its plain base token count, on the first purchase or
+// any later one, with no multiplier. firstPackPurchaseAt is STILL stamped
+// (repurposed to gate the $0.99 starter pack's one-time eligibility at
+// checkout-creation time — see create-checkout-session-dodo.js's own E9
+// guard/tests), just no longer read by the crediting path itself. Uses
+// seedZeroBalanceNoPriorPurchase (no firstPackPurchaseAt stamped) so these
+// accounts are genuinely brand-new, same as the old bonus tests this
+// section replaces — the point now is proving NO multiplier applies even
+// for a genuinely first-ever purchase.
 
-test('a brand-new account\'s first pack100 purchase ever credits 300 tokens (200 base x 1.5, pack enrichment 2026-07-28), not 200', async function () {
+test('a brand-new account\'s first-ever pack099 purchase credits the plain 300 base tokens -- no +50% bonus, ever', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_first_bonus',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_first_bonus', email: 'firstbonus@example.com' }
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'firstbonus@example.com');
-  assert.equal(record.tokens.balance, 300, 'first-ever pack purchase must credit 1.5x the base 200 tokens');
-  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must be stamped after the first purchase completes');
+  assert.equal(record.tokens.balance, 300, 'first-ever pack purchase credits the plain base amount -- the +50% bonus is retired');
+  // firstPackPurchaseAt is still stamped -- repurposed for starter-pack
+  // one-time gating (see create-checkout-session-dodo.js), just no longer
+  // used to compute a bonus multiplier here.
+  assert.ok(record.firstPackPurchaseAt, 'firstPackPurchaseAt must still be stamped after the first purchase completes');
 });
 
-test('a SECOND purchase from the same account does not get the bonus again — plain base tokens only', async function () {
+test('a SECOND purchase from the same account also credits the plain base amount -- both purchases, no multiplier on either', async function () {
   await seedZeroBalanceNoPriorPurchase('secondpurchase@example.com');
   var first = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_second_purchase_first',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_second_a', email: 'secondpurchase@example.com' }
   })));
   assert.equal(first.statusCode, 200);
   var afterFirst = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
-  assert.equal(afterFirst.tokens.balance, 300, 'first purchase still gets the bonus: 200 x 1.5');
+  assert.equal(afterFirst.tokens.balance, 300, 'first purchase credits the plain base amount, no bonus');
 
   var second = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_second_purchase_second',
-    product_cart: [{ product_id: 'pdt_pack300_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack199_test', quantity: 1 }],
     customer: { customer_id: 'cus_second_b', email: 'secondpurchase@example.com' }
   })));
   assert.equal(second.statusCode, 200);
   var afterSecond = await entitlements.getEntitlement({}, 'secondpurchase@example.com');
-  assert.equal(afterSecond.tokens.balance, 900, '300 (after first, bonused) + 600 (second purchase, base only, no bonus) = 900');
+  assert.equal(afterSecond.tokens.balance, 800, '300 (first, plain) + 500 (second, plain) = 800 -- neither purchase gets a bonus');
 });
 
-test('a redelivered FIRST-purchase event (same payment_id) does not re-apply the bonus a second time', async function () {
+test('a redelivered FIRST-purchase event (same payment_id) does not double-credit, and still applies no bonus', async function () {
   await seedZeroBalanceNoPriorPurchase('redeliveredbonus@example.com');
   var payload = paymentPayload({
     payment_id: 'pay_redelivered_bonus',
-    product_cart: [{ product_id: 'pdt_pack100_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
     customer: { customer_id: 'cus_redelivered_bonus', email: 'redeliveredbonus@example.com' }
   });
 
@@ -642,17 +680,56 @@ test('a redelivered FIRST-purchase event (same payment_id) does not re-apply the
 
   await handler(signedEvent(payload, { id: 'msg_bonus_second' }));
   var afterSecond = await entitlements.getEntitlement({}, 'redeliveredbonus@example.com');
-  assert.equal(afterSecond.tokens.balance, 300, 'a redelivered event for the SAME payment_id must not double-apply the bonus or the credit');
+  assert.equal(afterSecond.tokens.balance, 300, 'a redelivered event for the SAME payment_id must not double-credit');
 });
 
-test('pack700\'s first purchase credits 2100 tokens (1400 base x 1.5, pack enrichment 2026-07-28)', async function () {
+test('pack999\'s first-ever purchase also credits the plain 4000 base tokens -- no bonus regardless of pack size', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus700@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_first_bonus_700',
-    product_cart: [{ product_id: 'pdt_pack700_test', quantity: 1 }],
+    product_cart: [{ product_id: 'pdt_pack999_test', quantity: 1 }],
     customer: { customer_id: 'cus_first_bonus_700', email: 'firstbonus700@example.com' }
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'firstbonus700@example.com');
-  assert.equal(record.tokens.balance, 2100, '1400 base x 1.5 = 2100');
+  assert.equal(record.tokens.balance, 4000, 'plain base amount, no +50% bonus');
+});
+
+// ----- `starter` flag on the Purchase conversion event (tracker item
+// for-product-build-ship-today-founder-app-zn9zyy, item 5) -----
+
+test('the Purchase event\'s `starter` flag is true for pack099 and false for every other pack, on both PostHog and resolveIsStarterPack\'s product_cart match', async function () {
+  await seedZeroBalance('starterflagcart@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_starter_flag_cart',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_starter_flag', email: 'starterflagcart@example.com' },
+    metadata: { dreamtube_event_id: 'evt-starter-flag-cart' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.starter, true);
+});
+
+test('the Purchase event\'s `starter` flag falls back to metadata.dreamtube_starter when product_cart matches no configured pack (env var rotated after checkout creation)', async function () {
+  await seedZeroBalance('starterflagmeta@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_starter_flag_meta',
+    product_cart: [{ product_id: 'pdt_some_rotated_product', quantity: 1 }],
+    customer: { customer_id: 'cus_starter_flag_meta', email: 'starterflagmeta@example.com' },
+    metadata: { dreamtube_event_id: 'evt-starter-flag-meta', dreamtube_tokens: 300, dreamtube_price: 0.99, dreamtube_starter: true }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.starter, true, 'must fall back to metadata.dreamtube_starter when the product_cart match fails');
+});
+
+test('the Purchase event\'s `starter` flag defaults to false (never undefined) when neither product_cart nor metadata resolve it', async function () {
+  await seedZeroBalance('starterflagfallback@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_starter_flag_fallback',
+    product_cart: [{ product_id: 'pdt_some_rotated_product', quantity: 1 }],
+    customer: { customer_id: 'cus_starter_flag_fallback', email: 'starterflagfallback@example.com' },
+    metadata: { dreamtube_event_id: 'evt-starter-flag-fallback', dreamtube_tokens: 500, dreamtube_price: 1.99 }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.starter, false, 'an unresolvable starter flag must fail toward false, never undefined -- this is an analytics dimension on an otherwise-fully-resolvable event, not worth losing the whole Purchase fire over');
 });

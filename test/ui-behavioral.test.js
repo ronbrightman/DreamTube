@@ -2168,7 +2168,7 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 150, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await mockTokenStatus(page, { balance: 150, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: true });
     await seedLoggedInUserAt(page, baseUrl, 'shopbetatester', '/shop.html');
     await page.waitForSelector('#shop-cost-banner', { timeout: 5000 });
 
@@ -2176,25 +2176,23 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
     // Store-launch copy sweep (tracker item
     // for-product-store-launch-copy-sweep-purc-m6xhkx): "Free during
     // beta -- no card needed" / "nothing to buy right now" directly
-    // contradicted the three live Buy buttons right below it once Dodo
+    // contradicted the live Buy buttons right below it once Dodo
     // Payments checkout actually went live -- replaced with the real
     // cost facts (must match lib/entitlements.js's real
     // VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_CLAIM_AMOUNT, not
-    // stale/guessed numbers).
+    // stale/guessed numbers). Still true after "The Vault" redesign
+    // (tracker item for-product-build-ship-today-founder-app-zn9zyy).
     assert.doesNotMatch(bannerText, /free during beta/i, 'the beta framing must be gone now that the store is live');
-    assert.doesNotMatch(bannerText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- three live packs are right below it');
+    assert.doesNotMatch(bannerText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- live packs are right below it');
     assert.match(bannerText, /100 tokens/i, 'should state the real video cost');
     assert.match(bannerText, /10\b/, 'should state the real image cost');
     assert.match(bannerText, /free/i, 'should still mention the free daily grant exists');
 
-    // Token packs are real, live purchases (Dodo Payments) -- see
-    // test/shop-behavioral.test.js for full "Buy" button coverage, and
-    // the "promoted to primary" assertion below (same tracker item --
-    // the buttons were still styled as de-emphasized/secondary from the
-    // beta era even after Dodo checkout went live).
-    var buttonClasses = await page.getAttribute('#shop-buy-pack100', 'class');
-    assert.match(buttonClasses, /\bbtn-primary\b/, 'buy buttons must be promoted to primary styling now that the store is live');
-    assert.doesNotMatch(buttonClasses, /\bbtn-secondary\b/);
+    // Token packs are real, live purchases (Dodo Payments), each button
+    // stating its own exact price ("Pay $X.XX") -- see
+    // test/shop-behavioral.test.js for full pack-button coverage.
+    var buttonText = (await page.textContent('#shop-buy-pack199')).trim();
+    assert.match(buttonText, /^Pay \$1\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
 
     var trustLine = await page.textContent('#shop-trust-line');
     assert.match(trustLine, /Dodo Payments/i);

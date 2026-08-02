@@ -4,31 +4,33 @@
 // shop.html's ?checkout=success return trip (see docs/EVENT_TAXONOMY.md's
 // "Purchase / purchase_completed" entry). Before this, a real Dodo Payments
 // purchase completing and redirecting back here fired zero conversion
-// events -- no PostHog capture, no Meta Pixel/CAPI event -- which meant (1)
-// the shop-palette A/B test (test/shop-palette-variant-behavioral.test.js)
-// could show variant exposure but never which variant actually converts,
-// and (2) Meta ad spend had no Purchase signal at all.
+// events -- no PostHog capture, no Meta Pixel/CAPI event -- which meant
+// Meta ad spend had no Purchase signal at all. Pack ids/amounts throughout
+// this file use "The Vault" lineup (founder-approved 2026-08-02, tracker
+// item for-product-build-ship-today-founder-app-zn9zyy) — pack099 ($0.99/
+// 300, starter), pack199 ($1.99/500), pack499 ($4.99/1500), pack999
+// ($9.99/4000) — and additionally pin the `starter` flag this redesign
+// added to the same event.
 //
 // The fix is a sessionStorage marker (dreamtube_pending_purchase),
 // following the exact spoofing-resistance pattern
 // test/first-video-created-behavioral.test.js already covers for
 // result.html's dreamtube_just_generated_id: purchasePack() stashes
-// {pack, tokens, price} right before the real outbound redirect to Dodo,
-// and handleCheckoutReturn reads + unconditionally removes it exactly once
-// on a ?checkout=success load. Without the marker present, the bare query
-// param alone must not be enough to fire a Purchase event -- otherwise
-// anyone could fake a conversion by hand-visiting the URL. The marker is
-// ALSO cleared on ?checkout=cancelled (a review finding on the first pass
-// of this branch: cancelled attempts set the exact same marker on their
-// way to Dodo, so leaving it in place would let a later, unrelated
-// ?checkout=success visit in the same tab consume a stale marker from an
-// attempt that never actually completed).
+// {pack, tokens, price, starter} right before the real outbound redirect
+// to Dodo, and handleCheckoutReturn reads + unconditionally removes it
+// exactly once on a ?checkout=success load. Without the marker present,
+// the bare query param alone must not be enough to fire a Purchase event
+// -- otherwise anyone could fake a conversion by hand-visiting the URL.
+// The marker is ALSO cleared on ?checkout=cancelled (a review finding on
+// the first pass of this branch: cancelled attempts set the exact same
+// marker on their way to Dodo, so leaving it in place would let a later,
+// unrelated ?checkout=success visit in the same tab consume a stale
+// marker from an attempt that never actually completed).
 //
 // Follows test/shop-behavioral.test.js's seedShopPage/mockTokenStatus/
 // blockThirdParty conventions, test/meta-capi-behavioral.test.js's
 // installFbqRecorder/captureTrackConversion pattern for the standard
 // (non-custom) fbq('track', ...) call Purchase uses, and
-// test/shop-palette-variant-behavioral.test.js's/
 // test/first-video-created-behavioral.test.js's approach of reading
 // PostHog calls straight out of the stub's own pending-call queue.
 
@@ -175,9 +177,9 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     // server-side Purchase fire, for PostHog/Meta dedup -- see that
     // file's own header comment). A production purchasePack() call always
     // has one; this seed matches that reality rather than the pre-Phase-1
-    // shape. pack700/$14.99 matches the pack-enrichment lineup (2026-07-28:
-    // 1400 tokens, same $14.99 price as the original Token Economy C).
-    await markPendingPurchase(page, { pack: 'pack700', tokens: 1400, price: 14.99, eventId: 'evt-fixed-test-id' });
+    // shape. pack999/$9.99/4000 matches "The Vault" lineup's "Best value"
+    // pack (founder-approved 2026-08-02).
+    await markPendingPurchase(page, { pack: 'pack999', tokens: 4000, price: 9.99, starter: false, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget -- wait for the
@@ -202,12 +204,12 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var purchaseConversions = conversionCalls.filter(function (body) { return body && body.event_name === 'Purchase'; });
     assert.equal(purchaseConversions.length, 1, 'expected exactly one Purchase POST to track-conversion');
     assert.equal(purchaseConversions[0].event_id, eventId, 'track-conversion event_id must match the fbq call\'s eventID, so Meta can dedupe them');
-    assert.deepEqual(purchaseConversions[0].custom_data, { value: 14.99, currency: 'USD' });
+    assert.deepEqual(purchaseConversions[0].custom_data, { value: 9.99, currency: 'USD' });
 
     var phCalls = await readPostHogCalls(page);
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
-    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack700', tokens: 1400, value: 14.99, currency: 'USD', $insert_id: 'evt-fixed-test-id' });
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack999', tokens: 4000, value: 9.99, currency: 'USD', starter: false, $insert_id: 'evt-fixed-test-id' });
 
     var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
     assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
@@ -264,7 +266,7 @@ test('a cancelled checkout clears the marker, so a LATER bare/bookmarked ?checko
     // Same marker purchasePack() would have set right before redirecting to
     // Dodo -- but this attempt gets cancelled, not completed.
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack700', tokens: 1400, price: 14.99 });
+    await markPendingPurchase(page, { pack: 'pack999', tokens: 4000, price: 9.99, starter: false });
 
     await page.goto(baseUrl + '/shop.html?checkout=cancelled', { waitUntil: 'domcontentloaded' });
     var markerAfterCancel = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
@@ -298,7 +300,7 @@ test('a reload after a successful first fire does not re-fire (marker already co
 
     await seedAccount(page);
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack100', tokens: 200, price: 2.99 });
+    await markPendingPurchase(page, { pack: 'pack199', tokens: 500, price: 1.99, starter: false });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     await settle(function () { return fbqTrackCalls(fbqCalls, 'Purchase').length >= 1; });
@@ -348,7 +350,7 @@ test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries cre
       });
     });
 
-    await page.click('#shop-buy-pack100');
+    await page.click('#shop-buy-pack199');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
     await settle(function () {
       return fbqTrackCalls(fbqCalls, 'Purchase').length >= 1 &&
@@ -368,6 +370,8 @@ test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries cre
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1);
     assert.equal(purchaseCaptures[0][2].$insert_id, 'evt-real-server-eventid', 'PostHog\'s $insert_id must also be the real server-returned eventId, not a client-generated fallback, so dodo-webhook.js\'s own server-side Purchase fire can actually dedupe against this one');
+    assert.equal(purchaseCaptures[0][2].pack, 'pack199');
+    assert.equal(purchaseCaptures[0][2].starter, false, 'pack199 is not the starter pack');
   } finally {
     await context.close();
   }

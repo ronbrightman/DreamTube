@@ -187,7 +187,10 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
     var waitLine = await page.textContent('#ps-wait-line');
     assert.match(waitLine, /Or claim 20 free tokens in 6h 1[23]m/);
     var buyLabel = await page.textContent('#ps-buy-label');
-    assert.match(buyLabel, /Get 200 tokens · \$2\.99/);
+    // hasMadeFirstPurchase not set on this mocked tokenStatus -> fails
+    // toward false -> the sheet offers the one-time $0.99 starter pack099
+    // (see pickContextualPack's own doc comment).
+    assert.match(buyLabel, /Get 300 tokens · \$0\.99/);
 
     // THE BUG FIX: the sheet must have already persisted the full blocked
     // action's draft (style + mediaType), not only on an unblocked path.
@@ -202,7 +205,7 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
   }
 });
 
-test('style.html: tapping the buy button POSTs the smallest sufficient pack with a relative-path-only successUrl/cancelUrl', async function (t) {
+test('style.html: tapping the buy button POSTs the contextual pack (starter, since hasMadeFirstPurchase is unset) with a relative-path-only successUrl/cancelUrl', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -226,7 +229,7 @@ test('style.html: tapping the buy button POSTs the smallest sufficient pack with
     await page.waitForTimeout(300);
 
     assert.ok(captured, 'create-checkout-session-dodo must have been called');
-    assert.equal(captured.pack, 'pack100');
+    assert.equal(captured.pack, 'pack099');
     assert.equal(captured.successUrl, '/home.html?checkout=success');
     assert.equal(captured.cancelUrl, '/style.html?checkout=cancelled');
   } finally {
@@ -523,7 +526,7 @@ test('home.html: a mocked successful checkout return auto-resumes the exact bloc
     await seedAccount(page, {
       username: 'autoresume',
       draft: { caption: 'A dream about flying whales over the ocean', style: 'Cinematic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
@@ -587,7 +590,7 @@ test('home.html: when the token credit is still lagging past the poll window, it
     await seedAccount(page, {
       username: 'degradepath',
       draft: { caption: 'A dream about a lighthouse in the fog', style: 'Realistic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
@@ -661,7 +664,7 @@ test('home.html: pagehide cancels the in-flight credit poll -- a stale poll tick
     await seedAccount(page, {
       username: 'pagehidecancel',
       draft: { caption: 'A dream about a slow-motion waterfall', style: 'Realistic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack100', tokens: 200, price: 2.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-pagehide-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
     });
 
     await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });

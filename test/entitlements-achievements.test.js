@@ -171,9 +171,10 @@ test('an achievement grant does not corrupt appliedTokenPackPaymentIds/refundedJ
   await entitlements.creditTokenPackOnce({}, email, 'pay_1', 100);
   await entitlements.applyAchievementGrant({}, email, 'streak_7day', { type: 'tokens', amount: 20 });
   var record = await entitlements.getEntitlement({}, email);
-  // creditTokenPackOnce applies Token Economy C's +50% first-purchase bonus:
-  // 100 * 1.5 = 150, then +20 for the achievement = 170.
-  assert.equal(record.tokens.balance, 170);
+  // No bonus multiplier (retired 2026-08-02, "The Vault" shop redesign):
+  // creditTokenPackOnce credits the plain 100, then +20 for the
+  // achievement = 120.
+  assert.equal(record.tokens.balance, 120);
   assert.deepEqual(record.appliedTokenPackPaymentIds, []);
   assert.ok(record.achievements.streak_7day);
 });

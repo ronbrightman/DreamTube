@@ -15,12 +15,17 @@ var assert = require('node:assert/strict');
 
 var PurchaseSheet = require('../js/purchase-sheet');
 
-test('PACK_INFO matches shop.html\'s pack-enrichment lineup (2026-07-28: doubled tokens, same prices)', function () {
+test('PACK_INFO matches shop.html\'s "The Vault" lineup (founder-approved 2026-08-02: $0.99/300 starter, $1.99/500, $4.99/1500, $9.99/4000)', function () {
   assert.deepEqual(PurchaseSheet.PACK_INFO, {
-    pack100: { tokens: 200, price: 2.99 },
-    pack300: { tokens: 600, price: 7.99 },
-    pack700: { tokens: 1400, price: 14.99 }
+    pack099: { tokens: 300, price: 0.99 },
+    pack199: { tokens: 500, price: 1.99 },
+    pack499: { tokens: 1500, price: 4.99 },
+    pack999: { tokens: 4000, price: 9.99 }
   });
+});
+
+test('STARTER_PACK_ID is pack099', function () {
+  assert.equal(PurchaseSheet.STARTER_PACK_ID, 'pack099');
 });
 
 test('neededTokens: the exact shortfall, never negative', function () {
@@ -30,17 +35,27 @@ test('neededTokens: the exact shortfall, never negative', function () {
   assert.equal(PurchaseSheet.neededTokens(150, 100), 0, 'never negative even if balance already covers the cost');
 });
 
-test('pickSmallestSufficientPack: picks the cheapest pack that alone covers the shortfall', function () {
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(1), 'pack100');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(60), 'pack100');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(200), 'pack100');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(201), 'pack300');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(600), 'pack300');
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(601), 'pack700');
+test('pickContextualPack: offers the starter (pack099) when this account has never bought a pack before', function () {
+  assert.equal(PurchaseSheet.pickContextualPack(1, false), 'pack099');
+  assert.equal(PurchaseSheet.pickContextualPack(60, false), 'pack099');
+  assert.equal(PurchaseSheet.pickContextualPack(100, false), 'pack099', 'the real max shortfall (a blocked video) is well within the starter\'s 300 tokens');
 });
 
-test('pickSmallestSufficientPack: falls back to the largest pack when nothing alone is sufficient', function () {
-  assert.equal(PurchaseSheet.pickSmallestSufficientPack(5000), 'pack700');
+test('pickContextualPack: offers the $1.99 pack (pack199), never the starter, once this account has already bought a pack', function () {
+  assert.equal(PurchaseSheet.pickContextualPack(1, true), 'pack199');
+  assert.equal(PurchaseSheet.pickContextualPack(100, true), 'pack199');
+});
+
+test('pickContextualPack: never offers the two larger packs (pack499/pack999) for a real generation-blocked shortfall, in either eligibility state', function () {
+  assert.notEqual(PurchaseSheet.pickContextualPack(100, false), 'pack499');
+  assert.notEqual(PurchaseSheet.pickContextualPack(100, false), 'pack999');
+  assert.notEqual(PurchaseSheet.pickContextualPack(100, true), 'pack499');
+  assert.notEqual(PurchaseSheet.pickContextualPack(100, true), 'pack999');
+});
+
+test('pickContextualPack: falls back to the largest ELIGIBLE pack when nothing alone is sufficient, never crossing back into the starter once ineligible', function () {
+  assert.equal(PurchaseSheet.pickContextualPack(5000, false), 'pack999');
+  assert.equal(PurchaseSheet.pickContextualPack(5000, true), 'pack999', 'still pack999, not pack099, even though pack099 is technically the "first" entry in PACK_ORDER');
 });
 
 test('formatTokenCountdown: hours+minutes / minutes-only / "now"', function () {

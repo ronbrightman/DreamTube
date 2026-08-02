@@ -22,13 +22,14 @@
      the token balance chip, the wait-screen nudge dot, active toggle
      switches, and the beta-feedback CTA. */
   --gradient-ig:linear-gradient(135deg,#833AB4,#FD1D1D,#FCB045);
-  /* Shop palette A/B test (docs/SHOP_PALETTE_REDESIGN_SPEC.md) — two new,
-     narrowly-scoped accent hues, extending the token system rather than
-     replacing it. Direction A ("quiet ledger", calm periwinkle-blue) vs.
-     Direction B ("premium currency", muted warm gold); shop.html assigns a
-     visitor to one via a body-level .shop-variant-a/.shop-variant-b class.
-     Used ONLY for the "best value" token-pack card border/badge — see
-     .token-pack-card.best and .token-pack-badge below. */
+  /* Two general-purpose accent hues (calm periwinkle-blue / muted warm
+     gold), extending the token system rather than replacing it. Originally
+     introduced for the shop's now-retired "best value" pack-card palette
+     A/B test (docs/SHOP_PALETTE_REDESIGN_SPEC.md, superseded 2026-08-02 —
+     see that file's own header note) — kept as general tokens since
+     several other spots across the app (tracker.html's waiting-badge,
+     processing/install nudges, the token-chip low-balance state, the
+     claim-sheet amount) now use them independently of that retired test. */
   --accent-trust:#6C8CFF;
   --accent-trust-soft:rgba(108,140,255,.12);
   --accent-value:#D9A653;
@@ -1161,68 +1162,17 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .proc-payment-caption{ font-size:10.5px; color:var(--text-faint);}
 
 /* ===== Token shop (shop.html) =====
-   Palette per docs/SHOP_PALETTE_REDESIGN_SPEC.md — the shop used to be the
-   one place besides the two documented --gradient-ig spots (bottom-nav "+",
-   Profile avatar ring) that borrowed the hot IG gradient, which read as
-   loud/urgent rather than calm. Baseline fix below (plain card border, plain
-   white balance numeral matching .rec-timer's existing big-number pattern)
-   applies to every visitor, no variant condition. Only the "best value" pack
-   card's (pack700) border/badge color is a live in-product A/B test — see
-   .token-pack-card.best / .token-pack-badge and the .shop-variant-a/
-   .shop-variant-b rules further down, which shop.html's inline script
-   assigns once per browser and persists in localStorage. The middle
-   "Most popular" pack (pack300, added for Token Economy C's 3-pack
-   lineup) uses its own fixed .token-pack-card.popular / .token-pack-
-   badge-popular color, not part of that A/B test. */
-.token-balance-card{ position:relative; background:var(--surface); border:1px solid var(--border-strong); border-radius:20px; padding:20px; margin:6px 0 22px;}
-.token-balance-inner{ text-align:center;}
-.token-balance-amt{ font-size:36px; font-weight:800; line-height:1.1; color:var(--text-primary);}
-.token-balance-sub{ font-size:12.5px; color:var(--text-faint); margin-top:6px;}
-.token-pack-card{ position:relative; background:var(--surface); border:1px solid var(--border-strong); border-radius:18px; padding:18px 20px; margin-bottom:14px; transition:border-color .15s ease;}
-.token-pack-row{ display:flex; align-items:baseline; justify-content:space-between;}
-.token-pack-amt{ font-weight:800; font-size:18px;}
-.token-pack-price{ font-weight:800; font-size:20px;}
-.token-pack-sub{ font-size:12.5px; color:var(--text-faint); margin-top:4px;}
-.token-pack-badge{ position:absolute; top:-10px; right:16px; color:#fff; font-size:10px; font-weight:800; padding:4px 10px; border-radius:100px;}
-.token-pack-card .btn{ margin-top:14px;}
-/* "Most popular" badge (pack300, Token Economy C's 3-pack lineup) — fixed
-   accent-growth color, deliberately NOT part of the "best value" A/B test
-   below (that test is scoped to .token-pack-card.best specifically). */
-.token-pack-card.popular{ border-color:var(--accent-growth);}
-.token-pack-badge.token-pack-badge-popular{ background:var(--accent-growth);}
-/* Direction A — "quiet ledger" (calm periwinkle-blue). */
-.shop-variant-a .token-pack-card.best{ border-color:var(--accent-trust);}
-.shop-variant-a .token-pack-card.best .token-pack-badge{ background:var(--accent-trust);}
-/* Direction B — "premium currency" (muted warm gold). */
-.shop-variant-b .token-pack-card.best{ border-color:var(--accent-value);}
-.shop-variant-b .token-pack-card.best .token-pack-badge{ background:var(--accent-value);}
-
-/* First-purchase +50% bonus callout (tracker item
-   for-product-shop-first-purchase-50-bonus-bzx2d4) — promoted from a
-   small/faint ".auth-sub" line to the most prominent element on the shop
-   page per founder feedback (2026-07-27 live shop review): the research
-   that introduced this bonus called it the single strongest payer-
-   conversion lever on this page, so its visual weight now matches that —
-   big bold headline, real border/background, not fine print. shop.html's
-   script hides this by default (inline style="display:none;" in markup)
-   and only reveals it once get-token-status.js's hasMadeFirstPurchase
-   comes back explicitly false, so a repeat buyer who already redeemed the
-   bonus never sees the claim again. Deliberately shares the SAME
-   --accent-trust/--accent-value tokens as the "best value" pack's own
-   .shop-variant-a/.shop-variant-b border above (base plain style here,
-   two explicit per-variant overrides below) rather than introducing a
-   third, untested color — so this callout reads as part of whichever
-   palette direction this visitor's shop-palette A/B assignment already
-   put them in, instead of becoming its own confound in that live test. */
-.first-purchase-callout{ background:var(--surface); border:1.5px solid var(--border-strong); border-radius:18px; padding:16px 18px; margin-bottom:14px; text-align:center;}
-.first-purchase-callout-headline{ font-size:19px; font-weight:800; line-height:1.3; color:var(--text-primary);}
-.first-purchase-callout-sub{ font-size:12.5px; color:var(--text-muted); margin-top:5px;}
-/* Direction A — "quiet ledger" (calm periwinkle-blue), matching .token-pack-card.best's own A/B color. */
-.shop-variant-a .first-purchase-callout{ border-color:var(--accent-trust); background:var(--accent-trust-soft);}
-.shop-variant-a .first-purchase-callout-headline{ color:var(--accent-trust);}
-/* Direction B — "premium currency" (muted warm gold). */
-.shop-variant-b .first-purchase-callout{ border-color:var(--accent-value); background:var(--accent-value-soft);}
-.shop-variant-b .first-purchase-callout-headline{ color:var(--accent-value);}
+   "The Vault" redesign (founder-approved 2026-08-02, tracker item
+   for-product-build-ship-today-founder-app-zn9zyy) replaced this page's
+   entire structure and moved to a page-scoped Night Shelf theme (its own
+   inline <style> block, same convention as home.html/profile.html) —
+   this file's old shop-specific rules (the balance card, the pack cards
+   and their badges, the retired "best value" pack-card palette A/B test
+   two-variant classes, and the now-retired +50%-first-purchase-bonus
+   banner) are removed entirely rather than left as dead selectors
+   matching nothing. See shop.html's own header comment for the full
+   story, and docs/SHOP_PALETTE_REDESIGN_SPEC.md
+   (marked superseded) for the retired A/B test's original spec. */
 
 /* ===== Tracker (tracker.html) ===== */
 /* One item = one native <details>/<summary> — the summary row (always
