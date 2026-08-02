@@ -226,8 +226,8 @@ self.addEventListener('push', function (event) {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: 'assets/logo-v3.png',
-      badge: 'assets/logo-v3.png',
+      icon: 'assets/logo-v4.png',
+      badge: 'assets/logo-v4.png',
       data: { url: payload.url, type: payload.type, distinctId: payload.distinctId }
     })
   );
