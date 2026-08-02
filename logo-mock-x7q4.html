@@ -4,30 +4,26 @@
 <!--
   Temp founder mock (Manager, 2026-08-02) — unlinked, delete after decision.
 
-  LOGO ROUND 2 — SERIOUS NIGHT VARIANTS. Founder verdict on the live v3
-  logo (seen on the index.html welcome screen): too shiny light purple,
-  too "chicky" — pull it toward the serious, nocturnal colors of the rest
-  of the page (deep navy #0c0a1a, muted violet #9d90ff accents). This
-  replaces round 1 (the A–F retouch grid) whose decision already shipped
-  as logo-v3.
+  LOGO ROUND 3 — BETWEEN S1 AND CURRENT. Founder verdict on round 2:
+  "do again between S1 and current" — current v3 (violet → hot pink) is
+  too candy, S1 (deep indigo → muted violet) too muted; the answer lives
+  in the middle. This round keeps those two as reference anchors (first
+  and last) and steps three blends between them:
+    M1 ≈ 25% toward S1 — hot pink cooled to rich orchid, still vivid;
+    M2 ≈ 50% — pink fully replaced by a saturated purple (≈#a06ae0);
+    M3 ≈ 75% — S1's indigo→violet but a notch brighter so it isn't flat.
+  "tube" follows the same blend per variant.
 
-  Three variants (S1/S2/S3), each rendered on an EXACT replica of the
-  welcome screen he was looking at (index.html + css/styles.css values
-  verbatim: 220px .wm-visual tile, "Your dreams come alive." headline,
-  lavender Get Started button), plus the current v3 as reference.
-
-  Colors only, geometry identical — all treatments are CSS filters on the
-  real assets/logo-v3.png raster, no regeneration. Because it's a single
-  raster, the image is stacked three times with clip-path regions (the
-  crescent mark / "dream" / "tube") so each region gets its own precise
-  filter — e.g. S1 can hold "no pink anywhere" in both the mark AND the
-  "tube" wordmark. The regions tile back together seamlessly on the black
-  square. Production would ship the pick as a proper re-exported PNG;
-  these filters are the faithful preview.
+  Same rules as round 2: each variant rendered on an EXACT replica of the
+  index.html welcome screen (220px .wm-visual tile, headline, lavender
+  Get Started), colors only, geometry identical — CSS filters on the real
+  assets/logo-v3.png raster, stacked in clip-path regions (mark / "dream" /
+  "tube") so each region gets its own precise filter. Production ships the
+  pick as a proper re-exported PNG; these filters are the faithful preview.
 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Logo round 2 — serious night variants — DreamTube</title>
+<title>Logo round 3 — between S1 and current — DreamTube</title>
 <meta name="theme-color" content="#0c0a1a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -82,7 +78,8 @@ h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
   display:grid; grid-template-columns:1fr; gap:28px; justify-items:center;
 }
 @media (min-width:800px){ .grid{ grid-template-columns:1fr 1fr; } }
-@media (min-width:1520px){ .grid{ grid-template-columns:1fr 1fr 1fr 1fr; } }
+@media (min-width:1140px){ .grid{ grid-template-columns:1fr 1fr 1fr; } }
+@media (min-width:1860px){ .grid{ grid-template-columns:repeat(5,1fr); } }
 
 .vcol{ width:100%; max-width:390px; }
 .vhead{ display:flex; align-items:baseline; gap:10px; }
@@ -142,23 +139,24 @@ h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
 .l-mark{ clip-path:inset(0 0 35.5% 0); }
 .l-dream{ clip-path:inset(64.5% 41% 0 0); }
 .l-tube{ clip-path:inset(64.5% 0 0 59%); }
-/* subtle silhouette glow (S3) — blurred duplicate of the mark region only */
-.l-glow{ clip-path:inset(0 0 35.5% 0); filter:blur(14px); opacity:.5; }
 
-/* --- Current (v3, reference) — no filters --- */
+/* --- Current (v3, anchor) — no filters: violet → hot pink --- */
 
-/* --- S1 · deep indigo → muted violet, no pink anywhere --- */
+/* --- M1 · ≈25% toward S1: pink cooled to rich orchid, still vivid --- */
+.m1 .l-mark{ filter:hue-rotate(-12deg) saturate(.92) brightness(.97); }
+.m1 .l-tube{ filter:hue-rotate(-15deg) saturate(.9) brightness(.99); }
+
+/* --- M2 · ≈50%: pink fully replaced by saturated purple (≈#a06ae0) --- */
+.m2 .l-mark{ filter:hue-rotate(-26deg) saturate(.84) brightness(.95); }
+.m2 .l-tube{ filter:hue-rotate(-30deg) saturate(.8) brightness(1.0); }
+
+/* --- M3 · ≈75%: S1's indigo→violet, a notch brighter so it isn't flat --- */
+.m3 .l-mark{ filter:hue-rotate(-30deg) saturate(.76) brightness(.93); }
+.m3 .l-tube{ filter:hue-rotate(-38deg) saturate(.66) brightness(1.01); }
+
+/* --- S1 (anchor) · deep indigo → muted violet, no pink anywhere --- */
 .s1 .l-mark{ filter:hue-rotate(-30deg) saturate(.62) brightness(.9); }
 .s1 .l-tube{ filter:hue-rotate(-42deg) saturate(.5) brightness(1.0); }
-
-/* --- S2 · near-monochrome silver-white, faint violet edge; "tube" ≈ #9d90ff --- */
-.s2 .l-mark{ filter:grayscale(1) brightness(1.5) sepia(.32) saturate(1.9) hue-rotate(202deg); }
-.s2 .l-tube{ filter:hue-rotate(-40deg) saturate(.42) brightness(1.08); }
-
-/* --- S3 · deep violet → soft blue-lilac, cooler, subtle glow --- */
-.s3 .l-mark{ filter:hue-rotate(-55deg) saturate(.7) brightness(.98); }
-.s3 .l-tube{ filter:hue-rotate(-55deg) saturate(.55) brightness(1.02); }
-.s3 .l-glow{ filter:hue-rotate(-55deg) saturate(.9) blur(14px); }
 </style>
 </head>
 <body>
@@ -166,16 +164,16 @@ h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
 <div class="sky"><div class="sky-bg"></div><div class="sky-stars"></div></div>
 
 <div class="wrap">
-  <div class="page-eyebrow">Founder mock · round 2 · look &amp; pick</div>
-  <h1>Logo — serious night variants</h1>
-  <p class="page-sub">Round 2 after the verdict on the live logo: less candy, more nocturnal — pulled toward the deep navy and muted violet the rest of the page already speaks. Colors only, geometry identical, shown on the exact welcome screen. Pick one and it ships as a proper re-exported asset.</p>
+  <div class="page-eyebrow">Founder mock · round 3 · look &amp; pick</div>
+  <h1>Logo — between S1 and current</h1>
+  <p class="page-sub">Round 3 after the verdict on round 2: not the candy of the current logo, not the mute of S1 — three blends stepping from one to the other. The two anchors stay for reference, first and last. Colors only, geometry identical, shown on the exact welcome screen. Pick one and it ships as a proper re-exported asset.</p>
 
   <div class="grid">
 
-    <!-- Current v3 — reference -->
+    <!-- Current v3 — anchor -->
     <div class="vcol">
       <div class="vhead"><span class="vletter">Now</span><h2 class="vname">Current (v3)</h2></div>
-      <p class="vdesc">Reference — the live violet→hot-pink mark that read "too shiny, too chicky".</p>
+      <p class="vdesc">Anchor — the live violet→hot-pink mark. Too candy; everything right of here cools it down.</p>
       <div class="frame"><div class="welcome-body">
         <div class="wm-visual">
           <img class="l-mark" src="assets/logo-v3.png" alt="Current DreamTube logo">
@@ -193,56 +191,76 @@ h1{ font-size:28px; font-weight:800; letter-spacing:-.02em; }
       </div></div>
     </div>
 
-    <!-- S1 -->
+    <!-- M1 -->
+    <div class="vcol m1">
+      <div class="vhead"><span class="vletter">M1</span><h2 class="vname">Rich orchid</h2></div>
+      <p class="vdesc">≈25% toward S1 — the hot pink cooled to a rich orchid / magenta-violet. Still vivid and alive, no longer bubblegum.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="M1 — rich orchid logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
+        </div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
+        </div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- M2 -->
+    <div class="vcol m2">
+      <div class="vhead"><span class="vletter">M2</span><h2 class="vname">Violet → purple</h2></div>
+      <p class="vdesc">≈50% — the pink is gone, replaced by a saturated royal purple. The gradient reads violet into purple, still full of color.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="M2 — violet to purple logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
+        </div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
+        </div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- M3 -->
+    <div class="vcol m3">
+      <div class="vhead"><span class="vletter">M3</span><h2 class="vname">Bright indigo-violet</h2></div>
+      <p class="vdesc">≈75% — S1's indigo→violet palette, but a notch brighter and more saturated so it doesn't go flat.</p>
+      <div class="frame"><div class="welcome-body">
+        <div class="wm-visual">
+          <img class="l-mark" src="assets/logo-v3.png" alt="M3 — bright indigo-violet logo">
+          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
+          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
+        </div>
+        <div>
+          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
+          <div class="wm-subcopy">Turn your dreams into videos.</div>
+        </div>
+        <div class="wm-foot">
+          <span class="btn-primary">Get Started</span>
+          <span class="link-text">Already have an account? <a>Log in</a></span>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- S1 — anchor -->
     <div class="vcol s1">
       <div class="vhead"><span class="vletter">S1</span><h2 class="vname">Deep indigo → muted violet</h2></div>
-      <p class="vdesc">The crescent runs deep indigo into the app's own muted violet (≈#5b4bc4 → #9d90ff); "tube" sits in the same muted violet. No pink anywhere, no shine.</p>
+      <p class="vdesc">Anchor — round 2's S1 (≈#5b4bc4 → #9d90ff, no pink anywhere). Read as too muted on its own; kept here as the far endpoint.</p>
       <div class="frame"><div class="welcome-body">
         <div class="wm-visual">
           <img class="l-mark" src="assets/logo-v3.png" alt="S1 — indigo to muted violet logo">
-          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
-          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
-        </div>
-        <div>
-          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
-          <div class="wm-subcopy">Turn your dreams into videos.</div>
-        </div>
-        <div class="wm-foot">
-          <span class="btn-primary">Get Started</span>
-          <span class="link-text">Already have an account? <a>Log in</a></span>
-        </div>
-      </div></div>
-    </div>
-
-    <!-- S2 -->
-    <div class="vcol s2">
-      <div class="vhead"><span class="vletter">S2</span><h2 class="vname">Silver moon</h2></div>
-      <p class="vdesc">Near-monochrome silver-white crescent with a faint violet cast — a real moon, the most serious and premium read. Only "tube" keeps color, in the app's #9d90ff.</p>
-      <div class="frame"><div class="welcome-body">
-        <div class="wm-visual">
-          <img class="l-mark" src="assets/logo-v3.png" alt="S2 — silver-white moon logo">
-          <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
-          <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
-        </div>
-        <div>
-          <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
-          <div class="wm-subcopy">Turn your dreams into videos.</div>
-        </div>
-        <div class="wm-foot">
-          <span class="btn-primary">Get Started</span>
-          <span class="link-text">Already have an account? <a>Log in</a></span>
-        </div>
-      </div></div>
-    </div>
-
-    <!-- S3 -->
-    <div class="vcol s3">
-      <div class="vhead"><span class="vletter">S3</span><h2 class="vname">Deep violet → blue-lilac</h2></div>
-      <p class="vdesc">Still colorful, but cooler and nocturnal — deep violet falling into a soft blue-lilac, with a whisper of glow. The middle path between today's logo and S2.</p>
-      <div class="frame"><div class="welcome-body">
-        <div class="wm-visual">
-          <img class="l-glow" src="assets/logo-v3.png" alt="" aria-hidden="true">
-          <img class="l-mark" src="assets/logo-v3.png" alt="S3 — deep violet to blue-lilac logo">
           <img class="l-dream" src="assets/logo-v3.png" alt="" aria-hidden="true">
           <img class="l-tube" src="assets/logo-v3.png" alt="" aria-hidden="true">
         </div>
