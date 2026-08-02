@@ -2978,6 +2978,29 @@
     getCurrentUser: function () { return state.user; },
 
     /**
+     * True once THIS browser's localStorage has ever held any real,
+     * signed-up-or-logged-in account — regardless of whether anyone is
+     * currently signed in. state.accounts is deliberately NOT cleared by
+     * logout() (see that function's own single-line body: only
+     * state.user/the pre-account analytics marker/likes-tracking state
+     * are reset — the account cache itself survives so the same browser
+     * can log back into it later without re-registering locally). That
+     * makes it the right, durable signal for "is this a RETURNING visitor
+     * to this browser/origin, just currently logged out" — as opposed to
+     * "a genuinely brand-new visitor who has never touched this browser
+     * before" — used by wizard.html's own entry guard (tracker item
+     * for-product-life-origin-generate-handoff-founder-repro-8yc4wm) to
+     * decide whether a logged-out visit belongs in the pre-signup wizard
+     * at all. Exported here rather than left as a private state.accounts
+     * read because that state is otherwise never exposed to callers
+     * outside this file (see e.g. currentAccountEmail's own doc comment
+     * on why account data generally stays scoped to the signed-in user
+     * only) — this is a deliberate, narrow exception: existence-only,
+     * never any account's actual data (password, email, etc.).
+     */
+    hasLocalAccountHistory: function () { return Object.keys(state.accounts).length > 0; },
+
+    /**
      * Display-only helper: strips a leading '@' off a handle for rendering
      * (tracker item for-product-ui-founder-directed-2026-07--w3mc4v — drop
      * the '@' prefix from every place a username/handle is shown to the
