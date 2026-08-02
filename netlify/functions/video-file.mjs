@@ -45,7 +45,13 @@
 // comment) — if it ever changes, update both.
 import { createRequire } from 'module';
 var require = createRequire(import.meta.url);
-var { getStore } = require('@netlify/blobs');
+// blobs10 (the 10.x alias, see package.json + push-dedup-store.js): the
+// 8.x major fails to self-configure inside this modern Response-style
+// runtime, crashing before ANY handler logic ran -- the real reason every
+// serve attempt 502'd regardless of size (tracker cyp8np). 10.x
+// auto-detects the runtime context. mock-blobs.js patches both module
+// names, so tests keep working.
+var { getStore } = require('blobs10');
 
 var MAX_STREAMABLE_BYTES = 18 * 1024 * 1024;
 
@@ -58,8 +64,17 @@ export default async (req) => {
     });
   }
 
-  var store = getStore('dreamtube-videos');
-  var result = await store.getWithMetadata(key, { type: 'stream' });
+  var result;
+  try {
+    var store = getStore('dreamtube-videos');
+    result = await store.getWithMetadata(key, { type: 'stream' });
+  } catch (e) {
+    console.error('video-file: blobs read failed', e && e.name, e && e.message);
+    return new Response(JSON.stringify({ error: 'store_unavailable' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   if (!result) {
     return new Response(JSON.stringify({ error: 'not_found' }), {
       status: 404,
