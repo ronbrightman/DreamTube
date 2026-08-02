@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>The Sage — speaking demo</title>
+<!-- Temp founder demo (Manager, 2026-08-02) — real lip-sync + captions on the video. Delete after decision. -->
+<style>
+html{background:#0c0a1a}body{font-family:Manrope,system-ui,sans-serif;color:#eae7fb;margin:0;padding:20px 16px 60px;max-width:480px;margin-inline:auto}
+h1{font-size:19px;font-weight:800;margin:0 0 4px}
+p.sub{color:#a49dc4;font-size:14px;line-height:1.5;margin:0 0 14px}
+.stage{position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(157,144,255,.45);box-shadow:0 0 28px -6px rgba(157,144,255,.4);cursor:pointer}
+video{width:100%;display:block}
+.cap{position:absolute;left:10px;right:10px;bottom:12px;text-align:center;pointer-events:none}
+.cap span{display:inline;background:rgba(12,10,26,.72);color:#fff;font-size:16.5px;line-height:1.5;font-weight:700;padding:3px 9px;border-radius:8px;box-decoration-break:clone;-webkit-box-decoration-break:clone;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.playov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(12,10,26,.35);transition:opacity .3s}
+.playov.off{opacity:0;pointer-events:none}
+.playov .pbtn{width:78px;height:78px;border-radius:50%;background:#9d90ff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px rgba(157,144,255,.65)}
+.playov .pbtn:after{content:'';margin-left:6px;border-style:solid;border-width:14px 0 14px 24px;border-color:transparent transparent transparent #0c0a1a}
+.playov .plabel{position:absolute;bottom:18%;left:0;right:0;text-align:center;font-weight:800;font-size:15px;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.transcript{margin-top:16px;background:#141126;border:1px solid rgba(157,144,255,.25);border-radius:14px;padding:13px 15px;font-size:14.5px;line-height:1.65;color:#cfc9ec}
+.transcript b{color:#fff;display:block;font-size:12.5px;letter-spacing:.4px;text-transform:uppercase;color:#9d90ff;margin-bottom:5px}
+.note{color:#8f88b3;font-size:12px;margin-top:12px;line-height:1.5}
+</style></head><body>
+<h1>The Sage reads your dream</h1>
+<p class="sub">Now really speaking — lips, face and expression synced to his voice, captions on the video. Tap to play (sound on).</p>
+<div style="display:flex;gap:6px;margin-bottom:12px">
+  <button class="modelbtn" id="mb-opta" style="flex:1.2;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:#9d90ff;color:#0c0a1a;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Option A · $0.02</button>
+  <button class="modelbtn" id="mb-rich" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Full lips · $0.28</button>
+  <button class="modelbtn" id="mb-muse" style="flex:1;padding:10px 6px;border-radius:99px;border:1px solid rgba(157,144,255,.5);background:transparent;color:#eae7fb;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Budget lips · $0.16</button>
+</div>
+<p class="sub" style="font-size:12.5px;margin-top:-6px">Option A, desk edition: a fixed spoken greeting with real lips (made once — so readings are free), then he raises the tome and his voice reads YOUR dream behind it, eyes on you.</p>
+<div class="stage" id="stage">
+  <video id="v" src="sage-optiona-v14-x7q4.mp4" playsinline preload="auto"></video>
+  <div class="cap" id="cap"></div>
+  <div class="playov" id="ov"><div class="pbtn"></div><div class="plabel" id="plabel">▶ Hear the reading</div></div>
+</div>
+<div class="transcript"><b>Full reading</b>Ah... the desert. You walked a long way through burning sand, and still — you reached the water. Listen to what your dream is telling you. The desert is not emptiness; it is every effort you have been making lately that feels unseen. And the oasis... the oasis is not luck. Your own footprints led there. You are closer to what you seek than you believe. Tonight, notice what you reach for... and let yourself arrive.</div>
+<p class="note">Demo v3: reading at 0.8× pace, frame cropped so text sits above the fold (founder notes 08-02). sync-lipsync + Kokoro; caption timings mapped to the audio's real pauses. Production would generate this per reading.</p>
+<script>
+var CUES=[
+ [0.31,"Ah... come closer, dreamer."],
+ [3.46,"Sit with me... and let us see what the night has brought you."],
+ [7.05,"Ah... the desert."],
+ [8.40,"You walked a long way through burning sand, and still — you reached the water."],
+ [12.70,"Listen to what your dream is telling you."],
+ [14.88,"The desert is not emptiness; it is every effort you have been making lately that feels unseen."],
+ [19.83,"And the oasis... the oasis is not luck."],
+ [22.53,"Your own footprints led there."],
+ [24.02,"You are closer to what you seek than you believe."],
+ [26.96,"Tonight, notice what you reach for... and let yourself arrive."]
+];
+var v=document.getElementById('v'),cap=document.getElementById('cap'),ov=document.getElementById('ov'),plabel=document.getElementById('plabel');
+document.getElementById('stage').addEventListener('click',function(){
+  if(v.paused){v.currentTime=0;v.muted=false;v.play();ov.classList.add('off');}
+  else{v.pause();ov.classList.remove('off');}
+});
+v.addEventListener('timeupdate',function(){
+  var t=v.currentTime,line='';
+  for(var i=0;i<CUES.length;i++){if(t>=CUES[i][0])line=CUES[i][1];}
+  if(t>30.3)line='';
+  if(cap.textContent!==line)cap.innerHTML=line?'<span>'+line+'</span>':'';
+});
+v.addEventListener('ended',function(){plabel.textContent='↺ Hear it again';ov.classList.remove('off');cap.innerHTML='';});
+var BTNS=[document.getElementById('mb-opta'),document.getElementById('mb-rich'),document.getElementById('mb-muse')];
+var SRCS=['sage-optiona-v14-x7q4.mp4','sage-lipsync-x7q4.mp4','sage-lipsync-muse-x7q4.mp4'];
+BTNS.forEach(function(btn,i){
+  btn.addEventListener('click',function(){
+    v.pause();ov.classList.remove('off');cap.innerHTML='';plabel.textContent='▶ Hear the reading';
+    v.src=SRCS[i];v.load();
+    BTNS.forEach(function(b,j){
+      b.style.background=(i===j)?'#9d90ff':'transparent';
+      b.style.color=(i===j)?'#0c0a1a':'#eae7fb';
+    });
+  });
+});
+</script>
+</body></html>
