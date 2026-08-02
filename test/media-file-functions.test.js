@@ -34,7 +34,7 @@ test('video-file.mjs: 404 for an unknown key', async function () {
   assert.equal(res.status, 404);
 });
 
-test('video-file.mjs: streams back exactly what lib/media-rehost.js stored, with its content-type', async function () {
+test('video-file.mjs: a rehosted record (has sourceUrl) redirects to its source (emergency redirect-first, tracker cyp8np)', async function () {
   var mediaRehost = require('../netlify/functions/lib/media-rehost');
   var bytes = new ArrayBuffer(8);
   global.fetch = async function () {
@@ -44,10 +44,8 @@ test('video-file.mjs: streams back exactly what lib/media-rehost.js stored, with
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
   var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-key-1'));
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('Content-Type'), 'video/mp4');
-  var buf = await res.arrayBuffer();
-  assert.equal(buf.byteLength, 8);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), 'https://fal.media/x.mp4');
 });
 
 test('image-file.mjs: 400 when key is missing', async function () {
@@ -62,7 +60,7 @@ test('image-file.mjs: 404 for an unknown key', async function () {
   assert.equal(res.status, 404);
 });
 
-test('image-file.mjs: streams back exactly what lib/media-rehost.js stored, with its content-type, from the SEPARATE dreamtube-images store', async function () {
+test('image-file.mjs: a rehosted image (has sourceUrl) redirects to its source (emergency redirect-first), SEPARATE dreamtube-images store', async function () {
   var mediaRehost = require('../netlify/functions/lib/media-rehost');
   var bytes = new ArrayBuffer(5);
   global.fetch = async function () {
@@ -72,10 +70,7 @@ test('image-file.mjs: streams back exactly what lib/media-rehost.js stored, with
 
   var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
   var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file?key=if-key-1'));
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('Content-Type'), 'image/png');
-  var buf = await res.arrayBuffer();
-  assert.equal(buf.byteLength, 5);
+  assert.equal(res.status, 302);
 });
 
 // DEFENSE-IN-DEPTH SIZE GUARD — tracker item
@@ -99,7 +94,7 @@ test('video-file.mjs: redirects to metadata.sourceUrl instead of streaming when 
   assert.equal(res.headers.get('location'), 'https://fal.media/big-source.mp4');
 });
 
-test('video-file.mjs: an object at/under the ceiling streams normally even though byteLength metadata is present', async function () {
+test('video-file.mjs: an object at/under the ceiling with a sourceUrl now REDIRECTS too (emergency redirect-first posture, tracker cyp8np)', async function () {
   var { getStore } = require('@netlify/blobs');
   var bytes = new ArrayBuffer(6);
   await getStore({ name: 'dreamtube-videos' }).set('vf-small', bytes, {
@@ -108,6 +103,19 @@ test('video-file.mjs: an object at/under the ceiling streams normally even thoug
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
   var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-small'));
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), 'https://fal.media/small-source.mp4');
+});
+
+test('video-file.mjs: a record with NO sourceUrl still streams (fallback path)', async function () {
+  var { getStore } = require('@netlify/blobs');
+  var bytes = new ArrayBuffer(6);
+  await getStore({ name: 'dreamtube-videos' }).set('vf-nosource', bytes, {
+    metadata: { contentType: 'video/mp4', byteLength: 6 }
+  });
+
+  var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
+  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-nosource'));
   assert.equal(res.status, 200);
   var buf = await res.arrayBuffer();
   assert.equal(buf.byteLength, 6);

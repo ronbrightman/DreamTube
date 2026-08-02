@@ -70,10 +70,18 @@ export default async (req) => {
   var metadata = result.metadata || {};
   var contentType = metadata.contentType || 'video/mp4';
 
-  // Defense in depth — see header comment above. Should be unreachable in
-  // normal operation now that lib/media-rehost.js gates on the same
-  // threshold before ever handing out this url.
-  if (typeof metadata.byteLength === 'number' && metadata.byteLength > MAX_STREAMABLE_BYTES && metadata.sourceUrl) {
+  // EMERGENCY SERVING POSTURE (2026-08-02 night, tracker
+  // for-product-urgent-reopen-video-repair-p-cyp8np): streaming through
+  // this function 502s in production for ALL sizes, not just over-ceiling
+  // ones — founder-verified on a freshly generated few-MB clip after the
+  // size gate shipped, and reproducible on every own-storage feed url. The
+  // durable copy stays in Blobs, but until streaming is demonstrably fixed
+  // AND pinned by a prod-smoke check that fetches a real stored video,
+  // serving REDIRECTS to the original fal url (protected from expiry by
+  // FAL_NO_EXPIRY_HEADER since a098b14) whenever one was recorded at write
+  // time. Streaming below is now the fallback for sourceUrl-less records
+  // only.
+  if (metadata.sourceUrl) {
     return Response.redirect(metadata.sourceUrl, 302);
   }
 

@@ -46,7 +46,10 @@ export default async (req) => {
   var contentType = metadata.contentType || 'image/jpeg';
 
   // Defense in depth — see header comment above.
-  if (typeof metadata.byteLength === 'number' && metadata.byteLength > MAX_STREAMABLE_BYTES && metadata.sourceUrl) {
+  // EMERGENCY SERVING POSTURE — same as video-file.mjs tonight (see its
+  // header + tracker cyp8np): redirect-first whenever a sourceUrl exists;
+  // streaming is the fallback for sourceUrl-less records only.
+  if (metadata.sourceUrl) {
     return Response.redirect(metadata.sourceUrl, 302);
   }
 
