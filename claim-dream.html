@@ -311,7 +311,15 @@
   // "safe even if Meta Pixel isn't loaded" convention.
   function fireMetaConversionIfAvailable(){
     if(typeof fireMetaConversion === 'function'){
-      try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value }); }
+      // signup_method: 'email' -- this page only ever offers a plain
+      // password field (see #claim-password above), no Facebook/
+      // passwordless option (tracker item for-product-signup-method-
+      // analytics-foun-y1oqt4, founder ask 2026-08-03) -- tagged for
+      // consistency with every other CompleteRegistration call site in
+      // this app, even though this claim-retention flow isn't itself part
+      // of the dream-details -> signup-wall funnel the founder asked
+      // about.
+      try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value, custom_data: { signup_method: 'email' } }); }
       catch(e){ /* analytics must never break account creation */ }
     }
   }

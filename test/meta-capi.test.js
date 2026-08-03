@@ -281,6 +281,28 @@ test('track-conversion.js: FirstVideoCreated forwards custom_data (e.g. style) t
   });
 });
 
+// Tracker item for-product-signup-method-analytics-foun-y1oqt4 (founder
+// ask, 2026-08-03): signup_method (email | facebook | passwordless_code)
+// must reach Meta CAPI's custom_data unchanged on CompleteRegistration,
+// the same generic custom_data pass-through the FirstVideoCreated test
+// above already confirms, for each of the three real values js/store.js
+// and start.html/login.html/wizard.html/claim-dream.html's CompleteRegistration
+// call sites now send. See docs/EVENT_TAXONOMY.md's CompleteRegistration
+// entry for the full per-site breakdown.
+test('track-conversion.js: CompleteRegistration forwards custom_data.signup_method through to Meta unchanged, for each of the three real values', function () {
+  return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
+    var methods = ['email', 'facebook', 'passwordless_code'];
+    for (var i = 0; i < methods.length; i++) {
+      var calls = installFetchSpy();
+      var handler = require('../netlify/functions/track-conversion').handler;
+      var res = await handler(convEvent({ event_id: 'evt-signup-method-' + i, custom_data: { signup_method: methods[i] } }));
+      assert.equal(res.statusCode, 200, methods[i] + ' should be accepted');
+      assert.equal(calls[0].body.data[0].event_name, 'CompleteRegistration');
+      assert.deepEqual(calls[0].body.data[0].custom_data, { signup_method: methods[i] }, methods[i] + ' must reach Meta unchanged');
+    }
+  });
+});
+
 test('track-conversion.js: missing event_id or event_source_url is rejected with E5, no Meta call made', function () {
   return withEnv({ META_CAPI_ACCESS_TOKEN: REAL_TOKEN }, async function () {
     var calls = installFetchSpy();

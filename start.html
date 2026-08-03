@@ -1213,7 +1213,14 @@
           // CompleteRegistration call — see js/analytics-config.js's
           // fireMetaConversion for why. login.html's own ?mode=signup path
           // fires the equivalent call for its own signup case.
-          fireMetaConversion('CompleteRegistration', { email: email });
+          // signup_method (tracker item for-product-signup-method-analytics-
+          // foun-y1oqt4, founder ask 2026-08-03): this is the manual email/
+          // password wall ('unified'/'reveal' arms), always 'email' —
+          // carried in custom_data so it survives to Meta CAPI unchanged
+          // (see lib/meta-capi.js's custom_data pass-through) and is
+          // joinable, in PostHog, against the same-named property on the
+          // 'signed_up' capture (see commitLocalSignup in js/store.js).
+          fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'email' } });
           cb(true, null, false); return;
         }
         if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
@@ -1507,6 +1514,21 @@
     // leaves the visitor sitting right here).
     backBtn.disabled = false;
     track('signup_facebook_started', { variant: signupVariant });
+    // signup_facebook_click (tracker item for-product-signup-method-
+    // analytics-foun-y1oqt4, founder ask 2026-08-03): a dedicated,
+    // purpose-built "chosen Facebook" event for the email-vs-Facebook
+    // funnel this item asks for — kept separate from signup_facebook_started
+    // above (which predates this item and is used by existing A/B-variant
+    // reporting) so this funnel has one unambiguous, stably-named event to
+    // build against, without depending on signup_facebook_started's
+    // existing meaning never changing. Fires at the exact same moment
+    // (this function IS the button's click handler — see
+    // wireFacebookSignupButton above), before the full-page navigation to
+    // Facebook's OAuth dialog, so a visitor who taps this and never
+    // returns (denies the Facebook dialog, closes the tab, the in-app
+    // webview never makes it back) is the visible "chose Facebook, never
+    // completed" funnel leak the founder specifically asked to see.
+    track('signup_facebook_click', { variant: signupVariant, signup_method: 'facebook' });
 
     // Must happen BEFORE navigating — see persistStagedForFacebookRedirect
     // and the spec's §2.5. A failure here is logged, never fatal.
@@ -2473,7 +2495,11 @@
               return;
             }
             if(result.created){
-              fireMetaConversion('CompleteRegistration', { email: email });
+              // signup_method: 'passwordless_code' — this is the
+              // no-password email-code wall (see renderScreen13Passwordless's
+              // own header comment). Same custom_data convention as the
+              // other two arms/paths — see attemptSignup's own comment.
+              fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'passwordless_code' } });
             }
             // See this function's own header comment's "DEFERRED-
             // VERIFICATION SHEET, NOT SHOWN HERE" paragraph.
@@ -3095,7 +3121,30 @@
       // "Counted as a login for funnel-conversion measurement, not a new
       // signup"), and firing this unconditionally would double-count
       // every returning Facebook user as a fresh signup conversion.
-      if(email && fbOutcome === 'signup') fireMetaConversion('CompleteRegistration', { email: email });
+      //
+      // signup_method (tracker item for-product-signup-method-analytics-
+      // foun-y1oqt4, founder ask 2026-08-03): 'facebook', carried in
+      // custom_data same as the other two paths. Also fires the
+      // client-side PostHog 'signed_up' capture here — a real, pre-existing
+      // gap this fix closes: js/store.js's commitTransferredSession (the
+      // function that actually commits a Facebook-verified session) is
+      // shared by every session-transfer use in this app (email-verify
+      // links, "open in browser" nudges, etc.), not just Facebook signup, so
+      // it deliberately never fires 'signed_up' itself — doing so there
+      // would have double-fired it on every one of those unrelated
+      // resumes. Firing it HERE instead, at this exact same fb=signup gate
+      // CompleteRegistration already uses, is the same "fire only on a
+      // genuinely NEW account, never a login or an unrelated resume" rule
+      // every other 'signed_up'/CompleteRegistration call site in this file
+      // already follows. Before this fix, a Facebook signup never fired
+      // 'signed_up' at all in PostHog -- an email/passwordless signup did
+      // (see commitLocalSignup/commitLocalPasswordlessSignup in
+      // js/store.js), so this is what makes the "auth completed" funnel
+      // step in PostHog comparable across all three signup_method values.
+      if(email && fbOutcome === 'signup'){
+        fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'facebook' } });
+        track('signed_up', { signup_method: 'facebook' });
+      }
       completeSignupAndAdvance(email, {
         advance: function(){ goToStep(SIGNUP_STEP + 1); }
       });

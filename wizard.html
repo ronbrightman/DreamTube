@@ -1689,7 +1689,11 @@
           // by a Back+resubmit. Matches start.html's own tryUsername,
           // which fires its equivalent call at this same point for the
           // same reason (review round-2 non-blocking finding).
-          fireMetaConversion('CompleteRegistration', { email: email });
+          // signup_method: 'email' -- wizard.html's own renderSignup only
+          // ever offers a plain username/password wall, no Facebook/
+          // passwordless option (tracker item for-product-signup-method-
+          // analytics-foun-y1oqt4, founder ask 2026-08-03).
+          fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'email' } });
           cb(true, null, false); return;
         }
         if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
