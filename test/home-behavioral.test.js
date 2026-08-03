@@ -407,6 +407,79 @@ test('home.html: the ritual module stays the exact same element across locked ->
   }
 });
 
+/**
+ * Regression test for tracker item for-product-regression-founder-screensho-17vxr2:
+ * the founder reported the ritual module's own streak CONSTELLATION (lit
+ * stars + connecting lines) as completely missing, even though a prior
+ * source-level review found renderConstellation() and its #ritual-constel
+ * DOM slot present and matching every approved mock's JS logic. The
+ * ACTUAL root cause a source diff never caught: home.html's <svg
+ * class="constel"> markup was missing the `width="84" height="46"`
+ * attributes every mock (home-mock4/5-x7q4.html, funnel-end-mock-x7q4.
+ * html, morning-mock-x7q4.html) consistently includes. With no explicit
+ * size and no CSS rule that actually applies to the <svg> itself (the
+ * `.ritual .constel{ flex:0 0 84px; }` rule only affects a DIRECT flex
+ * child of .ritual-head, but the real flex child is the wrapping
+ * #ritual-constel span, not the svg nested inside it), the svg's
+ * computed size collapses to 0x0 in EVERY branch -- so this reproduced
+ * regardless of streak/week-count data, exactly matching why it recurred
+ * identically across the founder's 2026-08-02 (4 nights) and 2026-08-03
+ * (5 nights / 0 of 3 this week / claimable) screenshots. This asserts a
+ * REAL non-zero rendered bounding box (not just DOM presence/innerHTML),
+ * across the exact founder-reported state plus the other three
+ * renderRitualModule() branches, so a future regression back to
+ * attribute-less markup fails loudly instead of passing a source-only
+ * review again.
+ */
+test('home.html: the ritual module\'s streak constellation (#ritual-constel\'s <svg class="constel">) actually renders with a real non-zero size in every branch -- regression test for tracker item for-product-regression-founder-screensho-17vxr2 (constellation present in source/byte-identical to the mock but rendering at 0x0 due to missing width/height attributes)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    async function assertConstelVisible(label) {
+      await page.waitForSelector('#ritual-constel svg', { state: 'attached', timeout: 5000 });
+      var box = await page.locator('#ritual-constel svg').boundingBox();
+      assert.ok(box, label + ': constellation svg should have a layout box at all');
+      assert.ok(box.width > 0, label + ': constellation svg width should be > 0, got ' + (box && box.width));
+      assert.ok(box.height > 0, label + ': constellation svg height should be > 0, got ' + (box && box.height));
+      var visible = await page.locator('#ritual-constel svg').isVisible();
+      assert.equal(visible, true, label + ': constellation svg should be visible');
+    }
+
+    // Founder's exact reported shape: 2026-08-03 screenshot -- "5 nights /
+    // 0 of 3 this week / Claim +20 / 1420 balance" (the fresh screenshot
+    // that killed the prior "data-condition on his account" theory).
+    await mockTokenStatus(page, { balance: 1420, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 5, hasMadeFirstPurchase: true });
+    var NINE_DAYS_AGO = Date.now() - 9 * 24 * 60 * 60 * 1000;
+    await seedHomeUser(page, { dreams: [makeDream('old1', { createdAt: NINE_DAYS_AGO })] });
+    var big = await page.locator('#ritual-big').textContent();
+    assert.match(big, /5 nights/);
+    var sub = await page.locator('#ritual-sub').textContent();
+    assert.match(sub, /0 of 3/);
+    await assertConstelVisible('founder-reported shape (5 nights, 0 of 3, claimable)');
+
+    // First-ever night (isFirstEverNight && loggedToday) branch.
+    await mockTokenStatus(page, { balance: 20, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
+    await seedHomeUser(page, { dreams: [makeDream('d1')], freshState: true });
+    await assertConstelVisible('first-ever-night branch');
+
+    // Never-logged (hasEverLogged: false) branch.
+    await mockTokenStatus(page, { balance: 0, claimable: true, nextClaimAt: 0, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page, { freshState: true });
+    await assertConstelVisible('never-logged branch');
+
+    // Week-earned (n >= target) branch.
+    await mockTokenStatus(page, { balance: 60, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 3 });
+    var TEN_DAYS_AGO2 = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toDateString();
+    await seedHomeUser(page, { dreams: [makeDream('e1'), makeDream('e2'), makeDream('e3')], noRecallDates: [TEN_DAYS_AGO2], freshState: true });
+    await assertConstelVisible('week-earned branch');
+  } finally {
+    await context.close();
+  }
+});
+
 test('home.html: My Dreams row renders real thumbnails linking to result.html and an "All" link to profile.html; a truly brand-new account never shows the row at all; an account that has logged but has no real dream yet shows the friendly empty message', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();

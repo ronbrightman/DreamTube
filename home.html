@@ -1652,7 +1652,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     lit = Math.max(0, Math.min(3, lit));
     var l1 = lit >= 1 ? ' lit' : '', l2 = lit >= 2 ? ' lit' : '', l3 = lit >= 3 ? ' lit' : '';
     var line1 = lit >= 2 ? ' lit' : '', line2 = lit >= 3 ? ' lit' : '';
-    return '<svg class="constel" viewBox="0 0 84 46" aria-hidden="true">' +
+    return '<svg class="constel" width="84" height="46" viewBox="0 0 84 46" aria-hidden="true">' +
       '<line class="' + line1.trim() + '" x1="12" y1="34" x2="42" y2="12"/>' +
       '<line class="' + line2.trim() + '" x1="42" y1="12" x2="72" y2="28"/>' +
       '<path class="st' + l1 + '" d="M12 28l1.8 4.2L18 34l-4.2 1.8L12 40l-1.8-4.2L6 34l4.2-1.8z"/>' +
