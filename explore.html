@@ -108,6 +108,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/music-bed.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
@@ -246,8 +247,18 @@
     // no longer a separate data-src/src split to defer network activity
     // pre-hydration -- preload=none is the sole remaining lever for that,
     // same as before.
+    // Music bed (tracker item for-product-build-founder-approved-08-03-
+    // jlkjy9) -- a plain sibling <audio>, never rendered (no visual
+    // footprint at all), driven entirely by videoObserver below (same
+    // play/pause moment the video itself gets, same soundOn-driven muted
+    // state as the video's own initial muted attribute just above).
+    // MusicBed.eligible() already checks d.videoUrl/musicBedOn/a known
+    // style, so bedUrl is only ever non-null when this card really should
+    // get one.
+    var bedUrl = (d.videoUrl && window.MusicBed && MusicBed.eligible(d)) ? MusicBed.urlForStyle(d.style) : null;
     var media = d.videoUrl
-      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>'
+      ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>' +
+        (bedUrl ? '<audio class="feed-music-bed" src="'+esc(bedUrl)+'"'+(soundOn?'':' muted')+' loop preload="none"></audio>' : '')
       : d.imageUrl
         ? '<img class="feed-image" src="'+esc(d.imageUrl)+'" alt="">'
         : '<div class="feed-bg" style="background:'+DreamStore.gradientFor(d)+'"></div>';
@@ -393,13 +404,38 @@
   var videoObserver = new IntersectionObserver(function(entries){
     entries.forEach(function(entry){
       var video = entry.target;
+      // Music bed (tracker item for-product-build-founder-approved-08-03-
+      // jlkjy9) -- always a direct sibling of `video` inside the same
+      // .feed-card (see cardHTML above), or absent entirely for a card
+      // with no eligible bed. Driven by the SAME winner-takes-play
+      // decision as the video itself, never independently.
+      var bed = video.parentElement ? video.parentElement.querySelector('.feed-music-bed') : null;
       if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
         if(video.paused){
           video.currentTime = 0;
           video.play().catch(function(){ /* autoplay can be blocked before any user gesture — muted should normally allow it regardless */ });
         }
+        if(bed && bed.paused){
+          // Root-caused (systematic-debugging): unlike `video` above (whose
+          // FIRST card always has preload="metadata", so readyState is
+          // already >=1 by the time this fires), the bed is always
+          // preload="none" — readyState 0 (HAVE_NOTHING) the very first
+          // time this runs. Setting .currentTime on a media element before
+          // it has ANY loaded data is spec-legal but genuinely racy in
+          // Chromium in practice (confirmed via repeated real-browser
+          // trials: intermittently left the bed stuck at
+          // paused/currentTime 0 forever, no error/event fired at all,
+          // roughly 1 run in 3) — only reset position once there's
+          // actually something loaded to seek within. A background ambient
+          // loop restarting from wherever it happens to be (rather than
+          // exactly 0) on a replay is imperceptible anyway, unlike the
+          // visible video content this mirrors.
+          if(bed.readyState > 0) bed.currentTime = 0;
+          bed.play().catch(function(){ /* same accepted degrade as the video above — an unmuted bed specifically can also be blocked by a browser's real autoplay-with-sound policy even when muted video autoplay isn't; a blocked bed just never starts until the visitor interacts (e.g. the mute button), never a thrown error or broken card */ });
+        }
       } else {
         video.pause();
+        if(bed) bed.pause();
       }
     });
   }, { root: root, threshold: [0, 0.6, 1] });
@@ -475,10 +511,22 @@
   document.addEventListener('visibilitychange', function(){
     if(document.hidden){
       Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){
-        if(!v.paused){ v.pause(); pausedByVisibility = v; }
+        if(!v.paused){
+          v.pause();
+          pausedByVisibility = v;
+          // Music bed (tracker item for-product-build-founder-approved-
+          // 08-03-jlkjy9) -- paired 1:1 with whichever video this pauses,
+          // same as videoObserver's own pairing above.
+          var bed = v.parentElement ? v.parentElement.querySelector('.feed-music-bed') : null;
+          if(bed && !bed.paused) bed.pause();
+        }
       });
     } else if(pausedByVisibility){
-      if(root.contains(pausedByVisibility)) pausedByVisibility.play().catch(function(){});
+      if(root.contains(pausedByVisibility)){
+        pausedByVisibility.play().catch(function(){});
+        var resumedBed = pausedByVisibility.parentElement ? pausedByVisibility.parentElement.querySelector('.feed-music-bed') : null;
+        if(resumedBed && resumedBed.paused) resumedBed.play().catch(function(){});
+      }
       pausedByVisibility = null;
     }
   });
@@ -514,6 +562,38 @@
       v.addEventListener('pause', function(){ badge.classList.remove('hidden'); });
       v.addEventListener('error', function(){ badge.classList.remove('hidden'); });
     }
+    // Music-bed recovery (tracker item for-product-build-founder-approved-
+    // 08-03-jlkjy9) -- root-caused via repeated real-Chromium trials
+    // (systematic-debugging): a freshly created, preload="none" <audio>
+    // element's very FIRST .play() call, made synchronously from inside
+    // videoObserver's IntersectionObserver callback, intermittently (~1
+    // run in 3 in headless Chromium) never actually starts loading at
+    // all -- no error, no event of any kind fires, .play()'s own returned
+    // promise still resolves normally, it just silently doesn't happen.
+    // video itself never shows this failure mode (its own play() calls
+    // are reliable), so this is specifically an audio-element quirk, not
+    // a general autoplay-policy block (a REAL block is a different,
+    // already-accepted degrade -- see videoObserver's own comment). Fixed
+    // with a bounded, EVENT-driven retry (never a blind timeout): video's
+    // own 'timeupdate' fires repeatedly (multiple times a second) for as
+    // long as it's GENUINELY playing -- real, recurring confirmation worth
+    // re-checking the bed against, unlike 'playing' which only fires once
+    // and occasionally wasn't a wide enough window on its own. Capped at a
+    // few attempts (bedRetryCount), never unbounded, matching
+    // wireVideoRecovery above's own "no infinite retry loop" discipline --
+    // the listener detaches itself once the bed is confirmed playing OR
+    // the attempt budget is spent.
+    var MAX_BED_RETRIES = 4;
+    function retryBedIfStuck(){
+      var bed = v.parentElement ? v.parentElement.querySelector('.feed-music-bed') : null;
+      if(!bed) return;
+      if(!bed.paused){ v.removeEventListener('timeupdate', retryBedIfStuck); return; }
+      var attempts = Number(bed.dataset.bedRetryCount || 0);
+      if(attempts >= MAX_BED_RETRIES){ v.removeEventListener('timeupdate', retryBedIfStuck); return; }
+      bed.dataset.bedRetryCount = String(attempts + 1);
+      bed.play().catch(function(){});
+    }
+    v.addEventListener('timeupdate', retryBedIfStuck);
     // One retry only -- a permanently broken URL (not just a transient
     // network blip) would otherwise re-trigger 'error' immediately on every
     // retry and loop forever, hammering the network. After that, the play
@@ -856,6 +936,10 @@
       var soundOn = !DreamStore.getSoundPref();
       DreamStore.setSoundPref(soundOn);
       Array.prototype.forEach.call(root.querySelectorAll('.feed-video'), function(v){ v.muted = !soundOn; });
+      // Music bed (tracker item for-product-build-founder-approved-08-03-
+      // jlkjy9) -- same global sound preference as the video mute above,
+      // one unified toggle.
+      Array.prototype.forEach.call(root.querySelectorAll('.feed-music-bed'), function(a){ a.muted = !soundOn; });
       Array.prototype.forEach.call(root.querySelectorAll('.feed-mute-btn'), function(btn){
         btn.innerHTML = soundOn ? Icons.volumeOn : Icons.volumeMuted;
         btn.title = soundOn ? 'Mute' : 'Unmute';
@@ -870,7 +954,20 @@
     var playEl = e.target.closest('[data-play]');
     if(videoEl || playEl){
       var vid = videoEl || playEl.closest('.feed-card').querySelector('.feed-video');
-      if(vid){ vid.paused ? vid.play().catch(function(){}) : vid.pause(); }
+      if(vid){
+        // Music bed (tracker item for-product-build-founder-approved-08-03-
+        // jlkjy9) -- this manual tap bypasses videoObserver entirely (it
+        // calls vid.play()/pause() directly), so its own bed pairing needs
+        // repeating here rather than relying on that observer's callback.
+        var bed = vid.parentElement ? vid.parentElement.querySelector('.feed-music-bed') : null;
+        if(vid.paused){
+          vid.play().catch(function(){});
+          if(bed) bed.play().catch(function(){});
+        } else {
+          vid.pause();
+          if(bed) bed.pause();
+        }
+      }
       return;
     }
     var likeEl = e.target.closest('[data-like]');

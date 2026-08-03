@@ -28,7 +28,13 @@ var MIME = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
-  '.webmanifest': 'application/manifest+json'
+  '.webmanifest': 'application/manifest+json',
+  // .wav (tracker item for-product-build-founder-approved-08-03-jlkjy9) —
+  // assets/music-beds/*.wav, served with a real audio content-type so a
+  // real <audio> element (Chromium, in the behavioral tests that exercise
+  // it) actually decodes/plays it rather than treating an
+  // application/octet-stream fallback as an unplayable download.
+  '.wav': 'audio/wav'
 };
 
 /** Starts a static file server for the repo root. Resolves to { url, close }. */

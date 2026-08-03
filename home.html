@@ -2599,6 +2599,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         turnstileToken: turnstileToken,
         mediaType: mediaType, sourceImageUrl: d.sourceImageUrl || null,
         audioOn: d.audioOn, musicStyle: d.musicStyle,
+        // musicBedOn (tracker item for-product-build-founder-approved-08-03-
+        // jlkjy9) — only actually READ by DreamStore.generateVideo/
+        // generateImage below (a genuinely fresh generation, style.html's
+        // own toggle); regenerateDream/startDreamEdit have no music picker
+        // of their own and simply never look at this key, so passing it
+        // through unconditionally here is harmless for those two branches
+        // (same reasoning as audioOn/musicStyle just above, which those
+        // branches also ignore) — see js/store.js's startGeneration doc
+        // comment for the full contract.
+        musicBedOn: d.musicBedOn,
         storyText: d.storyText
       };
       if(d.sourceDreamId && d.isEditDelta){
