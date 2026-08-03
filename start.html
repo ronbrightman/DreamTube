@@ -317,19 +317,68 @@
      prefix this file's own class-naming convention requires (see this
      style block's header comment) rather than reusing home.html's
      day0card-scoped selectors verbatim, since screen 13 is a fixed-height
-     card, not a 9:16 video frame. ===== */
+     card, not a 9:16 video frame.
+
+     Nebula/aurora drift layer (tracker item
+     for-product-forming-veil-replace-the-fla-nwbe60, founder: "I hope you
+     plan to put something more interesting and moving there than just a
+     square color"): .fn-forming-frame used to paint that flat gradient
+     itself as a static `background`. It now only sets a plain fallback
+     fill, and .fn-form-nebula (new, first child, see formingFrameHtml
+     below) does the actual live painting -- an oversized layer, driven by
+     two independently-timed keyframe animations (13s drift + 17s hue
+     shift, deliberately not sharing a period so the motion never visibly
+     loops in sync) so colors/positions are always still gently changing on
+     a real page, not just defined-and-idle keyframes. Colors come from
+     --fn-neb-* custom properties set per .fnstyle-* class below --
+     formingTintClass(), in the script block below, picks the class from the dream's
+     `style` value using the exact same lowercase/fail-closed contract as
+     MusicBed.urlForStyle (js/music-bed.js) -- so an unrecognized value or
+     no style chosen yet (chosenStyle can be null) always resolves to
+     .fnstyle-default, which is exactly the palette this frame used before
+     this change (no color regression for a style-less visitor, only added
+     motion). ===== */
   .fn-forming-frame{
     position:relative; height:118px; border-radius:16px; overflow:hidden; margin-bottom:16px;
+    background:#171034; /* plain fallback fill, painted under .fn-form-nebula */
+  }
+  .fn-forming-frame.fnstyle-default{
+    --fn-neb-1:rgba(163,90,255,.55); --fn-neb-2:rgba(83,140,255,.5); --fn-neb-3:rgba(255,255,255,.10);
+    --fn-neb-base1:#241348; --fn-neb-base2:#2c1a5e; --fn-neb-base3:#141040;
+  }
+  .fn-forming-frame.fnstyle-cartoon{
+    --fn-neb-1:rgba(255,158,84,.55); --fn-neb-2:rgba(255,92,163,.5); --fn-neb-3:rgba(255,224,140,.16);
+    --fn-neb-base1:#4a2038; --fn-neb-base2:#5c2b1c; --fn-neb-base3:#2a1024;
+  }
+  .fn-forming-frame.fnstyle-cinematic{
+    --fn-neb-1:rgba(88,132,255,.5); --fn-neb-2:rgba(64,52,150,.55); --fn-neb-3:rgba(190,205,255,.10);
+    --fn-neb-base1:#101530; --fn-neb-base2:#182450; --fn-neb-base3:#080a1c;
+  }
+  .fn-forming-frame.fnstyle-anime{
+    --fn-neb-1:rgba(255,86,201,.55); --fn-neb-2:rgba(84,222,255,.5); --fn-neb-3:rgba(255,255,255,.14);
+    --fn-neb-base1:#3a1250; --fn-neb-base2:#173b5e; --fn-neb-base3:#170e3a;
+  }
+  .fn-forming-frame.fnstyle-realistic{
+    --fn-neb-1:rgba(126,204,150,.5); --fn-neb-2:rgba(232,190,108,.45); --fn-neb-3:rgba(200,230,210,.10);
+    --fn-neb-base1:#132a20; --fn-neb-base2:#2c3a1e; --fn-neb-base3:#0f150e;
+  }
+  .fn-forming-frame .fn-form-nebula{
+    position:absolute; inset:-35%;
     background:
-      radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.35), transparent 68%),
-      radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.30), transparent 65%),
-      linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+      radial-gradient(42% 42% at 28% 32%, var(--fn-neb-1), transparent 70%),
+      radial-gradient(48% 48% at 76% 72%, var(--fn-neb-2), transparent 68%),
+      radial-gradient(60% 60% at 50% 50%, var(--fn-neb-3), transparent 75%),
+      linear-gradient(155deg, var(--fn-neb-base1), var(--fn-neb-base2) 55%, var(--fn-neb-base3));
+    animation: fnNebulaDrift 13s ease-in-out infinite alternate, fnNebulaHue 17s ease-in-out infinite alternate;
   }
   /* Populated only on the rare chance a preview happens to already be
      available (see tryShowFormingPreview's own doc comment below) — hidden
-     by default, so the anticipation-only shimmer/arc is what most visitors
-     ever see. Heavily blurred + scaled up (avoids a sharp blurred edge at
-     the frame) so this reads as an early glimpse, not a finished reveal. */
+     by default, so the anticipation-only nebula/shimmer/arc is what most
+     visitors ever see. Heavily blurred + scaled up (avoids a sharp blurred
+     edge at the frame) so this reads as an early glimpse, not a finished
+     reveal. Painted after .fn-form-nebula in source order, so it still
+     covers the nebula completely the instant it's shown -- unchanged
+     swap-in behavior, this frame just isn't flat while it waits. */
   .fn-forming-still{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:blur(20px) saturate(1.15) brightness(.82); transform:scale(1.15); }
   .fn-forming-frame .fn-form-sweep{
     position:absolute; inset:-10%;
@@ -348,7 +397,17 @@
   }
   @keyframes fnFormSweep{ 0%{ transform:translateX(-70%) skewX(-12deg);} 100%{ transform:translateX(70%) skewX(-12deg);} }
   @keyframes fnArcSpin{ to{ transform:rotate(360deg);} }
-  @media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc{ animation:none !important;} }
+  @keyframes fnNebulaDrift{
+    0%{ transform:translate(-3%,-2%) rotate(-3deg) scale(1.02); }
+    50%{ transform:translate(3%,2.5%) rotate(3deg) scale(1.08); }
+    100%{ transform:translate(-2%,3%) rotate(-2deg) scale(1.04); }
+  }
+  @keyframes fnNebulaHue{
+    0%{ filter:hue-rotate(0deg) saturate(1.05); }
+    50%{ filter:hue-rotate(16deg) saturate(1.25); }
+    100%{ filter:hue-rotate(-12deg) saturate(1.1); }
+  }
+  @media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc, .fn-forming-frame .fn-form-nebula{ animation:none !important;} }
 </style>
 
 <script src="js/icons.js"></script>
@@ -2193,17 +2252,39 @@
   // ===================================================================
 
   /**
+   * Which .fnstyle-* tint class the forming veil's nebula layer (see
+   * .fn-form-nebula in the <style> block above) should carry for a given
+   * dream `style` value -- same lowercase-and-fail-closed contract as
+   * MusicBed.urlForStyle (js/music-bed.js): an unrecognized value, or no
+   * style chosen yet (`chosenStyle` can be null -- see this file's own
+   * `var chosenStyle = getParam('style') || null;`), always resolves to
+   * 'fnstyle-default' rather than an undefined class. Exported as its own
+   * named function (not inlined into formingFrameHtml) so it's directly
+   * unit-testable without a DOM.
+   */
+  var FORMING_TINT_STYLES = { cartoon: 1, cinematic: 1, anime: 1, realistic: 1 };
+  function formingTintClass(style){
+    var key = typeof style === 'string' ? style.toLowerCase() : '';
+    return 'fnstyle-' + (FORMING_TINT_STYLES[key] ? key : 'default');
+  }
+
+  /**
    * Markup for the forming veil -- see this file's <style> block, the
    * ".fn-forming-frame..." comment right above those rules, for the visual
    * convention this reuses (home.html's own day0card forming veil, itself
    * ported from funnel-end-mock-x7q4.html). `caption` is the copy shown
    * while purely anticipation-only, which is what the overwhelming
    * majority of visitors will ever see (see tryShowFormingPreview's own
-   * doc comment on why). #fn-forming-still stays hidden (display:none, via
-   * inline style) until tryShowFormingPreview finds something to show.
+   * doc comment on why). `style` is the dream's chosen style (chosenStyle
+   * at call sites below) -- tints the live .fn-form-nebula layer via
+   * formingTintClass, purely decorative, never required. #fn-forming-still
+   * stays hidden (display:none, via inline style) until
+   * tryShowFormingPreview finds something to show, and paints over
+   * .fn-form-nebula unchanged when it does (see that class's own comment).
    */
-  function formingFrameHtml(caption){
-    return '<div class="fn-forming-frame" id="fn-forming-frame" role="img" aria-label="' + esc(caption) + '">' +
+  function formingFrameHtml(caption, style){
+    return '<div class="fn-forming-frame ' + formingTintClass(style) + '" id="fn-forming-frame" role="img" aria-label="' + esc(caption) + '">' +
+      '<div class="fn-form-nebula" aria-hidden="true"></div>' +
       '<video class="fn-forming-still" id="fn-forming-still" muted loop playsinline style="display:none;"></video>' +
       '<div class="fn-form-sweep"></div>' +
       '<svg class="fn-form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>' +
@@ -2267,7 +2348,7 @@
     function renderEmailStep(prefillEmail){
       el.innerHTML =
         '<div class="fn-headline">' + headline + '</div>' +
-        formingFrameHtml(formingCaption) +
+        formingFrameHtml(formingCaption, chosenStyle) +
         computeProofStripHtml() +
         '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + revealReassurance + '</div>' +
         facebookSignupButtonHtml() +
@@ -2333,7 +2414,7 @@
     function renderPasswordStep(email){
       el.innerHTML =
         '<div class="fn-headline">' + headline + '</div>' +
-        formingFrameHtml(formingCaption) +
+        formingFrameHtml(formingCaption, chosenStyle) +
         computeProofStripHtml() +
         '<div class="fn-price-note" style="text-align:left; margin:-6px 0 14px;">' + revealReassurance + '</div>' +
         '<input class="fn-field" id="fn-email" type="email" value="' + esc(email) + '" readonly style="color:var(--phase-soft, var(--fn-ink-soft)); cursor:default;">' +
