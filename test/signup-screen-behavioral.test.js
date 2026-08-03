@@ -145,9 +145,9 @@ test('screen 13 initially renders ONLY the email field + a Continue affordance -
     await blockThirdParty(page);
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    assert.equal(await page.$('#fn-password'), null, 'the password field must not render until the email step is confirmed');
+    assert.ok((await page.$('#fn-password')) === null, 'the password field must not render until the email step is confirmed');
     assert.ok(await page.$('#fn-s13-email-continue'), 'the email-step Continue button must render');
-    assert.equal(await page.$('#fn-s13-continue'), null, 'the real submit button must not exist yet -- only the email-step button does at this point');
+    assert.ok((await page.$('#fn-s13-continue')) === null, 'the real submit button must not exist yet -- only the email-step button does at this point');
 
     var bodyText = await page.textContent('#fnScreen');
     assert.match(bodyText, /free to start, no card needed/i, 'must show the "free to start, no card needed" framing');
@@ -169,14 +169,14 @@ test('an invalid email on the first step shows an error and does not reveal the 
 
     var errText = await page.textContent('#fn-signup-error');
     assert.match(errText, /enter a valid email/i);
-    assert.equal(await page.$('#fn-password'), null, 'an invalid email must not advance to the password step');
+    assert.ok((await page.$('#fn-password')) === null, 'an invalid email must not advance to the password step');
 
     // An empty email must be rejected the same way.
     await page.fill('#fn-email', '');
     await page.click('#fn-s13-email-continue');
     var errText2 = await page.textContent('#fn-signup-error');
     assert.match(errText2, /enter a valid email/i);
-    assert.equal(await page.$('#fn-password'), null);
+    assert.ok((await page.$('#fn-password')) === null);
   } finally {
     await context.close();
   }
@@ -309,7 +309,7 @@ test('"Change email" returns to the email step with the previously entered email
 
     await page.click('#fn-s13-change-email');
     await page.waitForSelector('#fn-s13-email-continue', { timeout: 5000 });
-    assert.equal(await page.$('#fn-password'), null, 'returning to the email step must hide the password field again');
+    assert.ok((await page.$('#fn-password')) === null, 'returning to the email step must hide the password field again');
 
     var prefilled = await page.inputValue('#fn-email');
     assert.equal(prefilled, 'change-me@example.com', 'the email step must be prefilled with the email already entered');
@@ -573,7 +573,7 @@ test('Signup Continue -> immediate "Change email" before attemptSignup resolves 
     // attempt for EMAIL_STALE is still in flight.
     await page.click('#fn-s13-change-email');
     await page.waitForSelector('#fn-s13-email-continue', { timeout: 5000 });
-    assert.equal(await page.$('#fn-password'), null, 'must genuinely be back on the email step, password field gone');
+    assert.ok((await page.$('#fn-password')) === null, 'must genuinely be back on the email step, password field gone');
 
     // Back must also have been reset -- it lives outside the swapped
     // screen DOM and would otherwise stay stuck disabled from the
@@ -1006,7 +1006,7 @@ test('signup_error_shown: fires with reason invalid_email on a malformed address
     var errors = captureNamed(calls, 'signup_error_shown');
     assert.equal(errors.length, 1, 'expected exactly one signup_error_shown capture call');
     assert.deepEqual(errors[0][2], { reason: 'invalid_email', variant: 'unified' });
-    assert.equal(await page.$('#fn-password'), null, 'must not have advanced to the password step');
+    assert.ok((await page.$('#fn-password')) === null, 'must not have advanced to the password step');
   } finally {
     await context.close();
   }
@@ -1290,7 +1290,7 @@ test('default wall (no variant param) is PASSWORDLESS: email field + Send-me-my-
     await blockThirdParty(page);
     await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('a test dream'));
     await page.waitForSelector('#fn-email', { timeout: 15000 });
-    assert.equal(await page.$('input[type="password"]'), null, 'no password field on the default (passwordless) wall');
+    assert.ok((await page.$('input[type="password"]')) === null, 'no password field on the default (passwordless) wall');
     var btnText = (await page.textContent('#fn-s13-continue')).trim();
     assert.equal(btnText, 'Send me my dream');
   } finally {

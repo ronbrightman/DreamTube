@@ -8,15 +8,14 @@
 // exact reassurance-copy verification this variant's copy is built on.
 //
 // MOCK-FIRST GATE: SIGNUP_REVEAL_CHALLENGER_LIVE is false in the real,
-// committed start.html -- signupVariant resolves to 'unified' for every
-// real visitor, no exceptions (see test 'the reveal challenger is NOT live'
-// below). Every other test in this file exercises the 'reveal' arm by
-// REWRITING THE SERVED start.html (enableRevealChallenger, below) to flip
-// that one constant true for just that test's own page load -- the exact
-// same "rewrite the served file to flip a currently-off flag" technique
-// test/facebook-login-signup-behavioral.test.js already uses for the
-// Facebook Login placeholder-app-id flag (configureFacebookApp there).
-// Nothing about what actually ships changes.
+// committed start.html -- since the 2026-08-03 flip, signupVariant
+// resolves to the live 'passwordless' default for every real visitor
+// (see test 'the reveal challenger is NOT live' below). Every other test
+// in this file exercises the 'reveal' arm via the ?signup=reveal query
+// escape (resumeUrl below carries it), the same test/dev override the
+// resolution chain honors for 'unified', PLUS enableRevealChallenger's
+// served-file rewrite where a test needs the flag itself true. Nothing
+// about what actually ships changes.
 //
 // Reuses test/helpers/signup-flow.js's advanceToPasswordStep/
 // fillAndSubmitSignup -- both variants render the exact same field ids
@@ -77,7 +76,7 @@ async function safeGoto(page, url) {
 }
 
 function resumeUrl(caption) {
-  return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
+  return baseUrl + '/start.html?resume=1&signup=reveal&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
 // Rewrites the served start.html to flip SIGNUP_REVEAL_CHALLENGER_LIVE true
@@ -140,7 +139,7 @@ function mockHappyPathRoutes(page, opts) {
 // Mock-first gate.
 // ===========================================================================
 
-test('the reveal challenger is NOT live: a fresh, UNMODIFIED load resolves signupVariant to "unified" even with dreamtube_signup_variant pre-seeded to "reveal" in localStorage', async function (t) {
+test('the reveal challenger is NOT live: a fresh, UNMODIFIED load (no ?signup override) resolves signupVariant to "passwordless" even with dreamtube_signup_variant pre-seeded to "reveal" in localStorage', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -148,15 +147,20 @@ test('the reveal challenger is NOT live: a fresh, UNMODIFIED load resolves signu
     var page = await context.newPage();
     await blockThirdParty(page);
     // Deliberately NOT calling enableRevealChallenger here -- this is the
-    // real, committed start.html, unmodified.
-    await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
+    // real, committed start.html, unmodified -- and deliberately NOT using
+    // resumeUrl(), whose ?signup=reveal escape would legitimately force the
+    // reveal arm. A real visitor's URL carries no override, and since the
+    // 2026-08-03 flip the live default they must land on is 'passwordless'
+    // (SIGNUP_PASSWORDLESS_LIVE outranks SIGNUP_REVEAL_CHALLENGER_LIVE in
+    // the resolution chain), regardless of any stored assignment.
+    await safeGoto(page, baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'));
     await page.waitForSelector('#fn-email', { timeout: 5000 });
 
-    assert.equal(await page.$('.fn-forming-frame'), null, 'the reveal-only forming veil must never render while the challenger is gated off');
+    assert.ok((await page.$('.fn-forming-frame')) === null, 'the reveal-only forming veil must never render while the challenger is gated off');
     var calls = await readPostHogCalls(page);
     var shown = captureNamed(calls, 'signup_email_first_variant_shown');
     assert.equal(shown.length, 1);
-    assert.equal(shown[0][2].variant, 'unified', 'signupVariant must resolve to unified for every real visitor while SIGNUP_REVEAL_CHALLENGER_LIVE is false, regardless of any stored localStorage value');
+    assert.equal(shown[0][2].variant, 'passwordless', 'signupVariant must resolve to the live passwordless default for every real visitor while SIGNUP_REVEAL_CHALLENGER_LIVE is false, regardless of any stored localStorage value');
   } finally {
     await context.close();
   }
@@ -377,7 +381,7 @@ test('reveal variant, Record-it mode: the reassurance line does not claim the dr
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
     });
 
-    await safeGoto(page, baseUrl + '/start.html?resume=1&mode=record');
+    await safeGoto(page, baseUrl + '/start.html?resume=1&signup=reveal&mode=record');
     await signupFlow.advanceToPasswordStep(page, 'recorduser@example.com');
 
     var bodyText = await page.textContent('#fnScreen');

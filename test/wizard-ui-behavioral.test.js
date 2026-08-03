@@ -487,9 +487,9 @@ test('wizard.html: the Contact step never renders the parked WhatsApp toggle/fie
     await page.click('#fn-freetext-skip');
 
     await page.waitForSelector('#contact-email');
-    assert.equal(await page.$('#contact-whatsapp-toggle'), null, 'the parked WhatsApp toggle must never render');
-    assert.equal(await page.$('#contact-whatsapp-reveal'), null, 'the parked WhatsApp reveal container must never render');
-    assert.equal(await page.$('#contact-whatsapp'), null, 'the parked WhatsApp input must never render');
+    assert.ok((await page.$('#contact-whatsapp-toggle')) === null, 'the parked WhatsApp toggle must never render');
+    assert.ok((await page.$('#contact-whatsapp-reveal')) === null, 'the parked WhatsApp reveal container must never render');
+    assert.ok((await page.$('#contact-whatsapp')) === null, 'the parked WhatsApp input must never render');
 
     await page.fill('#contact-email', 'no-whatsapp-test@example.com');
     await page.click('#fn-contact-continue');

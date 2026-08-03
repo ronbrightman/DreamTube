@@ -138,7 +138,7 @@ test('start.html: the PAID growth-funnel handoff (?resume=1&...) is completely u
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await safeGoto(page, baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'));
+    await safeGoto(page, baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'));
 
     // A successful ?resume=1 handoff renders this file's own funnel tail in
     // place -- it must NOT bounce back out to the external funnel (that

@@ -90,7 +90,7 @@ async function safeGoto(page, url) {
 
 /** Same base resume params the other funnel behavioral tests use. */
 function resumeUrl(caption, extra) {
-  return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption) + (extra || '');
+  return baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent(caption) + (extra || '');
 }
 
 /**
@@ -167,7 +167,7 @@ test('feature flag OFF (placeholder App ID): renders NO Facebook button anywhere
     await blockThirdParty(page);
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
-    assert.equal(await page.$('#fn-fb-continue'), null, 'the button element must not exist at all');
+    assert.ok((await page.$('#fn-fb-continue')) === null, 'the button element must not exist at all');
     // Scoped to the funnel's own rendered screen (NOT document.body,
     // which also contains this page's inline <script> source and would
     // match on a code comment rather than real markup).
@@ -207,7 +207,7 @@ test('feature flag ON: renders the Facebook button above the email field, Meta-b
     });
     assert.equal(buttonIsAboveEmail, true);
     assert.ok(await page.$('#fn-email'), 'the email field still exists (Direction Y: nothing removed)');
-    assert.equal(await page.$('#fn-fb-divider'), null, 'Direction Y adds no divider');
+    assert.ok((await page.$('#fn-fb-divider')) === null, 'Direction Y adds no divider');
   } finally {
     await context.close();
   }
@@ -400,7 +400,7 @@ test('tapping Facebook after backing out of a mid-manual-signup attempt (via "Ch
     releaseRegister();
     await page.waitForTimeout(500);
 
-    assert.equal(await page.$('#fn-s14-continue'), null, 'an abandoned attempt must never force-navigate the visitor forward');
+    assert.ok((await page.$('#fn-s14-continue')) === null, 'an abandoned attempt must never force-navigate the visitor forward');
     var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
     assert.equal(user, null, 'the store-level commit must have been stopped too');
   } finally {
@@ -553,8 +553,8 @@ test('returning with a valid ?bt= skips screen 13 entirely and lands on screen 1
     await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&bt=transfer-token-3&fb=signup'));
     await page.waitForSelector('#fn-s14-continue', { timeout: 8000 });
 
-    assert.equal(await page.$('#fn-email'), null, 'the signup screen must never render for an already-signed-in visitor');
-    assert.equal(await page.$('#fn-password'), null);
+    assert.ok((await page.$('#fn-email')) === null, 'the signup screen must never render for an already-signed-in visitor');
+    assert.ok((await page.$('#fn-password')) === null);
     var user = await page.evaluate(function () { return DreamStore.getCurrentUser(); });
     assert.equal(user.username, 'skipuser');
     // And the ?bt= is not left sitting in the address bar.
@@ -754,7 +754,7 @@ test('fb_needs_email renders one minimal extra email field (no password), and co
     await safeGoto(page, resumeUrl('Flying over the ocean at sunset', '&fb_needs_email=marker-abc'));
     await page.waitForSelector('#fn-fb-email-continue', { timeout: 8000 });
 
-    assert.equal(await page.$('#fn-password'), null, 'a Facebook-only account never asks for a password');
+    assert.ok((await page.$('#fn-password')) === null, 'a Facebook-only account never asks for a password');
     assert.ok(await page.$('#fn-email'));
 
     await page.fill('#fn-email', 'supplied@example.com');

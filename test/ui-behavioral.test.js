@@ -214,7 +214,7 @@ function stubPendingGenerationAsUnavailable(page) {
 /** Drives start.html's funnel tail (Advanced screens/11/13) up to the pricing screen (14), the same path any real signup takes after arriving from the marketing funnel with ?resume=1. Skipping on the first Advanced screen (characters) jumps straight past camera/scenery too -- see the "Skip on any of the 3 screens" test below -- so one skip click is enough to reach the transition screen from here. */
 async function goToPricingScreen(page, email) {
   await stubPendingGenerationAsUnavailable(page);
-  await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+  await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
   // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
   // g64gjp), start.html's former characters and "preparing" transition
   // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -399,7 +399,7 @@ test('email capture screen (13) has no leftover subscription pricing copy', asyn
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -1372,11 +1372,11 @@ test('parked camera/scenery screens never render in start.html\'s funnel tail, a
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying with my sister'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying with my sister'), { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#fn-email', { timeout: 5000 });
-    assert.equal(await page.$('#fn-adv-chars-continue'), null, 'the removed characters screen must never render');
-    assert.equal(await page.$('#fn-adv-camera-continue'), null, 'the parked camera screen must never render');
-    assert.equal(await page.$('#fn-adv-scenery-continue'), null, 'the parked scenery screen must never render');
+    assert.ok((await page.$('#fn-adv-chars-continue')) === null, 'the removed characters screen must never render');
+    assert.ok((await page.$('#fn-adv-camera-continue')) === null, 'the parked camera screen must never render');
+    assert.ok((await page.$('#fn-adv-scenery-continue')) === null, 'the parked scenery screen must never render');
 
     var dotCount = await page.$$eval('.fn-progress i', function (els) { return els.length; });
     assert.equal(dotCount, 2, 'expected exactly 2 progress dots -- email + pricing/confirmation, the only two screens left in the funnel tail');
@@ -1746,7 +1746,7 @@ test('start.html: generate-during-signup -- screen 13\'s Continue starts a pendi
       route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('x') });
     });
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -1815,7 +1815,7 @@ test('start.html: generate-during-signup -- if the pre-signup generation call fa
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
     });
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -1883,7 +1883,7 @@ test('start.html: generate-during-signup -- REGRESSION: signup failing AFTER the
       }
     });
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -1951,7 +1951,7 @@ test('start.html: generate-during-signup -- a visitor who changes to a DIFFERENT
       }
     });
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -2030,7 +2030,7 @@ test('start.html: generate-during-signup -- REGRESSION: a stale start-pending-ge
       }
     });
 
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly
@@ -2130,7 +2130,7 @@ test('email capture screen (13) shows the reassurance microcopy explaining why e
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
+    await page.goto(baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('I had a dream about flying'), { waitUntil: 'domcontentloaded' });
     // As of 2026-07-31 (tracker item for-product-urgent-founder-screenshots-i-
     // g64gjp), start.html's former characters and "preparing" transition
     // screens were removed outright -- a fresh ?resume=1 load lands directly

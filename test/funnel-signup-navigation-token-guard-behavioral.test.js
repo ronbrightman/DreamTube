@@ -102,7 +102,9 @@ async function safeGoto(page, url) {
 
 /** Same base resume params test/record-mode-behavioral.test.js uses. */
 function resumeUrl(caption) {
-  return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
+  // signup=unified: legacy password-wall coverage pins its variant since the
+  // passwordless flip (tracker at2fko) — see signup-screen-behavioral.test.js.
+  return baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
 async function reachScreen13(page, caption) {

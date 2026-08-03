@@ -116,7 +116,7 @@ test('start.html: a mode=record visitor\'s signup never calls start-pending-gene
     // types/motivations), but deliberately no caption/style -- nothing has
     // been recorded yet -- plus the additive mode=record flag.
     await page.goto(
-      baseUrl + '/start.html?resume=1&mode=record&recall=vividly&types=flying,falling&motivations=' + encodeURIComponent('Turn them into videos'),
+      baseUrl + '/start.html?resume=1&signup=unified&mode=record&recall=vividly&types=flying,falling&motivations=' + encodeURIComponent('Turn them into videos'),
       { waitUntil: 'domcontentloaded' }
     );
 
@@ -158,7 +158,7 @@ test('start.html: a normal (no mode=record) Build/Write visitor is completely un
     var pendingGenerationCalls = await trackPendingGenerationCalls(page);
 
     await page.goto(
-      baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
+      baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
       { waitUntil: 'domcontentloaded' }
     );
 
@@ -316,7 +316,7 @@ test('record-it funnel full chain on a mobile webview viewport: mode=record hand
     var pendingGenerationCalls = await trackPendingGenerationCalls(page);
 
     await page.goto(
-      baseUrl + '/start.html?resume=1&mode=record&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos'),
+      baseUrl + '/start.html?resume=1&signup=unified&mode=record&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos'),
       { waitUntil: 'domcontentloaded' }
     );
 
@@ -376,7 +376,7 @@ test('start.html: a normal (no mode=record) visitor still sees the original scre
     await blockThirdParty(page);
 
     await page.goto(
-      baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
+      baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean at sunset'),
       { waitUntil: 'domcontentloaded' }
     );
 

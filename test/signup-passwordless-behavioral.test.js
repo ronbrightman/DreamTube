@@ -8,14 +8,15 @@
 // "don't show the deferred-verification sheet on this same landing"
 // sessionStorage handoff to home.html.
 //
-// MOCK-FIRST GATE: SIGNUP_PASSWORDLESS_LIVE is false in the real,
-// committed start.html — signupVariant resolves to 'unified' for every
-// real visitor. Every test here exercises the 'passwordless' arm by
-// REWRITING THE SERVED start.html to flip that one constant true for just
-// that test's own page load — the exact same technique test/signup-
-// reveal-variant-behavioral.test.js/test/facebook-login-signup-behavioral
-// .test.js already use for their own currently-off flags. Nothing about
-// what actually ships changes.
+// LIVE SINCE 2026-08-03: SIGNUP_PASSWORDLESS_LIVE is true in the real,
+// committed start.html (flipped on the founder's explicit "Flip it" after
+// he walked the preview) — signupVariant resolves to 'passwordless' for
+// every real visitor by default. The old serve-time rewrite gate is gone;
+// enablePasswordlessArm() below is now a PIN, not a patch: it serves
+// start.html untouched and asserts the live flag is still present
+// verbatim, so any future un-flip or rename breaks this whole file
+// loudly instead of silently testing the wrong world. The first test
+// asserts the arm IS the real-visitor default.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -73,14 +74,19 @@ function resumeUrl(caption) {
   return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
-/** Same "rewrite the served file" technique as test/signup-reveal-variant-behavioral.test.js's enableRevealChallenger. */
+/**
+ * Post-flip PIN (was a serve-time rewrite before 2026-08-03): the arm is
+ * live in the committed file, so nothing needs patching — but serving
+ * still goes through this route so the file loudly fails if the flag is
+ * ever flipped back off or renamed, instead of these tests quietly
+ * passing against the wrong default.
+ */
 function enablePasswordlessArm(page) {
   return page.route(/\/start\.html(\?|$)/, async function (route) {
     var response = await route.fetch();
     var body = await response.text();
-    var patched = body.replace('var SIGNUP_PASSWORDLESS_LIVE = false;', 'var SIGNUP_PASSWORDLESS_LIVE = true;');
-    assert.notEqual(patched, body, 'SIGNUP_PASSWORDLESS_LIVE = false must still be present verbatim in start.html for this rewrite to work');
-    route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: patched });
+    assert.ok(body.indexOf('var SIGNUP_PASSWORDLESS_LIVE = true;') !== -1, 'SIGNUP_PASSWORDLESS_LIVE = true must be present verbatim in start.html -- the passwordless arm shipped as the live default on 2026-08-03 and this file now tests that world');
+    route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: body });
   });
 }
 
@@ -114,21 +120,20 @@ function mockHappyPathRoutes(page, opts) {
   ]);
 }
 
-test('passwordless arm is NOT live for a real visitor by default -- no password-free email-only screen appears without the flag', async function (t) {
+test('passwordless arm IS the live default for a real visitor -- email-only wall, no password field, "Send me my dream" (flipped 2026-08-03)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockGetFeed(page, []);
-    // Deliberately NOT calling enablePasswordlessArm here.
+    // Deliberately NOT calling enablePasswordlessArm here -- this test is
+    // about what a completely unmodified page load resolves to.
     await safeGoto(page, resumeUrl('Flying over the ocean at sunset'));
     await page.waitForSelector('#fn-email', { timeout: 8000 });
-    // 'unified' shows a "Continue" button that reveals a password step --
-    // the passwordless arm's button says "Send me my dream" and never
-    // shows a password field at all. Confirm we're on the ordinary arm.
+    assert.equal(await page.locator('input[type="password"]').count(), 0, 'the live default wall must never render a password field');
     var buttonText = await page.locator('.fn-btn-primary').first().textContent();
-    assert.notEqual(buttonText.trim(), 'Send me my dream');
+    assert.equal(buttonText.trim(), 'Send me my dream');
   } finally {
     await context.close();
   }

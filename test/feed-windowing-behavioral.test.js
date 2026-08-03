@@ -199,7 +199,7 @@ test('explore.html: a feed smaller than one batch gets a DOM slot for every drea
     await page.waitForTimeout(200);
 
     assert.equal(await countAllSlots(page), 4, 'a 4-dream feed (under one batch) should give all 4 dreams a DOM slot');
-    assert.equal(await page.$('.feed-load-sentinel'), null, 'no sentinel should exist once every dream already has a slot');
+    assert.ok((await page.$('.feed-load-sentinel')) === null, 'no sentinel should exist once every dream already has a slot');
   } finally {
     await context.close();
   }
@@ -258,7 +258,7 @@ test('explore.html: scrolling near the end lazy-appends further batches until ev
     }
 
     assert.equal(await countAllSlots(page), 25, 'repeated scroll-to-bottom should eventually lazy-append a slot for every remaining dream');
-    assert.equal(await page.$('.feed-load-sentinel'), null, 'the sentinel should be removed once the whole feed has a slot');
+    assert.ok((await page.$('.feed-load-sentinel')) === null, 'the sentinel should be removed once the whole feed has a slot');
   } finally {
     await context.close();
   }

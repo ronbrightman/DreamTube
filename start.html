@@ -512,11 +512,11 @@
   } catch (e) {}
   if (signupQueryOverride === 'passwordless') {
     signupVariant = 'passwordless';
-  } else if (signupQueryOverride === 'unified') {
-    // Test/dev escape: force the legacy password wall regardless of the
-    // live flag, so the pre-passwordless test coverage keeps exercising
-    // that variant explicitly (it remains reachable for rollback).
-    signupVariant = 'unified';
+  } else if (signupQueryOverride === 'unified' || signupQueryOverride === 'reveal') {
+    // Test/dev escape: force a specific non-default wall regardless of the
+    // live flag, so pre-passwordless coverage keeps exercising those
+    // variants explicitly (they remain reachable for rollback/experiments).
+    signupVariant = signupQueryOverride;
   } else if (SIGNUP_PASSWORDLESS_LIVE) {
     signupVariant = 'passwordless';
   } else if (SIGNUP_REVEAL_CHALLENGER_LIVE) {
