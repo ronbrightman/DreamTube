@@ -12,6 +12,42 @@
   # instead of a fake "nth deploy today" counter). Tracker item
   # for-product-release-visibility-founder-a-8hx5cz.
   command = "npm run build"
+  # Skip a production deploy entirely when the commit range being deployed
+  # ONLY touches doc-like/internal-tooling paths that are never served to
+  # users and don't affect the deployed app. Tracker item
+  # for-product-netlify-cost-deploys-are-97--9vbpd4: 177 deploys this
+  # billing period = 2655 of 2724 total credits (97%) -- the push-per-
+  # iteration workflow (many small commits, each a full deploy) is
+  # effectively the entire hosting bill, and a large share of those
+  # commits touch only docs/AGENT files with zero user-facing effect.
+  #
+  # Netlify's documented ignore-command contract (see
+  # https://docs.netlify.com/build/configure-builds/ignore-builds/): this
+  # command runs before every build; exit 0 = SKIP the deploy, non-zero =
+  # proceed with the build. We want "skip WHEN ONLY doc-like paths
+  # changed", which is exactly `git diff --quiet`'s own exit-code
+  # semantics inverted-for-free: 0 = no diff found OUTSIDE the excluded
+  # doc-like paths (i.e. nothing real changed) = skip; 1 = a real diff
+  # exists outside those paths = build. No inversion needed -- just point
+  # `git diff --quiet` at everything BUT the doc-like paths.
+  #
+  # Uses Netlify's own $CACHED_COMMIT_REF (last successfully deployed
+  # commit for this branch/context) / $COMMIT_REF (commit being deployed
+  # now) env vars rather than HEAD^/HEAD literals, since Netlify's clone
+  # depth doesn't guarantee HEAD^ is available. If $CACHED_COMMIT_REF is
+  # unset (no prior successful deploy for this branch/context -- e.g. the
+  # very first build), there's nothing to diff against, so fail safe and
+  # build (exit 1) rather than risk skipping a first deploy.
+  #
+  # Excluded (doc-like, never served, safe to skip a deploy for):
+  # docs/**, AGENT_POLICY.md, CLAUDE.md, FOUNDER_PRINCIPLES.md,
+  # MANAGER_BRIEF.md, README.md, RELEASES.md, .claude/** (agent/skill
+  # config, never served). Deliberately NOT excluded: every .html page,
+  # js/**, netlify/functions/**, assets/**, stylesheets, sw.js,
+  # manifest.json, netlify.toml itself, package.json, scripts/** (the
+  # build command above reads scripts/generate-version.js) -- anything
+  # actually shipped or that affects the deployed app always builds.
+  ignore = "[ -z \"$CACHED_COMMIT_REF\" ] && exit 1; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs/**' ':!AGENT_POLICY.md' ':!CLAUDE.md' ':!FOUNDER_PRINCIPLES.md' ':!MANAGER_BRIEF.md' ':!README.md' ':!RELEASES.md' ':!.claude/**'"
 
 # Scheduled Functions (Netlify's own cron mechanism) -- tracker item
 # for-product-build-stage-0-pwa-web-push-f-jbutt5, part 4
