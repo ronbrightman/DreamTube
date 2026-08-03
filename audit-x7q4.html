@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — Lost-Dream Audit</title>
+<!-- Owner-only one-tap runner for admin-diagnose-lost-generations (the
+     dream-vanish P0's user-impact audit). Exists because the founder asked
+     for tasks he can DO, not read about (Board rule, 08-03): the endpoint
+     needs his real password at call time, which no agent sandbox holds, so
+     the Board links here instead of pasting a curl. The password goes
+     browser -> our own Netlify function only (verifyLogin), never stored.
+     Pages through nextCursor automatically until done. -->
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:560px;margin-inline:auto;font-size:14px;line-height:1.5}
+h1{font-size:19px;font-weight:800;color:#fff;margin:2px 0 4px}
+.sub{color:#a49dc4;font-size:12.5px;margin:0 0 16px}
+label{display:block;font-size:12px;font-weight:700;color:#a49dc4;margin:12px 0 4px}
+input{width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:15px;padding:10px 12px}
+button{margin-top:16px;width:100%;background:#6d5df6;color:#fff;font-weight:800;font-size:15px;border:0;border-radius:10px;padding:12px;cursor:pointer}
+button:disabled{opacity:.5}
+.out{margin-top:18px;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:12px 14px;display:none}
+.out.show{display:block}
+.ok{color:#8ee6c2;font-weight:800}.bad{color:#ff8a96;font-weight:800}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:13.5px}
+.row b{color:#fff}
+.err{color:#ff8a96;margin-top:12px;font-weight:700;display:none}
+pre{white-space:pre-wrap;font-size:12px;color:#cfc9ec;max-height:300px;overflow:auto}
+</style></head><body>
+<h1>🔍 Lost-Dream Audit</h1>
+<div class="sub">Checks every generation since the chosen date for a charged job with no surviving dream record. Read-only — writes nothing. Your password goes only to DreamTube's own login check.</div>
+
+<label for="pw">Your DreamTube password</label>
+<input id="pw" type="password" autocomplete="current-password">
+<label for="since">Check jobs since (UTC)</label>
+<input id="since" type="date" value="2026-08-01">
+<button id="run">Run the audit</button>
+<div class="err" id="err"></div>
+
+<div class="out" id="out">
+  <div id="verdict"></div>
+  <div class="row"><span>Jobs in window</span><b id="jobs"></b></div>
+  <div class="row"><span>Lost jobs (charged, no dream survives)</span><b id="lost"></b></div>
+  <div class="row"><span>Accounts affected</span><b id="acc"></b></div>
+  <div class="row"><span>Unresolvable job owners</span><b id="unres"></b></div>
+  <div class="row"><span>Job records scanned</span><b id="scanned"></b></div>
+  <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700;color:#a49dc4">Details</summary><pre id="details"></pre></details>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('run');
+  btn.addEventListener('click', async function () {
+    var pw = document.getElementById('pw').value;
+    var err = document.getElementById('err');
+    err.style.display = 'none';
+    if (!pw) { err.textContent = 'Enter your password first.'; err.style.display = 'block'; return; }
+    var since = new Date(document.getElementById('since').value + 'T00:00:00Z').getTime();
+    btn.disabled = true; btn.textContent = 'Running…';
+    var totals = { jobsInWindow: 0, lostJobs: 0, scannedJobOwnerKeys: 0, accountsAffected: 0, accountsUnresolved: 0 };
+    var details = [];
+    var cursor = null, page = 0;
+    try {
+      do {
+        page++;
+        btn.textContent = 'Running… (batch ' + page + ')';
+        var body = { usernameOrEmail: 'ronbrightman@gmail.com', password: pw, mode: 'sweep', sinceTimestamp: since };
+        if (cursor) body.cursor = cursor;
+        var res = await fetch('/.netlify/functions/admin-diagnose-lost-generations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        totals.jobsInWindow += data.jobsInWindow || 0;
+        totals.lostJobs += data.lostJobs || 0;
+        totals.scannedJobOwnerKeys += data.scannedJobOwnerKeys || 0;
+        // accountsAffected / accountsUnresolved are per-batch DISTINCT counts
+        // (Object.keys(...).length in the function); summing across batches
+        // can only overcount, never hide a loss, and the sweep is one batch
+        // at today's user count anyway.
+        totals.accountsAffected += data.accountsAffected || 0;
+        totals.accountsUnresolved += data.accountsUnresolved || 0;
+        if (data.details) details = details.concat(data.details);
+        cursor = data.done ? null : data.nextCursor;
+      } while (cursor);
+      var lost = totals.lostJobs;
+      document.getElementById('verdict').innerHTML = lost === 0
+        ? '<span class="ok">✔ No user has a lost dream in this window.</span>'
+        : '<span class="bad">✘ ' + lost + ' lost job(s) found — Product will follow up on each.</span>';
+      document.getElementById('jobs').textContent = totals.jobsInWindow;
+      document.getElementById('lost').textContent = lost;
+      document.getElementById('acc').textContent = totals.accountsAffected;
+      document.getElementById('unres').textContent = totals.accountsUnresolved;
+      document.getElementById('scanned').textContent = totals.scannedJobOwnerKeys;
+      document.getElementById('details').textContent = details.length ? JSON.stringify(details, null, 2) : '(none)';
+      document.getElementById('out').className = 'out show';
+    } catch (e) {
+      err.textContent = 'Failed: ' + e.message + (e.message === 'E5: forbidden' ? ' (wrong password?)' : '');
+      err.style.display = 'block';
+    }
+    btn.disabled = false; btn.textContent = 'Run the audit';
+  });
+})();
+</script>
+</body></html>
