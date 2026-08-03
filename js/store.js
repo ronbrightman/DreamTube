@@ -1124,6 +1124,19 @@
           // from, not just this browser's local copy.
           channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
           okToFeatureOnChannels: dream.okToFeatureOnChannels !== false,
+          // musicBedOn (tracker item for-product-build-founder-approved-
+          // 08-03-jlkjy9) — carried into the SHARED feed-index record too,
+          // not just this browser's local copy: explore.html's feed cards
+          // render entirely off get-feed.js's own response (see that
+          // page's cardHTML), including for the CURRENT account's own
+          // published dreams, so without this a published dream's music
+          // bed would only ever play back on result.html, never in the
+          // feed. `=== true` (not `!== false`, unlike okToFeatureOnChannels
+          // above) matches js/music-bed.js's own eligible() — a dream
+          // published before this feature existed has no musicBedOn at
+          // all, and that must come through as "silent," not "on by
+          // default."
+          musicBedOn: dream.musicBedOn === true,
           authToken: (state.user && state.user.authToken) || null
         })
       }).catch(function () { /* best-effort — see comment above */ });

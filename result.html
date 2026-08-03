@@ -450,6 +450,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="dreamvideo" id="dreamvideo-frame" role="button" aria-label="Play your dream video">
           <div class="dv-fallback" id="result-bg" style="position:absolute; inset:0;"></div>
           <video class="dv-media" id="result-video" muted loop playsinline autoplay style="display:none;"></video>
+          <!-- Music-bed audio (tracker item for-product-build-founder-
+               approved-08-03-jlkjy9) -- see js/music-bed.js's own header
+               comment for the full feature/tradeoff writeup. Kept as a
+               plain hidden sibling, never reparented into the fullscreen
+               overlay below (unlike #result-video) -- moving a media
+               element in the DOM doesn't reset its playback state in any
+               browser, so it doesn't need to follow the video there to
+               keep playing in sync; it just needs the SAME mute/play/pause
+               signals, wired in the ambient-preview/fullscreen IIFEs
+               further down this file. -->
+          <audio id="result-music-bed" loop preload="none" style="display:none;"></audio>
           <img class="dv-media" id="result-image" alt="" style="display:none;">
           <div class="playbadge" id="result-play-badge"><span class="icon" id="result-play-icon"></span></div>
           <button class="icon-btn dv-chip mute" id="mute-btn" title="Sound" aria-label="Unmute"></button>
@@ -803,6 +814,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/music-bed.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
@@ -1245,6 +1257,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var playBadge = document.getElementById('result-play-badge');
     var watchPill = document.getElementById('watch-pill');
     var muteBtn = document.getElementById('mute-btn');
+    // Music bed (tracker item for-product-build-founder-approved-08-03-
+    // jlkjy9) -- src assignment only; play/pause/mute sync lives in the
+    // ambient-preview/fullscreen IIFEs further down this file (same split
+    // #result-video's own src-vs-playback logic already has). Cleared
+    // (removeAttribute, not just paused) on every path other than a real
+    // eligible video so a stale bed can never keep looping silently in the
+    // background after e.g. an edit/regenerate strips this dream's own
+    // musicBedOn, or the dream turns out to be image/gradient-only.
+    var musicBed = document.getElementById('result-music-bed');
+    var bedUrl = window.MusicBed ? MusicBed.urlForStyle(dream.style) : null;
+    var bedEligible = !!(window.MusicBed && MusicBed.eligible(dream));
     // Three-way: video (existing <video>) -> image (new <img>, same frame
     // position) -> gradient fallback (unchanged) — see
     // docs/IMAGE_GENERATION_SPEC.md §6. video always takes rendering
@@ -1261,6 +1284,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       watchPill.style.display = 'flex';
       muteBtn.style.display = 'flex';
       document.getElementById('result-bg').style.background = 'transparent';
+      if(bedEligible && musicBed.getAttribute('src') !== bedUrl){
+        musicBed.pause();
+        musicBed.src = bedUrl;
+      } else if(!bedEligible){
+        musicBed.pause();
+        musicBed.removeAttribute('src');
+      }
     } else if(dream.imageUrl){
       video.removeAttribute('src');
       video.style.display = 'none';
@@ -1270,6 +1300,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       watchPill.style.display = 'none';
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = 'transparent';
+      musicBed.pause();
+      musicBed.removeAttribute('src');
     } else {
       video.removeAttribute('src');
       video.style.display = 'none';
@@ -1279,6 +1311,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       watchPill.style.display = 'none';
       muteBtn.style.display = 'none';
       document.getElementById('result-bg').style.background = DreamStore.gradientFor(dream);
+      musicBed.pause();
+      musicBed.removeAttribute('src');
     }
 
     // ===== Regenerating override (tracker item for-product-bug-founder-
@@ -1546,6 +1580,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // instead of toggling this inline loop (see the fullscreen IIFE below).
   (function(){
     var video = document.getElementById('result-video');
+    var musicBed = document.getElementById('result-music-bed');
     var playIcon = document.getElementById('result-play-icon');
     playIcon.innerHTML = Icons.play;
 
@@ -1558,6 +1593,36 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       video.dataset.retried = '1';
       video.load();
       video.play().catch(function(){});
+    });
+
+    // Music-bed sync (tracker item for-product-build-founder-approved-08-03-
+    // jlkjy9) -- starts/stops with the video's own play/pause state, driven
+    // entirely by these two DOM events rather than mirroring every call
+    // site that plays/pauses #result-video (visibilitychange below, the
+    // fullscreen IIFE's openOverlayPlayer/closeOverlayPlayer, the play-badge
+    // tap-to-recover handler) -- one listener here covers all of them
+    // automatically. No-ops harmlessly if this dream has no eligible bed
+    // (musicBed has no src -- see render()'s own musicBed.src assignment).
+    video.addEventListener('play', function(){
+      if(musicBed.getAttribute('src') && musicBed.paused) musicBed.play().catch(function(){});
+    });
+    video.addEventListener('pause', function(){
+      if(!musicBed.paused) musicBed.pause();
+    });
+    // Bounded retry for the SAME intermittent bed-autoplay race documented
+    // in explore.html's own wireVideoRecovery (systematic-debugging root
+    // cause: a freshly created, preload="none" <audio>'s first .play()
+    // occasionally silently never starts, no error/event at all — video
+    // itself never shows this). 'timeupdate' fires repeatedly while the
+    // video is genuinely playing, real recurring confirmation worth
+    // re-checking the bed against; capped, never unbounded.
+    var MAX_BED_RETRIES = 4;
+    video.addEventListener('timeupdate', function(){
+      if(!musicBed.getAttribute('src') || !musicBed.paused) return;
+      var attempts = Number(musicBed.dataset.bedRetryCount || 0);
+      if(attempts >= MAX_BED_RETRIES) return;
+      musicBed.dataset.bedRetryCount = String(attempts + 1);
+      musicBed.play().catch(function(){});
     });
 
     // Switching to a different tab/app doesn't pause anything on its own —
@@ -1652,6 +1717,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   //      restores it to the card on close.
   (function(){
     var video = document.getElementById('result-video');
+    var musicBed = document.getElementById('result-music-bed');
     var frame = document.getElementById('dreamvideo-frame');
     var watchPill = document.getElementById('watch-pill');
     var muteBtn = document.getElementById('mute-btn');
@@ -1668,13 +1734,23 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       btn.title = video.muted ? 'Unmute' : 'Mute';
       btn.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
     }
+    // Music bed (tracker item for-product-build-founder-approved-08-03-
+    // jlkjy9) -- shares the SAME device-level sound preference as the
+    // video's own muted state (DreamStore.getSoundPref/setSoundPref), one
+    // unified "is sound on" mental model rather than a second, separate
+    // pref nobody asked for. The video itself has no audio track at all
+    // (generate_audio is permanently false — see js/store.js's
+    // startGeneration doc comment), so muted here has never actually
+    // silenced anything real until this bed existed.
     video.muted = !DreamStore.getSoundPref();
+    musicBed.muted = video.muted;
     syncMuteIcon(muteBtn);
     syncMuteIcon(playerMuteBtn);
 
     function toggleMute(e){
       if(e) e.stopPropagation(); // never also open the fullscreen player
       video.muted = !video.muted;
+      musicBed.muted = video.muted;
       DreamStore.setSoundPref(!video.muted);
       syncMuteIcon(muteBtn);
       syncMuteIcon(playerMuteBtn);
