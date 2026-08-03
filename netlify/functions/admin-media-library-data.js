@@ -21,14 +21,31 @@
 // yet (see FOUNDER_PRINCIPLES.md's own current-scale framing).
 //
 // PRIVACY: this reads every real account's dream content (media URLs,
-// captions are NOT included — only the fields the owner page actually
-// needs to render: id, ownerHandle, mediaType, url, createdAt, published
-// status) across the whole app — the single most sensitive read surface
-// this codebase has short of the raw account store itself. Gated the same
-// real-password + OWNER_EMAIL bar as every sibling admin diagnostic (see
-// admin-diagnose-account-duplicates.js's own header comment) — POST-only,
-// so the password is never in a URL/query string that could end up in
-// server logs.
+// created/published status) across the whole app — the single most
+// sensitive read surface this codebase has short of the raw account store
+// itself. Gated the same real-password + OWNER_EMAIL bar as every sibling
+// admin diagnostic (see admin-diagnose-account-duplicates.js's own header
+// comment) — POST-only, so the password is never in a URL/query string
+// that could end up in server logs.
+//
+// storyText (tracker item for-product-media-library-founder-08-03--6h7fmv,
+// founder: "also show the text they wrote") — this WAS the one deliberate
+// exception to the "captions are not included" line above, until the
+// founder explicitly asked for it. Uses `record.storyText || record.caption
+// || null`, the same fallback js/store.js's own doc comment documents
+// everywhere else in the app (js/store.js's header comment, tileHTML in
+// js/dream-cards.js): storyText is the NEW, separate, human-readable
+// first-person dream description the user actually typed (tracker item
+// for-product-split-prompttext-storytext-f-yt5kc7); `record.promptText` is
+// a DIFFERENT field — the engineered generation prompt, never what the
+// user typed, and deliberately never surfaced here. A dream saved before
+// the storyText/promptText split shipped has no distinct storyText at all,
+// so `caption` (which served both roles pre-split) is the correct
+// fallback, not a bug. A FEED (published) record never carries a separate
+// storyText field to begin with (see publish-dream.js's own payload
+// shape) — its `caption` already equals its storyText per finalizeDream's
+// own guarantee (see js/store.js), so the same `|| record.caption`
+// fallback resolves it correctly without any FEED-specific branch.
 //
 // createdAt for a FEED (published) record: the shared feed store carries no
 // createdAt at all, only publishedAt (see get-feed.js/publish-dream.js) —
@@ -88,7 +105,10 @@ function itemsForRecord(record, createdAt, isPublished) {
       isPublished: !!isPublished,
       status: classified.status,
       protectedByNoExpiryHeader: classified.protectedByNoExpiryHeader,
-      daysUntilExpiry: classified.daysUntilExpiry
+      daysUntilExpiry: classified.daysUntilExpiry,
+      // See this file's header comment (storyText paragraph) for the
+      // fallback reasoning and why promptText is deliberately excluded.
+      storyText: record.storyText || record.caption || null
     });
   });
   return items;

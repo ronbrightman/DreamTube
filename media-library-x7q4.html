@@ -37,6 +37,14 @@
   .ml-sweep-panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:18px; }
   .ml-sweep-log{ font-size:11.5px; color:var(--text-muted); line-height:1.6; white-space:pre-wrap; margin-top:10px; max-height:160px; overflow-y:auto; }
   .ml-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+  /* .ml-desc pairs with .interp-text (reused verbatim from css/styles.css
+     for the same typography — see cardHTML's own comment) — this override
+     only trims the trailing margin .interp-text carries for its normal
+     "full-width reading card" context (14px bottom margin before a
+     disclosure line that doesn't exist here); this is the last element in
+     a grid tile, so no separate line follows it. Font-size/line-height/
+     color/white-space are all left untouched. */
+  .ml-desc{ margin:6px 0 0; }
 
   /* Lightbox (tracker for-product-media-library-clicking-a-vid-bnlcus) —
      tapping a grid card opens the REAL media full-size: unmuted+controls
@@ -276,6 +284,26 @@
     // reads item.url directly rather than depending on whatever that
     // element's own .src happens to be at click time (e.g. not yet
     // lazy-loaded, or scrolled past and unobserved).
+    //
+    // Dream text (tracker for-product-media-library-founder-08-03--6h7fmv,
+    // founder: "also show the text they wrote (same as for the
+    // interpretation text)") — item.storyText is the human-readable dream
+    // description the user actually typed (admin-media-library-data.js's
+    // own itemsForRecord already resolves the storyText/caption fallback
+    // server-side; promptText, the engineered generation prompt, is
+    // deliberately never sent to this page at all). There was no existing
+    // "interpretation text" element anywhere on THIS page to mirror
+    // (verified — this file had no prior rendering of any dream-text
+    // field), so "rendered the same way" is read literally: reusing
+    // css/styles.css's own `.interp-text` class verbatim (unclamped,
+    // white-space:pre-wrap, 16px/1.65) — the one place this codebase
+    // actually calls something "interpretation text"
+    // (js/interpret-experience.js's reading-card render) — rather than
+    // inventing a new truncation/typography scheme of our own. Omitted
+    // entirely (not an empty placeholder box) for a dream with no text on
+    // file, matching this card's existing pattern for every other optional
+    // field (expiry above, priv/pub badge).
+    var descHTML = item.storyText ? '<div class="interp-text ml-desc" dir="auto">' + esc(item.storyText) + '</div>' : '';
     return '<div class="vcard" data-media-url="' + esc(item.url) + '" data-media-type="' + esc(item.mediaType) + '">' +
       '<div class="vcard-thumb ml-vcard-thumb">' +
         mediaEl +
@@ -285,6 +313,7 @@
       '</div>' +
       '<div class="vcard-title">' + esc(item.ownerHandle || 'unknown') + '</div>' +
       '<div class="vcard-meta">' + esc(item.mediaType) + ' · ' + esc(when) + '</div>' +
+      descHTML +
     '</div>';
   }
 

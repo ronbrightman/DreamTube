@@ -78,7 +78,10 @@ async function seedUser(page) {
 }
 
 var SAMPLE_ITEMS = [
-  { id: 'd1:video', dreamId: 'd1', ownerHandle: '@alice', mediaType: 'video', url: '/.netlify/functions/video-file?key=d1', createdAt: Date.now(), isPublished: false, status: 're-hosted-durable', protectedByNoExpiryHeader: false, daysUntilExpiry: null },
+  // d1 carries a storyText (tracker for-product-media-library-founder-08-03--6h7fmv) —
+  // d2/d3 deliberately omit it, so the same fixture set also covers the
+  // "no text on file" no-placeholder-box case below.
+  { id: 'd1:video', dreamId: 'd1', ownerHandle: '@alice', mediaType: 'video', url: '/.netlify/functions/video-file?key=d1', createdAt: Date.now(), isPublished: false, status: 're-hosted-durable', protectedByNoExpiryHeader: false, daysUntilExpiry: null, storyText: 'I was flying over a purple ocean.' },
   { id: 'd2:video', dreamId: 'd2', ownerHandle: '@bob', mediaType: 'video', url: 'https://fal.media/x.mp4', createdAt: Date.now(), isPublished: true, status: 'still-on-fal', protectedByNoExpiryHeader: true, daysUntilExpiry: null },
   { id: 'd3:image', dreamId: 'd3', ownerHandle: '@alice', mediaType: 'image', url: 'https://fal.media/y.png', createdAt: Date.now() - 20 * 24 * 60 * 60 * 1000, isPublished: false, status: 'lost-expired', protectedByNoExpiryHeader: false, daysUntilExpiry: 0 }
 ];
@@ -158,6 +161,57 @@ test('correct password unlocks the grid, renders items with status badges, and t
   }, { timeout: 5000 });
   var filteredOwner = await page.locator('#ml-grid .vcard-title').first().textContent();
   assert.equal(filteredOwner.trim(), '@bob');
+
+  await page.close();
+});
+
+// ===== Dream text (tracker for-product-media-library-founder-08-03--6h7fmv,
+// founder: "also show the text they wrote (same as for the interpretation
+// text)") — no existing "interpretation text" element was ever rendered on
+// this page (verified by reading media-library-x7q4.html before building),
+// so this reuses css/styles.css's own `.interp-text` class verbatim — the
+// one place in this codebase that actually renders something called
+// "interpretation text" (js/interpret-experience.js's reading card) — for
+// the same typography, rather than a new truncation scheme. See
+// cardHTML's own comment in media-library-x7q4.html for the full reasoning. =====
+
+test('a card whose item carries storyText renders it using the same .interp-text typography as the interpretation reading', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await mockDataEndpoint(page, SAMPLE_ITEMS);
+  await seedUser(page);
+  await safeGoto(page, baseUrl + '/media-library-x7q4.html');
+
+  await page.fill('#ml-gate-password', 'realownerpassword');
+  await page.click('#ml-gate-submit');
+  await page.waitForSelector('#ml-content', { state: 'visible', timeout: 5000 });
+
+  // d1 (@alice, the only sample item with storyText) is the first-rendered
+  // card, sorted newest-first.
+  var descLocator = page.locator('#ml-grid .vcard:first-child .interp-text');
+  await assert.doesNotReject(descLocator.waitFor({ state: 'attached', timeout: 5000 }));
+  var descText = await descLocator.textContent();
+  assert.equal(descText.trim(), 'I was flying over a purple ocean.');
+
+  await page.close();
+});
+
+test('a card whose item has no storyText on file renders no description element at all (no empty placeholder box)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+  await blockThirdParty(page);
+  await mockDataEndpoint(page, SAMPLE_ITEMS);
+  await seedUser(page);
+  await safeGoto(page, baseUrl + '/media-library-x7q4.html');
+
+  await page.fill('#ml-gate-password', 'realownerpassword');
+  await page.click('#ml-gate-submit');
+  await page.waitForSelector('#ml-content', { state: 'visible', timeout: 5000 });
+
+  // d2 (@bob, still-on-fal, no storyText) is the second-rendered card.
+  var descCount = await page.locator('#ml-grid .vcard:nth-child(2) .interp-text').count();
+  assert.equal(descCount, 0);
 
   await page.close();
 });

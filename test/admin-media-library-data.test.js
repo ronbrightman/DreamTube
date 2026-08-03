@@ -135,6 +135,81 @@ test('a dream with no media at all emits no items', function () {
   });
 });
 
+// ===== storyText (tracker for-product-media-library-founder-08-03--6h7fmv,
+// founder: "also show the text they wrote") — the human-readable dream
+// description the user actually typed, never the engineered promptText.
+// See admin-media-library-data.js's own header comment for the full
+// storyText/caption/promptText fallback reasoning. =====
+
+test('a private dream with a distinct storyText returns it verbatim, not the caption', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    await seedPrivateDream('dreamer5', {
+      id: 'dream-5', ownerHandle: '@dreamer5', caption: 'engineered caption text', style: 'y',
+      promptText: 'engineered caption text', storyText: 'I was flying over a purple ocean.',
+      videoUrl: 'https://fal.media/files/five.mp4', mediaType: 'video', createdAt: Date.now()
+    });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-5'; });
+    assert.equal(item.storyText, 'I was flying over a purple ocean.');
+  });
+});
+
+test('a pre-split private dream with no distinct storyText falls back to its caption', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    await seedPrivateDream('dreamer6', {
+      id: 'dream-6', ownerHandle: '@dreamer6', caption: 'A pre-split legacy dream, one field did both jobs.', style: 'y',
+      videoUrl: 'https://fal.media/files/six.mp4', mediaType: 'video', createdAt: Date.now()
+    });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-6'; });
+    assert.equal(item.storyText, 'A pre-split legacy dream, one field did both jobs.');
+  });
+});
+
+test('a published feed item (no separate storyText field on the wire) uses its caption as storyText', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    seedFeed([{
+      id: 'feed-3', ownerHandle: '@pubowner2', caption: 'A published dream about a purple ocean.', style: 'y',
+      videoUrl: 'https://fal.media/files/seven.mp4', mediaType: 'video', publishedAt: Date.now()
+    }]);
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'feed-3'; });
+    assert.equal(item.storyText, 'A published dream about a purple ocean.');
+  });
+});
+
+test('a dream with no text on file at all (no storyText or caption) returns null, not an empty string', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    await seedPrivateDream('dreamer7', {
+      id: 'dream-7', ownerHandle: '@dreamer7', style: 'y',
+      videoUrl: 'https://fal.media/files/eight.mp4', mediaType: 'video', createdAt: Date.now()
+    });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-7'; });
+    assert.equal(item.storyText, null);
+  });
+});
+
 test('counts genuinely match lib/media-status.js\'s own classification -- no separate parallel computation', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var event = fakeEvent({ method: 'POST' });
