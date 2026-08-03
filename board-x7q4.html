@@ -21,28 +21,30 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 midday</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 afternoon</div>
 
-<h2 class="ron">🔴 Waiting on RON — 5 real, 2 low</h2>
+<h2 class="ron">🔴 Waiting on RON — 3 real, 2 low</h2>
 
-<details class="ron"><summary>WhatsApp permanent token <span class="tag today">~5 min · unblocks the whole channel</span></summary><div class="body">
-The token you set yesterday expired after 24h — the morning-message chain (template approval → sender → your first real morning message) is parked behind a permanent one.
-<div class="do"><b>Do:</b> business.facebook.com → Business Settings → (Users) System users → create/select a system user → Generate token → select the WhatsApp app → tick <b>whatsapp_business_messaging</b> + <b>whatsapp_business_management</b> → copy token → Netlify env <b>WHATSAPP_ACCESS_TOKEN</b> (replace value, keep secret flag). Say "wa token done" in chat.</div></div></details>
+
 
 <details class="ron"><summary>Ben's dream count — seen vs remembered <span class="tag stale">30 sec · open since Sat</span></summary><div class="body">His 4 published dreams verified safe from outside. The open half: does his profile show everything he remembers having? One number from him closes his restore saga.</div></details>
 
-<details class="ron"><summary>Media library — are you happy with it now? <span class="tag new">follow-up we owed you</span></summary><div class="body">Since your notes it got: Published/Private/All filter, desktop scroll fix, and tap-to-play lightbox. Outage-window videos also play now.
+<details class="ron"><summary>Media library (all videos incl. unpublished): <a href="https://dreamtube1.netlify.app/media-library-x7q4.html">dreamtube1.netlify.app/media-library-x7q4.html</a> <span class="tag new">happy?</span></summary><div class="body">Since your notes it got: Published/Private/All filter, desktop scroll fix, and tap-to-play lightbox. Outage-window videos also play now.
 <div class="do"><b>Do:</b> open <a href="https://dreamtube1.netlify.app/media-library-x7q4.html">the admin library</a> (owner login) → try the filter + tap a few videos → one word back: happy / not yet.</div></div></details>
 
-<details class="ron"><summary>Netlify billing screenshot <span class="tag stale">cost question, open for days</span></summary><div class="body">One screenshot of the Netlify billing/usage page settles what's driving hosting cost (deploy frequency vs Blobs vs functions). No navigation instructions from memory — it's wherever billing lives in your dashboard.</div></details>
 
-<details class="ron"><summary>Constellation — one screenshot if still missing <span class="tag today">investigation needs your eyes</span></summary><div class="body">Product's investigation says the streak-constellation code IS in the shipped home page — so either a data condition hides it for you or it's back. If your home still lacks it: screenshot → it becomes reproducible.</div></details>
+
+
 
 <details class="ron"><summary>Dodo optional account fields review <span class="tag min">low</span></summary><div class="body">The non-mandatory fields skipped during setup (07-27) — worth a pass when convenient, nothing blocks on it.</div></details>
 
-<details class="ron"><summary>Delete stale branch on GitHub <span class="tag min">low</span></summary><div class="body">feature/quota-credits-system — blocked for us at the git proxy; one click in GitHub UI whenever.</div></details>
+<details class="ron"><summary>Delete stale branch on GitHub <span class="tag min">low · exact steps inside</span></summary><div class="body"><div class="do"><b>Do:</b> open <a href="https://github.com/ronbrightman/dreamtube/branches">github.com/ronbrightman/dreamtube/branches</a> → find <b>feature/quota-credits-system</b> → click the trash-can icon next to it. Done.</div></div></details>
 
 <h2 class="prod">🟡 In flight — PRODUCT</h2>
+
+<details><summary>Email redesign + UNSUBSCRIBE <span class="tag new">your ask · compliance first</span></summary><div class="body">Unsubscribe link + suppression honored by every sender (legally required, currently missing), then the night-aesthetic template polish (M1 logo header, cleaner layout). You get a preview before rollout.</div></details>
+
+<details><summary>Netlify cost + error-rate follow-through <span class="tag new">answered by your screenshots</span></summary><div class="body">Verdict from your billing: <b>deploys are 97% of the bill</b> (2,655 of 2,724 credits — 177 deploys). Fixes routed: skip builds for non-app commits + batch merges. Also chasing the 17.6% request error rate you captured.</div></details>
 
 <details class="p0"><summary>Restore the lost "Ziv is dancing" dream <span class="tag p0">P0 · data loss</span></summary><div class="body">Created + charged at 07:43 this morning, video generated, record never landed in your account (verified missing in a fresh view). Restore-or-refund + root cause + count whether any other user was hit. Closes when Ziv appears in your profile.</div></details>
 
@@ -51,6 +53,10 @@ The token you set yesterday expired after 24h — the morning-message chain (tem
 <details class="p0"><summary>Service-worker staleness fix <span class="tag p0">co-P0 · corrupts your QA</span></summary><div class="body">Your device repeatedly sees hours-old pages (three incidents: sage demos, "unfixed" wizard, old walls). Fix = version-stamped SW keyed to deploys. Done-test: you load a page twice after a deploy and see the new version both times, no incognito needed.</div></details>
 
 <details><summary>Speaking Sage — Option D into the Chamber <span class="tag today">today's top build</span></summary><div class="body">Your approved design: lip-synced greeting → YOUR dream video plays while his voice reads with captions. Assets + reference cut ready. Preview link to you before it goes wide; other 4 personas follow the same pattern after.</div></details>
+
+<details><summary>WhatsApp: template approval + sender build <span class="tag new">unblocked by your token</span></summary><div class="body">Permanent token live (your 5-min done ✔). Next: template to Meta for approval, sender + schedule, you as pilot recipient of the first real morning message.</div></details>
+
+<details><summary>Constellation restore <span class="tag p0">your screenshot killed the excuse</span></summary><div class="body">Your 5-night streak card shows no constellation — the "data condition" theory is dead. Restore per the approved mock; closes when your home shows it.</div></details>
 
 <details><summary>Music beds — wire the Audio toggle <span class="tag new">assets ready</span></summary><div class="body">Your option B: free style-matched ambient beds (4 already generated) replace model audio — sound back, zero per-video cost, no invented words. Toggle becomes real.</div></details>
 
