@@ -186,12 +186,20 @@ async function checkFalImageStatus(model, requestId, falKey, event) {
   });
   var parsedStatus = await parseJsonSafe(statusRes);
   if (!parsedStatus.ok) {
-    return { statusCode: statusRes.status, error: 'E503: status_check_failed: non-JSON response (http ' + statusRes.status + '): ' + parsedStatus.rawText.slice(0, 300) };
+    // NORMALIZED TO 200 -- see video-status.js's checkFalStatus, the exact
+    // same fix for the exact same reason (tracker item
+    // for-product-netlify-cost-deploys-are-97--9vbpd4): a fal-side transport
+    // hiccup on this endpoint's own upstream call isn't a failure of THIS
+    // endpoint, matches E506/E507's already-normalized pattern just below,
+    // and the client (js/store.js's pollUntilDone) never inspects res.status
+    // anyway -- only the parsed body's `error` field.
+    return { statusCode: 200, done: true, error: 'E503: status_check_failed: non-JSON response (http ' + statusRes.status + '): ' + parsedStatus.rawText.slice(0, 300) };
   }
   var statusData = parsedStatus.data;
 
   if (!statusRes.ok) {
-    return { statusCode: statusRes.status, error: 'E504: ' + (falErrorMessage(statusData) || 'status_check_failed') };
+    // Same normalization as E503 immediately above -- see that comment.
+    return { statusCode: 200, done: true, error: 'E504: ' + (falErrorMessage(statusData) || 'status_check_failed') };
   }
 
   if (statusData.status === 'IN_QUEUE' || statusData.status === 'IN_PROGRESS') {

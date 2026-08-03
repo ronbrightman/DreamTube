@@ -155,9 +155,34 @@ test('E204 (fal status endpoint non-OK) is NOT refund-eligible -- no refund, no 
   assert.match(body.error, /^E204:/);
   assert.equal(body.tokensRefunded, undefined, 'a transport-level hiccup must not be treated as a refund-eligible generation failure');
 
+  // Regression (tracker item for-product-netlify-cost-deploys-are-97--9vbpd4,
+  // investigating an observed 17.6% request error rate): this HTTP response
+  // itself must be 200, not fal's raw upstream 500 -- a transient fal-side
+  // status-check hiccup isn't a failure of THIS endpoint (same normalization
+  // E207 below already gets), and the client never inspects res.status
+  // anyway (js/store.js's pollUntilDone only reads the parsed body's `error`
+  // field) -- so propagating fal's raw code here only ever inflated
+  // Netlify's own function-error-rate metrics for free, with zero
+  // corresponding client-behavior difference.
+  assert.equal(res.statusCode, 200, 'a fal-side transport hiccup must not surface as this endpoint\'s own error status');
+
   var record = await entitlements.getEntitlement({}, email);
   assert.equal(record.tokens.balance, 0, 'balance must be untouched (still the seeded zero) -- a transport hiccup never proves the job failed, so no refund should be attempted');
   assert.equal(posthogCalls.length, 0, 'no tokens_refunded event for a non-eligible code');
+});
+
+test('E203 (non-JSON response from fal status endpoint) also normalizes to statusCode 200 -- same reasoning as E204 above', async function () {
+  var email = 'e203norefund@example.com';
+  await seedZeroBalance(email);
+  global.fetch = async function (url) {
+    return { ok: true, status: 200, text: async function () { return 'not json'; } };
+  };
+  markInstalledFetchAsTestDouble();
+
+  var res = await handler(statusEvent('fal:fal-ai/veo3.1/fast:req3b', email));
+  var body = JSON.parse(res.body);
+  assert.match(body.error, /^E203:/);
+  assert.equal(res.statusCode, 200, 'a non-JSON fal status response is a transport hiccup, not this endpoint\'s own error');
 });
 
 test('E207 (fal result endpoint non-OK) is NOT refund-eligible', async function () {

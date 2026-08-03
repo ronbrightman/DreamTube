@@ -190,6 +190,13 @@ test('non-JSON status response -> E503', async function () {
   };
   var res = await handler(statusEvent('fal:fal-ai/flux/dev:req6'));
   assert.match(JSON.parse(res.body).error, /^E503:/);
+  // Regression (tracker item for-product-netlify-cost-deploys-are-97--9vbpd4,
+  // investigating an observed 17.6% request error rate): must normalize to
+  // 200, matching E506/E507's already-normalized pattern below -- a fal-side
+  // transport hiccup on THIS endpoint's own upstream call isn't a failure of
+  // this endpoint, and the client never inspects res.status anyway (only the
+  // parsed body's `error` field -- see js/store.js's pollUntilDone).
+  assert.equal(res.statusCode, 200, 'a non-JSON fal status response is a transport hiccup, not this endpoint\'s own error');
 });
 
 test('non-OK status endpoint response -> E504', async function () {
@@ -199,6 +206,7 @@ test('non-OK status endpoint response -> E504', async function () {
   };
   var res = await handler(statusEvent('fal:fal-ai/flux/dev:req7'));
   assert.match(JSON.parse(res.body).error, /^E504:/);
+  assert.equal(res.statusCode, 200, 'a fal-side transport hiccup must not surface as this endpoint\'s own error status');
 });
 
 test('non-JSON result response (after a COMPLETED status) -> E506', async function () {
