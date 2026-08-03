@@ -265,6 +265,13 @@ test('send-first-dream-email: a real registered account with a verified email ge
     assert.doesNotMatch(sentCalls[0].body.html, /watch\.html/, 'must not link to the old per-dream watch.html share link anymore');
     assert.match(sentCalls[0].body.html, /create\.html/, 'body must contain the soft "make another" nudge link');
     assert.match(sentCalls[0].body.html, /Flying over the ocean/, 'the client-triggered fallback path still personalizes with the dream\'s own caption');
+
+    // DESIGN + UNSUBSCRIBE (tracker item
+    // for-product-email-redesign-unsubscribe-l-16ysmp): night-aesthetic
+    // shell (logo header) and a real, working unsubscribe link, both now
+    // present on every send.
+    assert.match(sentCalls[0].body.html, /<img src="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
+    assert.match(sentCalls[0].body.html, /\/\.netlify\/functions\/unsubscribe-email\?email=nora%40example\.com&amp;token=[0-9a-f]{64}/, 'redesigned template must carry a real, per-recipient unsubscribe link');
   });
 });
 
@@ -321,7 +328,12 @@ test('send-first-dream-email: no imageUrl (the common case, especially right aft
     }));
 
     var html = sentCalls[0].body.html;
-    assert.doesNotMatch(html, /<img/, 'no imageUrl on the dream -- must fall back to the color banner, not an empty/broken <img>');
+    // NOTE: the redesigned shell (tracker item
+    // for-product-email-redesign-unsubscribe-l-16ysmp) always renders its
+    // own header <img> (the logo) regardless of thumbnail state -- so this
+    // no-longer asserts "no <img> anywhere", only "no THUMBNAIL <img>"
+    // (the real-thumbnail branch's own distinct object-fit:cover style).
+    assert.doesNotMatch(html, /object-fit:cover/, 'no imageUrl on the dream -- must fall back to the color banner, not a thumbnail <img>');
     assert.match(html, /background:#22405c;margin-bottom:18px/, 'Cinematic style\'s own flat color, unchanged from before this feature');
   });
 });
@@ -437,6 +449,44 @@ test('send-first-dream-email: image mediaType is out of scope -- a no-op, matchi
     var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ mediaType: 'image' }) }));
     assert.equal(JSON.parse(res.body).ok, true);
     assert.equal(sentCalls.length, 0);
+  });
+});
+
+// SUPPRESSION (tracker item for-product-email-redesign-unsubscribe-l-16ysmp):
+// a real sender actually skipping a real send for a suppressed email --
+// see also lib/first-dream-email-sender.js's own unit-level suppression
+// coverage in test/first-dream-email-store.test.js's sibling file, this
+// is the end-to-end HTTP-endpoint-level proof for the same guard.
+test('send-first-dream-email: an unsubscribed (suppressed) email is skipped -- no Resend call, but still reports ok', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    var suppressionStore = require('../netlify/functions/lib/email-suppression-store');
+    await suppressionStore.suppress(fakeEvent({ method: 'GET' }), 'nora@example.com');
+
+    var sentCalls = installFetchSpy(true);
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload() }));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true);
+    assert.equal(sentCalls.length, 0, 'a suppressed email must never actually be sent to');
+  });
+});
+
+test('send-first-dream-email: a DIFFERENT (non-suppressed) account is unaffected by another account\'s unsubscribe', function () {
+  return withEnv(ENV, async function () {
+    await registerAccount('nora', 'nora@example.com');
+    await registerAccount('mira', 'mira@example.com');
+    var suppressionStore = require('../netlify/functions/lib/email-suppression-store');
+    await suppressionStore.suppress(fakeEvent({ method: 'GET' }), 'nora@example.com');
+
+    var sentCalls = installFetchSpy(true);
+    var handler = require('../netlify/functions/send-first-dream-email').handler;
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: dreamPayload({ username: 'mira', dreamId: 'dream-mira' }) }));
+
+    assert.equal(JSON.parse(res.body).ok, true);
+    assert.equal(sentCalls.length, 1, 'an unrelated account\'s unsubscribe must never block a different account\'s legitimate send');
+    assert.deepEqual(sentCalls[0].body.to, ['mira@example.com']);
   });
 });
 

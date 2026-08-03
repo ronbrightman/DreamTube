@@ -173,10 +173,15 @@ test('mark-generation-completed: a brand-new account\'s first verified video com
   // maybeSendAutomaticFirstDreamEmail's own `dreamId: null` call), so it
   // has no way to look up a real imageUrl even when the dream has one by
   // now -- documents the accepted, known gap: the automatic path always
-  // falls back to the flat-color banner, never a real <img>. Only the
-  // client-triggered send-first-dream-email.js path (test/send-first-
-  // dream-email.test.js) can realistically supply a real thumbnail.
-  assert.doesNotMatch(spies.resendCalls[0].body.html, /<img/, 'the automatic path has no dreamId to look up an imageUrl with -- must always fall back to the color banner');
+  // falls back to the flat-color banner, never a real thumbnail <img>.
+  // Only the client-triggered send-first-dream-email.js path (test/send-
+  // first-dream-email.test.js) can realistically supply a real thumbnail.
+  // NOTE: the redesigned shell (tracker item
+  // for-product-email-redesign-unsubscribe-l-16ysmp) always renders its
+  // own header <img> (the logo) regardless of thumbnail state -- so this
+  // checks for absence of the THUMBNAIL <img> specifically (its own
+  // distinct object-fit:cover style), not "no <img> anywhere".
+  assert.doesNotMatch(spies.resendCalls[0].body.html, /object-fit:cover/, 'the automatic path has no dreamId to look up an imageUrl with -- must always fall back to the color banner, not a thumbnail <img>');
 
   assert.equal(spies.posthogCalls.length, 1, 'expected the first_dream_email_sent PostHog event to fire on the actual send');
   assert.equal(spies.posthogCalls[0].body.event, 'first_dream_email_sent');

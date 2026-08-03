@@ -82,6 +82,9 @@ var pendingDreams = require('./lib/pending-dreams');
 var pendingDreamToken = require('./lib/pending-dream-token');
 var whatsappClient = require('./lib/whatsapp-client');
 var mediaRehost = require('./lib/media-rehost');
+var emailSuppressionStore = require('./lib/email-suppression-store');
+var unsubscribeToken = require('./lib/unsubscribe-token');
+var emailLayout = require('./lib/email-layout');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
@@ -95,6 +98,17 @@ var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
  * mirrors request-password-reset.js's/request-magic-link.js's own
  * "log and move on" send-failure handling — a broken email send must
  * never turn into a 5xx that makes fal retry the whole webhook.
+ *
+ * SUPPRESSION + DESIGN (tracker item
+ * for-product-email-redesign-unsubscribe-l-16ysmp): this is one of the
+ * two retention/marketing sends in scope for that item ("first-dream,
+ * dream-ready, win-back, future") — a re-engagement email to a pre-signup
+ * visitor, not a transactional receipt, so it must honor
+ * lib/email-suppression-store.js and carry a real unsubscribe link, same
+ * as lib/first-dream-email-sender.js's own sendIfEligible. Checked here
+ * (never suppressing the WHOLE webhook — WhatsApp/bookkeeping below still
+ * run regardless) rather than inside pendingDreams.markReady, since the
+ * suppression list is keyed by email, not by pending-dream record.
  */
 async function sendReadyEmail(event, record) {
   var resendKey = process.env.RESEND_API_KEY;
@@ -102,9 +116,25 @@ async function sendReadyEmail(event, record) {
     console.log('dream-webhook: RESEND_API_KEY not configured — skipping the "your dream is ready" email for pending id ' + record.id);
     return;
   }
+  var suppressed = await emailSuppressionStore.isSuppressed(event, record.email);
+  if (suppressed) {
+    console.log('dream-webhook: ' + record.email + ' has unsubscribed -- skipping the "your dream is ready" email for pending id ' + record.id);
+    return;
+  }
   try {
     var token = await pendingDreamToken.createToken(event, record.id);
     var url = pendingDreamToken.buildUrl(event, record.id, token);
+    var inner = (
+      '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">The dream you started building is ready to watch.</p>' +
+      '<p style="margin:0 0 16px;">' + emailLayout.ctaButton(url, 'Watch my dream') + '</p>' +
+      '<p style="color:' + emailLayout.COLORS.textMuted + ';font-size:13px;margin:0;">Tap the button to watch it and save it to your DreamTube account. If you didn\'t start building a dream on DreamTube, you can safely ignore this email.</p>'
+    );
+    var html = emailLayout.renderShell({
+      event: event,
+      previewText: 'The dream you started building is ready to watch.',
+      bodyHtml: inner,
+      unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, record.email)
+    });
     var res = await fetch(RESEND_API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resendKey },
@@ -112,9 +142,7 @@ async function sendReadyEmail(event, record) {
         from: FROM_ADDRESS,
         to: [record.email],
         subject: 'Your dream is ready to watch',
-        html: '<p>The dream you started building is ready.</p>' +
-          '<p><a href="' + url + '">Tap here to watch it</a> and save it to your DreamTube account.</p>' +
-          '<p>If you didn\'t start building a dream on DreamTube, you can safely ignore this email.</p>'
+        html: html
       })
     });
     if (!res.ok) console.error('dream-webhook: Resend rejected the send', res.status);

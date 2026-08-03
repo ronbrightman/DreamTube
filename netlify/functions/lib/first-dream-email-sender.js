@@ -94,6 +94,9 @@
 
 var firstDreamEmailStore = require('./first-dream-email-store');
 var posthogCapture = require('./posthog-capture');
+var emailSuppressionStore = require('./email-suppression-store');
+var unsubscribeToken = require('./unsubscribe-token');
+var emailLayout = require('./email-layout');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated from dream-webhook.js's own identical constant —
@@ -174,14 +177,27 @@ function buildHtml(opts) {
   var readyLine = opts.caption
     ? 'Your dream is ready to watch: <b>' + esc(opts.caption) + '</b>'
     : 'Your dream is ready to watch.';
-  return (
-    '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
+  // DESIGN (tracker item for-product-email-redesign-unsubscribe-l-16ysmp,
+  // "elevate the templates toward the product night aesthetic"): the
+  // media banner/flat-color-fallback and the profileUrl/createUrl links
+  // above are UNCHANGED in shape (same style strings, same href targets)
+  // -- only the surrounding chrome (typography color, spacing, the CTA
+  // button's visual treatment) moved to lib/email-layout.js's shared
+  // night-aesthetic shell + ctaButton helper, wrapped around this same
+  // inner content, plus the required unsubscribe/mailing-address footer
+  // (opts.unsubscribeUrl, see this file's own sendIfEligible).
+  var inner = (
     media +
-    '<p style="font-size:16px;">' + readyLine + '</p>' +
-    '<p><a href="' + opts.profileUrl + '" style="display:inline-block;padding:12px 22px;background:#000;color:#fff;border-radius:24px;text-decoration:none;font-weight:600;">View my dreams</a></p>' +
-    '<p style="color:#666;font-size:13px;">Loved it? <a href="' + opts.createUrl + '">Make another dream</a> — it only takes a minute.</p>' +
-    '</div>'
+    '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">' + readyLine + '</p>' +
+    '<p style="margin:0 0 16px;">' + emailLayout.ctaButton(opts.profileUrl, 'View my dreams') + '</p>' +
+    '<p style="color:' + emailLayout.COLORS.textMuted + ';font-size:13px;margin:0;">Loved it? <a href="' + opts.createUrl + '" style="color:' + emailLayout.COLORS.textMuted + ';">Make another dream</a> — it only takes a minute.</p>'
   );
+  return emailLayout.renderShell({
+    event: opts.event,
+    previewText: readyLine.replace(/<[^>]*>/g, ''),
+    bodyHtml: inner,
+    unsubscribeUrl: opts.unsubscribeUrl
+  });
 }
 
 /**
@@ -232,7 +248,8 @@ async function reportSkip(username, email, reason, auto) {
  *
  * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
  * send, or { ok:true, sent:false, skipped:<reason> } for every other case
- * (already sent, no RESEND_API_KEY, missing identity, or Resend itself
+ * (already sent, no RESEND_API_KEY, missing identity, this email having
+ * unsubscribed via lib/email-suppression-store.js, or Resend itself
  * rejecting/failing the request) — this function itself never signals
  * failure to its caller; every caller here treats this as best-effort,
  * exactly like the rest of this codebase's other analytics-adjacent/
@@ -261,6 +278,19 @@ async function sendIfEligible(event, opts) {
     return { ok: true, sent: false, skipped: 'missing_identity' };
   }
 
+  // SUPPRESSION CHECK (tracker item for-product-email-redesign-unsubscribe-
+  // l-16ysmp) -- checked BEFORE claiming the once-ever guard below, so an
+  // unsubscribed account's guard is never burned for an email that will
+  // never send: if this account ever gets a real, working un-suppress path
+  // in the future, it stays eligible for its one legitimate first-dream
+  // email rather than having silently "used up" its only shot while
+  // suppressed.
+  var suppressed = await emailSuppressionStore.isSuppressed(event, email);
+  if (suppressed) {
+    await reportSkip(username, email, 'suppressed', opts.auto);
+    return { ok: true, sent: false, skipped: 'suppressed' };
+  }
+
   var guard = await firstDreamEmailStore.markSentOnce(event, username, opts.dreamId);
   if (!guard.ok) {
     var guardReason = guard.alreadySent ? 'already_sent' : (guard.error || 'guard_failed');
@@ -284,11 +314,13 @@ async function sendIfEligible(event, opts) {
 
   var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
   var html = buildHtml({
+    event: event,
     caption: opts.caption,
     style: opts.style,
     profileUrl: profileUrl(event),
     createUrl: 'https://' + host + '/create.html',
-    imageUrl: absoluteImageUrl(event, opts.imageUrl)
+    imageUrl: absoluteImageUrl(event, opts.imageUrl),
+    unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, email)
   });
 
   try {
