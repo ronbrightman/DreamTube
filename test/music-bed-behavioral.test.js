@@ -1,36 +1,45 @@
 // test/music-bed-behavioral.test.js
 //
 // Real browser-driven coverage for tracker item for-product-build-founder-
-// approved-08-03-jlkjy9 (founder-approved Option B): style.html's Audio &
-// music toggle, disabled since for-product-turn-off-audio-dialogue-gene-
-// ooeyoj (2026-08-02), is real again — but controls a reusable, style-
-// matched AMBIENT MUSIC BED (js/music-bed.js), played back 100% client-side
-// alongside a dream's own permanently-silent video. See js/music-bed.js's
-// own header comment for the full implementation-choice writeup
-// (client-side playback vs. muxing at generation — client-side was picked;
-// the real, accepted cost is that downloads/shares of the raw video file
-// itself carry no audio, since the bed is never baked into it).
+// approved-08-03-jlkjy9. style.html originally shipped a real Audio & music
+// toggle (Option B) controlling a reusable, style-matched AMBIENT MUSIC BED
+// (js/music-bed.js), played back 100% client-side alongside a dream's own
+// permanently-silent video. The founder then simplified it the same day:
+// "NO TOGGLE. Since the music beds are free, music is simply ALWAYS ON —
+// every dream video plays with its style-matched bed, no user choice." The
+// toggle and its `musicBedOn` field are gone entirely (see style.html's own
+// removal comment) — this file now covers the current, choice-free reality.
+// See js/music-bed.js's own header comment for the full implementation-
+// choice writeup (client-side playback vs. muxing at generation —
+// client-side was picked; the real, accepted cost is that downloads/shares
+// of the raw video file itself carry no audio, since the bed is never
+// baked into it).
 //
 // This file does NOT touch, and does not re-test, generate_audio/audioOn/
-// musicStyle — those stay exactly as ooeyoj left them (see
-// test/audio-toggle-behavioral.test.js and test/generate-video-audio-
+// musicStyle — those stay exactly as the earlier ooeyoj directive left them
+// (see test/audio-toggle-behavioral.test.js and test/generate-video-audio-
 // toggle.test.js for that coverage). This file covers only:
 //   1. The static bed assets resolve for all 4 styles at the real path a
 //      production deploy would serve them from (assets/music-beds/*.wav —
 //      no build step, no new endpoint, same as any other static asset in
 //      this repo — see netlify.toml's `publish = "."`).
 //   2. js/music-bed.js's own resolution logic (urlForStyle/eligible) — the
-//      forward-only "missing/false musicBedOn means silent" contract.
-//   3. result.html: an eligible dream gets a real, synced bed (src
-//      assigned, plays/pauses with the video, mutes/unmutes with the same
-//      device-level sound preference as the video's own mute button); an
-//      ineligible one (musicBedOn:false, OR missing entirely — simulating
-//      a pre-feature dream) never gets a bed at all.
-//   4. explore.html: the shared feed's own cardHTML renders a bed only for
-//      an eligible dream (server-side musicBedOn, carried through publish-
-//      dream.js/get-feed.js — see js/store.js's syncPublishedDreamToFeed);
-//      the feed's own mute button controls the bed's mute state together
-//      with the video's.
+//      current contract: eligible() no longer reads musicBedOn in any
+//      form, so a dream carrying a stale musicBedOn:false (or true) from
+//      the toggle era, or no musicBedOn field at all (predating the
+//      feature entirely), all become eligible identically, so long as they
+//      have a real video + a known style.
+//   3. result.html: EVERY video dream with a known style gets a real,
+//      synced bed (src assigned, plays/pauses with the video, mutes/
+//      unmutes with the same device-level sound preference as the video's
+//      own mute button) — regardless of any historical musicBedOn value.
+//      Only a missing video, or an unrecognized style, is ever silent.
+//   4. explore.html: the shared feed's own cardHTML renders a bed for
+//      every eligible card (server-side, via publish-dream.js/get-feed.js
+//      — see js/store.js's syncPublishedDreamToFeed), again regardless of
+//      any historical musicBedOn value on the stored record; the feed's
+//      own mute button controls the bed's mute state together with the
+//      video's.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -116,7 +125,7 @@ test('the four style-matched music-bed WAV files resolve as real static assets a
   }
 });
 
-test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed on anything else; eligible() requires musicBedOn===true, a real videoUrl, and a known style', async function (t) {
+test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed on anything else; eligible() requires only a real videoUrl and a known style -- no musicBedOn check at all, so any historical value (or its total absence) never opts a dream out', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -146,20 +155,23 @@ test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed o
 
     var eligibility = await page.evaluate(function () {
       return {
-        onWithVideo: MusicBed.eligible({ musicBedOn: true, videoUrl: 'x.mp4', style: 'Cartoon' }),
-        offWithVideo: MusicBed.eligible({ musicBedOn: false, videoUrl: 'x.mp4', style: 'Cartoon' }),
+        // The three historical shapes musicBedOn can carry on a real stored
+        // dream/draft (toggle-era true, toggle-era false, or entirely
+        // absent for a dream older than the feature) must ALL be equally
+        // eligible now -- the founder's "no user choice" simplification
+        // means this field is never consulted at all.
+        staleTrue: MusicBed.eligible({ musicBedOn: true, videoUrl: 'x.mp4', style: 'Cartoon' }),
+        staleFalse: MusicBed.eligible({ musicBedOn: false, videoUrl: 'x.mp4', style: 'Cartoon' }),
         missingField: MusicBed.eligible({ videoUrl: 'x.mp4', style: 'Cartoon' }), // pre-feature dream
-        truthyButNotBooleanTrue: MusicBed.eligible({ musicBedOn: 1, videoUrl: 'x.mp4', style: 'Cartoon' }),
-        noVideo: MusicBed.eligible({ musicBedOn: true, videoUrl: null, style: 'Cartoon', imageUrl: 'x.jpg' }),
-        unknownStyle: MusicBed.eligible({ musicBedOn: true, videoUrl: 'x.mp4', style: 'Surrealist' }),
+        noVideo: MusicBed.eligible({ musicBedOn: false, videoUrl: null, style: 'Cartoon', imageUrl: 'x.jpg' }),
+        unknownStyle: MusicBed.eligible({ videoUrl: 'x.mp4', style: 'Surrealist' }),
         nullDream: MusicBed.eligible(null)
       };
     });
-    assert.equal(eligibility.onWithVideo, true);
-    assert.equal(eligibility.offWithVideo, false);
-    assert.equal(eligibility.missingField, false, 'a dream that predates this feature entirely (no musicBedOn at all) must be treated as silent, never guessed on');
-    assert.equal(eligibility.truthyButNotBooleanTrue, false, 'must require the literal boolean true, not just a truthy value');
-    assert.equal(eligibility.noVideo, false, 'an image-only dream has nothing to loop a bed against');
+    assert.equal(eligibility.staleTrue, true);
+    assert.equal(eligibility.staleFalse, true, 'a stale musicBedOn:false left over from the retired toggle must NOT silently opt this dream out -- music is always on now');
+    assert.equal(eligibility.missingField, true, 'a dream that predates this feature entirely (no musicBedOn at all) must ALSO get a bed now -- no lingering opt-out from before the feature existed');
+    assert.equal(eligibility.noVideo, false, 'an image-only dream has nothing to loop a bed against, regardless of any musicBedOn value');
     assert.equal(eligibility.unknownStyle, false);
     assert.equal(eligibility.nullDream, false);
   } finally {
@@ -167,7 +179,7 @@ test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed o
   }
 });
 
-test('result.html: an eligible dream gets a real, style-matched bed that plays/pauses with the video and shares its mute state', async function (t) {
+test('result.html: an eligible dream gets a real, style-matched bed that plays/pauses with the video and shares its mute state -- even with a stale musicBedOn:false left over from the retired toggle', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -181,7 +193,11 @@ test('result.html: an eligible dream gets a real, style-matched bed that plays/p
       // this test server can serve, and <video> will happily play it well
       // enough to fire real play/pause events, which is all this test needs.
       videoUrl: '/assets/music-beds/anime.wav',
-      musicBedOn: true, dur: '0:08', isPublished: false, likes: 0, likedByMe: false
+      // Deliberately a stale musicBedOn:false, as if this dream survived
+      // from the earlier toggle era with the toggle switched off -- the
+      // founder's "no user choice" simplification means this must NOT
+      // suppress the bed anymore (see js/music-bed.js's eligible()).
+      musicBedOn: false, dur: '0:08', isPublished: false, likes: 0, likedByMe: false
     }]);
     await page.goto(baseUrl + '/result.html?id=dream-bed-eligible', { waitUntil: 'domcontentloaded' });
 
@@ -221,7 +237,7 @@ test('result.html: an eligible dream gets a real, style-matched bed that plays/p
   }
 });
 
-test('result.html: musicBedOn:false, and a dream that predates this feature entirely (no musicBedOn field at all), never get a bed', async function (t) {
+test('result.html: a pre-feature dream (no musicBedOn field at all) gets a bed just like a brand-new one -- no lingering opt-out from before the feature existed; only a real ineligibility reason (unknown style) still yields silence', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -229,31 +245,31 @@ test('result.html: musicBedOn:false, and a dream that predates this feature enti
     await blockThirdParty(page);
     await seedLoggedInUserWithDreams(page, 'bedofftester', [
       {
-        id: 'dream-bed-off', ownerHandle: '@bedofftester', caption: 'A silent one',
-        style: 'Anime', mediaType: 'video', videoUrl: 'https://example.com/fake2.mp4',
-        musicBedOn: false, dur: '0:08', isPublished: false, likes: 0, likedByMe: false
-      },
-      {
         id: 'dream-bed-missing', ownerHandle: '@bedofftester', caption: 'A pre-feature dream',
-        style: 'Realistic', mediaType: 'video', videoUrl: 'https://example.com/fake3.mp4',
+        style: 'Realistic', mediaType: 'video', videoUrl: '/assets/music-beds/anime.wav',
         dur: '0:08', isPublished: false, likes: 0, likedByMe: false
         // no musicBedOn key at all -- simulates a dream saved before this feature shipped
+      },
+      {
+        id: 'dream-bed-unknown-style', ownerHandle: '@bedofftester', caption: 'An unrecognized style',
+        style: 'Surrealist', mediaType: 'video', videoUrl: '/assets/music-beds/anime.wav',
+        dur: '0:08', isPublished: false, likes: 0, likedByMe: false
       }
     ]);
 
-    await page.goto(baseUrl + '/result.html?id=dream-bed-off', { waitUntil: 'domcontentloaded' });
-    var offSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
-    assert.equal(offSrc, null, 'musicBedOn:false must never get a bed src');
-
     await page.goto(baseUrl + '/result.html?id=dream-bed-missing', { waitUntil: 'domcontentloaded' });
     var missingSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
-    assert.equal(missingSrc, null, 'a pre-feature dream with no musicBedOn field at all must be treated as silent, not guessed on');
+    assert.equal(missingSrc, 'assets/music-beds/realistic.wav', 'a pre-feature dream with no musicBedOn field at all must get a bed now -- no lingering opt-out');
+
+    await page.goto(baseUrl + '/result.html?id=dream-bed-unknown-style', { waitUntil: 'domcontentloaded' });
+    var unknownStyleSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
+    assert.equal(unknownStyleSrc, null, 'an unrecognized style must still fail closed to no bed -- that check is untouched by the always-on simplification');
   } finally {
     await context.close();
   }
 });
 
-test('explore.html: the shared feed renders a bed only for an eligible card, and the feed\'s global mute button controls it alongside the video', async function (t) {
+test('explore.html: the shared feed renders a bed for every video card with a known style regardless of any historical musicBedOn value, and the feed\'s global mute button controls it alongside the video', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -264,7 +280,10 @@ test('explore.html: the shared feed renders a bed only for an eligible card, and
         status: 200, contentType: 'application/json', body: JSON.stringify({
           feed: [
             { id: 'feed-eligible', ownerHandle: '@someone', caption: 'A dream', style: 'Cartoon', videoUrl: '/assets/music-beds/anime.wav', mediaType: 'video', musicBedOn: true, likes: 3, dur: '0:08' },
-            { id: 'feed-off', ownerHandle: '@someone', caption: 'Another dream', style: 'Anime', videoUrl: '/assets/music-beds/realistic.wav', mediaType: 'video', musicBedOn: false, likes: 1, dur: '0:08' }
+            // Stale musicBedOn:false from the retired toggle era -- must
+            // still get a bed now (the founder's "no user choice"
+            // simplification means this field is never consulted).
+            { id: 'feed-stale-off', ownerHandle: '@someone', caption: 'Another dream', style: 'Anime', videoUrl: '/assets/music-beds/realistic.wav', mediaType: 'video', musicBedOn: false, likes: 1, dur: '0:08' }
           ],
           dreamOfDayId: null
         })
@@ -281,13 +300,13 @@ test('explore.html: the shared feed renders a bed only for an eligible card, and
       });
     });
     var eligibleCard = cards.filter(function (c) { return c.id === 'feed-eligible'; })[0];
-    var offCard = cards.filter(function (c) { return c.id === 'feed-off'; })[0];
+    var staleOffCard = cards.filter(function (c) { return c.id === 'feed-stale-off'; })[0];
     assert.ok(eligibleCard, 'the eligible card must be present');
     assert.equal(eligibleCard.hasBed, true);
     assert.equal(eligibleCard.bedSrc, 'assets/music-beds/cartoon.wav', 'style-matched to the eligible dream\'s own Cartoon style');
-    // feed-off is the second dream -- may still be a virtualized placeholder
-    // depending on viewport, so only assert on it if it actually hydrated.
-    if (offCard) assert.equal(offCard.hasBed, false, 'musicBedOn:false must never get a bed element at all');
+    // feed-stale-off is the second dream -- may still be a virtualized
+    // placeholder depending on viewport, so only assert on it if hydrated.
+    if (staleOffCard) assert.equal(staleOffCard.hasBed, true, 'a stale musicBedOn:false from the retired toggle era must NOT suppress the bed -- music is always on now');
 
     // The first (eligible) card is the scroll-snap winner and should be
     // autoplaying via videoObserver -- confirm the bed actually plays

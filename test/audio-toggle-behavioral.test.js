@@ -3,34 +3,38 @@
 // Real browser-driven coverage, originally for tracker item for-product-
 // audio-on-off-choice-at-creat-dyyr98 (founder-approved 2026-07-28) —
 // style.html's audio/music toggle placed just under the existing
-// image-vs-video segmented toggle. Went through two more directives since:
+// image-vs-video segmented toggle. Went through several more directives
+// since:
 //   - for-product-turn-off-audio-dialogue-gene-ooeyoj (2026-08-02): server-
 //     side model audio (generate_audio) forced permanently false for every
 //     video path — this file briefly covered the toggle's DISABLED state.
-//   - for-product-build-founder-approved-08-03-jlkjy9 (2026-08-03, THIS
-//     state, Option B): the toggle is REAL again, but controls something
-//     entirely different — a client-side-only, style-matched AMBIENT MUSIC
-//     BED (js/music-bed.js), never server-side model audio. The old
-//     audioOn/musicStyle server-request fields (and the old music-STYLE
-//     chip picker that used to accompany them) stay exactly as ooeyoj left
-//     them: permanently false/null/gone, completely untouched by this file's
-//     new coverage below. This file now asserts:
-//   1. The toggle renders ON by default (a deliberate reversal of the old
-//      default-off), and is a REAL, clickable control again.
-//   2. Clicking it flips musicBedOn (and the UI/sub-text) both ways.
-//   3. Switching to Image still hides the whole audio section entirely
-//      (capability-detect-and-hide — audio has no meaning for a still
-//      image).
-//   4. End to end: generating with the toggle ON persists musicBedOn:true
-//      onto the finished dream; with it OFF, musicBedOn:false. Neither
-//      case ever sends anything other than audioOn:false/musicStyle:null
-//      to generate-video.js (musicBedOn is never sent to the server at
-//      all — see js/store.js's startGeneration doc comment).
-//   5. "Generate Again" (Edit Dream) preserves the pre-existing dream's own
-//      musicBedOn rather than forcing a value neither the user nor any UI
-//      picker actually chose (same "no picker on this flow" reasoning the
-//      pre-existing audioOn:true assertion below already covers for the
-//      unrelated, retired server-audio field).
+//   - for-product-build-founder-approved-08-03-jlkjy9 (2026-08-03, Option
+//     B): the toggle became REAL again, controlling something entirely
+//     different — a client-side-only, style-matched AMBIENT MUSIC BED
+//     (js/music-bed.js), never server-side model audio.
+//   - SAME tracker item, founder simplification (2026-08-03, THIS state):
+//     "NO TOGGLE. Since the music beds are free, music is simply ALWAYS
+//     ON — every dream video plays with its style-matched bed, no user
+//     choice." The toggle, its markup (#audio-toggle-row/#audio-toggle/
+//     #audio-toggle-sub), and the `musicBedOn` field it used to write are
+//     all removed entirely — no disabled/"unavailable" placeholder left
+//     behind (see style.html's own removal comment). This file now
+//     asserts:
+//   1. No trace of the toggle (or its markup) exists anywhere in style.html
+//      — no dead UI left behind, on either media type.
+//   2. Generating a video never sends `musicBedOn` anywhere (it was always
+//      client-only, never sent to the server, and now doesn't exist at
+//      all) and still only ever sends the permanently-inert
+//      `audioOn:false`/`musicStyle:null` pair to generate-video.js — the
+//      retired server-audio fields, completely untouched by any of this.
+//   3. The finished dream itself carries no `musicBedOn` field at all —
+//      music-bed eligibility (js/music-bed.js's eligible(), covered in
+//      test/music-bed-behavioral.test.js) is computed purely from the
+//      dream's own videoUrl/style now, nothing persisted here to drive it.
+//   4. "Generate Again" (Edit Dream) still preserves the pre-existing
+//      always-audio-on WIRE behavior for the retired server-side field
+//      (unrelated to music beds, kept exactly as-is) and does not
+//      introduce a musicBedOn field on the regenerated dream either.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -123,73 +127,35 @@ async function readDreams(page) {
   });
 }
 
-test('style.html: audio toggle renders ON by default, is a real interactive control, and the section disappears entirely on Image', async function (t) {
+test('style.html: the Audio & music toggle is gone entirely -- no markup, no dead/disabled control, on either media type', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-    await seedLoggedInUserAt(page, 'audiodefaulttester', '/create.html');
+    await seedLoggedInUserAt(page, 'notogglenoUItester', '/create.html');
     await reachStyleScreen(page, 'A dream about drifting through a quiet forest');
 
-    var toggleOn = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('on'); });
-    var toggleDisabled = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('disabled'); });
-    var ariaChecked = await page.getAttribute('#audio-toggle', 'aria-checked');
-    var ariaDisabled = await page.getAttribute('#audio-toggle', 'aria-disabled');
-    assert.equal(toggleOn, true, 'the founder-approved default is ON, a deliberate reversal of the old default-off');
-    assert.equal(toggleDisabled, false, 'this is a real, interactive control again — not the ooeyoj-era disabled state');
-    assert.equal(ariaChecked, 'true');
-    assert.equal(ariaDisabled, null, 'aria-disabled must not be present at all on a real, enabled control');
-    assert.match(await page.textContent('#audio-toggle-sub'), /On.*ambient music/i, 'the sub-text must describe the real ON behavior, not claim unavailability');
-    // The old music-STYLE chip picker (dreamy/cinematic/upbeat/ambient) is
-    // gone entirely, not just hidden — the bed is chosen by the dream's own
-    // visual style, no separate picker exists anymore.
-    assert.equal(await page.locator('#music-style-row').count(), 0, 'the old music-style chip picker must be removed from the DOM entirely, not just hidden');
+    assert.equal(await page.locator('#audio-toggle-row').count(), 0, 'the toggle\'s choice-card must not exist in the DOM at all, not just be hidden');
+    assert.equal(await page.locator('#audio-toggle').count(), 0);
+    assert.equal(await page.locator('#audio-toggle-sub').count(), 0);
+    // The old music-STYLE chip picker (dreamy/cinematic/upbeat/ambient),
+    // already removed a generation earlier, must still be gone too.
+    assert.equal(await page.locator('#music-style-row').count(), 0);
 
-    // ----- Video -> Image: the whole audio section still disappears entirely -----
+    // Switching to Image must not surface anything either -- there was
+    // never anything audio-related to hide/show for that path anymore.
     await page.click('.media-type-btn[data-media-type="image"]');
-    assert.equal(await page.isVisible('#audio-toggle-row'), false, 'audio has no meaning for a still image and must be hidden entirely');
-
-    // ----- Back to Video: reappears, still ON (this session's own choice, untouched by the Image detour) -----
+    assert.equal(await page.locator('#audio-toggle-row').count(), 0);
     await page.click('.media-type-btn[data-media-type="video"]');
-    assert.equal(await page.isVisible('#audio-toggle-row'), true);
-    var stillOn = await page.locator('#audio-toggle').evaluate(function (el) { return el.classList.contains('on'); });
-    assert.equal(stillOn, true);
+    assert.equal(await page.locator('#audio-toggle-row').count(), 0);
   } finally {
     await context.close();
   }
 });
 
-test('style.html: clicking the toggle flips it both ways, updating the sub-text each time', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-    await seedLoggedInUserAt(page, 'audiopickertester', '/create.html');
-    await reachStyleScreen(page, 'A dream about a carnival at midnight');
-
-    // ON -> OFF
-    await page.click('#audio-toggle');
-    var offState = await page.locator('#audio-toggle').evaluate(function (el) { return { on: el.classList.contains('on'), ariaChecked: el.getAttribute('aria-checked') }; });
-    assert.equal(offState.on, false);
-    assert.equal(offState.ariaChecked, 'false');
-    assert.match(await page.textContent('#audio-toggle-sub'), /Off.*silent/i);
-
-    // OFF -> ON again
-    await page.click('#audio-toggle');
-    var onState = await page.locator('#audio-toggle').evaluate(function (el) { return { on: el.classList.contains('on'), ariaChecked: el.getAttribute('aria-checked') }; });
-    assert.equal(onState.on, true);
-    assert.equal(onState.ariaChecked, 'true');
-    assert.match(await page.textContent('#audio-toggle-sub'), /On.*ambient music/i);
-  } finally {
-    await context.close();
-  }
-});
-
-test('end to end: generating with the toggle left ON persists musicBedOn:true onto the finished dream, and still only ever sends the permanently-inert { audioOn:false, musicStyle:null } to generate-video.js', async function (t) {
+test('end to end: generating a video never sends musicBedOn anywhere, still only ever sends the permanently-inert { audioOn:false, musicStyle:null } to generate-video.js, and the finished dream carries no musicBedOn field', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -202,16 +168,15 @@ test('end to end: generating with the toggle left ON persists musicBedOn:true on
       var body = null;
       try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
       generateVideoCalls.push(body);
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/lite:test-op-bed-on' }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/lite:test-op-alwayson' }) });
     });
     await page.route('**/.netlify/functions/video-status*', function (route) {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video.mp4' }) });
     });
 
-    await seedLoggedInUserAt(page, 'audioontester', '/create.html');
+    await seedLoggedInUserAt(page, 'alwaysontester', '/create.html');
     await reachStyleScreen(page, 'A dream about sailing through the stars');
     await page.click('.style-card[data-style="Cinematic"]');
-    // Toggle left at its ON default — no click.
     await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
     await page.click('#generate-btn');
 
@@ -219,14 +184,10 @@ test('end to end: generating with the toggle left ON persists musicBedOn:true on
 
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
-    assert.equal(generateVideoCalls[0].audioOn, false, 'the retired server-request field stays permanently false, untouched by this feature');
+    assert.equal(generateVideoCalls[0].audioOn, false, 'the retired server-request field stays permanently false, untouched by the music-bed feature');
     assert.equal(generateVideoCalls[0].musicStyle, undefined, 'the retired musicStyle field is never sent');
-    assert.equal(generateVideoCalls[0].musicBedOn, undefined, 'musicBedOn must never be sent to the server at all — it is a client-only playback preference (see js/music-bed.js)');
+    assert.equal(generateVideoCalls[0].musicBedOn, undefined, 'musicBedOn must never be sent to the server -- it no longer exists as a concept at all');
 
-    // Page-side observation (localStorage) -- Playwright's own waitForFunction,
-    // not settle() (settle is only for node-side observations, e.g. a
-    // page.route() handler's own call count -- see that helper's own header
-    // comment for exactly why the distinction matters).
     await page.waitForFunction(function () {
       var raw = localStorage.getItem('dreamtube_state_v1');
       var state = raw ? JSON.parse(raw) : {};
@@ -234,54 +195,8 @@ test('end to end: generating with the toggle left ON persists musicBedOn:true on
     }, { timeout: 5000 });
     var dreams = await readDreams(page);
     assert.equal(dreams.length, 1);
-    assert.equal(dreams[0].musicBedOn, true, 'the finished dream record must carry musicBedOn:true');
+    assert.equal(dreams[0].musicBedOn, undefined, 'the finished dream record must not carry a musicBedOn field at all anymore');
     assert.equal(dreams[0].style, 'Cinematic');
-  } finally {
-    await context.close();
-  }
-});
-
-test('end to end: turning the toggle OFF before generating persists musicBedOn:false onto the finished dream', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 });
-
-    var generateVideoCalls = [];
-    await page.route('**/.netlify/functions/generate-video', function (route) {
-      var body = null;
-      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
-      generateVideoCalls.push(body);
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/veo3.1/lite:test-op-bed-off' }) });
-    });
-    await page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/fake-video-2.mp4' }) });
-    });
-
-    await seedLoggedInUserAt(page, 'audiodefaultsubmit', '/create.html');
-    await reachStyleScreen(page, 'A dream about walking through a quiet library');
-    await page.click('.style-card[data-style="Realistic"]');
-    await page.click('#audio-toggle'); // ON -> OFF
-    await page.waitForSelector('#generate-btn:not([disabled])', { timeout: 5000 });
-    await page.click('#generate-btn');
-
-    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
-
-    await settle(function () { return generateVideoCalls.length >= 1; });
-    assert.equal(generateVideoCalls.length, 1);
-    assert.equal(generateVideoCalls[0].audioOn, false);
-    assert.equal(generateVideoCalls[0].musicStyle, undefined);
-
-    await page.waitForFunction(function () {
-      var raw = localStorage.getItem('dreamtube_state_v1');
-      var state = raw ? JSON.parse(raw) : {};
-      return (state.dreams || []).length >= 1;
-    }, { timeout: 5000 });
-    var dreams = await readDreams(page);
-    assert.equal(dreams.length, 1);
-    assert.equal(dreams[0].musicBedOn, false, 'the finished dream record must carry musicBedOn:false when the toggle was switched off before generating');
   } finally {
     await context.close();
   }
@@ -298,21 +213,13 @@ test('end to end: turning the toggle OFF before generating persists musicBedOn:f
 // there is no home.html equivalent of "the checklist's caption list" to
 // test media-awareness against.
 
-test('result.html "Generate Again" (Edit Dream) preserves the pre-existing always-audio-on wire behavior, and preserves the source dream\'s own musicBedOn rather than forcing a value', async function (t) {
-  // Review finding on this branch (pre-existing, unrelated to this file's
-  // new coverage): js/store.js's regenerateDream (Edit Dream/Try Again, and
-  // the "Turn this into a video" upsell) has no audio picker UI of its own
-  // and, before the ooeyoj directive, always generated WITH server audio
-  // (gated only by the pre-existing condensing rule) — kept exactly as-is,
-  // still asserted below.
-  //
-  // NEW coverage (tracker item for-product-build-founder-approved-08-03-
-  // jlkjy9): regenerateDream/startDreamEdit likewise have no music-bed
-  // picker of their own, and never pass an explicit musicBedOn — js/
-  // store.js's finalizeDream treats that as "preserve whatever this dream
-  // already had" (same "undefined means don't touch it" contract as
-  // modelUsed), not "silently reset to some default." This seeds a dream
-  // with musicBedOn:false and asserts it survives a regenerate untouched.
+test('result.html "Generate Again" (Edit Dream) preserves the pre-existing always-audio-on wire behavior for the unrelated retired server-side field, and never introduces a musicBedOn field on the regenerated dream', async function (t) {
+  // Review finding on an earlier branch (pre-existing, unrelated to this
+  // file's music-bed history): js/store.js's regenerateDream (Edit
+  // Dream/Try Again, and the "Turn this into a video" upsell) has no audio
+  // picker UI of its own and, before the ooeyoj directive, always
+  // generated WITH server audio (gated only by the pre-existing condensing
+  // rule) — kept exactly as-is, still asserted below.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -336,6 +243,9 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
       if (!state.accounts) state.accounts = {};
       state.accounts.regenaudiokeep = { password: 'testpass1', email: 'regenaudiokeep@example.com' };
       if (!state.dreams) state.dreams = [];
+      // Deliberately seeded with a stale musicBedOn:false from the retired
+      // toggle era, to confirm the regenerate path doesn't newly resurrect
+      // or otherwise care about it either way.
       state.dreams.push({ id: 'dream-regen-audio', ownerHandle: '@regenaudiokeep', caption: 'A dream about the sea', style: 'Cinematic', mediaType: 'video', videoUrl: 'https://example.com/fake-video.mp4', musicBedOn: false, dur: '0:08', isPublished: false, likes: 0, likedByMe: false });
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
@@ -354,7 +264,7 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
     await settle(function () { return !!capturedBody; });
     assert.ok(capturedBody, 'generate-video.js must have been called');
     assert.equal(capturedBody.audioOn, true, 'regenerateDream must preserve the pre-existing always-audio-on wire behavior, not silently adopt anything new');
-    assert.equal(capturedBody.musicBedOn, undefined, 'musicBedOn must never be sent to the server at all');
+    assert.equal(capturedBody.musicBedOn, undefined, 'musicBedOn must never be sent to the server -- it does not exist as a concept at all');
 
     await page.waitForFunction(function () {
       var raw = localStorage.getItem('dreamtube_state_v1');
@@ -365,7 +275,12 @@ test('result.html "Generate Again" (Edit Dream) preserves the pre-existing alway
     var dreamsAfter = await readDreams(page);
     var regenerated = dreamsAfter.filter(function (x) { return x.id === 'dream-regen-audio'; })[0];
     assert.ok(regenerated, 'the regenerated dream must still exist under the same id');
-    assert.equal(regenerated.musicBedOn, false, 'a regenerate with no music-bed picker of its own must preserve the SOURCE dream\'s own musicBedOn, not reset it');
+    // The stale musicBedOn:false the dream was seeded with is simply left
+    // untouched (finalizeDream no longer reads/writes it at all) -- not
+    // asserted as any particular value here, since it's fully inert now;
+    // what matters is generate-video.js never received it (checked above)
+    // and js/music-bed.js's eligible() never reads it either way (see
+    // test/music-bed-behavioral.test.js).
   } finally {
     await context.close();
   }
