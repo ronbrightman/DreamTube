@@ -94,9 +94,18 @@ function resumeUrl(caption, extra) {
 }
 
 /**
- * Turns the feature flag ON by rewriting the placeholder in the real
- * js/facebook-config.js as it is served. See this file's header comment
- * for why this and not a window assignment.
+ * Turns the feature flag ON by rewriting whatever FACEBOOK_APP_ID value
+ * js/facebook-config.js currently ships with (the real one, as of
+ * 2026-08-03 -- see that file's own header comment -- or, in some future
+ * checkout, the placeholder) into a known, controlled test value, as it
+ * is served. See this file's header comment for why this and not a
+ * window assignment. Matches the whole `var FACEBOOK_APP_ID = '...';`
+ * assignment by regex rather than the literal placeholder string, so
+ * this stays correct regardless of which value the real file currently
+ * holds -- the earlier literal-placeholder-only replace silently
+ * no-opped (leaving the real, live App ID in place) the moment Facebook
+ * Login actually went live, which is exactly the state this repo is in
+ * now.
  */
 function configureFacebookApp(page, appId) {
   return page.route('**/js/facebook-config.js', async function (route) {
@@ -105,7 +114,20 @@ function configureFacebookApp(page, appId) {
     route.fulfill({
       status: 200,
       contentType: 'text/javascript; charset=utf-8',
-      body: body.replace("'REPLACE_WITH_REAL_FACEBOOK_APP_ID'", JSON.stringify(appId || FAKE_APP_ID))
+      body: body.replace(/var FACEBOOK_APP_ID = '[^']*';/, 'var FACEBOOK_APP_ID = ' + JSON.stringify(appId || FAKE_APP_ID) + ';')
+    });
+  });
+}
+
+/** Turns the feature flag OFF deterministically, regardless of what js/facebook-config.js currently ships with -- the counterpart to configureFacebookApp's own doc comment above. */
+function disableFacebookApp(page) {
+  return page.route('**/js/facebook-config.js', async function (route) {
+    var response = await route.fetch();
+    var body = await response.text();
+    route.fulfill({
+      status: 200,
+      contentType: 'text/javascript; charset=utf-8',
+      body: body.replace(/var FACEBOOK_APP_ID = '[^']*';/, "var FACEBOOK_APP_ID = 'REPLACE_WITH_REAL_FACEBOOK_APP_ID';")
     });
   });
 }
@@ -165,6 +187,11 @@ test('feature flag OFF (placeholder App ID): renders NO Facebook button anywhere
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
+    // Forced OFF (not just relying on this checkout's own config) --
+    // js/facebook-config.js ships with a real, live App ID as of
+    // 2026-08-03 (see that file's own header comment), so this
+    // deliberately overrides it rather than assuming the placeholder.
+    await disableFacebookApp(page);
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
     assert.ok((await page.$('#fn-fb-continue')) === null, 'the button element must not exist at all');
