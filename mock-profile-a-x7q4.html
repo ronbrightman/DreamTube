@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Mock A — Faithful Instagram profile</title>
+<!-- Throwaway visual mock (Manager, 2026-08-03) — Direction A of the social-layer-v2
+     design report (docs/SOCIAL_LAYER_V2_DESIGN.md). Not wired to anything; delete
+     both mock pages once the founder picks a direction and build starts. -->
+<style>
+html{background:#000}body{font-family:'Manrope',system-ui,sans-serif;color:#fff;margin:0;max-width:430px;margin-inline:auto;padding:0 0 40px}
+.tag{position:sticky;top:0;background:#1c1c2c;color:#c9bfff;font-size:11px;font-weight:800;text-align:center;padding:6px;z-index:5;letter-spacing:.5px}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+.topbar b{font-size:16px}
+.hdr{display:flex;align-items:center;gap:22px;padding:10px 20px}
+.av{width:76px;height:76px;border-radius:50%;padding:3px;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)}
+.av .in{width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a3f8f,#161327);display:flex;align-items:center;justify-content:center;font-size:30px}
+.stats{font-size:14px}.stats b{font-size:20px;display:block}
+.bio{padding:2px 20px 12px;font-size:13.5px;line-height:1.45;color:#e6e2f7}
+.bio b{display:block;font-size:14px}
+.btnrow{display:flex;gap:8px;padding:0 20px 10px}
+.btn{flex:1;border:0;border-radius:10px;padding:10px;font-weight:800;font-size:14px;font-family:inherit}
+.btn.pri{background:#fff;color:#000}.btn.sec{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.3)}
+.seg{display:flex;gap:6px;padding:0 20px 8px}
+.seg div{flex:1;text-align:center;padding:8px;border-radius:10px;font-weight:800;font-size:13px;border:1px solid rgba(255,255,255,.25)}
+.seg .on{background:#fff;color:#000;border-color:#fff}
+.privnote{padding:0 20px 12px;font-size:11.5px;color:#8f88b3}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.tile{aspect-ratio:3/4;position:relative;display:flex;align-items:center;justify-content:center}
+.tile::after{content:"▶";position:absolute;right:6px;top:6px;font-size:11px;opacity:.85}
+.t1{background:linear-gradient(160deg,#233a63,#0e1c38)}.t2{background:linear-gradient(160deg,#5b2a52,#1d0f2e)}.t3{background:linear-gradient(160deg,#1f4d43,#0a1f22)}
+.t4{background:linear-gradient(160deg,#4a3f14,#201a08)}.t5{background:linear-gradient(160deg,#37175a,#12082b)}
+.note{margin:26px 16px 0;background:#161327;border:1px solid rgba(157,144,255,.25);border-radius:12px;padding:12px 14px;font-size:12.5px;color:#a49dc4;line-height:1.5}
+</style></head><body>
+<div class="tag">MOCK A — "FAITHFUL INSTAGRAM" · grid + tap into viewer</div>
+<div class="topbar"><b>@luna_dreams</b><span>⇧</span></div>
+<div class="hdr">
+  <div class="av"><div class="in">🌙</div></div>
+  <div class="stats"><b>12</b>dreams published</div>
+</div>
+<div class="bio"><b>Luna ✦</b>I dream in cinematic blue. Mostly flying.</div>
+<div class="btnrow"><button class="btn pri">Edit profile</button><button class="btn sec">⇧ Share this profile</button></div>
+<div class="seg"><div class="on">PUBLIC</div><div>PRIVATE</div></div>
+<div class="privnote">Your interpretations stay private to you. They're never shown here.</div>
+<div class="grid">
+  <div class="tile t1"></div><div class="tile t2"></div><div class="tile t3"></div>
+  <div class="tile t4"></div><div class="tile t5"></div>
+</div>
+<div class="note"><b>How it behaves:</b> tapping a tile opens the full-screen dream viewer (like Explore) with the caption and the like / 💬 comment / share rail; comments open as a bottom sheet with the composer pinned at the bottom. Captions and comments are two taps away. With only 1–3 published dreams the grid shows one row and empty black below — its weak spot at today's content volume; its strength is instant familiarity and scaling to many dreams.</div>
+</body></html>

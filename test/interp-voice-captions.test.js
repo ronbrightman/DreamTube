@@ -20,6 +20,8 @@ var shouldShowIntro = InterpretExperience._shouldShowIntro;
 var computeSentenceFallbackCaptions = InterpretExperience._computeSentenceFallbackCaptions;
 var currentCaptionIndex = InterpretExperience._currentCaptionIndex;
 var nextBounceFrame = InterpretExperience._nextBounceFrame;
+var tapOverlayLabel = InterpretExperience._tapOverlayLabel;
+var preparingCaptionText = InterpretExperience._preparingCaptionText;
 
 test('shouldShowIntro: true only when the persona has BOTH the visual clip and its paired voice track AND it hasn\'t been shown yet', function () {
   var withIntro = { introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4', introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav' };
@@ -102,4 +104,42 @@ test('nextBounceFrame: a zero/missing duration or delta is a safe no-op (never t
   assert.deepEqual(nextBounceFrame(2, 0, 1, 0.5), { currentTime: 2, direction: 1 });
   assert.deepEqual(nextBounceFrame(2, 10, 1, 0), { currentTime: 2, direction: 1 });
   assert.deepEqual(nextBounceFrame(undefined, 10, undefined, 0.5), { currentTime: 0.5, direction: 1 });
+});
+
+// ── Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d ──
+// (founder walk 2026-08-03 23:31: dream video looped silently ~3x with no
+// indication a voice reading was coming, then only an unlabeled bare
+// play-triangle appeared once audio was ready). Both functions below are
+// the pure string logic behind that fix set's items 1 and 2.
+
+test('preparingCaptionText: persona-named "preparing" copy, with a generic fallback if the persona name is missing', function () {
+  assert.equal(preparingCaptionText('The Sage'), 'The Sage is preparing to read your dream…');
+  assert.equal(preparingCaptionText('The Depth Analyst'), 'The Depth Analyst is preparing to read your dream…');
+  assert.equal(preparingCaptionText(null), 'Your reader is preparing to read your dream…');
+  assert.equal(preparingCaptionText(''), 'Your reader is preparing to read your dream…');
+  assert.equal(preparingCaptionText(undefined), 'Your reader is preparing to read your dream…');
+});
+
+test('tapOverlayLabel: persona-named, distinct copy per reuse of the same tap overlay (intro / first reading play / resume / replay)', function () {
+  assert.equal(tapOverlayLabel('The Sage', 'first'), 'Hear The Sage read your dream');
+  assert.equal(tapOverlayLabel('The Sage', 'replay'), 'Hear it again');
+  assert.equal(tapOverlayLabel('The Sage', 'resume'), 'Resume');
+  assert.equal(tapOverlayLabel('The Sage', 'intro'), 'Tap to hear The Sage');
+  // Never hardcoded "Sage" -- driven entirely by whatever persona name is
+  // passed in, so a future second voice-eligible persona (docs/
+  // SPEAKING_SAGE_SPEC.md §12 item 2, still a founder-ears decision) gets
+  // correct copy for free.
+  assert.equal(tapOverlayLabel('The Depth Analyst', 'first'), 'Hear The Depth Analyst read your dream');
+  assert.equal(tapOverlayLabel('The Depth Analyst', 'intro'), 'Tap to hear The Depth Analyst');
+  // "replay"/"resume" never mention a name at all -- verify a different
+  // persona name doesn't leak into them either.
+  assert.equal(tapOverlayLabel('The Depth Analyst', 'replay'), 'Hear it again');
+  assert.equal(tapOverlayLabel('The Depth Analyst', 'resume'), 'Resume');
+  // Missing/falsy persona name never throws or renders "undefined"/"null".
+  assert.equal(tapOverlayLabel(null, 'first'), 'Hear this reader read your dream');
+  assert.equal(tapOverlayLabel(undefined, 'intro'), 'Tap to hear this reader');
+  // An unrecognized `kind` falls back to the "first play" copy rather than
+  // rendering blank/undefined -- defensive only, every real call site
+  // always passes one of the four known kinds.
+  assert.equal(tapOverlayLabel('The Sage', 'something_unexpected'), 'Hear The Sage read your dream');
 });

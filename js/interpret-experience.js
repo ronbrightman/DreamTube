@@ -235,6 +235,13 @@
       if (voiceState.audioEl) { try { voiceState.audioEl.pause(); } catch (e) { /* element may already be detached */ } }
       if (voiceState.introEl) { try { voiceState.introEl.pause(); } catch (e) { /* element may already be detached */ } }
       if (voiceState.introAudioEl) { try { voiceState.introAudioEl.pause(); } catch (e) { /* element may already be detached */ } }
+      // Only pause separately if it was never adopted as the real audioEl
+      // above (beginAudioPlayback's own primed-element reuse) — pausing an
+      // already-paused element twice is harmless either way, this just
+      // avoids a pointless extra try/catch in the common case.
+      if (voiceState.primedAudioEl && voiceState.primedAudioEl !== voiceState.audioEl) {
+        try { voiceState.primedAudioEl.pause(); } catch (e) { /* best-effort */ }
+      }
     }
     voiceState = null;
   }
@@ -249,6 +256,102 @@
 
   function showTapOverlay(vs) { if (vs.tapOverlay) vs.tapOverlay.classList.remove('off'); }
   function hideTapOverlay(vs) { if (vs.tapOverlay) vs.tapOverlay.classList.add('off'); }
+
+  /**
+   * Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d (founder
+   * walk 2026-08-03 23:31): a bare, unlabeled play-triangle read as
+   * nothing to most users — the tap overlay above is reused for THREE
+   * distinct moments (intro autoplay-blocked, first reading play blocked,
+   * resume/replay after the reading has already started once), and each
+   * needs its own explicit, persona-named copy rather than one generic
+   * label (or none at all). Pure string logic — no DOM — so it's directly
+   * unit-testable (test/interp-voice-captions.test.js) independent of the
+   * real tap-overlay markup. `personaName` is always read from the live
+   * persona object (never hardcoded "Sage") so this reads correctly for
+   * every future voice-eligible persona, not just talmudic.
+   */
+  function tapOverlayLabel(personaName, kind) {
+    var name = personaName || 'this reader';
+    if (kind === 'replay') return 'Hear it again';
+    if (kind === 'resume') return 'Resume';
+    if (kind === 'intro') return 'Tap to hear ' + name;
+    return 'Hear ' + name + ' read your dream';
+  }
+
+  function setTapOverlayLabel(vs, text) { if (vs.tapLabelEl) vs.tapLabelEl.textContent = text; }
+
+  /**
+   * Same tracker item, same founder walk — the silent loop before audio
+   * lands had ZERO indication a voice reading was even coming. Persona-
+   * named "preparing" copy shown in the caption strip (`.itp-voice-caption`
+   * — already the natural home for spoken-line text, gets the same visual
+   * treatment for free) for the entire `phase === 'loading'` window, and
+   * cleared the instant real playback is attempted (beginAudioPlayback),
+   * win or lose — a blocked attempt still means "audio exists, tap to
+   * hear it" which is a strictly better signal than "still preparing".
+   * Pure string logic, unit tested directly.
+   */
+  function preparingCaptionText(personaName) {
+    return (personaName || 'Your reader') + ' is preparing to read your dream…';
+  }
+
+  function showPreparingCaption(vs, persona) {
+    if (!vs.capEl) return;
+    vs.capEl.textContent = preparingCaptionText(persona && persona.name);
+  }
+
+  // ── Gesture-priming (tracker item for-product-p1-bug-founder-repro-sage-
+  //    re-cbdj3d, fix-set item 3) ──
+  // Best-effort attempt to carry a real, already-in-flow user gesture
+  // (the persona-pick tap, `onPersonaPicked` below) forward to the
+  // reading's eventual `<audio>` element, which is otherwise always
+  // created and played later, asynchronously, well outside any click
+  // handler's call stack — exactly the shape that trips a strict
+  // "play() must be a direct result of a user gesture" autoplay policy
+  // (notably Safari/iOS, the founder's own repro environment). The
+  // established trick for this (not previously present in this codebase
+  // — grepped attemptPlay/unlock/silent across interpret-experience.js,
+  // store.js, music-bed.js first per the tracker's own instruction, found
+  // no prior art to reuse) is: create the REAL element that will later
+  // host the real audio during the real gesture, call `.play()` on it
+  // immediately (a tiny embedded silent WAV data URI, so there's always
+  // something playable — some browsers reject/throw on `.play()` with no
+  // `src` at all, which would make priming itself throw instead of the
+  // graceful no-op it must be), then immediately pause/rewind it. Safari's
+  // "has this exact element been activated by a gesture" bookkeeping (as
+  // opposed to Chrome's page-wide autoplay unlock, which doesn't need
+  // this at all) is generally per-element, so swapping this SAME element's
+  // `src` to the real reading audio later (beginAudioPlayback) and calling
+  // `.play()` again stands a real chance of being honored where a brand
+  // new `new Audio(...)` would not be.
+  //
+  // Deliberately best-effort in every sense: wrapped in try/catch (a
+  // synchronous throw from `.play()` on an exotic/old browser must never
+  // break the persona-pick tap that triggered it), the returned element is
+  // just discarded on any failure, and beginAudioPlayback below always has
+  // a `new Audio(vs.audioUrl)` fallback ready if this primed element is
+  // missing OR turns out to be unusable when the real reading is ready —
+  // this must degrade to fix #2's explicit tap button, never regress
+  // anything if priming isn't supported or doesn't help.
+  var SILENT_AUDIO_DATA_URI = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==';
+
+  function createPrimedAudioElement() {
+    try {
+      var el = new Audio(SILENT_AUDIO_DATA_URI);
+      el.volume = 0;
+      var result = el.play();
+      if (result && typeof result.then === 'function') {
+        result.then(function () {
+          try { el.pause(); el.currentTime = 0; } catch (e) { /* best-effort */ }
+        }, function () { /* blocked/rejected -- fine, nothing lost, fix #2's tap button still covers this */ });
+      } else {
+        try { el.pause(); el.currentTime = 0; } catch (e) { /* best-effort */ }
+      }
+      return el;
+    } catch (e) {
+      return null; // never let priming break the real (persona-pick) gesture handler it rides along with
+    }
+  }
 
   /** Manual currentTime-scrubbing bounce loop for the reading phase's dream-video backdrop (see nextBounceFrame's own doc comment for why this doesn't use native playback). No-op if the dream has no playable video (image-only dream, or the dream record is missing a videoUrl) — the stage still renders (captions over a plain dark backdrop) rather than blocking the whole voice feature on having a video specifically. */
   function startDreamVideoBounceLoop(vs) {
@@ -332,6 +435,7 @@
         trackLocal('interp_voice_intro_shown', { persona: persona.key });
       } else {
         trackLocal('interp_voice_autoplay_blocked', { persona: persona.key, surface: 'intro' });
+        setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'intro'));
         showTapOverlay(vs);
       }
     });
@@ -374,13 +478,31 @@
     startDreamVideoBounceLoop(vs);
     if (vs.audioReady) beginAudioPlayback(vs, persona);
     else if (vs.audioFailed) teardownVoiceStageOnFailure(vs);
+    else showPreparingCaption(vs, persona); // silent bounce-loop window — see showPreparingCaption's own doc comment
     // else: requestVoiceAudio's own .then/.catch (already in flight) picks
     // this up the moment it resolves — see their own `phase === 'loading'` checks.
   }
 
   function beginAudioPlayback(vs, persona) {
     vs.phase = 'reading';
-    var audio = new Audio(vs.audioUrl);
+    if (vs.capEl) vs.capEl.textContent = ''; // clears showPreparingCaption's copy the instant real playback is attempted, win or lose (spec: "clear it the moment real captions/audio take over")
+    // Reuse the gesture-primed element (createPrimedAudioElement, set up
+    // back at the persona-pick tap) when one exists and is still usable —
+    // see that function's own doc comment for why swapping THIS element's
+    // src (rather than constructing a brand new Audio here) is the whole
+    // point of priming. Falls back to a fresh element on any failure or
+    // when there was nothing to reuse (priming unsupported/blocked, or
+    // this reading was reached some other way).
+    var audio = null;
+    if (vs.primedAudioEl) {
+      try {
+        vs.primedAudioEl.src = vs.audioUrl;
+        vs.primedAudioEl.volume = 1;
+        vs.primedAudioEl.currentTime = 0;
+        audio = vs.primedAudioEl;
+      } catch (e) { audio = null; }
+    }
+    if (!audio) audio = new Audio(vs.audioUrl);
     vs.audioEl = audio;
     audio.addEventListener('loadedmetadata', function () {
       if (voiceState !== vs) return;
@@ -404,6 +526,7 @@
       vs.hasCompletedOnce = true;
       renderVoiceCaption(vs, 0);
       trackLocal('interp_voice_complete', { persona: persona.key, duration_ms: vs.audioDurationMs || Math.round(audio.duration * 1000) || null });
+      setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'replay'));
       showTapOverlay(vs); // reused as the "replay" affordance post-completion
     });
     attemptPlay(audio).then(function (ok) {
@@ -413,6 +536,7 @@
         trackLocal('interp_voice_play', { persona: persona.key, source: 'auto' });
       } else {
         trackLocal('interp_voice_autoplay_blocked', { persona: persona.key, surface: 'reading' });
+        setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'first'));
         showTapOverlay(vs);
       }
     });
@@ -441,6 +565,7 @@
           audio.pause();
           if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
           trackLocal('interp_voice_paused', { persona: persona.key, position_ms: Math.round(audio.currentTime * 1000) });
+          setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'resume'));
           showTapOverlay(vs);
         }
       });
@@ -465,12 +590,20 @@
       dreamEl: document.getElementById('itp-voice-dream-video'),
       capEl: document.getElementById('itp-voice-caption'),
       tapOverlay: document.getElementById('itp-voice-tap-overlay'),
+      tapLabelEl: document.getElementById('itp-voice-tap-label'),
       skipEl: document.getElementById('itp-voice-skip'),
       phase: 'intro', bounceDirection: 1, rafId: null,
       audioEl: null, audioUrl: null, audioReady: false, audioFailed: false,
       captions: [], captionsLevel: 'word', audioDurationMs: null,
-      listenStartedAt: null, totalListenedMs: 0, hasCompletedOnce: false
+      listenStartedAt: null, totalListenedMs: 0, hasCompletedOnce: false,
+      // Consumed from `session` (set by onPersonaPicked's real gesture,
+      // see createPrimedAudioElement's own doc comment) — grabbed here
+      // once and cleared off `session` immediately so a LATER setupVoiceStage
+      // call for a different persona/reading (Another take, Regenerate)
+      // never accidentally reuses an element primed for a different one.
+      primedAudioEl: session.primedAudioEl || null
     };
+    session.primedAudioEl = null;
     voiceState = vs;
 
     requestVoiceAudio(vs, persona);
@@ -712,6 +845,17 @@
     var existing = existingMap || window.DreamStore.getInterpretations(session.dreamId) || {};
     trackLocal('interp_persona_selected', { persona: personaKey });
     session.personaKey = personaKey;
+    // Gesture-priming (fix-set item 3, see createPrimedAudioElement's own
+    // doc comment) — this click IS the real user gesture, so it's the
+    // earliest legal moment to prime an element for the reading's eventual
+    // audio, win or lose (revisit or fresh questions flow either way,
+    // setupVoiceStage consumes this off `session` whenever the reading
+    // phase is actually reached). Skipped entirely for a non-voice-eligible
+    // persona/gate-off browser — nothing to prime, no reason to spend it.
+    var pickedPersona = getPersonaOrFallback(personaKey);
+    if (isVoicePreviewEnabled() && pickedPersona && pickedPersona.voiceId) {
+      session.primedAudioEl = createPrimedAudioElement();
+    }
     var entry = existing[personaKey];
     if (entry && entry.text) {
       // Already read this persona on this dream — revisit, no network
@@ -949,7 +1093,10 @@
           '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>'
         : '') +
       '<div class="itp-voice-caption" id="itp-voice-caption"></div>' +
-      '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay"><div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div></div>' +
+      '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay">' +
+      '<div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div>' +
+      '<div class="itp-voice-tap-label" id="itp-voice-tap-label"></div>' +
+      '</div>' +
       '<div class="itp-voice-skip link-text" id="itp-voice-skip" style="display:none">Skip</div>' +
       '</div>';
   }
@@ -989,8 +1136,17 @@
     if (voiceEligible) setupVoiceStage(persona); else resetVoiceState();
   }
 
+  /** Discards a primed-but-never-consumed audio element (createPrimedAudioElement) — reachable whenever a persona pick's priming attempt never made it to setupVoiceStage's own consume-and-clear (Back mid-questions, switching dreams). Best-effort pause, same tolerance as every other media-element teardown in this file. */
+  function discardPrimedAudioEl() {
+    if (session && session.primedAudioEl) {
+      try { session.primedAudioEl.pause(); } catch (e) { /* best-effort */ }
+      session.primedAudioEl = null;
+    }
+  }
+
   function goToPicker() {
     resetVoiceState();
+    discardPrimedAudioEl();
     session.phase = 'picker';
     session.personaKey = null;
     session.questions = null;
@@ -1079,6 +1235,7 @@
     }
 
     ensureMounted();
+    discardPrimedAudioEl(); // a still-open session's primed element (see onPersonaPicked) has no home in the brand-new `session` object about to replace it below (switchDream's own re-open-for-a-different-dream path)
     gen += 1;
     var existing = window.DreamStore.getInterpretations(dreamId) || {};
     var existingKeys = Object.keys(existing).filter(function (k) { return existing[k] && existing[k].text; });
@@ -1136,6 +1293,7 @@
     if (root) root.classList.remove('open');
     document.body.style.overflow = '';
     resetVoiceState();
+    discardPrimedAudioEl();
     session = null;
     gen += 1;
   }
@@ -1153,6 +1311,10 @@
   InterpretExperience._computeSentenceFallbackCaptions = computeSentenceFallbackCaptions;
   InterpretExperience._currentCaptionIndex = currentCaptionIndex;
   InterpretExperience._nextBounceFrame = nextBounceFrame;
+  // Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d's fix set —
+  // both pure/no-DOM, same "export an internal for testability" precedent.
+  InterpretExperience._tapOverlayLabel = tapOverlayLabel;
+  InterpretExperience._preparingCaptionText = preparingCaptionText;
 
   if (typeof window !== 'undefined') window.InterpretExperience = InterpretExperience;
   if (typeof module !== 'undefined' && module.exports) module.exports = InterpretExperience;

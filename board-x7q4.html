@@ -21,11 +21,14 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 22:54 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 23:54 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 4</h2>
 
 
+
+<details class="ron"><summary>Social profile: pick a direction <span class="tag new">overnight research done · 2-min look</span></summary><div class="body">Your comments+follow+public-profile idea went through research and design overnight. Everything you specced is in both: the toggle tiles, share button, published/created counts, comments under videos. Interpretations stay private at MVP (strong precedent — Strava/Venmo pattern; per-dream opt-in can come later). One choice is yours:
+<div class="do"><b>Do:</b> open <a href="https://dreamtube.life/mock-profile-a-x7q4.html">Mock A — Instagram grid</a> and <a href="https://dreamtube.life/mock-profile-b-x7q4.html">Mock B — dream journal feed</a> → reply "A" or "B". My recommendation: <b>B</b> — with 1–3 dreams per user today, a grid looks empty while one journal card fills the screen; the grid becomes the natural upgrade once profiles fill up. Two smaller calls you can fold into the same reply: comments also on Explore from day one (recommended yes), and share-preview image as a branded card vs bare avatar (recommended branded).</div></div></details>
 
 <details class="ron"><summary>Dodo webhook log: one screenshot from you <span class="tag p0">P0 · money</span></summary><div class="body">The purchase-webhook root cause (your $0.99 that never completed) is stuck — Product can't see Dodo's side of the story.
 <div class="do"><b>Do:</b> log into your Dodo Payments dashboard → find the webhooks / events / logs section → locate the entries around your $0.99 charge (Aug 2–3) → screenshot what it shows (delivered? failed? which URL?) and paste it here. One screenshot likely closes the whole webhook mystery. (I'm not naming exact menu labels on purpose — their console changes; if you can't find it, screenshot whatever you do see and I'll guide from there.)</div></div></details>
@@ -36,8 +39,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 
-<details class="ron"><summary>Forming veil: approve the animation <span class="tag new">1-min look</span></summary><div class="body">The moving "dream is forming" visual you asked for, as a before/after — the After frame drifts continuously and retints per dream style (chips at the bottom).
-<div class="do"><b>Do:</b> open <a href="https://dreamtube.life/forming-veil-x7q4.html">dreamtube.life/forming-veil-x7q4.html</a>, watch the After frame a few seconds, flip a style chip or two → reply "veil approved" or what to change.</div></div></details>
+
 
 <details class="ron"><summary>Instagram/TikTok: create the channel accounts <span class="tag new">5 min each</span></summary><div class="body">The posting engine's Phase 1 (daily ready-to-post pack, you press publish — nothing posts itself) is specced and routed to Product. It needs real accounts to point at.
 <div class="do"><b>Do:</b> (1) In the <b>Instagram</b> app: profile → add/create new account → sign up with your email → handle: <b>dreamtube</b> if free, else closest (dreamtube.app / dreamtube_ai / usedreamtube) → set the avatar to the app logo — long-press and save <a href="https://dreamtube1.netlify.app/assets/logo-v4-512.png">this file</a> to your photos first. (2) Same in the <b>TikTok</b> app: sign up with the same email, same handle choice, same avatar. (3) Reply here with the two handles you got + your watermark call: logo watermark on exported clips, yes/no. That's everything — bios/links Product fills in later.</div></div></details>
@@ -55,7 +57,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <details><summary>Email redesign: fully unblocked, shipping <span class="tag today">nothing left on Ron</span></summary><div class="body">Design approved; retention send waits up to 3 minutes for the thumbnail then sends regardless (with-image version whenever it exists); footer address in (10 Dgania, Herzliya — rendered as small and faint as compliance allows). Rollout still gated only by the separate email-dedup fix below.</div></details>
 
-<details><summary>Signup layout: approved, centering the "or" <span class="tag today">merging after one fix</span></summary><div class="body">Your verdict: great, except the "or" sits glued to the Facebook button — being centered evenly between it and the email field, then merging. Live screenshot follows. Also routed with it: a real moving "dream is forming" visual instead of the flat square. (The email-code screen stays as is per your word — it was never part of the signup funnel, only returning-user security.)</div></details>
+<details><summary>Signup layout: approved, centering the "or" <span class="tag today">merging after one fix</span></summary><div class="body">Your verdicts are all in: "or" centered evenly, the approved animated veil, and your new line under it ("No need to wait — we will send your dream once it's ready to your email:"), all merging as one coherent screen with the Facebook button. Live screenshot follows. (The email-code screen stays as is per your word — it was never part of the signup funnel, only returning-user security.)</div></details>
 
 
 
@@ -69,7 +71,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <details class="p0"><summary>Service-worker staleness fix <span class="tag p0">co-P0 · corrupts your QA</span></summary><div class="body">Your device repeatedly sees hours-old pages (three incidents: sage demos, "unfixed" wizard, old walls). Fix = version-stamped SW keyed to deploys. Done-test: you load a page twice after a deploy and see the new version both times, no incognito needed.</div></details>
 
-<details class="p0"><summary>Speaking Sage: two real bugs from your walk <span class="tag p0">TTS root-caused tonight</span></summary><div class="body">Your walk surfaced both: (1) the intro speaks the old desert placeholder — the approved "come closer" take never existed; I'm producing it, but it's blocked on (2) the real bug: voice generation jobs never leave fal's queue — the reading voiceover has plausibly never completed in production (tests ran in mock mode). Root-cause trail handed to Product with the exact probe ids; fixing the queue unblocks both the reading voice and the corrected intro. One check that would speed this up: your fal dashboard balance — if it's empty, that's the whole answer.</div></details>
+<details class="p0"><summary>Speaking Sage: intro FIXED and live, reading voice with Product <span class="tag today">progress tonight</span></summary><div class="body">The "come closer" greeting is live and <b>founder-approved</b> (voice + lips, 08-03 23:25). Reading voiceover: WORKS end-to-end per your walk — but starts after a long silent gap. Fixes routed: start generating the voice earlier (the greeting buys time), show a "his voice is preparing" indicator, and switch the voice route if it stays slow. Your fal balance check ruled out billing ($66 available).</div></details>
 
 <details><summary>WhatsApp: template approval + sender build <span class="tag new">unblocked by your token</span></summary><div class="body">Permanent token live (your 5-min done ✔). Next: template to Meta for approval, sender + schedule, you as pilot recipient of the first real morning message.</div></details>
 
@@ -102,6 +104,8 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 <details><summary>Image ad creatives (your idea) <span class="tag new">routed today</span></summary><div class="body">Statics join the creative mix alongside videos — cheap, fast to iterate, sometimes beat videos on CPA. First batch from the strongest video concepts, through compliance review, into the next upload wave.</div></details>
 
 <h2 class="mgr">🟡 In flight — MANAGER</h2>
+
+<details><summary>Social layer v2: research → design running overnight <span class="tag new">your 23:40 idea</span></summary><div class="body">Comments + follow, Instagram-style public profile with the public/private toggle tiles, share-profile button, dream counts, and your open question on interpretation visibility. DONE overnight: research + full spec + two mock pages are live; the pick is on your list above. Build routes to Product on your word.</div></details>
 
 <details><summary>Meta identity-prefill research (your new idea) <span class="tag new">running now</span></summary><div class="body">Your ask: can Meta pre-fill email/phone so users never type at the wall (like lead forms do)? Researching the three real mechanisms — Lead Ads instant forms, click-to-WhatsApp ads, and FB Login on our wall — with honest conversion benchmarks and a ranked recommendation. Lands as a research doc + decision points for you today.</div></details>
 
