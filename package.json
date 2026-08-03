@@ -4,6 +4,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "smoke:prod": "node --test test/prod-smoke/*.test.js",
+    "smoke:prod:dreamtube1": "PROD_SMOKE_ORIGIN=https://dreamtube1.netlify.app node --test test/prod-smoke/*.test.js",
+    "smoke:prod:life": "PROD_SMOKE_ORIGIN=https://dreamtube.life node --test test/prod-smoke/*.test.js",
     "build": "node scripts/generate-version.js",
     "release-notes": "node scripts/generate-releases.js"
   },
