@@ -67,6 +67,8 @@
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
+var fs = require('node:fs');
+var path = require('node:path');
 var staticServer = require('./helpers/static-server');
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
@@ -119,8 +121,8 @@ async function safeGoto(page, url, opts) {
 }
 
 /** Seeds a logged-in account directly into localStorage — same shortcut every other behavioral test in this repo uses (see test/delete-account-behavioral.test.js's identical seedUser). */
-async function seedUser(page, username) {
-  await safeGoto(page, baseUrl + '/login.html');
+async function seedUser(page, username, baseUrlOverride) {
+  await safeGoto(page, (baseUrlOverride || baseUrl) + '/login.html');
   await page.evaluate(function (u) {
     var state = {
       user: { handle: '@' + u, username: u },
@@ -447,5 +449,117 @@ test('review round 2 fix: the deferred reload still fires after a recording stop
     assert.equal(calls, 1, 'expected the deferred reload to fire via recheckBusy() alone, with no focus/blur event involved');
   } finally {
     await context.close();
+  }
+});
+
+/**
+ * Added for the further round of tracker item for-product-urgent-founder-
+ * gets-stale-pa-6dn54z (08-02/08-03 recurrences AFTER the fix above had
+ * already shipped and been confirmed on-device once). See
+ * scripts/generate-version.js and sw.js's own CACHE_VERSION comment: the
+ * root gap closed by THIS round is that sw.js's own bytes previously only
+ * changed on a manual bump "whenever this file's own caching logic
+ * changes" -- meaning most real, routine content-only deploys left sw.js
+ * byte-identical, so the browser's own update-check (a byte comparison)
+ * never found anything new, `controllerchange` never fired, and an
+ * already-open, never-backgrounded tab had no path back to the current
+ * deploy short of the 30-minute-hidden fallback above or a manual
+ * close/reopen. Now CACHE_VERSION is auto-stamped with a fresh,
+ * deploy-unique string on EVERY build (see scripts/generate-version.js),
+ * so sw.js's bytes reliably differ every single deploy.
+ *
+ * This test proves that end-to-end mechanism actually works in a real
+ * browser, unlike the synthetic-dispatch test above -- with a real byte
+ * change on disk, not a synthetic event. Two things were tried and
+ * rejected first, confirmed directly (not theoretical) before landing on
+ * the approach below:
+ *   1. page.route('**\/sw.js', ...) and context.route(...) -- neither
+ *      intercepts the browser's own internal service-worker-script update
+ *      fetch (confirmed via a throwaway debug script: `reg.installing`
+ *      stayed false no matter how many times a route-swapped body was
+ *      served, meaning the real SW update machinery never saw it at all).
+ *      This is the SAME class of gotcha this file's own header comment
+ *      already documents for navigation requests once a SW controls the
+ *      page -- Playwright's page/context-level routing doesn't reach a
+ *      whole separate class of service-worker-internal fetches.
+ *   2. Overwriting THIS repo's own real sw.js on disk mid-test was
+ *      considered and rejected -- too invasive (this file's own test.before
+ *      shares one static server/repo checkout across every test in this
+ *      suite, and other files may run concurrently against the same repo
+ *      checkout).
+ * Instead: build an isolated temp directory that SYMLINKS every real repo
+ * entry except sw.js (so home.html/js/css/etc. all serve exactly as they
+ * really are, with zero duplication), write a real, standalone sw.js file
+ * into that temp dir, and run a SEPARATE static server rooted there (see
+ * test/helpers/static-server.js's `root` option, added for this test) —
+ * confirmed via the same debug script that overwriting THAT file on disk
+ * mid-test (simulating a real deploy) DOES get picked up by a real
+ * `registration.update()` call, exactly like a real deploy would.
+ */
+test('a real sw.js byte change on disk (simulating a deploy via the new auto-stamped CACHE_VERSION) triggers a genuine install/activate/controllerchange/reload cycle end to end', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  var repoRoot = path.join(__dirname, '..');
+  var tmpDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'dreamtube-swdeploy-'));
+  var deployServer = null;
+  var context = null;
+  try {
+    // Symlink every real top-level repo entry except sw.js (and non-served
+    // housekeeping dirs) into the temp root -- cheap (no copying) and keeps
+    // every OTHER file (home.html, js/*, css/*) byte-identical to the real
+    // repo, so this test only ever varies the one thing a real deploy of
+    // THIS bug's fix actually varies: sw.js's own CACHE_VERSION.
+    var EXCLUDE = { 'sw.js': true, '.git': true, 'node_modules': true, '.claude': true };
+    fs.readdirSync(repoRoot).forEach(function (name) {
+      if (EXCLUDE[name]) return;
+      fs.symlinkSync(path.join(repoRoot, name), path.join(tmpDir, name));
+    });
+    var realSwSource = fs.readFileSync(path.join(repoRoot, 'sw.js'), 'utf8');
+    var swPathOnDisk = path.join(tmpDir, 'sw.js');
+    fs.writeFileSync(swPathOnDisk, realSwSource);
+
+    deployServer = await staticServer.start({ root: tmpDir });
+    var deployBaseUrl = deployServer.url;
+
+    context = await browser.newContext();
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var username = 'swrealdeploy' + Math.random().toString(36).slice(2, 8);
+    await seedUser(page, username, deployBaseUrl);
+
+    await safeGoto(page, deployBaseUrl + '/home.html');
+    await waitForSwWired(page);
+    await page.waitForFunction(function () { return !!navigator.serviceWorker.controller; }, null, { timeout: 8000 });
+
+    var reloadCounter = trackReloadAttempts(page, deployBaseUrl + '/home.html');
+
+    // Simulate the deploy: overwrite the SAME file on disk with identical
+    // content except CACHE_VERSION -- the exact diff
+    // scripts/generate-version.js's stamping produces on every real
+    // deploy (see test/generate-version.test.js for that stamping logic's
+    // own coverage).
+    var deployedSw = realSwSource.replace(/var CACHE_VERSION = '[^']*';/, "var CACHE_VERSION = 'v-simulated-new-deploy';");
+    assert.notEqual(deployedSw, realSwSource, 'sanity check: the replace must have actually matched sw.js\'s real CACHE_VERSION line');
+    fs.writeFileSync(swPathOnDisk, deployedSw);
+
+    // Force an update check right now rather than waiting on the browser's
+    // own background timing -- the same call js/pwa.js's own
+    // visibilitychange handler makes (see registerServiceWorker()).
+    var updateResult = await page.evaluate(function () {
+      return navigator.serviceWorker.getRegistration().then(function (reg) {
+        return reg.update().then(function () {
+          return { installing: !!reg.installing };
+        });
+      });
+    });
+    assert.equal(updateResult.installing, true, 'expected the browser to have detected sw.js\'s real byte change and started installing a new worker');
+
+    var calls = await waitForCount(reloadCounter, 8000);
+    assert.equal(calls, 1, 'a real sw.js byte change on disk (simulating a deploy) must result in exactly one real reload once the new worker installs, activates, and claims this tab');
+  } finally {
+    if (context) await context.close();
+    if (deployServer) await deployServer.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
