@@ -117,16 +117,67 @@
 // email/push morning-capture sender's own key). A future email or push
 // morning-capture channel is a straightforward sibling scheduled function
 // following this exact same shape, not a change to this file.
+//
+// PILOT-ONLY GATE (tracker item for-product-build-whatsapp-morning-captu-
+// skez3n, the template-submission + sender-wiring follow-up round): per
+// Manager/Ron's explicit instruction, this must NOT reach a real end user
+// until Manager/Ron explicitly flips a go-live switch for wider rollout,
+// even though the opt-in itself (save-whatsapp-number.js, profile.html's
+// Settings sheet) has no such restriction and is already live for any
+// signed-in account. Rather than invent a new allowlist, this reuses
+// lib/test-identity.js's isKnownFounderOrInternalBase — the SAME predicate
+// this codebase already uses to recognize the founder's own real
+// identities (ronbrightman, richardharrisman, jackflaa, benbrightman14's
+// reduced base) for excluding his test traffic from analytics (see that
+// file's own header comment). That list already IS "the founder and
+// people he's explicitly approved," exactly the pilot roster this gate
+// needs — a second, purpose-built allowlist would just be the same
+// handful of names typed a second time, with a real risk of the two
+// silently drifting apart. Reusing it means an account already recognized
+// for the founder's other internal-traffic purposes is automatically
+// pilot-eligible here too, with no second edit required.
+//
+// The gate is OFF (pilot-only) unless the env var
+// WHATSAPP_MORNING_CAPTURE_GO_LIVE is literally the string 'true' — an
+// explicit opt-IN flag, not an opt-out one, so an unset/misspelled/blank
+// env var always fails safely closed to pilot-only rather than
+// accidentally wide open. There is deliberately no admin-UI toggle for
+// this yet — flipping it means setting one Netlify env var by hand, a
+// reversible, low-ceremony action matching the "not automatic, human
+// decides when" bar this rollout needs.
+//
+// scanAndSend below still scans and evaluates every opted-in account
+// either way (so the returned `pilotSkipped` count stays meaningful for
+// visibility into the pipeline even while gated) — it just skips the
+// actual send, and never marks the per-day dedup key, for anyone who
+// isn't pilot-eligible while the gate is on, so a later go-live flip sends
+// to them fresh rather than treating a piloted-skip as if it had already
+// gone out.
 
 var { schedule } = require('@netlify/functions');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var accountStore = require('./lib/account-store');
 var pushDedupStore = require('./lib/push-dedup-store');
+var testIdentity = require('./lib/test-identity');
 
 var GRAPH_API_BASE = 'https://graph.facebook.com/v20.0';
 
 // 13:00 UTC daily -- see this file's own SCHEDULING header note.
 var SCHEDULE_CRON = '0 13 * * *';
+
+// See this file's own PILOT-ONLY GATE header comment above.
+var GO_LIVE_ENV_VAR = 'WHATSAPP_MORNING_CAPTURE_GO_LIVE';
+
+/** True while this sender is restricted to the founder's own pilot identities -- see the PILOT-ONLY GATE header comment above. */
+function isPilotOnly() {
+  var v = process.env[GO_LIVE_ENV_VAR];
+  return !(typeof v === 'string' && v.trim().toLowerCase() === 'true');
+}
+
+/** True if `username` may receive a real send right now -- always true once go-live is flipped, otherwise only the founder's own known pilot identities. */
+function isSendEligible(username) {
+  return !isPilotOnly() || testIdentity.isKnownFounderOrInternalBase(username);
+}
 
 function looksUnset(value) {
   return typeof value !== 'string' || !value.trim();
@@ -226,10 +277,11 @@ async function sendMorningCaptureMessage(to, firstName) {
 /**
  * Scans every account record for an opted-in `whatsappNumber` and sends
  * today's morning-capture message to each one not already dedup-marked
- * for today. Exposed separately from `exports.handler` so
- * test/send-whatsapp-morning-capture.test.js can call it directly with a
- * mocked event/stores, same convention as send-daily-claim-pushes.js's own
- * scanAndSend/exports.handler split.
+ * for today AND currently send-eligible (see this file's own PILOT-ONLY
+ * GATE header comment — isSendEligible). Exposed separately from
+ * `exports.handler` so test/send-whatsapp-morning-capture.test.js can call
+ * it directly with a mocked event/stores, same convention as
+ * send-daily-claim-pushes.js's own scanAndSend/exports.handler split.
  *
  * O(n) full-store scan over lib/account-store.js's own "dreamtube-
  * accounts" Blobs store, filtered to "u:"-prefixed keys (the real account
@@ -238,6 +290,13 @@ async function sendMorningCaptureMessage(to, firstName) {
  * accepted "fine at current scale, would need a real index once this store
  * holds many thousands of records" tradeoff send-daily-claim-pushes.js's
  * own header comment documents for its identical scan shape.
+ *
+ * Return shape: { scanned, sent, skipped, pilotSkipped } — `skipped` keeps
+ * its original meaning (already sent today, or the dedup CAS write
+ * couldn't confirm the claim); `pilotSkipped` is opted-in, not yet sent
+ * today, but not currently pilot-eligible (see isSendEligible) — counted
+ * separately so a caller/log line can tell "the pipeline is working, it's
+ * just gated" apart from "something is actually failing."
  */
 async function scanAndSend(event) {
   connectLambda(event);
@@ -248,6 +307,7 @@ async function scanAndSend(event) {
   var scanned = 0;
   var sent = 0;
   var skipped = 0;
+  var pilotSkipped = 0;
 
   for (var i = 0; i < listResult.blobs.length; i++) {
     var key = listResult.blobs[i].key;
@@ -268,6 +328,11 @@ async function scanAndSend(event) {
     }
     if (!record || !record.whatsappNumber) continue; // not opted in
 
+    // PILOT-ONLY GATE -- checked BEFORE claiming the per-day dedup key, so
+    // a piloted-skip today never blocks a real send once go-live flips
+    // (see this file's own PILOT-ONLY GATE header comment).
+    if (!isSendEligible(record.username)) { pilotSkipped++; continue; }
+
     var dedupKey = 'whatsapp-morning-capture:' + record.username + ':' + today;
     var claim = await pushDedupStore.markSentOnce(event, dedupKey);
     if (!claim.ok) { skipped++; continue; } // already sent today, or the CAS write couldn't confirm the claim -- fail closed, same discipline every other pushDedupStore caller follows
@@ -276,13 +341,13 @@ async function scanAndSend(event) {
     if (result.ok) sent++;
   }
 
-  return { scanned: scanned, sent: sent, skipped: skipped };
+  return { scanned: scanned, sent: sent, skipped: skipped, pilotSkipped: pilotSkipped };
 }
 
 exports.handler = schedule(SCHEDULE_CRON, async function (event) {
   try {
     var result = await scanAndSend(event);
-    console.log('send-whatsapp-morning-capture: scanned ' + result.scanned + ' opted-in-eligible account(s), sent ' + result.sent + ', skipped ' + result.skipped + ' (already sent today, or config not set)');
+    console.log('send-whatsapp-morning-capture: scanned ' + result.scanned + ' opted-in-eligible account(s), sent ' + result.sent + ', skipped ' + result.skipped + ' (already sent today, or config not set), pilotSkipped ' + result.pilotSkipped + ' (opted in but not pilot-eligible yet -- see ' + GO_LIVE_ENV_VAR + ')');
   } catch (e) {
     // Best-effort, same "never let this surface as a hard failure" posture
     // as send-daily-claim-pushes.js's own top-level catch -- a failed scan
@@ -297,4 +362,7 @@ exports.handler = schedule(SCHEDULE_CRON, async function (event) {
 exports.scanAndSend = scanAndSend;
 exports.sendMorningCaptureMessage = sendMorningCaptureMessage;
 exports.isConfigured = isConfigured;
+exports.isPilotOnly = isPilotOnly;
+exports.isSendEligible = isSendEligible;
+exports.GO_LIVE_ENV_VAR = GO_LIVE_ENV_VAR;
 exports.SCHEDULE_CRON = SCHEDULE_CRON;
