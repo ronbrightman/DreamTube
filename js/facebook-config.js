@@ -7,10 +7,14 @@
 // for-product-signup-screen-the-single-big-bkwhbe). The server half is
 // netlify/functions/facebook-oauth-callback.js.
 //
-// FACEBOOK_APP_ID below is a placeholder on purpose — no real Meta app
-// exists yet (creating one requires Meta Business Verification, a human
-// sign-up/approval step outside this codebase; that's Manager's separate
-// track). This file mirrors js/turnstile-config.js's TURNSTILE_SITE_KEY
+// FACEBOOK_APP_ID below is the real "DreamTube Login" Meta app's public
+// App ID (founder pasted it 2026-08-03; business verification done, app
+// still Unpublished/dev-mode, so only app-role holders can complete the
+// login until it passes App Review and is published — see the tracker's
+// facebook-login items for the go-public checklist). The App ID is
+// public by design — it appears in every OAuth dialog URL — the SECRET
+// stays server-side only, in Netlify env, never in this repo.
+// This file mirrors js/turnstile-config.js's TURNSTILE_SITE_KEY
 // pattern EXACTLY: a literal placeholder string, checked at every call
 // site, that makes the whole feature a no-op until a human drops in a
 // real value. Concretely, while the placeholder is still here:
@@ -34,7 +38,7 @@
 // env vars are missing, so a half-configured state can never half-work.
 // Nothing else in this file or in start.html needs to change.
 
-var FACEBOOK_APP_ID = 'REPLACE_WITH_REAL_FACEBOOK_APP_ID';
+var FACEBOOK_APP_ID = '1575457744326846';
 
 // Pinned Graph API version, shared by the client (dialog URL below) and
 // the server (facebook-oauth-callback.js keeps its own copy — it can't
