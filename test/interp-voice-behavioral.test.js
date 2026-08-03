@@ -233,6 +233,62 @@ async function openAndPickSage(page) {
   await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 }
 
+// ── Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d ──
+// (founder walk 2026-08-03 23:31: the dream video looped silently ~3 times
+// with zero indication a voice reading was coming, then only a bare,
+// unlabeled play-triangle appeared once audio was finally ready). Below:
+// a held (never-resolving-until-released) interp-audio-status mock so a
+// test can observe the "preparing" window deterministically, plus a
+// gesture-priming-specific play() override that only affects the tiny
+// silent priming clip (leaving every other element's forced outcome
+// exactly as set by forcePlayOutcome above, so priming's own robustness
+// is isolated from the rest of the flow's already-covered behavior).
+
+/**
+ * Same shape as mockInterpAudio above, except interp-audio-status never
+ * resolves until the caller calls the returned `release()` — the standard
+ * technique for deterministically observing an in-flight loading state
+ * (here: the "preparing" caption) without a real, slow TTS backend or a
+ * real POLL_INTERVAL_MS-paced (10s) wait.
+ */
+function mockInterpAudioHeld(page) {
+  var releaseHold;
+  var held = new Promise(function (resolve) { releaseHold = resolve; });
+  var routes = [
+    page.route('**/.netlify/functions/generate-interp-audio', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/kokoro/american-english:test-req-held' }) });
+    }),
+    page.route('**/.netlify/functions/interp-audio-status*', function (route) {
+      held.then(function () {
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'done',
+            audioUrl: baseUrl + '/sage-voice-x7q4.mp3',
+            audioDurationMs: 1400,
+            captions: [{ word: 'Ah,', startMs: 0, endMs: 300 }],
+            captionsLevel: 'word'
+          })
+        });
+      });
+    })
+  ];
+  return Promise.all(routes).then(function () { return { release: releaseHold }; });
+}
+
+/** Every real element's `.play()` resolves (matches `forcePlayOutcome(page, true)`) EXCEPT the gesture-priming attempt's own tiny embedded silent-WAV data-URI element, which throws SYNCHRONOUSLY — the one failure mode `attemptPlay`'s own promise-based handling can't absorb, and exactly what createPrimedAudioElement's own try/catch exists to guard against. Isolated to only that one element (matched by its known `data:audio/wav;base64,` src prefix) so this test exercises gesture-priming's own robustness specifically, not a blanket "everything throws" scenario the intro/reading playback code was never meant to survive either. */
+function forcePlayWithPrimingThrow(page) {
+  return page.addInitScript(function () {
+    HTMLMediaElement.prototype.play = function () {
+      if (typeof this.src === 'string' && this.src.indexOf('data:audio/wav;base64,') === 0) {
+        throw new DOMException('synchronous-throw-for-test', 'NotSupportedError');
+      }
+      return Promise.resolve();
+    };
+  });
+}
+
 test('without the ?sagevoice=1 preview gate, the voice stage never mounts even for talmudic (default-off, matches "Manager needs a way to preview before rollout")', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -563,6 +619,119 @@ test('a hard TTS failure hides the whole voice stage and fires interp_voice_tts_
 
     var stageDisplay = await page.locator('#itp-voice-stage').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(stageDisplay, 'none');
+  } finally {
+    await context.close();
+  }
+});
+
+// ── Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d's fix set ──
+
+test('the silent bounce-loop window (reading phase, audio not ready yet) shows persona-named "preparing" copy, cleared the instant real playback is attempted', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    var heldMock = await mockInterpAudioHeld(page);
+    await seedResultPageWithPreviewParam(page, 'd-voice-preparing');
+    await openAndPickSage(page);
+
+    // Skip past the intro -- lands on the reading phase's own 'loading'
+    // sub-state (dream video bounce-looping, audio still not ready since
+    // interp-audio-status is held open).
+    await page.waitForSelector('#itp-voice-skip', { state: 'visible', timeout: 5000 });
+    await page.click('#itp-voice-skip');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 5000 });
+
+    // Release the held status poll -- audio becomes ready and real
+    // playback is attempted, which must clear the preparing copy right away.
+    heldMock.release();
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent !== 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('tap overlay label is explicit and persona-name-driven for the pre-first-play state, and reads differently once it reappears as "replay"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Forced to reject BEFORE navigation -- see the existing "autoplay
+    // blocked" test's own comment on why addInitScript has to be
+    // registered ahead of the page load it applies to.
+    await forcePlayOutcome(page, false);
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-voice-tap-label');
+    await openAndPickSage(page);
+    await page.click('#itp-voice-skip'); // straight to the reading phase
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && !el.classList.contains('off');
+    }, null, { timeout: 5000 });
+    var firstPlayLabel = await page.locator('#itp-voice-tap-label').textContent();
+    assert.equal(firstPlayLabel, 'Hear The Sage read your dream', 'pre-first-play label must be explicit and name the actual persona, not a bare icon');
+
+    // Force play() to succeed (a real tap is itself a user gesture) and
+    // unlock playback via the tap overlay, same as the existing autoplay-
+    // blocked test.
+    await page.evaluate(function () { HTMLMediaElement.prototype.play = function () { return Promise.resolve(); }; });
+    await page.click('#itp-voice-tap-overlay');
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && el.classList.contains('off');
+    }, null, { timeout: 5000 });
+
+    // Simulate the reading finishing naturally -- the SAME overlay
+    // reappears as the "replay" affordance, and must carry a DIFFERENT,
+    // non-persona-play label rather than repeating the first-play copy.
+    await page.evaluate(function () { window.__lastAudio.dispatchEvent(new Event('ended')); });
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && !el.classList.contains('off');
+    }, null, { timeout: 5000 });
+    var replayLabel = await page.locator('#itp-voice-tap-label').textContent();
+    assert.equal(replayLabel, 'Hear it again');
+    assert.notEqual(replayLabel, firstPlayLabel, 'the replay state must not reuse the exact same pre-first-play copy');
+  } finally {
+    await context.close();
+  }
+});
+
+test('gesture-priming is best-effort: a synchronously-throwing priming play() never breaks the persona pick or the reading flow', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayWithPrimingThrow(page);
+    var pageErrors = [];
+    page.on('pageerror', function (err) { pageErrors.push(err); });
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-voice-prime-throws');
+    // openAndPickSage's own persona-card tap IS the gesture-priming call
+    // site (onPersonaPicked) -- the synchronous throw happens right there,
+    // inside createPrimedAudioElement's try/catch, and must never surface.
+    await openAndPickSage(page);
+
+    var text = await page.locator('#itp-reading-text').textContent();
+    assert.ok(text && text.length > 0, 'the reading still renders normally despite the priming attempt throwing');
+    assert.equal(pageErrors.length, 0, 'a synchronously-throwing priming play() must never surface as an uncaught page error');
   } finally {
     await context.close();
   }
