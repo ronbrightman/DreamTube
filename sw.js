@@ -56,20 +56,41 @@
 // gets-stale-pa-6dn54z): this only exists to name the runtime cache and
 // know which old one(s) to delete in the activate handler below — it does
 // NOT gate whether a page or static asset is served fresh (that's the
-// network-first strategy above, unconditional). Bumping it also has one
-// real side effect worth knowing: it changes this file's own bytes, which
-// is what makes the browser notice sw.js itself has a new version worth
-// installing (see js/pwa.js's registerServiceWorker() header comment on
-// why that update-detection matters, and why it's still a narrow slice of
-// this bug — most deploys never touch this file at all, only page HTML/
-// CSS/JS, which the network-first strategy already serves fresh with no
-// dependency on this version number). This repo has no build step to key
-// a version off (grepped for any existing DEPLOY_ID/COMMIT_REF/BUILD_ID/
-// version convention first — none exists), so the honest, simplest choice
-// for a project that deploys many times a day is a manual bump here
-// whenever this file's OWN caching logic or PRECACHE_URLS list changes —
-// not on every routine content deploy, which doesn't need it.
-var CACHE_VERSION = 'v2';
+// network-first strategy above, unconditional). Its other real effect is
+// that changing it changes this file's own bytes, which is what makes the
+// browser notice sw.js itself has a new version worth installing (see
+// js/pwa.js's registerServiceWorker() header comment on why that
+// update-detection matters — a genuinely NEW controlling worker is what
+// fires `controllerchange`, which forces an already-open tab to reload
+// onto the new deploy).
+//
+// UPDATE (still tracker item 6dn54z, after two more founder-reported
+// staleness incidents on 08-02/08-03 — AFTER the manual-bump version
+// above had already shipped and been confirmed on-device once):
+// manually bumping this string "whenever this file's own caching logic
+// changes" meant sw.js's bytes stayed IDENTICAL across the vast majority
+// of real deploys (routine page/content changes never touch this file),
+// so `controllerchange` essentially never fired for those deploys — an
+// already-open, never-backgrounded tab had no path back to the current
+// deploy except the 30-minute-hidden visibilitychange fallback below, or
+// manually closing/reopening the tab. This is now stamped automatically,
+// every deploy, by scripts/generate-version.js (the ALREADY-EXISTING
+// build-time script — see netlify.toml's `command = "npm run build"` —
+// that stamps version.json with this exact same commit-based version
+// string; tracker item for-product-release-visibility-founder-a-8hx5cz).
+// Reusing that one mechanism rather than inventing a second means
+// version.json's "version" field and this file's CACHE_VERSION are
+// always identical for a given deploy — a direct, human-checkable way to
+// confirm whether a given device's active service worker matches the
+// currently deployed commit. See scripts/generate-version.js's own
+// `stampServiceWorkerCacheVersion` for the exact substitution and
+// test/generate-version.test.js for coverage of it.
+//
+// The literal value below is what a LOCAL/dev run (or any environment
+// that never went through `npm run build`) sees — deliberately NOT a
+// real version string, so it's obvious at a glance whether a given sw.js
+// on disk has actually been through the real build step or not.
+var CACHE_VERSION = 'v0-unbuilt-dev';
 var CACHE_NAME = 'dreamtube-shell-' + CACHE_VERSION;
 
 // Precached at install time — the minimum needed so a completely fresh
@@ -136,17 +157,71 @@ function isCacheableStaticAsset(url) {
   );
 }
 
-/** Network-first with a cache fallback, updating the cache on every successful network response — shared shape for both navigations and static assets below (they differ only in what they fall back to when there's no cached copy at all). */
+/**
+ * Network-first with a cache fallback, updating the cache on every successful
+ * network response — shared shape for both navigations and static assets
+ * below (they differ only in what they fall back to when there's no cached
+ * copy at all).
+ *
+ * Forces `cache: 'no-store'` on the outbound fetch — added for tracker item
+ * for-product-urgent-founder-gets-stale-pa-6dn54z's 08-02/08-03 recurrences,
+ * which happened AFTER the visibilitychange/controllerchange fix (bae7969)
+ * had already shipped and been confirmed on-device once. This function's own
+ * logic was already correct by its own terms (re-confirmed by re-reading it
+ * before touching it): it only ever falls back to a cached copy on a genuine
+ * fetch() REJECTION, never on a received-but-possibly-stale response. What
+ * it never controlled is whether the browser's own HTTP disk cache — a
+ * completely separate layer beneath the Fetch API from this file's own Cache
+ * Storage usage — gets consulted to satisfy that fetch() call at all. With
+ * the default cache mode ('default', inherited from `request`), a fully
+ * spec-compliant client honors this origin's own Cache-Control (confirmed
+ * live: `public, max-age=0, must-revalidate`, which is correct and should
+ * force revalidation on every access) — but this sandbox has no way to
+ * verify a real iOS Safari/WebKit in-app-webview client actually implements
+ * that correctly in every case, and the founder's own 08-02 report ("stale
+ * through multiple hard reloads... and a different browser") reads exactly
+ * like some client-side cache layer not honoring those headers the way this
+ * function assumed. `no-store` removes the ambiguity outright: it skips the
+ * HTTP cache entirely on the way out, so no code path here depends on that
+ * layer behaving correctly, on any client.
+ *
+ * HONEST CAVEAT: this cannot be proven to be the exact root cause without a
+ * real WebKit engine, which isn't available in this sandbox (Chromium only —
+ * see test/sw-fetch-handler.test.js's own header comment). Treat this as
+ * defense-in-depth for the most plausible remaining explanation, not a
+ * confirmed device-level fix — per this item's own standing "don't overclaim
+ * a device-level fix is proven" instruction.
+ *
+ * A Request constructed FROM another Request whose own `mode` is 'navigate'
+ * (true for every page-navigation `request` this is called with) has its
+ * mode downgraded to 'same-origin' by spec — a fresh Request can never
+ * itself be constructed with mode 'navigate'. Harmless here: respondWith()
+ * only cares about the RESPONSE this produces, not the mode of the request
+ * used to fetch it. Falls back to fetching `request` completely unmodified
+ * if this construction ever throws for any other reason, rather than
+ * letting a defensive improvement break the request entirely.
+ */
 function networkFirst(request, offlineFallbackUrl) {
-  return fetch(request).then(function (response) {
-    // Only cache a genuinely successful, basic (same-origin, non-opaque)
-    // response — never a 4xx/5xx, and never an opaque cross-origin
-    // response this worker couldn't inspect anyway.
-    if (response && response.ok && response.type === 'basic') {
+  var noStoreRequest;
+  try {
+    noStoreRequest = new Request(request, { cache: 'no-store' });
+  } catch (e) {
+    noStoreRequest = request;
+  }
+  return fetch(noStoreRequest).then(function (response) {
+    // Only cache a genuinely successful, COMPLETE (status 200, never 206
+    // Partial Content — the Cache Storage API spec disallows storing a
+    // partial response and throws if you try) basic (same-origin,
+    // non-opaque) response — never a 4xx/5xx, and never an opaque
+    // cross-origin response this worker couldn't inspect anyway. Guarded
+    // with its own .catch so a failed cache.put (e.g. a quota error) can
+    // never surface as a broken response to the page — caching here is
+    // always best-effort, the returned `response` below is what matters.
+    if (response && response.status === 200 && response.type === 'basic') {
       var responseToCache = response.clone();
       caches.open(CACHE_NAME).then(function (cache) {
-        cache.put(request, responseToCache);
-      });
+        return cache.put(request, responseToCache);
+      }).catch(function () { /* caching is best-effort -- must never break the real response */ });
     }
     return response;
   }).catch(function () {

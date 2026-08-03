@@ -60,10 +60,41 @@
 // This is still unique per build, still human-sortable by date, and is
 // exactly as honest as what it claims to be (it doesn't imply "3rd
 // deploy today", it just says "the 2026.08.01 build with SHA a1b2c3d").
+//
+// ALSO STAMPS sw.js's CACHE_VERSION (added for tracker item for-product-
+// urgent-founder-gets-stale-pa-6dn54z, the "stale pages after deploy"
+// item this file was already a diagnostic aid for): this reuses that same
+// `version` string as sw.js's own CACHE_VERSION, at the SAME build step,
+// rather than inventing a second version scheme. See sw.js's own
+// CACHE_VERSION comment for why this matters (changing sw.js's own bytes
+// on literally every deploy is what makes the browser's SW update-check
+// actually have something new to find and activate, instead of most
+// routine content-only deploys leaving sw.js byte-identical and the
+// update lifecycle a no-op). `stampServiceWorkerCacheVersion` below is a
+// pure string-in/string-out function (no I/O) specifically so it's
+// unit-testable without needing to run this whole script or touch real
+// files — see test/generate-version.test.js.
 
 var fs = require('fs');
 var path = require('path');
 var { execSync } = require('child_process');
+
+// Matches sw.js's exact `var CACHE_VERSION = '...';` declaration line.
+var CACHE_VERSION_LINE_RE = /var CACHE_VERSION = '[^']*';/;
+
+/**
+ * Pure function: returns `swSource` with its CACHE_VERSION line's value
+ * replaced by `version`, or `null` if the expected declaration line isn't
+ * found at all (e.g. sw.js was refactored and this marker no longer
+ * matches — caller decides how to handle that, but this never throws and
+ * never guesses at a different shape to replace). Idempotent: stamping
+ * already-stamped source with the same version again yields identical
+ * output.
+ */
+function stampServiceWorkerCacheVersion(swSource, version) {
+  if (typeof swSource !== 'string' || !CACHE_VERSION_LINE_RE.test(swSource)) return null;
+  return swSource.replace(CACHE_VERSION_LINE_RE, "var CACHE_VERSION = '" + version + "';");
+}
 
 function safeGitCommitMessage(sha) {
   try {
@@ -95,35 +126,75 @@ function safeGitSha() {
 // Everything below is wrapped in try/catch and never throws — this file
 // runs as a real Netlify [build] command (see netlify.toml), and a
 // diagnostic-only script failing must never fail the actual site deploy.
-// Worst case on any error: version.json doesn't get updated this build
-// (a stale-but-present copy — see the committed placeholder — is still
-// better than blocking a deploy over this).
-try {
-  var commitSha = process.env.COMMIT_REF || safeGitSha() || 'unknown';
-  var shortMessage = safeGitCommitMessage(commitSha !== 'unknown' ? commitSha : null);
-  var timestamp = new Date().toISOString();
-  var branch = process.env.BRANCH || null;
-  var context = process.env.CONTEXT || null; // production / deploy-preview / branch-deploy
-  var deployId = process.env.DEPLOY_ID || null;
+// Worst case on any error: version.json (and/or sw.js's CACHE_VERSION)
+// doesn't get updated this build (a stale-but-present copy — see the
+// committed placeholders — is still better than blocking a deploy over
+// this). The two steps (write version.json, stamp sw.js) are each in
+// their OWN try/catch so a failure in one never blocks the other.
+function main() {
+  var version = null;
+  try {
+    var commitSha = process.env.COMMIT_REF || safeGitSha() || 'unknown';
+    var shortMessage = safeGitCommitMessage(commitSha !== 'unknown' ? commitSha : null);
+    var timestamp = new Date().toISOString();
+    var branch = process.env.BRANCH || null;
+    var context = process.env.CONTEXT || null; // production / deploy-preview / branch-deploy
+    var deployId = process.env.DEPLOY_ID || null;
 
-  var shortSha = commitSha !== 'unknown' ? commitSha.slice(0, 7) : 'unknown';
-  var utcDate = timestamp.slice(0, 10).replace(/-/g, '.'); // YYYY.MM.DD, UTC (toISOString is always UTC)
-  var version = 'v' + utcDate + '-' + shortSha;
+    var shortSha = commitSha !== 'unknown' ? commitSha.slice(0, 7) : 'unknown';
+    var utcDate = timestamp.slice(0, 10).replace(/-/g, '.'); // YYYY.MM.DD, UTC (toISOString is always UTC)
+    version = 'v' + utcDate + '-' + shortSha;
 
-  var payload = {
-    version: version,
-    commitSha: commitSha,
-    shortMessage: shortMessage,
-    timestamp: timestamp,
-    branch: branch,
-    context: context,
-    deployId: deployId
-  };
+    var payload = {
+      version: version,
+      commitSha: commitSha,
+      shortMessage: shortMessage,
+      timestamp: timestamp,
+      branch: branch,
+      context: context,
+      deployId: deployId
+    };
 
-  var outPath = path.join(__dirname, '..', 'version.json');
-  fs.writeFileSync(outPath, JSON.stringify(payload, null, 2) + '\n');
-  console.log('[generate-version] wrote ' + outPath + ':');
-  console.log(JSON.stringify(payload, null, 2));
-} catch (err) {
-  console.error('[generate-version] non-fatal: failed to write version.json — ' + err.message);
+    var outPath = path.join(__dirname, '..', 'version.json');
+    fs.writeFileSync(outPath, JSON.stringify(payload, null, 2) + '\n');
+    console.log('[generate-version] wrote ' + outPath + ':');
+    console.log(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error('[generate-version] non-fatal: failed to write version.json — ' + err.message);
+  }
+
+  // Stamp sw.js's CACHE_VERSION with the SAME version string computed
+  // above, so a device's active service worker cache name is always
+  // directly comparable to version.json's own "version" field. Skipped
+  // (not attempted) if the version.json step above failed entirely (no
+  // `version` computed) — nothing sane to stamp with in that case.
+  if (version) {
+    try {
+      var swPath = path.join(__dirname, '..', 'sw.js');
+      var swSource = fs.readFileSync(swPath, 'utf8');
+      var stamped = stampServiceWorkerCacheVersion(swSource, version);
+      if (stamped === null) {
+        console.error('[generate-version] non-fatal: CACHE_VERSION marker not found in sw.js -- left unchanged');
+      } else if (stamped !== swSource) {
+        fs.writeFileSync(swPath, stamped);
+        console.log('[generate-version] stamped sw.js CACHE_VERSION -> ' + version);
+      }
+    } catch (err) {
+      console.error('[generate-version] non-fatal: failed to stamp sw.js -- ' + err.message);
+    }
+  }
 }
+
+// Only auto-run as a real build step (`node scripts/generate-version.js` /
+// `npm run build`) — NOT when this file is `require()`d, e.g. by
+// test/generate-version.test.js, which needs `stampServiceWorkerCacheVersion`
+// as a pure function without the side effect of overwriting real files on
+// disk just from being imported.
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  stampServiceWorkerCacheVersion: stampServiceWorkerCacheVersion,
+  main: main
+};

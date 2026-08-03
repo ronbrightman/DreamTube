@@ -37,17 +37,27 @@ var MIME = {
   '.wav': 'audio/wav'
 };
 
-/** Starts a static file server for the repo root. Resolves to { url, close }. */
-function start() {
+/**
+ * Starts a static file server. Resolves to { url, close }.
+ *
+ * `options.root` (added for test/pwa-sw-update-behavioral.test.js's real
+ * on-disk-deploy-simulation test) overrides the served directory —
+ * defaults to this repo's own root, unchanged for every other caller.
+ * Every file is read fresh off disk per-request (no caching layer here),
+ * which is exactly what lets that test simulate a real deploy by simply
+ * overwriting a file's bytes in a temp directory between requests.
+ */
+function start(options) {
+  var root = (options && options.root) || ROOT;
   return new Promise(function (resolve, reject) {
     var server = http.createServer(function (req, res) {
       var urlPath = decodeURIComponent(req.url.split('?')[0]);
       if (urlPath === '/') urlPath = '/index.html';
-      var filePath = path.normalize(path.join(ROOT, urlPath));
-      // Never serve anything outside the repo root (defends against a
+      var filePath = path.normalize(path.join(root, urlPath));
+      // Never serve anything outside the served root (defends against a
       // "../../" style path in the request even though nothing in these
       // tests sends one).
-      if (filePath.indexOf(ROOT) !== 0) {
+      if (filePath.indexOf(root) !== 0) {
         res.writeHead(403);
         res.end();
         return;
