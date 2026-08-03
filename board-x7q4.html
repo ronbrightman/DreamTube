@@ -21,7 +21,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 18:03 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 18:05 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 6</h2>
 
@@ -36,7 +36,8 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <details class="ron"><summary>Instagram/TikTok: create the channel accounts <span class="tag new">5 min each</span></summary><div class="body">The posting engine's Phase 1 (daily ready-to-post pack, you press publish — nothing posts itself) is specced and routed to Product. It needs real IG + TikTok accounts to point at. Also your call: watermark on exported clips, yes/no.</div></details>
 
-<details class="ron"><summary>Facebook Login: arrange the final mile <span class="tag min">low until launch</span></summary><div class="body">Code is built and creds are in env, but end-to-end verification needs the live Meta app + your own walk on the signup screen. Product won't start until that's arranged — tell me when you want to do the walk together.</div></details>
+<details class="ron"><summary>Facebook Login: paste one value, then one tap <span class="tag min">low until launch</span></summary><div class="body">Found the exact blocker: your Saturday task set the server-side secrets, but the public <b>App ID</b> was never dropped into the site's own code (js/facebook-config.js still has the placeholder) — so the "Continue with Facebook" button currently renders for <b>nobody</b>. The App ID is the shorter, non-secret number from the same Meta page you copied the secret from.
+<div class="do"><b>Do:</b> paste the App ID in chat (just the number, one line). I'll wire it, verify the button renders, and update this item with the exact link for your tap-through with your real Facebook account. Your app is in development mode, so only you can use the button until we go public — your walk is safe. Placement next to the passwordless wall gets decided after your tap works.</div></div></details>
 
 
 
