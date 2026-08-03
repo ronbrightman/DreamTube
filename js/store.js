@@ -1178,16 +1178,74 @@
    * comment above), and dream-sync.js's own server-side sanitization would
    * force isPublished back to false regardless, so calling this for one
    * would be actively misleading about what's actually being persisted.
+   *
+   * CONFIRMATION + RETRY (tracker item
+   * for-product-p0-data-loss-founder-repro-0-6bzvv1 — a real, token-
+   * charged generation, confirmed by its own PostHog video_created event,
+   * completed and was written to local state but never reached the
+   * server-side dream-sync store at all, so a fresh device/browser never
+   * saw it). Before this fix, this function was pure fire-and-forget with
+   * no retry and no way to tell later whether the write had actually
+   * landed — the ONLY thing that ever retried a failed private-dream sync
+   * was reconcilePrivateDreamsFromServer's own login-only catch-up push
+   * (see that function's own doc comment), which never fires again for an
+   * account that doesn't happen to log out and back in. Two concrete
+   * gaps that both produce exactly this symptom, neither requiring the
+   * other:
+   *   (a) `state.user.authToken` can legitimately be null even for an
+   *       existing, real, already-"signed in" account — see
+   *       attemptLocalLogin's own doc comment for the local-only-fallback
+   *       path that produces exactly that (a transient moment where the
+   *       real server-side login couldn't be reached). This function
+   *       already correctly no-ops rather than pretending to sync in
+   *       that case — but pre-fix, a dream created during that window
+   *       stayed permanently unsynced even after the account's session
+   *       eventually regained a real authToken (nothing ever revisited
+   *       it, since no NEW login necessarily follows just because a
+   *       token quietly reappears).
+   *   (b) A genuine transient failure (a dropped connection, a real
+   *       server-side 5xx from dream-sync.js's own E8 sync_write_failed)
+   *       used to be swallowed by a bare `.catch()` that didn't even
+   *       inspect the response status — a real synchronous 500 was
+   *       treated exactly like a full success from this function's point
+   *       of view.
+   * `dream.syncConfirmed` (local-only bookkeeping — deliberately never
+   * sent to the server, see the fixed field whitelist below) tracks
+   * whether THIS dream's server-side copy has actually been confirmed
+   * written. Stamped `false` up front on every call (including ones this
+   * function itself immediately no-ops on below) so
+   * retryUnconfirmedPrivateDreamSyncs — called on every ordinary page
+   * load, see its own doc comment — has something durable to retry later,
+   * regardless of why this particular attempt didn't confirm. Only ever
+   * flipped to `true` once a real 200 ok:true response is actually
+   * observed.
    */
   function syncPrivateDreamBestEffort(dream) {
+    if (!dream || dream.isPublished) return;
+    dream.syncConfirmed = false;
+    persist();
     if (!PRIVATE_DREAM_SYNC_ENABLED) return;
     if (!state.user || !state.user.authToken) return;
-    if (!dream || dream.isPublished) return;
+    attemptPrivateDreamSync(dream, 0);
+  }
+
+  // Two retries beyond the first attempt (three attempts total), short
+  // fixed backoff — long enough to ride out a momentary blip, short
+  // enough this never meaningfully delays confirmation for a user who
+  // stays on the page. Any attempt still unconfirmed after these gives up
+  // for THIS page load — retryUnconfirmedPrivateDreamSyncs on a later
+  // load (or reconcilePrivateDreamsFromServer's catch-up on a later real
+  // login) picks it back up, per this function's own doc comment above.
+  var PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS = [800, 2500];
+
+  function attemptPrivateDreamSync(dream, attemptIndex) {
+    var authToken = state.user && state.user.authToken;
+    if (!authToken) return; // lost its token between attempts (e.g. logout) — nothing to sync against right now
     fetch('/.netlify/functions/dream-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        authToken: state.user.authToken,
+        authToken: authToken,
         action: 'upsert',
         dream: {
           id: dream.id, ownerHandle: dream.ownerHandle,
@@ -1199,7 +1257,53 @@
           updatedAt: dream.updatedAt || Date.now()
         }
       })
-    }).catch(function () { /* best-effort — see section comment above */ });
+    }).then(function (res) {
+      return res.json().then(function (data) { return res.ok && !!(data && data.ok); }, function () { return false; });
+    }).then(function (confirmed) {
+      if (confirmed) {
+        dream.syncConfirmed = true;
+        persist();
+        return;
+      }
+      scheduleRetryOrGiveUp();
+    }, function () { scheduleRetryOrGiveUp(); });
+
+    function scheduleRetryOrGiveUp() {
+      if (attemptIndex < PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS.length) {
+        setTimeout(function () { attemptPrivateDreamSync(dream, attemptIndex + 1); }, PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS[attemptIndex]);
+      }
+    }
+  }
+
+  /**
+   * Sweeps this account's local private dreams for any whose server-side
+   * dream-sync copy was never confirmed (see syncPrivateDreamBestEffort's
+   * own syncConfirmed doc comment) and retries each — tracker item
+   * for-product-p0-data-loss-founder-repro-0-6bzvv1. Called once on every
+   * ordinary page load (see the bottom of this file, right where
+   * backfillSharedFeed's identical-shape one-time catch-up already runs)
+   * — deliberately NOT gated behind a fresh login/signup the way
+   * reconcilePrivateDreamsFromServer's own catch-up push is, since an
+   * already-"signed in" session that fell into a temporarily authToken-
+   * less state (see attemptLocalLogin's own doc comment) has no natural
+   * reason to ever log out and back in again just because its token quietly
+   * came back — this closes that gap directly, with no login required.
+   * Deliberately skips the GET/compare round trip reconcile does first —
+   * dream-sync.js's own upsert is idempotent by id, so redundantly
+   * re-pushing an already-server-side dream is a harmless no-op, which
+   * keeps this cheap enough to run unconditionally on every load rather
+   * than needing its own one-time-ever gate the way backfillSharedFeed
+   * does.
+   */
+  function retryUnconfirmedPrivateDreamSyncs() {
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
+    if (!state.user || !state.user.authToken) return;
+    var myHandle = state.user.handle;
+    state.dreams.forEach(function (d) {
+      if (d.ownerHandle === myHandle && !d.isPublished && d.syncConfirmed !== true) {
+        syncPrivateDreamBestEffort(d);
+      }
+    });
   }
 
   /**
@@ -2155,6 +2259,9 @@
 
   var state = load();
   backfillSharedFeed();
+  // tracker item for-product-p0-data-loss-founder-repro-0-6bzvv1 — see
+  // retryUnconfirmedPrivateDreamSyncs' own doc comment.
+  retryUnconfirmedPrivateDreamSyncs();
 
   // Set by getSharedFeed on every fetch, read by explore.html right after
   // via getLastDreamOfDayId — a side-channel rather than changing
