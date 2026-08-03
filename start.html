@@ -502,7 +502,14 @@
   // to end before deciding the flip. Unlisted; remove when the flag goes
   // live for real.
   var signupQueryOverride = null;
-  try { signupQueryOverride = new URLSearchParams(location.search).get('signup'); } catch (e) {}
+  try {
+    signupQueryOverride = new URLSearchParams(location.search).get('signup');
+    // Sticky for the founder's walk: once seen, the override survives
+    // reloads/navigation within this tab (sessionStorage dies with the
+    // tab, so it can't leak into normal browsing).
+    if (signupQueryOverride === 'passwordless') sessionStorage.setItem('dt_signup_preview', 'passwordless');
+    else if (sessionStorage.getItem('dt_signup_preview') === 'passwordless') signupQueryOverride = 'passwordless';
+  } catch (e) {}
   if (signupQueryOverride === 'passwordless') {
     signupVariant = 'passwordless';
   } else if (SIGNUP_PASSWORDLESS_LIVE) {
