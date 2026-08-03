@@ -90,3 +90,14 @@
 # function checks touch).
 [functions."both-domain-smoke"]
   schedule = "0 */4 * * *"
+
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# tracker item for-product-instagram-tiktok-auto-postin-cahr76 (Manager's
+# SPEC v1, manual-export MVP for postpack-h4mv.html). Fires once nightly;
+# the function itself enforces at most one pack item per channel
+# (Instagram/TikTok) per UTC calendar day via its own dedup marker (see
+# assemble-instagram-tiktok-postpack.js's own header comment) -- the exact
+# hour isn't load-bearing, just picked clear of the other scheduled jobs
+# above.
+[functions."assemble-instagram-tiktok-postpack"]
+  schedule = "0 7 * * *"

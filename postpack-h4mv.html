@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Post Pack — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-v4.png">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v4.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  /* Utilitarian owner tool, same posture as media-library-x7q4.html's own
+     styling note — reuses .video-grid/.vcard/.vcard-thumb from
+     css/styles.css plus a handful of small local rules for the parts that
+     are genuinely new here: the channel badge, the caption/hashtag copy
+     block, and the desktop scroll-shell (see media-library-x7q4.html's own
+     comment on that fix — same #app/.scroll-area pattern reused verbatim
+     here since this is another long-content owner-only page). */
+  .pp-summary{ display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 18px; }
+  .pp-stat{ flex:1; min-width:84px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+  .pp-stat-num{ font-size:18px; font-weight:800; }
+  .pp-stat-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
+  .pp-filters{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .pp-select{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 10px; color:var(--text-primary); font-family:var(--font-body); font-size:12.5px; flex:1; min-width:120px; }
+  .pp-badge{ position:absolute; left:6px; top:6px; font-size:9px; font-weight:800; padding:3px 7px; border-radius:6px; letter-spacing:.02em; color:#000; }
+  .pp-badge.channel-instagram{ background:var(--accent-growth); }
+  .pp-badge.channel-tiktok{ background:var(--accent-value); }
+  .pp-vcard-thumb{ background:var(--surface-alt); }
+  .pp-card-body{ padding:0; }
+  .pp-caption-box{ width:100%; box-sizing:border-box; resize:vertical; min-height:78px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 10px; color:var(--text-primary); font-family:var(--font-body); font-size:12.5px; line-height:1.5; margin-top:8px; }
+  .pp-hashtags{ font-size:11.5px; color:var(--text-muted); margin-top:6px; word-break:break-word; }
+  .pp-actions{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .pp-actions .btn{ width:auto; padding:8px 12px; font-size:12px; display:inline-flex; align-items:center; gap:6px; }
+  .pp-actions .icon{ width:15px; height:15px; }
+  .pp-copied{ color: var(--accent-growth); font-size:11px; margin-left:2px; align-self:center; opacity:0; transition:opacity .15s; }
+  .pp-copied.show{ opacity:1; }
+  .pp-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+</style>
+</head>
+<body>
+
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <a class="icon-btn" id="pp-back" href="admin.html"></a>
+    <div class="topbar-logo" style="font-size:15px;">Post Pack</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <!-- Same desktop-scroll-shell fix as media-library-x7q4.html/tracker.html
+       — see that file's own comment for the full "why" (#app gets a fixed
+       height once the desktop phone-frame breakpoint kicks in, with no
+       internal scroll region otherwise). -->
+  <div class="scroll-area">
+  <div class="px">
+    <div class="admin-row-sub" style="margin-bottom:16px;">Ready-to-post Instagram/TikTok items, built nightly from recently-published dreams with on-file republish-license consent. Manual export only — nothing here posts anywhere automatically. Copy the caption + hashtags, download the media, post it yourself.</div>
+
+    <!-- Unauthorized / not-logged-in state -->
+    <div id="pp-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+      <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="pp-unauthorized-icon"></div>
+      <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+    </div>
+
+    <!-- Real-password gate (never a bare client-trusted claim — see
+         admin-postpack-data.js's own header comment). -->
+    <div id="pp-gate" style="display:none;">
+      <div class="auth-sub">Enter the owner account's real password to load the post pack.</div>
+      <input class="field" id="pp-gate-source" type="text" placeholder="Username or email" autocomplete="username" dir="auto">
+      <input class="field" id="pp-gate-password" type="password" placeholder="Password" autocomplete="current-password">
+      <button type="button" class="btn btn-primary btn-block" id="pp-gate-submit">Unlock</button>
+      <div class="err-text" id="pp-gate-error" style="margin-top:4px;"></div>
+    </div>
+
+    <!-- Main content, shown once the gate above succeeds -->
+    <div id="pp-content" style="display:none;">
+      <div class="pp-summary" id="pp-summary"></div>
+
+      <div class="pp-filters">
+        <select class="pp-select" id="pp-filter-channel">
+          <option value="">All channels</option>
+          <option value="instagram">Instagram</option>
+          <option value="tiktok">TikTok</option>
+        </select>
+        <button type="button" class="btn btn-ghost" id="pp-refresh-btn" style="width:auto; padding:8px 16px;">Refresh</button>
+      </div>
+
+      <div class="video-grid" id="pp-grid"></div>
+      <div class="pp-empty" id="pp-empty" style="display:none;">No pack items yet — the nightly job builds up to one per channel, only from published dreams with real channel-license consent.</div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script>
+  document.getElementById('pp-back').innerHTML = Icons.back;
+  document.getElementById('pp-unauthorized-icon').innerHTML = Icons.lock;
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=postpack-h4mv.html'; }
+
+  var gateEl = document.getElementById('pp-gate');
+  var unauthorizedEl = document.getElementById('pp-unauthorized');
+  var contentEl = document.getElementById('pp-content');
+  var gateSourceEl = document.getElementById('pp-gate-source');
+  var gatePasswordEl = document.getElementById('pp-gate-password');
+  var gateSubmitBtn = document.getElementById('pp-gate-submit');
+  var gateErrorEl = document.getElementById('pp-gate-error');
+
+  var gateSourceEmail = DreamStore.getAccountEmail();
+  gateSourceEl.value = user && user.handle ? user.handle.replace(/^@/, '') : '';
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    gateEl.style.display = 'none';
+    contentEl.style.display = 'none';
+  }
+
+  // A logged-in account with no email on file at all can never be the
+  // owner — same short-circuit media-library-x7q4.html's own gate uses.
+  if (!gateSourceEmail) {
+    showUnauthorized();
+  } else {
+    gateEl.style.display = 'block';
+  }
+
+  var creds = null;
+  var allItems = [];
+
+  var CHANNEL_LABEL = { instagram: 'Instagram', tiktok: 'TikTok' };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderSummary(items) {
+    var counts = { instagram: 0, tiktok: 0 };
+    items.forEach(function (it) { if (counts[it.channel] !== undefined) counts[it.channel]++; });
+    var el = document.getElementById('pp-summary');
+    el.innerHTML = [
+      { label: 'Total items', num: items.length },
+      { label: 'Instagram', num: counts.instagram },
+      { label: 'TikTok', num: counts.tiktok }
+    ].map(function (s) {
+      return '<div class="pp-stat"><div class="pp-stat-num">' + s.num + '</div><div class="pp-stat-label">' + s.label + '</div></div>';
+    }).join('');
+  }
+
+  function captionAndHashtagsText(item) {
+    var tags = (item.hashtags || []).join(' ');
+    return (item.caption || '') + (tags ? '\n\n' + tags : '');
+  }
+
+  // Lazy video loading (Intersection Observer) — same pattern
+  // media-library-x7q4.html already established for its own grid.
+  var lazyVideoObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      var video = entry.target;
+      if (video.dataset.src && !video.src) {
+        video.preload = 'metadata';
+        video.src = video.dataset.src;
+      }
+      lazyVideoObserver.unobserve(video);
+    });
+  }, { threshold: 0.1, rootMargin: '200px' });
+
+  function cardHTML(item) {
+    var mediaEl = item.mediaType === 'image'
+      ? '<img class="vcard-image" loading="lazy" src="' + esc(item.mediaUrl) + '" alt="">'
+      : '<video class="vcard-video" muted playsinline preload="none" data-src="' + esc(item.mediaUrl) + '"></video>';
+    var channelLabel = CHANNEL_LABEL[item.channel] || item.channel;
+    var hashtagsText = (item.hashtags || []).join(' ');
+    var fullText = captionAndHashtagsText(item);
+    return '<div class="vcard" data-item-id="' + esc(item.id) + '">' +
+      '<div class="vcard-thumb pp-vcard-thumb">' +
+        mediaEl +
+        '<span class="pp-badge channel-' + esc(item.channel) + '">' + esc(channelLabel) + '</span>' +
+      '</div>' +
+      '<div class="vcard-title">' + esc(item.ownerHandle || 'unknown') + '</div>' +
+      '<div class="vcard-meta">' + esc(item.style || '') + '</div>' +
+      '<div class="pp-card-body">' +
+        '<textarea class="pp-caption-box" readonly dir="auto" data-full-text="' + esc(fullText) + '">' + esc(fullText) + '</textarea>' +
+        (hashtagsText ? '<div class="pp-hashtags">' + esc(hashtagsText) + '</div>' : '') +
+        '<div class="pp-actions">' +
+          '<button type="button" class="btn btn-ghost pp-copy-btn" data-item-id="' + esc(item.id) + '"><span class="icon"></span>Copy</button>' +
+          '<a class="btn btn-ghost pp-download-btn" href="' + esc(item.mediaUrl) + '" download target="_blank" rel="noopener"><span class="icon"></span>Download</a>' +
+          '<span class="pp-copied" id="pp-copied-' + esc(item.id) + '">Copied!</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderGrid() {
+    var channelFilter = document.getElementById('pp-filter-channel').value;
+    var filtered = allItems.filter(function (it) {
+      if (channelFilter && it.channel !== channelFilter) return false;
+      return true;
+    });
+    filtered.sort(function (a, b) { return (b.builtAt || 0) - (a.builtAt || 0); });
+
+    var gridEl = document.getElementById('pp-grid');
+    var emptyEl = document.getElementById('pp-empty');
+    if (!filtered.length) {
+      gridEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    gridEl.innerHTML = filtered.map(cardHTML).join('');
+    Array.prototype.forEach.call(gridEl.querySelectorAll('.vcard-video'), function (v) { lazyVideoObserver.observe(v); });
+    Array.prototype.forEach.call(gridEl.querySelectorAll('.pp-copy-btn .icon'), function (el) { el.innerHTML = Icons.copy; });
+    Array.prototype.forEach.call(gridEl.querySelectorAll('.pp-download-btn .icon'), function (el) { el.innerHTML = Icons.download; });
+  }
+
+  // Copy caption+hashtags (event-delegated on #pp-grid, since its innerHTML
+  // is fully replaced on every renderGrid() call). Uses the classic
+  // select()+execCommand('copy') technique against the card's own visible,
+  // readonly textarea rather than navigator.clipboard.writeText — this
+  // stays reliable in every embedding context (including a plain http
+  // local dev server, and a headless test browser with no clipboard
+  // permission granted) without needing a permission prompt at all, and
+  // the textarea itself is always there as a manual select-all/copy
+  // fallback even if the button's own attempt silently does nothing.
+  document.getElementById('pp-grid').addEventListener('click', function (e) {
+    var btn = e.target.closest('.pp-copy-btn');
+    if (!btn) return;
+    var itemId = btn.getAttribute('data-item-id');
+    var card = btn.closest('.vcard');
+    var textarea = card ? card.querySelector('.pp-caption-box') : null;
+    if (textarea) {
+      textarea.focus();
+      textarea.select();
+      try { document.execCommand('copy'); } catch (err) { /* best-effort — textarea stays selected for a manual copy either way */ }
+    }
+    var copiedEl = document.getElementById('pp-copied-' + itemId);
+    if (copiedEl) {
+      copiedEl.classList.add('show');
+      window.clearTimeout(copiedEl._hideTimer);
+      copiedEl._hideTimer = window.setTimeout(function () { copiedEl.classList.remove('show'); }, 2000);
+    }
+  });
+
+  function loadData() {
+    return fetch('/.netlify/functions/admin-postpack-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds)
+    }).then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    }).then(function (result) {
+      if (!result.ok || !result.data.ok) {
+        throw new Error((result.data && result.data.error) || 'load_failed');
+      }
+      allItems = result.data.items;
+      renderSummary(allItems);
+      renderGrid();
+    });
+  }
+
+  gateSubmitBtn.addEventListener('click', function () {
+    gateErrorEl.textContent = '';
+    var usernameOrEmail = gateSourceEl.value.trim();
+    var password = gatePasswordEl.value;
+    if (!usernameOrEmail || !password) {
+      gateErrorEl.textContent = 'Enter a username/email and password.';
+      return;
+    }
+    gateSubmitBtn.disabled = true;
+    creds = { usernameOrEmail: usernameOrEmail, password: password };
+    loadData().then(function () {
+      gateSubmitBtn.disabled = false;
+      gateEl.style.display = 'none';
+      contentEl.style.display = 'block';
+    }).catch(function (err) {
+      gateSubmitBtn.disabled = false;
+      creds = null;
+      var msg = (err && err.message) || '';
+      gateErrorEl.textContent = msg.indexOf('E5') === 0 || msg === 'forbidden'
+        ? "Couldn't verify — check the username/email and password (must be the owner account's real credentials)."
+        : "Couldn't reach the server — check your connection and try again.";
+    });
+  });
+
+  document.getElementById('pp-refresh-btn').addEventListener('click', function () {
+    if (!creds) return;
+    loadData().catch(function () { /* stays on the last-good render */ });
+  });
+  document.getElementById('pp-filter-channel').addEventListener('change', renderGrid);
+</script>
+</body>
+</html>
