@@ -81,3 +81,12 @@
 # mirrors.
 [functions."send-whatsapp-morning-capture"]
   schedule = "0 13 * * *"
+
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# tracker item for-product-reliability-net-spec-v1-smok-x1o5zc, piece 1
+# ("both-domain smoke runs"). Every 4 hours -- see both-domain-smoke.js's
+# own header comment for the call-volume math this cadence was picked
+# against (well under every existing per-IP/per-day rate limit its own
+# function checks touch).
+[functions."both-domain-smoke"]
+  schedule = "0 */4 * * *"

@@ -460,6 +460,29 @@ test('bottom dock nav walk: home -> explore -> create -> profile -> home', async
   await page.waitForSelector('#bottom-nav-slot #nav-home', { timeout: 10000 });
 });
 
+// tracker item for-product-reliability-net-spec-v1-smok-x1o5zc's "state-
+// seeded journeys" ask explicitly names shop.html rendering as one of the
+// nightly-covered surfaces -- added here (this suite's existing real,
+// signed-in probe session) rather than as a separate test, since a real
+// signed-in balance render is exactly what this session already has on
+// hand at this point in the run.
+test('shop.html renders real pack cards and the real server-confirmed token balance for the signed-in probe', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  await safeGoto(origin + '/shop.html');
+  await page.waitForSelector('#shop-topbar-balance', { timeout: 10000 });
+  await page.waitForFunction(function () {
+    var el = document.querySelector('#shop-topbar-balance');
+    return el && el.textContent.trim() !== '' && el.textContent.trim() !== '–';
+  }, { timeout: 10000 });
+
+  var balanceText = await page.locator('#shop-topbar-balance').textContent();
+  assert.match(balanceText.trim(), /^[\d,]+$/, 'expected a real numeric token balance, got "' + balanceText + '"');
+
+  var packCardCount = await page.locator('.pack-card').count();
+  assert.ok(packCardCount > 0, 'expected at least one real pack card to render');
+});
+
 // ===========================================================================
 // 8. Self-cleaning: delete the probe account
 // ===========================================================================
