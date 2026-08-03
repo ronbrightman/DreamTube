@@ -496,7 +496,16 @@
   var SIGNUP_VARIANT_KEY = 'dreamtube_signup_variant';
   var SIGNUP_REVEAL_CHALLENGER_LIVE = false;
   var signupVariant;
-  if (SIGNUP_PASSWORDLESS_LIVE) {
+  // Founder-preview override (2026-08-03, tracker at2fko): ?signup=passwordless
+  // picks the passwordless wall for THIS visit only, while the live flag
+  // stays off for everyone else — so the founder can walk the new wall end
+  // to end before deciding the flip. Unlisted; remove when the flag goes
+  // live for real.
+  var signupQueryOverride = null;
+  try { signupQueryOverride = new URLSearchParams(location.search).get('signup'); } catch (e) {}
+  if (signupQueryOverride === 'passwordless') {
+    signupVariant = 'passwordless';
+  } else if (SIGNUP_PASSWORDLESS_LIVE) {
     signupVariant = 'passwordless';
   } else if (SIGNUP_REVEAL_CHALLENGER_LIVE) {
     signupVariant = localStorage.getItem(SIGNUP_VARIANT_KEY);
