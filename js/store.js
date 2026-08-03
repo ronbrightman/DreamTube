@@ -2757,7 +2757,19 @@
     // fires exactly once per real signup, never on a later login from any
     // device. Phase 1 reporting instrumentation — tracker item
     // for-product-phase-1-reporting-instrument-kjlh46.
-    trackAnalytics('signed_up');
+    //
+    // signup_method: 'email' (tracker item for-product-signup-method-
+    // analytics-foun-y1oqt4, founder ask 2026-08-03) — commitLocalSignup is
+    // ONLY ever reached via the manual username/password wall (start.html's
+    // attemptSignup, login.html's ?mode=signup, wizard.html's own
+    // renderSignup) — commitLocalPasswordlessSignup/commitTransferredSession
+    // are the passwordless-code and Facebook equivalents respectively (see
+    // each of those for their own signup_method value), so this is a fixed
+    // constant here, not a threaded parameter. Joinable in PostHog against
+    // the same-named custom_data property on the paired CompleteRegistration
+    // CAPI event (see js/analytics-config.js's fireMetaConversion call
+    // sites above).
+    trackAnalytics('signed_up', { signup_method: 'email' });
     return { ok: true, user: state.user };
   }
 
@@ -2877,7 +2889,11 @@
     persist();
     identifyForAnalytics(username);
     reconcilePrivateDreamsFromServer();
-    if (fireSignedUpEvent) trackAnalytics('signed_up');
+    // signup_method: 'passwordless_code' (tracker item for-product-signup-
+    // method-analytics-foun-y1oqt4, founder ask 2026-08-03) — see
+    // commitLocalSignup's own comment on why this is a fixed constant
+    // rather than a threaded parameter.
+    if (fireSignedUpEvent) trackAnalytics('signed_up', { signup_method: 'passwordless_code' });
     // `created` mirrors fireSignedUpEvent (both are true exactly for a
     // genuinely NEW account, never a resolved-existing one) — exposed on
     // the return value so a caller (start.html's passwordless signup arm)

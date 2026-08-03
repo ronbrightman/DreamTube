@@ -253,7 +253,12 @@
           // the equivalent call for the post-quiz funnel signup. Shared
           // event_id pairs this with the Pixel's own CompleteRegistration
           // call — see js/analytics-config.js's fireMetaConversion.
-          if(isSignup){ fireMetaConversion('CompleteRegistration', { email: email }); }
+          // signup_method: 'email' — this page only ever offers a plain
+          // username/password signup (see AGENT_POLICY tracker item
+          // for-product-signup-method-analytics-foun-y1oqt4), same
+          // custom_data convention as start.html's own three CompleteRegistration
+          // call sites.
+          if(isSignup){ fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'email' } }); }
           location.href = nextUrl;
         } else {
           err.textContent = result.error;
