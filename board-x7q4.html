@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — The Board</title>
+<!-- The Founder Board (Manager-maintained, 2026-08-03). ONE page for everything open, by side. Zero scripts — works in any viewer. Replaces waiting-x7q4.html. Updated by Manager every cycle; anything said in chat as "waiting on you / I'll follow up" MUST land here same turn. -->
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:760px;margin-inline:auto;font-size:14px;line-height:1.5}
+h1{font-size:20px;font-weight:800;margin:2px 0 0;color:#fff}
+.sub{color:#a49dc4;font-size:12px;margin:2px 0 16px}
+h2{font-size:14px;font-weight:800;margin:20px 0 8px;letter-spacing:.3px}
+h2.ron{color:#ffd28a} h2.prod{color:#9ab0ff} h2.growth{color:#8ee6c2} h2.mgr{color:#e0b3ff} h2.done{color:#7ee2a8} h2.parked{color:#8f88b3}
+details{background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;margin-bottom:7px;overflow:hidden}
+details.ron{border-color:rgba(217,166,83,.45);background:#1a1712}
+details.p0{border-color:rgba(255,112,128,.55)}
+summary{padding:10px 13px;cursor:pointer;font-weight:700;color:#fff;list-style:none;display:flex;gap:8px;align-items:baseline}
+summary::-webkit-details-marker{display:none}
+summary .tag{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px;white-space:nowrap}
+.tag.p0{background:#3a1218;color:#ff8a96}.tag.today{background:#2a2440;color:#c9bfff}.tag.stale{background:#332a12;color:#ffd28a}.tag.new{background:#12332a;color:#8ee6c2}.tag.fyi{background:#1c1c2c;color:#8f88b3}.tag.min{background:#1c1c2c;color:#8f88b3}
+.body{padding:2px 13px 12px;color:#cfc9ec;font-size:13.5px;border-top:1px solid rgba(255,255,255,.06)}
+.body b{color:#fff}.body .do{background:#0f0d20;border-radius:8px;padding:8px 10px;margin-top:7px}
+.body .do b{color:#ffd28a}
+a{color:#9ab0ff;font-weight:700;text-decoration:none}
+.note{color:#8f88b3;font-size:12px;margin-top:18px;line-height:1.55}
+.donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
+</style></head><body>
+<h1>🗂 The Board</h1>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-03 morning</div>
+
+<h2 class="ron">🔴 Waiting on RON — 5 real, 2 low</h2>
+
+<details class="ron"><summary>WhatsApp permanent token <span class="tag today">~5 min · unblocks the whole channel</span></summary><div class="body">
+The token you set yesterday expired after 24h — the morning-message chain (template approval → sender → your first real morning message) is parked behind a permanent one.
+<div class="do"><b>Do:</b> business.facebook.com → Business Settings → (Users) System users → create/select a system user → Generate token → select the WhatsApp app → tick <b>whatsapp_business_messaging</b> + <b>whatsapp_business_management</b> → copy token → Netlify env <b>WHATSAPP_ACCESS_TOKEN</b> (replace value, keep secret flag). Say "wa token done" in chat.</div></div></details>
+
+<details class="ron"><summary>Ben's dream count — seen vs remembered <span class="tag stale">30 sec · open since Sat</span></summary><div class="body">His 4 published dreams verified safe from outside. The open half: does his profile show everything he remembers having? One number from him closes his restore saga.</div></details>
+
+<details class="ron"><summary>Media library — are you happy with it now? <span class="tag new">follow-up we owed you</span></summary><div class="body">Since your notes it got: Published/Private/All filter, desktop scroll fix, and tap-to-play lightbox. Outage-window videos also play now.
+<div class="do"><b>Do:</b> open <a href="https://dreamtube1.netlify.app/media-library-x7q4.html">the admin library</a> (owner login) → try the filter + tap a few videos → one word back: happy / not yet.</div></div></details>
+
+<details class="ron"><summary>Netlify billing screenshot <span class="tag stale">cost question, open for days</span></summary><div class="body">One screenshot of the Netlify billing/usage page settles what's driving hosting cost (deploy frequency vs Blobs vs functions). No navigation instructions from memory — it's wherever billing lives in your dashboard.</div></details>
+
+<details class="ron"><summary>Constellation — one screenshot if still missing <span class="tag today">investigation needs your eyes</span></summary><div class="body">Product's investigation says the streak-constellation code IS in the shipped home page — so either a data condition hides it for you or it's back. If your home still lacks it: screenshot → it becomes reproducible.</div></details>
+
+<details class="ron"><summary>Dodo optional account fields review <span class="tag min">low</span></summary><div class="body">The non-mandatory fields skipped during setup (07-27) — worth a pass when convenient, nothing blocks on it.</div></details>
+
+<details class="ron"><summary>Delete stale branch on GitHub <span class="tag min">low</span></summary><div class="body">feature/quota-credits-system — blocked for us at the git proxy; one click in GitHub UI whenever.</div></details>
+
+<h2 class="prod">🟡 In flight — PRODUCT</h2>
+
+<details class="p0"><summary>Restore the lost "Ziv is dancing" dream <span class="tag p0">P0 · data loss</span></summary><div class="body">Created + charged at 07:43 this morning, video generated, record never landed in your account (verified missing in a fresh view). Restore-or-refund + root cause + count whether any other user was hit. Closes when Ziv appears in your profile.</div></details>
+
+<details class="p0"><summary>Purchase webhook — completions never land <span class="tag p0">P0 · money</span></summary><div class="body">Your $0.99 was charged, no completion callback arrived (suspected secret/URL mismatch from Saturday's rotation). Your 300 tokens were granted manually (balance 1520). Shop stays un-announced until a purchase completes end-to-end on its own.</div></details>
+
+<details class="p0"><summary>Service-worker staleness fix <span class="tag p0">co-P0 · corrupts your QA</span></summary><div class="body">Your device repeatedly sees hours-old pages (three incidents: sage demos, "unfixed" wizard, old walls). Fix = version-stamped SW keyed to deploys. Done-test: you load a page twice after a deploy and see the new version both times, no incognito needed.</div></details>
+
+<details><summary>Speaking Sage — Option D into the Chamber <span class="tag today">today's top build</span></summary><div class="body">Your approved design: lip-synced greeting → YOUR dream video plays while his voice reads with captions. Assets + reference cut ready. Preview link to you before it goes wide; other 4 personas follow the same pattern after.</div></details>
+
+<details><summary>Music beds — wire the Audio toggle <span class="tag new">assets ready</span></summary><div class="body">Your option B: free style-matched ambient beds (4 already generated) replace model audio — sound back, zero per-video cost, no invented words. Toggle becomes real.</div></details>
+
+<details><summary>Facebook Login — final mile <span class="tag stale">creds ready since Sat</span></summary><div class="body">Code built; DreamTube Login app created; ID+secret in env. Remaining: end-to-end verify with the real app, your walk on the signup screen, then decide placement alongside the now-live passwordless wall. (App Review only when going fully public.)</div></details>
+
+<details><summary>Email dedup integrity <span class="tag stale">gates the win-back send</span></summary><div class="body">Some users got 2–4 copies of a once-ever email (again visible yesterday: 10 sends/4 people). Until clean, the win-back blast to all past users stays locked. After it's clean: you get preview + recipient count for one-word approval.</div></details>
+
+<details><summary>Recovery backfill — final "sorted and done" report <span class="tag stale">your directive</span></summary><div class="body">The sweep tool ran (rehost counts logged in the admin library) — the missing piece is the closing report to you: what was saved, what expired unrecoverable, per account. Owed.</div></details>
+
+<details><summary>Reliability net buildout <span class="tag today"></span></summary><div class="body">Nightly real-chain probe (your idea: cheap real generation nightly per domain, must PLAY back), both-domain smoke runs, state-seeded journeys, routing matrix. The media-serving assertion already shipped.</div></details>
+
+<details><summary>Instagram/TikTok auto-posting engine <span class="tag new">rescued from neglect — routing today</span></summary><div class="body">The organic engine on top of published dreams (channel-license fields were built for exactly this in July, then it fell off everyone's radar — your catch). Being routed as a proper project today: channel accounts, posting pipeline, consent already modeled. Expect a spec + decision points, not silent building.</div></details>
+
+<h2 class="growth">🟡 In flight — GROWTH</h2>
+
+<details class="p0"><summary>Explain the $76.37 overspend vs $50 budget <span class="tag p0">demanded today</span></summary><div class="body">+53% over your confirmed daily budget, unreported. Answer due today: budget setting vs Meta overdelivery vs unreported change — and whether action is needed. Your call may follow.</div></details>
+
+<details><summary>Resume nightly numbers + 2h cadence <span class="tag stale">went quiet overnight</span></summary><div class="body">No nightly line for Saturday; 2h checks silent. Escalated.</div></details>
+
+<details><summary>CAPI verification after token swap <span class="tag stale"></span></summary><div class="body">Confirm server-side conversion events flow again in Events Manager + how long the dead-token gap was.</div></details>
+
+<details><summary>Wizard-completion A/B challenger <span class="tag stale">deadline passed</span></summary><div class="body">The funnel test you approved. If still silent today, Manager builds it via its own test agent — with your preview before anything flips.</div></details>
+
+<details><summary>Creative uploads launch <span class="tag stale">trigger was ~Sunday evening</span></summary><div class="body">Approved package waiting for the targeting to exit learning. Verify learning state + launch or state the hold reason.</div></details>
+
+<h2 class="mgr">🟡 In flight — MANAGER</h2>
+
+<details><summary>Passwordless post-flip watch <span class="tag today">live since this morning</span></summary><div class="body">The new wall is LIVE for all new users (your walk + "Flip it"). I watch wall-conversion hour by hour vs the ~70%-bounce baseline; you get the before/after within a day.</div></details>
+
+<details><summary>End the scheduler saga <span class="tag today"></span></summary><div class="body">Durable server-side schedules are blocked on a permission approval that isn't reaching you; today I find the settings-level path. Until then: self-armed wakeups + honest flagging when one dies.</div></details>
+
+<details><summary>Morning report upgrades <span class="tag today">tomorrow's edition</span></summary><div class="body">Charts become tap-throughs to the live dashboard. Test-traffic exclusions extended (gfgg@shdh.com and friends).</div></details>
+
+<details><summary>WhatsApp chain driving <span class="tag today"></span></summary><div class="body">After your token: template submission for Meta approval, sender build, then your first real morning message as the pilot user.</div></details>
+
+<details><summary>This Board <span class="tag fyi">standing</span></summary><div class="body">Refreshed every cycle. Anything I tell you in chat that waits on anyone lands here the same turn. Delivered-to-you items stay listed until you confirm you're happy — the media-library lesson.</div></details>
+
+<h2 class="done">✅ Landed in the last 48h</h2>
+<div class="donebox">
+Video crisis: root-caused (functions dead-on-deploy), fixed, founder-verified, permanently guarded · <b>Passwordless wall LIVE</b> after your walk · Shop wired with your 4 packs (announce waits on webhook) · Meta chain closed: WhatsApp proven + opt-in built, FB Login app created, CAPI token rotated · Logo M1 baked · Audio-off: cheaper videos, no invented speech · Wizard: multi-select + details-field fixed · Media library: filter + scroll + lightbox · Email: real first-frame thumbnail · Countdown into streak module · Sage Option D approved (your design, your book idea) · Retention emails flowing; first-ever second-day returns (best returning day yet: 5) · Your 300 tokens granted · Two founder rules added (P0-stops-everything, negligible-cost=free) + no-unwalked-links rule
+</div>
+
+<h2 class="parked">⚪ Parked on purpose</h2>
+<details><summary>Deliberately not moving <span class="tag fyi"></span></summary><div class="body">Taxes (your call to defer) · Google Play dev account (stage 1, parked) · dreamtube.life full cutover (alias phase holds) · Full per-reading lip-sync (killed on cost — revisit only if volumes change the math) · Titan email (skip until Meta demands a mailbox).</div></details>
+
+<div class="note">Bookmark this page — it's the one place. If something you care about isn't here, say it in chat and it lands here the same turn. Tracker (the workers' database) stays at <a href="https://dreamtube1.netlify.app/tracker.html">tracker.html</a> — you never need it; this Board is your view of it.</div>
+</body></html>
