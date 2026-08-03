@@ -636,3 +636,51 @@ code), `js/store.js` (`pickEditModel`, `realignDreamPrompt`,
 `startDreamEdit`, `modelUsed`/`editHistory` fields on the dream record,
 `isEditDelta`/`editDeltaLength` draft fields), `test/realign-dream-
 prompt.test.js`, `test/generate-video-model-rotation.test.js` (new).
+
+### interp_voice_*
+
+Speaking Sage — Option D (`docs/SPEAKING_SAGE_SPEC.md`, tracker item
+`for-product-build-speaking-sage-wave-fou-8uobuh`, founder GO on "Option D"
+2026-08-02/08-03). Voice/captions wave for the Interpreter's Chamber: a
+one-time lip-synced intro per persona, then a per-reading Kokoro (`am_onyx`,
+speed `0.8`) voice track played over the user's OWN dream video (bounce-
+looped) with timed captions overlaid — no per-reading lip-sync (ruled out
+as too expensive, ~$0.30/reading, per this item's own tracker history).
+Ships FREE (negligible marginal cost per the founder's own "negligible =
+free" rule) behind a founder-preview gate (`?sagevoice=1`, sticky per
+browser) — see `js/interpret-experience.js`'s own header comment. All
+PostHog-only, neutral naming matching the existing `interp_*` convention
+exactly (no Meta Pixel/CAPI, same standing rule as every other
+interpretation event).
+
+| Event | Fires | Props |
+|---|---|---|
+| `interp_voice_intro_shown` | The persona's one-time intro clip actually starts playing — autoplay succeeded, or a blocked-autoplay tap just unlocked it | `{ persona }` |
+| `interp_voice_intro_completed` | Intro clip finishes playing naturally, end to end | `{ persona }` |
+| `interp_voice_intro_skipped` | User taps the intro's "Skip" link, or closes the Chamber while the intro is still playing | `{ persona, via: 'skip_link' \| 'closed' }` |
+| `interp_voice_autoplay_blocked` | Capability-detection (a real `.play()` Promise rejection, never user-agent sniffing) determines audio-on playback was blocked for either the intro or the reading, and the tap-to-play overlay is shown | `{ persona, surface: 'intro' \| 'reading' }` |
+| `interp_voice_play` | The reading's TTS audio actually begins playing | `{ persona, source: 'auto' \| 'tap_unlock' }` |
+| `interp_voice_paused` | User manually pauses reading playback before it completes | `{ persona, position_ms }` |
+| `interp_voice_complete` | Reading TTS finishes playing to the end, uninterrupted | `{ persona, duration_ms }` |
+| `interp_voice_replay` | User re-plays a reading's audio after it already completed once | `{ persona }` |
+| `interp_voice_listen_time` | Once, on Chamber close, IF a voice stage was ever mounted this session (same choke point as `interp_closed`) — total audio dwell | `{ persona, listened_ms, audio_duration_ms, completed: bool }` |
+| `interp_voice_tts_failed` | `generate-interp-audio.js`/`interp-audio-status.js` returns a hard failure — the whole voice stage is hidden, reading falls back to Wave 1's plain text-only card | `{ persona, error_code }` |
+| `interp_voice_caption_fallback` | `captionsLevel` resolves to `'sentence'` instead of `'word'` — the Whisper word-alignment pass (see `interp-audio-status.js`'s own header comment on why this reuses that pattern instead of the tracker-referenced ffmpeg `silencedetect` method) failed or returned nothing usable, and the client-side sentence-proportional fallback engaged | `{ persona }` |
+
+**PLACEHOLDER ASSET CAVEAT:** the intro clip currently wired for `talmudic`
+(the only persona shipping voice this wave) is NOT the real founder-
+approved Option D asset — see `js/interpreter-personas.js`'s own header
+comment and `docs/TEST_REGISTRY.md`'s Interpretation/Chamber section for
+the full story. The events above fire correctly regardless of which video
+file `introClipUrl` points at; only the VISUAL is a stand-in.
+
+**Files touched:** `js/interpreter-personas.js` (`voiceId`/`introClipUrl`
+per persona), `js/interpret-experience.js` (voice stage mount/teardown,
+intro/reading phase state machine, caption rendering, capability-detected
+tap-to-play, every event above), `css/styles.css` (`.itp-voice-*`),
+`netlify/functions/generate-interp-audio.js` (new), `netlify/functions/
+interp-audio-status.js` (new), `js/store.js` (`generateInterpAudio`,
+`hasIntroShown`/`markIntroShown`, `getInterpretations`'s extended shape),
+`assets/interpreters/intro/sage.mp4` (placeholder), `test/generate-interp-
+audio.test.js`, `test/interp-audio-status.test.js`, `test/interp-voice-
+captions.test.js`, `test/interp-voice-behavioral.test.js` (all new).

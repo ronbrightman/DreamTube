@@ -180,6 +180,20 @@
 //       Replaces the old, now-removed getInterpretation/generateInterpretation (single blended
 //       reading, no persona/questions) — see this file's own INTERPRETATION_WAVE1_SPEC.md-linked
 //       comment near ensureInterpretationsMigrated for the full migration/data-model story.
+//   generateInterpAudio(id,personaKey,text) -> Speaking Sage Option D (docs/SPEAKING_SAGE_SPEC.md,
+//       tracker item for-product-build-speaking-sage-wave-fou-8uobuh) — POST
+//       /.netlify/functions/generate-interp-audio then polls /.netlify/functions/interp-audio-status
+//       to completion (mirrors pollUntilDone's shape, own doc comment near its definition below).
+//       On success writes audioUrl/audioDurationMs/captions/captionsLevel onto
+//       interpretations[personaKey] (same object generateInterpretationReading already writes
+//       text/at/qa onto) and persists. Only ever called for a persona whose
+//       js/interpreter-personas.js entry has a non-null voiceId (currently: talmudic/The Sage only).
+//   hasIntroShown(id,personaKey) / markIntroShown(id,personaKey) -> local read/write of a
+//       PER-DREAM-PER-PERSONA "already played this persona's one-time intro clip" flag —
+//       deliberately NOT nested inside interpretations[personaKey] (unlike audioUrl/captions
+//       above) so it survives finalizeDream's edit-clear (which nulls the WHOLE interpretations
+//       map — Wave 1 §3.6), per docs/SPEAKING_SAGE_SPEC.md §7's explicit requirement that seeing
+//       a persona's greeting once shouldn't reset just because the dream's text was later edited.
 //   getTokenStatus()                      -> GET  /.netlify/functions/get-token-status
 //   markFirstVideoCreatedIfEligible(dreamId) -> local read+write, fire-once-per-account guard for
 //                                                the "first video created" conversion event (see
@@ -798,6 +812,28 @@
       persist();
     }
     return dream.interpretations;
+  }
+
+  /**
+   * Speaking Sage Option D (docs/SPEAKING_SAGE_SPEC.md §7, tracker item
+   * for-product-build-speaking-sage-wave-fou-8uobuh) — per-dream-per-
+   * persona "has this persona's one-time intro clip already played for
+   * THIS dream" flag. Lives on `dream.introShownPersonas` (a plain
+   * `{ [personaKey]: timestamp }` map), deliberately a SIBLING of
+   * `interpretations`, not nested inside `interpretations[personaKey]` —
+   * finalizeDream's edit-clear (Wave 1 §3.6) nulls the whole
+   * `interpretations` map wholesale on every edit/regenerate, and the spec
+   * is explicit that seeing a persona's greeting once must NOT reset just
+   * because the dream's text was later edited (§7: "not cleared by
+   * edit/regenerate"). Nesting this flag inside `interpretations[key]`
+   * (as an early draft of this spec literally described) would make that
+   * impossible given how finalizeDream's patch actually works — flagged
+   * here as a deliberate, documented deviation from that literal text, not
+   * an oversight, same spirit as js/interpret-experience.js's own
+   * documented deviations elsewhere in this codebase.
+   */
+  function hasIntroShownFlag(dream, personaKey) {
+    return !!(dream && dream.introShownPersonas && dream.introShownPersonas[personaKey]);
   }
 
   /**
@@ -1649,6 +1685,54 @@
             // the ordinary not-done-yet path above instead of giving up on
             // the very first miss (see doc comment above).
             setTimeout(poll, POLL_INTERVAL_MS);
+          });
+      }
+      poll();
+    });
+  }
+
+  // Speaking Sage Option D's own poll budget — deliberately smaller than
+  // video/image's MAX_POLL_MS: this is a short voice clip plus a caption-
+  // alignment pass over it, not a multi-minute video render, so waiting
+  // this long already means something is genuinely stuck.
+  var INTERP_AUDIO_MAX_POLL_MS = 3 * 60 * 1000;
+
+  /**
+   * Polls interp-audio-status.js to completion, following whichever
+   * `operationName` each response hands back (see that file's own header
+   * comment — the caption-alignment chain hands off a NEW operationName
+   * mid-flight once the TTS stage completes; this loop always polls
+   * whatever name it was told to use most recently, never assumes the
+   * name is static across the whole job the way pollUntilDone's video/
+   * image jobs can). Resolves `{ audioUrl, audioDurationMs, captions,
+   * captionsLevel }` on `status:'done'`, rejects on `status:'failed'` or a
+   * sustained network failure, same "ENNN: reason" Error convention as
+   * pollUntilDone above.
+   */
+  function pollInterpAudioUntilDone(operationName) {
+    return new Promise(function (resolve, reject) {
+      var startedAt = Date.now();
+      var currentName = operationName;
+      function poll() {
+        if (Date.now() - startedAt > INTERP_AUDIO_MAX_POLL_MS) { reject(new Error('E506: tts_request_failed: timed_out')); return; }
+        fetch('/.netlify/functions/interp-audio-status?name=' + encodeURIComponent(currentName))
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.status === 'failed') { reject(new Error(data.error || 'E506: tts_request_failed')); return; }
+            if (data.status === 'done') {
+              resolve({
+                audioUrl: data.audioUrl,
+                audioDurationMs: typeof data.audioDurationMs === 'number' ? data.audioDurationMs : null,
+                captions: Array.isArray(data.captions) ? data.captions : [],
+                captionsLevel: data.captionsLevel === 'word' ? 'word' : 'sentence'
+              });
+              return;
+            }
+            if (data.operationName) currentName = data.operationName;
+            setTimeout(poll, POLL_INTERVAL_MS);
+          })
+          .catch(function (err) {
+            reject(new Error('network_error_during_interp_audio_status_check' + (err && err.message ? ': ' + err.message : '')));
           });
       }
       poll();
@@ -4670,9 +4754,37 @@
       var out = {};
       Object.keys(map).forEach(function (key) {
         var entry = map[key];
-        if (entry) out[key] = { text: entry.text, at: entry.at, qa: entry.qa || [] };
+        if (!entry) return;
+        // audioUrl/audioDurationMs/captions/captionsLevel — Speaking Sage
+        // Option D additive fields (docs/SPEAKING_SAGE_SPEC.md §7). Present
+        // only once generateInterpAudio below has actually completed for
+        // this persona's reading; `undefined` on every existing reading
+        // (no migration needed — see that spec section).
+        out[key] = {
+          text: entry.text, at: entry.at, qa: entry.qa || [],
+          audioUrl: entry.audioUrl, audioDurationMs: entry.audioDurationMs,
+          captions: entry.captions, captionsLevel: entry.captionsLevel
+        };
       });
       return out;
+    },
+
+    /** See hasIntroShownFlag's own doc comment above for the full "why a sibling field, not nested" reasoning. Read-only; same ownership guard every other per-dream read in this file uses. */
+    hasIntroShown: function (id, personaKey) {
+      var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return false;
+      return hasIntroShownFlag(d, personaKey);
+    },
+
+    /** Marks `personaKey`'s one-time intro clip as shown for THIS dream — idempotent (a second call for an already-shown persona is a harmless no-op re-stamp of the same timestamp field). */
+    markIntroShown: function (id, personaKey) {
+      var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return;
+      if (!d.introShownPersonas) d.introShownPersonas = {};
+      d.introShownPersonas[personaKey] = Date.now();
+      persist();
     },
 
     /**
@@ -4778,6 +4890,68 @@
         });
       }, function (err) {
         throw new Error('network_error_requesting_interpretation' + (err && err.message ? ': ' + err.message : ''));
+      });
+    },
+
+    /**
+     * Speaking Sage Option D (docs/SPEAKING_SAGE_SPEC.md, tracker item
+     * for-product-build-speaking-sage-wave-fou-8uobuh) — generates this
+     * persona's per-reading voice track for a dream's ALREADY-GENERATED
+     * reading `text` (generateInterpretationReading's own output — this
+     * never re-generates the reading itself). Submits via
+     * generate-interp-audio.js, then polls interp-audio-status.js to
+     * completion — same submit-then-poll shape pollUntilDone (video/image)
+     * already established in this file, tailored for this feature's own
+     * "one poll cycle, operationName may change mid-flight" contract (see
+     * that function's own header comment).
+     *
+     * On success, writes `audioUrl`/`audioDurationMs`/`captions`/
+     * `captionsLevel` onto the SAME `interpretations[personaKey]` object
+     * generateInterpretationReading above already wrote `text`/`at`/`qa`
+     * onto (never overwriting those fields) and persists. Resolves
+     * `{ audioUrl, audioDurationMs, captions, captionsLevel }`. On
+     * failure, rejects with an Error the same "ENNN: reason" convention
+     * every other function in this file uses — js/interpret-experience.js
+     * treats this as a soft failure (interp_voice_tts_failed, reading
+     * falls back to text-only), never a hard gate on the reading itself.
+     *
+     * Deliberately does NOT ownership-guard against `d` the way
+     * generateInterpretationReading does at call time only — it
+     * re-resolves+re-checks ownership at the WRITE point below (mirroring
+     * generateInterpretationReading's own "the signed-in account could
+     * have changed by the time this resolves" reasoning), since audio
+     * generation is slower (a real TTS + alignment pipeline, not a single
+     * LLM completion) and has more time to race a sign-out/switch.
+     */
+    generateInterpAudio: function (id, personaKey, text) {
+      var d = findDream(id);
+      var myHandle = state.user ? state.user.handle : null;
+      if (!d || !myHandle || d.ownerHandle !== myHandle) return Promise.reject(new Error('not_found'));
+      return fetch('/.netlify/functions/generate-interp-audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dreamId: id, personaKey: personaKey, text: text })
+      }).then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'E506: tts_request_failed');
+          return pollInterpAudioUntilDone(data.operationName);
+        });
+      }, function (err) {
+        throw new Error('network_error_requesting_interp_audio' + (err && err.message ? ': ' + err.message : ''));
+      }).then(function (result) {
+        var dream = findDream(id);
+        var currentHandle = state.user ? state.user.handle : null;
+        if (dream && currentHandle && dream.ownerHandle === currentHandle) {
+          var map = ensureInterpretationsMigrated(dream);
+          var entry = map[personaKey] || { text: text, at: Date.now(), qa: [] };
+          entry.audioUrl = result.audioUrl;
+          entry.audioDurationMs = result.audioDurationMs;
+          entry.captions = result.captions;
+          entry.captionsLevel = result.captionsLevel;
+          map[personaKey] = entry;
+          persist();
+        }
+        return result;
       });
     },
 

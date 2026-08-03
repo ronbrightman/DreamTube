@@ -11,6 +11,27 @@ pass before build on any substantial new user-facing feature; the scope
 itself (TTS on readings + one-time lip-synced intro clips, per the brief)
 is not up for re-litigation here — only the concrete UX mechanics are.
 
+**SUPERSEDED IN PART (2026-08-02/08-03) — "Option D" is what actually got
+built.** After this spec shipped, the founder ran 14 more live-iteration
+rounds directly with Manager and landed on a simpler final recipe (tracker
+item `for-product-build-speaking-sage-wave-fou-8uobuh`'s own comment
+history, "FOUNDER GO ON OPTION D"): the intro clip is unchanged from §5
+below, but the READING no longer shows the persona's portrait/face at all
+— it crossfades directly into the USER'S OWN dream video (bounce-looped)
+while the Kokoro voice track plays over it, captions overlaid on the
+video. This makes §3's whole Direction 1 vs Direction 2 debate moot (there
+is no persona portrait to tap or dock a player around during a reading
+anymore) and changes §4's caption-timing mechanism's OWN mechanism
+slightly in the actual build (word-level Whisper alignment is still used —
+this section's own finding was right — but the tracker's later Option D
+text separately references an ffmpeg `silencedetect` method that this
+repo/sandbox has no ffmpeg dependency for; the build reuses THIS spec's
+own §4 Whisper approach instead, see `interp-audio-status.js`'s header
+comment for the full reasoning). §§1, 2, 5, 6, 7 (data model shape, intro-
+clip mechanics, mobile-webview fallback, safety) are all still accurate to
+what shipped. §12 items 1/3/4 (voice casting beyond the Sage, exact voice
+catalog, hint copy) are still open for the other four personas.
+
 **Codebase-freshness note for whoever builds this:** this spec was
 written against the REAL, current `main` (fetched directly from GitHub —
 `js/interpret-experience.js`, `js/interpreter-personas.js`,

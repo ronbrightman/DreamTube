@@ -77,6 +77,115 @@
   var session = null;
   var gen = 0;
 
+  // ==========================================================================
+  // Speaking Sage — Option D (docs/SPEAKING_SAGE_SPEC.md, tracker item
+  // for-product-build-speaking-sage-wave-fou-8uobuh, founder GO on "Option
+  // D" 2026-08-02/08-03). One-time lip-synced intro per persona, then a
+  // per-reading Kokoro voice track (am_onyx, speed 0.8) played over the
+  // user's OWN dream video (bounce-looped) with timed captions overlaid —
+  // no per-reading lip-sync (explicitly ruled out as too expensive).
+  //
+  // ── Founder-preview gate ──
+  // Ships behind a query-param + localStorage-sticky gate (same
+  // "?param=1, remembered in localStorage from then on" convention this
+  // codebase already uses elsewhere — e.g. start.html's `signup` override,
+  // wizard.html's `entry=index`) rather than a broad on/off flip — build
+  // task scope item 4: "Manager needs a way to preview it and give the
+  // founder a link first," before this goes live for everyone. A link like
+  // `home.html?sagevoice=1` (or any page hosting the Chamber) permanently
+  // enables this browser; there is no broad-rollout switch yet — that's a
+  // deliberate separate step once the real founder-approved intro asset
+  // replaces this branch's placeholder (see js/interpreter-personas.js's
+  // own header note).
+  var VOICE_PREVIEW_PARAM = 'sagevoice';
+  var VOICE_PREVIEW_STORAGE_KEY = 'dreamtube_interp_voice_preview';
+
+  /** True once this browser has been granted the Speaking Sage preview (via the `?sagevoice=1` link, sticky in localStorage from then on) — never assumed on, always explicit. Best-effort: any localStorage failure (private mode, etc.) reads as "not previewing" rather than throwing, same convention as every other localStorage read in this codebase. */
+  function isVoicePreviewEnabled() {
+    try {
+      if (typeof location !== 'undefined' && new RegExp('[?&]' + VOICE_PREVIEW_PARAM + '=1(?:&|$)').test(location.search)) {
+        localStorage.setItem(VOICE_PREVIEW_STORAGE_KEY, '1');
+        return true;
+      }
+      return typeof localStorage !== 'undefined' && localStorage.getItem(VOICE_PREVIEW_STORAGE_KEY) === '1';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** Whether persona's one-time intro clip should play right now — has an asset AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
+  function shouldShowIntro(persona, introAlreadyShown) {
+    return !!(persona && persona.introClipUrl) && !introAlreadyShown;
+  }
+
+  /**
+   * Splits a reading into sentence-ish chunks and distributes `durationMs`
+   * across them proportional to character length — the sentence-level
+   * caption fallback (docs/SPEAKING_SAGE_SPEC.md §4) engaged only when
+   * interp-audio-status.js's word-level Whisper alignment pass fails or
+   * returns nothing usable (`captionsLevel:'sentence'`, empty `captions`).
+   * Computed CLIENT-SIDE, once the real audio duration is known (the
+   * `<audio>` element's own `loadedmetadata`, not a guessed server-side
+   * field — see interp-audio-status.js's own header comment on why Kokoro's
+   * response has no confirmed duration field to trust), rather than
+   * attempting this server-side. Returns the same `{ word, startMs, endMs }`
+   * shape the word-level path already uses (one entry per SENTENCE here,
+   * not per word — `word` just holds the sentence text) so the caller's
+   * rendering/lookup code (currentCaptionIndex below) is identical either
+   * way. Pure/no-DOM — unit tested directly.
+   */
+  function computeSentenceFallbackCaptions(text, durationMs) {
+    var trimmed = (text || '').trim();
+    if (!trimmed || !durationMs || durationMs <= 0) return [];
+    var sentences = trimmed.match(/[^.!?]+[.!?]*/g) || [trimmed];
+    sentences = sentences.map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!sentences.length) return [];
+    var totalChars = sentences.reduce(function (sum, s) { return sum + s.length; }, 0) || 1;
+    var captions = [];
+    var elapsedMs = 0;
+    sentences.forEach(function (sentence) {
+      var shareMs = Math.round((sentence.length / totalChars) * durationMs);
+      var startMs = elapsedMs;
+      var endMs = Math.min(durationMs, elapsedMs + shareMs);
+      captions.push({ word: sentence, startMs: startMs, endMs: endMs });
+      elapsedMs = endMs;
+    });
+    // Last cue always reaches the real end, regardless of any rounding
+    // drift accumulated above.
+    captions[captions.length - 1].endMs = durationMs;
+    return captions;
+  }
+
+  /** Index of the caption cue active at `currentMs` (word- or sentence-level — same shape either way), or -1 before the first cue starts. Assumes `captions` is sorted ascending by startMs (true by construction of both producers). Pure/no-DOM — unit tested directly. */
+  function currentCaptionIndex(captions, currentMs) {
+    if (!captions || !captions.length) return -1;
+    var idx = -1;
+    for (var i = 0; i < captions.length; i++) {
+      if (currentMs >= captions[i].startMs) idx = i; else break;
+    }
+    return idx;
+  }
+
+  /**
+   * One rAF tick of the reading-phase dream-video bounce loop ("play
+   * forward to the end, then backward to the start, repeat" — Option D's
+   * own spec wording — implemented as manual `currentTime` scrubbing in
+   * BOTH directions rather than fighting the browser's one-directional
+   * native playback clock with a negative `playbackRate`, which isn't
+   * reliably supported). Pure math, `deltaSec` supplied by the caller (a
+   * real rAF timestamp delta) so this is independently unit-testable
+   * without a real `<video>` element or a real animation frame.
+   */
+  function nextBounceFrame(currentTime, duration, direction, deltaSec) {
+    var safeCurrentTime = typeof currentTime === 'number' && !isNaN(currentTime) ? currentTime : 0;
+    var safeDirection = direction === -1 ? -1 : 1;
+    if (!duration || duration <= 0 || !deltaSec || deltaSec <= 0) return { currentTime: safeCurrentTime, direction: safeDirection };
+    var next = safeCurrentTime + safeDirection * deltaSec;
+    if (next >= duration) return { currentTime: duration, direction: -1 };
+    if (next <= 0) return { currentTime: 0, direction: 1 };
+    return { currentTime: next, direction: safeDirection };
+  }
+
   function trackLocal(name, props) {
     if (typeof window !== 'undefined' && window.posthog && typeof window.posthog.capture === 'function') {
       try { posthog.capture(name, props || {}); } catch (e) { /* analytics must never break the app */ }
@@ -105,6 +214,254 @@
   /** Resolves `key` to its real persona data, or the neutral classic-migration fallback above if `key` isn't (or is no longer) a recognized persona. Every render function below reads a persona through this rather than InterpreterPersonas.get() directly. */
   function getPersonaOrFallback(key) {
     return (window.InterpreterPersonas && window.InterpreterPersonas.get(key)) || CLASSIC_FALLBACK_PERSONA;
+  }
+
+  // ==========================================================================
+  // Voice runtime state — a SEPARATE object from `session` (same spirit:
+  // reset on every teardown, referenced by closures that must go stale the
+  // moment it's replaced). Only ever non-null while the reading phase's
+  // voice stage is actually mounted for a voice-eligible persona (has
+  // `voiceId`, see js/interpreter-personas.js). `myGen`/`myDreamId`/
+  // `myPersonaKey` are captured at setup time so a late-arriving
+  // generateInterpAudio response can detect it's stale (the user closed,
+  // switched dreams, or picked a different persona) — same async-
+  // staleness-guard convention as `session`'s own `gen` above.
+  // ==========================================================================
+  var voiceState = null;
+
+  function resetVoiceState() {
+    if (voiceState) {
+      if (voiceState.rafId) cancelAnimationFrame(voiceState.rafId);
+      if (voiceState.audioEl) { try { voiceState.audioEl.pause(); } catch (e) { /* element may already be detached */ } }
+      if (voiceState.introEl) { try { voiceState.introEl.pause(); } catch (e) { /* element may already be detached */ } }
+    }
+    voiceState = null;
+  }
+
+  /** Real, tap-satisfying attempt to play a media element with capability detection (spec §6: "attempt playback; if the returned Promise from .play() rejects... fall back to tap-to-play" — never user-agent sniffing). Resolves true on success, false on a detected autoplay block (never rejects — a play() rejection is an expected, handled outcome here, not a bug). */
+  function attemptPlay(el) {
+    if (!el || typeof el.play !== 'function') return Promise.resolve(false);
+    var result = el.play();
+    if (!result || typeof result.then !== 'function') return Promise.resolve(true); // older browsers: play() returns undefined, assume success
+    return result.then(function () { return true; }, function () { return false; });
+  }
+
+  function showTapOverlay(vs) { if (vs.tapOverlay) vs.tapOverlay.classList.remove('off'); }
+  function hideTapOverlay(vs) { if (vs.tapOverlay) vs.tapOverlay.classList.add('off'); }
+
+  /** Manual currentTime-scrubbing bounce loop for the reading phase's dream-video backdrop (see nextBounceFrame's own doc comment for why this doesn't use native playback). No-op if the dream has no playable video (image-only dream, or the dream record is missing a videoUrl) — the stage still renders (captions over a plain dark backdrop) rather than blocking the whole voice feature on having a video specifically. */
+  function startDreamVideoBounceLoop(vs) {
+    var el = vs.dreamEl;
+    if (!el || !el.getAttribute('src')) return;
+    el.muted = true; // purely a visual loop — the actual reading audio is the separate <audio> element
+    var lastTs = null;
+    function step(ts) {
+      if (voiceState !== vs) return; // torn down / superseded — stop scheduling more frames
+      if (lastTs != null && el.duration && !isNaN(el.duration)) {
+        var deltaSec = (ts - lastTs) / 1000;
+        var next = nextBounceFrame(el.currentTime, el.duration, vs.bounceDirection, deltaSec);
+        try { el.currentTime = next.currentTime; } catch (e) { /* seeking before metadata is ready — next frame retries */ }
+        vs.bounceDirection = next.direction;
+      }
+      lastTs = ts;
+      vs.rafId = requestAnimationFrame(step);
+    }
+    vs.rafId = requestAnimationFrame(step);
+  }
+
+  /** Renders whichever caption cue is active at `ms` into the stage's caption strip — same "one current line, replacing the previous" overlay treatment already prototyped and founder-reviewed on the Option-D demo pages (sage-demo-x7q4.html), reused here rather than inventing a new multi-word karaoke layout under this build's time budget. Blank between cues (before the first word, or past the last one). */
+  function renderVoiceCaption(vs, ms) {
+    if (!vs.capEl) return;
+    var idx = currentCaptionIndex(vs.captions, ms);
+    var text = idx >= 0 ? vs.captions[idx].word : '';
+    if (vs.capEl.textContent !== text) vs.capEl.textContent = text;
+  }
+
+  /** Kicks off this reading's TTS+captions generation in the background — called immediately when the voice stage mounts, in parallel with the intro clip, so audio is ready (or close to it) by the time a real ~7s intro finishes playing (spec's own reasoning). Soft-fails (spec: "reading falls back to text-only, no audio control shown at all") — a failure here tears down the whole voice stage rather than leaving it half-built with nothing to play. */
+  function requestVoiceAudio(vs, persona) {
+    var myGen = gen, myDreamId = vs.dreamId, myPersonaKey = vs.personaKey;
+    window.DreamStore.generateInterpAudio(vs.dreamId, vs.personaKey, vs.readingText).then(function (result) {
+      if (myGen !== gen || voiceState !== vs || session.dreamId !== myDreamId || session.personaKey !== myPersonaKey) return; // stale
+      vs.audioUrl = result.audioUrl;
+      vs.audioDurationMs = result.audioDurationMs;
+      vs.captions = result.captions || [];
+      vs.captionsLevel = result.captionsLevel;
+      vs.audioReady = true;
+      if (vs.captionsLevel === 'sentence') trackLocal('interp_voice_caption_fallback', { persona: persona.key });
+      if (vs.phase === 'loading') beginAudioPlayback(vs, persona);
+    }).catch(function (err) {
+      if (myGen !== gen || voiceState !== vs || session.dreamId !== myDreamId || session.personaKey !== myPersonaKey) return; // stale
+      trackLocal('interp_voice_tts_failed', { persona: persona.key, error_code: (err && err.message) || 'unknown' });
+      vs.audioFailed = true;
+      if (vs.phase === 'loading') teardownVoiceStageOnFailure(vs);
+    });
+  }
+
+  /** A hard TTS failure after the intro already finished — nothing to play, so the whole voice stage is hidden and this reading falls back to exactly Wave 1's plain text-only card (already rendered underneath it — see renderReading). */
+  function teardownVoiceStageOnFailure(vs) {
+    vs.phase = 'failed';
+    if (vs.stageEl) vs.stageEl.style.display = 'none';
+  }
+
+  /** Intro phase (spec §5) — plays the persona's one-time lip-synced greeting, tap-to-play fallback on a detected autoplay block (spec §6), advances to the reading phase on natural end OR an explicit Skip tap. */
+  function startIntroPhase(vs, persona) {
+    vs.phase = 'intro';
+    if (vs.skipEl) vs.skipEl.style.display = '';
+    var introEl = vs.introEl;
+    if (!introEl) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldn't happen, renderReading only renders the skip/intro markup when introClipUrl is set
+    attemptPlay(introEl).then(function (ok) {
+      if (voiceState !== vs) return;
+      if (ok) {
+        trackLocal('interp_voice_intro_shown', { persona: persona.key });
+      } else {
+        trackLocal('interp_voice_autoplay_blocked', { persona: persona.key, surface: 'intro' });
+        showTapOverlay(vs);
+      }
+    });
+    introEl.addEventListener('ended', function () {
+      if (voiceState !== vs) return;
+      completeIntro(vs, persona, 'ended');
+    });
+    if (vs.tapOverlay) {
+      vs.tapOverlay.addEventListener('click', function onIntroTap() {
+        if (voiceState !== vs || vs.phase !== 'intro') return;
+        attemptPlay(introEl).then(function (ok) {
+          if (voiceState !== vs || vs.phase !== 'intro') return;
+          if (ok) { hideTapOverlay(vs); trackLocal('interp_voice_intro_shown', { persona: persona.key }); }
+        });
+      });
+    }
+    if (vs.skipEl) {
+      vs.skipEl.addEventListener('click', function () {
+        if (voiceState !== vs || vs.phase !== 'intro') return;
+        completeIntro(vs, persona, 'skip_link');
+      });
+    }
+  }
+
+  function completeIntro(vs, persona, via) {
+    if (via === 'ended') trackLocal('interp_voice_intro_completed', { persona: persona.key });
+    else trackLocal('interp_voice_intro_skipped', { persona: persona.key, via: via });
+    window.DreamStore.markIntroShown(vs.dreamId, vs.personaKey);
+    hideTapOverlay(vs);
+    if (vs.skipEl) vs.skipEl.style.display = 'none';
+    if (vs.introEl) vs.introEl.classList.add('itp-voice-fade-out');
+    if (vs.dreamEl) vs.dreamEl.classList.remove('itp-voice-hidden'); // crossfades IN as the intro crossfades out (spec §5: "genuinely lip-synced video... then crossfades back", adapted to Option D's "into the user's own dream video" target)
+    enterReadingPhase(vs, persona);
+  }
+
+  /** Reading phase (Option D §2) — starts the dream-video bounce loop immediately (so its crossfade-in lines up with the intro's crossfade-out, or fires immediately for a persona with no intro), and begins real audio playback the moment TTS/captions are ready (immediately, if they already finished generating during the intro). */
+  function enterReadingPhase(vs, persona) {
+    vs.phase = 'loading';
+    startDreamVideoBounceLoop(vs);
+    if (vs.audioReady) beginAudioPlayback(vs, persona);
+    else if (vs.audioFailed) teardownVoiceStageOnFailure(vs);
+    // else: requestVoiceAudio's own .then/.catch (already in flight) picks
+    // this up the moment it resolves — see their own `phase === 'loading'` checks.
+  }
+
+  function beginAudioPlayback(vs, persona) {
+    vs.phase = 'reading';
+    var audio = new Audio(vs.audioUrl);
+    vs.audioEl = audio;
+    audio.addEventListener('loadedmetadata', function () {
+      if (voiceState !== vs) return;
+      // Authoritative duration (spec's own "probe the real asset" rule) —
+      // fills in the sentence-fallback schedule now that it's knowable,
+      // and supersedes the server's best-effort estimate for analytics.
+      if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+        vs.audioDurationMs = Math.round(audio.duration * 1000);
+        if (vs.captionsLevel === 'sentence' && !vs.captions.length) {
+          vs.captions = computeSentenceFallbackCaptions(vs.readingText, vs.audioDurationMs);
+        }
+      }
+    });
+    audio.addEventListener('timeupdate', function () {
+      if (voiceState !== vs) return;
+      renderVoiceCaption(vs, audio.currentTime * 1000);
+    });
+    audio.addEventListener('ended', function () {
+      if (voiceState !== vs) return;
+      if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
+      vs.hasCompletedOnce = true;
+      renderVoiceCaption(vs, 0);
+      trackLocal('interp_voice_complete', { persona: persona.key, duration_ms: vs.audioDurationMs || Math.round(audio.duration * 1000) || null });
+      showTapOverlay(vs); // reused as the "replay" affordance post-completion
+    });
+    attemptPlay(audio).then(function (ok) {
+      if (voiceState !== vs) return;
+      if (ok) {
+        vs.listenStartedAt = Date.now();
+        trackLocal('interp_voice_play', { persona: persona.key, source: 'auto' });
+      } else {
+        trackLocal('interp_voice_autoplay_blocked', { persona: persona.key, surface: 'reading' });
+        showTapOverlay(vs);
+      }
+    });
+    if (vs.tapOverlay) {
+      vs.tapOverlay.addEventListener('click', function onReadingTap() {
+        if (voiceState !== vs || vs.phase !== 'reading') return;
+        if (vs.hasCompletedOnce) {
+          audio.currentTime = 0;
+          vs.hasCompletedOnce = false;
+          attemptPlay(audio).then(function (ok) {
+            if (voiceState !== vs) return;
+            if (ok) { vs.listenStartedAt = Date.now(); hideTapOverlay(vs); trackLocal('interp_voice_replay', { persona: persona.key }); }
+          });
+          return;
+        }
+        if (audio.paused) {
+          attemptPlay(audio).then(function (ok) {
+            if (voiceState !== vs) return;
+            if (ok) {
+              vs.listenStartedAt = Date.now();
+              hideTapOverlay(vs);
+              trackLocal('interp_voice_play', { persona: persona.key, source: 'tap_unlock' });
+            }
+          });
+        } else {
+          audio.pause();
+          if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
+          trackLocal('interp_voice_paused', { persona: persona.key, position_ms: Math.round(audio.currentTime * 1000) });
+          showTapOverlay(vs);
+        }
+      });
+    }
+  }
+
+  /**
+   * Mounts the voice stage for the CURRENT reading (called from
+   * renderReading below only when the active persona has a `voiceId` and
+   * the founder-preview gate is on). Kicks off audio generation
+   * immediately (in parallel with the intro, if there is one) and starts
+   * whichever phase applies — intro-first (persona has an unshown
+   * introClipUrl) or straight to the reading phase.
+   */
+  function setupVoiceStage(persona) {
+    resetVoiceState();
+    var vs = {
+      dreamId: session.dreamId, personaKey: session.personaKey, readingText: session.readingText,
+      stageEl: document.getElementById('itp-voice-stage'),
+      introEl: document.getElementById('itp-voice-intro'),
+      dreamEl: document.getElementById('itp-voice-dream-video'),
+      capEl: document.getElementById('itp-voice-caption'),
+      tapOverlay: document.getElementById('itp-voice-tap-overlay'),
+      skipEl: document.getElementById('itp-voice-skip'),
+      phase: 'intro', bounceDirection: 1, rafId: null,
+      audioEl: null, audioUrl: null, audioReady: false, audioFailed: false,
+      captions: [], captionsLevel: 'word', audioDurationMs: null,
+      listenStartedAt: null, totalListenedMs: 0, hasCompletedOnce: false
+    };
+    voiceState = vs;
+
+    requestVoiceAudio(vs, persona);
+
+    var introAlreadyShown = window.DreamStore.hasIntroShown(vs.dreamId, vs.personaKey);
+    if (shouldShowIntro(persona, introAlreadyShown)) {
+      startIntroPhase(vs, persona);
+    } else {
+      enterReadingPhase(vs, persona);
+    }
   }
 
   function ensureMounted() {
@@ -536,10 +893,50 @@
     render();
   }
 
+  /**
+   * Speaking Sage Option D voice stage markup — mounted ABOVE the plain
+   * text `.itp-reading-card` (unchanged from Wave 1, still rendered
+   * underneath, still the only thing a non-voice persona or a preview-gate-
+   * off browser ever sees — same "tolerate a missing capability, never
+   * block" convention as the portrait fallback). Only rendered when the
+   * founder-preview gate is on AND the active persona has a `voiceId`
+   * (currently: talmudic/The Sage only — js/interpreter-personas.js).
+   *
+   * The intro `<video>` (`#itp-voice-intro`) is only present in the markup
+   * at all when `showIntro` is true — i.e. the persona actually has an
+   * `introClipUrl` AND it hasn't already played for this dream
+   * (shouldShowIntro) — NOT merely whenever the persona has an intro asset
+   * at all. This matters for the "reopen an already-read persona" case
+   * (spec §5): if the element were unconditionally present whenever
+   * `introClipUrl` is set, the intro's `<video>` would sit in the DOM
+   * (unused, never played) even on a revisit that should show nothing but
+   * the reading — the markup itself has to reflect the same "already
+   * shown" decision setupVoiceStage's own runtime logic makes, not just
+   * skip PLAYING it while still rendering it.
+   */
+  function voiceStageHtml(persona, dreamMediaUrl, showIntro) {
+    return '<div class="itp-voice-stage" id="itp-voice-stage">' +
+      '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
+      (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>' +
+      (showIntro
+        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introClipUrl) + '"></video>'
+        : '') +
+      '<div class="itp-voice-caption" id="itp-voice-caption"></div>' +
+      '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay"><div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div></div>' +
+      '<div class="itp-voice-skip link-text" id="itp-voice-skip" style="display:none">Skip</div>' +
+      '</div>';
+  }
+
   function renderReading() {
     var persona = getPersonaOrFallback(session.personaKey);
     var body = document.getElementById('itp-body');
+    var voiceEligible = isVoicePreviewEnabled() && !!persona.voiceId;
+    var dream = voiceEligible ? window.DreamStore.getDream(session.dreamId) : null;
+    var dreamMediaUrl = dream ? (dream.videoUrl || dream.imageUrl || null) : null;
+    var showIntro = voiceEligible && shouldShowIntro(persona, window.DreamStore.hasIntroShown(session.dreamId, session.personaKey));
+
     body.innerHTML =
+      (voiceEligible ? voiceStageHtml(persona, dreamMediaUrl, showIntro) : '') +
       '<div class="itp-reading-card" id="itp-reading-card" style="border-left-color:' + esc(persona.accent) + '">' +
       '<div class="itp-reading-persona-line">' + portraitHtml(persona) +
       '<div class="itp-reading-persona-name">' + esc(persona.name) + ' — ' + esc(persona.inspiredBy) + '</div></div>' +
@@ -561,9 +958,12 @@
       goToReadingLoading({ regenerated: true });
     });
     document.getElementById('itp-close-link').addEventListener('click', function () { close(); });
+
+    if (voiceEligible) setupVoiceStage(persona); else resetVoiceState();
   }
 
   function goToPicker() {
+    resetVoiceState();
     session.phase = 'picker';
     session.personaKey = null;
     session.questions = null;
@@ -683,15 +1083,49 @@
 
   function close() {
     if (!session) return;
+    // Speaking Sage Option D voice-lifecycle events that only make sense at
+    // a real close choke point (same reasoning `interp_closed` itself
+    // already established) — fired BEFORE resetVoiceState() below clears
+    // the state they read from.
+    if (voiceState) {
+      if (voiceState.phase === 'intro') {
+        trackLocal('interp_voice_intro_skipped', { persona: voiceState.personaKey, via: 'closed' });
+      }
+      if (voiceState.listenStartedAt) {
+        voiceState.totalListenedMs += Date.now() - voiceState.listenStartedAt;
+        voiceState.listenStartedAt = null;
+      }
+      if (voiceState.audioEl) {
+        trackLocal('interp_voice_listen_time', {
+          persona: voiceState.personaKey,
+          listened_ms: voiceState.totalListenedMs,
+          audio_duration_ms: voiceState.audioDurationMs || null,
+          completed: !!voiceState.hasCompletedOnce
+        });
+      }
+    }
     trackLocal('interp_closed', { phase: session.phase });
     var root = document.getElementById(ROOT_ID);
     if (root) root.classList.remove('open');
     document.body.style.overflow = '';
+    resetVoiceState();
     session = null;
     gen += 1;
   }
 
   var InterpretExperience = { open: open, close: close };
+
+  // Speaking Sage Option D's pure (no-DOM) logic, exported purely for
+  // test/interp-voice-captions.test.js's direct require()'d unit coverage —
+  // same "export an internal for testability" precedent
+  // js/purchase-sheet.js / js/wizard-chips.js already established in this
+  // codebase (see either file's own header comment). Purely additive:
+  // nothing above reads these off the exported object, every real call
+  // site uses the closures directly.
+  InterpretExperience._shouldShowIntro = shouldShowIntro;
+  InterpretExperience._computeSentenceFallbackCaptions = computeSentenceFallbackCaptions;
+  InterpretExperience._currentCaptionIndex = currentCaptionIndex;
+  InterpretExperience._nextBounceFrame = nextBounceFrame;
 
   if (typeof window !== 'undefined') window.InterpretExperience = InterpretExperience;
   if (typeof module !== 'undefined' && module.exports) module.exports = InterpretExperience;
