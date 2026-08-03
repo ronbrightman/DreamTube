@@ -152,7 +152,14 @@ test('start.html: the persisted fbc/fbp cookies actually reach a real conversion
     await blockThirdParty(page);
     var conversionCalls = await captureTrackConversion(page);
 
-    await page.goto(baseUrl + '/start.html?' + BASE_RESUME_PARAMS + '&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean') + '&fbc=fb.1.1700000000000.attributed&fbp=fb.1.1700000000000.browserid', { waitUntil: 'domcontentloaded' });
+    // signup=unified: the default signup wall became 'passwordless' on
+    // 2026-08-03 (SIGNUP_PASSWORDLESS_LIVE, start.html), which has a
+    // different screen-13 DOM than the two-step email->password flow this
+    // test drives via signupFlow.advanceToPasswordStep. This test/dev
+    // override (start.html's signupQueryOverride) forces the two-step
+    // 'unified' wall regardless of the live default, matching the other
+    // signup-flow-driven behavioral test files' convention.
+    await page.goto(baseUrl + '/start.html?' + BASE_RESUME_PARAMS + '&signup=unified&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean') + '&fbc=fb.1.1700000000000.attributed&fbp=fb.1.1700000000000.browserid', { waitUntil: 'domcontentloaded' });
 
     await signupFlow.advanceToPasswordStep(page, 'attribution-test@example.com');
     await page.fill('#fn-password', 'longenoughpassword1');

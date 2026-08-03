@@ -596,6 +596,9 @@ test('needs-email completion: shape errors are rejected before anything else run
 // drifts. These load the real client file and round-trip through the real
 // server parser.
 
+/** The literal placeholder App ID value — see js/facebook-config.js's own header comment and isFacebookLoginConfigured(). Kept as one named constant here so both tests below (and anyone reading a failure) agree on exactly what "placeholder" means. */
+var PLACEHOLDER_APP_ID = 'REPLACE_WITH_REAL_FACEBOOK_APP_ID';
+
 /** Loads js/facebook-config.js's pure helpers into this process, with the minimal browser globals they touch. */
 function loadClientConfig() {
   var fs = require('node:fs');
@@ -603,7 +606,7 @@ function loadClientConfig() {
   var source = fs.readFileSync(path.join(__dirname, '..', 'js', 'facebook-config.js'), 'utf8');
   global.btoa = function (s) { return Buffer.from(s, 'binary').toString('base64'); };
   /* eslint-disable no-new-func */
-  return new Function(source + '; return { trimResumeParams: trimResumeParams, buildFacebookState: buildFacebookState, isFacebookLoginConfigured: isFacebookLoginConfigured };')();
+  return new Function(source + '; return { trimResumeParams: trimResumeParams, buildFacebookState: buildFacebookState, isFacebookLoginConfigured: isFacebookLoginConfigured, facebookButtonHtml: facebookButtonHtml, FACEBOOK_APP_ID: FACEBOOK_APP_ID };')();
 }
 
 test('state contract: the client encoder and this function\'s parser agree, including a unicode caption', function () {
@@ -618,8 +621,33 @@ test('state contract: the client encoder and this function\'s parser agree, incl
   assert.equal(resume.get('style'), 'Cartoon');
 });
 
-test('state contract: the client ships with the feature flag OFF (a real App ID must never be committed by accident)', function () {
-  assert.equal(loadClientConfig().isFacebookLoginConfigured(), false);
+// UPDATED 2026-08-03: Facebook Login went live in this repo on 2026-08-03
+// (js/facebook-config.js's own header comment; commit "Turn on Facebook
+// Login client config with the real DreamTube Login App ID") and the
+// founder has since verified the live flow end-to-end
+// (board-x7q4.html, "Facebook Login verified end-to-end by founder —
+// item closed", 2026-08-03). This test used to assert the flag ships OFF;
+// that is no longer the intended state, so asserting it would just be
+// asserting a regression. The ORIGINAL SPIRIT — a placeholder/dev-only
+// App ID must never silently ship as if it were live — is preserved
+// below, inverted for the new reality: the shipped config must carry a
+// real (non-placeholder) App ID and the button must actually render.
+test('state contract: the client ships with the feature flag ON and a real (non-placeholder) App ID — this is the intentional, launched state', function () {
+  var client = loadClientConfig();
+  assert.equal(client.isFacebookLoginConfigured(), true, 'Facebook Login is live as of 2026-08-03 and must be configured');
+  assert.notEqual(client.FACEBOOK_APP_ID, PLACEHOLDER_APP_ID, 'the shipped App ID must not be the dev/placeholder value');
+  assert.ok(/^\d+$/.test(client.FACEBOOK_APP_ID), 'a real Meta App ID is numeric — this also fails if it is empty or some other non-ID placeholder');
+  assert.notEqual(client.facebookButtonHtml(), '', 'with the flag on, the Facebook button must actually render');
+});
+
+// The narrower safety net the old test was really protecting: whatever
+// value ships, it must never silently be the known dev placeholder. This
+// stays meaningful regardless of which direction the flag is flipped —
+// unlike the assertion above, it would also catch a future accidental
+// revert to the placeholder.
+test('state contract: the known dev placeholder App ID is never the value actually shipped (safety net against an accidental revert)', function () {
+  var client = loadClientConfig();
+  assert.notEqual(client.FACEBOOK_APP_ID, PLACEHOLDER_APP_ID);
 });
 
 test('state contract: an over-budget resume string drops low-priority params but NEVER the caption or resume=1', function () {
