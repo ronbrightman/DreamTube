@@ -64,7 +64,6 @@
 var COLORS = {
   void: '#000000',
   card: '#151027',
-  surfaceAlt: '#1f1a33',
   textPrimary: '#ffffff',
   textMuted: '#a39fc2',
   textFaint: '#77719a',
