@@ -2,9 +2,9 @@
 //
 // Covers netlify/functions/send-whatsapp-morning-capture.js — the
 // WhatsApp channel for the Morning Capture Ritual (tracker item
-// for-product-build-whatsapp-morning-captu-skez3n, steps 3-4). Two halves,
-// following test/send-daily-claim-pushes.test.js's own conventions for
-// this repo's first scheduled function:
+// for-product-build-whatsapp-morning-captu-skez3n, steps 3-4). Three
+// halves, following test/send-daily-claim-pushes.test.js's own conventions
+// for this repo's first scheduled function:
 //
 //   1. sendMorningCaptureMessage in isolation — stubs global.fetch the
 //      same way test/create-checkout-session-dodo.test.js stubs the Dodo
@@ -13,6 +13,15 @@
 //   2. scanAndSend — mocked Blobs (account-store.js's real store) + a
 //      captured sendMorningCaptureMessage call list, mirroring send-daily-
 //      claim-pushes.test.js's seedSubscribedAccount/scanAndSend shape.
+//   3. the PILOT-ONLY GATE (isSendEligible/isPilotOnly + scanAndSend's
+//      pilotSkipped counting) — added in the template-submission +
+//      sender-wiring follow-up round, since the original build of this
+//      file (steps 3-4) had no such restriction. REQUIRED_ENV below sets
+//      WHATSAPP_MORNING_CAPTURE_GO_LIVE:'true' for every test in sections
+//      1-2 (so their seeded, non-founder usernames keep sending exactly as
+//      before — those tests are about dedup/send mechanics, not the gate
+//      itself); section 3's own tests explicitly override that one env var
+//      to exercise the gate's actual default-off behavior.
 //
 // Run with: node --test test/
 
@@ -30,7 +39,13 @@ var realFetch = global.fetch;
 var REQUIRED_ENV = {
   WHATSAPP_ACCESS_TOKEN: 'test-access-token',
   WHATSAPP_PHONE_NUMBER_ID: '1022231790969271',
-  WHATSAPP_TEMPLATE_NAME_MORNING_CAPTURE: 'morning_capture_v1'
+  WHATSAPP_TEMPLATE_NAME_MORNING_CAPTURE: 'morning_capture_v1',
+  // Sections 1-2 below predate the pilot-only gate and seed arbitrary,
+  // non-founder usernames to exercise send/dedup mechanics -- flipping
+  // go-live on for those tests keeps them exercising "a real send
+  // happens" rather than accidentally re-testing the gate itself. Section
+  // 3 explicitly clears/overrides this one var to test the gate for real.
+  WHATSAPP_MORNING_CAPTURE_GO_LIVE: 'true'
 };
 
 function setRequiredEnv() {
@@ -306,4 +321,112 @@ test('exports.handler resolves 200 even while completely unconfigured (never cra
 
   var res = await sender.handler(fakeEvent({}));
   assert.equal(res.statusCode, 200);
+});
+
+// ===========================================================================
+// 3. PILOT-ONLY GATE (isSendEligible / isPilotOnly / scanAndSend's
+//    pilotSkipped counting) -- see this file's own PILOT-ONLY GATE header
+//    comment. Every test below explicitly overrides
+//    WHATSAPP_MORNING_CAPTURE_GO_LIVE away from REQUIRED_ENV's own
+//    always-on default, to exercise the gate's real default-off behavior.
+// ===========================================================================
+
+test('isPilotOnly: true whenever the go-live env var is unset, blank, or anything other than the literal string "true"', function () {
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+  assert.equal(sender.isPilotOnly(), true);
+
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = '';
+  assert.equal(sender.isPilotOnly(), true);
+
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = 'yes';
+  assert.equal(sender.isPilotOnly(), true);
+
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = 'TRUE';
+  assert.equal(sender.isPilotOnly(), false, 'case-insensitive match on "true"');
+
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = 'true';
+  assert.equal(sender.isPilotOnly(), false);
+
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+});
+
+test('isSendEligible: while pilot-only, only the founder\'s own known identities (lib/test-identity.js) are eligible', function () {
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+
+  assert.equal(sender.isSendEligible('ronbrightman'), true);
+  assert.equal(sender.isSendEligible('ronbrightman8877'), true, 'a numbered founder throwaway account still normalizes to a known base');
+  assert.equal(sender.isSendEligible('wendy'), false);
+  assert.equal(sender.isSendEligible('xavier'), false);
+});
+
+test('isSendEligible: once go-live is flipped, every opted-in username is eligible, founder or not', function () {
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = 'true';
+
+  assert.equal(sender.isSendEligible('ronbrightman'), true);
+  assert.equal(sender.isSendEligible('wendy'), true);
+
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+});
+
+test('scanAndSend: pilot-only by default -- sends only to the founder\'s own opted-in account, never a real end user', async function () {
+  setRequiredEnv();
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  var captured = stubFetchCapture();
+
+  await seedOptedInAccount('ronbrightman', 'ron@example.com', '+15550000001');
+  await seedOptedInAccount('wendy', 'wendy@example.com', '+15551110000');
+  await seedOptedInAccount('xavier', 'xavier@example.com', '+15552220000');
+
+  var result = await sender.scanAndSend(fakeEvent({}));
+
+  assert.equal(result.scanned, 3);
+  assert.equal(result.sent, 1, 'only the founder\'s own opted-in account should actually receive a real send');
+  assert.equal(result.pilotSkipped, 2);
+  assert.equal(captured.calls.length, 1, 'the real Graph API call must never target a non-pilot number');
+  var sentTo = JSON.parse(captured.calls[0].init.body).to;
+  assert.equal(sentTo, '+15550000001');
+});
+
+test('scanAndSend: a pilot-skipped (non-eligible) account never gets its per-day dedup key marked, so a later go-live flip still sends to them the same day', async function () {
+  setRequiredEnv();
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  stubFetchCapture();
+  await seedOptedInAccount('yolanda', 'yolanda@example.com', '+15553330000');
+
+  var pilotOnlyRun = await sender.scanAndSend(fakeEvent({}));
+  assert.equal(pilotOnlyRun.sent, 0);
+  assert.equal(pilotOnlyRun.pilotSkipped, 1);
+
+  var pushDedupStore = require('../netlify/functions/lib/push-dedup-store');
+  var today = new Date().toISOString().slice(0, 10);
+  var alreadyMarked = await pushDedupStore.hasSent(fakeEvent({}), 'whatsapp-morning-capture:yolanda:' + today);
+  assert.equal(alreadyMarked, false, 'a pilot-skip must not consume the per-day dedup slot');
+
+  // Now flip go-live on (same day, same dedup store) -- the account must
+  // still be reachable, proving the earlier pilot-skip never falsely
+  // claimed the dedup key on its behalf.
+  process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE = 'true';
+  var goLiveRun = await sender.scanAndSend(fakeEvent({}));
+  assert.equal(goLiveRun.sent, 1);
+  delete process.env.WHATSAPP_MORNING_CAPTURE_GO_LIVE;
+});
+
+test('scanAndSend: once WHATSAPP_MORNING_CAPTURE_GO_LIVE=true, every opted-in account is eligible regardless of identity', async function () {
+  setRequiredEnv(); // REQUIRED_ENV already sets go-live true
+  var sender = require('../netlify/functions/send-whatsapp-morning-capture');
+  var captured = stubFetchCapture();
+
+  await seedOptedInAccount('wendy', 'wendy@example.com', '+15551110000');
+  await seedOptedInAccount('xavier', 'xavier@example.com', '+15552220000');
+
+  var result = await sender.scanAndSend(fakeEvent({}));
+
+  assert.equal(result.sent, 2);
+  assert.equal(result.pilotSkipped, 0);
+  assert.equal(captured.calls.length, 2);
 });
