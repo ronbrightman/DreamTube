@@ -2,7 +2,13 @@
 //
 // POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType,
 //        avatar, channelLicenseGrantedAt, channelLicenseRevokedAt,
-//        okToFeatureOnChannels, musicBedOn, authToken }
+//        okToFeatureOnChannels, authToken }
+// (musicBedOn removed from this payload/record shape as of tracker item
+// for-product-build-founder-approved-08-03-jlkjy9's 2026-08-03 founder
+// simplification — "no user choice," music is always on. js/music-bed.js's
+// eligible() computes bed eligibility purely from a dream's own
+// videoUrl/style, so the field no longer means anything and is no longer
+// read or written here.)
 // -> upserts a dream into the shared feed-index blob (see get-feed.js).
 // Called both when a dream is first published, and again if an
 // already-published dream is later edited/regenerated (store.js's
@@ -196,13 +202,6 @@ exports.handler = async function (event) {
   var channelLicenseGrantedAt = payload.channelLicenseGrantedAt || null;
   var channelLicenseRevokedAt = payload.channelLicenseRevokedAt || null;
   var okToFeatureOnChannels = payload.okToFeatureOnChannels !== false;
-  // musicBedOn (tracker item for-product-build-founder-approved-08-03-
-  // jlkjy9) — `=== true` specifically, opposite default from
-  // okToFeatureOnChannels above: a dream published before this feature
-  // existed (or any caller that simply omits the field) must come through
-  // as "silent," matching js/music-bed.js's own eligible() convention, not
-  // silently default to "has a bed."
-  var musicBedOn = payload.musicBedOn === true;
   var authToken = (payload.authToken || '').trim();
 
   if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
@@ -254,8 +253,7 @@ exports.handler = async function (event) {
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
       channelLicenseGrantedAt: channelLicenseGrantedAt,
       channelLicenseRevokedAt: channelLicenseRevokedAt,
-      okToFeatureOnChannels: okToFeatureOnChannels,
-      musicBedOn: musicBedOn
+      okToFeatureOnChannels: okToFeatureOnChannels
     };
 
     if (idx === -1) feed.unshift(record); else feed[idx] = record;

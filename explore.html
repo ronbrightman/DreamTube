@@ -252,9 +252,10 @@
     // footprint at all), driven entirely by videoObserver below (same
     // play/pause moment the video itself gets, same soundOn-driven muted
     // state as the video's own initial muted attribute just above).
-    // MusicBed.eligible() already checks d.videoUrl/musicBedOn/a known
-    // style, so bedUrl is only ever non-null when this card really should
-    // get one.
+    // MusicBed.eligible() already checks d.videoUrl and a known style (no
+    // per-dream choice left as of the 2026-08-03 founder simplification --
+    // see js/music-bed.js's header comment), so bedUrl is only ever
+    // non-null when this card really should get one.
     var bedUrl = (d.videoUrl && window.MusicBed && MusicBed.eligible(d)) ? MusicBed.urlForStyle(d.style) : null;
     var media = d.videoUrl
       ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>' +

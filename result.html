@@ -1263,8 +1263,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // #result-video's own src-vs-playback logic already has). Cleared
     // (removeAttribute, not just paused) on every path other than a real
     // eligible video so a stale bed can never keep looping silently in the
-    // background after e.g. an edit/regenerate strips this dream's own
-    // musicBedOn, or the dream turns out to be image/gradient-only.
+    // background after e.g. an edit/regenerate changes this dream's own
+    // style, or the dream turns out to be image/gradient-only. As of the
+    // 2026-08-03 founder simplification (js/music-bed.js's header comment),
+    // eligibility no longer depends on any per-dream choice -- every video
+    // dream with a known style is eligible now, full stop.
     var musicBed = document.getElementById('result-music-bed');
     var bedUrl = window.MusicBed ? MusicBed.urlForStyle(dream.style) : null;
     var bedEligible = !!(window.MusicBed && MusicBed.eligible(dream));

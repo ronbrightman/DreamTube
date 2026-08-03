@@ -7,7 +7,7 @@
 // dream's video.
 //
 // ===== Background (tracker item for-product-build-founder-approved-08-03-
-// jlkjy9, Option B) =====
+// jlkjy9) =====
 // Founder directive 2026-08-02 (tracker item for-product-turn-off-audio-
 // dialogue-gene-ooeyoj) made every generated video permanently, structurally
 // silent — generate-video.js/start-pending-generation.js force
@@ -30,6 +30,26 @@
 // permanently inert — see js/store.js's startGeneration doc comment. This
 // bed is chosen entirely by the dream's own VISUAL style, no separate
 // picker.
+//
+// ===== FOUNDER SIMPLIFICATION (2026-08-03, current state — supersedes the
+// "Option B toggle" this feature originally shipped as) =====
+// The feature above first shipped as a real ON/OFF toggle on style.html,
+// per-dream, persisted as a `musicBedOn` boolean (default ON). The founder
+// walked it and immediately simplified: "NO TOGGLE. Since the music beds
+// are free, music is simply ALWAYS ON — every dream video plays with its
+// style-matched bed, no user choice." style.html's toggle (and the
+// `musicBedOn` field it used to write onto a draft/dream) is gone entirely
+// — see that file's own removal comment for what replaced the screen real
+// estate (nothing — matches the precedent this same tracker item already
+// set when it removed the old #music-style-row chip picker outright rather
+// than leaving a disabled placeholder). `eligible()` below deliberately
+// no longer reads `musicBedOn` in ANY form, which is exactly what makes a
+// dream generated/published BEFORE this simplification — carrying a stale
+// `musicBedOn: false` from the toggle era, or no field at all from before
+// the feature existed at all — get a bed now too, same as a brand new one:
+// there is no lingering opt-out sitting in old data. Mute stays available
+// in the player exactly as before; the client-side-vs-muxing tradeoff
+// below is unaffected by this simplification.
 //
 // ===== Implementation choice: client-side playback, not server-side muxing
 // (stated here, at the point of use, per that tracker item's own
@@ -78,16 +98,17 @@ var MusicBed = (function () {
 
   /**
    * Whether `dream` should ever get a music-bed <audio> element at all.
-   * Forward-only migration, same convention as modelUsed/createdAt (see
-   * js/store.js's finalizeDream doc comment): `dream.musicBedOn` must be
-   * the LITERAL boolean `true` — anything else (explicit `false`, or simply
-   * absent because this dream predates the feature entirely) is treated as
-   * silent, never guessed or backfilled. Also requires a real video
-   * (mediaType video, imageUrl-only dreams have nothing to loop a bed
-   * against) and a style with a known bed file.
+   * Per the 2026-08-03 founder simplification (see this file's header
+   * comment), there is no user choice left to check — music is always on
+   * for every dream that has both a real video and a style with a known
+   * bed file. Deliberately does NOT read `dream.musicBedOn` at all (that
+   * field no longer means anything, and may still be `false`/`true`/absent
+   * on dreams generated across this feature's three history phases) — this
+   * is what makes a dream generated before this simplification also always
+   * play its bed now, with no stale opt-out surviving from the toggle era.
    */
   function eligible(dream) {
-    return !!(dream && dream.musicBedOn === true && dream.videoUrl && urlForStyle(dream.style));
+    return !!(dream && dream.videoUrl && urlForStyle(dream.style));
   }
 
   return { urlForStyle: urlForStyle, eligible: eligible };
