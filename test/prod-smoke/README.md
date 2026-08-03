@@ -76,6 +76,20 @@ browser tests use (`/opt/pw-browsers/chromium`) — no separate install.
    for-product-add-a-prod-smoke-assertion-f-bqt2sh, following up on
    for-product-urgent-reopen-video-repair-p-cyp8np's module-load-crash
    incident).
+7. **shop.html renders real pack cards + a real server-confirmed token
+   balance** for the same signed-in probe session — `session.test.js`'s
+   nav-walk section, added for tracker item
+   `for-product-reliability-net-spec-v1-smok-x1o5zc`'s "state-seeded
+   journeys" ask.
+8. **Domain routing matrix** (`domain-routing-matrix.test.js`) — plain HTTP
+   checks (no browser) against BOTH real production hosts by name
+   (`dreamtube1.netlify.app` and `dreamtube.life`), regardless of which
+   one this run's own `--origin`/`PROD_SMOKE_ORIGIN` resolved to: both are
+   live, the canonical/primary relationship between them is what's
+   documented, `www.dreamtube.life` redirects correctly, and a core
+   function endpoint works on both. See `docs/DOMAIN_ROUTING_MATRIX.md`
+   for the full write-up (tracker item
+   `for-product-reliability-net-spec-v1-smok-x1o5zc`, piece 3).
 
 ## Safety — why this is safe to run daily against real production
 
@@ -111,6 +125,86 @@ browser tests use (`/opt/pw-browsers/chromium`) — no separate install.
   default cap (20-100/day depending on the endpoint), even run daily
   indefinitely.
 
+## Both-domain runs
+
+Both `dreamtube1.netlify.app` and `dreamtube.life` are genuinely live
+production surfaces today, not one real domain and one stale leftover —
+see `docs/DOMAIN_ROUTING_MATRIX.md`. `domain-routing-matrix.test.js`
+above always checks both by name, regardless of origin resolution. Every
+OTHER file in this suite (`session.test.js`, `journey1-funnel-render.
+test.js`, `media-serving.test.js`) still only runs against whichever
+single origin `config.js` resolves for that invocation — since
+`js/store.js`'s account/dream state is per-origin localStorage (see
+`docs/DOMAIN_ROUTING_MATRIX.md`'s own note on this), a full run against
+ONE origin cannot see a bug that only manifests on the OTHER origin, or
+on an origin hop between the two (exactly the shape of
+`for-product-urgent-founder-repro-on-drea-uq3a36`/
+`for-product-urgent-founder-repro-index-g-c6boa9`, both 2026-08-02).
+
+Two convenience `npm` scripts run the WHOLE suite once against each real
+domain by name:
+
+```
+npm run smoke:prod:dreamtube1   # PROD_SMOKE_ORIGIN=https://dreamtube1.netlify.app
+npm run smoke:prod:life         # PROD_SMOKE_ORIGIN=https://dreamtube.life
+```
+
+Each creates and self-cleans its OWN throwaway probe account (a fresh
+`@example.com` identity per invocation — see `helpers/config.js`), so
+running both back to back is safe and doesn't collide.
+
+## Nightly scheduling — why this can't run INSIDE a Netlify Function
+
+Tracker item `for-product-reliability-net-spec-v1-smok-x1o5zc` (piece 2,
+"state-seeded journeys") asked for this suite to run nightly against
+production on its own schedule, and to investigate honestly whether
+Netlify's own scheduled-Functions mechanism (the same one
+`send-daily-claim-pushes.js`/`reconcile-fal-cost.js`/`both-domain-
+smoke.js` already use) could run it directly, the way those simpler
+plain-HTTP background jobs do.
+
+**Conclusion: no, not as specced, for a concrete, checkable reason** —
+this suite needs a REAL Chromium binary (`playwright.chromium.launch()`,
+the same `/opt/pw-browsers/chromium` this whole repo's browser tests
+already depend on), and a Netlify Function's own deployed bundle has no
+such binary available and no reasonable way to add one:
+
+- Netlify Functions ship as a zipped Lambda-compatible bundle with a real,
+  documented size ceiling (50MB compressed / 250MB uncompressed) — a real
+  Chromium binary alone is comfortably tens of MB compressed, and would
+  need to sit ALONGSIDE this repo's existing function dependencies
+  (`@netlify/blobs`, `dodopayments`, `stripe`, `web-push`, etc.), not
+  replace them — a real risk of blowing that ceiling for a bundle that
+  otherwise stays lean on purpose.
+- Even if the binary fit, Netlify Functions run under a real execution
+  TIME ceiling per invocation (this repo's own existing scheduled
+  functions are simple, fast, single-digit-second jobs — a full
+  Playwright session doing a real signup → claim → generate → edit →
+  publish/unpublish → nav-walk → shop render, PLUS a second full pass for
+  the other domain, routinely takes well past a single function
+  invocation's budget in this repo's own local runs — see this build's
+  own report for a real measured wall-clock time).
+- No `netlify dev`/local Functions runtime was available in this sandbox
+  to even attempt a real end-to-end proof either way — this conclusion is
+  reasoned from Netlify's own documented bundle-size and execution-time
+  limits, not asserted from a failed attempt; flagged as such rather than
+  overclaiming a test that was never actually run.
+
+**What's built instead**: this environment's own external scheduling
+capability (the same kind of thing that already runs this session's daily
+`self-improving-agent` reflection pass, per `AGENT_POLICY.md`) fires a
+nightly Routine that runs a REAL Node process (not a Netlify Function) —
+`npm run smoke:prod:dreamtube1 && npm run smoke:prod:life` — against
+production, then reports its pass/fail result to
+`report-smoke-status.js` (a normal, public Netlify Function endpoint,
+shared-secret-gated — see that file's own header comment), which writes
+into the SAME `lib/smoke-status-store.js` both-domain-smoke.js itself
+writes to directly. `get-smoke-status.js` reads both producers' results
+back out as one combined view. See this build's own report for the exact
+Routine and the one remaining human step (setting
+`SMOKE_STATUS_REPORT_TOKEN` in Netlify) needed before that reporting step
+actually writes anything.
+
 ## Local verification (this suite's own tests, not production)
 
 This repo has no local Netlify Functions runtime available in every
@@ -125,10 +219,37 @@ whatever environment you're using for that (a `netlify dev` instance, a
 branch deploy preview, or a throwaway Netlify site) rather than assuming
 `test/helpers/static-server.js` alone is enough.
 
-**This suite has NOT been run against real production as part of building
-it** — per this task's own instructions, that first real run should only
-happen once a human/Manager has reviewed the suite itself. It WAS
-verified end to end (all 9 assertions, both files, twice for stability)
+**Update, 2026-08-03 (reliability-net build):** this suite HAS since been
+run for real against production — `media-serving.test.js` and
+`domain-routing-matrix.test.js` (both plain HTTP, no browser) passed
+cleanly against real production as part of building the reliability-net
+pieces. A real, full Chromium run of `session.test.js` against
+production was ALSO attempted twice during this same build, but hit a
+sandbox-wide Chromium-egress outage unrelated to this suite or to
+production itself — confirmed by a minimal repro (even
+`page.goto('https://example.com/')` failed with
+`net::ERR_CONNECTION_RESET` via this sandbox's own Playwright/Chromium at
+the time, while a plain `curl`/`fetch` to the exact same URLs succeeded
+immediately) — see this build's own report for the full investigation.
+One of the two attempts got the furthest through the whole session before
+that outage hit (`duration_ms` ~223s total for the 9-test file, cascading
+failures downstream of the very first `page.goto` once the outage
+started) — that number is the "real measured wall-clock time" this file's
+own "Nightly scheduling" section above cites for why a full two-domain
+Playwright pass cannot fit inside a single Netlify Function invocation.
+The new `shop.html` assertion this build added follows the exact same
+`safeGoto`/`waitForSelector`/`textContent` pattern as its immediately
+adjacent, previously-verified sibling test, and was confirmed via direct
+source inspection to target real, currently-deployed selectors
+(`#shop-topbar-balance`, `.pack-card`) — but was not itself confirmed by
+a clean live Chromium run due to that outage; whoever next runs this
+suite in a healthy environment should treat that as the first real
+confirmation of this specific addition.
+
+**Before this build**, per the ORIGINAL task's own instructions, that
+first real run was intentionally held until a human/Manager had reviewed
+the suite itself. It WAS verified end to end (all 9 assertions, both
+files, twice for stability)
 against a throwaway local stand-in server implementing just the handful
 of real endpoints this suite calls, built for this one verification pass
 and not shipped as part of this suite — see this task's own build report

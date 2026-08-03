@@ -1,5 +1,20 @@
 # Domain migration cutover checklist
 
+**2026-08-03 flag, not yet reconciled into the checklist below:** item 1's
+custom-domain/primary-domain flip appears to have already happened —
+`dreamtube.life` is currently the live canonical domain in production
+(verified via `curl`, see `docs/DOMAIN_ROUTING_MATRIX.md`), even though
+this file still frames "nothing here has been changed today" as current.
+Whether the REST of this checklist's steps (Dodo webhook URL, Resend
+sender, PostHog/Turnstile allow-lists, Meta OAuth redirect URIs, the doc
+sweep in item 9) have also been completed is unverified from this repo
+alone — each needs a human with that specific dashboard's access to
+confirm. See `docs/DOMAIN_ROUTING_MATRIX.md` for what's independently
+verifiable about routing itself (which that new doc keeps re-checking via
+`test/prod-smoke/domain-routing-matrix.test.js`) and this build's own
+report for the same flag. Whoever reconciles this should update the
+framing below once each remaining step's real status is confirmed.
+
 Founder-approved target structure (2026-07-31, tracker item
 `for-product-domain-migration-prep-founde-iahddm`, referencing
 `decision-future-planned-migration-only-m-fk2m28`):
