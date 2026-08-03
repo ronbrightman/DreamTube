@@ -94,9 +94,18 @@ function resumeUrl(caption, extra) {
 }
 
 /**
- * Turns the feature flag ON by rewriting the placeholder in the real
- * js/facebook-config.js as it is served. See this file's header comment
- * for why this and not a window assignment.
+ * Turns the feature flag ON by rewriting whatever FACEBOOK_APP_ID value
+ * js/facebook-config.js currently ships with (the real one, as of
+ * 2026-08-03 -- see that file's own header comment -- or, in some future
+ * checkout, the placeholder) into a known, controlled test value, as it
+ * is served. See this file's header comment for why this and not a
+ * window assignment. Matches the whole `var FACEBOOK_APP_ID = '...';`
+ * assignment by regex rather than the literal placeholder string, so
+ * this stays correct regardless of which value the real file currently
+ * holds -- the earlier literal-placeholder-only replace silently
+ * no-opped (leaving the real, live App ID in place) the moment Facebook
+ * Login actually went live, which is exactly the state this repo is in
+ * now.
  */
 function configureFacebookApp(page, appId) {
   return page.route('**/js/facebook-config.js', async function (route) {
@@ -105,7 +114,20 @@ function configureFacebookApp(page, appId) {
     route.fulfill({
       status: 200,
       contentType: 'text/javascript; charset=utf-8',
-      body: body.replace("'REPLACE_WITH_REAL_FACEBOOK_APP_ID'", JSON.stringify(appId || FAKE_APP_ID))
+      body: body.replace(/var FACEBOOK_APP_ID = '[^']*';/, 'var FACEBOOK_APP_ID = ' + JSON.stringify(appId || FAKE_APP_ID) + ';')
+    });
+  });
+}
+
+/** Turns the feature flag OFF deterministically, regardless of what js/facebook-config.js currently ships with -- the counterpart to configureFacebookApp's own doc comment above. */
+function disableFacebookApp(page) {
+  return page.route('**/js/facebook-config.js', async function (route) {
+    var response = await route.fetch();
+    var body = await response.text();
+    route.fulfill({
+      status: 200,
+      contentType: 'text/javascript; charset=utf-8',
+      body: body.replace(/var FACEBOOK_APP_ID = '[^']*';/, "var FACEBOOK_APP_ID = 'REPLACE_WITH_REAL_FACEBOOK_APP_ID';")
     });
   });
 }
@@ -165,6 +187,11 @@ test('feature flag OFF (placeholder App ID): renders NO Facebook button anywhere
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
+    // Forced OFF (not just relying on this checkout's own config) --
+    // js/facebook-config.js ships with a real, live App ID as of
+    // 2026-08-03 (see that file's own header comment), so this
+    // deliberately overrides it rather than assuming the placeholder.
+    await disableFacebookApp(page);
     await reachScreen13(page, 'Flying over the ocean at sunset');
 
     assert.ok((await page.$('#fn-fb-continue')) === null, 'the button element must not exist at all');
@@ -207,7 +234,40 @@ test('feature flag ON: renders the Facebook button above the email field, Meta-b
     });
     assert.equal(buttonIsAboveEmail, true);
     assert.ok(await page.$('#fn-email'), 'the email field still exists (Direction Y: nothing removed)');
-    assert.ok((await page.$('#fn-fb-divider')) === null, 'Direction Y adds no divider');
+
+    // UPDATED 2026-08-03 (tracker item
+    // for-product-signup-screen-layout-fixes-f-3hclmj, founder mobile
+    // walk): Direction Y originally shipped with NO divider at all -- the
+    // founder has since explicitly asked for the standard "or" separator
+    // between the Facebook button and the email field, so this now
+    // asserts the OPPOSITE of what it used to (a divider must exist,
+    // positioned between the two, and disappear along with the button
+    // when the flag is off -- see the test right below this one).
+    var divider = await page.$('#fn-fb-or-divider');
+    assert.ok(divider, 'an "or" divider must render between the Facebook button and the email field');
+    assert.equal((await divider.textContent()).trim().toLowerCase(), 'or');
+    var dividerBetween = await page.evaluate(function () {
+      var b = document.getElementById('fn-fb-continue').getBoundingClientRect();
+      var d = document.getElementById('fn-fb-or-divider').getBoundingClientRect();
+      var e = document.getElementById('fn-email').getBoundingClientRect();
+      return b.bottom <= d.top && d.bottom <= e.top;
+    });
+    assert.equal(dividerBetween, true, 'the divider must sit between the Facebook button and the email field');
+  } finally {
+    await context.close();
+  }
+});
+
+test('feature flag OFF (placeholder App ID): the "or" divider is absent too (it only ever appears alongside the Facebook button)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await disableFacebookApp(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    assert.ok((await page.$('#fn-fb-or-divider')) === null, 'no orphan divider without the Facebook button above it');
   } finally {
     await context.close();
   }
