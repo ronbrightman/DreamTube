@@ -29,6 +29,13 @@ var MIME = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.webmanifest': 'application/manifest+json',
+  // .mp3/.mp4 (tracker item for-product-build-speaking-sage-wave-fou-8uobuh)
+  // — real audio/video content-types so test/interp-voice-behavioral.
+  // test.js's Chromium run actually decodes the intro clip
+  // (assets/interpreters/intro/sage.mp4) and the mocked reading audio
+  // (sage-voice-x7q4.mp3), same reasoning as the .wav entry just below.
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
   // .wav (tracker item for-product-build-founder-approved-08-03-jlkjy9) —
   // assets/music-beds/*.wav, served with a real audio content-type so a
   // real <audio> element (Chromium, in the behavioral tests that exercise

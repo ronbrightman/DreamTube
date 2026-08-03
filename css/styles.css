@@ -1675,3 +1675,65 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 
 .itp-error-copy{ font-size:13px; color:var(--text-muted); line-height:1.5; margin:16px 0; text-align:center;}
 .faq-item.open .faq-answer{ display:block;}
+
+/* ----- Speaking Sage Option D voice stage (docs/SPEAKING_SAGE_SPEC.md,
+   tracker item for-product-build-speaking-sage-wave-fou-8uobuh) — mounted
+   ABOVE .itp-reading-card (js/interpret-experience.js's renderReading),
+   only for a voice-eligible persona behind the founder-preview gate.
+   Portrait-circle sizing isn't right here — Option D's intro/reading are
+   both full-frame video (the intro crossfades directly into the user's
+   OWN dream video, not a small avatar), so this reuses .dreamvideo's own
+   9:16 "phone footage" proportions rather than .itp-portrait's circular
+   treatment. */
+.itp-voice-stage{
+  position:relative; width:100%; aspect-ratio:9/16; max-height:52vh;
+  border-radius:16px; overflow:hidden; background:#0a0a0a; margin:4px 0 14px;
+}
+.itp-voice-media{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block;}
+/* The intro sits ABOVE the dream-video backdrop and crossfades away —
+   opacity-only transition (no layout shift), same 0.3s the spec calls for
+   throughout (intro->reading, and Wave 1's own crossfade precedent
+   elsewhere in this app). */
+.itp-voice-intro{ z-index:2; opacity:1; transition:opacity .3s ease;}
+.itp-voice-intro.itp-voice-fade-out{ opacity:0; pointer-events:none;}
+/* Dream-video backdrop: opacity 1 by default (the common case once no
+   intro is left to crossfade from — either a persona with no intro asset
+   at all, or the intro has already completed and JS removed this class).
+   `.itp-voice-hidden` is added ONLY in the markup itself (voiceStageHtml)
+   when an intro clip is about to play on top of it, so it starts invisible
+   underneath the intro rather than both being visible at once — removed
+   by js/interpret-experience.js's completeIntro() the moment the intro
+   finishes/is skipped, crossfading it in as the intro crossfades out. */
+#itp-voice-dream-video{ opacity:1; transition:opacity .3s ease;}
+#itp-voice-dream-video.itp-voice-hidden{ opacity:0;}
+.itp-voice-caption{
+  position:absolute; z-index:3; left:10px; right:10px; bottom:12px; text-align:center; pointer-events:none;
+  font:700 15px var(--font-body); color:#fff; text-shadow:0 1px 6px rgba(0,0,0,.85);
+  min-height:1.4em;
+}
+.itp-voice-caption:not(:empty){
+  background:rgba(5,5,5,.55); display:inline-block; padding:4px 10px; border-radius:8px;
+  left:50%; transform:translateX(-50%); right:auto; max-width:90%;
+}
+/* Tap-to-play affordance (spec §6 — "a centered play triangle overlay...
+   never a separate modal, never an explanation of why") — reused verbatim
+   for the reading phase's own autoplay-blocked state AND, after
+   completion, as the "replay" tap target (js/interpret-experience.js's
+   beginAudioPlayback branches on hasCompletedOnce to decide which one a
+   tap means). */
+.itp-voice-tap-overlay{
+  position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center;
+  background:rgba(5,5,5,.4); cursor:pointer; transition:opacity .2s ease;
+}
+.itp-voice-tap-overlay.off{ opacity:0; pointer-events:none;}
+.itp-voice-tap-btn{
+  width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,.92);
+  display:flex; align-items:center; justify-content:center; color:#0a0a0a;
+  box-shadow:0 8px 24px -6px rgba(0,0,0,.6);
+}
+.itp-voice-tap-btn .icon{ width:26px; height:26px;}
+.itp-voice-skip{ position:absolute; z-index:5; right:10px; bottom:12px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.7);}
+
+@media (prefers-reduced-motion:reduce){
+  .itp-voice-intro, #itp-voice-dream-video, .itp-voice-tap-overlay{ transition:none;}
+}
