@@ -10,15 +10,14 @@
 // test.js's own established helpers/conventions (staticServer,
 // blockThirdParty, readPostHogCalls, mockInterpretDream).
 //
-// PLACEHOLDER ASSET CAVEAT: `talmudic`'s introClipUrl on this branch
-// (assets/interpreters/intro/sage.mp4) is a placeholder copy of an
-// EARLIER, superseded Option-A-style demo clip, not the real founder-
-// approved Option D asset (see js/interpreter-personas.js's own header
-// comment). These tests exercise the MECHANISM (does the intro play, does
-// it crossfade, do the events fire, does the fallback degrade correctly)
-// — none of them assert anything about the clip's actual visual content,
-// so they remain valid regardless of which video file introClipUrl points
-// at.
+// ASSET STATUS: `talmudic`'s introClipUrl/introVoiceUrl on this branch are
+// the REAL, founder-approved Option D handoff (main commit c0b9202) — see
+// js/interpreter-personas.js's own header comment for the full "silent
+// looping visual + separate paired voice track" story. These tests
+// exercise the MECHANISM (does the intro play, does it crossfade, do the
+// events fire, does the fallback degrade correctly) rather than asserting
+// anything about the clip's actual visual/audio content, so they'd stay
+// valid even if the asset were swapped again later.
 //
 // Real `<video>`/`<audio>` autoplay success/failure is deliberately NOT
 // left to depend on this sandbox's actual Chromium autoplay policy (real-

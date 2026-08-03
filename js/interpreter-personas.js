@@ -36,47 +36,58 @@
 // documented accent-gradient + initial treatment (see that file's
 // renderPortrait helper) — never assume the file is there.
 //
-// ── Speaking Sage / voice fields (`voiceId`, `introClipUrl`) — additive,
-//    tracker item for-product-build-speaking-sage-wave-fou-8uobuh, founder
-//    GO on "Option D" 2026-08-02/08-03 ──
+// ── Speaking Sage / voice fields (`voiceId`, `introClipUrl`,
+//    `introVoiceUrl`) — additive, tracker item
+//    for-product-build-speaking-sage-wave-fou-8uobuh, founder GO on
+//    "Option D" 2026-08-02/08-03 ──
 // `voiceId` is a fal-ai/kokoro/american-english voice id (confirmed against
 // fal's own current model docs at build time, not memory — 2026-08:
 // `am_onyx` is a real, valid enum value on that endpoint) used by
 // netlify/functions/generate-interp-audio.js for this persona's per-reading
-// TTS. `introClipUrl` points at the ONE shared, pre-rendered, lip-synced
-// intro clip (sync-lipsync, one-time asset, never regenerated per-dream —
-// see docs/SPEAKING_SAGE_SPEC.md §5) played once per persona-selection
-// commit (js/interpret-experience.js).
+// TTS.
 //
-// Both are `null` for every persona except `talmudic` (The Sage) on this
-// branch — scope item 4 of the build task is "sage persona first," and the
-// real per-persona greeting/casting work for the other four is real,
-// separate creative effort (voice casting is a founder-ears decision, spec
-// §12 item 2) that hasn't happened yet. `js/interpret-experience.js`
-// gates BOTH the intro-clip playback and the reading's TTS/captions on
-// these being non-null for the active persona — a persona with neither set
-// behaves EXACTLY like Wave 1 today (silent, text-only reading), the same
-// "tolerate a missing asset, never block" convention this file's own
-// header already established for `portrait` above, extended to these two
-// new fields.
+// `introClipUrl`/`introVoiceUrl` are the ONE-TIME, shared, pre-rendered
+// intro greeting (played once per persona-selection commit,
+// js/interpret-experience.js) — as TWO SEPARATE FILES, not one muxed clip:
 //
-// PLACEHOLDER ASSET NOTICE (read before treating `talmudic`'s
-// introClipUrl as launch-ready): `assets/interpreters/intro/sage.mp4` is
-// NOT the real founder-approved Option D intro asset. The actual approved
-// clip (tracker-referenced as `r0-talk-ls` / `v10-intro`, plus the
-// `optD-full.mp4`/`optD-caps.mp4`/`d-caps.srt` reference set) exists only
-// in "Manager scratchpad," outside this repo/sandbox's filesystem and
-// network reach — there is no downloadable URL for it on record the way
-// the music-bed feature's real assets had. The file actually checked in
-// here is a copy of this repo's own already-committed `sage-intro-x7q4.mp4`
-// (a real sage-themed clip from the same live-iteration history, but from
-// an EARLIER, superseded composite spec — the "book covers the mouth
-// during reading" recipe, not Option D's "crossfade into the user's own
-// dream video" recipe) — close enough to exercise the full mechanism
-// end-to-end, wrong art/greeting to actually show a real user. See
-// `docs/SPEAKING_SAGE_SPEC.md`'s top-of-file build note and this branch's
-// own PR description for the full story; swap this path for the real
-// asset before flipping the preview gate broad.
+//   REAL ASSETS, handed off directly on `main` (commit c0b9202, "Add
+//   approved Speaking Sage intro reference cut + voice take (Option D
+//   handoff)") — launch-ready, founder-approved, no longer a placeholder:
+//   - `introClipUrl`  -> assets/interpreters/intro/sage-intro-reference.mp4
+//     — VIDEO-ONLY (confirmed by inspecting its own moov/trak atoms
+//       directly — a single `vide`-handler track, no `soun` track at all),
+//       ~6.68s. Played MUTED and LOOPED as a purely ambient visual
+//       backdrop — this file carries no sound of its own to capability-
+//       detect or unlock.
+//   - `introVoiceUrl` -> assets/interpreters/intro/sage-intro-voice.wav
+//     — the actual spoken-greeting AUDIO (mono, 24kHz, ~7.25s — a Kokoro-
+//       shaped render). THIS is what's capability-detected/tap-to-play-
+//       gated (spec §6) and whose 'ended' event is the real "intro
+//       complete" signal — not the video's, since the two durations don't
+//       match exactly (6.68s video vs 7.25s audio: two separately-
+//       delivered takes, not a single frame-locked mux) and the video is
+//       explicitly just a loop, not the timing source.
+//
+//   This is the SAME "muted looping visual + separate `<audio>` element
+//   drives real timing/capability-detection" pattern this file's sibling,
+//   js/interpret-experience.js, already uses for the READING phase (bounce-
+//   looped dream video + Kokoro `<audio>`) — the intro isn't a special
+//   case requiring different mechanics, it's the exact same mechanism
+//   pointed at different content. See that file's `startIntroPhase`/
+//   `beginAudioPlayback` for the shared implementation.
+//
+// All three are `null` for every persona except `talmudic` (The Sage) on
+// this branch — scope item 4 of the build task is "sage persona first,"
+// and the real per-persona greeting/casting work for the other four is
+// real, separate creative effort (voice casting is a founder-ears
+// decision, spec §12 item 2) that hasn't happened yet.
+// `js/interpret-experience.js` gates BOTH the intro playback and the
+// reading's TTS/captions on `voiceId` (and, for the intro specifically,
+// `introClipUrl`+`introVoiceUrl` together) being set for the active
+// persona — a persona with none of these set behaves EXACTLY like Wave 1
+// today (silent, text-only reading), the same "tolerate a missing asset,
+// never block" convention this file's header already established for
+// `portrait` above, extended to these three new fields.
 //
 // ── Safety / crisis framing lives OUTSIDE this file ──
 // The crisis-language instruction, the universal bans (no clinical/
@@ -113,7 +124,8 @@
       questionFocus: 'Ask about the dreamer\'s current life situation and what feels unbalanced or out of alignment for them right now — the compensation your method looks for. Questions should invite a short, honest answer about waking life, not more dream detail.',
       maxQuestions: 3,
       voiceId: null,
-      introClipUrl: null
+      introClipUrl: null,
+      introVoiceUrl: null
     },
     {
       key: 'freud',
@@ -130,7 +142,8 @@
       questionFocus: 'Ask for the dreamer\'s first, unfiltered association to one or two of the dream\'s key elements — "what\'s the very first thing that comes to mind when you think of [element]?" — the free-association move your method is built on. Never ask about the dream\'s meaning directly; ask what it brings to mind.',
       maxQuestions: 2,
       voiceId: null,
-      introClipUrl: null
+      introClipUrl: null,
+      introVoiceUrl: null
     },
     {
       key: 'gestalt',
@@ -155,7 +168,8 @@
       questionFocus: 'Ask the dreamer to pick one element of the dream — a person, object, or place — and briefly speak AS it, in first person ("I am the ___, and I..."). This is the core Gestalt move your method uses; keep the invitation short and concrete.',
       maxQuestions: 2,
       voiceId: null,
-      introClipUrl: null
+      introClipUrl: null,
+      introVoiceUrl: null
     },
     {
       key: 'scientist',
@@ -172,7 +186,8 @@
       questionFocus: 'Ask about the dreamer\'s current waking concerns or stressors — what has been on their mind, or what they\'ve been dealing with lately — the continuity-hypothesis link your method looks for.',
       maxQuestions: 3,
       voiceId: null,
-      introClipUrl: null
+      introClipUrl: null,
+      introVoiceUrl: null
     },
     {
       key: 'talmudic',
@@ -193,10 +208,11 @@
       // (see generate-interp-audio.js). Sage is the only persona shipping
       // voice this wave (scope item 4 — "sage persona first").
       voiceId: 'am_onyx',
-      // PLACEHOLDER — see this file's header note above. Swap for the real
-      // Manager-delivered Option D intro asset before this can actually
-      // preview correctly for the founder.
-      introClipUrl: 'assets/interpreters/intro/sage.mp4'
+      // Real, founder-approved Option D handoff (main commit c0b9202) —
+      // see this file's header note above for the full "two separate
+      // files, video-only + a separate voice track" story.
+      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
+      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     }
   ];
 

@@ -21,13 +21,15 @@ var computeSentenceFallbackCaptions = InterpretExperience._computeSentenceFallba
 var currentCaptionIndex = InterpretExperience._currentCaptionIndex;
 var nextBounceFrame = InterpretExperience._nextBounceFrame;
 
-test('shouldShowIntro: true only when the persona has an introClipUrl AND it hasn\'t been shown yet', function () {
-  var withIntro = { introClipUrl: 'assets/interpreters/intro/sage.mp4' };
-  var withoutIntro = { introClipUrl: null };
+test('shouldShowIntro: true only when the persona has BOTH the visual clip and its paired voice track AND it hasn\'t been shown yet', function () {
+  var withIntro = { introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4', introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav' };
+  var withoutIntro = { introClipUrl: null, introVoiceUrl: null };
+  var videoOnly = { introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4', introVoiceUrl: null };
   assert.equal(shouldShowIntro(withIntro, false), true);
   assert.equal(shouldShowIntro(withIntro, true), false);
   assert.equal(shouldShowIntro(withoutIntro, false), false);
   assert.equal(shouldShowIntro(withoutIntro, true), false);
+  assert.equal(shouldShowIntro(videoOnly, false), false, 'the video alone is not enough -- the paired voice track drives the real timing/capability-detection');
   assert.equal(shouldShowIntro(null, false), false);
 });
 

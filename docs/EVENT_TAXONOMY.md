@@ -667,20 +667,22 @@ interpretation event).
 | `interp_voice_tts_failed` | `generate-interp-audio.js`/`interp-audio-status.js` returns a hard failure — the whole voice stage is hidden, reading falls back to Wave 1's plain text-only card | `{ persona, error_code }` |
 | `interp_voice_caption_fallback` | `captionsLevel` resolves to `'sentence'` instead of `'word'` — the Whisper word-alignment pass (see `interp-audio-status.js`'s own header comment on why this reuses that pattern instead of the tracker-referenced ffmpeg `silencedetect` method) failed or returned nothing usable, and the client-side sentence-proportional fallback engaged | `{ persona }` |
 
-**PLACEHOLDER ASSET CAVEAT:** the intro clip currently wired for `talmudic`
-(the only persona shipping voice this wave) is NOT the real founder-
-approved Option D asset — see `js/interpreter-personas.js`'s own header
-comment and `docs/TEST_REGISTRY.md`'s Interpretation/Chamber section for
-the full story. The events above fire correctly regardless of which video
-file `introClipUrl` points at; only the VISUAL is a stand-in.
+**Asset status:** `talmudic`'s (The Sage's) intro is the real, founder-
+approved Option D handoff, landed on `main` (commit `c0b9202`) as TWO
+separate files — a silent looping visual (`sage-intro-reference.mp4`) and
+its paired spoken-greeting voice track (`sage-intro-voice.wav`) — see
+`js/interpreter-personas.js`'s own header comment for the full "why two
+files" story. No placeholder remains.
 
-**Files touched:** `js/interpreter-personas.js` (`voiceId`/`introClipUrl`
-per persona), `js/interpret-experience.js` (voice stage mount/teardown,
-intro/reading phase state machine, caption rendering, capability-detected
-tap-to-play, every event above), `css/styles.css` (`.itp-voice-*`),
-`netlify/functions/generate-interp-audio.js` (new), `netlify/functions/
-interp-audio-status.js` (new), `js/store.js` (`generateInterpAudio`,
-`hasIntroShown`/`markIntroShown`, `getInterpretations`'s extended shape),
-`assets/interpreters/intro/sage.mp4` (placeholder), `test/generate-interp-
-audio.test.js`, `test/interp-audio-status.test.js`, `test/interp-voice-
-captions.test.js`, `test/interp-voice-behavioral.test.js` (all new).
+**Files touched:** `js/interpreter-personas.js` (`voiceId`/`introClipUrl`/
+`introVoiceUrl` per persona), `js/interpret-experience.js` (voice stage
+mount/teardown, intro/reading phase state machine, caption rendering,
+capability-detected tap-to-play, every event above), `css/styles.css`
+(`.itp-voice-*`), `netlify/functions/generate-interp-audio.js` (new),
+`netlify/functions/interp-audio-status.js` (new), `js/store.js`
+(`generateInterpAudio`, `hasIntroShown`/`markIntroShown`,
+`getInterpretations`'s extended shape), `assets/interpreters/intro/
+sage-intro-reference.mp4`/`sage-intro-voice.wav` (real assets, commit
+`c0b9202`), `test/generate-interp-audio.test.js`, `test/interp-audio-
+status.test.js`, `test/interp-voice-captions.test.js`, `test/interp-voice-
+behavioral.test.js` (all new).

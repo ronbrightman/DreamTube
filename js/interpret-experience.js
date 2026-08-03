@@ -113,9 +113,9 @@
     }
   }
 
-  /** Whether persona's one-time intro clip should play right now — has an asset AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
+  /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
-    return !!(persona && persona.introClipUrl) && !introAlreadyShown;
+    return !!(persona && persona.introClipUrl && persona.introVoiceUrl) && !introAlreadyShown;
   }
 
   /**
@@ -234,6 +234,7 @@
       if (voiceState.rafId) cancelAnimationFrame(voiceState.rafId);
       if (voiceState.audioEl) { try { voiceState.audioEl.pause(); } catch (e) { /* element may already be detached */ } }
       if (voiceState.introEl) { try { voiceState.introEl.pause(); } catch (e) { /* element may already be detached */ } }
+      if (voiceState.introAudioEl) { try { voiceState.introAudioEl.pause(); } catch (e) { /* element may already be detached */ } }
     }
     voiceState = null;
   }
@@ -303,13 +304,29 @@
     if (vs.stageEl) vs.stageEl.style.display = 'none';
   }
 
-  /** Intro phase (spec §5) — plays the persona's one-time lip-synced greeting, tap-to-play fallback on a detected autoplay block (spec §6), advances to the reading phase on natural end OR an explicit Skip tap. */
+  /**
+   * Intro phase (spec §5) — plays the persona's one-time greeting, tap-to-
+   * play fallback on a detected autoplay block (spec §6), advances to the
+   * reading phase on natural end OR an explicit Skip tap.
+   *
+   * Real founder-approved Option D assets (js/interpreter-personas.js's own
+   * header comment) are TWO separate files, not one muxed clip: `introEl`
+   * (`introClipUrl`) is a silent, looping visual backdrop — played MUTED,
+   * best-effort, fire-and-forget, never capability-detected (a muted
+   * video has nothing for a browser's autoplay policy to block). `introAudioEl`
+   * (`introVoiceUrl`) is the actual spoken greeting — THIS is what's
+   * capability-detected/tap-gated, and its 'ended' event (not the video's)
+   * is the real "intro complete" signal, since the two files' durations
+   * don't match exactly (separately-delivered takes, not a frame-locked
+   * mux).
+   */
   function startIntroPhase(vs, persona) {
     vs.phase = 'intro';
     if (vs.skipEl) vs.skipEl.style.display = '';
-    var introEl = vs.introEl;
-    if (!introEl) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldn't happen, renderReading only renders the skip/intro markup when introClipUrl is set
-    attemptPlay(introEl).then(function (ok) {
+    if (vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
+    var introAudio = vs.introAudioEl;
+    if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldn't happen, renderReading only renders the intro markup when introClipUrl+introVoiceUrl are both set
+    attemptPlay(introAudio).then(function (ok) {
       if (voiceState !== vs) return;
       if (ok) {
         trackLocal('interp_voice_intro_shown', { persona: persona.key });
@@ -318,14 +335,14 @@
         showTapOverlay(vs);
       }
     });
-    introEl.addEventListener('ended', function () {
+    introAudio.addEventListener('ended', function () {
       if (voiceState !== vs) return;
       completeIntro(vs, persona, 'ended');
     });
     if (vs.tapOverlay) {
       vs.tapOverlay.addEventListener('click', function onIntroTap() {
         if (voiceState !== vs || vs.phase !== 'intro') return;
-        attemptPlay(introEl).then(function (ok) {
+        attemptPlay(introAudio).then(function (ok) {
           if (voiceState !== vs || vs.phase !== 'intro') return;
           if (ok) { hideTapOverlay(vs); trackLocal('interp_voice_intro_shown', { persona: persona.key }); }
         });
@@ -345,6 +362,7 @@
     window.DreamStore.markIntroShown(vs.dreamId, vs.personaKey);
     hideTapOverlay(vs);
     if (vs.skipEl) vs.skipEl.style.display = 'none';
+    if (vs.introAudioEl) { try { vs.introAudioEl.pause(); } catch (e) { /* best-effort */ } }
     if (vs.introEl) vs.introEl.classList.add('itp-voice-fade-out');
     if (vs.dreamEl) vs.dreamEl.classList.remove('itp-voice-hidden'); // crossfades IN as the intro crossfades out (spec §5: "genuinely lip-synced video... then crossfades back", adapted to Option D's "into the user's own dream video" target)
     enterReadingPhase(vs, persona);
@@ -443,6 +461,7 @@
       dreamId: session.dreamId, personaKey: session.personaKey, readingText: session.readingText,
       stageEl: document.getElementById('itp-voice-stage'),
       introEl: document.getElementById('itp-voice-intro'),
+      introAudioEl: document.getElementById('itp-voice-intro-audio'),
       dreamEl: document.getElementById('itp-voice-dream-video'),
       capEl: document.getElementById('itp-voice-caption'),
       tapOverlay: document.getElementById('itp-voice-tap-overlay'),
@@ -919,7 +938,15 @@
       '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
       (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>' +
       (showIntro
-        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introClipUrl) + '"></video>'
+        // Two separate elements (js/interpreter-personas.js's own header
+        // note): the video is a silent, looping visual only (muted here
+        // in markup too, not just in JS, so there's never a flash of
+        // real audio before startIntroPhase's own vs.introEl.muted=true
+        // runs) — the actual greeting audio is the sibling <audio>,
+        // hidden (no visual chrome of its own, the tap overlay above it
+        // in the stage is what a blocked-autoplay tap lands on).
+        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
+          '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>'
         : '') +
       '<div class="itp-voice-caption" id="itp-voice-caption"></div>' +
       '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay"><div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div></div>' +
