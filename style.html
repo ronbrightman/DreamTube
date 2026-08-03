@@ -101,58 +101,54 @@
       <div class="media-type-btn" data-media-type="image">Image</div>
       <div class="media-type-btn active" data-media-type="video">Video</div>
     </div>
-    <!-- Audio/music toggle -- tracker item for-product-audio-on-off-choice-
-         at-creat-dyyr98 (founder-approved 2026-07-28): generate-video.js's
-         generate_audio:false genuinely bills less, so defaulting this OFF
-         cuts real cost. Updated 2026-07-28 (tracker item for-product-switch-
-         default-video-model-t-lqxafa) for the fal-ai/veo3.1/lite default:
-         720p is $0.03/s audio-off vs $0.05/s audio-on (fal's own published
-         pricing), so the default 8s video drops from $0.40 to $0.24 --
-         still the same ~40% audio-on/off cost delta as the prior Fast
-         figures ($1.20 vs $0.80), just at Lite's much lower base. Token
-         price stays flat at 100 either way (founder explicit -- no split
-         pricing). Reuses admin.html's existing .toggle-switch component
-         (see css/styles.css) and create.html's .opt-chip-row/.opt-chip
-         single-select preset pattern (Advanced camera/scenery pickers) --
-         both already-established in this codebase, not new UI language.
-         Video-only concept -- hidden entirely (never just disabled-
-         looking) whenever Image is selected, per FOUNDER_PRINCIPLES.md's
-         "capability-detect and hide" lesson -- see updateMediaTypeUI()
-         below.
+    <!-- Audio/music toggle -- HISTORY (kept for context; see below for the
+         current, real behavior):
+           1. tracker item for-product-audio-on-off-choice-at-creat-dyyr98
+              (founder-approved 2026-07-28): added default-OFF, since
+              generate-video.js's generate_audio:false genuinely billed
+              less at the time.
+           2. tracker item for-product-turn-off-audio-dialogue-gene-ooeyoj
+              (founder directive 2026-08-02): Veo's native audio was
+              lip-syncing invented dialogue the user never wrote, so
+              generate_audio became unconditionally FALSE server-side for
+              EVERY video, forever (generate-video.js/start-pending-
+              generation.js) -- this toggle was shown disabled-with-a-note
+              ("Unavailable...") since it could no longer do anything.
+           3. tracker item for-product-build-founder-approved-08-03-jlkjy9
+              (Option B, founder-approved 2026-08-03, THIS state): the
+              toggle is REAL again, but controls something entirely
+              different from either of the above -- a reusable,
+              style-matched AMBIENT MUSIC BED (one-time-generated static
+              assets, assets/music-beds/*.wav, see js/music-bed.js's own
+              header comment for the full tradeoff writeup), played back
+              CLIENT-SIDE only, synced to the video's own play/pause state
+              wherever a finished dream is actually watched (result.html,
+              explore.html's feed -- see each page's own wiring). The
+              video FILE itself is still, and will remain, permanently
+              silent -- item 2's fix is completely untouched by this.
 
-         DISABLED as of tracker item for-product-turn-off-audio-dialogue-
-         gene-ooeyoj (founder directive 2026-08-02): generate-video.js now
-         forces generate_audio:false unconditionally server-side, so this
-         toggle would silently no-op if left interactive -- same "don't
-         leave a control lying that claims to do something it can't"
-         discipline this codebase already applies elsewhere (e.g. the
-         admin.html paywall toggle's own .toggle-switch.disabled state).
-         Shown disabled-with-a-note rather than fully hidden (unlike the
-         image-mode case above, where audio has no meaning at all for a
-         still image and hiding communicates nothing) since this is a real,
-         user-visible behavior change on the video path specifically --
-         users who remember this toggle deserve to know why their video
-         came back silent rather than just losing the option with no
-         explanation. .toggle-switch.disabled (css/styles.css) already
-         exists (opacity .5, pointer-events:none) -- reused, not
-         reinvented. The underlying audioOn/musicStyle plumbing (payload
-         fields, js/store.js pass-through) is left fully intact and inert
-         per the tracker item's own instruction, so this is a trivial flip
-         back on if the founder ever reverses the directive -- see
-         updateAudioUI() below for where audioOn is now permanently pinned
-         false. -->
-    <div class="choice-card" id="audio-toggle-row" style="cursor:default;">
+         Default is ON (a deliberate REVERSAL of item 1's old default-off --
+         the founder's own explicit instruction, "Toggle default ON with
+         music, off = silent") -- see updateAudioUI()/musicBedOn below.
+         Reuses admin.html's existing .toggle-switch component (see
+         css/styles.css), already-established in this codebase. Video-only
+         concept -- hidden entirely (never just disabled-looking) whenever
+         Image is selected, per FOUNDER_PRINCIPLES.md's "capability-detect
+         and hide" lesson -- see updateMediaTypeUI() below.
+
+         No separate music-STYLE picker (the old #music-style-row chip
+         row -- dreamy/cinematic/upbeat/none-ambient -- is gone, not just
+         hidden): that picker existed to steer Veo's native audio content,
+         which no longer exists at all. The bed is chosen entirely by the
+         dream's own VISUAL style (Cartoon/Cinematic/Anime/Realistic,
+         picked just above on this same screen) -- one bed per style,
+         nothing left for a user to additionally choose here. -->
+    <div class="choice-card" id="audio-toggle-row">
       <div class="choice-text">
         <div class="choice-title">Audio &amp; music</div>
-        <div class="admin-row-sub" id="audio-toggle-sub">Unavailable — videos are generated silent for now</div>
+        <div class="admin-row-sub" id="audio-toggle-sub">On — plays a style-matched ambient music track</div>
       </div>
-      <div class="toggle-switch disabled" id="audio-toggle" role="switch" aria-checked="false" aria-disabled="true" aria-label="Audio and music (currently unavailable)"></div>
-    </div>
-    <div class="opt-chip-row" id="music-style-row" style="display:none; margin-bottom:14px;">
-      <div class="opt-chip selected" data-music-style="dreamy">Dreamy</div>
-      <div class="opt-chip" data-music-style="cinematic">Cinematic</div>
-      <div class="opt-chip" data-music-style="upbeat">Upbeat</div>
-      <div class="opt-chip" data-music-style="none-ambient">Ambient only</div>
+      <div class="toggle-switch on" id="audio-toggle" role="switch" aria-checked="true" aria-label="Audio and music"></div>
     </div>
     <button class="btn btn-primary btn-block" id="generate-btn" disabled style="margin-bottom:22px;">Generate Video</button>
   </div>
@@ -281,38 +277,36 @@
   var selectedMediaType = 'video';
   var mediaTypeRow = document.getElementById('media-type-row');
 
-  // ===== Audio/music toggle (tracker: for-product-audio-on-off-choice-at-
-  // creat-dyyr98) — permanently pinned OFF as of tracker item for-product-
-  // turn-off-audio-dialogue-gene-ooeyoj (founder directive 2026-08-02):
-  // generate-video.js now forces generate_audio:false unconditionally
-  // server-side, so this control is non-functional and shown disabled (see
-  // the markup's own comment above for why disabled-with-a-note rather
-  // than hidden). audioOn is intentionally never reassigned anywhere below
-  // — no click handler flips it — so it stays false for the lifetime of
-  // this page load; musicStyle is left set but is never actually read
-  // anywhere now that currentDraftPatch() below only sends it when audioOn
-  // is true, which it never is.
-  var audioOn = false;
-  var musicStyle = 'dreamy'; // inert — kept only so currentDraftPatch()'s shape is unchanged; never actually sent (see below)
+  // ===== Audio/music toggle (tracker item for-product-build-founder-
+  // approved-08-03-jlkjy9, Option B) — see the markup's own comment above
+  // for the full three-step history. This is now a REAL, per-generation
+  // choice again — musicBedOn — but a completely different concept from
+  // the retired audioOn/musicStyle server-request fields just below
+  // (currentDraftPatch still sends those, permanently false/null, exactly
+  // as item 2 left them — untouched by this feature). musicBedOn is a
+  // purely client-side PLAYBACK preference: never sent to generate-
+  // video.js/generate-image.js at all, only persisted onto the draft (and
+  // from there, the finished dream — see js/store.js's finalizeDream) so
+  // result.html/explore.html know whether to play the style-matched bed
+  // (js/music-bed.js) once this dream is actually watched. Defaults true
+  // (ON) per the founder's own explicit instruction — see the markup
+  // comment.
+  var musicBedOn = true;
   var audioToggleRow = document.getElementById('audio-toggle-row');
   var audioToggle = document.getElementById('audio-toggle');
   var audioToggleSub = document.getElementById('audio-toggle-sub');
-  var musicStyleRow = document.getElementById('music-style-row');
 
   function updateAudioUI(){
-    audioToggle.classList.remove('on');
-    audioToggle.setAttribute('aria-checked', 'false');
-    audioToggleSub.textContent = 'Unavailable — videos are generated silent for now';
-    // Always hidden — audioOn is permanently false, so there's never a
-    // music style to pick (see the doc comment above).
-    musicStyleRow.style.display = 'none';
+    audioToggle.classList.toggle('on', musicBedOn);
+    audioToggle.setAttribute('aria-checked', String(musicBedOn));
+    audioToggleSub.textContent = musicBedOn
+      ? 'On — plays a style-matched ambient music track'
+      : 'Off — silent';
   }
-  // No click listener on audioToggle — the control is disabled (see the
-  // markup's .toggle-switch.disabled class, pointer-events:none) and
-  // there's nothing to toggle to now that audio is server-forced off
-  // unconditionally. musicStyleRow's own click listener is likewise
-  // removed — it's never shown (see updateAudioUI above), so there's
-  // nothing to click.
+  audioToggle.addEventListener('click', function(){
+    musicBedOn = !musicBedOn;
+    updateAudioUI();
+  });
 
   function updateMediaTypeUI(){
     Array.prototype.forEach.call(mediaTypeRow.querySelectorAll('.media-type-btn'), function(b){
@@ -344,8 +338,12 @@
   // captured/stale snapshot, and shared by both proceedToGenerate (the
   // unblocked path) and the out-of-tokens sheet's persistDraft below (the
   // blocked path) so the two can never silently drift apart. audioOn/
-  // musicStyle only ever meaningful on the video path — an image draft
-  // always carries audioOn:false/musicStyle:null.
+  // musicStyle are the retired server-request fields — permanently
+  // false/null (see the toggle's own doc comment above; item 2's
+  // generate_audio:false fix is untouched by this feature). musicBedOn is
+  // the new, real, client-only playback preference, only ever meaningful
+  // on the video path — an image draft always carries musicBedOn:false too
+  // (no video to loop a bed against).
   //
   // storyText: currentStoryText (tracker item for-product-split-
   // prompttext-storytext-f-yt5kc7) — reads whatever the recap card is
@@ -356,8 +354,8 @@
   function currentDraftPatch(){
     return {
       style: selected, mediaType: selectedMediaType, sourceImageUrl: null,
-      audioOn: selectedMediaType === 'video' ? audioOn : false,
-      musicStyle: (selectedMediaType === 'video' && audioOn) ? musicStyle : null,
+      audioOn: false, musicStyle: null,
+      musicBedOn: selectedMediaType === 'video' ? musicBedOn : false,
       storyText: currentStoryText
     };
   }

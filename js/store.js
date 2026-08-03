@@ -373,7 +373,19 @@
       // a video") already uses. editDeltaLength carries the user's
       // ORIGINAL delta text's character length only — never the raw text
       // itself, matching edit_submitted's own instrumentation rule.
-      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null },
+      // musicBedOn (tracker item for-product-build-founder-approved-08-03-
+      // jlkjy9, Option B): defaults true — a deliberate REVERSAL of
+      // audioOn's own default-false above. audioOn/musicStyle are the
+      // retired server-side model-audio request fields (permanently inert
+      // — see generate-video.js's own header comment); musicBedOn is an
+      // entirely separate, purely-CLIENT-SIDE playback preference that
+      // never reaches the server at all — see js/music-bed.js. Default ON
+      // means a user who never visits style.html's toggle at all (the
+      // pre-signup wizard/quiz-funnel paths, which set a draft directly —
+      // see start.html/wizard.html — without ever rendering that toggle)
+      // still gets a music bed on their first dream, matching the
+      // founder's own explicit "default ON" instruction.
+      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, musicBedOn: true, isEditDelta: false, editDeltaLength: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -526,6 +538,10 @@
       if (parsed.draft.sourceImageUrl === undefined) parsed.draft.sourceImageUrl = null;
       if (parsed.draft.audioOn === undefined) parsed.draft.audioOn = false;
       if (parsed.draft.musicStyle === undefined) parsed.draft.musicStyle = null;
+      // musicBedOn — see the draft's own seed()/state literal above for why
+      // this migrates to true (not false, unlike its audioOn/musicStyle
+      // neighbors) for any pre-existing draft blob that predates this field.
+      if (parsed.draft.musicBedOn === undefined) parsed.draft.musicBedOn = true;
       if (!parsed.likedIds) parsed.likedIds = {};
       if (!parsed.blockedByUser) parsed.blockedByUser = {};
       if (migrateLegacyState(parsed)) {
@@ -1727,11 +1743,25 @@
    *     needed to power the LLM call in-flight" — only its length.
    *     Never applies to a brand-new dream (no sourceDreamId) — there is
    *     no dream to have an edit history yet.
+   *   - musicBedOn (tracker item for-product-build-founder-approved-08-03-
+   *     jlkjy9) — boolean or undefined. Same "undefined means don't touch
+   *     what's already there" contract as modelUsed above: a REGENERATE
+   *     (sourceDreamId branch) with musicBedOn left undefined (every
+   *     existing regenerate/edit caller — none of them have a music picker
+   *     of their own) preserves whatever this dream's musicBedOn already
+   *     was, including "not set at all" for a dream that predates this
+   *     feature entirely (js/music-bed.js's own eligible() treats that as
+   *     silent, the safe default). A brand-new dream (no sourceDreamId)
+   *     defaults to true for a fresh VIDEO generation (the founder's own
+   *     "default ON" directive — a deliberate reversal of the old
+   *     audioOn-defaults-false behavior above) and false for an image
+   *     (there's nothing to loop a bed against).
    */
   function finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, operationName, storyText, extra) {
     mediaType = mediaType === 'image' ? 'image' : 'video';
     var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
     var extraModelUsed = (extra && typeof extra.modelUsed !== 'undefined') ? extra.modelUsed : null;
+    var extraMusicBedOn = (extra && typeof extra.musicBedOn === 'boolean') ? extra.musicBedOn : undefined;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -1792,6 +1822,9 @@
         style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null,
         interpretations: null, sourceOperationName: operationName || null,
         modelUsed: extraModelUsed || dream.modelUsed || null,
+        // musicBedOn — see this function's own doc comment above for the
+        // "undefined preserves the existing value" contract.
+        musicBedOn: (typeof extraMusicBedOn === 'boolean') ? extraMusicBedOn : dream.musicBedOn,
         // updatedAt (tracker item for-product-build-p0-server-side-dream-p-
         // zl3rb2): stamped on every mutation so reconcilePrivateDreamsFromServer
         // can tell which of two devices' copies of this dream is newer.
@@ -1828,6 +1861,12 @@
         // only migration, same as promptText/storyText/createdAt above) —
         // never retroactively guessed.
         modelUsed: extraModelUsed || null,
+        // musicBedOn — see this function's own doc comment above. Defaults
+        // to whether this is a video at all (true for video, false for
+        // image) whenever the caller didn't pass an explicit choice —
+        // belt-and-suspenders only; every real video-generation caller
+        // (generateVideo, via style.html's own toggle) always does pass one.
+        musicBedOn: (typeof extraMusicBedOn === 'boolean') ? extraMusicBedOn : (mediaType === 'video'),
         // createdAt (epoch ms, new — tracker item
         // for-product-build-homepage-wave-1-the-ri-xr8mir): only ever
         // stamped here, on a genuinely brand-new dream, never on the
@@ -1937,6 +1976,22 @@
     // generation never takes a sourceImageUrl (there is no "image-to-image"
     // concept here).
     var sourceImageUrl = (mediaType === 'video' && opts.sourceImageUrl) ? opts.sourceImageUrl : null;
+    // musicBedOn (tracker item for-product-build-founder-approved-08-03-
+    // jlkjy9, Option B) — a per-dream PLAYBACK preference only, never sent
+    // to generate-video.js/generate-image.js at all: the ambient music bed
+    // is a static asset resolved client-side from the finished dream's own
+    // `style` at watch time (js/music-bed.js), so there's nothing for the
+    // server to decide here, unlike the retired audioOn/musicStyle fields
+    // just above (which ARE still sent, permanently inert — see
+    // generate-video.js's own header comment). Deliberately left as
+    // `undefined` (never coerced to a boolean) when the caller didn't pass
+    // one — regenerateDream/startDreamEdit/turnImageIntoVideo below have no
+    // music picker of their own and never set opts.musicBedOn, so this
+    // stays undefined for them, and finalizeDream's own patch logic (see
+    // its doc comment) treats undefined as "preserve whatever this dream
+    // already had" rather than silently forcing a value neither the user
+    // nor any UI actually chose.
+    var musicBedOn = (mediaType === 'video' && typeof opts.musicBedOn === 'boolean') ? opts.musicBedOn : undefined;
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7) — the human-readable dream description, distinct from
     // `caption` (the full engineered generation prompt this function's
@@ -2105,7 +2160,8 @@
       }
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
         modelUsed: capturedModelUsed,
-        editHistoryEntry: opts.editHistoryEntry || null
+        editHistoryEntry: opts.editHistoryEntry || null,
+        musicBedOn: musicBedOn
       });
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
@@ -4034,9 +4090,9 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, musicBedOn: true, isEditDelta: false, editDeltaLength: null }; persist(); },
 
-    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
+    /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle, musicBedOn }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. */
     generateVideo: function (caption, style, opts) {
       opts = opts || {};
       return startGeneration(caption, style, {
@@ -4044,6 +4100,10 @@
         sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
         turnstileToken: opts.turnstileToken,
         audioOn: opts.audioOn, musicStyle: opts.musicStyle,
+        // musicBedOn (tracker item for-product-build-founder-approved-08-03-
+        // jlkjy9) — see startGeneration's own doc comment for the full
+        // "undefined vs explicit boolean" contract this just forwards.
+        musicBedOn: opts.musicBedOn,
         storyText: opts.storyText
       });
     },
