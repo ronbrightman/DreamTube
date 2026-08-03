@@ -86,7 +86,12 @@ async function safeGoto(page, url) {
 
 /** Same base resume params test/record-mode-behavioral.test.js and test/funnel-signup-navigation-token-guard-behavioral.test.js use. */
 function resumeUrl(caption) {
-  return baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent(caption);
+  // signup=unified: these behavioral tests were written against the legacy
+  // password wall; since SIGNUP_PASSWORDLESS_LIVE went true (founder flip,
+  // tracker at2fko) the default variant is passwordless, so the legacy
+  // coverage pins its variant explicitly. Passwordless-default coverage:
+  // see the 'default wall is passwordless' test appended at the bottom.
+  return baseUrl + '/start.html?resume=1&signup=unified&style=Cartoon&caption=' + encodeURIComponent(caption);
 }
 
 /** Reads every posthog call made during this page load straight out of the PostHog stub's own pending-call queue (window.posthog is the array itself until array.js loads and drains it -- blocked here by blockThirdParty). Same technique as test/first-video-created-behavioral.test.js. */
@@ -1271,6 +1276,23 @@ test('the Facebook Login return leg is never blocked by the already-signed-in gu
     await safeGoto(page, resumeUrl('A different dream this time') + '&fb_error=denied');
     await page.waitForSelector('#fn-email', { timeout: 5000 });
     assert.ok(/start\.html/.test(page.url()), 'must have stayed on start.html to show the Facebook error + fallback, not been redirected away');
+  } finally {
+    await context.close();
+  }
+});
+
+
+test('default wall (no variant param) is PASSWORDLESS: email field + Send-me-my-dream, no password input (founder flip, tracker at2fko)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/start.html?resume=1&style=Cartoon&caption=' + encodeURIComponent('a test dream'));
+    await page.waitForSelector('#fn-email', { timeout: 15000 });
+    assert.equal(await page.$('input[type="password"]'), null, 'no password field on the default (passwordless) wall');
+    var btnText = (await page.textContent('#fn-s13-continue')).trim();
+    assert.equal(btnText, 'Send me my dream');
   } finally {
     await context.close();
   }
