@@ -198,14 +198,27 @@ function fakeGetStore(opts) {
     // tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5's
     // send-daily-claim-pushes.js (this repo's first scheduled function),
     // which has no per-record key to read directly and must enumerate an
-    // entire store instead. Only the non-paginated, no-options shape
-    // (`Promise<{ blobs, directories }>`) is implemented — every real
-    // call site added alongside this comment uses exactly that shape;
-    // `directories` is always empty (this mock has no concept of blob
-    // "directories", a real-Blobs-only feature no caller here uses).
-    list: async function () {
+    // entire store instead. Only the non-paginated shape
+    // (`Promise<{ blobs, directories }>`) is implemented — no real call
+    // site in this codebase uses `paginate: true` yet; `directories` is
+    // always empty (this mock has no concept of blob "directories", a
+    // real-Blobs-only feature no caller here uses).
+    //
+    // `{ prefix }` filtering added for lib/deploy-log-store.js (tracker
+    // item for-product-surface-deploys-day-as-a-vis-xld1vk), the first
+    // caller in this codebase to need it — mirrors real @netlify/blobs'
+    // own server-side prefix filtering (see ListOptions in
+    // node_modules/@netlify/blobs/dist/main.d.ts). Purely additive: no
+    // `prefix` (every existing call site) still returns every key in the
+    // store, unchanged.
+    list: async function (options) {
+      var prefix = options && options.prefix;
+      var keys = Array.from(map.keys());
+      if (prefix) {
+        keys = keys.filter(function (key) { return key.indexOf(prefix) === 0; });
+      }
       return {
-        blobs: Array.from(map.keys()).map(function (key) { return { key: key, etag: 'mock-etag' }; }),
+        blobs: keys.map(function (key) { return { key: key, etag: 'mock-etag' }; }),
         directories: []
       };
     }

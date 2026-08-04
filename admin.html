@@ -46,7 +46,18 @@
            the instant answer to "is my device on the latest deploy" that
            the tracker item calls out. Fails silently (line just stays
            hidden) rather than showing an error if version.json 404s or
-           the fetch fails, since this is a convenience, not a feature. -->
+           the fetch fails, since this is a convenience, not a feature.
+
+           Also folds in "deploys today" (tracker item
+           for-product-surface-deploys-day-as-a-vis-xld1vk, a deploy-cost
+           round 2 follow-up: 40 deploys in one day / ~600 Netlify
+           credits was only noticed a full billing period later) — calls
+           get-deploy-count.js, a separate public GET, independently of
+           version.json's own fetch below, so a slow/failed deploy-count
+           call never blocks the version line itself from showing, and
+           vice versa. Appended onto the SAME line rather than a second
+           row — this is one small "is today's deploy volume normal"
+           glance, not a separate feature surface. -->
       <div class="admin-row-sub" id="admin-version-line" style="display:none; margin-bottom:18px; padding:10px 12px; border-radius:10px; background:var(--surface); border:1px solid var(--border); font-size:11.5px; line-height:1.5;"></div>
 
       <div class="section-label" style="padding:0;">Paywall</div>
@@ -147,17 +158,50 @@
   document.getElementById('admin-paywall-icon').innerHTML = Icons.lock;
   document.getElementById('admin-bypass-icon').innerHTML = Icons.lock;
 
-  // ===== Release visibility (version.json, see comment above the element) =====
+  // ===== Release visibility (version.json + deploys-today, see comment above the element) =====
   (function loadVersionLine() {
     var el = document.getElementById('admin-version-line');
+    // Two independent fetches, each rendering into its own slot of the
+    // same line — neither blocks or waits on the other (see the HTML
+    // comment above this element for why they're combined onto one line
+    // rather than split into two).
+    var parts = { version: null, deployCount: null };
+
+    function render() {
+      var text = [parts.version, parts.deployCount].filter(Boolean).join(' · ');
+      if (!text) return;
+      el.textContent = text;
+      el.style.display = 'block';
+    }
+
     fetch('/version.json', { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         if (!data || !data.commitSha) return; // placeholder/unbuilt or missing — stay hidden
         var when = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'unknown time';
         var msg = data.shortMessage ? ' — "' + data.shortMessage + '"' : '';
-        el.textContent = (data.version || data.commitSha.slice(0, 7)) + ' · built ' + when + msg;
-        el.style.display = 'block';
+        parts.version = (data.version || data.commitSha.slice(0, 7)) + ' · built ' + when + msg;
+        render();
+      })
+      .catch(function () { /* stays hidden — debugging aid, not a feature */ });
+
+    fetch('/.netlify/functions/get-deploy-count', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || typeof data.count !== 'number') return; // endpoint down/unreachable — stay hidden for this part
+        // A count of 0 is deliberately NOT rendered. Until the founder
+        // adds the NETLIFY_BLOBS_BUILD_TOKEN env var this endpoint
+        // correctly returns 0 on every real deploy (see
+        // netlify/functions/lib/deploy-log-store.js's header comment) —
+        // and "0 deploys today" printed on a page you're only looking at
+        // BECAUSE a deploy happened is a confidently-wrong number, which
+        // is exactly what this feature's own race-free design went out of
+        // its way to avoid. Genuinely-zero days (early UTC morning, no
+        // deploy yet) have nothing worth saying either, so the same
+        // silence is right in both cases.
+        if (data.count < 1) return;
+        parts.deployCount = data.count + (data.count === 1 ? ' deploy today' : ' deploys today');
+        render();
       })
       .catch(function () { /* stays hidden — debugging aid, not a feature */ });
   })();
