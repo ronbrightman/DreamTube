@@ -453,9 +453,25 @@
     if (vs.tapOverlay) {
       vs.tapOverlay.addEventListener('click', function onIntroTap() {
         if (voiceState !== vs || vs.phase !== 'intro') return;
-        attemptPlay(introAudio).then(function (ok) {
+        // A tap that still can't play must never be a silent no-op (founder
+        // repro, 2026-08-04: "tapping doesn't do anything"). iOS can wedge a
+        // media element whose first (blocked) play attempt aborted its load —
+        // a load() reset before the gesture's play() is the standard unwedge.
+        // On failure, surface the error name in the tap label (preview-gated
+        // surface, so this diagnostic is founder/dev-only today) and track it.
+        try { if (introAudio.error || introAudio.readyState === 0) introAudio.load(); } catch (e) { /* best-effort */ }
+        var result;
+        try { result = introAudio.play(); } catch (e) { result = Promise.reject(e); }
+        if (!result || typeof result.then !== 'function') result = Promise.resolve();
+        result.then(function () {
           if (voiceState !== vs || vs.phase !== 'intro') return;
-          if (ok) { hideTapOverlay(vs); trackLocal('interp_voice_intro_shown', { persona: persona.key }); }
+          hideTapOverlay(vs);
+          trackLocal('interp_voice_intro_shown', { persona: persona.key });
+        }, function (err) {
+          if (voiceState !== vs || vs.phase !== 'intro') return;
+          var name = (err && err.name) || 'unknown';
+          setTapOverlayLabel(vs, 'Tap again — audio was blocked (' + name + ')');
+          trackLocal('interp_voice_intro_tap_failed', { persona: persona.key, error: name });
         });
       });
     }
