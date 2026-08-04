@@ -167,6 +167,43 @@ test('successful completion: marks the record ready+notified and sends the ready
   assert.deepEqual(sentTo, ['claimant@example.com']);
   assert.match(sentHtml, /claim-dream\.html\?pending=/);
   assert.match(sentHtml, new RegExp(record.id));
+
+  // DESIGN + UNSUBSCRIBE (tracker item
+  // for-product-email-redesign-unsubscribe-l-16ysmp): this is one of the
+  // two retention/marketing sends in scope -- night-aesthetic shell (logo
+  // header) and a real, working unsubscribe link.
+  assert.match(sentHtml, /<img src="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
+  assert.match(sentHtml, /\/\.netlify\/functions\/unsubscribe-email\?email=claimant%40example\.com&amp;token=[0-9a-f]{64}/, 'redesigned template must carry a real, per-recipient unsubscribe link');
+});
+
+// SUPPRESSION (tracker item for-product-email-redesign-unsubscribe-l-16ysmp):
+// this is the second of the two retention/marketing senders in scope --
+// end-to-end proof the abandoned-dream webhook itself actually skips a
+// real send for a suppressed email (see test/send-first-dream-email.test.js
+// for the first-dream-retention-email sender's own equivalent coverage).
+test('an unsubscribed (suppressed) email is skipped by the webhook -- no Resend call, but the rest of the flow (re-host, markNotified) still completes', async function () {
+  var record = await pendingDreams.create({}, { email: 'unsubscribed@example.com', caption: 'a dream', style: 'Cinematic' });
+  var emailSuppressionStore = require('../netlify/functions/lib/email-suppression-store');
+  await emailSuppressionStore.suppress({}, 'unsubscribed@example.com');
+
+  process.env.RESEND_API_KEY = 'test-resend-key';
+  var emailCalls = 0;
+  global.fetch = async function (url) {
+    if (String(url).indexOf('jwks') !== -1) return { ok: true, status: 200, json: async function () { return { keys: [publicJwk()] }; } };
+    if (String(url).indexOf('resend.com') !== -1) { emailCalls++; }
+    return { ok: true, status: 200, json: async function () { return {}; } };
+  };
+
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(emailCalls, 0, 'a suppressed email must never actually be sent to');
+
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.status, 'notified', 'the rest of the webhook flow (re-host, markNotified) must still complete normally even when the email itself is skipped');
+  assert.equal(updated.videoUrl, 'https://cdn.fal/finished.mp4');
 });
 
 test('an already-claimed record (real signup finished first) records the video but sends NO email', async function () {

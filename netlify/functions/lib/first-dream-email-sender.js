@@ -72,15 +72,27 @@
 // there's no thumbnail field anywhere in fal's veo3.1 result payload and
 // a second paid fal image-generation call per video isn't worth it for a
 // cosmetic email detail). buildHtml falls back to the flat-color banner
-// whenever it's absent — which is EXPECTED to be most of the time for the
-// automatic path specifically: mark-generation-completed.js has no
-// dreamId at all at its choke point (`dreamId: null` below), so it has no
-// way to look up a dream's imageUrl even when one exists, let alone when
-// the race against the client capturing one hasn't resolved yet (the
-// automatic send fires the instant generation completes server-side,
-// almost always before the client has even loaded this page). Only the
-// client-triggered send-first-dream-email.js path — which has the actual
-// dream object on hand — can realistically supply a real thumbnail today.
+// whenever it's absent.
+//
+// CORRECTED (2026-08-04, same tracker item's founder-approved thumbnail-
+// gating follow-up): this paragraph used to say the automatic path
+// (mark-generation-completed.js) "has no dreamId at all... so it has no
+// way to look up a dream's imageUrl even when one exists" and therefore
+// ALWAYS fell back to the flat-color banner in practice. That's no longer
+// true — mark-generation-completed.js no longer calls sendIfEligible
+// directly at all; it only enqueues (lib/first-dream-email-pending-
+// store.js's markPending), and send-pending-first-dream-emails.js's
+// scheduled scan is what actually calls this function, after resolving a
+// real dreamId/imageUrl (via lib/dream-store.js, once the client's own
+// thumbnail capture has synced) whenever one is available within the
+// founder's 3-minute window — see that file's own header comment for the
+// full mechanism. The flat-color banner is still the deliberate, honest
+// fallback for whenever no thumbnail lands within that window (client
+// never reached result.html, capture failed, sync never landed, etc.) —
+// this template is NOT dead code, it's the one path that intentionally
+// still reaches it. The client-triggered send-first-dream-email.js path
+// (which has the actual dream object on hand at request time) can also
+// still realistically supply a real thumbnail, same as before.
 //
 // PostHog event: fires 'first_dream_email_sent' server-side (via
 // lib/posthog-capture.js, the same server-side-capture pattern
@@ -94,6 +106,9 @@
 
 var firstDreamEmailStore = require('./first-dream-email-store');
 var posthogCapture = require('./posthog-capture');
+var emailSuppressionStore = require('./email-suppression-store');
+var unsubscribeToken = require('./unsubscribe-token');
+var emailLayout = require('./email-layout');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated from dream-webhook.js's own identical constant —
@@ -174,14 +189,27 @@ function buildHtml(opts) {
   var readyLine = opts.caption
     ? 'Your dream is ready to watch: <b>' + esc(opts.caption) + '</b>'
     : 'Your dream is ready to watch.';
-  return (
-    '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
+  // DESIGN (tracker item for-product-email-redesign-unsubscribe-l-16ysmp,
+  // "elevate the templates toward the product night aesthetic"): the
+  // media banner/flat-color-fallback and the profileUrl/createUrl links
+  // above are UNCHANGED in shape (same style strings, same href targets)
+  // -- only the surrounding chrome (typography color, spacing, the CTA
+  // button's visual treatment) moved to lib/email-layout.js's shared
+  // night-aesthetic shell + ctaButton helper, wrapped around this same
+  // inner content, plus the required unsubscribe/mailing-address footer
+  // (opts.unsubscribeUrl, see this file's own sendIfEligible).
+  var inner = (
     media +
-    '<p style="font-size:16px;">' + readyLine + '</p>' +
-    '<p><a href="' + opts.profileUrl + '" style="display:inline-block;padding:12px 22px;background:#000;color:#fff;border-radius:24px;text-decoration:none;font-weight:600;">View my dreams</a></p>' +
-    '<p style="color:#666;font-size:13px;">Loved it? <a href="' + opts.createUrl + '">Make another dream</a> — it only takes a minute.</p>' +
-    '</div>'
+    '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">' + readyLine + '</p>' +
+    '<p style="margin:0 0 16px;">' + emailLayout.ctaButton(opts.profileUrl, 'View my dreams') + '</p>' +
+    '<p style="color:' + emailLayout.COLORS.textMuted + ';font-size:13px;margin:0;">Loved it? <a href="' + opts.createUrl + '" style="color:' + emailLayout.COLORS.textMuted + ';">Make another dream</a> — it only takes a minute.</p>'
   );
+  return emailLayout.renderShell({
+    event: opts.event,
+    previewText: readyLine.replace(/<[^>]*>/g, ''),
+    bodyHtml: inner,
+    unsubscribeUrl: opts.unsubscribeUrl
+  });
 }
 
 /**
@@ -232,7 +260,8 @@ async function reportSkip(username, email, reason, auto) {
  *
  * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
  * send, or { ok:true, sent:false, skipped:<reason> } for every other case
- * (already sent, no RESEND_API_KEY, missing identity, or Resend itself
+ * (already sent, no RESEND_API_KEY, missing identity, this email having
+ * unsubscribed via lib/email-suppression-store.js, or Resend itself
  * rejecting/failing the request) — this function itself never signals
  * failure to its caller; every caller here treats this as best-effort,
  * exactly like the rest of this codebase's other analytics-adjacent/
@@ -261,6 +290,19 @@ async function sendIfEligible(event, opts) {
     return { ok: true, sent: false, skipped: 'missing_identity' };
   }
 
+  // SUPPRESSION CHECK (tracker item for-product-email-redesign-unsubscribe-
+  // l-16ysmp) -- checked BEFORE claiming the once-ever guard below, so an
+  // unsubscribed account's guard is never burned for an email that will
+  // never send: if this account ever gets a real, working un-suppress path
+  // in the future, it stays eligible for its one legitimate first-dream
+  // email rather than having silently "used up" its only shot while
+  // suppressed.
+  var suppressed = await emailSuppressionStore.isSuppressed(event, email);
+  if (suppressed) {
+    await reportSkip(username, email, 'suppressed', opts.auto);
+    return { ok: true, sent: false, skipped: 'suppressed' };
+  }
+
   var guard = await firstDreamEmailStore.markSentOnce(event, username, opts.dreamId);
   if (!guard.ok) {
     var guardReason = guard.alreadySent ? 'already_sent' : (guard.error || 'guard_failed');
@@ -284,11 +326,13 @@ async function sendIfEligible(event, opts) {
 
   var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
   var html = buildHtml({
+    event: event,
     caption: opts.caption,
     style: opts.style,
     profileUrl: profileUrl(event),
     createUrl: 'https://' + host + '/create.html',
-    imageUrl: absoluteImageUrl(event, opts.imageUrl)
+    imageUrl: absoluteImageUrl(event, opts.imageUrl),
+    unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, email)
   });
 
   try {
