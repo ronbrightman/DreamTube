@@ -109,6 +109,7 @@ var posthogCapture = require('./posthog-capture');
 var emailSuppressionStore = require('./email-suppression-store');
 var unsubscribeToken = require('./unsubscribe-token');
 var emailLayout = require('./email-layout');
+var siteOrigin = require('./site-origin');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated from dream-webhook.js's own identical constant —
@@ -136,8 +137,12 @@ function esc(s) {
 }
 
 function profileUrl(event) {
-  var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
-  return 'https://' + host + '/profile.html';
+  return siteOrigin.emailOrigin(event) + '/profile.html';
+}
+
+/** This email's "Make another dream" link, on the same resolved public origin as everything else in the body. */
+function createUrl(event) {
+  return siteOrigin.emailOrigin(event) + '/create.html';
 }
 
 /**
@@ -146,17 +151,25 @@ function profileUrl(event) {
  * own durableUrl — or an already-absolute one) to something an email
  * client can actually load, which must always be a full https:// url —
  * unlike an in-app <img>, an email has no document base url to resolve a
- * relative one against. Returns null (never a broken/relative src) when
- * there's no url to resolve, or no host to resolve a relative one against
- * (the same defensive host-empty-string fallback profileUrl above already
- * accepts).
+ * relative one against. Returns null (never a broken/relative src) only
+ * when there's no url to resolve at all.
+ *
+ * FIXED (tracker item for-product-bug-two-blank-square-emails--3fvxvc):
+ * this used to resolve a relative url against the inbound request's own
+ * Host header and give up (return null) when there wasn't one. Under the
+ * SCHEDULED sender (send-pending-first-dream-emails.js, the only path that
+ * sends this email automatically since commit de124a5) there never is one
+ * — so a real, successfully-captured-and-synced thumbnail was silently
+ * downgraded to buildHtml's flat-colour fallback banner on every automatic
+ * send. Production thumbnails are ALWAYS relative durable urls
+ * (upload-dream-thumbnail.js returns lib/media-rehost.js's durableUrl()),
+ * so this hit every single one. lib/site-origin.js's emailOrigin always
+ * yields a real public origin, so there is no "give up" case left.
  */
 function absoluteImageUrl(event, url) {
   if (typeof url !== 'string' || !url) return null;
   if (/^https?:\/\//i.test(url)) return url;
-  var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
-  if (!host) return null;
-  return 'https://' + host + (url.charAt(0) === '/' ? url : '/' + url);
+  return siteOrigin.emailOrigin(event) + (url.charAt(0) === '/' ? url : '/' + url);
 }
 
 function buildHtml(opts) {
@@ -324,13 +337,12 @@ async function sendIfEligible(event, opts) {
     return { ok: true, sent: false, skipped: 'no_resend_key' };
   }
 
-  var host = (event && event.headers && (event.headers['x-forwarded-host'] || event.headers.host)) || '';
   var html = buildHtml({
     event: event,
     caption: opts.caption,
     style: opts.style,
     profileUrl: profileUrl(event),
-    createUrl: 'https://' + host + '/create.html',
+    createUrl: createUrl(event),
     imageUrl: absoluteImageUrl(event, opts.imageUrl),
     unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, email)
   });
@@ -379,4 +391,4 @@ async function sendIfEligible(event, opts) {
   return { ok: true, sent: true };
 }
 
-module.exports = { sendIfEligible, buildHtml, profileUrl, absoluteImageUrl };
+module.exports = { sendIfEligible, buildHtml, profileUrl, createUrl, absoluteImageUrl };
