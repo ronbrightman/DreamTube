@@ -326,10 +326,23 @@ test('a genuine version.json change on disk (simulating a real deploy) triggers 
     // test/pwa-sw-update-behavioral.test.js's header comment on why
     // location.reload can't be monkeypatched) -- reading localStorage
     // immediately afterward can race the old execution context tearing
-    // down mid-navigation ("Execution context was destroyed"), so this
-    // retries past that specific, expected race rather than a single
-    // evaluate call (see evaluateAfterReload's own comment).
-    var stored = await evaluateAfterReload(page, function () { return localStorage.getItem('dreamtube_last_known_version_v1'); });
+    // down mid-navigation ("Execution context was destroyed"), so
+    // evaluateAfterReload already retries past that specific error. But
+    // localStorage's write and the reload navigation are two independent
+    // async signals racing back to Node (the same class of hazard this
+    // repo's own test/helpers/settle.js documents at length) -- a
+    // filesystem-timing-sensitive run can observe the navigation request
+    // (satisfying waitForCount) before recordVersionAndReloadIfChanged's
+    // own synchronous localStorage.setItem has actually landed in the
+    // reloaded page's storage snapshot. Poll past that too, rather than a
+    // single evaluateAfterReload call, matching this file's own bounded-
+    // retry discipline elsewhere.
+    var stored = null;
+    var storedDeadline = Date.now() + 5000;
+    while (stored !== 'v-deploy-new' && Date.now() < storedDeadline) {
+      stored = await evaluateAfterReload(page, function () { return localStorage.getItem('dreamtube_last_known_version_v1'); });
+      if (stored !== 'v-deploy-new') await new Promise(function (resolve) { setTimeout(resolve, 50); });
+    }
     assert.equal(stored, 'v-deploy-new', 'expected the newly-observed version to be recorded');
   } finally {
     if (context) await context.close();
