@@ -16,9 +16,8 @@
 // added later, `.notifyDreamResolved(pendingDreamId, realDreamId)` (see its
 // own section below), the host page's way of telling an OPEN session that
 // the still-generating dream it was opened for has finished rendering.
-// Matches
-// js/purchase-sheet.js's own established precedent for a complex shared
-// sheet/overlay component — same singleton-DOM-mounted-once,
+// Matches js/purchase-sheet.js's own established precedent for a complex
+// shared sheet/overlay component — same singleton-DOM-mounted-once,
 // `currentGen`-style async-staleness-guard, `trackLocal` posthog-direct
 // analytics pattern (see that file's own header comment for the full
 // reasoning on each).
