@@ -184,8 +184,12 @@ var MusicBed = (function () {
    * Whether `dream` should ever get a music-bed <audio> element at all.
    * Per the 2026-08-03 founder simplification (see this file's header
    * comment), there is no user choice left to check — music is always on
-   * for every dream that has both a real video and a style with a known
-   * bed file. Deliberately does NOT read `dream.musicBedOn` at all (that
+   * for every dream that has both a real video and a bed that actually
+   * resolves. As of the mood-keyed layer that means EITHER tier resolving
+   * (urlForDream): a dream whose visual style has no bed is now eligible
+   * after all if its mood has a track — which today can never happen,
+   * since MOOD_FILES is empty, so this is byte-for-byte the same answer
+   * it has always given. Deliberately does NOT read `dream.musicBedOn` at all (that
    * field no longer means anything, and may still be `false`/`true`/absent
    * on dreams generated across this feature's three history phases) — this
    * is what makes a dream generated before this simplification also always
