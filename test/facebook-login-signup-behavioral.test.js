@@ -234,7 +234,40 @@ test('feature flag ON: renders the Facebook button above the email field, Meta-b
     });
     assert.equal(buttonIsAboveEmail, true);
     assert.ok(await page.$('#fn-email'), 'the email field still exists (Direction Y: nothing removed)');
-    assert.ok((await page.$('#fn-fb-divider')) === null, 'Direction Y adds no divider');
+
+    // UPDATED 2026-08-03 (tracker item
+    // for-product-signup-screen-layout-fixes-f-3hclmj, founder mobile
+    // walk): Direction Y originally shipped with NO divider at all -- the
+    // founder has since explicitly asked for the standard "or" separator
+    // between the Facebook button and the email field, so this now
+    // asserts the OPPOSITE of what it used to (a divider must exist,
+    // positioned between the two, and disappear along with the button
+    // when the flag is off -- see the test right below this one).
+    var divider = await page.$('#fn-fb-or-divider');
+    assert.ok(divider, 'an "or" divider must render between the Facebook button and the email field');
+    assert.equal((await divider.textContent()).trim().toLowerCase(), 'or');
+    var dividerBetween = await page.evaluate(function () {
+      var b = document.getElementById('fn-fb-continue').getBoundingClientRect();
+      var d = document.getElementById('fn-fb-or-divider').getBoundingClientRect();
+      var e = document.getElementById('fn-email').getBoundingClientRect();
+      return b.bottom <= d.top && d.bottom <= e.top;
+    });
+    assert.equal(dividerBetween, true, 'the divider must sit between the Facebook button and the email field');
+  } finally {
+    await context.close();
+  }
+});
+
+test('feature flag OFF (placeholder App ID): the "or" divider is absent too (it only ever appears alongside the Facebook button)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await disableFacebookApp(page);
+    await reachScreen13(page, 'Flying over the ocean at sunset');
+
+    assert.ok((await page.$('#fn-fb-or-divider')) === null, 'no orphan divider without the Facebook button above it');
   } finally {
     await context.close();
   }
