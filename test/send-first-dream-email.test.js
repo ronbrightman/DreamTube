@@ -338,14 +338,34 @@ test('send-first-dream-email: no imageUrl (the common case, especially right aft
   });
 });
 
-test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative durable url against the request host, passes an absolute one through, and returns null with nothing to resolve against', function () {
+test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative durable url against the request host, passes an absolute one through, and returns null only when there is no url at all', function () {
   var sender = require('../netlify/functions/lib/first-dream-email-sender');
   var event = fakeEvent({ method: 'POST', headers: { host: 'dreamtube1.netlify.app' } });
   assert.equal(sender.absoluteImageUrl(event, '/.netlify/functions/image-file?key=x'), 'https://dreamtube1.netlify.app/.netlify/functions/image-file?key=x');
   assert.equal(sender.absoluteImageUrl(event, 'https://fal.media/x.jpg'), 'https://fal.media/x.jpg');
   assert.equal(sender.absoluteImageUrl(event, null), null);
   assert.equal(sender.absoluteImageUrl(event, ''), null);
-  assert.equal(sender.absoluteImageUrl(fakeEvent({ method: 'POST' }), '/relative'), null, 'no host on the event -- nothing safe to resolve a relative url against');
+
+  // CORRECTED (tracker item for-product-bug-two-blank-square-emails--3fvxvc).
+  // This line used to assert `null` here, with the rationale "no host on
+  // the event -- nothing safe to resolve a relative url against". That
+  // assertion is what encoded the bug: a header-less event is exactly what
+  // the SCHEDULED sender (send-pending-first-dream-emails.js, the only path
+  // that sends this email automatically since commit de124a5) always
+  // passes, and production thumbnails are ALWAYS relative durable urls
+  // (upload-dream-thumbnail.js returns lib/media-rehost.js's durableUrl()),
+  // so "give up and return null" meant every automatic send silently
+  // dropped a real, successfully-captured-and-synced thumbnail down to the
+  // flat-colour fallback banner. There IS something safe to resolve
+  // against -- this app's own configured public origin
+  // (lib/site-origin.js) -- so resolving it is the correct behaviour, not
+  // giving up. See test/email-public-origin.test.js for the full
+  // regression coverage.
+  assert.equal(
+    sender.absoluteImageUrl(fakeEvent({ method: 'POST' }), '/relative'),
+    'https://dreamtube1.netlify.app/relative',
+    'a header-less event (the scheduled sender) must still resolve against the configured public origin, not drop the thumbnail'
+  );
 });
 
 test('send-first-dream-email: never trusts a client-supplied email address — always resolves via the account store', function () {
