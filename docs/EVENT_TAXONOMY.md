@@ -679,6 +679,7 @@ interpretation event).
 | `interp_voice_listen_time` | Once, on Chamber close, IF a voice stage was ever mounted this session (same choke point as `interp_closed`) — total audio dwell | `{ persona, listened_ms, audio_duration_ms, completed: bool }` |
 | `interp_voice_tts_failed` | `generate-interp-audio.js`/`interp-audio-status.js` returns a hard failure — the whole voice stage is hidden, reading falls back to Wave 1's plain text-only card | `{ persona, error_code }` |
 | `interp_voice_caption_fallback` | `captionsLevel` resolves to `'sentence'` instead of `'word'` — the Whisper word-alignment pass (see `interp-audio-status.js`'s own header comment on why this reuses that pattern instead of the tracker-referenced ffmpeg `silencedetect` method) failed or returned nothing usable, and the client-side sentence-proportional fallback engaged | `{ persona }` |
+| `interp_voice_saved_audio_expired` | A REVISITED reading's persisted `audioUrl` (fal-hosted, no guaranteed lifetime) fires a real `<audio>` `error` — dead/expired/unreachable — and the stage silently regenerates it via `generate-interp-audio` instead of dying to text. Fires at most once per reading-open (`vs.regenerateAttempted`); if the regenerated track errors too, `interp_voice_tts_failed{error_code:'regenerated_audio_error'}` follows instead. A rising rate here is the signal that fal's audio retention has shortened | `{ persona }` |
 
 **Asset status:** `talmudic`'s (The Sage's) intro is the real, founder-
 approved Option D handoff, landed on `main` (commit `c0b9202`) as TWO

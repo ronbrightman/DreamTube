@@ -223,6 +223,12 @@
       if (voiceState.primedAudioEl && voiceState.primedAudioEl !== voiceState.audioEl) {
         try { voiceState.primedAudioEl.pause(); } catch (e) { /* best-effort */ }
       }
+      // Same round-2 teardown beginAudioPlayback uses when it re-enters for
+      // a regenerated track — applied on unmount too so a gesture-primed
+      // `<audio>` element (the one thing here that can genuinely outlive the
+      // mount, since the stage's own DOM is re-rendered from scratch each
+      // time) never carries a superseded stage's handlers forward.
+      detachPlaybackListeners(voiceState);
     }
     voiceState = null;
   }
@@ -496,8 +502,44 @@
     // this up the moment it resolves — see their own `phase === 'loading'` checks.
   }
 
+  /**
+   * Removes whatever listener set a PREVIOUS beginAudioPlayback call
+   * attached for this same `vs` (round-2 review finding on tracker item
+   * for-product-defensive-revisited-readings-dta2ae).
+   *
+   * beginAudioPlayback is NOT once-per-mount: the dead-saved-audio
+   * regenerate path below deliberately re-enters it for the same `vs` to
+   * start the regenerated track. Its listeners, though, land on things that
+   * outlive a single call — `vs.tapOverlay` is one mount-lived DOM element
+   * reused across every call, and the gesture-primed `<audio>` element is
+   * reused too when priming succeeded. Without this teardown, a second call
+   * left the first call's handlers live alongside the new ones, so one real
+   * user tap after a regenerate fired attemptPlay twice — once on the
+   * regenerated element, once on the stale DEAD one the old closure still
+   * held — double-counting interp_voice_play in analytics and attempting
+   * playback of a URL already known to be gone.
+   *
+   * Handler references are kept on `vs` (rather than a WeakMap or a
+   * dataset flag) because they must be removable from a specific element
+   * pair, and `vs` is already this stage's single owned state bag —
+   * resetVoiceState's own teardown gets to reuse this for free.
+   */
+  function detachPlaybackListeners(vs) {
+    var prev = vs && vs.playbackListeners;
+    if (!prev) return;
+    if (prev.audioEl) {
+      prev.audioEl.removeEventListener('loadedmetadata', prev.onLoadedMetadata);
+      prev.audioEl.removeEventListener('timeupdate', prev.onTimeUpdate);
+      prev.audioEl.removeEventListener('ended', prev.onEnded);
+      prev.audioEl.removeEventListener('error', prev.onError);
+    }
+    if (prev.tapOverlay) prev.tapOverlay.removeEventListener('click', prev.onReadingTap);
+    vs.playbackListeners = null;
+  }
+
   function beginAudioPlayback(vs, persona) {
     vs.phase = 'reading';
+    detachPlaybackListeners(vs); // see its own doc comment — this function can legitimately run more than once per `vs` (the regenerate path re-enters it)
     if (vs.capEl) vs.capEl.textContent = ''; // clears showPreparingCaption's copy the instant real playback is attempted, win or lose (spec: "clear it the moment real captions/audio take over")
     // Reuse the gesture-primed element (createPrimedAudioElement, set up
     // back at the persona-pick tap) when one exists and is still usable —
@@ -517,7 +559,10 @@
     }
     if (!audio) audio = new Audio(vs.audioUrl);
     vs.audioEl = audio;
-    audio.addEventListener('loadedmetadata', function () {
+    // Every listener below is a NAMED reference, collected into
+    // vs.playbackListeners so detachPlaybackListeners above can remove this
+    // exact set if beginAudioPlayback runs again for this same `vs`.
+    function onLoadedMetadata() {
       if (voiceState !== vs) return;
       // Authoritative duration (spec's own "probe the real asset" rule) —
       // fills in the sentence-fallback schedule now that it's knowable,
@@ -528,12 +573,12 @@
           vs.captions = computeSentenceFallbackCaptions(vs.readingText, vs.audioDurationMs);
         }
       }
-    });
-    audio.addEventListener('timeupdate', function () {
+    }
+    function onTimeUpdate() {
       if (voiceState !== vs) return;
       renderVoiceCaption(vs, audio.currentTime * 1000);
-    });
-    audio.addEventListener('ended', function () {
+    }
+    function onEnded() {
       if (voiceState !== vs) return;
       if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
       vs.hasCompletedOnce = true;
@@ -541,7 +586,7 @@
       trackLocal('interp_voice_complete', { persona: persona.key, duration_ms: vs.audioDurationMs || Math.round(audio.duration * 1000) || null });
       setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'replay'));
       showTapOverlay(vs); // reused as the "replay" affordance post-completion
-    });
+    }
     // Tracker item for-product-defensive-revisited-readings-dta2ae —
     // the real `error` event (fires on a genuinely dead/expired/
     // unreachable src, same signal class result.html's own
@@ -561,7 +606,7 @@
     // errors too, this degrades to the existing hard-TTS-failure path
     // (teardownVoiceStageOnFailure — voice stage hides, Wave 1's plain
     // text card underneath is unaffected) rather than looping forever.
-    audio.addEventListener('error', function () {
+    function onError() {
       if (voiceState !== vs) return;
       if (vs.audioSource !== 'saved') return;
       if (vs.regenerateAttempted) {
@@ -577,8 +622,60 @@
       vs.audioUrl = null;
       vs.phase = 'loading'; // reuses enterReadingPhase's own loading sub-state UI language
       showPreparingCaption(vs, persona); // same "preparing" copy a brand-new reading shows — this must look like the reading is getting itself ready again, not like anything broke
-      requestVoiceAudio(vs, persona); // the SAME regeneration flow a fresh reading already uses; its own .then re-enters beginAudioPlayback (vs.phase === 'loading'), its own .catch falls to teardownVoiceStageOnFailure if the regenerate call itself fails outright
-    });
+      requestVoiceAudio(vs, persona); // the SAME regeneration flow a fresh reading already uses; its own .then re-enters beginAudioPlayback (vs.phase === 'loading' — and detachPlaybackListeners there clears THIS listener set first), its own .catch falls to teardownVoiceStageOnFailure if the regenerate call itself fails outright
+    }
+    function onReadingTap() {
+      if (voiceState !== vs || vs.phase !== 'reading') return;
+      if (vs.hasCompletedOnce) {
+        audio.currentTime = 0;
+        vs.hasCompletedOnce = false;
+        attemptPlay(audio).then(function (ok) {
+          if (voiceState !== vs) return;
+          if (ok) { vs.listenStartedAt = Date.now(); hideTapOverlay(vs); trackLocal('interp_voice_replay', { persona: persona.key }); }
+        });
+        return;
+      }
+      if (audio.paused) {
+        attemptPlay(audio).then(function (ok) {
+          if (voiceState !== vs) return;
+          if (ok) {
+            vs.listenStartedAt = Date.now();
+            hideTapOverlay(vs);
+            trackLocal('interp_voice_play', { persona: persona.key, source: 'tap_unlock' });
+          }
+        });
+      } else {
+        audio.pause();
+        if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
+        trackLocal('interp_voice_paused', { persona: persona.key, position_ms: Math.round(audio.currentTime * 1000) });
+        setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'resume'));
+        showTapOverlay(vs);
+      }
+    }
+
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
+    if (vs.tapOverlay) vs.tapOverlay.addEventListener('click', onReadingTap);
+    // Recorded against the EXACT elements they were attached to (not just
+    // re-read off `vs` at teardown time), so a later detach can't miss a
+    // handler because `vs.audioEl` has since been swapped for a regenerated
+    // element.
+    vs.playbackListeners = {
+      audioEl: audio,
+      tapOverlay: vs.tapOverlay || null,
+      onLoadedMetadata: onLoadedMetadata,
+      onTimeUpdate: onTimeUpdate,
+      onEnded: onEnded,
+      onError: onError,
+      onReadingTap: onReadingTap
+    };
+
+    // Deliberately AFTER the listener registration above (the order the
+    // pre-fix code had too): play() itself never dispatches synchronously,
+    // but keeping the element fully wired before it is ever asked to play
+    // means no media event can outrun its handler.
     attemptPlay(audio).then(function (ok) {
       if (voiceState !== vs) return;
       if (ok) {
@@ -590,36 +687,6 @@
         showTapOverlay(vs);
       }
     });
-    if (vs.tapOverlay) {
-      vs.tapOverlay.addEventListener('click', function onReadingTap() {
-        if (voiceState !== vs || vs.phase !== 'reading') return;
-        if (vs.hasCompletedOnce) {
-          audio.currentTime = 0;
-          vs.hasCompletedOnce = false;
-          attemptPlay(audio).then(function (ok) {
-            if (voiceState !== vs) return;
-            if (ok) { vs.listenStartedAt = Date.now(); hideTapOverlay(vs); trackLocal('interp_voice_replay', { persona: persona.key }); }
-          });
-          return;
-        }
-        if (audio.paused) {
-          attemptPlay(audio).then(function (ok) {
-            if (voiceState !== vs) return;
-            if (ok) {
-              vs.listenStartedAt = Date.now();
-              hideTapOverlay(vs);
-              trackLocal('interp_voice_play', { persona: persona.key, source: 'tap_unlock' });
-            }
-          });
-        } else {
-          audio.pause();
-          if (vs.listenStartedAt) { vs.totalListenedMs += Date.now() - vs.listenStartedAt; vs.listenStartedAt = null; }
-          trackLocal('interp_voice_paused', { persona: persona.key, position_ms: Math.round(audio.currentTime * 1000) });
-          setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'resume'));
-          showTapOverlay(vs);
-        }
-      });
-    }
   }
 
   /**

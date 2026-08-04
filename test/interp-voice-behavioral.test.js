@@ -876,6 +876,137 @@ test('revisit with a DEAD saved audioUrl (a real 404): exactly one regenerate-vi
   }
 });
 
+/**
+ * Same forced-autoplay-outcome technique as forcePlayOutcome above, but the
+ * outcome is flippable at runtime (`window.__playSucceeds`) and every real
+ * `.play()` invocation is recorded (`window.__playCalls`) — both needed by
+ * the duplicate-listener regression test below, which has to (a) keep
+ * autoplay BLOCKED through a whole regenerate cycle so the tap overlay is
+ * actually the thing driving playback, then (b) flip to success for the real
+ * tap (a genuine user gesture would unlock it), then (c) count exactly how
+ * many playback attempts that ONE tap produced. An `>=`-style assertion
+ * cannot see the bug this exists to catch, so the count has to be real.
+ */
+function forcePlayOutcomeCounted(page, succeeds) {
+  return page.addInitScript(function (succeeds) {
+    window.__playSucceeds = succeeds;
+    window.__playCalls = [];
+    HTMLMediaElement.prototype.play = function () {
+      window.__playCalls.push(this.src || '');
+      if (window.__playSucceeds) return Promise.resolve();
+      return Promise.reject(new DOMException('forced-block-for-test', 'NotAllowedError'));
+    };
+  }, succeeds);
+}
+
+/**
+ * ── Round-2 review finding on this same tracker item ──
+ *
+ * The three tests above all ran with `forcePlayOutcome(page, true)` —
+ * autoplay never blocked, so the tap overlay was never exercised on the
+ * regenerate path at all — and asserted `>= 1` on telemetry. That combination
+ * is precisely why a real duplicate-listener bug shipped through them
+ * undetected: beginAudioPlayback used to attach a fresh full listener set
+ * (loadedmetadata/timeupdate/ended/error on the <audio> element, plus click
+ * on the SHARED, mount-lived #itp-voice-tap-overlay element) on EVERY call,
+ * with no removal of the previous set — and the dead-audio regenerate path
+ * deliberately re-enters beginAudioPlayback for the SAME `vs` to start the
+ * regenerated track. Result: after one regenerate cycle the overlay carried
+ * two live click handlers, and a single real user tap fired attemptPlay
+ * twice — once against the regenerated element and once against the stale,
+ * already-dead one it closed over — double-firing interp_voice_play.
+ *
+ * This test reproduces exactly that user path (revisit → dead saved audio →
+ * regenerate → autoplay blocked → ONE real tap) and asserts EXACT counts, so
+ * a regression cannot hide behind an `>=`.
+ */
+test('after a dead-audio regenerate cycle, ONE real tap on the overlay produces exactly ONE playback attempt and exactly ONE interp_voice_play — beginAudioPlayback must not leave duplicate listeners behind', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Autoplay BLOCKED for the whole flow — this is what forces the tap
+    // overlay to be the real playback affordance on both the dead-audio
+    // pass and the regenerated pass, the code path the original three tests
+    // never reached.
+    await forcePlayOutcomeCounted(page, false);
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var generateCalls = 0;
+    page.on('request', function (req) {
+      if (req.url().indexOf('/generate-interp-audio') !== -1) generateCalls++;
+    });
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-voice-regen-tap-once', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3', // real 404
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-regen-tap-once&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate cycle completes: the dead URL errored, exactly one
+    // regeneration ran, and the element now in use is the regenerated one.
+    await page.waitForFunction(function () {
+      return window.__lastAudio && window.__lastAudio.src && window.__lastAudio.src.indexOf('sage-voice-x7q4.mp3') !== -1;
+    }, null, { timeout: 8000 });
+    assert.equal(generateCalls, 1, 'exactly one regeneration — precondition for the rest of this test');
+
+    // The regenerated track's own autoplay was blocked too, so the overlay
+    // is showing as the real "tap to hear it" affordance.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && !el.classList.contains('off');
+    }, null, { timeout: 5000 });
+
+    // A real tap IS a user gesture — flip play() to succeed, and zero the
+    // counter so what's measured is strictly what THIS ONE tap causes.
+    await page.evaluate(function () {
+      window.__playSucceeds = true;
+      window.__playCalls.length = 0;
+    });
+    await page.click('#itp-voice-tap-overlay');
+    await page.waitForFunction(function () {
+      var q = window.posthog && window.posthog.slice ? window.posthog.slice() : [];
+      return q.some(function (e) { return e[0] === 'capture' && e[1] === 'interp_voice_play'; });
+    }, null, { timeout: 5000 });
+    // Settle: a duplicate handler's own attemptPlay resolves on a later
+    // microtask/tick, so give any second capture a real chance to land
+    // before counting (otherwise this could pass by racing rather than by
+    // the fix actually holding).
+    await page.waitForTimeout(300);
+
+    var playCalls = await page.evaluate(function () { return window.__playCalls.slice(); });
+    assert.equal(playCalls.length, 1, 'ONE tap must produce EXACTLY ONE play() attempt — two means beginAudioPlayback left a duplicate tap-overlay handler behind after the regenerate cycle (got: ' + JSON.stringify(playCalls) + ')');
+    assert.ok(playCalls[0].indexOf('sage-voice-x7q4.mp3') !== -1, 'the tap must drive the REGENERATED audio element, never the stale dead one a leftover handler would still close over');
+
+    var phCalls = await readPostHogCalls(page);
+    var played = captures(phCalls, 'interp_voice_play');
+    assert.equal(played.length, 1, 'exactly ONE interp_voice_play for one tap — a duplicate listener double-counts real listens in analytics');
+    assert.deepEqual(played[0][2], { persona: 'talmudic', source: 'tap_unlock' });
+
+    // The same duplicate-listener class of bug would also double-fire the
+    // <audio> element's own lifecycle listeners whenever the regenerated
+    // element is the SAME object as the pre-regenerate one (gesture-primed
+    // reuse). Completion telemetry is the cheapest exact-count probe for it.
+    await page.evaluate(function () { window.__lastAudio.dispatchEvent(new Event('ended')); });
+    var phAfterEnded = await readPostHogCalls(page);
+    assert.equal(captures(phAfterEnded, 'interp_voice_complete').length, 1, 'exactly ONE interp_voice_complete for one real "ended" — duplicate <audio> lifecycle listeners would fire it twice');
+  } finally {
+    await context.close();
+  }
+});
+
 test('a dead saved audioUrl whose REGENERATED audio ALSO errors degrades to the existing hard-TTS-failure path (voice stage hides, plain text card still renders) — bounded to one attempt, never loops', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
