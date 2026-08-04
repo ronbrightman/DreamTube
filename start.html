@@ -280,8 +280,24 @@
      markup, divider included). Text content is lowercase "or" (kept
      that way for any test/copy that reads it); text-transform:uppercase
      below is purely visual, matching the universal social-login pattern
-     without hardcoding two casings of the same word. */
-  .fn-or-divider{ display:flex; align-items:center; gap:12px; margin:0 0 14px; color:var(--phase-faint, var(--fn-ink-faint)); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;}
+     without hardcoding two casings of the same word.
+
+     FOUNDER FIX (08-03 preview walk, tracker item
+     for-product-signup-screen-layout-fixes-f-3hclmj): the divider used
+     to be bundled into the SAME .fn-stage-group as the Facebook button
+     (facebookSignupButtonHtml() + facebookOrDividerHtml() concatenated
+     as one fnStageHtml entry), with a hardcoded 14px margin gluing it to
+     the button above while only the shared .fn-stage-spacer below it
+     separated it from the email field -- so it always sat much closer to
+     the button than to the field ("glued to Facebook button" per the
+     founder's verdict). Root cause was that one-group bundling, not this
+     rule. Fix: the button and divider are now each their own
+     .fn-stage-group (see the two screen-13 render call sites below), so
+     the SAME flex:1 .fn-stage-spacer mechanism that already spaces every
+     other beat on this screen puts one equal, auto-sized gap above the
+     divider and one below it -- genuinely centered in the whitespace, no
+     hardcoded margin needed here at all. */
+  .fn-or-divider{ display:flex; align-items:center; gap:12px; margin:0; color:var(--phase-faint, var(--fn-ink-faint)); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;}
   .fn-or-divider::before, .fn-or-divider::after{ content:''; flex:1; height:1px; background:var(--phase-line, var(--fn-line));}
 
   .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
@@ -1577,10 +1593,21 @@
   // does NOT take this funnel's pastel-gradient .fn-btn-primary pill —
   // Meta's brand policy is a hard constraint, not a preference (spec §1).
 
-  /** Markup for the additive Facebook button, or '' when the feature flag is still a placeholder — in which case NOTHING is written into the DOM (the button is absent, not hidden; spec §2.4's "Flag OFF" row). */
+  /**
+   * Markup for the additive Facebook button, or '' when the feature flag
+   * is still a placeholder — in which case NOTHING is written into the
+   * DOM (the button is absent, not hidden; spec §2.4's "Flag OFF" row).
+   *
+   * No wrapping margin here (there used to be a hardcoded margin:0 0 14px
+   * div) — the button is now its own .fn-stage-group at every call site
+   * (see the divider-centering fix in facebookOrDividerHtml/.fn-or-divider
+   * above), so the surrounding .fn-stage-spacer flex items already
+   * provide the gap on both sides; a fixed margin here would just add an
+   * extra, unequal sliver on top of that.
+   */
   function facebookSignupButtonHtml(){
     if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
-    return '<div style="margin:0 0 14px;">' + facebookButtonHtml('fn-fb-continue') + '</div>';
+    return facebookButtonHtml('fn-fb-continue');
   }
 
   /**
@@ -2103,9 +2130,14 @@
         computeProofStripHtml() + '<div class="fn-price-note" style="text-align:left; margin:-6px 0 0;">' + treatmentReassurance + '</div>',
         // Direction Y placement — see the LAYOUT NOTE above
         // facebookSignupButtonHtml. Absent entirely (empty string) while
-        // the feature flag is a placeholder, in which case this whole
-        // group is dropped by fnStageHtml (no orphan spacer either).
-        facebookSignupButtonHtml() + facebookOrDividerHtml(),
+        // the feature flag is a placeholder, in which case both groups
+        // below are dropped by fnStageHtml (no orphan spacer either).
+        // Kept as two SEPARATE groups (not one concatenated entry) so the
+        // divider gets its own equal .fn-stage-spacer on both sides —
+        // see the divider-centering fix in facebookOrDividerHtml/
+        // .fn-or-divider above.
+        facebookSignupButtonHtml(),
+        facebookOrDividerHtml(),
         '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" value="' + esc(prefillEmail || '') + '">' +
         '<div class="fn-err-text" id="fn-signup-error"></div>',
         '<button class="fn-btn-primary" id="fn-s13-email-continue" type="button">Continue</button>'
@@ -2322,10 +2354,12 @@
   //          place (see that file's own header comment). claim-dream.html
   //          is the durable landing page for exactly a "closed the window"
   //          visitor to come back and save the finished dream later.
-  //      So "saving to your email, waiting even if you close this window"
-  //      is accurate from the moment the email step's Continue succeeds --
-  //      NOT merely from screen load, and NOT contingent on signup ever
-  //      completing. isRecordMode is the one real exception: no pending
+  //      So "No need to wait — we will send your dream once it's ready to
+  //      your email:" (the founder's own verbatim copy, tracker item
+  //      for-product-forming-veil-replace-the-fla-nwbe60) is accurate from
+  //      the moment the email step's Continue succeeds -- NOT merely from
+  //      screen load, and NOT contingent on signup ever completing.
+  //      isRecordMode is the one real exception: no pending
   //      generation is ever started for Record-it (captionText is empty --
   //      nothing exists yet to save; recording happens after signup, on
   //      create.html), so that path gets its own, still-true copy instead,
@@ -2422,16 +2456,26 @@
     // Save-framing reassurance -- see this function's OWN block comment
     // above (right before formingFrameHtml) for the exact verification
     // this claim is built on.
+    // FOUNDER FIX (08-03 ~23:00 verdict, tracker item
+    // for-product-forming-veil-replace-the-fla-nwbe60): the non-record-mode
+    // reassurance line above the email field now reads, verbatim per his
+    // words: "No need to wait — we will send your dream once it's ready to
+    // your email:" — replaces the old "Your dream is saving to your
+    // email..." copy. Only mechanics (the apostrophe, matching this file's
+    // curly-quote convention used everywhere else) were changed, not his
+    // wording. isRecordMode keeps its own separate copy untouched — the
+    // founder's fix targeted only the default (non-record) line.
     var revealReassurance = isRecordMode
       ? 'Record it, then it’s saved — we’ll email your finished dream the moment it’s ready, even if you’ve moved on by then.'
-      : 'Your dream is saving to your email — it’ll be waiting even if you close this window.';
+      : 'No need to wait — we will send your dream once it’s ready to your email:';
     var submitLabels = { idle: 'Send me my dream', submitting: 'Sending your dream…' };
 
     function renderEmailStep(prefillEmail){
       el.innerHTML = fnStageHtml([
         '<div class="fn-headline">' + headline + '</div>' + formingFrameHtml(formingCaption, chosenStyle),
         computeProofStripHtml() + '<div class="fn-price-note" style="text-align:left; margin:-6px 0 0;">' + revealReassurance + '</div>',
-        facebookSignupButtonHtml() + facebookOrDividerHtml(),
+        facebookSignupButtonHtml(),
+        facebookOrDividerHtml(),
         '<input class="fn-field" id="fn-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto" value="' + esc(prefillEmail || '') + '">' +
         '<div class="fn-err-text" id="fn-signup-error"></div>',
         '<button class="fn-btn-primary" id="fn-s13-email-continue" type="button">Continue</button>'

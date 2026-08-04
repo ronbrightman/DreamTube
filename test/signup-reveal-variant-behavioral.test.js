@@ -188,8 +188,12 @@ test('reveal variant, email step: renders the forming veil, the proof-adjacent s
     assert.match(captionText, /forming/i);
 
     var bodyText = await page.textContent('#fnScreen');
-    assert.match(bodyText, /saving to your email/i, 'the save-framing reassurance line must render');
-    assert.match(bodyText, /waiting even if you close this window/i);
+    // Founder-approved copy change (tracker item
+    // for-product-forming-veil-replace-the-fla-nwbe60, verdict 08-03
+    // ~23:00) -- replaces the old "Your dream is saving to your email...
+    // it'll be waiting..." line with his verbatim wording.
+    assert.match(bodyText, /no need to wait/i, 'the save-framing reassurance line must render');
+    assert.match(bodyText, /we will send your dream once it.s ready to your email/i);
     assert.doesNotMatch(bodyText, /sign up/i, 'the reveal variant must never say "Sign up" anywhere on screen');
 
     // Anticipation-only by default -- no video-status route was mocked, so
@@ -223,7 +227,7 @@ test('reveal variant, password step: the submit button reads "Send me my dream" 
     assert.equal(btnText.trim(), 'Send me my dream');
     var bodyText = await page.textContent('#fnScreen');
     assert.doesNotMatch(bodyText, /sign up/i, 'still never "Sign up" once the password field is revealed');
-    assert.match(bodyText, /saving to your email/i);
+    assert.match(bodyText, /no need to wait/i);
   } finally {
     await context.close();
   }
