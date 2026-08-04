@@ -275,6 +275,27 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     assert.ok(markCalls.length >= 1, 'home.html must have called the REAL mark-generation-completed.js at least once');
     assert.equal(markCalls[0].operationName.indexOf('mock:'), 0, 'the operationName reaching mark-generation-completed must be the SAME funnel operationName minted by start-pending-generation.js');
 
+    // THUMBNAIL-GATED SEND (tracker item for-product-email-redesign-
+    // unsubscribe-l-16ysmp's founder-approved follow-up, 2026-08-04): the
+    // real mark-generation-completed.js call above now only ENQUEUES the
+    // send (lib/first-dream-email-pending-store.js's markPending) -- the
+    // actual Resend attempt happens later, off this request, via send-
+    // pending-first-dream-emails.js's scheduled scan. This test never had
+    // a real thumbnail sync in play (no result.html visit), so force that
+    // scan's own 3-minute deadline as already elapsed and run it directly
+    // in this same Node process (mirroring test/automatic-first-dream-
+    // email.test.js's own flushPending helper) -- proving the REAL
+    // downstream send still fires off the REAL enqueued record, not a
+    // mocked stand-in.
+    var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
+    var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+    var pendingRecord = await pendingStore.getPending(fakeEvent({}), markCalls[0].operationName);
+    assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending record for this exact operationName');
+    mockBlobs.seed(pendingStore.STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
+      triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
+    }));
+    await sendPending.scanAndSend(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }));
+
     // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the automatic retention email
     // must have genuinely been attempted, through the real job-owners
     // lookup, the real account-store lookup, and the real

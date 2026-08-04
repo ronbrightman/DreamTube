@@ -91,22 +91,44 @@
 // real registered account whose recorded mediaType is 'video' (matching
 // the retention email's own long-established video-only scope --
 // see send-first-dream-email.js's header comment; an unrecorded/unknown
-// mediaType fails closed here, never assumed to be video), calls the
-// exact same guarded lib/first-dream-email-sender.js core
-// send-first-dream-email.js itself calls. This needs NO password and NO
-// client-claimed identity at all -- ownership is proven purely by
-// knowing operationName (server-issued, unguessable, independently
-// re-verified as genuinely completed above) plus the submission-time
-// job-owners binding, a strictly STRONGER identity proof than the
-// password re-check the client-triggered endpoint needs, not a weaker
-// one. Awaited (not fire-and-forget) so this function's own invocation
-// doesn't return before the send genuinely completes or fails -- same
-// "await the notification best-effort, inside a try/catch, before
-// returning" discipline dream-webhook.js's own sendReadyEmail already
-// uses for its webhook handler. Never turns into a distinguishable
-// response either way (see the E-code list below): a real completion
-// marker write always succeeds or fails on its own terms, independent of
-// whatever happens to this bonus email step.
+// mediaType fails closed here, never assumed to be video), ENQUEUES the
+// guarded send -- see "THUMBNAIL-GATED SEND" below for why this no longer
+// calls lib/first-dream-email-sender.js's sendIfEligible directly. This
+// needs NO password and NO client-claimed identity at all -- ownership is
+// proven purely by knowing operationName (server-issued, unguessable,
+// independently re-verified as genuinely completed above) plus the
+// submission-time job-owners binding, a strictly STRONGER identity proof
+// than the password re-check the client-triggered endpoint needs, not a
+// weaker one. Awaited (not fire-and-forget) so this function's own
+// invocation doesn't return before the ENQUEUE genuinely completes or
+// fails -- same "await the notification best-effort, inside a try/catch,
+// before returning" discipline dream-webhook.js's own sendReadyEmail
+// already uses for its webhook handler; the actual email SEND now happens
+// later, off this request entirely (see below). Never turns into a
+// distinguishable response either way (see the E-code list below): a
+// real completion marker write always succeeds or fails on its own
+// terms, independent of whatever happens to this bonus email step.
+//
+// THUMBNAIL-GATED SEND (added 2026-08-04, this same tracker item's
+// founder-approved follow-up -- "wait up to 3 MINUTES for the captured
+// image; if it exists, send with it; if not, SEND ANYWAY at the
+// 3-minute mark"): this choke point used to call sendIfEligible directly,
+// synchronously, the instant a completion verified -- meaning the
+// automatic path always fired before any client could possibly have
+// captured/uploaded a real thumbnail (see lib/first-dream-email-sender.js's
+// OLD header comment, still visible in git history), so it always fell
+// back to the flat-color banner. A real Netlify Function invocation
+// cannot just await a 3-minute delay in place (see lib/first-dream-email-
+// pending-store.js's own header comment for the full "why" and why this
+// mirrors send-daily-claim-pushes.js's existing "store + scheduled scan"
+// shape instead of inventing a new mechanism). So this now only ENQUEUES
+// a pending record (lib/first-dream-email-pending-store.js's markPending)
+// -- send-pending-first-dream-emails.js's scheduled scan is what actually
+// decides, on a later run, whether to send with the real thumbnail or
+// fall back once the 3-minute window elapses. Every existing race-safety
+// guarantee below this point in the file (job-owners retry, the pendingId/
+// readyAt double-send guard, the video-only mediaType scope) is completely
+// UNCHANGED -- only the very last step (send now vs. enqueue) moved.
 //
 // Rate limiting: same reasoning as track-conversion.js -- a public,
 // unauthenticated endpoint, so a per-IP daily cap guards against someone
@@ -127,7 +149,7 @@
 var generationCompletionStore = require('./lib/generation-completion-store');
 var jobOwners = require('./lib/job-owners');
 var accountStore = require('./lib/account-store');
-var firstDreamEmailSender = require('./lib/first-dream-email-sender');
+var firstDreamEmailPendingStore = require('./lib/first-dream-email-pending-store');
 var rateLimit = require('./lib/rate-limit');
 var posthogCapture = require('./lib/posthog-capture');
 var pendingDreams = require('./lib/pending-dreams');
@@ -301,23 +323,30 @@ exports.handler = async function (event) {
 /**
  * Resolves `operationName`'s real owner (lib/job-owners.js, recorded at
  * submission time) and, if it's a real registered account whose recorded
- * mediaType is 'video', fires the guarded first-dream retention-email
- * send -- see this file's own "AUTOMATIC FIRST-DREAM RETENTION EMAIL"
- * header comment for the full reasoning. Every branch below is a plain,
- * silent no-op (never an error, never a distinguishable response) -- see
- * that same header comment for why: a job-owners record missing/failed to
- * write, an email that doesn't resolve to a real account (a local-only
- * legacy account never backfilled server-side, see
- * js/store.js's backfillAccountServerSide), or a non-video mediaType (or
- * one recorded before this field existed) all mean simply "no automatic
- * email this time," not a failure worth surfacing anywhere.
+ * mediaType is 'video', ENQUEUES the guarded first-dream retention-email
+ * send (lib/first-dream-email-pending-store.js's markPending) -- see this
+ * file's own "AUTOMATIC FIRST-DREAM RETENTION EMAIL" and "THUMBNAIL-GATED
+ * SEND" header comments for the full reasoning, including why this no
+ * longer calls lib/first-dream-email-sender.js's sendIfEligible directly.
+ * Every branch below is a plain, silent no-op (never an error, never a
+ * distinguishable response) -- see that same header comment for why: a
+ * job-owners record missing/failed to write, an email that doesn't
+ * resolve to a real account (a local-only legacy account never
+ * backfilled server-side, see js/store.js's backfillAccountServerSide),
+ * or a non-video mediaType (or one recorded before this field existed)
+ * all mean simply "no automatic email this time," not a failure worth
+ * surfacing anywhere.
  *
- * Caption/style are deliberately NOT passed through here (see
+ * Caption/style/imageUrl are deliberately NOT resolved here (see
  * lib/first-dream-email-sender.js's own header comment) -- this choke
  * point only ever independently re-verifies a job's completion STATUS,
  * never fetches its full result payload, so there is nothing to
  * personalize with without accepting new client-trusted input at exactly
- * the one place in this feature that currently needs none at all.
+ * the one place in this feature that currently needs none at all. The
+ * imageUrl this feature DOES eventually send with is resolved later,
+ * off this request, by send-pending-first-dream-emails.js's own scan
+ * (via lib/dream-store.js, keyed by the enqueued operationName) -- see
+ * that file's header comment.
  *
  * SILENT-SKIP TELEMETRY (tracker.html's for-product-bug-founder-affects-
  * all-funn-0efe7t item, gap #6): each of these no-op branches now ALSO
@@ -461,12 +490,17 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
     return;
   }
 
-  await firstDreamEmailSender.sendIfEligible(event, {
-    username: account.username,
-    email: account.email,
-    dreamId: null,
-    auto: true
-  });
+  // THUMBNAIL-GATED SEND (see this file's own top-of-file header comment
+  // section by that name): no longer sends directly -- markPending is
+  // idempotent (a duplicate call for the SAME operationName, e.g. a
+  // retried client call, is a harmless no-op against the already-ticking
+  // deadline -- see lib/first-dream-email-pending-store.js's own header
+  // comment) and best-effort (a failed enqueue here is a silent miss for
+  // THIS completion's automatic email, same "no failure ever surfaces to
+  // the caller" posture as every other branch in this function -- the
+  // client-triggered send-first-dream-email.js fallback remains as a
+  // second, independent path that can still cover it).
+  await firstDreamEmailPendingStore.markPending(event, operationName, account.username, account.email);
 }
 
 /**

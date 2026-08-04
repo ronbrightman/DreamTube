@@ -72,15 +72,27 @@
 // there's no thumbnail field anywhere in fal's veo3.1 result payload and
 // a second paid fal image-generation call per video isn't worth it for a
 // cosmetic email detail). buildHtml falls back to the flat-color banner
-// whenever it's absent — which is EXPECTED to be most of the time for the
-// automatic path specifically: mark-generation-completed.js has no
-// dreamId at all at its choke point (`dreamId: null` below), so it has no
-// way to look up a dream's imageUrl even when one exists, let alone when
-// the race against the client capturing one hasn't resolved yet (the
-// automatic send fires the instant generation completes server-side,
-// almost always before the client has even loaded this page). Only the
-// client-triggered send-first-dream-email.js path — which has the actual
-// dream object on hand — can realistically supply a real thumbnail today.
+// whenever it's absent.
+//
+// CORRECTED (2026-08-04, same tracker item's founder-approved thumbnail-
+// gating follow-up): this paragraph used to say the automatic path
+// (mark-generation-completed.js) "has no dreamId at all... so it has no
+// way to look up a dream's imageUrl even when one exists" and therefore
+// ALWAYS fell back to the flat-color banner in practice. That's no longer
+// true — mark-generation-completed.js no longer calls sendIfEligible
+// directly at all; it only enqueues (lib/first-dream-email-pending-
+// store.js's markPending), and send-pending-first-dream-emails.js's
+// scheduled scan is what actually calls this function, after resolving a
+// real dreamId/imageUrl (via lib/dream-store.js, once the client's own
+// thumbnail capture has synced) whenever one is available within the
+// founder's 3-minute window — see that file's own header comment for the
+// full mechanism. The flat-color banner is still the deliberate, honest
+// fallback for whenever no thumbnail lands within that window (client
+// never reached result.html, capture failed, sync never landed, etc.) —
+// this template is NOT dead code, it's the one path that intentionally
+// still reaches it. The client-triggered send-first-dream-email.js path
+// (which has the actual dream object on hand at request time) can also
+// still realistically supply a real thumbnail, same as before.
 //
 // PostHog event: fires 'first_dream_email_sent' server-side (via
 // lib/posthog-capture.js, the same server-side-capture pattern

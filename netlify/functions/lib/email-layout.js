@@ -27,11 +27,18 @@
 // link's placement without anyone noticing — a real risk a shared shell
 // removes cleanly for a small, deliberate cost in cross-file coupling.
 //
-// PLACEHOLDER MAILING ADDRESS (flagged explicitly in this build's own
-// report — CAN-SPAM requires a real physical postal address in every
-// marketing email's footer): MAILING_ADDRESS below is NOT real. Replace
-// it with Ron's actual business/mailing address before this branch is
-// approved for rollout.
+// MAILING ADDRESS (CAN-SPAM requires a real physical postal address in
+// every marketing email's footer): MAILING_ADDRESS below is the founder's
+// own real address, supplied verbatim (tracker item
+// for-product-email-redesign-unsubscribe-l-16ysmp, 2026-08-03 final
+// clarification) — this used to be a flagged placeholder pending his
+// answer; it no longer is. Rendered as small/faint as this file's own
+// renderShell can make it while staying legible (his own explicit ask —
+// "as small and as faint-colored as possible while staying readable/
+// compliant") — see ADDRESS_COLOR below, a step fainter than this file's
+// existing COLORS.textFaint (used for the unsubscribe line right above
+// it, which stays at the more legible weight since THAT line carries the
+// actual actionable link).
 //
 // Inline CSS throughout (email clients don't support external
 // stylesheets or many modern CSS features — no ::before/::after, no CSS
@@ -72,8 +79,17 @@ var COLORS = {
   ctaText: '#000000'
 };
 
-// Flagged as a placeholder in this build's own report -- see header comment.
-var MAILING_ADDRESS = 'DreamTube, Inc. · 548 Market St PMB 12345, San Francisco, CA 94104';
+// A step fainter than COLORS.textFaint, purely for the mailing-address
+// line -- see header comment's MAILING ADDRESS paragraph on why this
+// exists as its own constant rather than reusing textFaint (the
+// unsubscribe line right above the address stays at the more legible
+// textFaint, since it carries the actual actionable link). Still a real,
+// distinguishable hex against COLORS.card (#151027), not blended all the
+// way to invisible -- "as faint as possible while staying readable" per
+// the founder's own explicit ask, not "as faint as possible" alone.
+var ADDRESS_COLOR = '#48436a';
+
+var MAILING_ADDRESS = '10 Dgania, Herzliya, Israel';
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -118,7 +134,7 @@ function renderShell(opts) {
       'You\'re getting this because you have a DreamTube account. ' +
       '<a href="' + esc(opts.unsubscribeUrl) + '" style="color:' + COLORS.textMuted + ';text-decoration:underline;">Unsubscribe</a>' +
       '</p>' +
-      '<p style="margin:0;font-size:11px;line-height:1.6;color:' + COLORS.textFaint + ';">' + esc(MAILING_ADDRESS) + '</p>' +
+      '<p style="margin:0;font-size:10px;line-height:1.5;color:' + ADDRESS_COLOR + ';">' + esc(MAILING_ADDRESS) + '</p>' +
       '</td></tr>'
     )
     : '';
@@ -142,4 +158,4 @@ function ctaButton(url, label) {
   return '<a href="' + esc(url) + '" style="display:inline-block;padding:14px 26px;background:' + COLORS.ctaBg + ';color:' + COLORS.ctaText + ';border-radius:100px;text-decoration:none;font-weight:700;font-size:14.5px;">' + esc(label) + '</a>';
 }
 
-module.exports = { COLORS, MAILING_ADDRESS, esc, selfOrigin, logoUrl, renderShell, ctaButton };
+module.exports = { COLORS, ADDRESS_COLOR, MAILING_ADDRESS, esc, selfOrigin, logoUrl, renderShell, ctaButton };

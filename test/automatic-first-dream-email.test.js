@@ -6,9 +6,9 @@
 // AUTOMATICALLY when a user's first video finishes - do not wait for
 // manual triggering"):
 //   - netlify/functions/mark-generation-completed.js's new
-//     maybeSendAutomaticFirstDreamEmail -- fires the exact same guarded
-//     send test/send-first-dream-email.test.js already covers via the
-//     client-triggered HTTP endpoint, but resolves identity via
+//     maybeSendAutomaticFirstDreamEmail -- ENQUEUES the exact same
+//     guarded send test/send-first-dream-email.test.js already covers via
+//     the client-triggered HTTP endpoint, but resolves identity via
 //     lib/job-owners.js's submission-time operationName -> email binding
 //     instead of a client-claimed username + password.
 //   - netlify/functions/lib/job-owners.js's mediaType field (new) --
@@ -19,6 +19,28 @@
 //     concurrent completions for the same brand-new account (two videos
 //     finishing near-simultaneously), the scenario this task's own
 //     instructions called out as "the part most worth getting right."
+//
+// THUMBNAIL-GATED SEND (added 2026-08-04, this same tracker item's
+// founder-approved follow-up): mark-generation-completed.js no longer
+// sends synchronously -- it only enqueues (lib/first-dream-email-pending-
+// store.js's markPending); send-pending-first-dream-emails.js's scheduled
+// scanAndSend is what actually decides whether to send now (a real
+// thumbnail is already synced) or later (once the founder's 3-minute
+// window elapses). Every test below that expects an actual Resend call
+// now explicitly forces that decision via this file's own flushPending
+// helper (which pushes the pending record's own triggeredAt past the
+// deadline, then calls scanAndSend directly -- see
+// test/send-pending-first-dream-emails.test.js for that scheduled
+// function's OWN dedicated coverage of the wait/send-with-image/
+// send-fallback decision itself; this file stays focused on everything
+// UPSTREAM of the enqueue, which is completely unchanged by this follow-up
+// -- job-owners/pending-dreams race hardening, the video-only scope, the
+// pendingId/readyAt double-send guard). Any test below whose own skip
+// condition is decided BEFORE the enqueue point (mediaType scope, no
+// job-owner record, the readyAt double-send guard, an unverified
+// completion, no matching account) needs no flush at all -- nothing was
+// ever going to be enqueued in the first place, so there's nothing for a
+// later scan to act on.
 //
 // Deliberately its own file rather than folded into
 // test/generation-completion-marker.test.js (which already covers
@@ -133,6 +155,8 @@ test.beforeEach(function () {
   delete require.cache[require.resolve('../netlify/functions/lib/job-owners')];
   delete require.cache[require.resolve('../netlify/functions/lib/first-dream-email-store')];
   delete require.cache[require.resolve('../netlify/functions/lib/first-dream-email-sender')];
+  delete require.cache[require.resolve('../netlify/functions/lib/first-dream-email-pending-store')];
+  delete require.cache[require.resolve('../netlify/functions/send-pending-first-dream-emails')];
   delete require.cache[require.resolve('../netlify/functions/lib/generation-completion-store')];
   delete require.cache[require.resolve('../netlify/functions/lib/rate-limit')];
   delete process.env.MAX_GENERATION_MARKERS_PER_IP_PER_DAY;
@@ -155,7 +179,36 @@ async function seedJobOwner(operationName, email, mediaType) {
   await jobOwners.recordJobOwner(fakeEvent({ method: 'POST' }), operationName, email, mediaType);
 }
 
-test('mark-generation-completed: a brand-new account\'s first verified video completion automatically sends the retention email, linking to profile.html', async function () {
+/**
+ * Forces a pending record's `triggeredAt` (lib/first-dream-email-pending-
+ * store.js) into the past, well beyond send-pending-first-dream-
+ * emails.js's own THUMBNAIL_WAIT_MS, then runs its scanAndSend once --
+ * modeling "a later scheduled run, after the founder's 3-minute window
+ * has elapsed, with no thumbnail ever having synced" without this test
+ * suite actually waiting 3 real minutes. A no-op (nothing to flush) for
+ * any operationName that was never enqueued in the first place -- exactly
+ * what every test whose OWN skip condition fires before the enqueue point
+ * needs (see this file's own header comment).
+ *
+ * `hostHeaders` (optional): threaded into scanAndSend's own event so
+ * lib/first-dream-email-sender.js's profileUrl/absoluteImageUrl resolve
+ * the same host the corresponding markHandler call used -- pass the same
+ * `{ host: '...' }` object a test's own markHandler call used whenever it
+ * later asserts on a link's host.
+ */
+async function flushPending(operationName, hostHeaders) {
+  var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
+  var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+  var record = await pendingStore.getPending(fakeEvent({}), operationName);
+  if (record) {
+    mockBlobs.seed(pendingStore.STORE_NAME, operationName, Object.assign({}, record, {
+      triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
+    }));
+  }
+  return sendPending.scanAndSend(fakeEvent({ headers: hostHeaders || {} }));
+}
+
+test('mark-generation-completed: a brand-new account\'s first verified video completion ENQUEUES the retention email, and a later scan (no thumbnail synced within the window) sends it linking to profile.html', async function () {
   await registerAccount('autouser', 'autouser@example.com');
   var opName = realMockOpName('auto-1');
   await seedJobOwner(opName, 'autouser@example.com', 'video');
@@ -165,23 +218,30 @@ test('mark-generation-completed: a brand-new account\'s first verified video com
   var res = await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' }, body: { operationName: opName } }));
 
   assert.equal(res.statusCode, 200);
+  // THUMBNAIL-GATED SEND (see this file's own header comment): the mark
+  // request itself only ENQUEUES now -- no Resend call happens on this
+  // request at all.
+  assert.equal(spies.resendCalls.length, 0, 'must not send synchronously on the mark request -- the send is deferred, gated on the captured thumbnail (or the 3-minute fallback)');
+
+  var scanResult = await flushPending(opName, { host: 'dreamtube1.netlify.app' });
+  assert.equal(scanResult.sentFallback, 1, 'no thumbnail was ever synced for this operationName, so the deferred scan must send the fallback template once the window elapses');
+
   assert.equal(spies.resendCalls.length, 1, 'expected exactly one automatic Resend send, with no client request to send-first-dream-email.js at all');
   assert.deepEqual(spies.resendCalls[0].body.to, ['autouser@example.com']);
   assert.match(spies.resendCalls[0].body.html, /href="https:\/\/dreamtube1\.netlify\.app\/profile\.html"/, 'the automatic email must link to profile.html too');
   // REAL THUMBNAIL (tracker item for-product-dream-ready-email-real-first-
-  // qr9fbj) -- this automatic choke point has no dreamId at all (see
-  // maybeSendAutomaticFirstDreamEmail's own `dreamId: null` call), so it
-  // has no way to look up a real imageUrl even when the dream has one by
-  // now -- documents the accepted, known gap: the automatic path always
-  // falls back to the flat-color banner, never a real thumbnail <img>.
-  // Only the client-triggered send-first-dream-email.js path (test/send-
-  // first-dream-email.test.js) can realistically supply a real thumbnail.
+  // qr9fbj) -- no dream was ever synced server-side for this operationName
+  // in this test (no client-side finalizeDream/dream-sync call happened),
+  // so send-pending-first-dream-emails.js's scan never finds an imageUrl
+  // to send with, even after the wait -- falls back to the flat-color
+  // banner. See test/send-pending-first-dream-emails.test.js for the
+  // dedicated coverage of the "a thumbnail WAS synced in time" case.
   // NOTE: the redesigned shell (tracker item
   // for-product-email-redesign-unsubscribe-l-16ysmp) always renders its
   // own header <img> (the logo) regardless of thumbnail state -- so this
   // checks for absence of the THUMBNAIL <img> specifically (its own
   // distinct object-fit:cover style), not "no <img> anywhere".
-  assert.doesNotMatch(spies.resendCalls[0].body.html, /object-fit:cover/, 'the automatic path has no dreamId to look up an imageUrl with -- must always fall back to the color banner, not a thumbnail <img>');
+  assert.doesNotMatch(spies.resendCalls[0].body.html, /object-fit:cover/, 'no thumbnail was synced within the window -- must fall back to the color banner, not a broken thumbnail <img>');
 
   assert.equal(spies.posthogCalls.length, 1, 'expected the first_dream_email_sent PostHog event to fire on the actual send');
   assert.equal(spies.posthogCalls[0].body.event, 'first_dream_email_sent');
@@ -197,15 +257,19 @@ test('mark-generation-completed: a second (and third) completed video for the SA
   var firstOp = realMockOpName('repeat-1');
   await seedJobOwner(firstOp, 'repeatuser@example.com', 'video');
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: firstOp } }));
+  assert.equal(spies.resendCalls.length, 0, 'the mark request only enqueues -- see this file\'s own header comment');
+  await flushPending(firstOp);
   assert.equal(spies.resendCalls.length, 1);
 
   var secondOp = realMockOpName('repeat-2');
   await seedJobOwner(secondOp, 'repeatuser@example.com', 'video');
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: secondOp } }));
+  await flushPending(secondOp);
 
   var thirdOp = realMockOpName('repeat-3');
   await seedJobOwner(thirdOp, 'repeatuser@example.com', 'video');
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: thirdOp } }));
+  await flushPending(thirdOp);
 
   assert.equal(spies.resendCalls.length, 1, 'a 2nd/3rd completed video for the same account must never trigger a second automatic send');
   // Split by event name (tracker.html's for-product-bug-founder-affects-
@@ -226,25 +290,46 @@ test('CONCURRENCY: two of a brand-new account\'s videos completing at nearly the
   await registerAccount('raceruser', 'raceruser@example.com');
   var spies = installFetchSpy();
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
+  var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
 
   var opA = realMockOpName('race-a');
   var opB = realMockOpName('race-b');
   await seedJobOwner(opA, 'raceruser@example.com', 'video');
   await seedJobOwner(opB, 'raceruser@example.com', 'video');
 
+  // The mark requests themselves only ENQUEUE now (see this file's own
+  // header comment) -- each against its OWN operationName key, so there's
+  // no real race between them at this step (lib/first-dream-email-pending-
+  // store.js's CAS write can't collide with itself across two different
+  // keys). The genuine race this test exists to exercise -- TWO attempts
+  // to send THE SAME ACCOUNT's once-ever email landing concurrently --
+  // now lives one layer downstream, in send-pending-first-dream-emails.js's
+  // own scanAndSend, once both of this account's pending records are past
+  // their deadline in the SAME window.
+  await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opA } }));
+  await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opB } }));
+
+  var recordA = await pendingStore.getPending(fakeEvent({}), opA);
+  var recordB = await pendingStore.getPending(fakeEvent({}), opB);
+  var pastDeadline = Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000;
+  mockBlobs.seed(pendingStore.STORE_NAME, opA, Object.assign({}, recordA, { triggeredAt: pastDeadline }));
+  mockBlobs.seed(pendingStore.STORE_NAME, opB, Object.assign({}, recordB, { triggeredAt: pastDeadline }));
+
   // Same "the mock Blobs store's operations are still genuinely async, so
   // a Promise.all races step-by-step exactly like two concurrent Netlify
   // Function invocations would" reasoning as test/session-transfer.test.js's
-  // own concurrent-consume test -- this is what actually exercises
-  // lib/first-dream-email-store.js's blobs-retry-backed claim under a real
-  // race, not just two sequential calls that could never collide in a
-  // synchronous mock.
+  // own concurrent-consume test -- two overlapping scheduled-scan
+  // invocations, both seeing both of this account's now-past-deadline
+  // pending records, is what actually exercises lib/first-dream-email-
+  // store.js's blobs-retry-backed claim under a real race, not just two
+  // sequential calls that could never collide in a synchronous mock.
   var results = await Promise.all([
-    markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opA } })),
-    markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opB } }))
+    sendPending.scanAndSend(fakeEvent({})),
+    sendPending.scanAndSend(fakeEvent({}))
   ]);
 
-  results.forEach(function (r) { assert.equal(r.statusCode, 200); });
+  assert.equal(results[0].scanned + results[1].scanned, 4, 'both scans should each see both of this account\'s two pending records');
   assert.equal(spies.resendCalls.length, 1, 'exactly one of the two racing completions must win the send -- never both, never neither');
   // See the "second (and third) completed video" test above for why this
   // is now split by event name -- the race's LOSER now also fires a
@@ -396,6 +481,8 @@ test('END-TO-END ROOT-CAUSE FIX: a funnel-started generation (start-pending-gene
     body: { operationName: startData.operationName }
   }));
   assert.equal(markRes.statusCode, 200);
+  assert.equal(spies.resendCalls.length, 0, 'the mark request only enqueues -- see this file\'s own header comment');
+  await flushPending(startData.operationName, { host: 'dreamtube1.netlify.app' });
 
   assert.equal(spies.resendCalls.length, 1, 'the ROOT CAUSE FIX: a funnel-started generation must now get a job-owners record and trigger the automatic retention email, exactly like a normal signed-in generation already did');
   assert.deepEqual(spies.resendCalls[0].body.to, [funnelEmail], 'the email must go to the funnel user\'s own real email, not anything else');
@@ -433,6 +520,7 @@ test('EXACTLY ONE EMAIL, NOT TWO: a completed funnel user gets the automatic ret
     method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
     body: { operationName: startData.operationName }
   }));
+  await flushPending(startData.operationName, { host: 'dreamtube1.netlify.app' });
   assert.equal(spies.resendCalls.length, 1, 'the completer must get exactly one email from the automatic retention-email path');
 
   // Now simulate fal's own webhook finally arriving for this SAME pending
@@ -562,6 +650,11 @@ test('WEBHOOK-BEFORE-CLAIM ORDERING: the abandonment email firing first (webhook
   assert.equal(markRes.statusCode, 200);
 
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: the automatic retention email must NOT also fire once the abandonment path already sent -- exactly one email total, never two');
+  // This skip fires BEFORE the enqueue point (see this file's own header
+  // comment) -- nothing was ever enqueued, so a later scan has nothing to
+  // act on either. Flushed anyway, defensively, to prove that stays true.
+  await flushPending(startData.operationName, { host: 'dreamtube1.netlify.app' });
+  assert.equal(spies.resendCalls.length, 1, 'a later scan must not conjure up a second send either');
 });
 
 // -----------------------------------------------------------------------
@@ -661,6 +754,8 @@ test('CLAIM-BEFORE-WEBHOOK ORDERING (the realistic/typical case): claiming while
     body: { operationName: startData.operationName }
   }));
   assert.equal(markRes.statusCode, 200);
+  assert.equal(spies.resendCalls.length, 0, 'the mark request only enqueues -- see this file\'s own header comment');
+  await flushPending(startData.operationName, { host: 'dreamtube1.netlify.app' });
 
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: the automatic retention email MUST still fire for the typical claim-before-webhook ordering -- this is the only email this user will ever get');
   assert.deepEqual(spies.resendCalls[0].body.to, [funnelEmail]);
@@ -749,6 +844,10 @@ test('RESIDUAL RACE HARDENING: a readyAt write that has genuinely landed but has
   mockBlobs.clearReadOverride(pendingDreams.STORE_NAME);
 
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: even with mark-generation-completed.js\'s own first read of readyAt landing stale, the bounded retry must recover the true value and skip the automatic send -- exactly one email total, never two');
+  // This skip fires BEFORE the enqueue point -- nothing was enqueued for
+  // startData.operationName, so a later scan has nothing to act on either.
+  await flushPending(startData.operationName, { host: 'dreamtube1.netlify.app' });
+  assert.equal(spies.resendCalls.length, 1, 'a later scan must not conjure up a second send either');
 });
 
 // -----------------------------------------------------------------------
@@ -786,6 +885,7 @@ test('ROUND-3 HARDENING: a job-owners write that has genuinely landed but has no
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
   var res = await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
   mockBlobs.clearReadOverride(jobOwners.STORE_NAME);
+  await flushPending(opName);
 
   assert.equal(res.statusCode, 200);
   assert.equal(spies.resendCalls.length, 1, 'THE FIX: a single lagging read of the job-owners store must not surface as no_job_owner_record -- the bounded retry must recover the real record and send');
@@ -819,27 +919,66 @@ test('mark-generation-completed: an operationName that fails completion verifica
   assert.equal(spies.resendCalls.length, 0, 'an unverified completion must never trigger the retention email, even with a real job-owner record on file');
 });
 
-test('mark-generation-completed + send-first-dream-email: the automatic path and the client-triggered fallback cooperate -- whichever fires first wins, the other is a harmless no-op', async function () {
+test('mark-generation-completed + send-first-dream-email: the client-triggered fallback firing FIRST (now the realistic ordering, per the automatic path\'s own deferred/gated send) cooperates cleanly -- the automatic path\'s later scan is a harmless no-op', async function () {
   await registerAccount('cooperateuser', 'cooperateuser@example.com');
   var opName = realMockOpName('cooperate-1');
   await seedJobOwner(opName, 'cooperateuser@example.com', 'video');
   var spies = installFetchSpy();
 
-  // The automatic path fires first (as it would in practice -- see
-  // mark-generation-completed.js's own header comment on why it almost
-  // always wins the real race against result.html loading).
+  // THUMBNAIL-GATED SEND (see this file's own header comment): the
+  // automatic path's real send is now deferred by up to 3 minutes, so the
+  // client-triggered fallback (fired the moment result.html loads) is the
+  // REALISTIC winner of this race now, not the automatic path -- the
+  // reverse of this test's pre-2026-08-04 framing. Enqueue via the mark
+  // request first (mirroring the real ordering: home.html calls both
+  // markGenerationJustCompleted and, moments later, its own fallback),
+  // but do NOT flush yet.
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
-  assert.equal(spies.resendCalls.length, 1);
+  assert.equal(spies.resendCalls.length, 0);
 
-  // result.html's own client fallback still fires its request regardless
-  // (it has no idea the automatic path already won) -- must be a no-op,
-  // not a second send.
+  // result.html's own client fallback fires next, well within the
+  // 3-minute window, and wins the real send.
   var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
   var fallbackRes = await sendHandler(fakeEvent({
     method: 'POST', ip: nextIp(),
     body: {
       username: 'cooperateuser', password: 'realpassword1', dreamId: 'dream-1',
+      caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video'
+    }
+  }));
+  assert.equal(JSON.parse(fallbackRes.body).ok, true);
+  assert.equal(spies.resendCalls.length, 1, 'the client-triggered fallback wins the real send');
+
+  // The automatic path's later deferred scan (once the 3-minute window
+  // elapses with no thumbnail synced) must be a harmless no-op -- the
+  // once-ever guard already claimed by the fallback above.
+  await flushPending(opName);
+  assert.equal(spies.resendCalls.length, 1, 'the automatic path\'s later scan must not send a second email once the client-triggered fallback already won');
+});
+
+test('mark-generation-completed + send-first-dream-email: the automatic path winning first (client never reaches result.html at all) cooperates cleanly -- the fallback endpoint is a harmless no-op', async function () {
+  await registerAccount('automatonuser', 'automatonuser@example.com');
+  var opName = realMockOpName('cooperate-2');
+  await seedJobOwner(opName, 'automatonuser@example.com', 'video');
+  var spies = installFetchSpy();
+
+  // Models the client never getting far enough to call the fallback at
+  // all (tab closed, connection lost) -- the automatic path's own
+  // deferred scan, once the 3-minute window elapses, is the ONLY thing
+  // that ever sends.
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
+  await flushPending(opName);
+  assert.equal(spies.resendCalls.length, 1);
+
+  // A late-arriving client fallback (e.g. a delayed retry) must still be a
+  // harmless no-op.
+  var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
+  var fallbackRes = await sendHandler(fakeEvent({
+    method: 'POST', ip: nextIp(),
+    body: {
+      username: 'automatonuser', password: 'realpassword1', dreamId: 'dream-1',
       caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video'
     }
   }));
