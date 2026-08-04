@@ -482,13 +482,15 @@ rather than discoverable only by a founder hitting it on his own phone.
 | | |
 |---|---|
 | **`purchase_credit_confirmed`** | Fires once per purchase, from `shop.html`'s `?checkout=success` handler, at the moment a real `get-token-status` read PROVES the pack's tokens landed on the balance (never on the redirect alone). `{ pack, tokens, balance, waited_ms, attempt }` — `waited_ms` is the real wall-clock wait from landing back on the page to the credit being observed (the number that would have surfaced this bug on its own), and `attempt` is which confirmation round proved it (1 on the normal path, >1 if the buyer had to tap "Check again"). Fires at most once per page load even across retries |
-| **`purchase_credit_unconfirmed`** | Fires each time a full confirmation window (`PurchaseSheet.pollForCredit`'s real 75s) elapses without the credit being observed — i.e. every time the banner falls back to its explicit retryable state. `{ pack, tokens, waited_ms, attempt }` — `pack`/`tokens` are `null` on a marker-less return (private-mode storage, cross-device, or a hand-typed URL), which is also the one case where this event does not imply anything actually went wrong |
+| **`purchase_credit_unconfirmed`** | Fires each time a full confirmation window (`PurchaseSheet.pollForCredit`'s real 75s) elapses without the credit being observed — i.e. every time the banner falls back to its explicit retryable state. `{ pack, tokens, waited_ms, attempt, reason }` — `pack`/`tokens` are `null` on a marker-less return (private-mode storage, cross-device, or a hand-typed URL), which is also the one case where this event does not imply anything actually went wrong. `reason` is `'timeout'` (the normal case: a real pre-purchase baseline existed, the credit just never cleared it inside the window) or `'no_baseline'` (no baseline could be established at all — the marker carried no `balanceBefore` AND every `get-token-status` read in the window failed — so the page deliberately refused to guess rather than confirm off a fabricated zero baseline; see `shop.html`'s `startCreditConfirmation` doc comment) |
 
 **Reading these together:** a healthy shop shows `purchase_credit_confirmed`
 with a low `waited_ms` and almost no `purchase_credit_unconfirmed` carrying
 a real `pack`. A rising `waited_ms` distribution is early warning that the
 webhook path is degrading, well before it becomes "I paid and nothing
-happened."
+happened." A rising `reason: 'no_baseline'` share means something different
+and worth separating out: `get-token-status` itself is unreachable on the
+return trip, not the webhook being slow.
 
 **Why `checkout_started`/`checkout_cancelled` also touch shop.html, not just the new sheet:** `source` describes where a checkout journey *began* (`blocked_action`, `balance_chip`, or organic), not just whether it started from `js/purchase-sheet.js`'s own buy button — a visit that starts at the sheet's "See all packs" link and completes the purchase on shop.html itself is still part of the same blocked-action funnel, and would otherwise be invisible in this pair of events.
 

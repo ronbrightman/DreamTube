@@ -29,6 +29,13 @@
 // (4) resolve into an explicit, retryable state if the window really does
 // elapse — never a silent stall.
 //
+// Tests 10-12 hold closed a second, subtler failure of (2) that review
+// found in the FIRST version of that fix: when neither pre-credit baseline
+// was available (a marker with no `balanceBefore` AND a failed arrival
+// read), the threshold silently fell back to a bare pack size, which any
+// repeat buyer's existing balance already satisfies. See test 10's own
+// header for the full mechanics.
+//
 // Conventions follow test/shop-behavioral.test.js and
 // test/shop-purchase-conversion-behavioral.test.js (Playwright over the
 // shared static server, self-skipping if Chromium isn't resolvable,
@@ -436,6 +443,7 @@ test('purchase_credit_confirmed fires once with the real waited_ms, and purchase
     assert.equal(unconfirmed[0][2].pack, 'pack199');
     assert.equal(unconfirmed[0][2].tokens, 500);
     assert.ok(unconfirmed[0][2].waited_ms >= 2000, 'waited_ms must be the real elapsed wait, got ' + unconfirmed[0][2].waited_ms);
+    assert.equal(unconfirmed[0][2].reason, 'timeout', 'the ordinary case — a real baseline existed, the credit just never cleared it — must be distinguishable from the no-baseline one (see test 12)');
 
     tokens.setBalance(550);
     await page.click('#shop-checkout-banner-action');
@@ -578,6 +586,206 @@ test('a marker-less ?checkout=success neither claims a payment happened nor stal
     assert.match(timedOut.title, /no new tokens yet/i);
     assert.doesNotMatch(timedOut.sub, /payment went through/i, 'a return with no evidence of a purchase must not tell someone their payment went through');
     assert.equal(timedOut.actionVisible, true);
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// 10. THE DOUBLE-NULL BASELINE — the false positive round-1 review found in
+//     the first version of this fix.
+//
+//     Both pre-credit reference points can be missing at once, for real:
+//
+//       * `balanceBefore` is null whenever the buy button is clicked before
+//         the page's own loadBalance() has resolved — the buttons are wired
+//         at load and never gated on that read, so a fast tap stashes a
+//         marker with no baseline in it;
+//       * `arrivalBalance` is null when the return-trip get-token-status
+//         read fails (a transient blip is exactly the kind of thing that
+//         happens on a redirect back from an external checkout host).
+//
+//     The first version of this fix answered "no baseline" with "baseline
+//     = 0", collapsing the threshold to a bare `packTokens` — which asks
+//     only "is this balance at least one pack big?". Any REPEAT buyer (the
+//     precise population buying a second pack) already answers yes, so the
+//     very next poll tick painted an unearned "✦ 500 tokens added" for a
+//     purchase nothing had credited. This test holds that closed.
+// ===========================================================================
+test('a double-null baseline (no balanceBefore in the marker AND a failed arrival read) never confirms off the pack size alone — a repeat buyer already holding 800 tokens gets no unearned confirmation', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await shrinkPollWindow(context, 120, 6000);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // A repeat buyer sitting on 800 tokens — comfortably MORE than the
+    // 500-token pack they just bought, which is the whole trap: a bare
+    // `packTokens` threshold is already satisfied before anything lands.
+    // Nothing in this test ever credits them; the balance stays 800.
+    var reads = 0;
+    var failing = true;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      reads++;
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        // js/store.js's getTokenStatus rejects on an `error` payload — the
+        // same shape a real get-token-status failure surfaces as.
+        body: failing
+          ? JSON.stringify({ error: 'E-transient-test' })
+          : JSON.stringify({ balance: 800, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: true })
+      });
+    });
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    // The fast-click marker: a real pack, but NO balanceBefore, because
+    // purchasePack() stashed it before this page's first balance read had
+    // resolved.
+    await page.evaluate(function () {
+      sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ pack: 'pack199', tokens: 500, price: 1.99, starter: false, eventId: 'evt-double-null', balanceBefore: null }));
+    });
+    reads = 0;
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#shop-checkout-banner.is-pending', { state: 'visible', timeout: 5000 });
+    // Three reads on this load means the page's own loadBalance AND the
+    // confirmation's arrival read have both genuinely failed, and the
+    // confirmation has moved on to whatever it does next — i.e. we are
+    // provably inside the double-null case, not merely near it.
+    await settle(function () { return reads >= 3; }, { timeout: 5000 });
+
+    // The network recovers, reporting this buyer's real, UNCHANGED 800.
+    // Under the pre-fix threshold (0 + 500) this single read is enough to
+    // paint "✦ 500 tokens added" on the spot.
+    failing = false;
+
+    // Deliberately waits for EITHER terminal state, not just the correct
+    // one — so the pre-fix code fails this test by loudly reporting the
+    // false "500 tokens added" it painted, rather than by timing out on a
+    // selector that never appears.
+    await page.waitForSelector('#shop-checkout-banner.is-confirmed, #shop-checkout-banner.is-unconfirmed', { state: 'visible', timeout: 20000 });
+    var resolved = await bannerState(page);
+    assert.equal(resolved.cls.indexOf('is-confirmed'), -1, 'a balance that merely happens to exceed the pack size must never be read as this purchase landing — banner resolved as: ' + resolved.cls + ' / "' + resolved.title + '"');
+    assert.doesNotMatch(resolved.title + ' ' + resolved.sub, /tokens added/i, 'no unearned "tokens added" claim with no baseline to prove it against');
+    assert.match(resolved.title, /still confirming/i, 'the honest posture is "we cannot show you it landed yet", with a way to look again');
+    assert.equal(resolved.actionVisible, true, 'and it must stay retryable, not a dead end');
+
+    var events = await page.evaluate(function () {
+      var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+      return queue.filter(function (e) { return e[0] === 'capture' && (e[1] === 'purchase_credit_confirmed' || e[1] === 'purchase_credit_unconfirmed'); }).map(function (e) { return { name: e[1], props: e[2] }; });
+    });
+    assert.equal(events.filter(function (e) { return e.name === 'purchase_credit_confirmed'; }).length, 0, 'purchase_credit_confirmed must never fire for a credit that was never observed — this event feeds the webhook-latency read, and a false one poisons it');
+    assert.ok(events.some(function (e) { return e.name === 'purchase_credit_unconfirmed'; }), 'the unconfirmed outcome must still be reported, not silently swallowed');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// 11. The other half of #10: refusing to guess must not mean refusing to
+//     confirm. A transient arrival-read failure is usually just a blip, so
+//     the baseline read is retried inside the same window — and once a real
+//     baseline lands, a real credit on top of it still confirms normally.
+//     Without this, "never a false positive" could be trivially satisfied
+//     by never confirming anything.
+// ===========================================================================
+test('a transient arrival-read failure recovers: the retried read becomes the real baseline, and a genuine credit on top of it still confirms', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await shrinkPollWindow(context, 120, 20000);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var reads = 0;
+    var failing = true;
+    var balance = 800;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      reads++;
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: failing
+          ? JSON.stringify({ error: 'E-transient-test' })
+          : JSON.stringify({ balance: balance, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: true })
+      });
+    });
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ pack: 'pack199', tokens: 500, price: 1.99, starter: false, eventId: 'evt-recover', balanceBefore: null }));
+    });
+    reads = 0;
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#shop-checkout-banner.is-pending', { state: 'visible', timeout: 5000 });
+    await settle(function () { return reads >= 3; }, { timeout: 5000 });
+
+    // Network back; the pre-credit balance (800) is now readable and
+    // becomes the baseline this purchase is measured against.
+    failing = false;
+    var readsAtRecovery = reads;
+    await settle(function () { return reads >= readsAtRecovery + 2; }, { timeout: 5000 });
+    assert.equal((await bannerState(page)).cls.indexOf('is-pending') !== -1, true, 'still honestly pending on a recovered-but-uncredited balance');
+
+    // dodo-webhook.js credits the 500 tokens on top of that real baseline.
+    balance = 1300;
+
+    await page.waitForSelector('#shop-checkout-banner.is-confirmed', { state: 'visible', timeout: 20000 });
+    var confirmed = await bannerState(page);
+    assert.match(confirmed.title, /500 tokens added/, 'a real credit above a recovered baseline still confirms with the real amount');
+    assert.match(confirmed.sub, /balance is now 1300/);
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// 12. The terminal case of #10: get-token-status is unreachable for the
+//     WHOLE window, so no baseline ever becomes establishable. There is
+//     nothing honest to confirm against, so the page must resolve into the
+//     same explicit retryable state a timeout produces — and say so in the
+//     data, since "the balance endpoint was down" is a different production
+//     signal from "the webhook was slow".
+// ===========================================================================
+test('a window that never yields any baseline at all resolves into the retryable state and reports reason:no_baseline, never a confirmation', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await shrinkPollWindow(context, 120, 1500);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: 'E-down-test' }) });
+    });
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ pack: 'pack199', tokens: 500, price: 1.99, starter: false, eventId: 'evt-no-baseline', balanceBefore: null }));
+    });
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#shop-checkout-banner.is-unconfirmed', { state: 'visible', timeout: 15000 });
+    var resolved = await bannerState(page);
+    assert.equal(resolved.cls.indexOf('is-confirmed'), -1);
+    assert.match(resolved.title, /still confirming/i);
+    assert.match(resolved.sub, /payment went through/i, 'the buyer still paid — that part is knowable from the marker and must be said');
+    assert.equal(resolved.actionVisible, true);
+    assert.match(resolved.actionLabel, /check again/i);
+
+    var unconfirmed = await page.evaluate(function () {
+      var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+      return queue.filter(function (e) { return e[0] === 'capture' && e[1] === 'purchase_credit_unconfirmed'; });
+    });
+    assert.equal(unconfirmed.length, 1);
+    assert.equal(unconfirmed[0][2].reason, 'no_baseline', 'a never-established baseline must be distinguishable in production from an ordinary slow-webhook timeout');
+    assert.equal(unconfirmed[0][2].pack, 'pack199');
   } finally {
     await context.close();
   }

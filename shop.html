@@ -874,6 +874,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   // repeatedly (async side effects not scoped to the instance that
   // started them) — guarded here by construction rather than by argument.
   var creditConfirmAttempt = 0;
+
+  // The one confirmation window, read off js/purchase-sheet.js so this page
+  // can never drift out of agreement with the poll it drives (the original
+  // bug here was exactly that: an ad-hoc 15s loop sitting next to a shared
+  // 75s helper). The literal fallbacks cover one real case — a service
+  // worker serving a cached js/purchase-sheet.js from before these were
+  // exported — where an undefined window would otherwise turn into a NaN
+  // deadline and a retry loop with no end.
+  var CREDIT_POLL_INTERVAL_MS = (window.PurchaseSheet && typeof PurchaseSheet.POLL_INTERVAL_MS === 'number') ? PurchaseSheet.POLL_INTERVAL_MS : 3000;
+  var CREDIT_POLL_MAX_MS = (window.PurchaseSheet && typeof PurchaseSheet.POLL_MAX_MS === 'number') ? PurchaseSheet.POLL_MAX_MS : 75000;
+
   function abandonCreditConfirmation(){
     creditConfirmAttempt++;
     if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
@@ -914,6 +925,36 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
    * and reports the observed delta — an honest, weaker signal, with its
    * own honest copy on the timeout path rather than a confident claim
    * either way.
+   *
+   * ---------------------------------------------------------------------
+   * WHY A BASELINE IS NEVER FABRICATED (round-2 review fix)
+   * ---------------------------------------------------------------------
+   * An earlier version of this function treated "no baseline available"
+   * as "baseline = 0", i.e. `Math.min(...[]) || 0` collapsing the
+   * threshold to a bare `packTokens`. That is not a weaker proof, it is
+   * NO proof: it asks "is the balance at least one pack big?", which any
+   * repeat buyer already sitting on 300+ tokens answers on the very first
+   * poll tick — producing an immediate, unearned "✦ 500 tokens added"
+   * for a purchase nothing had credited yet. Exactly the false positive
+   * this whole feature exists to prevent, and reachable for real: the buy
+   * buttons are wired at load and never gated on the first `loadBalance()`
+   * resolving (so a fast click stashes `balanceBefore: null`), and the
+   * return-trip arrival read can fail on a transient network blip.
+   *
+   * So: `beginPoll` refuses to run without at least one REAL baseline.
+   * When the marker carried no `balanceBefore`, the arrival read is the
+   * only possible source of one, and a failed arrival read is usually
+   * transient — so it is retried on the same cadence and inside the same
+   * total budget as the poll it would otherwise have started, and the
+   * first read that actually succeeds becomes the baseline. If the whole
+   * window elapses without one ever landing, this resolves into the same
+   * explicit, retryable "still confirming" state a real timeout produces
+   * (distinguished only in analytics, by `reason`). Never a confirmation.
+   *
+   * The cost of that conservatism is a real credit that landed before our
+   * first successful read being reported as "still confirming" rather than
+   * confirmed — an understatement the buyer can act on, instead of a
+   * claim the page cannot support.
    */
   var creditConfirmFired = false;
   function startCreditConfirmation(pending, startedAt){
@@ -927,6 +968,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     var attempt = creditConfirmAttempt;
     function isCurrent(){ return creditConfirmAttempt === attempt; }
 
+    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
+    // test/shop-checkout-confirmation-behavioral.test.js shrink the real
+    // ~75s window to something a browser test can run in; absent in every
+    // real page load, exactly as home.html uses it. Read once here (rather
+    // than at poll time) because the baseline retry below shares the SAME
+    // cadence and the SAME total budget as the poll — one window for the
+    // whole confirmation, not one per phase.
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    var intervalMs = typeof pollOverrides.intervalMs === 'number' ? pollOverrides.intervalMs : CREDIT_POLL_INTERVAL_MS;
+    var maxMs = typeof pollOverrides.maxMs === 'number' ? pollOverrides.maxMs : CREDIT_POLL_MAX_MS;
+    var deadline = Date.now() + maxMs;
+
     // Copy differs by whether a real pending-purchase marker backs this
     // return. With one, "Payment received" is a statement of fact (this
     // browser genuinely started a checkout and Dodo redirected it back).
@@ -939,38 +992,70 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         ? ('Confirming your ' + packTokens + ' tokens — this usually takes a few seconds.')
         : 'Checking whether new tokens have landed on your balance.');
 
-    DreamStore.getTokenStatus().then(function(arrival){
-      if(!isCurrent()) return;
-      tokenStatus = arrival;
-      renderBalance();
-      beginPoll(typeof arrival.balance === 'number' ? arrival.balance : null);
-    }).catch(function(){
-      if(!isCurrent()) return;
-      // The arrival read failing is not itself a purchase problem — poll
-      // anyway (pollForCredit tolerates its own failed reads too), just
-      // without an arrival baseline to lean on.
-      beginPoll(null);
-    });
+    readArrivalBalance();
+
+    /**
+     * Reads the balance as it stands right now. On success that read is
+     * both the page's fresh balance AND (usually) the arrival baseline.
+     * On failure — or on a malformed response with no numeric balance —
+     * it either leans on `balanceBefore` if the marker carried one, or
+     * retries, because with neither there is nothing honest to poll for.
+     */
+    function readArrivalBalance(){
+      DreamStore.getTokenStatus().then(function(arrival){
+        if(!isCurrent()) return;
+        var arrivalBalance = (arrival && typeof arrival.balance === 'number') ? arrival.balance : null;
+        if(arrivalBalance != null){
+          tokenStatus = arrival;
+          renderBalance();
+        }
+        if(arrivalBalance != null || balanceBefore != null){ beginPoll(arrivalBalance); return; }
+        retryArrivalBalance();
+      }).catch(function(){
+        if(!isCurrent()) return;
+        // The arrival read failing is not itself a purchase problem. With
+        // a `balanceBefore` in hand there is still a real baseline to
+        // poll against (pollForCredit tolerates its own failed reads
+        // too), so proceed without an arrival baseline to lean on.
+        if(balanceBefore != null){ beginPoll(null); return; }
+        retryArrivalBalance();
+      });
+    }
+
+    function retryArrivalBalance(){
+      if(Date.now() >= deadline){ resolveUnconfirmed('no_baseline'); return; }
+      var timer = setTimeout(function(){
+        if(!isCurrent()) return;
+        activeCreditPollCancel = null;
+        readArrivalBalance();
+      }, intervalMs);
+      // Parked in the same slot the poll's own cancel() uses, so a
+      // dismiss / navigation / "Check again" tears this phase down through
+      // exactly one path — the attempt-id guard above already makes the
+      // callback inert, this just stops the timer from lingering too.
+      activeCreditPollCancel = function(){ clearTimeout(timer); };
+    }
 
     function beginPoll(arrivalBalance){
-      var neededBalance;
-      if(packTokens != null){
-        var baselines = [];
-        if(balanceBefore != null) baselines.push(balanceBefore);
-        if(arrivalBalance != null) baselines.push(arrivalBalance);
-        neededBalance = (baselines.length ? Math.min.apply(Math, baselines) : 0) + packTokens;
-      } else {
-        neededBalance = (arrivalBalance != null ? arrivalBalance : 0) + 1;
-      }
-      // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
-      // test/shop-checkout-confirmation-behavioral.test.js shrink the real
-      // ~75s window to something a browser test can run in; absent in
-      // every real page load, exactly as home.html uses it.
-      var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+      var baselines = [];
+      if(balanceBefore != null) baselines.push(balanceBefore);
+      if(arrivalBalance != null) baselines.push(arrivalBalance);
+      // Invariant, asserted where the arithmetic that depends on it lives:
+      // readArrivalBalance never calls this without a real baseline. If
+      // that ever stops being true, the honest non-confirming state is the
+      // safe direction to fail in — never a fabricated zero baseline.
+      if(!baselines.length){ resolveUnconfirmed('no_baseline'); return; }
+      var baseline = Math.min.apply(Math, baselines);
+      // A known pack means a full pack-sized jump is required. Without one
+      // (marker-less return) the honest question is only "did anything
+      // land at all", answered against the same real baseline.
+      var neededBalance = baseline + (packTokens != null ? packTokens : 1);
       activeCreditPollCancel = PurchaseSheet.pollForCredit({
         neededBalance: neededBalance,
-        intervalMs: pollOverrides.intervalMs,
-        maxMs: pollOverrides.maxMs,
+        intervalMs: intervalMs,
+        // Whatever is left of the one shared window, so a slow baseline
+        // phase can't quietly buy the confirmation a second full 75s.
+        maxMs: Math.max(0, deadline - Date.now()),
         onCredited: function(status){
           if(!isCurrent()) return;
           activeCreditPollCancel = null;
@@ -998,22 +1083,34 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
             });
           }
         },
-        onTimeout: function(){
-          if(!isCurrent()) return;
-          activeCreditPollCancel = null;
-          renderCheckoutBanner('unconfirmed',
-            packTokens ? 'Still confirming your tokens' : 'No new tokens yet',
-            packTokens
-              ? ('Your payment went through and nothing more is owed — the ' + packTokens + ' tokens just haven’t reached your balance yet. This can take a minute.')
-              : 'Nothing new has landed on this balance yet. If you just paid, it can take a minute to arrive.',
-            { label: 'Check again', onTap: function(){ startCreditConfirmation(pending, Date.now()); } });
-          track('purchase_credit_unconfirmed', {
-            pack: (pending && pending.pack) || null,
-            tokens: packTokens,
-            waited_ms: Date.now() - startedAt,
-            attempt: attempt
-          });
-        }
+        onTimeout: function(){ resolveUnconfirmed('timeout'); }
+      });
+    }
+
+    /**
+     * The one honest, non-confirming resolution — reached either because
+     * the window genuinely elapsed with the credit unobserved
+     * (`reason: 'timeout'`) or because no real baseline could ever be
+     * established to measure against (`reason: 'no_baseline'`). Identical
+     * on screen in both cases: the buyer's situation is the same ("we
+     * can't yet show you it landed, here's how to look again") and the
+     * distinction is a diagnostic one, so it lives in analytics only.
+     */
+    function resolveUnconfirmed(reason){
+      if(!isCurrent()) return;
+      activeCreditPollCancel = null;
+      renderCheckoutBanner('unconfirmed',
+        packTokens ? 'Still confirming your tokens' : 'No new tokens yet',
+        packTokens
+          ? ('Your payment went through and nothing more is owed — the ' + packTokens + ' tokens just haven’t reached your balance yet. This can take a minute.')
+          : 'Nothing new has landed on this balance yet. If you just paid, it can take a minute to arrive.',
+        { label: 'Check again', onTap: function(){ startCreditConfirmation(pending, Date.now()); } });
+      track('purchase_credit_unconfirmed', {
+        pack: (pending && pending.pack) || null,
+        tokens: packTokens,
+        waited_ms: Date.now() - startedAt,
+        attempt: attempt,
+        reason: reason
       });
     }
   }
