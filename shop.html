@@ -846,12 +846,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   }
   checkoutBannerCloseEl.addEventListener('click', function(){
     checkoutBannerEl.style.display = 'none';
-    // Dismissing the banner also stops the poll behind it — otherwise a
-    // cancelled-looking UI would keep fetching in the background and could
-    // still repaint a banner the user just closed. Same "an async
-    // callback's side effects must stay scoped to the thing that started
-    // it" discipline home.html's own checkout-return poll follows.
-    if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
+    // Dismissing the banner also stops the confirmation behind it —
+    // otherwise a closed-looking UI would keep fetching in the background
+    // and could still repaint a banner the user just closed. Same "an
+    // async callback's side effects must stay scoped to the thing that
+    // started it" discipline home.html's own checkout-return poll follows.
+    abandonCreditConfirmation();
   });
 
   // Holds pollForCredit's returned cancel() while a confirmation poll is
@@ -861,9 +861,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   // still repaint this page's banner if the browser bfcache-restores it
   // with the setTimeout chain alive.
   var activeCreditPollCancel = null;
-  window.addEventListener('pagehide', function(){
+
+  // Monotonic id of the CURRENT confirmation attempt. Every async step
+  // below (the arrival read's continuation, and pollForCredit's own two
+  // callbacks) checks it before touching shared state, so a superseded
+  // attempt — a "Check again" tap, a dismiss, a navigation — can never
+  // repaint the banner, restart a poll, or fire an event on behalf of an
+  // attempt that no longer exists. Cancelling the in-flight poll alone
+  // isn't sufficient: an arrival read that's still in flight has no poll
+  // to cancel yet, and would otherwise go on to start one afterwards.
+  // This is the recurring bug class this codebase has been bitten by
+  // repeatedly (async side effects not scoped to the instance that
+  // started them) — guarded here by construction rather than by argument.
+  var creditConfirmAttempt = 0;
+  function abandonCreditConfirmation(){
+    creditConfirmAttempt++;
     if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
-  });
+  }
+  window.addEventListener('pagehide', abandonCreditConfirmation);
 
   /**
    * Polls get-token-status until this purchase's tokens have PROVABLY
@@ -901,14 +916,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
    * either way.
    */
   var creditConfirmFired = false;
-  var creditConfirmAttempt = 0;
   function startCreditConfirmation(pending, startedAt){
     var packTokens = (pending && typeof pending.tokens === 'number' && pending.tokens > 0) ? pending.tokens : null;
     var balanceBefore = (pending && typeof pending.balanceBefore === 'number') ? pending.balanceBefore : null;
-    creditConfirmAttempt++;
-    var attempt = creditConfirmAttempt;
 
-    if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
+    // Supersedes (and cancels) whatever attempt came before, then claims
+    // the new id — every async continuation below bails if this moves on
+    // without it. `attempt` doubles as the number reported to analytics.
+    abandonCreditConfirmation();
+    var attempt = creditConfirmAttempt;
+    function isCurrent(){ return creditConfirmAttempt === attempt; }
+
     // Copy differs by whether a real pending-purchase marker backs this
     // return. With one, "Payment received" is a statement of fact (this
     // browser genuinely started a checkout and Dodo redirected it back).
@@ -922,10 +940,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         : 'Checking whether new tokens have landed on your balance.');
 
     DreamStore.getTokenStatus().then(function(arrival){
+      if(!isCurrent()) return;
       tokenStatus = arrival;
       renderBalance();
       beginPoll(typeof arrival.balance === 'number' ? arrival.balance : null);
     }).catch(function(){
+      if(!isCurrent()) return;
       // The arrival read failing is not itself a purchase problem — poll
       // anyway (pollForCredit tolerates its own failed reads too), just
       // without an arrival baseline to lean on.
@@ -952,6 +972,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         intervalMs: pollOverrides.intervalMs,
         maxMs: pollOverrides.maxMs,
         onCredited: function(status){
+          if(!isCurrent()) return;
           activeCreditPollCancel = null;
           tokenStatus = status;
           renderBalance();
@@ -978,6 +999,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           }
         },
         onTimeout: function(){
+          if(!isCurrent()) return;
           activeCreditPollCancel = null;
           renderCheckoutBanner('unconfirmed',
             packTokens ? 'Still confirming your tokens' : 'No new tokens yet',

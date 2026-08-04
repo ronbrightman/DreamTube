@@ -43,7 +43,9 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
-var settle = require('./helpers/settle').settle;
+var settleHelpers = require('./helpers/settle');
+var settle = settleHelpers.settle;
+var gate = settleHelpers.gate;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 
@@ -486,6 +488,62 @@ test('dismissing the banner cancels the poll behind it — no background reads, 
 
     assert.equal(tokens.calls, callsAtDismiss, 'the poll must stop on dismiss, not keep reading get-token-status in the background (was ' + callsAtDismiss + ', now ' + tokens.calls + ')');
     assert.equal(await page.isVisible('#shop-checkout-banner'), false, 'a dismissed banner must never repaint itself from a poll callback');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
+// 8b. The same scope-hygiene question one step earlier in the sequence, in
+//     the one window where cancelling the poll is not enough to be safe:
+//     the arrival read is still in flight, so there IS no poll to cancel
+//     yet — and the read's own continuation is what would go on to start
+//     one. Guarded by attempt id, not by cancelling.
+// ===========================================================================
+test('dismissing while the arrival read is still in flight leaves nothing behind — the superseded attempt never starts a poll or repaints', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await shrinkPollWindow(context, 120, 30000);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var held = gate();
+    var requests = 0;
+    var balance = 50;
+    await page.route('**/.netlify/functions/get-token-status*', async function (route) {
+      requests++;
+      await held.wait(); // every read hangs until the test says otherwise
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ balance: balance, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: true })
+      });
+    });
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ pack: 'pack199', tokens: 500, price: 1.99, starter: false, eventId: 'e', balanceBefore: 50 }));
+    });
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    // The pending banner is rendered synchronously, before the arrival
+    // read has resolved -- which is exactly the window under test.
+    await page.waitForSelector('#shop-checkout-banner.is-pending', { state: 'visible', timeout: 5000 });
+    await page.click('#shop-checkout-banner-close');
+    assert.equal(await page.isVisible('#shop-checkout-banner'), false);
+
+    var requestsAtDismiss = requests;
+    // Now let the in-flight reads land, with the credit having arrived --
+    // the most tempting possible moment for a superseded attempt to
+    // "helpfully" resume.
+    balance = 550;
+    held.open();
+    await page.waitForTimeout(1500);
+
+    assert.equal(requests, requestsAtDismiss, 'the superseded attempt must not start a poll after the dismiss (was ' + requestsAtDismiss + ', now ' + requests + ')');
+    assert.equal(await page.isVisible('#shop-checkout-banner'), false, 'a dismissed banner must never be repainted by a read that was already in flight');
   } finally {
     await context.close();
   }
