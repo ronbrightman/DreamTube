@@ -75,7 +75,7 @@ var FAL_SYNC_BASE = 'https://fal.run'; // synchronous execution — no scheduler
 var FAL_MODEL = process.env.FAL_MODEL_INTERP_TTS || 'fal-ai/kokoro/american-english';
 var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // same model interp-audio-status.js aligns captions with
 var SYNC_TTS_BUDGET_MS = 12000;    // ~8x the measured sync latency; past this, the queue fallback is the better bet
-var SYNC_WHISPER_BUDGET_MS = 8000; // captions only — a blown budget degrades to sentence-level, never delays the voice
+var SYNC_WHISPER_BUDGET_MS = 3500; // captions only — a blown budget degrades to sentence-level, never delays the voice (was 8000; live check 08-04 showed whisper eating the whole budget while the founder waits — the voice's own start time outranks word-level captions)
 var READING_SPEED = 0.8; // founder-approved Option D pace (2026-08-02), same for every persona
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above and generate-video.js's own mockOperationName for the identical convention. */
