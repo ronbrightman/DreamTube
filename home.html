@@ -2603,7 +2603,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         // founder-approved-08-03-jlkjy9, 2026-08-03 founder simplification)
         // — nothing to forward here anymore; see js/music-bed.js's header
         // comment for the current always-on eligibility logic.
-        storyText: d.storyText
+        storyText: d.storyText,
+        // mood (tracker item for-product-founder-08-04-evening-music--
+        // jfjco0) — the dream-builder wizard's Mood step answer, written
+        // onto the draft by create.html's "Build it" finish (and
+        // wizard.html's own draftPatch), forwarded here so it survives onto
+        // the finished dream record for music-bed selection. Null for every
+        // creation path with no Mood step (Write it / Record it), which is
+        // the documented "fall back to the visual-style bed" state, i.e.
+        // exactly today's behavior for those paths.
+        mood: d.mood || null
       };
       if(d.sourceDreamId && d.isEditDelta){
         return DreamStore.startDreamEdit(d.sourceDreamId, {

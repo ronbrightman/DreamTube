@@ -434,3 +434,58 @@ test('assembleCaption: with a place chosen, the connector still joins the action
   assert.match(falling.caption, /falling through an open sky,/);
   assert.doesNotMatch(falling.caption, /,\s*,/);
 });
+
+// ── persistedMood (tracker item for-product-founder-08-04-evening-music--
+//    jfjco0) ───────────────────────────────────────────────────────────────
+// The single shared definition of "did this dream end up with a usable mood,"
+// used identically by wizard.html and create.html's "Build it" retrofit so
+// they can't disagree. See js/wizard-chips.js's own doc comment.
+
+test('persistedMood: each of the six real mood chips persists as itself', function () {
+  ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'].forEach(function (key) {
+    assert.equal(WizardChips.persistedMood(key, false), key, key + ' must persist as itself');
+  });
+});
+
+test('persistedMood: a SKIPPED mood step persists as null even though the pre-highlighted default chip is still selected -- this is the whole reason the skipped flag exists', function () {
+  // The exact ambiguity this guards: both wizards pre-seed their mood var to
+  // DEFAULT_MOOD so a chip is always visibly highlighted, so moodKey alone
+  // cannot distinguish "tapped Skip" from "accepted the default via
+  // Continue". Same key, opposite answers.
+  assert.equal(WizardChips.persistedMood(WizardChips.DEFAULT_MOOD, true), null, 'Skip must persist no mood at all');
+  assert.equal(WizardChips.persistedMood(WizardChips.DEFAULT_MOOD, false), 'dreamy', 'Continue on the pre-highlighted default IS an answer');
+});
+
+test('persistedMood: a "+ Something else" free-text mood persists as null -- keyword-mapping free text to a bed is explicitly out of scope for this pass', function () {
+  assert.equal(WizardChips.persistedMood('other', false), null);
+  assert.equal(WizardChips.persistedMood('other', true), null);
+});
+
+test('persistedMood: fails closed on anything unrecognized rather than guessing', function () {
+  assert.equal(WizardChips.persistedMood('euphoric', false), null);
+  assert.equal(WizardChips.persistedMood('', false), null);
+  assert.equal(WizardChips.persistedMood(null, false), null);
+  assert.equal(WizardChips.persistedMood(undefined, undefined), null);
+});
+
+test('persistedMood: only ever returns a key that MOOD_CHIPS actually defines (minus "other"), so a bed lookup can never be handed an invented mood', function () {
+  var realKeys = WizardChips.MOOD_CHIPS.map(function (c) { return c.key; }).filter(function (k) { return k !== 'other'; });
+  realKeys.forEach(function (key) {
+    assert.equal(WizardChips.persistedMood(key, false), key);
+  });
+  // And the inverse: every value persistedMood can return is in that list.
+  WizardChips.MOOD_CHIPS.forEach(function (c) {
+    var out = WizardChips.persistedMood(c.key, false);
+    if (out !== null) assert.ok(realKeys.indexOf(out) !== -1, out + ' must be a real MOOD_CHIPS key');
+  });
+});
+
+test('persistedMood does NOT change prompt or story assembly -- a skipped mood still contributes the default mood language it always did, so generation output is byte-identical to before this field existed', function () {
+  // The regression this guards: it would be easy to "helpfully" make a skip
+  // drop the mood clause from the prompt too. That would silently change
+  // what actually gets generated for every user who skips the step.
+  var skipped = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'flying', moodKey: WizardChips.DEFAULT_MOOD, style: 'Cinematic' });
+  assert.match(skipped.caption, /dreamy surreal mood,/, 'the assembled prompt is unaffected by whether the step was skipped');
+  var story = WizardChips.buildDeterministicStory({ actionKey: 'flying', moodKey: WizardChips.DEFAULT_MOOD });
+  assert.match(story, /feeling dreamy and surreal/, 'the deterministic story is likewise unaffected');
+});

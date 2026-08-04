@@ -175,6 +175,43 @@
   var DEFAULT_STYLE = 'Cinematic';
   var DEFAULT_ACTION = 'flying';
 
+  /**
+   * The value to persist as a dream's `mood` field (tracker item
+   * for-product-founder-08-04-evening-music--jfjco0) — the single shared
+   * definition of "did this dream end up with a usable mood," so
+   * wizard.html and create.html's "Build it" retrofit can never disagree
+   * about it.
+   *
+   * Returns one of the six real MOOD_CHIPS keys, or null. Null is a
+   * first-class, permanently-supported answer meaning "no mood-keyed music
+   * bed applies, use the visual-style bed" (js/music-bed.js's urlForDream),
+   * and covers exactly three cases:
+   *   - `skipped` true: the user tapped Skip on the Mood step. This can't
+   *     be inferred from moodKey alone — both wizards pre-seed it to
+   *     DEFAULT_MOOD so a chip is always visibly pre-highlighted, making a
+   *     Skip indistinguishable from accepting that default via Continue.
+   *     The caller tracks which button was pressed and passes it here.
+   *   - moodKey === 'other': a "+ Something else" free-text mood. Mapping
+   *     free text to a bed by keyword is explicitly OUT of scope for this
+   *     pass (the tracker item says so directly) — until that exists, free
+   *     text has no bed and falls back. The typed text itself is not lost:
+   *     assembleCaption still bakes it into the generated promptText.
+   *   - an unrecognized/absent key: fails closed rather than guessing, same
+   *     discipline as urlForStyle/urlForMood.
+   *
+   * Deliberately has NO effect on prompt or story assembly — assembleCaption
+   * and buildDeterministicStory still take the raw moodKey and behave
+   * exactly as they did before this function existed, including for a skip
+   * (which has always contributed the default 'dreamy' mood language to the
+   * generated prompt). This function only decides what gets STORED.
+   */
+  function persistedMood(moodKey, skipped) {
+    if (skipped) return null;
+    if (moodKey === 'other') return null;
+    var known = MOOD_CHIPS.filter(function (c) { return c.key !== 'other' && c.key === moodKey; })[0];
+    return known ? known.key : null;
+  }
+
   function chipLabel(list, key) {
     var found = list.filter(function (c) { return c.key === key; })[0];
     return found ? found.label : null;
@@ -530,6 +567,7 @@
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_ACTION: DEFAULT_ACTION,
     chipLabel: chipLabel,
+    persistedMood: persistedMood,
     inferCamera: inferCamera,
     inferLighting: inferLighting,
     assembleCaption: assembleCaption,

@@ -2,7 +2,17 @@
 //
 // POST { id, ownerHandle, caption, style, dur, videoUrl, imageUrl, mediaType,
 //        avatar, channelLicenseGrantedAt, channelLicenseRevokedAt,
-//        okToFeatureOnChannels, authToken }
+//        okToFeatureOnChannels, mood, authToken }
+// (`mood` is new as of tracker item for-product-founder-08-04-evening-
+// music--jfjco0 — the dream-builder wizard's Mood step answer, carried into
+// the shared record purely so explore.html can pick a mood-keyed ambient
+// music bed for the card (js/music-bed.js's urlForDream). Optional and
+// non-load-bearing: absent/unknown stores as null, and null simply means
+// that card falls back to its visual-style bed exactly as every card does
+// today. Validated against a fixed key list below rather than stored
+// verbatim — this value is written into a world-readable shared blob and
+// then read straight back out into an asset path, so an unbounded string
+// has no business in it.)
 // (musicBedOn removed from this payload/record shape as of tracker item
 // for-product-build-founder-approved-08-03-jlkjy9's 2026-08-03 founder
 // simplification — "no user choice," music is always on. js/music-bed.js's
@@ -155,6 +165,13 @@ function stripAt(handle) {
 // leaves real headroom for a legitimate client without letting a forged
 // request smuggle a full-size photo into the shared feed-index blob that
 // every visitor's device downloads whole (see get-feed.js).
+// The six real mood keys the dream-builder wizard can produce
+// (js/wizard-chips.js's MOOD_CHIPS, minus 'other' — that chip is free text
+// and has no fixed music bed). Kept in lockstep with js/music-bed.js's own
+// MOOD_KEYS; test/mood-music-bed-behavioral.test.js asserts all three lists
+// still agree, so they can't silently drift apart.
+var KNOWN_MOODS = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
+
 var AVATAR_MAX_BYTES = 20 * 1024;
 var AVATAR_DATA_URL_RE = /^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 
@@ -202,6 +219,10 @@ exports.handler = async function (event) {
   var channelLicenseGrantedAt = payload.channelLicenseGrantedAt || null;
   var channelLicenseRevokedAt = payload.channelLicenseRevokedAt || null;
   var okToFeatureOnChannels = payload.okToFeatureOnChannels !== false;
+  // See this file's header comment. Fails closed to null for anything not
+  // in this exact list — a free-text "+ Something else" mood, a future key
+  // this deploy doesn't know, or any other value a caller might send.
+  var mood = KNOWN_MOODS.indexOf(payload.mood) === -1 ? null : payload.mood;
   var authToken = (payload.authToken || '').trim();
 
   if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
@@ -253,7 +274,8 @@ exports.handler = async function (event) {
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
       channelLicenseGrantedAt: channelLicenseGrantedAt,
       channelLicenseRevokedAt: channelLicenseRevokedAt,
-      okToFeatureOnChannels: okToFeatureOnChannels
+      okToFeatureOnChannels: okToFeatureOnChannels,
+      mood: mood
     };
 
     if (idx === -1) feed.unshift(record); else feed[idx] = record;

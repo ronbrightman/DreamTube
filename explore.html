@@ -256,7 +256,12 @@
     // per-dream choice left as of the 2026-08-03 founder simplification --
     // see js/music-bed.js's header comment), so bedUrl is only ever
     // non-null when this card really should get one.
-    var bedUrl = (d.videoUrl && window.MusicBed && MusicBed.eligible(d)) ? MusicBed.urlForStyle(d.style) : null;
+    // urlForDream (not urlForStyle) as of the mood-keyed bed layer —
+    // tracker item for-product-founder-08-04-evening-music--jfjco0. A feed
+    // record only carries `mood` if it was published after publish-dream.js
+    // started forwarding it; anything older simply has no mood and gets the
+    // same style bed as before. See js/music-bed.js's header comment.
+    var bedUrl = (d.videoUrl && window.MusicBed && MusicBed.eligible(d)) ? MusicBed.urlForDream(d) : null;
     var media = d.videoUrl
       ? '<video class="feed-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>' +
         (bedUrl ? '<audio class="feed-music-bed" src="'+esc(bedUrl)+'"'+(soundOn?'':' muted')+' loop preload="none"></audio>' : '')
