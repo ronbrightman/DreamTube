@@ -39,15 +39,22 @@
   # very first build), there's nothing to diff against, so fail safe and
   # build (exit 1) rather than risk skipping a first deploy.
   #
-  # Excluded (doc-like, never served, safe to skip a deploy for):
-  # docs/**, AGENT_POLICY.md, CLAUDE.md, FOUNDER_PRINCIPLES.md,
+  # Excluded (doc-like/test-only, never served, safe to skip a deploy
+  # for): docs/**, AGENT_POLICY.md, CLAUDE.md, FOUNDER_PRINCIPLES.md,
   # MANAGER_BRIEF.md, README.md, RELEASES.md, .claude/** (agent/skill
-  # config, never served). Deliberately NOT excluded: every .html page,
-  # js/**, netlify/functions/**, assets/**, stylesheets, sw.js,
-  # manifest.json, netlify.toml itself, package.json, scripts/** (the
-  # build command above reads scripts/generate-version.js) -- anything
-  # actually shipped or that affects the deployed app always builds.
-  ignore = "[ -z \"$CACHED_COMMIT_REF\" ] && exit 1; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs/**' ':!AGENT_POLICY.md' ':!CLAUDE.md' ':!FOUNDER_PRINCIPLES.md' ':!MANAGER_BRIEF.md' ':!README.md' ':!RELEASES.md' ':!.claude/**'"
+  # config, never served), test/** (round 2, tracker item
+  # for-product-deploy-cost-round-2-extend-b-f6bnhc, founder re-raised
+  # 08-04: 40 deploys/~600 credits in one day despite round 1's doc-only
+  # skip -- several tests-only commits still triggered a full deploy,
+  # even though a test file is exercised by `npm test`, never served or
+  # read at request time, same "internal-tooling, zero user-facing
+  # effect" reasoning round 1 already established for docs/AGENT files).
+  # Deliberately NOT excluded: every .html page, js/**, netlify/
+  # functions/**, assets/**, stylesheets, sw.js, manifest.json,
+  # netlify.toml itself, package.json, scripts/** (the build command
+  # above reads scripts/generate-version.js) -- anything actually
+  # shipped or that affects the deployed app always builds.
+  ignore = "[ -z \"$CACHED_COMMIT_REF\" ] && exit 1; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs/**' ':!AGENT_POLICY.md' ':!CLAUDE.md' ':!FOUNDER_PRINCIPLES.md' ':!MANAGER_BRIEF.md' ':!README.md' ':!RELEASES.md' ':!.claude/**' ':!test/**'"
 
 # Scheduled Functions (Netlify's own cron mechanism) -- tracker item
 # for-product-build-stage-0-pwa-web-push-f-jbutt5, part 4
