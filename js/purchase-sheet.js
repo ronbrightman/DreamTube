@@ -1231,6 +1231,15 @@
     STARTER_PACK_ID: STARTER_PACK_ID,
     PENDING_PURCHASE_KEY: PENDING_PURCHASE_KEY,
     LOW_BALANCE_THRESHOLD: LOW_BALANCE_THRESHOLD,
+    // Exported so a caller that has to reason about the confirmation
+    // window itself reads the same numbers pollForCredit already defaults
+    // to, instead of restating them. shop.html's checkout-return banner
+    // budgets its baseline-establishment retries and its poll out of ONE
+    // shared window and needs them for that. A second, drifted copy of
+    // exactly these two values is what produced the 15s-vs-75s bug this
+    // whole confirmation path exists to fix.
+    POLL_INTERVAL_MS: POLL_INTERVAL_MS,
+    POLL_MAX_MS: POLL_MAX_MS,
     pickContextualPack: pickContextualPack,
     neededTokens: neededTokens,
     formatTokenCountdown: formatTokenCountdown,

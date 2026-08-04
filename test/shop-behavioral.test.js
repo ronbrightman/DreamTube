@@ -229,7 +229,15 @@ test('a starter-already-used (E9) failure shows the specific "welcome offer alre
   }
 });
 
-test('returning with ?checkout=success shows a "payment received" toast and clears the query param', async function (t) {
+// Rewritten for tracker item for-product-webhook-p0-reframed-by-found-peytt8:
+// the ?checkout=success return used to be a 2.2s "payment received" toast
+// and nothing else. It is now a persistent, state-carrying banner
+// (#shop-checkout-banner) that stays on screen until the token credit is
+// genuinely confirmed. This test keeps the original's query-param-clearing
+// assertion and re-points the visible-feedback half at the banner; the
+// banner's own three states and their timing are covered in depth by
+// test/shop-checkout-confirmation-behavioral.test.js.
+test('returning with ?checkout=success shows the persistent confirmation banner (not a vanishing toast) and clears the query param', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -248,10 +256,11 @@ test('returning with ?checkout=success shows a "payment received" toast and clea
     });
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t && t.classList.contains('show') && /payment received/i.test(t.textContent);
-    }, null, { timeout: 5000 });
+    await page.waitForSelector('#shop-checkout-banner.is-pending', { state: 'visible', timeout: 5000 });
+    // Still visible well past the 2.2s the old toast lasted — the whole
+    // point of the change (the founder's real credit took 36 seconds).
+    await page.waitForTimeout(3000);
+    assert.equal(await page.isVisible('#shop-checkout-banner'), true, 'the confirmation banner must persist, not auto-dismiss like the toast it replaced');
 
     assert.doesNotMatch(page.url(), /checkout=success/);
   } finally {
