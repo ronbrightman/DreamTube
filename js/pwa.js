@@ -527,6 +527,33 @@ window.PwaInstall = (function () {
       }
       hiddenAtMs = null;
     });
+
+    // Multi-tab correctness fix (review finding, round 1): LAST_KNOWN_
+    // VERSION_KEY is one shared-per-origin localStorage key, but without
+    // this listener each tab's own "did I already reload for this" state
+    // lived only in that tab's in-memory reloadOnceGuard. With two tabs
+    // open across a deploy, whichever tab's own check fires first writes
+    // the new version into the shared key and reloads itself; a second
+    // tab whose check fires afterward would find previous === version
+    // already (the first tab beat it to the write) and treat itself as
+    // "already current" via recordVersionAndReloadIfChanged's own
+    // early-return -- silently skipping ITS OWN reload while its
+    // bookkeeping now falsely claims it's current. The `storage` event
+    // (which the spec fires only in OTHER same-origin tabs, never the tab
+    // that made the write) is exactly the missing signal: a genuine
+    // version change written by a sibling tab means this tab is stale
+    // too, so route it through the same reloadWhenSafe() guard everything
+    // else here uses. e.oldValue === null is that OTHER tab's own
+    // first-ever baseline write (no real version change happened, and
+    // this tab's prior localStorage state was equally absent the key) --
+    // skip it, matching recordVersionAndReloadIfChanged's own "previous
+    // === null -> just a baseline, no reload" rule.
+    window.addEventListener('storage', function (e) {
+      if (e.key !== LAST_KNOWN_VERSION_KEY) return;
+      if (e.oldValue === null) return; // sibling tab's own first-ever baseline, not a real change
+      if (!e.newValue || e.newValue === e.oldValue) return;
+      reloadWhenSafe();
+    });
   }
 
   /**

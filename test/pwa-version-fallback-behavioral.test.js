@@ -326,10 +326,23 @@ test('a genuine version.json change on disk (simulating a real deploy) triggers 
     // test/pwa-sw-update-behavioral.test.js's header comment on why
     // location.reload can't be monkeypatched) -- reading localStorage
     // immediately afterward can race the old execution context tearing
-    // down mid-navigation ("Execution context was destroyed"), so this
-    // retries past that specific, expected race rather than a single
-    // evaluate call (see evaluateAfterReload's own comment).
-    var stored = await evaluateAfterReload(page, function () { return localStorage.getItem('dreamtube_last_known_version_v1'); });
+    // down mid-navigation ("Execution context was destroyed"), so
+    // evaluateAfterReload already retries past that specific error. But
+    // localStorage's write and the reload navigation are two independent
+    // async signals racing back to Node (the same class of hazard this
+    // repo's own test/helpers/settle.js documents at length) -- a
+    // filesystem-timing-sensitive run can observe the navigation request
+    // (satisfying waitForCount) before recordVersionAndReloadIfChanged's
+    // own synchronous localStorage.setItem has actually landed in the
+    // reloaded page's storage snapshot. Poll past that too, rather than a
+    // single evaluateAfterReload call, matching this file's own bounded-
+    // retry discipline elsewhere.
+    var stored = null;
+    var storedDeadline = Date.now() + 5000;
+    while (stored !== 'v-deploy-new' && Date.now() < storedDeadline) {
+      stored = await evaluateAfterReload(page, function () { return localStorage.getItem('dreamtube_last_known_version_v1'); });
+      if (stored !== 'v-deploy-new') await new Promise(function (resolve) { setTimeout(resolve, 50); });
+    }
     assert.equal(stored, 'v-deploy-new', 'expected the newly-observed version to be recorded');
   } finally {
     if (context) await context.close();
@@ -427,5 +440,65 @@ test('a version.json fetch failure never breaks the page and never forces a relo
     assert.ok(title && title.length > 0, 'the page must still have loaded and rendered normally despite the version.json fetch failing');
   } finally {
     if (context) await context.close();
+  }
+});
+
+test('a version change observed by one tab reloads a sibling tab too, via the shared localStorage write', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding (round 1, retroactive review of tracker item
+  // for-product-urgent-founder-gets-stale-pa-6dn54z's second-round merge):
+  // LAST_KNOWN_VERSION_KEY is one shared-per-origin localStorage key, but
+  // without js/pwa.js's `storage`-event listener each tab's own "did I
+  // already reload for this" bookkeeping lived only in that tab's
+  // in-memory reloadOnceGuard. With two tabs open across a real deploy,
+  // whichever tab's own check fires first wins the localStorage write and
+  // reloads itself; a sibling tab whose own check never fires (or fires
+  // later and finds previous === version, since the first tab already
+  // wrote it) would otherwise silently stay on stale content forever.
+  // This proves the fix: tab B here never runs its OWN version check at
+  // all -- the only way it can reload is the `storage` event fired by
+  // tab A's write.
+  var deploy = makeDeployRoot({ version: 'v-multitab-old' });
+  var deployServer = null;
+  var context = null;
+  try {
+    deployServer = await staticServer.start({ root: deploy.tmpDir });
+    var deployBaseUrl = deployServer.url;
+
+    context = await browser.newContext();
+    var pageA = await context.newPage();
+    var pageB = await context.newPage();
+    await blockThirdParty(pageA);
+    await blockThirdParty(pageB);
+    await blockServiceWorker(pageA);
+    await blockServiceWorker(pageB);
+    await shrinkStaleThreshold(pageA, 50);
+    await shrinkStaleThreshold(pageB, 50);
+    var username = 'vermultitab' + Math.random().toString(36).slice(2, 8);
+    await seedUser(pageA, username, deployBaseUrl);
+
+    await safeGoto(pageA, deployBaseUrl + '/home.html');
+    await waitForVersionFallbackReady(pageA); // records the baseline, no reload
+    await safeGoto(pageB, deployBaseUrl + '/home.html');
+    await waitForVersionFallbackReady(pageB); // same shared localStorage already has the baseline -- no-op, no reload
+
+    var reloadCounterA = trackReloadAttempts(pageA, deployBaseUrl + '/home.html');
+    var reloadCounterB = trackReloadAttempts(pageB, deployBaseUrl + '/home.html');
+
+    // Simulate a real deploy, then let ONLY tab A resurface past the
+    // (shrunk) stale threshold -- tab B never runs its own check in this
+    // test at all.
+    fs.writeFileSync(deploy.versionPath, JSON.stringify({ version: 'v-multitab-new' }, null, 2) + '\n');
+    await simulateHiddenThenVisible(pageA, 150);
+
+    var callsA = await waitForCount(reloadCounterA, 5000);
+    assert.equal(callsA, 1, 'tab A, whose own check found the mismatch, should reload exactly once');
+
+    var callsB = await waitForCount(reloadCounterB, 5000);
+    assert.equal(callsB, 1, 'tab B, which never ran its own version check, must still reload once via tab A\'s localStorage write -- otherwise it silently stays on stale content indefinitely (the exact gap this test guards against)');
+  } finally {
+    if (context) await context.close();
+    if (deployServer) await deployServer.close();
+    fs.rmSync(deploy.tmpDir, { recursive: true, force: true });
   }
 });
