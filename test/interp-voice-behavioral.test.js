@@ -737,3 +737,499 @@ test('gesture-priming is best-effort: a synchronously-throwing priming play() ne
     await context.close();
   }
 });
+
+// ── Tracker item for-product-defensive-revisited-readings-dta2ae ──
+// (founder re-ran the Sage on existing dreams 2026-08-04 ~12:30 and got
+// text-only, no voice). Root-cause investigation found setupVoiceStage
+// used to unconditionally call requestVoiceAudio on EVERY mount —
+// including a revisit of a dream+persona that already had a persisted
+// audioUrl — silently regenerating (and re-spending) a fresh TTS track
+// every single time rather than reusing what was already saved, and
+// tearing down the whole voice stage on any transient failure of that
+// unnecessary regeneration. The two tests below prove: (3) a GOOD saved
+// audioUrl is now reused directly, with zero wasted regeneration calls,
+// and the voice stage still offers real playback; (4) a DEAD saved
+// audioUrl (a genuine 404, not a mocked DOM event) triggers exactly one
+// real regenerate-via-generate-interp-audio fallback, shows the same
+// preparing-state copy a brand-new reading shows while it's in flight,
+// and the newly generated audio actually plays once ready.
+
+test('revisit with a GOOD saved audioUrl: the voice stage mounts and offers real playback with ZERO regeneration calls (point 3 of the tracker item)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Capability-detected tap-to-play (rather than forcing autoplay to
+    // succeed) so the "Hear The Sage read your dream" label itself is
+    // asserted, not just a silent successful autoplay.
+    await forcePlayOutcome(page, false);
+    await blockThirdParty(page);
+    var generateCalls = 0;
+    page.on('request', function (req) {
+      if (req.url().indexOf('/generate-interp-audio') !== -1) generateCalls++;
+    });
+    await seedResultPageWithPreviewParam(page, 'd-voice-revisit-good', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading, already narrated once before.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/sage-voice-x7q4.mp3',
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-revisit-good&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    // Opens straight on the reading (spec §3.0's revisit fast path) — no
+    // picker tap needed.
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    var stage = await page.locator('#itp-voice-stage').count();
+    assert.equal(stage, 1, 'the voice stage must mount for a revisit with a good saved audioUrl');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && !el.classList.contains('off');
+    }, null, { timeout: 5000 });
+    var label = await page.locator('#itp-voice-tap-label').textContent();
+    assert.equal(label, 'Hear The Sage read your dream', 'a revisit with a good saved audioUrl must offer real playback ("Hear him read"), not just render an empty stage');
+
+    assert.equal(generateCalls, 0, 'a GOOD saved audioUrl must be reused directly — regenerating it on every revisit would be exactly the wasteful/fragile behavior this fix removes');
+  } finally {
+    await context.close();
+  }
+});
+
+test('revisit with a DEAD saved audioUrl (a real 404): exactly one regenerate-via-generate-interp-audio fallback fires, preparing-state copy shows during it, and the newly generated audio plays once ready (point 4 of the tracker item)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var generateCalls = 0;
+    page.on('request', function (req) {
+      if (req.url().indexOf('/generate-interp-audio') !== -1) generateCalls++;
+    });
+    // mockInterpAudioHeld's own real regeneration response (once released)
+    // resolves to sage-voice-x7q4.mp3 — a REAL, playable file this static
+    // server actually serves (see this file's own MIME-type header comment
+    // in helpers/static-server.js).
+    var heldMock = await mockInterpAudioHeld(page);
+    await seedResultPageWithPreviewParam(page, 'd-voice-revisit-dead', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000,
+          qa: [],
+          // A real 404 off this test's own static server (helpers/
+          // static-server.js returns a genuine 404 for any unknown path)
+          // — a genuine dead/unreachable media URL, not a synthetic DOM
+          // 'error' event, matching how this repo's other behavioral
+          // tests fabricate real error conditions.
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3',
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-revisit-dead&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // The dead URL's real 'error' event must have been caught and a real
+    // regenerate kicked off — surfaced exactly the same way a brand-new
+    // reading's own silent loading window is (preparingCaptionText, same
+    // copy, not a new/bespoke string).
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 5000 });
+
+    heldMock.release();
+
+    // Preparing copy clears once the regenerated audio is ready and real
+    // playback is attempted (same convention as a brand-new reading).
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent !== 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 5000 });
+
+    // The audio element actually in use now points at the REGENERATED
+    // (real, playable) URL, not the dead one.
+    await page.waitForFunction(function () {
+      return window.__lastAudio && window.__lastAudio.src && window.__lastAudio.src.indexOf('sage-voice-x7q4.mp3') !== -1;
+    }, null, { timeout: 5000 });
+
+    var phCalls = await readPostHogCalls(page);
+    assert.ok(captures(phCalls, 'interp_voice_saved_audio_expired').length >= 1, 'the dead-saved-audio error path must be observable in telemetry');
+    assert.ok(captures(phCalls, 'interp_voice_play').length >= 1, 'the newly generated audio must actually attempt/succeed playback once ready');
+    assert.equal(generateCalls, 1, 'exactly ONE regenerate-via-generate-interp-audio call — bounded, not looping');
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * Same forced-autoplay-outcome technique as forcePlayOutcome above, but the
+ * outcome is flippable at runtime (`window.__playSucceeds`) and every real
+ * `.play()` invocation is recorded (`window.__playCalls`) — both needed by
+ * the duplicate-listener regression test below, which has to (a) keep
+ * autoplay BLOCKED through a whole regenerate cycle so the tap overlay is
+ * actually the thing driving playback, then (b) flip to success for the real
+ * tap (a genuine user gesture would unlock it), then (c) count exactly how
+ * many playback attempts that ONE tap produced. An `>=`-style assertion
+ * cannot see the bug this exists to catch, so the count has to be real.
+ */
+function forcePlayOutcomeCounted(page, succeeds) {
+  return page.addInitScript(function (succeeds) {
+    window.__playSucceeds = succeeds;
+    window.__playCalls = [];
+    HTMLMediaElement.prototype.play = function () {
+      window.__playCalls.push(this.src || '');
+      if (window.__playSucceeds) return Promise.resolve();
+      return Promise.reject(new DOMException('forced-block-for-test', 'NotAllowedError'));
+    };
+  }, succeeds);
+}
+
+/**
+ * ── Round-2 review finding on this same tracker item ──
+ *
+ * The three tests above all ran with `forcePlayOutcome(page, true)` —
+ * autoplay never blocked, so the tap overlay was never exercised on the
+ * regenerate path at all — and asserted `>= 1` on telemetry. That combination
+ * is precisely why a real duplicate-listener bug shipped through them
+ * undetected: beginAudioPlayback used to attach a fresh full listener set
+ * (loadedmetadata/timeupdate/ended/error on the <audio> element, plus click
+ * on the SHARED, mount-lived #itp-voice-tap-overlay element) on EVERY call,
+ * with no removal of the previous set — and the dead-audio regenerate path
+ * deliberately re-enters beginAudioPlayback for the SAME `vs` to start the
+ * regenerated track. Result: after one regenerate cycle the overlay carried
+ * two live click handlers, and a single real user tap fired attemptPlay
+ * twice — once against the regenerated element and once against the stale,
+ * already-dead one it closed over — double-firing interp_voice_play.
+ *
+ * This test reproduces exactly that user path (revisit → dead saved audio →
+ * regenerate → autoplay blocked → ONE real tap) and asserts EXACT counts, so
+ * a regression cannot hide behind an `>=`.
+ */
+test('after a dead-audio regenerate cycle, ONE real tap on the overlay produces exactly ONE playback attempt and exactly ONE interp_voice_play — beginAudioPlayback must not leave duplicate listeners behind', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Autoplay BLOCKED for the whole flow — this is what forces the tap
+    // overlay to be the real playback affordance on both the dead-audio
+    // pass and the regenerated pass, the code path the original three tests
+    // never reached.
+    await forcePlayOutcomeCounted(page, false);
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var generateCalls = 0;
+    page.on('request', function (req) {
+      if (req.url().indexOf('/generate-interp-audio') !== -1) generateCalls++;
+    });
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-voice-regen-tap-once', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3', // real 404
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-regen-tap-once&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate cycle completes: the dead URL errored, exactly one
+    // regeneration ran, and the element now in use is the regenerated one.
+    await page.waitForFunction(function () {
+      return window.__lastAudio && window.__lastAudio.src && window.__lastAudio.src.indexOf('sage-voice-x7q4.mp3') !== -1;
+    }, null, { timeout: 8000 });
+    assert.equal(generateCalls, 1, 'exactly one regeneration — precondition for the rest of this test');
+
+    // The regenerated track's own autoplay was blocked too, so the overlay
+    // is showing as the real "tap to hear it" affordance.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-tap-overlay');
+      return el && !el.classList.contains('off');
+    }, null, { timeout: 5000 });
+
+    // A real tap IS a user gesture — flip play() to succeed, and zero the
+    // counter so what's measured is strictly what THIS ONE tap causes.
+    await page.evaluate(function () {
+      window.__playSucceeds = true;
+      window.__playCalls.length = 0;
+    });
+    await page.click('#itp-voice-tap-overlay');
+    await page.waitForFunction(function () {
+      var q = window.posthog && window.posthog.slice ? window.posthog.slice() : [];
+      return q.some(function (e) { return e[0] === 'capture' && e[1] === 'interp_voice_play'; });
+    }, null, { timeout: 5000 });
+    // Settle: a duplicate handler's own attemptPlay resolves on a later
+    // microtask/tick, so give any second capture a real chance to land
+    // before counting (otherwise this could pass by racing rather than by
+    // the fix actually holding).
+    await page.waitForTimeout(300);
+
+    var playCalls = await page.evaluate(function () { return window.__playCalls.slice(); });
+    assert.equal(playCalls.length, 1, 'ONE tap must produce EXACTLY ONE play() attempt — two means beginAudioPlayback left a duplicate tap-overlay handler behind after the regenerate cycle (got: ' + JSON.stringify(playCalls) + ')');
+    assert.ok(playCalls[0].indexOf('sage-voice-x7q4.mp3') !== -1, 'the tap must drive the REGENERATED audio element, never the stale dead one a leftover handler would still close over');
+
+    var phCalls = await readPostHogCalls(page);
+    var played = captures(phCalls, 'interp_voice_play');
+    assert.equal(played.length, 1, 'exactly ONE interp_voice_play for one tap — a duplicate listener double-counts real listens in analytics');
+    assert.deepEqual(played[0][2], { persona: 'talmudic', source: 'tap_unlock' });
+
+    // The same duplicate-listener class of bug would also double-fire the
+    // <audio> element's own lifecycle listeners whenever the regenerated
+    // element is the SAME object as the pre-regenerate one (gesture-primed
+    // reuse). Completion telemetry is the cheapest exact-count probe for it.
+    await page.evaluate(function () { window.__lastAudio.dispatchEvent(new Event('ended')); });
+    var phAfterEnded = await readPostHogCalls(page);
+    assert.equal(captures(phAfterEnded, 'interp_voice_complete').length, 1, 'exactly ONE interp_voice_complete for one real "ended" — duplicate <audio> lifecycle listeners would fire it twice');
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * Found by the REAL-MODE verification pass (AGENT_POLICY.md's REAL-MODE gate),
+ * not by any mocked test: driving the real flow against the real production
+ * `generate-interp-audio` with Chromium's real `--autoplay-policy=
+ * user-gesture-required`, the persona-named "preparing" copy was immediately
+ * overwritten by a stale caption word (`"Ah,"`) from the DEAD track, so the
+ * regenerate window showed a leftover word instead of the preparing state the
+ * tracker item explicitly asks for.
+ *
+ * Root cause, same class as the duplicate-listener bug above: the dead
+ * element's `timeupdate` listener stayed live after the stage had already
+ * given up on that element, so it kept writing `vs.captions` (which still
+ * described the dead track) into the caption strip, racing the preparing copy.
+ * The mocked tests never saw it because a 404'd element in those runs never
+ * emitted a `timeupdate` at all.
+ *
+ * Reproduced deterministically here by dispatching a real `timeupdate` on the
+ * dead element after the regenerate has started — which is exactly what the
+ * real browser does.
+ */
+test('once a dead saved audioUrl has been given up on, its stale listeners can no longer write over the "preparing" copy (found in real-mode, not by mocks)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, false); // autoplay blocked, as on a real mobile browser
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var heldMock = await mockInterpAudioHeld(page); // regenerate stays in flight
+    await seedResultPageWithPreviewParam(page, 'd-voice-stale-caption', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3', // real 404
+          audioDurationMs: 1400,
+          // Real saved captions for the DEAD track — these are what used to
+          // leak over the preparing copy.
+          captions: [{ word: 'Ah,', startMs: 0, endMs: 300 }, { word: 'the', startMs: 300, endMs: 600 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-stale-caption&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate has started and the preparing copy is up.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 8000 });
+
+    // The dead element emits a real timeupdate (Chromium genuinely does this
+    // around the failed play attempt). It must NOT be able to repaint the
+    // caption strip — the stage has already moved on from this element.
+    await page.evaluate(function () {
+      var dead = window.__lastAudio;
+      Object.defineProperty(dead, 'currentTime', { value: 0.1, configurable: true });
+      dead.dispatchEvent(new Event('timeupdate'));
+      dead.dispatchEvent(new Event('ended'));
+    });
+
+    var caption = await page.locator('#itp-voice-caption').textContent();
+    assert.equal(caption, 'The Sage is preparing to read your dream…', 'a dead track\'s stale listeners must not overwrite the preparing copy during regeneration (got: ' + JSON.stringify(caption) + ')');
+
+    // The dead element's stale `ended` must not fabricate a completion either.
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'interp_voice_complete').length, 0, 'a dead, abandoned track must never report interp_voice_complete');
+
+    heldMock.release();
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * Third finding from the REAL-MODE pass. The regenerate path made a sequence
+ * reachable that never existed before it: the DEAD track's autoplay attempt is
+ * blocked (so the tap overlay goes up), and then the REGENERATED track's
+ * attempt SUCCEEDS. The success branch never hid the overlay — because before
+ * the regenerate path a mount either autoplayed or was blocked exactly once —
+ * so "Hear The Sage read your dream" sat on top of audio that was already
+ * playing, and the user's next tap PAUSED the reading instead of starting it.
+ */
+test('after a regenerate whose playback succeeds, the tap overlay is hidden — it must not sit over already-playing audio and turn the next tap into a pause', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Reproduces the REAL browser's ordering, which is the whole point of this
+    // test: a real blocked play() rejection on the dead track lands only after
+    // the network has had its say, i.e. AFTER the 404 'error' event has already
+    // made the stage abandon that element. A plain forced rejection settles on
+    // the very next microtask, well BEFORE the error event, which is exactly
+    // why the mocked suite never saw this. The dead track's rejection is
+    // therefore deliberately delayed here; the regenerated track's play()
+    // resolves normally.
+    await page.addInitScript(function () {
+      window.__playCalls = [];
+      HTMLMediaElement.prototype.play = function () {
+        var self = this;
+        window.__playCalls.push(self.src || '');
+        if (typeof self.src === 'string' && self.src.indexOf('nonexistent-dead-audio') !== -1) {
+          return new Promise(function (_resolve, reject) {
+            setTimeout(function () { reject(new DOMException('forced-block-for-test', 'NotAllowedError')); }, 1200);
+          });
+        }
+        return Promise.resolve();
+      };
+    });
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var heldMock = await mockInterpAudioHeld(page);
+    await seedResultPageWithPreviewParam(page, 'd-voice-regen-overlay', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000, qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3',
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-regen-overlay&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate is in flight (held) after the dead track's real 404.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 8000 });
+
+    // Let the DEAD track's blocked-autoplay rejection land LATE, after the
+    // stage has already abandoned that element — the real-browser race this
+    // guard exists for. It must NOT raise a tap overlay for a track that no
+    // longer exists.
+    await page.waitForTimeout(1600);
+    var overlayDuringPrepare = await page.locator('#itp-voice-tap-overlay').evaluate(function (el) { return !el.classList.contains('off'); });
+    assert.equal(overlayDuringPrepare, false, 'an abandoned dead track\'s late play() rejection must not raise the tap-to-play overlay while its replacement is being fetched');
+
+    heldMock.release();
+
+    await page.waitForFunction(function () {
+      var q = window.posthog && window.posthog.slice ? window.posthog.slice() : [];
+      return q.some(function (e) { return e[0] === 'capture' && e[1] === 'interp_voice_play'; });
+    }, null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+
+    var overlayHidden = await page.locator('#itp-voice-tap-overlay').evaluate(function (el) { return el.classList.contains('off'); });
+    assert.equal(overlayHidden, true, 'once the regenerated track is actually playing, the tap-to-play overlay must be hidden — leaving it up makes the next real tap pause the reading the user just asked to hear');
+
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'interp_voice_play').length, 1, 'still exactly one play event across the whole regenerate cycle');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a dead saved audioUrl whose REGENERATED audio ALSO errors degrades to the existing hard-TTS-failure path (voice stage hides, plain text card still renders) — bounded to one attempt, never loops', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await blockThirdParty(page);
+    var generateCalls = 0;
+    page.on('request', function (req) {
+      if (req.url().indexOf('/generate-interp-audio') !== -1) generateCalls++;
+    });
+    // The regeneration itself also resolves to a dead URL — proving the
+    // one-shot bound holds even when the fallback ALSO fails, rather than
+    // retrying forever.
+    await page.route('**/.netlify/functions/generate-interp-audio', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/kokoro/american-english:test-req-2' }) });
+    });
+    await page.route('**/.netlify/functions/interp-audio-status*', function (route) {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'done',
+          audioUrl: baseUrl + '/still-dead-audio-x7q4.mp3', // also 404s
+          audioDurationMs: 1400,
+          captions: [],
+          captionsLevel: 'word'
+        })
+      });
+    });
+    await seedResultPageWithPreviewParam(page, 'd-voice-revisit-dead-twice', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio, and its replacement, are both gone.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3',
+          audioDurationMs: 1400,
+          captions: [],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-revisit-dead-twice&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-stage');
+      return el && getComputedStyle(el).display === 'none';
+    }, null, { timeout: 8000 });
+
+    var text = await page.locator('#itp-reading-text').textContent();
+    assert.ok(text && text.length > 0, 'the plain Wave 1 text reading card must still render');
+
+    assert.equal(generateCalls, 1, 'must attempt regeneration exactly once, never loop, even when the regenerated audio ALSO errors');
+  } finally {
+    await context.close();
+  }
+});
