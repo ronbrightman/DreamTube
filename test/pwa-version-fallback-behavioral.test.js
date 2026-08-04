@@ -442,3 +442,63 @@ test('a version.json fetch failure never breaks the page and never forces a relo
     if (context) await context.close();
   }
 });
+
+test('a version change observed by one tab reloads a sibling tab too, via the shared localStorage write', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  // Review finding (round 1, retroactive review of tracker item
+  // for-product-urgent-founder-gets-stale-pa-6dn54z's second-round merge):
+  // LAST_KNOWN_VERSION_KEY is one shared-per-origin localStorage key, but
+  // without js/pwa.js's `storage`-event listener each tab's own "did I
+  // already reload for this" bookkeeping lived only in that tab's
+  // in-memory reloadOnceGuard. With two tabs open across a real deploy,
+  // whichever tab's own check fires first wins the localStorage write and
+  // reloads itself; a sibling tab whose own check never fires (or fires
+  // later and finds previous === version, since the first tab already
+  // wrote it) would otherwise silently stay on stale content forever.
+  // This proves the fix: tab B here never runs its OWN version check at
+  // all -- the only way it can reload is the `storage` event fired by
+  // tab A's write.
+  var deploy = makeDeployRoot({ version: 'v-multitab-old' });
+  var deployServer = null;
+  var context = null;
+  try {
+    deployServer = await staticServer.start({ root: deploy.tmpDir });
+    var deployBaseUrl = deployServer.url;
+
+    context = await browser.newContext();
+    var pageA = await context.newPage();
+    var pageB = await context.newPage();
+    await blockThirdParty(pageA);
+    await blockThirdParty(pageB);
+    await blockServiceWorker(pageA);
+    await blockServiceWorker(pageB);
+    await shrinkStaleThreshold(pageA, 50);
+    await shrinkStaleThreshold(pageB, 50);
+    var username = 'vermultitab' + Math.random().toString(36).slice(2, 8);
+    await seedUser(pageA, username, deployBaseUrl);
+
+    await safeGoto(pageA, deployBaseUrl + '/home.html');
+    await waitForVersionFallbackReady(pageA); // records the baseline, no reload
+    await safeGoto(pageB, deployBaseUrl + '/home.html');
+    await waitForVersionFallbackReady(pageB); // same shared localStorage already has the baseline -- no-op, no reload
+
+    var reloadCounterA = trackReloadAttempts(pageA, deployBaseUrl + '/home.html');
+    var reloadCounterB = trackReloadAttempts(pageB, deployBaseUrl + '/home.html');
+
+    // Simulate a real deploy, then let ONLY tab A resurface past the
+    // (shrunk) stale threshold -- tab B never runs its own check in this
+    // test at all.
+    fs.writeFileSync(deploy.versionPath, JSON.stringify({ version: 'v-multitab-new' }, null, 2) + '\n');
+    await simulateHiddenThenVisible(pageA, 150);
+
+    var callsA = await waitForCount(reloadCounterA, 5000);
+    assert.equal(callsA, 1, 'tab A, whose own check found the mismatch, should reload exactly once');
+
+    var callsB = await waitForCount(reloadCounterB, 5000);
+    assert.equal(callsB, 1, 'tab B, which never ran its own version check, must still reload once via tab A\'s localStorage write -- otherwise it silently stays on stale content indefinitely (the exact gap this test guards against)');
+  } finally {
+    if (context) await context.close();
+    if (deployServer) await deployServer.close();
+    fs.rmSync(deploy.tmpDir, { recursive: true, force: true });
+  }
+});
