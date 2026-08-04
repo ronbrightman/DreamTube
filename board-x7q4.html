@@ -21,18 +21,17 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-04 14:27 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-04 14:38 IDT</div>
 
-<h2 class="ron">🔴 Waiting on RON — 3</h2>
-
-
+<h2 class="ron">🔴 Waiting on RON — 2</h2>
 
 
 
 
 
-<details class="ron"><summary>Dodo webhook log: one screenshot from you <span class="tag p0">P0 · money</span></summary><div class="body">The purchase-webhook root cause (your $0.99 that never completed) is stuck — Product can't see Dodo's side of the story.
-<div class="do"><b>Do:</b> log into your Dodo Payments dashboard → find the webhooks / events / logs section → locate the entries around your $0.99 charge (Aug 2–3) → screenshot what it shows (delivered? failed? which URL?) and paste it here. One screenshot likely closes the whole webhook mystery. (I'm not naming exact menu labels on purpose — their console changes; if you can't find it, screenshot whatever you do see and I'll guide from there.)</div></div></details>
+
+
+
 
 
 
@@ -74,7 +73,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <details class="p0"><summary>Dream-vanish: audit found 37 lost jobs, 20 accounts <span class="tag p0">P0 · your sweep, 22:23</span></summary><div class="body">You ran the sweep — NOT clean: 37 charged jobs with no surviving dream across 20 accounts since Aug 1 (99 jobs total). Product is now (1) separating real video-dream losses from image jobs that may lack records by design, (2) checking how many the already-shipped retry fix heals on the user's next visit, (3) quiet-refunding the genuine losses per your pattern. Closes on the corrected count + refund report.</div></details>
 
-<details class="p0"><summary>Purchase webhook — completions never land <span class="tag p0">P0 · money</span></summary><div class="body">Your $0.99 was charged, no completion callback arrived (suspected secret/URL mismatch from Saturday's rotation). Your 300 tokens were granted manually (balance 1520). Shop stays un-announced until a purchase completes end-to-end on its own.</div></details>
+<details class="p0"><summary>Purchase webhook: your evidence broke it open <span class="tag p0">P0 · diagnosing our side</span></summary><div class="body">Your Dodo paste proves the payment succeeded with all our metadata intact — so the failure is our webhook receiving/processing (top suspect: Saturday's secret rotation making us silently reject deliveries). Product now root-causes, credits your 500-token pack exactly once, and proves the fix with a fresh end-to-end purchase. Nothing more needed from you.</div></details>
 
 
 
