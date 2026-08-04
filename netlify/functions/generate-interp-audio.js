@@ -74,7 +74,7 @@ var FAL_API_BASE = 'https://queue.fal.run';
 var FAL_SYNC_BASE = 'https://fal.run'; // synchronous execution — no scheduler, measured 1.3-1.4s for kokoro (probe 2026-08-04)
 var FAL_MODEL = process.env.FAL_MODEL_INTERP_TTS || 'fal-ai/kokoro/american-english';
 var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // same model interp-audio-status.js aligns captions with
-var SYNC_TTS_BUDGET_MS = 12000;    // ~8x the measured sync latency; past this, the queue fallback is the better bet
+var SYNC_TTS_BUDGET_MS = 18000;    // real readings are 500-900 chars -> sync TTS can take 10-15s (founder hit the 12s abort on his first real-length reading, 08-04); 18s + capped whisper stays under Netlify's 26s ceiling
 var SYNC_WHISPER_BUDGET_MS = 3500; // captions only — a blown budget degrades to sentence-level, never delays the voice (was 8000; live check 08-04 showed whisper eating the whole budget while the founder waits — the voice's own start time outranks word-level captions)
 var READING_SPEED = 0.8; // founder-approved Option D pace (2026-08-02), same for every persona
 
@@ -136,6 +136,7 @@ exports.handler = async function (event) {
   // an enhancement, never worth delaying the voice for (spec §4's own
   // degrade-to-sentence rule) — a blown whisper budget ships the audio
   // with captionsLevel:'sentence' immediately.
+  var handlerT0 = Date.now();
   var ttsBody = JSON.stringify({ prompt: text, voice: persona.voiceId, speed: READING_SPEED });
   var authHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Key ' + falKey };
 
@@ -153,9 +154,13 @@ exports.handler = async function (event) {
 
   if (syncAudioUrl) {
     var captions = null;
+    // Skip whisper entirely when a long TTS already ate most of the wall
+    // clock — the 26s function ceiling outranks word-level captions.
+    var whisperBudget = (Date.now() - handlerT0) > 11000 ? 0 : SYNC_WHISPER_BUDGET_MS;
     try {
+      if (!whisperBudget) throw new Error('skip_whisper_budget_spent');
       var wCtl = new AbortController();
-      var wTimer = setTimeout(function () { wCtl.abort(); }, SYNC_WHISPER_BUDGET_MS);
+      var wTimer = setTimeout(function () { wCtl.abort(); }, whisperBudget);
       var wRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL_WHISPER, {
         method: 'POST', headers: authHeaders,
         body: JSON.stringify({ audio_url: syncAudioUrl, task: 'transcribe', chunk_level: 'word' }),
