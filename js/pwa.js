@@ -405,6 +405,130 @@ window.PwaInstall = (function () {
     attempt();
   }
 
+  // ==========================================================================
+  // Second, SW-lifecycle-INDEPENDENT safety net (further round of tracker
+  // item for-product-urgent-founder-gets-stale-pa-6dn54z, 2026-08-04). The
+  // CACHE_VERSION auto-stamping fix above is confirmed live and correct on
+  // both production origins (verified via live curl against dreamtube1.
+  // netlify.app and dreamtube.life immediately before this was written), but
+  // it only ever reaches a DEVICE that already has an old service worker
+  // registered from before that fix existed if the browser's own
+  // `registration.update()` byte-comparison check succeeds at least once —
+  // and that check is specifically unreliable in Safari/WKWebView, the
+  // founder's actual real-world browsing context (iOS Safari, Facebook/
+  // Instagram in-app webviews). So the entire recovery path above depends on
+  // the very mechanism that's known to be flaky there. This is a second,
+  // completely independent layer that never touches the service worker at
+  // all: a plain page-level fetch of /version.json (already written at
+  // build time by scripts/generate-version.js — see that file), compared
+  // against the last version this exact browser saw, stored in localStorage.
+  // A genuine mismatch reuses reloadWhenSafe() above verbatim — same
+  // one-shot guard, same typing/recording busy check — rather than a second,
+  // weaker reload path that could stomp a draft or an in-progress recording.
+  //
+  // Runs (1) once immediately on this page load, and (2) reusing the exact
+  // same hiddenStaleThresholdMs()-gated visibilitychange pattern
+  // registerServiceWorker() already uses for its own hidden-tab check below
+  // — deliberately the SAME threshold/timing scheme, not a second one, per
+  // this fix's own brief. This listener is attached unconditionally,
+  // independent of whether navigator.serviceWorker even exists or
+  // registration succeeds, which is the whole point: it must keep working
+  // even when the service worker layer is completely broken or absent.
+  // ==========================================================================
+
+  /** localStorage key holding the last version.json "version" string this browser has observed — same dreamtube_*_v1 naming convention js/store.js's own keys use (see e.g. LIKES_SEEN_KEY, PERSIST_ASKED_KEY). */
+  var LAST_KNOWN_VERSION_KEY = 'dreamtube_last_known_version_v1';
+
+  /**
+   * Compares `version` (a freshly-fetched version.json "version" string)
+   * against whatever this browser last recorded. Three outcomes:
+   *   - Nothing recorded yet (brand new browser/first-ever check here):
+   *     just record it, no reload — matches the existing controllerchange-
+   *     on-first-load guard's own reasoning (a new visitor shouldn't get a
+   *     pointless reload).
+   *   - Recorded value matches: no-op, this browser is already current.
+   *   - Recorded value differs: record the new value, then trigger the
+   *     shared reloadWhenSafe() deferred reload — the real "stale content"
+   *     signal this whole mechanism exists to catch.
+   * Defensive: a localStorage read/write failure (private mode, storage
+   * disabled) is swallowed and treated as "can't safely compare," same
+   * discipline as every other localStorage access in this codebase — never
+   * throws, never breaks the page.
+   */
+  function recordVersionAndReloadIfChanged(version) {
+    if (typeof version !== 'string' || !version) return;
+    var previous;
+    try {
+      previous = localStorage.getItem(LAST_KNOWN_VERSION_KEY);
+    } catch (e) {
+      return; // can't safely read -- don't guess, don't reload
+    }
+    if (previous === version) return; // already current, nothing to do
+    try {
+      localStorage.setItem(LAST_KNOWN_VERSION_KEY, version);
+    } catch (e) {
+      return; // can't safely record the new value -- skip the reload too, rather than risk reloading every single check from here on with nothing ever successfully recorded
+    }
+    if (previous === null) return; // first-ever check for this browser -- just recorded a baseline, no reload
+    reloadWhenSafe(); // a real, later mismatch -- the actual stale-content signal
+  }
+
+  /**
+   * Fetches version.json fresh (cache: 'no-store', same as admin.html's and
+   * media-library-x7q4.html's existing version-line readers — established
+   * precedent in this codebase, not a new pattern) and hands the result to
+   * recordVersionAndReloadIfChanged(). Best-effort everywhere: a failed
+   * fetch, a non-ok response, or malformed JSON all resolve quietly with no
+   * reload and no error thrown — matches this file's own registerServiceWorker()
+   * try/catch discipline for every other analytics/PWA-adjacent call.
+   * Returns a Promise that always resolves (never rejects) once settled, so
+   * callers (and tests) can await "this check has finished" deterministically.
+   */
+  function checkVersionFallback() {
+    try {
+      return fetch('/version.json', { cache: 'no-store' }).then(function (res) {
+        return res.ok ? res.json() : null;
+      }).then(function (data) {
+        if (data && typeof data.version === 'string') recordVersionAndReloadIfChanged(data.version);
+      }).catch(function () { /* fetch failure, non-JSON body, etc -- must never break the page */ });
+    } catch (e) {
+      return Promise.resolve(); // synchronous throw (e.g. fetch unavailable at all) -- same defensive discipline
+    }
+  }
+
+  /**
+   * Resolves once the page-load-time checkVersionFallback() call below has
+   * settled — exposed purely so test/pwa-version-fallback-behavioral.test.js
+   * can await a real, precise readiness signal instead of guessing at a
+   * fixed delay, same reasoning as swListenersReady above. Never awaited by
+   * any real page; harmless to leave in place for production loads.
+   */
+  var versionFallbackReadyResolve = null;
+  var versionFallbackReady = new Promise(function (resolve) { versionFallbackReadyResolve = resolve; });
+
+  function initVersionFallback() {
+    checkVersionFallback().then(versionFallbackReadyResolve);
+
+    // Same hiddenStaleThresholdMs()-gated visibilitychange pattern as
+    // registerServiceWorker()'s own hidden-tab check — separate bookkeeping
+    // (this listener is attached unconditionally, independent of whether
+    // that other one ever gets attached at all) but the SAME threshold
+    // function/override, per this fix's own brief not to invent a second
+    // timing scheme.
+    var hiddenAtMs = null;
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtMs = Date.now();
+        return;
+      }
+      if (document.visibilityState !== 'visible') return;
+      if (hiddenAtMs !== null && (Date.now() - hiddenAtMs) >= hiddenStaleThresholdMs()) {
+        checkVersionFallback();
+      }
+      hiddenAtMs = null;
+    });
+  }
+
   /**
    * Resolves once registerServiceWorker()'s own registration.then() below
    * has finished attaching its controllerchange/visibilitychange listeners
@@ -504,6 +628,7 @@ window.PwaInstall = (function () {
   }
 
   registerServiceWorker();
+  initVersionFallback();
 
   // Real, verified "opened from the home screen" signal — fires at most
   // once per account (markInstallVerified is itself idempotent) on
@@ -522,6 +647,7 @@ window.PwaInstall = (function () {
     iosBrowserKind: iosBrowserKind,
     registerBusyCheck: registerBusyCheck,
     recheckBusy: recheckBusy,
-    __swListenersReady: swListenersReady
+    __swListenersReady: swListenersReady,
+    __versionFallbackReady: versionFallbackReady
   };
 })();
