@@ -139,6 +139,17 @@ proceed without stopping to ask, as long as it stays on the branch.
   ordinary feature branch unless the change is specifically about one of
   the flows it already covers (see that directory's own `README.md`);
   ordinary new coverage belongs in `test/*.test.js` as usual.
+- **REAL-MODE verification gate** (see `AGENT_POLICY.md`'s section of
+  the same name) — for a change that introduces or alters a real
+  external-service call (fal.ai generation, TTS, email send, payment) or
+  a mobile-specific behavior (autoplay, gesture-unlock, webview quirks),
+  exercise it at least once with mock mode off, against a real deployed
+  asset, under the relevant real-world constraint, before reporting the
+  work done — mocked/unit tests passing is not enough on its own for
+  this class of change. State plainly in your report whether you did
+  this and what you saw; if this sandbox has no way to (no `FAL_KEY`, no
+  real deploy reachable), say that explicitly rather than letting it go
+  unmentioned.
 
 ## Reading and writing tracker.html
 

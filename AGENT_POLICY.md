@@ -175,6 +175,39 @@ touching it on every commit regardless of relevance.
 `docs/TEST_REGISTRY.md` update is a legitimate review finding, the same
 category as a behavioral change with no real test evidence attached.
 
+**REAL-MODE verification gate** — added per tracker item
+`for-product-policy-founder-pace-concern--fzc9gh` (founder pace concern,
+2026-08-04): mock-mode/unit-test coverage passing is not, by itself,
+proof a feature works. Several real bugs this project shipped only
+existed on the production path — kokoro TTS's real queue latency,
+iOS's autoplay-user-gesture requirement, moov-atom placement, a
+preview-flag class of bug — and none of them would ever show up in
+`GENERATION_MOCK_MODE` tests, because the whole point of that mode is
+skipping the real call. The founder found out about all of them by
+hitting them himself on his phone, which is the failure mode this gate
+closes.
+
+**Before a feature is reported done or shown to the founder, it must be
+exercised at least once against real services on a mobile-viewport
+browser** — real function calls with mock mode off for that one run
+(the "Keep generation-testing cost low" section below still applies:
+use the cheapest real call that actually exercises the path, not
+necessarily the full-price default), real deployed assets (not
+`localhost`-only), and iOS-like constraints checked explicitly
+(autoplay requires a real user gesture at minimum). This is on top of,
+not instead of, the existing `docs/TEST_REGISTRY.md`/mocked-test bar
+above — mocked tests stay the fast, cheap, repeatable regression net;
+this gate is the one-time "does the real pipeline actually run"
+check before something is called done.
+
+This is deliberately narrower than the founder's own walkthroughs: his
+time is for taste and product judgment, never for discovering that a
+pipeline doesn't run at all. It complements
+`both-domain-smoke.js`/the reliability net's nightly real-chain probes
+(`netlify.toml`'s `[functions."both-domain-smoke"]`), which catch drift
+*after* something ships — this gate is the pre-ship check, not a
+replacement for the post-ship one.
+
 ## Post-launch: the ab-test-creator loop
 
 Once the onboarding funnel is live and PostHog experiments are running,
