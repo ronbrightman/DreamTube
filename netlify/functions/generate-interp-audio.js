@@ -76,7 +76,7 @@ var FAL_MODEL = process.env.FAL_MODEL_INTERP_TTS || 'fal-ai/kokoro/american-engl
 var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // same model interp-audio-status.js aligns captions with
 var SYNC_TTS_BUDGET_MS = 18000;    // real readings are 500-900 chars -> sync TTS can take 10-15s (founder hit the 12s abort on his first real-length reading, 08-04); 18s + capped whisper stays under Netlify's 26s ceiling
 var SYNC_WHISPER_BUDGET_MS = 3500; // captions only — a blown budget degrades to sentence-level, never delays the voice (was 8000; live check 08-04 showed whisper eating the whole budget while the founder waits — the voice's own start time outranks word-level captions)
-var READING_SPEED = 0.8; // founder-approved Option D pace (2026-08-02), same for every persona
+var READING_SPEED = 0.9; // founder-adjusted 08-04 ("slightly too slow" at 0.8 on his full walk); same for every persona
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above and generate-video.js's own mockOperationName for the identical convention. */
 function mockOperationName() {
