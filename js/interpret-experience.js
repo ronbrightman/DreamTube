@@ -113,6 +113,13 @@
     }
   }
 
+  // Persist the ?sagevoice=1 grant at load time, not just when a reading
+  // renders — the founder's preview link lands on home.html, where no
+  // reading ever renders; without this eager call the param was read by
+  // nobody, nothing was stored, and the preview "didn't work" from the
+  // link (founder-hit regression, 2026-08-04 morning).
+  isVoicePreviewEnabled();
+
   /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
     return !!(persona && persona.introClipUrl && persona.introVoiceUrl) && !introAlreadyShown;
