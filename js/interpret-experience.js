@@ -362,7 +362,23 @@
     if (vs.capEl.textContent !== text) vs.capEl.textContent = text;
   }
 
-  /** Kicks off this reading's TTS+captions generation in the background — called immediately when the voice stage mounts, in parallel with the intro clip, so audio is ready (or close to it) by the time a real ~7s intro finishes playing (spec's own reasoning). Soft-fails (spec: "reading falls back to text-only, no audio control shown at all") — a failure here tears down the whole voice stage rather than leaving it half-built with nothing to play. */
+  /**
+   * Kicks off this reading's TTS+captions generation in the background —
+   * called immediately when the voice stage mounts for a reading with NO
+   * usable persisted audio yet (a brand-new reading, or a saved reading
+   * whose audio has just been found dead — see beginAudioPlayback's own
+   * 'error' listener, tracker item
+   * for-product-defensive-revisited-readings-dta2ae), in parallel with the
+   * intro clip when there is one, so audio is ready (or close to it) by
+   * the time a real ~7s intro finishes playing (spec's own reasoning).
+   * Soft-fails (spec: "reading falls back to text-only, no audio control
+   * shown at all") — a failure here tears down the whole voice stage
+   * rather than leaving it half-built with nothing to play. Writes the
+   * result onto the SAME `dream.interpretations[personaKey]` record
+   * (via DreamStore.generateInterpAudio) whether this is the reading's
+   * first-ever audio or a regeneration replacing a dead saved URL — a
+   * later revisit picks up whatever landed here most recently.
+   */
   function requestVoiceAudio(vs, persona) {
     var myGen = gen, myDreamId = vs.dreamId, myPersonaKey = vs.personaKey;
     window.DreamStore.generateInterpAudio(vs.dreamId, vs.personaKey, vs.readingText).then(function (result) {
@@ -526,6 +542,43 @@
       setTapOverlayLabel(vs, tapOverlayLabel(persona.name, 'replay'));
       showTapOverlay(vs); // reused as the "replay" affordance post-completion
     });
+    // Tracker item for-product-defensive-revisited-readings-dta2ae —
+    // the real `error` event (fires on a genuinely dead/expired/
+    // unreachable src, same signal class result.html's own
+    // `video.addEventListener('error', ...)` retry-once convention
+    // already reacts to for the dream video itself) ONLY triggers a
+    // regenerate-and-swap-in fallback on the REVISIT-WITH-SAVED-AUDIO
+    // path (`vs.audioSource === 'saved'` — a persisted reading's
+    // audioUrl, fal-hosted with no guaranteed lifetime, going stale
+    // between visits). A brand-new reading's own freshly-minted URL
+    // erroring is a much rarer, out-of-scope case for this fix (it was
+    // just returned seconds ago) and is left exactly as before —
+    // silently not playing, no regression either way.
+    //
+    // Bounded to exactly one regenerate attempt per reading-open
+    // (`vs.regenerateAttempted`, same one-shot spirit as result.html's
+    // own `video.dataset.retried`): if the REGENERATED audio somehow
+    // errors too, this degrades to the existing hard-TTS-failure path
+    // (teardownVoiceStageOnFailure — voice stage hides, Wave 1's plain
+    // text card underneath is unaffected) rather than looping forever.
+    audio.addEventListener('error', function () {
+      if (voiceState !== vs) return;
+      if (vs.audioSource !== 'saved') return;
+      if (vs.regenerateAttempted) {
+        trackLocal('interp_voice_tts_failed', { persona: persona.key, error_code: 'regenerated_audio_error' });
+        teardownVoiceStageOnFailure(vs);
+        return;
+      }
+      vs.regenerateAttempted = true;
+      trackLocal('interp_voice_saved_audio_expired', { persona: persona.key });
+      try { audio.pause(); } catch (e) { /* best-effort — it's already erroring */ }
+      hideTapOverlay(vs); // no stale "Hear him read"/"Resume" affordance while a fresh track is being fetched
+      vs.audioReady = false;
+      vs.audioUrl = null;
+      vs.phase = 'loading'; // reuses enterReadingPhase's own loading sub-state UI language
+      showPreparingCaption(vs, persona); // same "preparing" copy a brand-new reading shows — this must look like the reading is getting itself ready again, not like anything broke
+      requestVoiceAudio(vs, persona); // the SAME regeneration flow a fresh reading already uses; its own .then re-enters beginAudioPlayback (vs.phase === 'loading'), its own .catch falls to teardownVoiceStageOnFailure if the regenerate call itself fails outright
+    });
     attemptPlay(audio).then(function (ok) {
       if (voiceState !== vs) return;
       if (ok) {
@@ -572,13 +625,37 @@
   /**
    * Mounts the voice stage for the CURRENT reading (called from
    * renderReading below only when the active persona has a `voiceId` and
-   * the founder-preview gate is on). Kicks off audio generation
-   * immediately (in parallel with the intro, if there is one) and starts
-   * whichever phase applies — intro-first (persona has an unshown
-   * introClipUrl) or straight to the reading phase.
+   * the founder-preview gate is on). Starts whichever phase applies —
+   * intro-first (persona has an unshown introClipUrl) or straight to the
+   * reading phase.
+   *
+   * Audio sourcing (tracker item
+   * for-product-defensive-revisited-readings-dta2ae): a REVISIT of a
+   * dream+persona that already has a persisted `audioUrl`
+   * (js/store.js's getInterpretations — written once by a prior
+   * generateInterpAudio call and never expiring locally) reuses it
+   * directly, `audioReady:true` from the moment `vs` is built — no new
+   * generation call at all. This used to unconditionally call
+   * requestVoiceAudio on every single mount regardless of whether audio
+   * already existed for this reading, silently regenerating (and
+   * re-spending) a fresh TTS track on every revisit, and meant any
+   * transient failure on THAT regeneration (rate limit, network blip)
+   * tore down the whole voice stage even though a perfectly good saved
+   * reading already existed — a very plausible account of exactly the
+   * "text-only, no voice" symptom this tracker item was opened over. Only
+   * a genuinely NEW reading (no persisted audioUrl yet) still calls
+   * requestVoiceAudio here, in parallel with the intro clip when there is
+   * one, same as before. `vs.audioSource` records which path seeded this
+   * `vs` — beginAudioPlayback's own 'error' listener reads it to decide
+   * whether a saved URL going stale should trigger a real regenerate.
    */
   function setupVoiceStage(persona) {
     resetVoiceState();
+    var savedEntry = null;
+    var existingReadings = window.DreamStore.getInterpretations(session.dreamId);
+    if (existingReadings && existingReadings[session.personaKey] && existingReadings[session.personaKey].audioUrl) {
+      savedEntry = existingReadings[session.personaKey];
+    }
     var vs = {
       dreamId: session.dreamId, personaKey: session.personaKey, readingText: session.readingText,
       stageEl: document.getElementById('itp-voice-stage'),
@@ -590,8 +667,15 @@
       tapLabelEl: document.getElementById('itp-voice-tap-label'),
       skipEl: document.getElementById('itp-voice-skip'),
       phase: 'intro', bounceDirection: 1, rafId: null,
-      audioEl: null, audioUrl: null, audioReady: false, audioFailed: false,
-      captions: [], captionsLevel: 'word', audioDurationMs: null,
+      audioEl: null,
+      audioUrl: savedEntry ? savedEntry.audioUrl : null,
+      audioReady: !!savedEntry,
+      audioFailed: false,
+      audioSource: savedEntry ? 'saved' : 'fresh',
+      regenerateAttempted: false, // bounds beginAudioPlayback's own error-driven regenerate to one attempt per reading-open
+      captions: savedEntry ? (savedEntry.captions || []) : [],
+      captionsLevel: savedEntry ? (savedEntry.captionsLevel || 'word') : 'word',
+      audioDurationMs: savedEntry ? (savedEntry.audioDurationMs || null) : null,
       listenStartedAt: null, totalListenedMs: 0, hasCompletedOnce: false,
       // Consumed from `session` (set by onPersonaPicked's real gesture,
       // see createPrimedAudioElement's own doc comment) — grabbed here
@@ -603,7 +687,7 @@
     session.primedAudioEl = null;
     voiceState = vs;
 
-    requestVoiceAudio(vs, persona);
+    if (!savedEntry) requestVoiceAudio(vs, persona);
 
     var introAlreadyShown = window.DreamStore.hasIntroShown(vs.dreamId, vs.personaKey);
     if (shouldShowIntro(persona, introAlreadyShown)) {
