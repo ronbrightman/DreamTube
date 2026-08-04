@@ -67,10 +67,15 @@
 
 var crypto = require('crypto');
 var InterpreterPersonas = require('../../js/interpreter-personas');
+var InterpAudioStatus = require('./interp-audio-status');
 var rateLimit = require('./lib/rate-limit');
 
 var FAL_API_BASE = 'https://queue.fal.run';
+var FAL_SYNC_BASE = 'https://fal.run'; // synchronous execution — no scheduler, measured 1.3-1.4s for kokoro (probe 2026-08-04)
 var FAL_MODEL = process.env.FAL_MODEL_INTERP_TTS || 'fal-ai/kokoro/american-english';
+var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // same model interp-audio-status.js aligns captions with
+var SYNC_TTS_BUDGET_MS = 12000;    // ~8x the measured sync latency; past this, the queue fallback is the better bet
+var SYNC_WHISPER_BUDGET_MS = 8000; // captions only — a blown budget degrades to sentence-level, never delays the voice
 var READING_SPEED = 0.8; // founder-approved Option D pace (2026-08-02), same for every persona
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above and generate-video.js's own mockOperationName for the identical convention. */
@@ -120,20 +125,69 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ operationName: mockOperationName() }) };
   }
 
-  try {
-    var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Key ' + falKey
-      },
-      body: JSON.stringify({
-        prompt: text,
-        voice: persona.voiceId,
-        speed: READING_SPEED
-      })
-    });
+  // ── Sync-first (founder-directed, 2026-08-04, tracker cbdj3d) ──
+  // The queue path measured 30s–35min of pure scheduler wait for a ~1.5s
+  // TTS job (probe: sync fal.run answered in 1317/1427ms wall-clock).
+  // So: call the SYNCHRONOUS endpoint and hand the client a finished
+  // result in one round trip — { done:true, audioUrl, captions… } — and
+  // only fall back to the legacy queue submit (the { operationName }
+  // shape interp-audio-status.js polls) if sync fails or times out.
+  // Whisper word-alignment runs sync too, on a tight budget: captions are
+  // an enhancement, never worth delaying the voice for (spec §4's own
+  // degrade-to-sentence rule) — a blown whisper budget ships the audio
+  // with captionsLevel:'sentence' immediately.
+  var ttsBody = JSON.stringify({ prompt: text, voice: persona.voiceId, speed: READING_SPEED });
+  var authHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Key ' + falKey };
 
+  var syncAudioUrl = null;
+  try {
+    var ttsCtl = new AbortController();
+    var ttsTimer = setTimeout(function () { ttsCtl.abort(); }, SYNC_TTS_BUDGET_MS);
+    var syncRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL, { method: 'POST', headers: authHeaders, body: ttsBody, signal: ttsCtl.signal });
+    clearTimeout(ttsTimer);
+    var syncData = await syncRes.json();
+    if (syncRes.ok && syncData && syncData.audio && syncData.audio.url) {
+      syncAudioUrl = syncData.audio.url;
+    }
+  } catch (e) { /* fall through to the queue path */ }
+
+  if (syncAudioUrl) {
+    var captions = null;
+    try {
+      var wCtl = new AbortController();
+      var wTimer = setTimeout(function () { wCtl.abort(); }, SYNC_WHISPER_BUDGET_MS);
+      var wRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL_WHISPER, {
+        method: 'POST', headers: authHeaders,
+        body: JSON.stringify({ audio_url: syncAudioUrl, task: 'transcribe', chunk_level: 'word' }),
+        signal: wCtl.signal
+      });
+      clearTimeout(wTimer);
+      var wData = await wRes.json();
+      if (wRes.ok) captions = InterpAudioStatus.parseWordChunks(wData);
+    } catch (e) { /* sentence-level fallback below */ }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify(captions ? {
+        done: true,
+        audioUrl: syncAudioUrl,
+        audioDurationMs: captions[captions.length - 1].endMs,
+        captions: captions,
+        captionsLevel: 'word'
+      } : {
+        done: true,
+        audioUrl: syncAudioUrl,
+        audioDurationMs: null,
+        captions: [],
+        captionsLevel: 'sentence',
+        degradedReason: 'E508: caption_alignment_failed'
+      })
+    };
+  }
+
+  // Legacy queue fallback — unchanged contract, polled by interp-audio-status.js.
+  try {
+    var res = await fetch(FAL_API_BASE + '/' + FAL_MODEL, { method: 'POST', headers: authHeaders, body: ttsBody });
     var data = await res.json();
 
     if (!res.ok) {

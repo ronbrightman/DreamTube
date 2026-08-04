@@ -4950,6 +4950,18 @@
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E506: tts_request_failed');
+          // Sync-first path (generate-interp-audio.js, 2026-08-04): the
+          // function now usually returns the FINISHED result in one round
+          // trip — no polling at all, the voice can start immediately.
+          // The { operationName } shape remains the queue-fallback path.
+          if (data.done && data.audioUrl) {
+            return {
+              audioUrl: data.audioUrl,
+              audioDurationMs: typeof data.audioDurationMs === 'number' ? data.audioDurationMs : null,
+              captions: Array.isArray(data.captions) ? data.captions : [],
+              captionsLevel: data.captionsLevel === 'word' ? 'word' : 'sentence'
+            };
+          }
           return pollInterpAudioUntilDone(data.operationName);
         });
       }, function (err) {
