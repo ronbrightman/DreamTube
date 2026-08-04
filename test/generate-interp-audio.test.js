@@ -108,7 +108,7 @@ test('submits to fal-ai/kokoro/american-english with the right voice/speed and r
   assert.match(capturedUrl, /fal-ai\/kokoro\/american-english$/);
   assert.equal(capturedBody.voice, 'am_onyx');
   assert.equal(capturedBody.speed, generateInterpAudio.READING_SPEED);
-  assert.equal(capturedBody.speed, 0.8);
+  assert.equal(capturedBody.speed, 0.9); // founder-adjusted 08-04
   assert.equal(capturedBody.prompt, 'A hopeful reading of your dream, turning it toward the good.');
 });
 
