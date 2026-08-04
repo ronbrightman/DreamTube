@@ -144,6 +144,51 @@ var SCENERY_PLACE_MODIFIERS = {
 };
 
 /**
+ * Style-integrity guardrail — a clause asserting that the chosen style is
+ * an AESTHETIC choice only (rendering, palette, line work, atmosphere) and
+ * must never change who/what the dreamer IS. Placed as the second clause
+ * in the prompt, immediately after the caption and before every other
+ * clause (characters/camera/scenery/style itself) — deliberately early
+ * and prominent rather than tacked on at the end, since these models
+ * weight earlier instructions more heavily in practice, and this is
+ * exactly what the style modifier further down would otherwise have
+ * unchecked license to override.
+ *
+ * Root cause this addresses (tracker item
+ * for-product-founder-ask-08-04-style-must-ezz8uf): the founder's caption
+ * "I am running back and forth to bring some important things for my
+ * family" with style Anime produced a video where the dreamer himself was
+ * rendered AS a flying dragon. Nothing in the prompt previously told the
+ * model that a strongly stylized style descriptor (e.g. "vibrant Japanese
+ * anime animation style") governs rendering only — so the model had
+ * latitude to reinterpret the dreamer's species/identity along with the
+ * art style. Applies to every style (not just Anime/Cartoon — the
+ * founder's ask explicitly included sweeping non-stylized styles too),
+ * phrased generically enough to read naturally whether the style is
+ * strongly transformative (Anime, Cartoon) or not (Cinematic, Realistic).
+ *
+ * Deliberately ends with "...unless the dream itself explicitly describes
+ * a transformation" — this constrains the STYLE CHOICE only, not genuine
+ * dream content. buildPrompt's philosophy is to narrate what the dream
+ * text already says; if a dream's own caption literally describes the
+ * dreamer turning into something else, that must still come through. This
+ * clause only closes the loophole where the style modifier alone was
+ * introducing a transformation the dream text never asked for.
+ *
+ * Complements, rather than duplicates or contradicts, the existing
+ * self-character text below (charTextParts/photoSelf) — that logic
+ * establishes exactly who "the dreamer" is (optionally tied to a
+ * reference photo); this clause separately establishes that whoever that
+ * is, they stay human and stay themselves regardless of style.
+ */
+function styleIntegrityClause(style) {
+  return 'the dreamer remains a real human being throughout, doing exactly what the dream describes — the ' +
+    style + ' treatment applied below governs only the visual rendering, color palette, line work, and ' +
+    'atmosphere, and must never change the subject\'s species, identity, or actions, unless the dream itself ' +
+    'explicitly describes a transformation';
+}
+
+/**
  * Combines the plain caption with style + character + camera + scenery
  * enrichment into the prompt actually sent to the video model. This is
  * provider-only enrichment — the caption the UI shows the user is never
@@ -159,6 +204,10 @@ var SCENERY_PLACE_MODIFIERS = {
  * self character (no description) still gets just the plain pointer line,
  * unchanged from before.
  *
+ * The second clause of the prompt is always styleIntegrityClause(style) —
+ * see that function's own doc comment for why it's there and why it's
+ * placed this early.
+ *
  * musicStyle (optional 7th arg) — see MUSIC_STYLE_MODIFIERS above; the
  * caller (the handler below) only ever passes one when the request's
  * final, already-resolved generateAudio is true, never based on the raw
@@ -166,7 +215,7 @@ var SCENERY_PLACE_MODIFIERS = {
  */
 function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace, musicStyle) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
-  var parts = [caption];
+  var parts = [caption, styleIntegrityClause(style)];
 
   var photoSelf = (characters || []).filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
   var charTextParts = (characters || [])
