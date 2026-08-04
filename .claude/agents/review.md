@@ -64,6 +64,19 @@ spec it was supposed to implement, check three things:
    touched this file is a legitimate finding — the same category as a
    behavioral change with no real test evidence attached, just about the
    written record of coverage rather than the coverage itself.
+5. **REAL-MODE verification** (see `AGENT_POLICY.md`'s "REAL-MODE
+   verification gate" section) — for a change that introduces or alters
+   a real external-service call (fal.ai generation, TTS, email send,
+   payment) or a mobile-specific behavior (autoplay, gesture-unlock,
+   webview quirks), check that the build's own report states it was
+   exercised at least once with mock mode off, on a real deployed asset,
+   under the relevant real-world constraint (e.g. a mobile-viewport
+   browser for autoplay-dependent code) — not just that mocked/unit tests
+   pass. If this sandbox genuinely has no way to do that (no `FAL_KEY`,
+   no real deploy to hit), that's an acceptable, honestly-disclosed gap —
+   but it must be disclosed, not silently absent. Passing mocked tests
+   alone is not sufficient evidence for a feature whose failure mode this
+   codebase has repeatedly seen live only on the real path.
 
 ## This codebase's actual gotchas — check for these specifically
 
