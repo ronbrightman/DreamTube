@@ -166,6 +166,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .profile-name{ font-size:16px; font-weight:800; color:var(--home-ink); margin-top:10px; }
 .profile-stats{ font-size:12.5px; color:var(--home-soft); margin-top:7px; }
 .profile-stats b{ color:var(--home-ink); font-weight:800; }
+/* PUBLIC/PRIVATE toggle (Social Layer v2 slice 1) — night skin over the
+   shared .char-mode-row/.char-mode-btn rules (css/styles.css), plus a
+   real 44px tap target (that shared component's own 9px-padding default
+   is a few px short — every OTHER use of it sits inside a tall sheet
+   with room to spare, but this one is a real top-level nav control). */
+.profile-visibility-row{ width:100%; max-width:220px; margin:12px auto 0; }
+.profile-visibility-row .char-mode-btn{
+  min-height:44px; display:flex; align-items:center; justify-content:center;
+  background:rgba(12,10,26,.62); border-color:rgba(157,144,255,.4); color:var(--home-soft);
+}
+.profile-visibility-row .char-mode-btn.active{ background:#fff; color:#000; border-color:#fff; }
 #profile-token-slot{ margin-top:12px; }
 /* Night skin over js/purchase-sheet.js's structural .token-chip-plain
    rules (see css/styles.css) — colors only. */
@@ -275,7 +286,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
       </div>
       <div class="profile-name" id="profile-handle" title="Edit your profile">you</div>
-      <div class="profile-stats"><b id="stat-created">0</b> created · <b id="stat-shared">0</b> shared</div>
+      <div class="profile-stats"><b id="stat-created">0</b> created on this device · <b id="stat-shared">0</b> published</div>
+      <!-- PUBLIC/PRIVATE segmented toggle (Social Layer v2 slice 1, "state C"
+           in docs/SOCIAL_LAYER_V2_DESIGN.md): this IS the private view — the
+           toggle is a pure navigation control, not a stored preference.
+           PRIVATE stays highlighted/inert here (profile.html unchanged);
+           tapping PUBLIC navigates to u.html?handle=<me>, the exact same
+           page a visitor sees, which itself adds this same toggle (PUBLIC
+           highlighted there) plus the Share button/counts once
+           viewer===handle — see u.html's own script for that half. Reuses
+           the existing .char-mode-row/.char-mode-btn language per the
+           design doc rather than inventing a new toggle component. -->
+      <div class="char-mode-row profile-visibility-row" id="profile-visibility-row">
+        <div class="char-mode-btn active" data-visibility="private">Private</div>
+        <div class="char-mode-btn" data-visibility="public">Public</div>
+      </div>
       <!-- PLAIN balance chip — js/purchase-sheet.js's mountBalanceChip
            `plain:true` variant. Balance + a link to the shop, and nothing
            else: no claim state, no pulsing, no auto-opening claim sheet.
@@ -676,6 +701,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         <span class="char-photo-remove" id="identity-photo-remove" style="display:none;">Remove photo</span>
       </div>
 
+      <!-- Public-profile bio (Social Layer v2 slice 1) — plain text, IG
+           parity length cap (150 chars, mirrored server-side by
+           sync-profile.js's own BIO_MAX_CHARS), dir=auto for right-to-left
+           input same as every other free-text field in this app. Shown on
+           u.html under the identity block; never used in video-generation
+           prompts (unlike identity-desc-input above), so it's stored
+           separately (DreamStore.getMyBio/setMyBio), not folded into the
+           Me character record. -->
+      <textarea class="field" id="identity-bio-input" placeholder="Bio (optional) — shown on your public profile" dir="auto" maxlength="150" style="min-height:64px;"></textarea>
+      <div class="auth-sub" id="identity-bio-counter" style="margin:-8px 0 12px; text-align:right;">0/150</div>
+
       <div class="err-text" id="identity-error"></div>
       <button class="btn btn-primary btn-block" id="identity-save-btn">Save</button>
       <div style="height:10px;"></div>
@@ -810,6 +846,37 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 
   var user = DreamStore.getCurrentUser();
 
+  // ===== PUBLIC/PRIVATE visibility toggle (Social Layer v2 slice 1) =====
+  // Pure navigation — see the markup comment above #profile-visibility-row
+  // for the full "state C" story. PRIVATE is already the state this page
+  // IS, so tapping it is a no-op; PUBLIC navigates to the exact page a
+  // visitor would see for this same account.
+  document.getElementById('profile-visibility-row').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-visibility]');
+    if(!btn || btn.dataset.visibility !== 'public' || !user) return;
+    location.href = 'u.html?handle=' + encodeURIComponent(DreamStore.displayHandle(user.handle));
+  });
+
+  // "N published" (server truth, via get-profile.js) — see the markup
+  // comment above .profile-stats for why this is deliberately a DIFFERENT
+  // number from "M created on this device" (stat-created, below in
+  // render()): this device might not have created every dream this
+  // account has ever published (a different device could have), and this
+  // device might have created dreams never published anywhere. Best-effort
+  // — a failed fetch just leaves the immediate local-shared-count render
+  // from render() below in place, never a broken page.
+  function refreshPublishedCountFromServer(){
+    if(!user) return;
+    fetch('/.netlify/functions/get-profile?handle=' + encodeURIComponent(DreamStore.displayHandle(user.handle)))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(data && typeof data.publishedCount === 'number'){
+          document.getElementById('stat-shared').textContent = data.publishedCount;
+        }
+      })
+      .catch(function(){ /* leave the local-shared-count render in place */ });
+  }
+
   // ===== Identity (the "Me" character) =====
   // Profile's name+photo are NOT a separate identity field — they ARE
   // whichever character DreamStore.getCharacters() marks isSelf, the same
@@ -890,6 +957,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       removeLink.style.display = 'none';
     }
   }
+  // Social Layer v2 slice 1 — plain char-count readout, same 150 cap
+  // DreamStore.setMyBio/sync-profile.js both enforce (maxlength=150 on the
+  // textarea itself already stops typing past the cap; this just makes
+  // the remaining room visible, matching this app's other counted fields
+  // e.g. dream text / support message).
+  function updateBioCounter(){
+    var len = document.getElementById('identity-bio-input').value.length;
+    document.getElementById('identity-bio-counter').textContent = len + '/150';
+  }
+  document.getElementById('identity-bio-input').addEventListener('input', updateBioCounter);
+
   function setIdentitySubMode(next){
     identitySubMode = next;
     Array.prototype.forEach.call(document.querySelectorAll('#identity-mode-row .char-mode-btn'), function(b){
@@ -949,6 +1027,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     document.getElementById('identity-name-input').value = me ? (me.name || '') : '';
     document.getElementById('identity-desc-input').value = me ? (me.description || '') : '';
     document.getElementById('identity-error').textContent = '';
+    // Social Layer v2 slice 1 — bio is stored separately from the Me
+    // character (see DreamStore.getMyBio's own doc comment), so it's
+    // prefilled independently of the `me` lookup above.
+    var bioInput = document.getElementById('identity-bio-input');
+    bioInput.value = DreamStore.getMyBio();
+    updateBioCounter();
     identityPendingPhotoDataUrl = (me && me.photoDataUrl) ? me.photoDataUrl : null;
     setIdentitySubMode(identityPendingPhotoDataUrl ? 'photo' : 'describe');
     // Unconditionally reset the Save button to its ready state on every
@@ -1028,8 +1112,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         errorEl.textContent = result.error;
         return;
       }
+      // Social Layer v2 slice 1 — bio is validated/stored separately from
+      // the character record above (DreamStore.setMyBio's own local cap
+      // check mirrors sync-profile.js's server-side one). Checked AFTER
+      // saveCharacter succeeds so a name/photo change is never lost just
+      // because the bio alone was too long — surfaces its own error and
+      // leaves the rest of the save applied, same "each field validated
+      // independently" posture the rest of this sheet already has.
+      var bioResult = DreamStore.setMyBio(document.getElementById('identity-bio-input').value);
+      if(!bioResult.ok){
+        errorEl.textContent = bioResult.error;
+        renderIdentity();
+        return;
+      }
       closeIdentitySheet();
       renderIdentity();
+      // Best-effort push of the freshly-saved name/photo/bio to the public
+      // profile record (netlify/functions/sync-profile.js) — see
+      // DreamStore.syncProfileToServer's own doc comment for why this is
+      // the other of its two call sites (alongside first publish).
+      DreamStore.syncProfileToServer();
       showToast('Profile updated');
     }
 
@@ -1152,6 +1254,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     DreamCards.observeVideos();
   }
   render();
+  refreshPublishedCountFromServer();
 
   // ===== New-likes notification (tracker item idea-notify-likes, v1) =====
   // The only page-load fetch anywhere in this feature — see
