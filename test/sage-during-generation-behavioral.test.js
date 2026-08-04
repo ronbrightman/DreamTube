@@ -437,3 +437,194 @@ test('the reading started during generation survives the video landing: it mount
     await context.close();
   }
 });
+
+// ============================================================================
+// 4. The reading is PERSISTED even when its own response lands AFTER the video
+// ============================================================================
+//
+// The three tests above all sequence the race one way only: every
+// interpret-dream / generate-interp-audio response resolves BEFORE the video
+// lands. That ordering never exercises the actual hazard this feature
+// creates, and is exactly why the bug below shipped undetected.
+//
+// The hazard: a reading (or its TTS track) is requested against the synthetic
+// `pending:<operationName>` id, and the video finishes generating WHILE that
+// request is still in flight. finalizeDream clears pendingJob in the same
+// tick it creates the real dream, so by the time the response arrives the
+// pending id no longer resolves to anything at all. The UI-session half of
+// the swap (notifyDreamResolved/stillTargetsDream) tolerates this and still
+// renders the reading — which is precisely what makes the failure invisible:
+// it LOOKS fine in the live session, and is simply never written to disk.
+//
+// So these two tests hold the response open past the moment the video lands,
+// then release it, and assert on the DURABLE record after a reload — not on
+// what the still-live overlay happens to be showing.
+
+/**
+ * Like mockInterpretDream, but HOLDS the `mode:"reading"` response open
+ * instead of fulfilling it. Returns a handle whose `.release(text)` fulfils
+ * it on demand, and whose `.captured()` reports whether the request has
+ * actually reached the route yet.
+ */
+function mockInterpretDreamWithHeldReading(page) {
+  var held = null;
+  page.route('**/.netlify/functions/interpret-dream', function (route) {
+    var body = JSON.parse(route.request().postData() || '{}');
+    if (body.mode === 'reading') { held = route; return; }
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ questions: [] }) });
+  });
+  return {
+    captured: function () { return !!held; },
+    release: function (text) {
+      return held.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interpretation: text }) });
+    }
+  };
+}
+
+/** Waits for the in-flight generation to have actually landed in the store -- pendingJob cleared and the real dream written -- and resolves with the real dream's id. This is the exact moment the `pending:` id goes dead. */
+function waitForRealDreamId(page) {
+  return page.waitForFunction(function () {
+    var raw = localStorage.getItem('dreamtube_state_v1');
+    if (!raw) return null;
+    var s = JSON.parse(raw);
+    if (s.pendingJob) return null;
+    var d = (s.dreams || []).filter(function (x) { return x.videoUrl || x.imageUrl; })[0];
+    return d ? d.id : null;
+  }, null, { timeout: 10000 }).then(function (handle) { return handle.jsonValue(); });
+}
+
+/** Re-reads the durable record from a FRESH page load -- the only thing that proves a write actually persisted, as opposed to living in the still-open session's memory. */
+async function readPersistedInterpretation(page, dreamId, personaKey) {
+  await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(function () { return !!window.DreamStore; }, null, { timeout: 5000 });
+  return page.evaluate(function (a) {
+    var map = window.DreamStore.getInterpretations(a.id) || {};
+    return map[a.persona] || null;
+  }, { id: dreamId, persona: personaKey });
+}
+
+test('a reading whose response lands AFTER the video finishes is still PERSISTED to the real dream -- the pending: id it was requested under is dead by then, and must not silently swallow the write', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await forcePlaySucceeds(page);
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
+    var reading = mockInterpretDreamWithHeldReading(page);
+    await page.route('**/.netlify/functions/mark-generation-completed', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    // The TTS call is deliberately left hanging forever, so this test can
+    // only pass because generateInterpretationReading ITSELF persisted.
+    // Without this, generateInterpAudio's write block quietly covers for a
+    // lost reading -- it fabricates `map[personaKey] || { text: text, at:
+    // Date.now(), qa: [] }` from the text it was handed, which resurrects a
+    // reading record that was never actually saved. That masking is real
+    // (it made an earlier draft of this very test pass against the unfixed
+    // code), so isolating the two write paths is load-bearing here, not
+    // tidiness.
+    await page.route('**/.netlify/functions/generate-interp-audio', function () { /* held open, deliberately */ });
+
+    var heldVideo = null;
+    await page.route('**/.netlify/functions/video-status*', function (route) { heldVideo = route; });
+
+    await seedPendingHome(page, { username: 'readingafter' });
+    await page.waitForSelector('#day0-card', { state: 'visible', timeout: 5000 });
+    await page.click('#d0-sage');
+    await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
+
+    // The reading request is out and hanging, against the pending id.
+    await page.waitForFunction(function () { return true; }, null, { timeout: 100 }).catch(function () {});
+    var waited = 0;
+    while (!reading.captured() && waited < 8000) { await new Promise(function (r) { setTimeout(r, 100); }); waited += 100; }
+    assert.ok(reading.captured(), 'the reading request must be genuinely in flight before the video is allowed to land');
+
+    // Now the video lands, WHILE that reading request is still open. This is
+    // the moment `pending:<operationName>` stops resolving to anything.
+    assert.ok(heldVideo, 'expected home.html to be polling video-status');
+    await heldVideo.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/landed-first.mp4' }) });
+    var realId = await waitForRealDreamId(page);
+    assert.ok(realId && !/^pending:/.test(realId), 'sanity: the generation must have produced a real dream id (got ' + realId + ')');
+
+    // Only NOW does the reading come back.
+    var READING_TEXT = 'The golden city is the part of you that already knows the way home.';
+    await reading.release(READING_TEXT);
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 8000 });
+    assert.match(await page.locator('#itp-reading-text').textContent(), /golden city/, 'sanity: the live session still renders the reading (this half already worked -- it is what hid the persistence bug)');
+
+    // The real assertion: it survived. Reopened from a fresh load, the
+    // reading is on the REAL dream, not lost with the dead pending id.
+    var saved = await readPersistedInterpretation(page, realId, 'talmudic');
+    assert.ok(saved, 'the reading must be persisted onto the real dream -- a reading that renders once and is gone on reload is a silent data loss, and any TTS spend behind it is wasted');
+    assert.equal(saved.text, READING_TEXT, 'the persisted reading must be the one the user actually saw');
+    assert.ok(saved.at, 'the persisted reading must carry its own timestamp (interpret-experience sorts revisits by it)');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a voice track whose TTS response lands AFTER the video finishes is still PERSISTED onto the real dream\'s reading -- generate-interp-audio has an 18s sync budget, so it is the likeliest caller to lose this race', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await forcePlaySucceeds(page);
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 220, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
+    mockInterpretDream(page);
+    await page.route('**/.netlify/functions/mark-generation-completed', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+
+    // The TTS call is held open; the reading itself resolves normally.
+    var heldAudio = null;
+    await page.route('**/.netlify/functions/generate-interp-audio', function (route) { heldAudio = route; });
+    var heldVideo = null;
+    await page.route('**/.netlify/functions/video-status*', function (route) { heldVideo = route; });
+
+    await seedPendingHome(page, { username: 'audioafter' });
+    await page.waitForSelector('#day0-card', { state: 'visible', timeout: 5000 });
+    await page.click('#d0-sage');
+    await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 8000 });
+
+    var waited = 0;
+    while (!heldAudio && waited < 8000) { await new Promise(function (r) { setTimeout(r, 100); }); waited += 100; }
+    assert.ok(heldAudio, 'the TTS request must be genuinely in flight before the video is allowed to land');
+
+    assert.ok(heldVideo, 'expected home.html to be polling video-status');
+    await heldVideo.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/landed-first-audio.mp4' }) });
+    var realId = await waitForRealDreamId(page);
+    assert.ok(realId && !/^pending:/.test(realId), 'sanity: the generation must have produced a real dream id (got ' + realId + ')');
+
+    // Only NOW does the TTS come back (sync-first shape -- see
+    // js/store.js's generateInterpAudio `data.done && data.audioUrl` path).
+    var AUDIO_URL = baseUrl + '/sage-voice-x7q4.mp3';
+    await heldAudio.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ done: true, audioUrl: AUDIO_URL, audioDurationMs: 1400, captions: [{ word: 'The', startMs: 0, endMs: 300 }], captionsLevel: 'word' })
+    });
+
+    await page.waitForFunction(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      if (!raw) return false;
+      var s = JSON.parse(raw);
+      return (s.dreams || []).some(function (d) {
+        return d.interpretations && d.interpretations.talmudic && d.interpretations.talmudic.audioUrl;
+      });
+    }, null, { timeout: 8000 }).catch(function () { /* asserted properly below, with a real message */ });
+
+    var saved = await readPersistedInterpretation(page, realId, 'talmudic');
+    assert.ok(saved, 'the reading itself must still be on the real dream');
+    assert.equal(saved.audioUrl, AUDIO_URL, 'the generated voice track must be persisted onto the real dream -- otherwise the next visit re-runs (and re-pays for) TTS that already succeeded');
+    assert.equal(saved.audioDurationMs, 1400, 'the voice track\'s duration must persist alongside it');
+    assert.equal(saved.captionsLevel, 'word', 'the caption level must persist alongside it');
+  } finally {
+    await context.close();
+  }
+});

@@ -699,7 +699,14 @@
     var hasSelected = dreams.some(function (d) { return d.id === selectedId; });
     if (!hasSelected) {
       var selectedDream = window.DreamStore.getDream(selectedId);
-      if (selectedDream) dreams = [selectedDream].concat(dreams);
+      // Match on the RESOLVED dream's own id, not on `selectedId`: a
+      // `pending:<operationName>` id whose generation has already finished
+      // now resolves through to the real dream it produced (js/store.js's
+      // findPendingDream fall-through), which getMyDreams above is already
+      // listing under its real id — prepending on the id alone would show
+      // that one dream twice.
+      var alreadyListed = selectedDream && dreams.some(function (d) { return d.id === selectedDream.id; });
+      if (selectedDream && !alreadyListed) dreams = [selectedDream].concat(dreams);
     }
     if (!dreams.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
     strip.style.display = 'flex';
@@ -1280,13 +1287,26 @@
    * produced, and swaps the finished video into the voice stage in place.
    *
    * Everything that survives the swap does so because it never depended on
-   * the media in the first place: the reading text is already rendered, the
-   * voice `<audio>` element is a separate element with its own url, and the
-   * per-persona reading itself was already persisted under the pending id
-   * (js/store.js migrates state.pendingInterpretations onto the real dream
-   * inside the very same finalizeDream call that triggers this) — so
+   * the media in the first place: the reading text is already rendered, and
+   * the voice `<audio>` element is a separate element with its own url — so
    * Regenerate / Another take / a later revisit all resolve correctly
    * against the new id immediately.
+   *
+   * Persistence, precisely (this used to overstate the guarantee): whatever
+   * had ALREADY been written under the pending id by the time this fires is
+   * carried over by js/store.js — finalizeDream migrates
+   * state.pendingInterpretations onto the real dream in the very same call
+   * that triggers this. But a reading or TTS request still IN FLIGHT at this
+   * moment has written nothing yet, and will come back to a pending id whose
+   * pendingJob is already gone. That case is handled on the store side, not
+   * here: findPendingDream falls through to the real dream via its
+   * `sourceOperationName` once the job has finished, so a late response
+   * persists onto the real dream instead of being silently dropped. This
+   * function's own job is the OPEN SESSION only — re-pointing
+   * `session.dreamId` and letting `stillTargetsDream` keep those in-flight
+   * responses from being discarded as stale. Neither half is sufficient
+   * alone: with only this half, a late reading renders here and then vanishes
+   * on the next visit.
    *
    * Safe to call unconditionally: a closed overlay, or one showing a
    * DIFFERENT dream than the one that just resolved (the user switched via
