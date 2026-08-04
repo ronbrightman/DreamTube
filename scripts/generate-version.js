@@ -129,9 +129,11 @@ function safeGitSha() {
 // Worst case on any error: version.json (and/or sw.js's CACHE_VERSION)
 // doesn't get updated this build (a stale-but-present copy — see the
 // committed placeholders — is still better than blocking a deploy over
-// this). The two steps (write version.json, stamp sw.js) are each in
-// their OWN try/catch so a failure in one never blocks the other.
-function main() {
+// this). The three steps (write version.json, stamp sw.js, record the
+// deploy-log entry — see below) are each in their OWN try/catch so a
+// failure in one never blocks the others. `main` is `async` (only) for
+// the third step, which does one awaited Blobs write.
+async function main() {
   var version = null;
   try {
     var commitSha = process.env.COMMIT_REF || safeGitSha() || 'unknown';
@@ -183,6 +185,30 @@ function main() {
       console.error('[generate-version] non-fatal: failed to stamp sw.js -- ' + err.message);
     }
   }
+
+  // Deploys/day visibility (tracker item
+  // for-product-surface-deploys-day-as-a-vis-xld1vk) — one pure-create
+  // Blobs write per REAL (non-skipped) build. See
+  // netlify/functions/lib/deploy-log-store.js's own header comment for
+  // the full race-free design and why this needs a manually-configured
+  // NETLIFY_BLOBS_BUILD_TOKEN env var (a real human step, not self-serve
+  // from a sandbox). Deliberately reads straight from `process.env`
+  // inside recordBuildTimeDeploy, not any of the locals computed above,
+  // so it still runs (and still safely no-ops without that token) even if
+  // the version.json step above threw before assigning them. Independent
+  // try/catch, non-fatal — same posture as the two steps above.
+  try {
+    var deployLogStore = require('../netlify/functions/lib/deploy-log-store');
+    var deployLogResult = await deployLogStore.recordBuildTimeDeploy(process.env);
+    if (deployLogResult.written) {
+      console.log('[generate-version] recorded deploy-log entry: ' + deployLogResult.key +
+        ' (credentials: ' + deployLogResult.credentialSource + ')');
+    } else {
+      console.log('[generate-version] deploy-log entry not written (' + deployLogResult.reason + ')');
+    }
+  } catch (err) {
+    console.error('[generate-version] non-fatal: deploy-log write failed -- ' + err.message);
+  }
 }
 
 // Only auto-run as a real build step (`node scripts/generate-version.js` /
@@ -191,7 +217,14 @@ function main() {
 // as a pure function without the side effect of overwriting real files on
 // disk just from being imported.
 if (require.main === module) {
-  main();
+  main().catch(function (err) {
+    // main() already catches everything meaningful internally (see the
+    // per-step try/catches above) — this is a last-resort net for a
+    // truly unexpected top-level failure, so `npm run build` still exits
+    // 0 (never fails the real deploy over this file) rather than
+    // propagating an unhandled rejection.
+    console.error('[generate-version] non-fatal: unexpected top-level error -- ' + err.message);
+  });
 }
 
 module.exports = {

@@ -22,6 +22,16 @@
 //      isolated temp copy of scripts/generate-version.js + sw.js — proving
 //      the whole build step actually rewrites both files consistently,
 //      without touching this repo's own real files.
+//
+// A third end-to-end test (near the bottom of this file) covers the
+// deploy-log write this script's `main()` now also attempts on every real
+// build (tracker item for-product-surface-deploys-day-as-a-vis-xld1vk) —
+// see netlify/functions/lib/deploy-log-store.js's own tests for direct,
+// non-child-process coverage of that module's write/read logic itself;
+// this file's own end-to-end test only proves the two scripts are wired
+// together correctly and that a real build (the common case, no
+// NETLIFY_BLOBS_BUILD_TOKEN configured yet) still succeeds and still
+// writes version.json/sw.js normally when that Blobs write safely no-ops.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -137,6 +147,56 @@ test('end-to-end: running the script twice (two simulated deploys) produces two 
     assert.notEqual(deploy1, deploy2, 'a different commit each deploy must produce different sw.js bytes -- the whole point of auto-stamping instead of a manual bump');
     assert.match(deploy1, /1111111/);
     assert.match(deploy2, /2222222/);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('end-to-end: a real build with DEPLOY_ID but no NETLIFY_BLOBS_BUILD_TOKEN configured (today\'s real, common case) still writes version.json/sw.js normally, and logs the deploy-log write as a safe no-op rather than failing the build', function () {
+  var tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dreamtube-genversion-deploylog-'));
+  try {
+    fs.mkdirSync(path.join(tmpDir, 'scripts'));
+    fs.mkdirSync(path.join(tmpDir, 'netlify', 'functions', 'lib'), { recursive: true });
+    fs.copyFileSync(
+      path.join(__dirname, '..', 'scripts', 'generate-version.js'),
+      path.join(tmpDir, 'scripts', 'generate-version.js')
+    );
+    // The real lib file, at the SAME relative path generate-version.js's
+    // own require('../netlify/functions/lib/deploy-log-store') expects --
+    // proves the two are actually wired together, not just that each
+    // passes its own isolated unit tests.
+    fs.copyFileSync(
+      path.join(__dirname, '..', 'netlify', 'functions', 'lib', 'deploy-log-store.js'),
+      path.join(tmpDir, 'netlify', 'functions', 'lib', 'deploy-log-store.js')
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'sw.js'),
+      "var CACHE_VERSION = 'v0-unbuilt-dev';\n"
+    );
+
+    // NODE_PATH lets the copied deploy-log-store.js's own
+    // require('@netlify/blobs') resolve against this repo's REAL
+    // node_modules despite tmpDir living outside the repo tree (Node
+    // reads NODE_PATH at process startup, which execFileSync's `env`
+    // controls here).
+    var output = execFileSync(process.execPath, [path.join(tmpDir, 'scripts', 'generate-version.js')], {
+      cwd: tmpDir,
+      env: Object.assign({}, process.env, {
+        COMMIT_REF: 'cafebabe1234567890abcdef1234567890abcdef',
+        DEPLOY_ID: 'dep-test-noblobs',
+        CONTEXT: 'production',
+        NODE_PATH: path.join(__dirname, '..', 'node_modules')
+      }),
+      stdio: ['ignore', 'pipe', 'pipe']
+    }).toString();
+
+    assert.match(output, /deploy-log entry not written \(no_blobs_credentials\)/, 'must log the specific no-op reason, not silently swallow it');
+    assert.doesNotMatch(output, /non-fatal: (failed to write version\.json|failed to stamp sw\.js|deploy-log write failed|unexpected top-level error)/, 'the deploy-log no-op must never be confused with, or cause, a real failure of either of the other two steps');
+
+    var versionJson = JSON.parse(fs.readFileSync(path.join(tmpDir, 'version.json'), 'utf8'));
+    assert.equal(versionJson.commitSha, 'cafebabe1234567890abcdef1234567890abcdef');
+    var swSource = fs.readFileSync(path.join(tmpDir, 'sw.js'), 'utf8');
+    assert.match(swSource, /cafebab/); // sw.js's CACHE_VERSION carries the 7-char SHORT sha, not the full COMMIT_REF
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
