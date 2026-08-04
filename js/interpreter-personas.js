@@ -36,8 +36,8 @@
 // `talmudic`/The Sage included — there is no persona today with a real
 // static portrait to copy from for the others; every one of the five
 // currently renders the documented accent-gradient + initial fallback
-// only (js/interpret-experience.js's `.itp-persona-card-fallback`/
-// `.itp-persona-tile-fallback`). Generating the actual stylized
+// only (js/interpret-experience.js's `.itp-persona-card-fallback`).
+// Generating the actual stylized
 // illustrations is a separate, founder-eyeball-reviewed step (real
 // fal.ai/flux spend, pre-approved as a one-time/negligible-cost asset
 // generation per that tracker item, but not executable from this build
