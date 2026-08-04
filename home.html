@@ -922,13 +922,44 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            "real fallback destination + JS override" pattern the old
            #card-chamber link used, just living on the pill now instead of
            the whole card (only the pill navigates; the card itself is
-           decorative, per the mock). -->
+           decorative, per the mock).
+
+           ── RENAME, 2026-08-04 (tracker for-product-founder-spec-08-04-
+              chamber-m-zf5ufo, part 1 — "users report they don't
+              understand what 'the Chamber' means") ──
+           The visible heading below was "The Chamber" (an internal/brand
+           name with no self-evident meaning); this build's own user
+           complaint is that name itself, not a missing subtitle — a
+           subtitle ("Your reading awaits.") already existed here and
+           users still didn't get it. Three candidates considered (the
+           founder's own examples from the spec), recommendation implemented:
+
+             1. "Dream Meaning" -- RECOMMENDED, shipped below. Short
+                enough to sit comfortably at .hero-title size (same visual
+                weight "The Chamber" had), immediately self-explaining,
+                and echoes result.html's own already-live CTA copy family
+                ("What does this dream mean?" / "View your reading")
+                without literally repeating it -- reads as this feature's
+                proper name rather than a generic label.
+             2. "What Your Dream Means" -- the most literal/explicit of
+                the three, but noticeably longer as a hero heading (real
+                wrap risk on a narrow phone at this font-size) and reads
+                more like a sentence than a name.
+             3. "Interpretation" -- plainest, single word, guaranteed to
+                fit, but more clinical/generic than the other two and
+                doesn't say "dream" on its own -- relies more heavily on
+                the subtitle to land.
+
+           Founder previews all three live (this section's own comment)
+           before merge and can swap in #2/#3 with a one-line edit here if
+           he prefers a different candidate -- nothing else in the
+           codebase keys off this heading's literal text. -->
       <section class="hero-card hero-chamber" id="hero-chamber" data-card="chamber">
         <div class="hero-stars"></div>
         <div class="chamber-breathe"></div>
         <div class="hero-scrim"></div>
         <div class="hero-content">
-          <h2 class="hero-title">The Chamber</h2>
+          <h2 class="hero-title">Dream Meaning</h2>
           <p class="hero-sub" id="chamber-sub">Your reading awaits.</p>
           <a class="pill" id="chamber-pill" href="create.html">Enter</a>
         </div>
@@ -2237,7 +2268,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     { id:'t1', cat:'Recall', text:'Stay still when you wake — replay the dream once before opening your eyes, then speak it.' },
     { id:'t2', cat:'Recall', text:'Dreams fade fastest in the first minutes. Capture first, coffee second.' },
     { id:'t3', cat:'Meaning', text:'Dreams usually replay feelings, not facts — ask what you felt, not what happened.' },
-    { id:'t4', cat:'Meaning', text:'A recurring dream is your mind circling something unfinished. The Chamber can help you read it.' },
+    { id:'t4', cat:'Meaning', text:'A recurring dream is your mind circling something unfinished. Dream Meaning can help you read it.' },
     { id:'t5', cat:'Why it matters', text:'People who log dreams typically start remembering more of them within a week or two.' },
     { id:'t6', cat:'DreamTube', text:'Claim your free tokens every day — streaks add up faster than you think.' },
     { id:'t7', cat:'DreamTube', text:'Watching other people’s dreams in Explore often unlocks your own recall.' },

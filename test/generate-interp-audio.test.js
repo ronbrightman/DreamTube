@@ -86,12 +86,24 @@ test('rejects an unknown personaKey with E505', async function () {
   assert.match(JSON.parse(res.body).error, /^E505:/);
 });
 
-test('rejects a persona with no voiceId configured yet with E505 (same "tolerate a missing asset" gate as portraits)', async function () {
-  // jung has no voiceId on this branch (only talmudic/The Sage ships voice
-  // this wave — scope item 4, "sage persona first").
+// ── Tracker for-product-founder-spec-08-04-chamber-m-zf5ufo, part 3
+//    (INTERIM VOICES, 2026-08-04) ──
+// jung/freud/gestalt/scientist now carry the Sage's own `voiceId`
+// (`am_onyx`) too — see js/interpreter-personas.js's own header note. The
+// "real persona, no voiceId configured" branch of the `!persona ||
+// !persona.voiceId` gate (generate-interp-audio.js) therefore has no live
+// example among today's five real personas anymore; it remains real
+// defense-in-depth for any FUTURE persona added before it gets voice
+// casting, but there is nothing left to exercise it with here. This test
+// now proves the POSITIVE side instead: jung, one of the four interim-
+// voice personas, is genuinely accepted past the gate (mock mode so no
+// real fal.ai call is made).
+test('an interim-voice persona (jung, borrowing the Sage\'s am_onyx casting per the 2026-08-04 "go wide interim" change) is accepted, not rejected with E505', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
   var res = await handler(genEvent({ body: { personaKey: 'jung' } }));
-  assert.equal(res.statusCode, 400);
-  assert.match(JSON.parse(res.body).error, /^E505:/);
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.match(data.operationName, /^mock:/);
 });
 
 test('sync-first: a real one-round-trip kokoro+whisper success returns done:true with word-level captions, hitting fal.run not the queue', async function () {
@@ -215,7 +227,11 @@ test('mock mode still runs the rate-limit guardrail (never a way to bypass it)',
 
 test('mock mode still runs persona/voiceId validation (never a way to bypass it)', async function () {
   process.env.GENERATION_MOCK_MODE = 'true';
-  var res = await handler(genEvent({ body: { personaKey: 'jung' } }));
+  // Not a real persona at all (rather than 'jung' — since the 2026-08-04
+  // interim-voice change, jung DOES carry a voiceId now; see this file's
+  // "interim-voice persona" test above), so this still genuinely exercises
+  // the `!persona` half of the gate under mock mode.
+  var res = await handler(genEvent({ body: { personaKey: 'not-a-real-persona' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E505:/);
 });

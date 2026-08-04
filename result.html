@@ -513,7 +513,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
              page's own `?id=` param and re-read on every render(), and
              dream.id is what gets passed to InterpretExperience.open() —
              never "the latest dream", never an ambiguous default. -->
-        <button type="button" class="heropill" id="interp-cta-btn" title="Open the Interpreter's Chamber for this dream">
+        <button type="button" class="heropill" id="interp-cta-btn" title="Open your dream's meaning">
           <span class="interp-sparkle" aria-hidden="true">✨</span> <span id="interp-cta-label-text">What does this dream mean?</span>
         </button>
       </div>
@@ -1406,7 +1406,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // saved for this dream.
     var hasSavedReading = isMyDream && Object.keys(DreamStore.getInterpretations(dream.id) || {}).length > 0;
     document.getElementById('interp-cta-label-text').textContent = hasSavedReading ? 'View your reading' : 'What does this dream mean?';
-    document.getElementById('interp-cta-btn').title = hasSavedReading ? 'View your Chamber reading for this dream' : "Open the Interpreter's Chamber for this dream";
+    document.getElementById('interp-cta-btn').title = hasSavedReading ? "View your dream's reading" : "Open your dream's meaning";
     // storyText (tracker item for-product-split-prompttext-storytext-
     // f-yt5kc7): the human-readable dream description, never the chip
     // flow's own camera-direction/style-modifier promptText. Falls back
