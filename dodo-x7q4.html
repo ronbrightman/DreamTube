@@ -1,0 +1,109 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — Dodo Payment Check</title>
+<!-- Owner-only one-tap runner for admin-diagnose-lost-generations (the
+     dream-vanish P0's user-impact audit). Exists because the founder asked
+     for tasks he can DO, not read about (Board rule, 08-03): the endpoint
+     needs his real password at call time, which no agent sandbox holds, so
+     the Board links here instead of pasting a curl. The password goes
+     browser -> our own Netlify function only (verifyLogin), never stored.
+     Pages through nextCursor automatically until done.
+
+     BUG FIX (08-03, tracker item
+     for-product-p0-data-loss-founder-repro-0-6bzvv1, follow-up comment):
+     the "Details" pane used to dump the sweep's ENTIRE `details` array
+     verbatim -- admin-diagnose-lost-generations.js's own header comment
+     documents that array as every job-owner record IN THE WINDOW, not just
+     the lost ones (see runSweepMode in that file: `details` is pushed to
+     for every record, `lostJobs`/`accountsAffectedSet` are the only things
+     gated on `hasDream === false`). Placed directly under the "Lost jobs"
+     stat with a bare "Details" label, that unfiltered dump reads exactly
+     like a list of lost jobs -- which is exactly what produced this
+     tracker item's own reported anomaly ("at least one row was flagged
+     hasDream:true even while appearing in the lost list"). Verified via
+     test/admin-diagnose-lost-generations.test.js (all passing, unchanged)
+     that the backend's own lostJobs/accountsAffected counters never
+     include a hasDream:true row -- this was a front-end display bug, not a
+     diagnostic logic bug. Now splits into three explicitly labeled
+     sections (lost / not-lost-for-reference / unresolved) so a hasDream
+     row can never again be misread as "lost" just because it showed up in
+     the same pane. Also breaks the lost bucket down by mediaType
+     (video vs image) since a real generation completing with no dream
+     record is genuine loss for either type -- see generate-image.js's own
+     finalizeDream/syncPrivateDreamBestEffort path in js/store.js, which is
+     identical in shape to the video path, not a thumbnail/preview
+     mechanism carved out by design. -->
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:560px;margin-inline:auto;font-size:14px;line-height:1.5}
+h1{font-size:19px;font-weight:800;color:#fff;margin:2px 0 4px}
+.sub{color:#a49dc4;font-size:12.5px;margin:0 0 16px}
+label{display:block;font-size:12px;font-weight:700;color:#a49dc4;margin:12px 0 4px}
+input{width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:15px;padding:10px 12px}
+button{margin-top:16px;width:100%;background:#6d5df6;color:#fff;font-weight:800;font-size:15px;border:0;border-radius:10px;padding:12px;cursor:pointer}
+button:disabled{opacity:.5}
+.out{margin-top:18px;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:12px 14px;display:none}
+.out.show{display:block}
+.ok{color:#8ee6c2;font-weight:800}.bad{color:#ff8a96;font-weight:800}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:13.5px}
+.row b{color:#fff}
+.err{color:#ff8a96;margin-top:12px;font-weight:700;display:none}
+pre{white-space:pre-wrap;font-size:12px;color:#cfc9ec;max-height:300px;overflow:auto}
+</style></head><body>
+<h1>💳 Dodo Payment Check</h1>
+<div class="sub">Checks whether specific Dodo payments ever reached our webhook and what happened to them. Read-only — writes nothing. Your password goes only to DreamTube's own login check.</div>
+
+<label for="pw">Your DreamTube password</label>
+<input id="pw" type="password" autocomplete="current-password">
+<label for="pids">Payment IDs (one per line)</label>
+<textarea id="pids" style="width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:13px;padding:10px 12px;min-height:70px;font-family:monospace">pay_0NkXXcjgKWjX3MLhfP5xP</textarea>
+<button id="run">Check payments</button>
+<div class="err" id="err"></div>
+
+<div class="out" id="out">
+  <div id="verdict"></div>
+  <div class="row"><span>Jobs in window</span><b id="jobs"></b></div>
+  <div class="row"><span>Lost jobs (charged, no dream survives)</span><b id="lost"></b></div>
+  <div class="row"><span>Accounts affected</span><b id="acc"></b></div>
+  <div class="row"><span>Unresolvable job owners</span><b id="unres"></b></div>
+  <div class="row"><span>Job records scanned</span><b id="scanned"></b></div>
+  <div class="row"><span>Lost — video</span><b id="lost-video"></b></div>
+  <div class="row"><span>Lost — image</span><b id="lost-image"></b></div>
+  <details style="margin-top:10px" open><summary style="cursor:pointer;font-weight:700;color:#ff8a96">Lost jobs (needs review) — <span id="lost-count-label"></span></summary><pre id="details-lost"></pre></details>
+  <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;color:#a49dc4">Unresolved (job owner's account not found)</summary><pre id="details-unresolved"></pre></details>
+  <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;color:#a49dc4">Not lost — has a dream (for reference only, NOT part of the lost count)</summary><pre id="details-found"></pre></details>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('run');
+  btn.addEventListener('click', async function () {
+    var pw = document.getElementById('pw').value;
+    var err = document.getElementById('err');
+    err.style.display = 'none';
+    if (!pw) { err.textContent = 'Enter your password first.'; err.style.display = 'block'; return; }
+    var ids = document.getElementById('pids').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+    if (!ids.length) { err.textContent = 'Paste at least one payment id.'; err.style.display = 'block'; return; }
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      var res = await fetch('/.netlify/functions/admin-diagnose-dodo-payment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: 'ronbrightman@gmail.com', password: pw, paymentIds: ids })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      var out = document.getElementById('out');
+      var v = document.getElementById('verdict');
+      var rows = data.results.map(function (r) {
+        var verdict = r.markerExists
+          ? (r.status === 'committed' ? '✔ processed & credited (' + r.tokens + ' tokens)' : '⚠ reached us but stuck at "' + r.status + '"')
+          : '✘ NEVER reached our webhook';
+        return '<div class="row" style="display:block"><b>' + r.paymentId.slice(0,18) + '…</b><br>' + verdict + (r.createdAt ? ' · ' + new Date(r.createdAt).toLocaleString() : '') + '</div>';
+      }).join('');
+      v.innerHTML = rows;
+      out.className = 'out show';
+    } catch (e) {
+      err.textContent = 'Failed: ' + e.message; err.style.display = 'block';
+    }
+    btn.disabled = false; btn.textContent = 'Check payments';
+  });
+})();
+</script>
+</body></html>
