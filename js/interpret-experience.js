@@ -85,40 +85,14 @@
   // user's OWN dream video (bounce-looped) with timed captions overlaid —
   // no per-reading lip-sync (explicitly ruled out as too expensive).
   //
-  // ── Founder-preview gate ──
-  // Ships behind a query-param + localStorage-sticky gate (same
-  // "?param=1, remembered in localStorage from then on" convention this
-  // codebase already uses elsewhere — e.g. start.html's `signup` override,
-  // wizard.html's `entry=index`) rather than a broad on/off flip — build
-  // task scope item 4: "Manager needs a way to preview it and give the
-  // founder a link first," before this goes live for everyone. A link like
-  // `home.html?sagevoice=1` (or any page hosting the Chamber) permanently
-  // enables this browser; there is no broad-rollout switch yet — that's a
-  // deliberate separate step once the real founder-approved intro asset
-  // replaces this branch's placeholder (see js/interpreter-personas.js's
-  // own header note).
-  var VOICE_PREVIEW_PARAM = 'sagevoice';
-  var VOICE_PREVIEW_STORAGE_KEY = 'dreamtube_interp_voice_preview';
-
-  /** True once this browser has been granted the Speaking Sage preview (via the `?sagevoice=1` link, sticky in localStorage from then on) — never assumed on, always explicit. Best-effort: any localStorage failure (private mode, etc.) reads as "not previewing" rather than throwing, same convention as every other localStorage read in this codebase. */
-  function isVoicePreviewEnabled() {
-    try {
-      if (typeof location !== 'undefined' && new RegExp('[?&]' + VOICE_PREVIEW_PARAM + '=1(?:&|$)').test(location.search)) {
-        localStorage.setItem(VOICE_PREVIEW_STORAGE_KEY, '1');
-        return true;
-      }
-      return typeof localStorage !== 'undefined' && localStorage.getItem(VOICE_PREVIEW_STORAGE_KEY) === '1';
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Persist the ?sagevoice=1 grant at load time, not just when a reading
-  // renders — the founder's preview link lands on home.html, where no
-  // reading ever renders; without this eager call the param was read by
-  // nobody, nothing was stored, and the preview "didn't work" from the
-  // link (founder-hit regression, 2026-08-04 morning).
-  isVoicePreviewEnabled();
+  // ── Speaking Sage is LIVE for everyone (founder "go wide", 2026-08-04) ──
+  // The ?sagevoice=1 founder-preview gate that shipped with the feature is
+  // deliberately GONE, not just defaulted-on: after a day of the founder's
+  // previews dying to per-browser/private-tab flag state, his call was that
+  // voice eligibility is purely "does this persona have a voice" — no
+  // switch to lose. (The once-per-dream intro memory, hasIntroShown, is
+  // unrelated and stays.) Rollback, if ever needed, is a revert of this
+  // commit, not a flag.
 
   /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
@@ -876,7 +850,7 @@
     // phase is actually reached). Skipped entirely for a non-voice-eligible
     // persona/gate-off browser — nothing to prime, no reason to spend it.
     var pickedPersona = getPersonaOrFallback(personaKey);
-    if (isVoicePreviewEnabled() && pickedPersona && pickedPersona.voiceId) {
+    if (pickedPersona && pickedPersona.voiceId) {
       session.primedAudioEl = createPrimedAudioElement();
     }
     var entry = existing[personaKey];
@@ -1127,7 +1101,7 @@
   function renderReading() {
     var persona = getPersonaOrFallback(session.personaKey);
     var body = document.getElementById('itp-body');
-    var voiceEligible = isVoicePreviewEnabled() && !!persona.voiceId;
+    var voiceEligible = !!persona.voiceId;
     var dream = voiceEligible ? window.DreamStore.getDream(session.dreamId) : null;
     var dreamMediaUrl = dream ? (dream.videoUrl || dream.imageUrl || null) : null;
     var showIntro = voiceEligible && shouldShowIntro(persona, window.DreamStore.hasIntroShown(session.dreamId, session.personaKey));

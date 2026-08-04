@@ -289,7 +289,7 @@ function forcePlayWithPrimingThrow(page) {
   });
 }
 
-test('without the ?sagevoice=1 preview gate, the voice stage never mounts even for talmudic (default-off, matches "Manager needs a way to preview before rollout")', async function (t) {
+test('GO-WIDE (founder, 2026-08-04): with NO preview param at all, talmudic\'s reading mounts the voice stage for every visitor — the ?sagevoice gate no longer exists', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -297,12 +297,13 @@ test('without the ?sagevoice=1 preview gate, the voice stage never mounts even f
     await blockThirdParty(page);
     await mockInterpretDream(page, {});
     await mockInterpAudio(page, {});
-    // seedResultPage's own URL deliberately does NOT carry a real
-    // `&sagevoice=1` (see its own comment) — this is the "gate off" case.
+    // seedResultPage's own URL deliberately does NOT carry any `sagevoice`
+    // param (see its own comment) — post-go-wide this is the everyday
+    // real-visitor case, and the voice stage must mount regardless.
     await seedResultPage(page, 'd-voice-gate-off');
     await openAndPickSage(page);
     var stage = await page.locator('#itp-voice-stage').count();
-    assert.equal(stage, 0, 'the voice stage must not render at all when the preview gate is off');
+    assert.equal(stage, 1, 'the voice stage must render for a plain visitor with no preview param — the gate was removed on the founder\'s go-wide call');
   } finally {
     await context.close();
   }
