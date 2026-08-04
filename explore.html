@@ -434,6 +434,7 @@
           if(bed.readyState > 0) bed.currentTime = 0;
           bed.play().catch(function(){ /* same accepted degrade as the video above — an unmuted bed specifically can also be blocked by a browser's real autoplay-with-sound policy even when muted video autoplay isn't; a blocked bed just never starts until the visitor interacts (e.g. the mute button), never a thrown error or broken card */ });
         }
+        if(bed) maybeShowSoundNudge(video);
       } else {
         video.pause();
         if(bed) bed.pause();
@@ -904,6 +905,29 @@
     t.textContent = msg;
     t.classList.add('show');
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ===== Sound-discoverability nudge (tracker item
+  // for-product-p1-founder-repro-08-04-12-40-6icx89) =====
+  // Same nudge as result.html's own copy of this function (see that file's
+  // comment for the full "why") — fires ONCE per device, the first time a
+  // bed-eligible card actually becomes the playing one (videoObserver's
+  // own isIntersecting branch above, so this only fires for a card the
+  // visitor is really looking at, not one merely rendered into the DOM),
+  // for a visitor who has never explicitly touched their sound preference.
+  // `video` is the .feed-video that just became the winner; its mute
+  // button sibling is `.feed-mute-btn` inside the same .feed-card.
+  function maybeShowSoundNudge(video){
+    if(DreamStore.hasEverSetSoundPref() || DreamStore.hasSeenSoundNudge()) return;
+    DreamStore.markSoundNudgeSeen();
+    showToast('🎵 Tap for sound');
+    var muteBtn = video.parentElement ? video.parentElement.querySelector('.feed-mute-btn') : null;
+    if(muteBtn){
+      muteBtn.classList.remove('sound-nudge-pulse'); // reflow so a re-add always restarts the animation
+      void muteBtn.offsetWidth;
+      muteBtn.classList.add('sound-nudge-pulse');
+      setTimeout(function(){ muteBtn.classList.remove('sound-nudge-pulse'); }, 3600);
+    }
   }
 
   // Delegated click handling so re-rendering (filtering) never needs to

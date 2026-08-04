@@ -1345,6 +1345,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       var liveQuote = pendingJob && (pendingJob.storyText || pendingJob.caption);
       if(liveQuote) document.getElementById('result-quote').textContent = '"' + liveQuote + '"';
     }
+    // Sound-discoverability nudge (see maybeShowSoundNudge's own comment) --
+    // deliberately checked AFTER the regenerating override above, not
+    // inside the video-branch it logically follows: while regenerating,
+    // muteBtn is hidden and the visible video is the STALE pre-edit one,
+    // not the bed-eligible one just resolved above -- pulsing/toasting
+    // about a hidden control pointed at content that's about to be
+    // replaced would be confusing, and was a real regression this exact
+    // ordering fixed (caught by test/edit-regeneration-forming-state-
+    // behavioral.test.js's own "no toast on a page that isn't the one
+    // driving this attempt" assertion).
+    if(!regenerating) maybeShowSoundNudge(bedEligible, muteBtn);
     // isMyDream: see the ownership-gate comment above -- "Turn this into a
     // video" spends tokens and calls DreamStore.turnImageIntoVideo, which
     // refuses to act on a dream that isn't this account's own, so the
@@ -2495,6 +2506,36 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     t.textContent = msg;
     t.classList.add('show');
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // ===== Sound-discoverability nudge (tracker item
+  // for-product-p1-founder-repro-08-04-12-40-6icx89) =====
+  // Music beds are the first real audio this app has ever shipped — every
+  // video before 2026-08-04 was permanently silent (generate_audio:false),
+  // so DreamStore.getSoundPref's mute-by-default (js/store.js) was
+  // harmless until now: nobody ever had a reason to tap unmute, since
+  // there was nothing to hear either way. Fires ONCE per device (not once
+  // per page, not once per video) the first time a bed-eligible video is
+  // shown to a visitor who has never explicitly touched their sound
+  // preference — see DreamStore.hasEverSetSoundPref/hasSeenSoundNudge for
+  // the two device-level flags this checks (both must be false to fire;
+  // marking the nudge seen happens immediately, not on any later tap, so
+  // it can't double-fire across renders/videos in the same session).
+  // Deliberately just a toast + a bounded pulse on the EXISTING mute icon
+  // — no new modal, no new persistent banner. The mute button already
+  // works correctly and already reflects the honest current state; the
+  // bug was purely that nothing ever pointed at it.
+  function maybeShowSoundNudge(bedEligible, muteBtn){
+    if(!bedEligible) return;
+    if(DreamStore.hasEverSetSoundPref() || DreamStore.hasSeenSoundNudge()) return;
+    DreamStore.markSoundNudgeSeen();
+    showToast('🎵 Tap for sound');
+    if(muteBtn){
+      muteBtn.classList.remove('sound-nudge-pulse'); // reflow so a re-add always restarts the animation
+      void muteBtn.offsetWidth;
+      muteBtn.classList.add('sound-nudge-pulse');
+      setTimeout(function(){ muteBtn.classList.remove('sound-nudge-pulse'); }, 3600);
+    }
   }
 
   // Sharing produces a link, and Explore only ever shows published

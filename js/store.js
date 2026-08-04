@@ -5367,6 +5367,57 @@
     },
 
     /**
+     * Whether dreamtube_sound_on has ever been WRITTEN by a real tap on a
+     * mute/unmute control, as distinct from getSoundPref()'s own boolean
+     * return — that only reports the current effective value, and reads
+     * `false` both for "explicitly muted" and "never touched, defaulted to
+     * muted," which look identical from the outside. Added for tracker
+     * item for-product-p1-founder-repro-08-04-12-40-6icx89: used solely to
+     * gate the one-time sound-discoverability nudge below, which only
+     * makes sense for someone who has never had a reason to notice the
+     * mute control exists (see hasSeenSoundNudge's own doc comment for the
+     * full story of why that nudge exists at all).
+     */
+    hasEverSetSoundPref: function () {
+      try { return localStorage.getItem('dreamtube_sound_on') !== null; }
+      catch (e) { return true; } // fail closed -- can't reliably track "seen" either without storage, so don't nudge
+    },
+
+    /**
+     * Device-level "has this device already been shown the one-time
+     * sound-discoverability nudge" marker (tracker item
+     * for-product-p1-founder-repro-08-04-12-40-6icx89). Music beds
+     * (js/music-bed.js) are the first real audio this app has ever
+     * shipped — every video before 2026-08-04 was permanently silent
+     * (generate_audio:false), so getSoundPref's mute-by-default above was
+     * harmless: nobody ever had a reason to tap unmute, since there was
+     * nothing to hear either way. Now it silently mutes the one thing
+     * worth hearing, for virtually the entire installed base, with no
+     * affordance telling anyone sound exists. result.html/explore.html
+     * show a brief toast + a short pulse on the existing mute icon (no new
+     * modal/banner — the mute button itself already works and already
+     * shows the honest current state, so this only needs to point at it)
+     * the first time a bed-eligible video is shown to a visitor who has
+     * never touched sound (hasEverSetSoundPref() false) and has never
+     * seen this nudge before. Gated as its OWN separate flag (not folded
+     * into hasEverSetSoundPref) so the nudge still fires exactly once per
+     * device even though a visitor can see it more than once without
+     * touching sound (e.g. two different bed-eligible dreams back to
+     * back) before hasEverSetSoundPref() would otherwise catch up.
+     * Device-level (not account-scoped) for the same reason as
+     * getSoundPref/getSeenDreamOfDayId — sound is a property of the
+     * device/browser, not of whichever account happens to be signed in.
+     */
+    hasSeenSoundNudge: function () {
+      try { return localStorage.getItem('dreamtube_sound_nudge_seen') === '1'; }
+      catch (e) { return true; } // fail closed -- same reasoning as hasEverSetSoundPref
+    },
+    markSoundNudgeSeen: function () {
+      try { localStorage.setItem('dreamtube_sound_nudge_seen', '1'); }
+      catch (e) { /* ignore (private browsing / storage disabled) */ }
+    },
+
+    /**
      * Device-level "have I already been shown today's Dream of the Day
      * pinned to the top of Explore" marker (see explore.html's render/
      * loadFeed). Without this, the same card got forced back to position 0
