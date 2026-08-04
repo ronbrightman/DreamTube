@@ -1007,6 +1007,171 @@ test('after a dead-audio regenerate cycle, ONE real tap on the overlay produces 
   }
 });
 
+/**
+ * Found by the REAL-MODE verification pass (AGENT_POLICY.md's REAL-MODE gate),
+ * not by any mocked test: driving the real flow against the real production
+ * `generate-interp-audio` with Chromium's real `--autoplay-policy=
+ * user-gesture-required`, the persona-named "preparing" copy was immediately
+ * overwritten by a stale caption word (`"Ah,"`) from the DEAD track, so the
+ * regenerate window showed a leftover word instead of the preparing state the
+ * tracker item explicitly asks for.
+ *
+ * Root cause, same class as the duplicate-listener bug above: the dead
+ * element's `timeupdate` listener stayed live after the stage had already
+ * given up on that element, so it kept writing `vs.captions` (which still
+ * described the dead track) into the caption strip, racing the preparing copy.
+ * The mocked tests never saw it because a 404'd element in those runs never
+ * emitted a `timeupdate` at all.
+ *
+ * Reproduced deterministically here by dispatching a real `timeupdate` on the
+ * dead element after the regenerate has started — which is exactly what the
+ * real browser does.
+ */
+test('once a dead saved audioUrl has been given up on, its stale listeners can no longer write over the "preparing" copy (found in real-mode, not by mocks)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, false); // autoplay blocked, as on a real mobile browser
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var heldMock = await mockInterpAudioHeld(page); // regenerate stays in flight
+    await seedResultPageWithPreviewParam(page, 'd-voice-stale-caption', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000,
+          qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3', // real 404
+          audioDurationMs: 1400,
+          // Real saved captions for the DEAD track — these are what used to
+          // leak over the preparing copy.
+          captions: [{ word: 'Ah,', startMs: 0, endMs: 300 }, { word: 'the', startMs: 300, endMs: 600 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-stale-caption&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate has started and the preparing copy is up.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 8000 });
+
+    // The dead element emits a real timeupdate (Chromium genuinely does this
+    // around the failed play attempt). It must NOT be able to repaint the
+    // caption strip — the stage has already moved on from this element.
+    await page.evaluate(function () {
+      var dead = window.__lastAudio;
+      Object.defineProperty(dead, 'currentTime', { value: 0.1, configurable: true });
+      dead.dispatchEvent(new Event('timeupdate'));
+      dead.dispatchEvent(new Event('ended'));
+    });
+
+    var caption = await page.locator('#itp-voice-caption').textContent();
+    assert.equal(caption, 'The Sage is preparing to read your dream…', 'a dead track\'s stale listeners must not overwrite the preparing copy during regeneration (got: ' + JSON.stringify(caption) + ')');
+
+    // The dead element's stale `ended` must not fabricate a completion either.
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'interp_voice_complete').length, 0, 'a dead, abandoned track must never report interp_voice_complete');
+
+    heldMock.release();
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * Third finding from the REAL-MODE pass. The regenerate path made a sequence
+ * reachable that never existed before it: the DEAD track's autoplay attempt is
+ * blocked (so the tap overlay goes up), and then the REGENERATED track's
+ * attempt SUCCEEDS. The success branch never hid the overlay — because before
+ * the regenerate path a mount either autoplayed or was blocked exactly once —
+ * so "Hear The Sage read your dream" sat on top of audio that was already
+ * playing, and the user's next tap PAUSED the reading instead of starting it.
+ */
+test('after a regenerate whose playback succeeds, the tap overlay is hidden — it must not sit over already-playing audio and turn the next tap into a pause', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    // Reproduces the REAL browser's ordering, which is the whole point of this
+    // test: a real blocked play() rejection on the dead track lands only after
+    // the network has had its say, i.e. AFTER the 404 'error' event has already
+    // made the stage abandon that element. A plain forced rejection settles on
+    // the very next microtask, well BEFORE the error event, which is exactly
+    // why the mocked suite never saw this. The dead track's rejection is
+    // therefore deliberately delayed here; the regenerated track's play()
+    // resolves normally.
+    await page.addInitScript(function () {
+      window.__playCalls = [];
+      HTMLMediaElement.prototype.play = function () {
+        var self = this;
+        window.__playCalls.push(self.src || '');
+        if (typeof self.src === 'string' && self.src.indexOf('nonexistent-dead-audio') !== -1) {
+          return new Promise(function (_resolve, reject) {
+            setTimeout(function () { reject(new DOMException('forced-block-for-test', 'NotAllowedError')); }, 1200);
+          });
+        }
+        return Promise.resolve();
+      };
+    });
+    await trackLastAudioInstance(page);
+    await blockThirdParty(page);
+    var heldMock = await mockInterpAudioHeld(page);
+    await seedResultPageWithPreviewParam(page, 'd-voice-regen-overlay', {
+      interpretations: {
+        talmudic: {
+          text: 'An existing reading whose audio has since expired.',
+          at: Date.now() - 100000, qa: [],
+          audioUrl: baseUrl + '/nonexistent-dead-audio-x7q4.mp3',
+          audioDurationMs: 1400,
+          captions: [{ word: 'An', startMs: 0, endMs: 300 }],
+          captionsLevel: 'word'
+        }
+      },
+      introShownPersonas: { talmudic: Date.now() - 100000 }
+    });
+    await page.goto(baseUrl + '/result.html?id=d-voice-regen-overlay&sagevoice=1', { waitUntil: 'domcontentloaded' });
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+
+    // Regenerate is in flight (held) after the dead track's real 404.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('itp-voice-caption');
+      return el && el.textContent === 'The Sage is preparing to read your dream…';
+    }, null, { timeout: 8000 });
+
+    // Let the DEAD track's blocked-autoplay rejection land LATE, after the
+    // stage has already abandoned that element — the real-browser race this
+    // guard exists for. It must NOT raise a tap overlay for a track that no
+    // longer exists.
+    await page.waitForTimeout(1600);
+    var overlayDuringPrepare = await page.locator('#itp-voice-tap-overlay').evaluate(function (el) { return !el.classList.contains('off'); });
+    assert.equal(overlayDuringPrepare, false, 'an abandoned dead track\'s late play() rejection must not raise the tap-to-play overlay while its replacement is being fetched');
+
+    heldMock.release();
+
+    await page.waitForFunction(function () {
+      var q = window.posthog && window.posthog.slice ? window.posthog.slice() : [];
+      return q.some(function (e) { return e[0] === 'capture' && e[1] === 'interp_voice_play'; });
+    }, null, { timeout: 8000 });
+    await page.waitForTimeout(200);
+
+    var overlayHidden = await page.locator('#itp-voice-tap-overlay').evaluate(function (el) { return el.classList.contains('off'); });
+    assert.equal(overlayHidden, true, 'once the regenerated track is actually playing, the tap-to-play overlay must be hidden — leaving it up makes the next real tap pause the reading the user just asked to hear');
+
+    var phCalls = await readPostHogCalls(page);
+    assert.equal(captures(phCalls, 'interp_voice_play').length, 1, 'still exactly one play event across the whole regenerate cycle');
+  } finally {
+    await context.close();
+  }
+});
+
 test('a dead saved audioUrl whose REGENERATED audio ALSO errors degrades to the existing hard-TTS-failure path (voice stage hides, plain text card still renders) — bounded to one attempt, never loops', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

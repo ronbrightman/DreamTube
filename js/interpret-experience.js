@@ -617,9 +617,24 @@
       vs.regenerateAttempted = true;
       trackLocal('interp_voice_saved_audio_expired', { persona: persona.key });
       try { audio.pause(); } catch (e) { /* best-effort — it's already erroring */ }
+      // This element is abandoned as of right now — drop its listeners here
+      // rather than waiting for the regenerated track to re-enter
+      // beginAudioPlayback. Found by the REAL-MODE verification pass and
+      // invisible to every mocked test: a real browser emits a `timeupdate`
+      // on the failing element around its play attempt, and that stale
+      // handler repainted the caption strip from `vs.captions` — which still
+      // described the DEAD track — instantly overwriting the persona-named
+      // "preparing" copy this whole path exists to show (the founder would
+      // have seen a leftover word, not "The Sage is preparing…"). Same bug
+      // class as the duplicate-listener fix above (a listener outliving its
+      // element's relevance), so it reuses the same teardown. A stale `ended`
+      // would likewise have fabricated a bogus interp_voice_complete for
+      // audio that never actually played.
+      detachPlaybackListeners(vs);
       hideTapOverlay(vs); // no stale "Hear him read"/"Resume" affordance while a fresh track is being fetched
       vs.audioReady = false;
       vs.audioUrl = null;
+      vs.captions = []; // they describe the dead track; the regenerated one brings its own
       vs.phase = 'loading'; // reuses enterReadingPhase's own loading sub-state UI language
       showPreparingCaption(vs, persona); // same "preparing" copy a brand-new reading shows — this must look like the reading is getting itself ready again, not like anything broke
       requestVoiceAudio(vs, persona); // the SAME regeneration flow a fresh reading already uses; its own .then re-enters beginAudioPlayback (vs.phase === 'loading' — and detachPlaybackListeners there clears THIS listener set first), its own .catch falls to teardownVoiceStageOnFailure if the regenerate call itself fails outright
@@ -677,9 +692,27 @@
     // but keeping the element fully wired before it is ever asked to play
     // means no media event can outrun its handler.
     attemptPlay(audio).then(function (ok) {
-      if (voiceState !== vs) return;
+      // `vs.audioEl !== audio` is the staleness guard this callback was
+      // missing — same spirit as requestVoiceAudio's own `myGen !== gen`
+      // checks, and the third finding of the REAL-MODE pass. The DEAD track's
+      // play() rejection can land AFTER onError has already abandoned that
+      // element and kicked off a regenerate; the old closure would then raise
+      // the "Hear The Sage read your dream" overlay for a track that no longer
+      // exists. That overlay then sat on top of the regenerated audio once it
+      // started playing, so the user's next real tap PAUSED the reading they
+      // had just asked to hear. A superseded attempt must never paint the stage.
+      //
+      // `vs.phase !== 'reading'` is the load-bearing half: while a regenerate
+      // is in flight the stage has gone back to 'loading' but `vs.audioEl`
+      // still points at the dead element, so an element-identity check alone
+      // would miss it. Same phase guard onReadingTap already uses.
+      if (voiceState !== vs || vs.audioEl !== audio || vs.phase !== 'reading') return;
       if (ok) {
         vs.listenStartedAt = Date.now();
+        // Defence in depth for the same symptom: if playback actually began,
+        // the tap-to-play affordance has no business still being up, whatever
+        // put it there.
+        hideTapOverlay(vs);
         trackLocal('interp_voice_play', { persona: persona.key, source: 'auto' });
       } else {
         trackLocal('interp_voice_autoplay_blocked', { persona: persona.key, surface: 'reading' });
