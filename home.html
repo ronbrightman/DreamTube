@@ -342,8 +342,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    veil (shimmer sweep + progress arc + caption) is ported from the
    founder-approved funnel-end-mock-x7q4.html's own .video-forming/
    .form-sweep/.form-arc/.form-caption. The card itself carries no day-0-only
-   copy (its "Tonight's dream" title, "Ready when your dream is" caption
-   etc. are already scenario-neutral) — any actual first-ever-night framing
+   copy (its "Tonight's dream" title, its forming-state caption etc. are
+   already scenario-neutral) — any actual first-ever-night framing
    lives entirely OUTSIDE this card (hero-tonight's own d1line, the ritual
    module's first-claim eyebrow), gated by isFirstEverNight there, untouched
    by this generalization. Every OTHER Tonight state (unlogged, logged via
@@ -438,6 +438,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   .day0card .quietlink{ gap:3px; padding:8px 1px; font-size:10.5px; }
   .day0card .quietlink .icon{ width:12px; height:12px; }
 }
+/* The during-generation interpretation entry (see the #d0-sage markup's own
+   comment). Visually the accented hero action of this card while forming —
+   same shape/weight as result.html's own .heropill, scaled to this card's
+   compact rhythm and reusing .watchpill's own width/radius/tap-target
+   values so the two never look like they came from different cards. Carries
+   the same homePulse the page's other primary actions use; the .day0card is
+   only ever on screen when the Tonight hero (the page's other pulsing pill)
+   is hidden, so this never breaks the single-pulse rule. */
+.day0card .d0-sage{
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%; min-height:44px; margin-top:14px; border:none; border-radius:99px; padding:12px 10px; cursor:pointer;
+  background:var(--home-acc); color:#0c0a1a;
+  font:800 13.5px var(--font-body); letter-spacing:.01em;
+  animation:homePulse 2.6s ease-in-out infinite;
+  transition:transform .12s ease; -webkit-tap-highlight-color:transparent;
+}
+.day0card .d0-sage:active{ transform:scale(.98); }
+.day0card .d0-sage .interp-sparkle{ font-size:14px; line-height:1; }
+@media (prefers-reduced-motion: reduce){ .day0card .d0-sage{ animation:none; } }
 .day0card .quiet-caption{
   margin-top:6px; text-align:center;
   font:700 11.5px var(--font-body); letter-spacing:.06em; text-transform:uppercase;
@@ -889,7 +908,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           <button type="button" class="quietlink" id="d0-edit" disabled title="Edit Dream"><span class="icon" id="d0-edit-icon"></span>Edit</button>
           <button type="button" class="quietlink danger" id="d0-delete" disabled title="Delete this dream"><span class="icon" id="d0-delete-icon"></span>Delete</button>
         </div>
-        <div class="quiet-caption" id="d0-caption">Ready when your dream is</div>
+        <!-- The interpretation offer DURING generation (founder ask
+             2026-08-04, tracker item for-product-founder-ask-08-04-offer-
+             the--rlcai3): "on processing while the dream generates, there
+             is no offer to do the interpretation — there should be...
+             replace (or drop) the bottom 'ready when you are' line so the
+             Sage/interpretation entry comes into view." So the old
+             "Ready when your dream is" caption is GONE — this button takes
+             its slot, and the caption below it is demoted to the one line
+             that still matters while forming (that the reading does not
+             wait for the video). Deliberately the SAME label result.html's
+             own completed-dream hero uses ("✨ What does this dream mean?")
+             rather than a second, differently-worded interpretation entry —
+             one offer, one name for it, wherever it appears. Shown only
+             while forming; the ready state's own entry points (the Chamber
+             hero below, and the dream's full room) are unchanged. -->
+        <button type="button" class="d0-sage" id="d0-sage" hidden>
+          <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
+        </button>
+        <div class="quiet-caption" id="d0-caption">No need to wait for the video</div>
       </section>
 
       <!-- 3 · TONIGHT hero — the guided Wizard pill leads; Write/Speak/No
@@ -1433,6 +1470,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     document.getElementById('d0-watch').hidden = true;
     document.getElementById('d0-quiet').classList.add('waiting');
     document.getElementById('d0-caption').hidden = false;
+    // The during-generation interpretation offer — only once there's a REAL
+    // pending job to interpret (formingSageDreamId's own doc comment): during
+    // the optimistic pre-pendingJob window there is genuinely nothing to open
+    // yet, and an offer that opens nothing is worse than no offer.
+    document.getElementById('d0-sage').hidden = !formingSageDreamId();
     Array.prototype.forEach.call(document.querySelectorAll('#d0-quiet .quietlink'), function(b){ b.disabled = true; });
     var video = document.getElementById('d0-video-el');
     var image = document.getElementById('d0-image-el');
@@ -1480,6 +1522,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
     document.getElementById('d0-quiet').classList.remove('waiting');
     document.getElementById('d0-caption').hidden = true;
+    // Ready state keeps its existing entry points (the Chamber hero, and
+    // this dream's own full room) — the forming-only offer steps aside.
+    document.getElementById('d0-sage').hidden = true;
     Array.prototype.forEach.call(document.querySelectorAll('#d0-quiet .quietlink'), function(b){ b.disabled = false; });
     var quoteText = dream.storyText || dream.caption || '';
     document.getElementById('d0-quote').textContent = quoteText ? ('“' + quoteText + '”') : '';
@@ -1589,25 +1634,43 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     });
   });
 
-  // The dream id the Chamber should open for, in priority order: a real
-  // completed dream first, then a still-generating one (tracker item
-  // for-product-funnel-ending-v2-founder-ins-tfuu0q — "Chamber readable
-  // immediately... interpretation only needs the dream text, so it's
-  // enterable immediately", via the synthetic pending:<operationName> id
-  // js/store.js's findDream resolves), or null when there's neither.
+  // The dream id the forming card's own interpretation offer (#d0-sage)
+  // opens: the CURRENTLY-generating dream, or nothing. Deliberately NOT
+  // chamberTargetDreamId's fallback chain — the whole point of this offer
+  // is "read the dream you are waiting on right now," so during the
+  // optimistic pre-pendingJob window (renderDay0CardForming's own comment)
+  // it correctly resolves to null and the offer stays hidden, rather than
+  // quietly opening a previous night's dream.
+  function formingSageDreamId(){
+    return pendingJob ? DreamStore.getPendingDreamId() : null;
+  }
+
+  // The dream id the Chamber should open for, in priority order: a
+  // still-generating dream FIRST, then the most recent completed one, or
+  // null when there's neither.
+  //
+  // Founder bug, 2026-08-04 (tracker item for-product-founder-ask-08-04-
+  // offer-the--rlcai3): "entering the Chamber from processing must target
+  // the CURRENTLY-GENERATING dream (the pending one) by default — today it
+  // opens an existing older video." Confirmed in this exact function, which
+  // used to check `completedDream` first: with a generation in flight AND
+  // any earlier completed dream in the account, every Chamber entry from
+  // Home silently targeted that older dream, and the pending branch below
+  // was only ever reachable by an account that had never finished one.
+  // Pending-first also makes this agree with roomCardOwnedDreamId() below,
+  // which has always resolved the room card's own dream pending-first —
+  // the two were answering "which dream is this page about" differently.
+  // (Reading a previous dream is still one tap away either way: the
+  // Chamber's dream strip lists every completed dream.)
   function chamberTargetDreamId(){
-    if(completedDream) return completedDream.id;
     if(pendingJob) return DreamStore.getPendingDreamId();
+    if(completedDream) return completedDream.id;
     return null;
   }
   function renderChamberHero(){
     var pill = document.getElementById('chamber-pill');
     var sub = document.getElementById('chamber-sub');
-    if(completedDream){
-      pill.href = 'result.html?id=' + encodeURIComponent(completedDream.id);
-      pill.textContent = 'Enter';
-      sub.textContent = 'Your reading awaits.';
-    } else if(pendingJob){
+    if(pendingJob){
       // No real dream to link to yet — href stays a safe, real,
       // functioning fallback destination (create.html) for the vanishingly
       // rare case a click somehow bypasses the JS handler below (e.g.
@@ -1617,7 +1680,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // the Chamber for the pending dream in the overwhelmingly common case.
       pill.href = 'create.html';
       pill.textContent = 'Enter';
-      sub.textContent = 'Your first reading is ready — no need to wait for the video.';
+      // Copy is deliberately not "your FIRST reading" anymore — this branch
+      // now also covers a returning account with earlier dreams (see
+      // chamberTargetDreamId's own comment on the priority flip), for whom
+      // "first" would simply be wrong.
+      sub.textContent = 'Your reading is ready — no need to wait for the video.';
+    } else if(completedDream){
+      pill.href = 'result.html?id=' + encodeURIComponent(completedDream.id);
+      pill.textContent = 'Enter';
+      sub.textContent = 'Your reading awaits.';
     } else {
       pill.href = 'create.html';
       pill.textContent = 'Begin';
@@ -1627,20 +1698,40 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // Diagnostic-only (tracker item for-product-bug-founder-new-home-
     // tapping-yuspxa), kept since it's still useful signal independent of
     // the mechanism change above — fired at HREF-COMPUTE time,
-    // deliberately not gated on the click itself.
+    // deliberately not gated on the click itself. `branch` mirrors the
+    // if/else above (pending first) so this diagnostic keeps naming the
+    // branch actually taken, which is the entire point of it existing.
     track('home_chamber_href_computed', {
-      branch: completedDream ? 'completed_dream' : (pendingJob ? 'pending_dream' : 'no_completed_dream'),
+      branch: chamberBranch(),
       href: pill.getAttribute('href'),
       dream_id: completedDream ? completedDream.id : null
     });
+  }
+
+  /** Which branch renderChamberHero/chamberTargetDreamId actually took — one definition, read by both the render-time diagnostic and the tap event, so the two can never disagree about what happened. */
+  function chamberBranch(){
+    if(pendingJob) return 'pending_dream';
+    return completedDream ? 'completed_dream' : 'no_completed_dream';
   }
   renderChamberHero();
 
   document.getElementById('chamber-pill').addEventListener('click', function(e){
     var targetId = chamberTargetDreamId();
-    track('home_chamber_pill_tapped', { branch: completedDream ? 'completed_dream' : (pendingJob ? 'pending_dream' : 'no_completed_dream') });
+    track('home_chamber_pill_tapped', { branch: chamberBranch() });
     if(!targetId) return; // real link to create.html — let it navigate normally
     e.preventDefault();
+    if(window.InterpretExperience) InterpretExperience.open(targetId);
+  });
+
+  // The forming card's own interpretation offer (#d0-sage) — the founder's
+  // "turn dead generation-wait time into the product's best moment" ask.
+  // Same InterpretExperience.open() call every other entry point in this app
+  // makes; the only thing special here is WHICH dream it names (the pending
+  // one, always — formingSageDreamId).
+  document.getElementById('d0-sage').addEventListener('click', function(){
+    var targetId = formingSageDreamId();
+    track('home_day0_sage_tapped', { has_pending: !!targetId });
+    if(!targetId) return; // rendered hidden in this state; defensive only
     if(window.InterpretExperience) InterpretExperience.open(targetId);
   });
 
@@ -1968,6 +2059,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       myDreams = DreamStore.getMyDreams();
       completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
       refreshHomeState();
+      // If the user took this page's during-generation interpretation offer
+      // (#d0-sage / the Chamber pill) and is STILL reading, hand the open
+      // session the real dream id this job just produced, so the finished
+      // video swaps into the reading in place and every later action
+      // (Regenerate, Another take) targets the real dream rather than an id
+      // whose pendingJob no longer exists. A no-op when nothing is open, or
+      // when what's open is a different dream — see
+      // InterpretExperience.notifyDreamResolved's own doc comment. The
+      // pending id is computed from the DREAM's own sourceOperationName
+      // (not this page's cleared-by-now pendingJob) so it names exactly the
+      // job that resolved.
+      if(window.InterpretExperience && typeof InterpretExperience.notifyDreamResolved === 'function'){
+        InterpretExperience.notifyDreamResolved(DreamStore.pendingDreamIdFor(dream.sourceOperationName), dream.id);
+      }
       showToast('✨ Your dream is ready');
       track('home_generation_completed', { media_type: dream.mediaType || 'video' });
       // Durable completion marker (tracker.html's result-htmls-

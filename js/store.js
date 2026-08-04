@@ -112,6 +112,8 @@
 //       for-product-funnel-ending-v2-founder-ins-tfuu0q — see that field's own doc comment)
 //   getPendingDreamId()         -> local read, the synthetic `pending:<operationName>` id the
 //       Chamber opens for a still-generating dream — see findPendingDream's own doc comment
+//   pendingDreamIdFor(opName)   -> pure helper, the same synthetic id for an operationName whose
+//       pendingJob has ALREADY been cleared (a just-settled generation) — see its own doc comment
 //   logNoRecallToday()          -> local write, records a content-less "no recall" dream-log
 //       check-in for today (idempotent per day, grants nothing) — see getDreamLogStatus above
 //   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
@@ -719,6 +721,11 @@
   // enterable immediately"). See pendingInterpretations' own doc comment
   // above (seed()) for the full mechanism this id plugs into.
   var PENDING_DREAM_ID_PREFIX = 'pending:';
+
+  /** The synthetic pending-dream id for an operationName. Sole place the prefix is ever concatenated — see the exported pendingDreamIdFor's own doc comment for why callers need this for an ALREADY-settled job too. */
+  function pendingDreamIdFor(operationName) {
+    return operationName ? PENDING_DREAM_ID_PREFIX + operationName : null;
+  }
 
   /**
    * Resolves a `PENDING_DREAM_ID_PREFIX`-id to a lightweight, in-memory
@@ -4495,7 +4502,26 @@
      */
     getPendingDreamId: function () {
       var job = scopedPendingJob();
-      return job ? PENDING_DREAM_ID_PREFIX + job.operationName : null;
+      return job ? pendingDreamIdFor(job.operationName) : null;
+    },
+
+    /**
+     * The synthetic `pending:<operationName>` id for an arbitrary
+     * operationName — the same string getPendingDreamId above returns, but
+     * computable AFTER that job has already settled (finalizeDream clears
+     * state.pendingJob before the completion promise resolves, so
+     * getPendingDreamId() is already null by the time a caller learns the
+     * generation finished). home.html's onGenerationSettled needs exactly
+     * that: "which synthetic id did the dream that just landed used to be
+     * addressed by," so an interpretation opened against the still-
+     * generating dream can be re-pointed at the real one
+     * (InterpretExperience.notifyDreamResolved). Pure string math, no
+     * state read and no ownership guard of its own — it names an id, it
+     * doesn't grant access to anything (findPendingDream/findDream still
+     * apply every existing ownership check when that id is actually used).
+     */
+    pendingDreamIdFor: function (operationName) {
+      return pendingDreamIdFor(operationName);
     },
 
     /**
