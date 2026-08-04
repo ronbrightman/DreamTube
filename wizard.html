@@ -1395,7 +1395,7 @@
       // would not have been enough. See WizardChips.persistedMood for what
       // null means here.
       var moodForDream = currentMoodForDream();
-      var draftPatch ={ caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey, mood: moodForDream };
+      var draftPatch = { caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey, mood: moodForDream };
 
       // Marks this click as the new current attempt -- see
       // pendingGenerationToken's own comment above for why this is
