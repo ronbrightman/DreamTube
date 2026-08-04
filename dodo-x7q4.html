@@ -53,22 +53,14 @@ pre{white-space:pre-wrap;font-size:12px;color:#cfc9ec;max-height:300px;overflow:
 <label for="pw">Your DreamTube password</label>
 <input id="pw" type="password" autocomplete="current-password">
 <label for="pids">Payment IDs (one per line)</label>
-<textarea id="pids" style="width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:13px;padding:10px 12px;min-height:70px;font-family:monospace">pay_0NkXXcjgKWjX3MLhfP5xP</textarea>
+<textarea id="pids" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="dodo-payment-ids" style="width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:13px;padding:10px 12px;min-height:70px;font-family:monospace">pay_0NkXXcjgKWjX3MLhfP5xP</textarea>
 <button id="run">Check payments</button>
 <div class="err" id="err"></div>
 
 <div class="out" id="out">
   <div id="verdict"></div>
-  <div class="row"><span>Jobs in window</span><b id="jobs"></b></div>
-  <div class="row"><span>Lost jobs (charged, no dream survives)</span><b id="lost"></b></div>
-  <div class="row"><span>Accounts affected</span><b id="acc"></b></div>
-  <div class="row"><span>Unresolvable job owners</span><b id="unres"></b></div>
-  <div class="row"><span>Job records scanned</span><b id="scanned"></b></div>
-  <div class="row"><span>Lost — video</span><b id="lost-video"></b></div>
-  <div class="row"><span>Lost — image</span><b id="lost-image"></b></div>
-  <details style="margin-top:10px" open><summary style="cursor:pointer;font-weight:700;color:#ff8a96">Lost jobs (needs review) — <span id="lost-count-label"></span></summary><pre id="details-lost"></pre></details>
-  <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;color:#a49dc4">Unresolved (job owner's account not found)</summary><pre id="details-unresolved"></pre></details>
-  <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:700;color:#a49dc4">Not lost — has a dream (for reference only, NOT part of the lost count)</summary><pre id="details-found"></pre></details>
+</div>
+
 </div>
 
 <script>
