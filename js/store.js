@@ -1338,6 +1338,23 @@
           videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
           sourceOperationName: dream.sourceOperationName || null,
           interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
+          // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+          // — the dream-builder wizard's Mood step answer, which
+          // js/music-bed.js keys the ambient bed off. This list is an
+          // explicit, hand-maintained whitelist (see this function's own doc
+          // comment above): a new dream field is NOT carried automatically,
+          // and omitting one fails silently rather than loudly. dream-sync.js's
+          // server-side DREAM_FIELDS allowlist having 'mood' is necessary but
+          // NOT sufficient — without it here too, the server never receives
+          // the field to store in the first place, so a dream RESTORED onto a
+          // new device or after a webview storage wipe (the entire reason this
+          // sync exists) comes back permanently moodless and quietly falls
+          // back to its visual-style bed. Null-coalesced like every optional
+          // field beside it, so "no mood" (a skipped Mood step, a free-text
+          // "+ Something else", or a creation path with no mood step at all —
+          // Write it / Record it / claim-dream) travels as a real explicit
+          // answer rather than an absent key.
+          mood: dream.mood || null,
           updatedAt: dream.updatedAt || Date.now()
         }
       })

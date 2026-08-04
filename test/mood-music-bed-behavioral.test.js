@@ -140,6 +140,50 @@ async function mockGeneration(page, videoUrl) {
   });
 }
 
+/**
+ * Records every dream-sync.js call this page makes, answering each with a
+ * plain success so js/store.js's own retry ladder never kicks in.
+ *
+ * Deliberately captures the RAW outgoing request body rather than asserting
+ * on local state: the bug this exists to catch (review finding on branch
+ * mood-music-audition-infra-jfjco0) was precisely a field that was correct
+ * everywhere in local state and correct in dream-sync.js's server-side
+ * DREAM_FIELDS allowlist, but was silently missing from the one place that
+ * matters for cross-device restore — the wire. js/store.js's
+ * attemptPrivateDreamSync builds its POST body from an explicit,
+ * hand-maintained field list (see its own doc comment's "fixed field
+ * whitelist" note), so a new dream field is NOT carried automatically and
+ * nothing fails loudly when one is forgotten.
+ */
+function mockDreamSync(page) {
+  var calls = [];
+  page.route('**/.netlify/functions/dream-sync*', function (route) {
+    var req = route.request();
+    if (req.method() === 'GET') {
+      calls.push({ method: 'GET' });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, dreams: [] }) });
+      return;
+    }
+    calls.push({ method: 'POST', body: JSON.parse(req.postData()) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+  });
+  return calls;
+}
+
+/** Polls until `fn()` is truthy (js/store.js's private-dream sync is deliberately fire-and-forget, so there is nothing to await on). */
+async function waitFor(fn, timeoutMs) {
+  var start = Date.now();
+  while (Date.now() - start < (timeoutMs || 3000)) {
+    if (fn()) return true;
+    await new Promise(function (r) { setTimeout(r, 25); });
+  }
+  return false;
+}
+
+function firstUpsert(calls) {
+  return calls.filter(function (c) { return c.method === 'POST' && c.body.action === 'upsert'; })[0];
+}
+
 async function seedLoggedInUser(page, username) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (u) {
@@ -440,6 +484,96 @@ test('js/store.js: a mood on the draft reaches the FINISHED dream record through
     await page.goto(baseUrl + '/result.html?id=' + dream.id, { waitUntil: 'domcontentloaded' });
     var bedSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
     assert.equal(bedSrc, 'assets/music-beds/moods/mysterious.wav', 'result.html must pick the bed from the dream\'s mood, not its Cartoon style');
+  } finally {
+    await context.close();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 1b. mood has to reach the WIRE, not just local state
+//
+// Regression coverage for a review finding on this branch. dream-sync.js's
+// server-side DREAM_FIELDS allowlist was correctly given 'mood', and
+// test/dream-sync.test.js proves the server round-trips it — but that test
+// hand-builds its payload via its own dreamPayload() helper and calls the
+// handler directly, so it can (and did) pass while the REAL client never put
+// `mood` on the wire at all. js/store.js's attemptPrivateDreamSync builds its
+// upsert body from an explicit hand-maintained field list, and `mood` was
+// missing from it: a private dream's mood was correct in local state, correct
+// in the server's allowlist, and still silently dropped in transit.
+//
+// Consequence pre-fix (zero user-visible impact TODAY only because no real
+// mood-keyed tracks exist yet — this is dead-until-lit infrastructure that
+// has to be correct the moment those 12 tracks land): a private dream
+// RESTORED onto a new device or after a webview storage wipe — the entire
+// reason dream-sync.js exists — came back permanently moodless and quietly
+// fell back to its visual-style bed. The same dream would sound different on
+// two devices, with nothing to recover the lost answer from.
+//
+// These two tests assert on the OUTGOING REQUEST BODY specifically. Asserting
+// on local state, or on the server handler with a hand-built payload, is
+// exactly what missed this.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('js/store.js (regression): a real generation\'s mood actually reaches the WIRE in the private-dream sync upsert -- local state and the server allowlist both being right is not enough, the client\'s own explicit field list has to carry it too', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInUser(page, 'moodwiresyncer');
+    var syncCalls = mockDreamSync(page);
+    await mockGeneration(page, '/assets/music-beds/anime.wav');
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+
+    // The real public creation path, all the way through the real
+    // finalizeDream -> syncPrivateDreamBestEffort -> attemptPrivateDreamSync
+    // chain. Nothing here hand-builds a payload.
+    var dream = await page.evaluate(async function () {
+      return await DreamStore.generateVideo('a prompt, mysterious mood, Cartoon style, dreamlike.', 'Cartoon', { mood: 'mysterious' });
+    });
+    assert.equal(dream.mood, 'mysterious', 'sanity: local state must have the mood (this part was already correct pre-fix)');
+
+    var sawUpsert = await waitFor(function () { return !!firstUpsert(syncCalls); });
+    assert.ok(sawUpsert, 'sanity: a freshly generated private dream must fire an upsert against dream-sync at all');
+
+    var upsert = firstUpsert(syncCalls);
+    assert.equal(upsert.body.dream.id, dream.id, 'sanity: the upsert must be for the dream just created');
+    assert.equal(
+      upsert.body.dream.mood,
+      'mysterious',
+      'THE REGRESSION: mood must be present in the outgoing dream-sync upsert body. Without it the server stores a moodless copy, and a restore onto a new device / after a webview wipe permanently loses the user\'s mood answer and silently falls back to the visual-style bed.'
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test('js/store.js (regression): a generation with NO mood still sends an explicit `mood: null` on the wire -- matching how every other optional field in that same upsert body is shaped, so "no mood" is transmitted as a real answer rather than an absent key', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInUser(page, 'moodlesswiresyncer');
+    var syncCalls = mockDreamSync(page);
+    await mockGeneration(page, '/assets/music-beds/anime.wav');
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+
+    await page.evaluate(async function () {
+      // No mood opt at all -- exactly what Write-it / Record-it produce.
+      return await DreamStore.generateVideo('a prompt, Cartoon style, dreamlike.', 'Cartoon', {});
+    });
+
+    var sawUpsert = await waitFor(function () { return !!firstUpsert(syncCalls); });
+    assert.ok(sawUpsert, 'sanity: a freshly generated private dream must fire an upsert against dream-sync at all');
+
+    var upsert = firstUpsert(syncCalls);
+    assert.equal(
+      upsert.body.dream.mood,
+      null,
+      'the no-mood path must send an explicit null (same null-coalesced shape as promptText/storyText/videoUrl right beside it), never a fabricated default and never an absent key'
+    );
   } finally {
     await context.close();
   }
