@@ -52,6 +52,11 @@
 //                                     a missing asset, never block" — same as portraits)
 //   E506 tts_request_failed        — fal rejected the submission, or a network/parse error occurred
 //   E507 rate_limited              — MAX_INTERP_AUDIO_PER_IP_PER_DAY exceeded for today
+//   E508 caption_alignment_failed  — sync TTS succeeded but whisper word-alignment didn't (failed,
+//                                     timed out, was skipped because the TTS leg already ate the
+//                                     wall clock, or returned no usable chunks) -- NOT an error
+//                                     response on its own, degrades captionsLevel to 'sentence'
+//                                     inside an otherwise-200 done:true response (see below)
 //
 // Mock mode (GENERATION_MOCK_MODE==="true", AGENT_POLICY.md's "keep
 // generation-testing cost low" rule + docs/TESTING.md): skips the real
@@ -74,7 +79,7 @@ var FAL_API_BASE = 'https://queue.fal.run';
 var FAL_SYNC_BASE = 'https://fal.run'; // synchronous execution — no scheduler, measured 1.3-1.4s for kokoro (probe 2026-08-04)
 var FAL_MODEL = process.env.FAL_MODEL_INTERP_TTS || 'fal-ai/kokoro/american-english';
 var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // same model interp-audio-status.js aligns captions with
-var SYNC_TTS_BUDGET_MS = 18000;    // real readings are 500-900 chars -> sync TTS can take 10-15s (founder hit the 12s abort on his first real-length reading, 08-04); 18s + capped whisper stays under Netlify's 26s ceiling
+var SYNC_TTS_BUDGET_MS = 18000;    // real readings are 500-900 chars -> sync TTS can take 10-15s (founder hit the 12s abort on his first real-length reading, 08-04). NOTE (review round 1 of tracker cbdj3d's remaining-polish item, 2026-08-04): the "26s Netlify ceiling" this value was originally sized against has no cited source, and this codebase's OWN transcribe-audio.js documents an empirically-tested (real production 504s hit) 10s function timeout on this plan -- an unresolved conflict. NOT reverting this value though: unlike that speculative polish attempt, THIS number has real production evidence behind it -- the founder has since walked a full-length reading live and confirmed it working (board notes 2026-08-04: "reading voice fixed at root -- 5.3s measured live for a full-length reading", "Sage founder-confirmed working"). If the true ceiling ever turns out to be materially under 18s, that would show up as raw 502/504s in the outcome= logging below rather than this function's own graceful fallback -- worth watching, not yet observed.
 var SYNC_WHISPER_BUDGET_MS = 3500; // captions only — a blown budget degrades to sentence-level, never delays the voice (was 8000; live check 08-04 showed whisper eating the whole budget while the founder waits — the voice's own start time outranks word-level captions)
 var READING_SPEED = 0.9; // founder-adjusted 08-04 ("slightly too slow" at 0.8 on his full walk); same for every persona
 
@@ -141,35 +146,63 @@ exports.handler = async function (event) {
   var authHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Key ' + falKey };
 
   var syncAudioUrl = null;
+  var ttsCtl = new AbortController();
+  var ttsTimer = setTimeout(function () { ttsCtl.abort(); }, SYNC_TTS_BUDGET_MS);
   try {
-    var ttsCtl = new AbortController();
-    var ttsTimer = setTimeout(function () { ttsCtl.abort(); }, SYNC_TTS_BUDGET_MS);
     var syncRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL, { method: 'POST', headers: authHeaders, body: ttsBody, signal: ttsCtl.signal });
-    clearTimeout(ttsTimer);
     var syncData = await syncRes.json();
     if (syncRes.ok && syncData && syncData.audio && syncData.audio.url) {
       syncAudioUrl = syncData.audio.url;
     }
-  } catch (e) { /* fall through to the queue path */ }
+  } catch (e) { /* fall through to the queue path */
+  } finally {
+    // Bug fix (review round 1 of tracker cbdj3d's remaining-polish item):
+    // clearTimeout used to sit AFTER the awaited fetch/json() calls, so a
+    // thrown fetch (network error, or the abort itself) skipped it
+    // entirely, leaving this timer armed for the full budget even though
+    // the request had already failed and moved on -- harmless in
+    // production (an abandoned AbortController's abort() is a no-op) but
+    // it kept the function's event loop alive needlessly, and made every
+    // failure-path test in this file take the full budget's worth of real
+    // wall-clock time to finish. Same fix applied to the whisper timer
+    // below.
+    clearTimeout(ttsTimer);
+  }
+  var ttsElapsedMs = Date.now() - handlerT0;
 
   if (syncAudioUrl) {
     var captions = null;
     // Skip whisper entirely when a long TTS already ate most of the wall
-    // clock — the 26s function ceiling outranks word-level captions.
-    var whisperBudget = (Date.now() - handlerT0) > 11000 ? 0 : SYNC_WHISPER_BUDGET_MS;
-    try {
-      if (!whisperBudget) throw new Error('skip_whisper_budget_spent');
+    // clock -- word-level captions are an enhancement, never worth risking
+    // the function's own execution budget for.
+    var whisperBudget = ttsElapsedMs > 11000 ? 0 : SYNC_WHISPER_BUDGET_MS;
+    if (whisperBudget) {
       var wCtl = new AbortController();
       var wTimer = setTimeout(function () { wCtl.abort(); }, whisperBudget);
-      var wRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL_WHISPER, {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ audio_url: syncAudioUrl, task: 'transcribe', chunk_level: 'word' }),
-        signal: wCtl.signal
-      });
-      clearTimeout(wTimer);
-      var wData = await wRes.json();
-      if (wRes.ok) captions = InterpAudioStatus.parseWordChunks(wData);
-    } catch (e) { /* sentence-level fallback below */ }
+      try {
+        var wRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL_WHISPER, {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ audio_url: syncAudioUrl, task: 'transcribe', chunk_level: 'word' }),
+          signal: wCtl.signal
+        });
+        var wData = await wRes.json();
+        if (wRes.ok) captions = InterpAudioStatus.parseWordChunks(wData);
+      } catch (e) { /* sentence-level fallback below */
+      } finally {
+        clearTimeout(wTimer); // same fix as the TTS timer above
+      }
+    }
+
+    // Instrumentation (tracker cbdj3d remaining-polish item: "instrument
+    // the sync-vs-fallback ratio") -- one summary line per request logging
+    // which outcome branch was actually taken and how long the sync TTS
+    // leg took, so a real production log scan can answer "is the current
+    // budget actually enough for our longest readings, and is the real
+    // function-timeout ceiling ever actually being hit" empirically
+    // instead of guessing (see SYNC_TTS_BUDGET_MS's own comment above for
+    // the unresolved question this data feeds into).
+    var outcome = captions ? 'sync_word_captions' : (whisperBudget ? 'sync_sentence_degraded' : 'sync_whisper_skipped_budget_spent');
+    console.log('generate-interp-audio: outcome=' + outcome + ' ttsMs=' + ttsElapsedMs + ' textLen=' + text.length);
 
     return {
       statusCode: 200,
@@ -189,6 +222,8 @@ exports.handler = async function (event) {
       })
     };
   }
+
+  console.log('generate-interp-audio: outcome=queue_fallback ttsMs=' + ttsElapsedMs + ' textLen=' + text.length);
 
   // Legacy queue fallback — unchanged contract, polled by interp-audio-status.js.
   try {

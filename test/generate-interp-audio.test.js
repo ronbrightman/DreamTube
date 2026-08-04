@@ -94,7 +94,59 @@ test('rejects a persona with no voiceId configured yet with E505 (same "tolerate
   assert.match(JSON.parse(res.body).error, /^E505:/);
 });
 
-test('submits to fal-ai/kokoro/american-english with the right voice/speed and returns operationName on success', async function () {
+test('sync-first: a real one-round-trip kokoro+whisper success returns done:true with word-level captions, hitting fal.run not the queue', async function () {
+  var urls = [];
+  global.fetch = async function (url, opts) {
+    urls.push(url);
+    if (/\/fal-ai\/whisper$/.test(url)) {
+      var body = JSON.parse(opts.body);
+      assert.equal(body.audio_url, 'https://cdn.fal.example/audio-123.mp3');
+      return { ok: true, status: 200, json: async function () {
+        return { chunks: [
+          { text: 'A', timestamp: [0, 0.3] },
+          { text: 'hopeful', timestamp: [0.3, 0.9] }
+        ] };
+      } };
+    }
+    // fal.run sync TTS call
+    var body2 = JSON.parse(opts.body);
+    assert.equal(body2.voice, 'am_onyx');
+    assert.equal(body2.speed, generateInterpAudio.READING_SPEED);
+    return { ok: true, status: 200, json: async function () { return { audio: { url: 'https://cdn.fal.example/audio-123.mp3' } }; } };
+  };
+  var res = await handler(genEvent());
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.equal(data.done, true);
+  assert.equal(data.audioUrl, 'https://cdn.fal.example/audio-123.mp3');
+  assert.equal(data.captionsLevel, 'word');
+  assert.equal(data.captions.length, 2);
+  assert.equal(data.captions[0].word, 'A');
+  assert.equal(data.audioDurationMs, 900);
+  // Anchored on the host specifically: FAL_API_BASE (the queue endpoint) is
+  // 'https://queue.fal.run', which CONTAINS the substring 'fal.run/' -- an
+  // unanchored /fal\.run\// regex would silently pass even if a future
+  // regression accidentally routed this call through the queue base
+  // instead of the sync one.
+  assert.ok(urls.every(function (u) { return new URL(u).host === 'fal.run'; }), 'sync-first must hit fal.run (sync), never queue.fal.run, when it succeeds');
+});
+
+test('sync-first: kokoro succeeds but whisper fails/times out -- degrades to sentence-level captions, still done:true, never falls back to the queue', async function () {
+  global.fetch = async function (url) {
+    if (/\/fal-ai\/whisper$/.test(url)) return { ok: false, status: 500, json: async function () { return {}; } };
+    return { ok: true, status: 200, json: async function () { return { audio: { url: 'https://cdn.fal.example/audio-456.mp3' } }; } };
+  };
+  var res = await handler(genEvent());
+  assert.equal(res.statusCode, 200);
+  var data = JSON.parse(res.body);
+  assert.equal(data.done, true);
+  assert.equal(data.audioUrl, 'https://cdn.fal.example/audio-456.mp3');
+  assert.equal(data.captionsLevel, 'sentence');
+  assert.deepEqual(data.captions, []);
+  assert.match(data.degradedReason, /^E508:/);
+});
+
+test('submits to fal-ai/kokoro/american-english with the right voice/speed and returns operationName on success (queue fallback -- exercised when the sync leg does not return a usable audio.url)', async function () {
   var capturedUrl = null, capturedBody = null;
   global.fetch = async function (url, opts) {
     capturedUrl = url;
@@ -112,14 +164,14 @@ test('submits to fal-ai/kokoro/american-english with the right voice/speed and r
   assert.equal(capturedBody.prompt, 'A hopeful reading of your dream, turning it toward the good.');
 });
 
-test('surfaces a fal rejection as E506', async function () {
+test('surfaces a fal rejection as E506 (queue fallback path)', async function () {
   stubFetchOnce({ ok: false, status: 422, json: async function () { return { detail: 'bad request' }; } });
   var res = await handler(genEvent());
   assert.equal(res.statusCode, 422);
   assert.match(JSON.parse(res.body).error, /^E506:/);
 });
 
-test('a thrown/network-level fal failure surfaces as a 500 E506', async function () {
+test('a thrown/network-level fal failure on the sync leg falls through to the queue, and a thrown/network-level failure THERE surfaces as a 500 E506', async function () {
   global.fetch = async function () { throw new Error('boom'); };
   var res = await handler(genEvent());
   assert.equal(res.statusCode, 500);
