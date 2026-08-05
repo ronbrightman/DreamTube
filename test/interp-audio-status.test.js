@@ -232,6 +232,48 @@ test('if the CLAIMED submission itself fails, the claim is released so a later g
   assert.equal(record, null, 'the claim must be released on submission failure, not left dangling');
 });
 
+test('if the whisper submission SUCCEEDS but recordSubmitted()\'s durable write fails, the client still gets the real falw: operationName -- an already-paid job is never orphaned', async function () {
+  var whisperStore = require('../netlify/functions/lib/whisper-alignment-store');
+  var name = 'fal:fal-ai/kokoro/american-english:req-recordfails';
+  global.fetch = async function (url, opts) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    if (/\/requests\/req-recordfails$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/recordfails.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url) && opts && opts.method === 'POST') {
+      return { ok: true, status: 200, json: async function () { return { request_id: 'whisper-req-recordfails' }; } };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  // Simulate a transient Blobs write failure on the SECOND write to this
+  // store (the claim() CAS write must succeed first so there's a claim to
+  // record against; the second write is recordSubmitted()'s own plain
+  // overwrite -- the one this test targets).
+  mockBlobs.setWriteOverride(whisperStore.STORE_NAME, function (key, value, callIndex) {
+    if (callIndex >= 2) return new Error('simulated Blobs 500 -- transient storage-layer fault');
+    return null;
+  });
+
+  var res = await handler(getEvent(name));
+  assert.equal(res.statusCode, 200, 'must NOT surface as a 500 -- the submission itself already succeeded');
+  var data = JSON.parse(res.body);
+  assert.equal(data.status, 'processing');
+  assert.equal(
+    data.operationName,
+    'falw:' + encodeURIComponent('https://cdn.fal.ai/recordfails.mp3') + ':whisper-req-recordfails',
+    'the real, already-paid-for whisper requestId must still reach the client even though the durable dedup record write failed'
+  );
+
+  mockBlobs.clearWriteOverride(whisperStore.STORE_NAME);
+  // Documents this fix's accepted residual gap (see recordSubmitted()'s own
+  // doc comment): the persisted record is left exactly as claim() wrote it
+  // -- whisperRequestId still null -- since nothing ever retries this
+  // write. This does NOT affect the poller above (it already has its
+  // answer directly), only a genuinely different concurrent poller would
+  // still see this stale marker.
+  var record = await whisperStore.get(fakeEvent({}), 'fal-ai/kokoro/american-english', 'req-recordfails');
+  assert.equal(record.whisperRequestId, null, 'documents the accepted residual gap -- the durable record was NOT updated by the failed write');
+});
+
 test('if Kokoro itself fails (non-COMPLETED terminal status), reports status:"failed"', async function () {
   global.fetch = async function () {
     return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'ERROR' }); } };

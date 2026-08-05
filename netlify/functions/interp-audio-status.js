@@ -335,6 +335,13 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ status: 'done', audioUrl: audioUrl, audioDurationMs: null, captions: [], captionsLevel: 'sentence', degradedReason: 'E508: caption_alignment_failed' }) };
     }
 
+    // recordSubmitted() is itself best-effort (never throws -- see its own
+    // doc comment in whisper-alignment-store.js): the whisper submission
+    // above already succeeded and real money is already spent, so a
+    // transient Blobs write failure in the durable dedup record must never
+    // discard `submitted.requestId` or turn into a 500 here. The falw:
+    // operationName below is returned to the client regardless of whether
+    // this durable write actually landed.
     await whisperAlignmentStore.recordSubmitted(event, ttsModel, ttsRequestId, audioUrl, submitted.requestId);
 
     return {

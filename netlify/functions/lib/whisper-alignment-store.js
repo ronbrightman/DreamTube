@@ -150,18 +150,69 @@ async function claim(event, ttsModel, ttsRequestId, audioUrl) {
  * won (claim() returned claimed:true). Plain overwrite, no CAS needed --
  * only the claim's own winner ever calls this, so there is no concurrent
  * writer to race.
+ *
+ * BEST-EFFORT, same posture as releaseClaim() below -- and for a sharper
+ * reason: by the time this is called, the real fal-ai/whisper submission
+ * has ALREADY happened (real money spent, `whisperRequestId` is a real,
+ * otherwise-unrecoverable job id the caller is already holding). A
+ * transient Blobs write failure here must never discard that. This
+ * function swallows its own write failure (logs and returns normally,
+ * never throws) so interp-audio-status.js's Stage 1 can still hand the
+ * client the "falw:" operationName it needs in THIS response, regardless
+ * of whether the durable dedup record itself got persisted -- the record
+ * is a best-effort optimization to avoid a second submission on a FUTURE
+ * poll, not a correctness requirement for the response happening right now.
+ *
+ * RESIDUAL GAP, accepted deliberately rather than chased: if this write
+ * does fail, the persisted record is left exactly as claim() left it --
+ * `{ whisperRequestId: null, ... }` -- forever, since nothing ever retries
+ * or corrects it. Any OTHER poll for the SAME ttsRequestId (a second
+ * browser tab, a genuinely concurrent retry racing this one) that reaches
+ * Stage 1's `whisperAlignmentStore.get()` will keep taking the "someone
+ * else is mid-submission, don't touch it" branch and re-poll with the OLD
+ * "fal:" name -- forever -- until INTERP_AUDIO_MAX_POLL_MS elapses and
+ * THAT poll's reading fails outright (E506: tts_request_failed: timed_out).
+ * This is deliberately NOT "fixed" by releasing the claim on a write
+ * failure here the way releaseClaim() does on a submission failure:
+ * releasing would let a future poll win claim() again and submit a SECOND
+ * real fal-ai/whisper job for audio that was already (successfully, just
+ * not durably recorded) aligned -- reopening exactly the duplicate-
+ * submission cost leak this whole store exists to prevent, and a worse
+ * outcome than the gap it would be closing. There is no way for this
+ * function to tell "the submission actually failed, a fresh claim is
+ * safe" (releaseClaim's case) apart from "the submission succeeded but
+ * only the record of it failed to save" (this case) -- so the safe choice
+ * is to leave the marker in place. The blast radius is narrow and
+ * strictly smaller than before this fix existed: the ONE poller that
+ * actually holds `whisperRequestId` (this invocation) still succeeds
+ * immediately via interp-audio-status.js's direct return, completely
+ * unaffected by this write's outcome; only a genuinely different,
+ * genuinely concurrent-at-this-exact-moment poller for the same TTS
+ * request is affected, and only until it independently times out. A
+ * narrow, rare-of-a-rare edge, documented honestly here rather than
+ * chased -- same "narrowed but not fully eliminated" posture as
+ * blobs-retry.js's own header comment.
  */
 async function recordSubmitted(event, ttsModel, ttsRequestId, audioUrl, whisperRequestId) {
   var key = keyFor(ttsModel, ttsRequestId);
-  connectLambda(event);
-  await store().setJSON(key, {
-    ttsModel: ttsModel,
-    ttsRequestId: ttsRequestId,
-    audioUrl: audioUrl,
-    whisperRequestId: whisperRequestId,
-    claimedAt: Date.now(),
-    submittedAt: Date.now()
-  });
+  try {
+    connectLambda(event);
+    await store().setJSON(key, {
+      ttsModel: ttsModel,
+      ttsRequestId: ttsRequestId,
+      audioUrl: audioUrl,
+      whisperRequestId: whisperRequestId,
+      claimedAt: Date.now(),
+      submittedAt: Date.now()
+    });
+  } catch (e) {
+    // Best-effort -- see this function's own doc comment above. The
+    // whisper submission itself already succeeded and the caller already
+    // holds whisperRequestId, so it still returns it to the client
+    // regardless of this write's outcome -- never orphan an already-paid
+    // job over a durability write failing.
+    console.error('whisper-alignment-store: failed to record a successful whisper submission (requestId=' + whisperRequestId + ') for ttsRequestId=' + ttsRequestId + ' -- the submission itself succeeded and the caller will still return it to the client, but the durable dedup record was NOT updated (stays claimed/null)', e);
+  }
 }
 
 /**
