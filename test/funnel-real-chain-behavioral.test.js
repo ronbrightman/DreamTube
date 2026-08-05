@@ -199,6 +199,12 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     var FUNNEL_EMAIL = 'real-chain-funnel@example.com';
     var claimCalls = [];
     var markCalls = [];
+    // markCalls records a mark-generation-completed REQUEST the instant the
+    // route is intercepted; markCompletions records the real handler
+    // actually RESOLVING. They are not the same event, and the assertions
+    // below depend on which one they are sequenced behind -- see the
+    // markCompletions settle further down for the full reasoning.
+    var markCompletions = [];
 
     await wireRealPostHandler(page, '**/.netlify/functions/check-email', checkEmailHandler);
     // The submission itself is the one call in this chain that needs its
@@ -230,7 +236,10 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await wireRealPostHandler(page, '**/.netlify/functions/mark-generation-completed', markHandler, {
       wrap: function (handler, event) {
         markCalls.push(JSON.parse(event.body));
-        return handler(event);
+        return Promise.resolve(handler(event)).then(function (res) {
+          markCompletions.push(res);
+          return res;
+        });
       }
     });
 
@@ -289,6 +298,39 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     // mocked stand-in.
     var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
     var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+    // Wait for the real mark-generation-completed.js invocation to actually
+    // RESOLVE before reading the record it is supposed to have enqueued.
+    //
+    // Why this line exists (root-caused for tracker item test-funnel-real-
+    // chain-behavioral-test-j-nmhqx0 -- this test was deterministically red
+    // on main, ~3/3, not a flake): `markCalls` is pushed by
+    // wireRealPostHandler's own wrap the instant the route is intercepted,
+    // BEFORE the awaited handler runs. So `markCalls.length >= 1` above is
+    // evidence the request was made, never evidence the handler finished --
+    // and the enqueue asserted below is the LAST thing that handler does
+    // (verifyOperationCompleted -> markCompleted -> job-owners read ->
+    // pending-dreams getWithReadyRetry, which spends a real
+    // blobs-retry.DEFAULT_RETRY_DELAY_MS on this funnel path since the
+    // record legitimately has no readyAt -> account-store read ->
+    // markPending). Measured here: the route was intercepted at ~1788ms and
+    // markPending did not land until ~1990ms, while this read ran at
+    // ~1881ms, i.e. ~110ms too early, every time.
+    //
+    // Nothing before this point is causally downstream of the handler
+    // resolving: the DOM gate above (#dreams-row/#d0-video) is client-side
+    // and settles as soon as the poll loop paints, which happens off the
+    // video-status response, not off the mark-generation-completed one.
+    // This is exactly the unsound-ordering shape test/helpers/settle.js was
+    // written for (see its header comment) -- the pre-existing
+    // `settle(resendCalls...)` at the bottom used to absorb this window
+    // incidentally back when mark-generation-completed.js sent the email
+    // inline; commit de124a5 (thumbnail-gated send) moved the send off this
+    // request and inserted this synchronous store read ahead of that
+    // settle, leaving the new assertion racing an in-flight handler with
+    // nothing sequencing it. The production code is not at fault: a real
+    // caller gets its 200 only after markPending has already returned.
+    await settle(function () { return markCompletions.length >= 1; });
+    assert.ok(markCompletions.length >= 1, 'the real mark-generation-completed.js handler must have actually resolved before its enqueue is asserted on');
     var pendingRecord = await pendingStore.getPending(fakeEvent({}), markCalls[0].operationName);
     assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending record for this exact operationName');
     mockBlobs.seed(pendingStore.STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
