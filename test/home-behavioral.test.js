@@ -912,7 +912,7 @@ test('home.html: Write / Speak quiet links reuse create.html\'s EXISTING entry p
   }
 });
 
-test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dream" action and reuses create.html\'s EXISTING chip-first "Build it" wizard via a ?build=1 deep-link (tracker item for-product-home-screen-spec-drift-from--575djz, fix 2 -- the founder-requested Wizard entry point that has a history of not surviving from mock into the live build -- and the mock4 amendment moving it from a small button among four into the hero\'s own primary pill)', async function (t) {
+test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dream" action and now lands on create.html\'s EXISTING Build/Write/Record choice screen (a bare create.html deep-link, no ?build=1) rather than skipping straight into the wizard (tracker item for-product-founder-ask-08-05-tell-your--vmfvsk, founder preview catch: "when I clicked the Tell your dream button I was redirected to wizard without the choice first or without the suggestion to record or write instead" -- supersedes the earlier for-product-home-screen-spec-drift-from--575djz fix that sent the pill straight to ?build=1)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -928,26 +928,100 @@ test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dre
     assert.ok(pillBox.height >= 44, 'the primary pill must meet a real tap-target minimum (spec: 56px tall)');
 
     // DOM order of the quiet entry links underneath: Write, Speak, No
-    // recall -- Wizard itself is no longer among them (it's the pill above).
+    // recall -- these remain as a faster one-tap shortcut for a returning
+    // user, alongside the pill now also offering the full choice.
     var entryIds = await page.locator('#tonight-links button').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
     assert.deepEqual(entryIds, ['btn-write', 'btn-speak', 'btn-norecall']);
 
     await page.click('#tonight-pill');
-    await page.waitForURL(/create\.html\?build=1/, { timeout: 5000, waitUntil: 'domcontentloaded' });
+    await page.waitForURL(function (url) { return /\/create\.html$/.test(url.pathname) && url.search === ''; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
 
-    // Not just a URL check -- confirm the actual chip-first wizard UI is
-    // what's showing, same rigor as the ?write=1 test above confirming
-    // #create-write. #choice-build's own click handler swaps the
-    // Build/Write/Record choice screen (#create-select) out for the
-    // chip-first build flow (#create-build); step 1 of 5 (subject chips)
-    // is the first thing rendered into it.
+    // Confirm the actual Build/Write/Record choice screen is what's
+    // showing -- not the wizard, not any other create.html state. All
+    // three real choice cards must be visible and correctly routed.
+    await page.waitForSelector('#create-select', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#create-build').isVisible(), false, 'the chip wizard must NOT be shown yet -- the choice screen comes first');
+    assert.equal(await page.locator('#choice-build').isVisible(), true, '"Build it" choice card must be offered');
+    assert.equal(await page.locator('#choice-write').isVisible(), true, '"Write it" choice card must be offered');
+    assert.equal(await page.locator('#choice-record').isVisible(), true, '"Record it" choice card must be offered');
+
+    // Build it -> the chip-first wizard, same rigor as the old test:
+    // step 1 of 5 (subject chips) must actually render, not just an
+    // empty/generic build screen.
+    await page.click('#choice-build');
     await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#create-select').isVisible(), false, 'the Build/Write/Record choice screen should be skipped entirely');
+    assert.equal(await page.locator('#create-select').isVisible(), false);
     var stepBodyText = await page.locator('#build-step-body').textContent();
     assert.match(stepBodyText, /step 1 of 5/i, 'must land showing the chip-first wizard\'s first step, not just an empty/generic build screen');
     assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the chip row itself -- not just the step heading -- must be visible');
   } finally {
     await context.close();
+  }
+});
+
+test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (create.html\'s own #choice-write/#choice-record handlers, unchanged)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page, { dreams: [] });
+
+    await page.waitForSelector('#tonight-pill', { timeout: 5000 });
+    await page.click('#tonight-pill');
+    await page.waitForSelector('#choice-write', { state: 'visible', timeout: 5000 });
+    await page.click('#choice-write');
+    await page.waitForSelector('#create-write', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#create-select').isVisible(), false);
+  } finally {
+    await context.close();
+  }
+
+  // Fresh page for Record it, same pill entry point. Needs a fake
+  // getUserMedia/MediaRecorder (same convention as test/record-mode-
+  // behavioral.test.js's installMediaRecorderMock) so #choice-record's
+  // real startRecordingUI() can run end to end without a real mic.
+  var context2 = await newMobileContext();
+  try {
+    await context2.addInitScript(function () {
+      var fakeStream = { getTracks: function () { return []; } };
+      if (!navigator.mediaDevices) navigator.mediaDevices = {};
+      navigator.mediaDevices.getUserMedia = function () { return Promise.resolve(fakeStream); };
+      function FakeMediaRecorder(stream, opts) {
+        this.stream = stream;
+        this.state = 'inactive';
+        this.mimeType = (opts && opts.mimeType) || 'audio/webm';
+        this._listeners = {};
+      }
+      FakeMediaRecorder.prototype.addEventListener = function (evt, cb) {
+        this._listeners[evt] = this._listeners[evt] || [];
+        this._listeners[evt].push(cb);
+      };
+      FakeMediaRecorder.prototype.start = function () { this.state = 'recording'; };
+      FakeMediaRecorder.prototype.stop = function () {
+        this.state = 'inactive';
+        (this._listeners.stop || []).forEach(function (cb) { cb(); });
+      };
+      FakeMediaRecorder.isTypeSupported = function () { return true; };
+      window.MediaRecorder = FakeMediaRecorder;
+    });
+    var page2 = await context2.newPage();
+    await blockThirdParty(page2);
+    await mockTokenStatus(page2, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
+    await seedHomeUser(page2, { dreams: [] });
+
+    await page2.waitForSelector('#tonight-pill', { timeout: 5000 });
+    await page2.click('#tonight-pill');
+    await page2.waitForSelector('#choice-record', { state: 'visible', timeout: 5000 });
+    await page2.click('#choice-record');
+    // #choice-record's own handler (startRecordingUI) opens the record
+    // panel -- same existing, already-tested destination as the ?record=1
+    // deep-link.
+    await page2.waitForSelector('#create-record', { state: 'visible', timeout: 5000 });
+    assert.equal(await page2.locator('#create-select').isVisible(), false);
+  } finally {
+    await context2.close();
   }
 });
 
