@@ -164,13 +164,15 @@
       <div class="char-mode-btn active" data-visibility="public">Public</div>
     </div>
 
-    <!-- Share this profile — shown for every viewer (visitor or owner):
-         sharing someone else's profile is itself the growth loop this
-         slice exists to ship (design doc §F / research doc §2), not an
-         owner-only action. Reuses js/share-sheet.js's chooseLink ladder
-         via a synthetic "dream-shaped" payload pointed at
-         share-profile.js instead of share-dream.js — see the script
-         block below for why. -->
+    <!-- Share this profile — OWNER-ONLY (founder call, 2026-08-05, on
+         slice-1 review: "no need for the Share this Profile button for
+         non user visitors who get the shared profile link to view").
+         The original design showed it to every viewer as a growth loop
+         (design doc §F) — overridden by that founder decision; visitors
+         who received a link can reshare the URL itself. Reuses
+         js/share-sheet.js's chooseLink ladder via a synthetic
+         "dream-shaped" payload pointed at share-profile.js instead of
+         share-dream.js — see the script block below for why. -->
     <button type="button" class="btn btn-secondary btn-block u-share-btn" id="u-share-btn" style="display:none;">
       <span class="icon" id="u-share-icon"></span>
       <span>Share this profile</span>
@@ -484,7 +486,9 @@
 
         document.getElementById('u-identity').style.display = 'flex';
         renderOwnerControls();
-        document.getElementById('u-share-btn').style.display = 'flex';
+        // Owner-only per the founder's slice-1 review call — see the
+        // button's own comment above.
+        document.getElementById('u-share-btn').style.display = isOwner ? 'flex' : 'none';
         document.getElementById('u-priv-note').style.display = 'block';
 
         lastLoadedDreams = DreamStore.decorateFeedDreams(data.dreams);
