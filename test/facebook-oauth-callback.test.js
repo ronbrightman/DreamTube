@@ -100,9 +100,11 @@ test.after(function () {
   global.fetch = realFetch;
 });
 
-/** base64url-encodes a state payload the same way js/facebook-config.js's buildFacebookState does. */
-function encodeState(nonce, resume) {
-  var json = JSON.stringify({ n: nonce, r: resume === undefined ? 'resume=1&style=Cartoon' : resume });
+/** base64url-encodes a state payload the same way js/facebook-config.js's buildFacebookState does. `page` mirrors that function's own optional third argument -- omitted (not written as `p:undefined`) when absent, matching every pre-existing call site that never sends it. */
+function encodeState(nonce, resume, page) {
+  var payload = { n: nonce, r: resume === undefined ? 'resume=1&style=Cartoon' : resume };
+  if (page) payload.p = page;
+  var json = JSON.stringify(payload);
   return Buffer.from(json, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
@@ -118,7 +120,7 @@ function callbackEvent(opts) {
     method: 'GET',
     ip: opts.ip || nextIp(),
     headers: headers,
-    query: Object.assign({ code: 'fb-code-123', state: encodeState(nonce, opts.resume) }, opts.query || {})
+    query: Object.assign({ code: 'fb-code-123', state: encodeState(nonce, opts.resume, opts.page) }, opts.query || {})
   });
 }
 
@@ -403,6 +405,46 @@ test('a stale bt/fb_error already sitting in the resume params is stripped, neve
   assert.equal(params.get('fb_needs_email'), null);
 });
 
+// ===================================================================
+// `p` (page) — tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j:
+// wizard.html's own Facebook button reuses this exact endpoint (not a
+// second copy), and needs the 302 to land back on wizard.html instead of
+// start.html. Mirrors js/facebook-config.js's buildFacebookState's own
+// optional third argument.
+// ===================================================================
+
+test('p:"wizard" in state sends the success redirect to wizard.html, not start.html', async function () {
+  installGraphStub({ profile: { id: '5550013', name: null, email: 'wizard-success@example.com' } });
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ resume: 'resume=1', page: 'wizard' }));
+  var url = locationOf(res);
+  assert.equal(url.pathname, '/wizard.html');
+  assert.equal(url.searchParams.get('bt') !== null, true, 'a real transfer token must still be minted, same as the start.html path');
+  assert.equal(url.searchParams.get('fb'), 'signup');
+});
+
+test('p:"wizard" in state sends a FAILURE redirect to wizard.html too (e.g. CSRF) -- not just the success path', async function () {
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ cookieNonce: 'ffffffffffffffffffffffffffffffff', page: 'wizard' }));
+  var url = locationOf(res);
+  assert.equal(url.pathname, '/wizard.html');
+  assert.equal(url.searchParams.get('fb_error'), 'csrf');
+});
+
+test('a missing/absent `p` still defaults to start.html -- every pre-existing start.html click never sends this field at all', async function () {
+  installGraphStub({ profile: { id: '5550014', name: null, email: 'no-page-field@example.com' } });
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ resume: 'resume=1' }));
+  assert.equal(locationOf(res).pathname, '/start.html');
+});
+
+test('an unrecognized `p` value also falls back to start.html (fail-closed to the one long-standing destination, never an arbitrary attacker-chosen path)', async function () {
+  installGraphStub({ profile: { id: '5550015', name: null, email: 'bogus-page@example.com' } });
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ resume: 'resume=1', page: 'not-a-real-page' }));
+  assert.equal(locationOf(res).pathname, '/start.html');
+});
+
 test('non-GET is a plain 405, not a redirect', async function () {
   var handler = require('../netlify/functions/facebook-oauth-callback').handler;
   var res = await handler(fakeEvent({ method: 'POST', ip: nextIp() }));
@@ -619,6 +661,21 @@ test('state contract: the client encoder and this function\'s parser agree, incl
   var resume = new URLSearchParams(parsed.resume);
   assert.equal(resume.get('caption'), caption, 'a unicode caption must survive the base64url round trip byte for byte');
   assert.equal(resume.get('style'), 'Cartoon');
+});
+
+test('state contract: buildFacebookState\'s optional third argument (page) round-trips through parseState, and is omitted (not "p":undefined) when the caller passes nothing -- start.html\'s own existing calls never pass one', function () {
+  var client = loadClientConfig();
+  var parseState = require('../netlify/functions/facebook-oauth-callback')._internal.parseState;
+
+  var wizardState = client.buildFacebookState('cafebabecafebabecafebabecafebabe', '', 'wizard');
+  assert.equal(parseState(wizardState).page, 'wizard');
+
+  var noPageState = client.buildFacebookState('cafebabecafebabecafebabecafebabe', '');
+  assert.equal(parseState(noPageState).page, 'start', 'a state with no `p` field at all must default to start -- every pre-existing start.html click builds its state this way');
+
+  // And the literal payload really does omit the key -- not a JSON "p":undefined.
+  var decoded = JSON.parse(Buffer.from(noPageState.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  assert.equal('p' in decoded, false, 'the key must be genuinely absent, not present with an undefined/null value');
 });
 
 // UPDATED 2026-08-03: Facebook Login went live in this repo on 2026-08-03

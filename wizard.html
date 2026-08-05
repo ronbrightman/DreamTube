@@ -215,6 +215,20 @@
 
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
 
+  /* Signup wall layout (ported from start.html's screen 13 -- see
+     tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j): the
+     Facebook button, the "or" divider, and the email field/CTA below it
+     each get their own .fn-stage-group inside .fn-signup-stage, spaced by
+     equal flex:1 .fn-stage-spacer gaps -- same mechanism, same class
+     names, as start.html's own fnStageHtml (see that file's own doc
+     comment on .fn-signup-stage for the full root-cause reasoning this
+     was built to fix there). renderSignup below is wizard.html's only
+     caller. */
+  .fn-signup-stage{ display:flex; flex-direction:column; min-height:100%;}
+  .fn-stage-spacer{ flex:1; min-height:14px;}
+  .fn-or-divider{ display:flex; align-items:center; gap:12px; margin:0; color:var(--fn-ink-faint); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;}
+  .fn-or-divider::before, .fn-or-divider::after{ content:''; flex:1; height:1px; background:var(--fn-line);}
+
   /* Flat white CTA instead of the pastel --fn-accent-grad -- reads as
      intentional/high-contrast against this shell's near-black background,
      same treatment start.html's own 'night' phase gives .fn-btn-primary
@@ -252,6 +266,7 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/facebook-config.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
@@ -265,11 +280,50 @@
     }
   }
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
+
+  // ===== Facebook Login — return-leg markers (tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
+  // facebook-oauth-callback.js 302s back HERE whenever the click that sent
+  // the visitor to Facebook originated on THIS page's own Signup step (the
+  // `p:'wizard'` marker in `state` — see js/facebook-config.js's
+  // buildFacebookState and that function's own `page` doc comment),
+  // carrying exactly one of the same three markers start.html's own return
+  // leg already handles (see that file's own head-of-file comment for the
+  // full shape):
+  //   ?bt=<session-transfer token>  — signed in; consume it and land
+  //                                    directly on the Signup step, skipping
+  //                                    every earlier question (there's
+  //                                    nothing left to ask this visitor).
+  //   ?fb_error=<slug>              — failed closed; show an inline error
+  //                                    on Signup, the passwordless email
+  //                                    path below it still fully usable.
+  //   ?fb_needs_email=<marker>      — Facebook confirmed who they are but
+  //                                    returned no email. Unlike
+  //                                    start.html (which has to ASK for
+  //                                    one), this wizard already collected
+  //                                    a real, deliverability-checked
+  //                                    email back at Contact capture —
+  //                                    see boot() below for how that gets
+  //                                    reused instead of asking again.
+  // Read BEFORE anything else touches the URL — DreamStore's own
+  // consumeSessionTransferTokenFromUrlSync strips `bt` via
+  // history.replaceState the moment it runs.
+  var fbTransferPresent = !!getParam('bt');
+  var facebookErrorSlug = getParam('fb_error');
+  var facebookNeedsEmailToken = getParam('fb_needs_email');
+  var resumedFromFacebookWizard = !!(fbTransferPresent || facebookErrorSlug || facebookNeedsEmailToken);
 
   // Already-signed-in visitors have no business in a PRE-signup wizard —
   // send them to the normal logged-in "New Dream" flow instead (create.html's
   // own chip wizard retrofit covers the same chip-first experience there).
-  if(DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
+  // Exempted on the Facebook return leg (resumedFromFacebookWizard): that
+  // load is an identity exchange IN PROGRESS (about to consume ?bt= and
+  // establish state.user, or still needs to show an inline error on
+  // Signup) — it must be allowed to finish and land on the Signup step
+  // normally, the same exemption start.html's own equivalent guard makes
+  // for its resumedFromFacebook flag.
+  if(!resumedFromFacebookWizard && DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
 
   // Returning-but-currently-logged-out entry guard (tracker item
   // for-product-life-origin-generate-handoff-founder-repro-8yc4wm, founder
@@ -313,8 +367,14 @@
   // explicit click-through from index.html always proceeds. A genuinely
   // first-time visitor (hasLocalAccountHistory() false) is unaffected
   // either way, exactly as docs/JOURNEY_MANIFEST.md documents.
+  // Also exempted on the Facebook return leg, same reasoning as the guard
+  // above: this specific load is finishing an identity exchange this exact
+  // browser itself just started (the Facebook click bumped signupAttemptToken
+  // and left for facebook.com from THIS wizard run), not an unrelated
+  // stale bookmark/history hit — bouncing it to index.html would strand a
+  // visitor who was already most of the way through signing up.
   var cameFromIndexGetStarted = new URLSearchParams(location.search).get('entry') === 'index';
-  if(!cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  if(!resumedFromFacebookWizard && !cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
   if(cameFromIndexGetStarted){
     var __cleanParams = new URLSearchParams(location.search);
     __cleanParams.delete('entry');
@@ -322,7 +382,13 @@
     history.replaceState(null, '', location.pathname + (__cleanQs ? '?' + __cleanQs : ''));
   }
 
-  DreamStore.clearDraft();
+  // Also skipped on the Facebook return leg -- wiping the draft here would
+  // discard the exact caption/style/characterIds a fresh signup on this
+  // return leg is about to adopt a pending generation for. See boot() at
+  // the end of this file for the full return-leg restore sequence, which
+  // repopulates this from the localStorage snapshot persisted right before
+  // the redirect to facebook.com instead.
+  if(!resumedFromFacebookWizard) DreamStore.clearDraft();
 
   // ===================================================================
   // Character staging — identical pattern to start.html's own pre-signup
@@ -1596,322 +1662,464 @@
   }
 
   // ===================================================================
-  // Step 8 — Signup (username + password; email locked to Step 7's
-  // capture). On success: flush staged characters, adopt the in-flight
-  // generation job (if the pre-signup start succeeded), best-effort mark
-  // it claimed server-side, then hand off straight to home.html (tracker
-  // item for-product-funnel-ending-v2-founder-ins-tfuu0q — processing.html
-  // removed, generation now runs in the background there instead).
+  // Step 8 — Signup wall (tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j, founder-reported gap:
+  // "saw no Facebook button" on a fresh wizard signup). Ported from
+  // start.html's LIVE screen-13 passwordless arm (renderScreen13Passwordless,
+  // SIGNUP_PASSWORDLESS_LIVE) + the Facebook button/or-divider
+  // (facebookSignupButtonHtml/facebookOrDividerHtml, used by that file's
+  // 'unified'/'reveal' arms) COMBINED into one wall — passwordless-first
+  // (no password field, ever), with Facebook Login above an "or" divider.
+  // Replaces the OLD plain username/password wall entirely; organic/direct
+  // signups (this file) now get the SAME wall the paid ad funnel offers.
+  //
+  // Email is never re-asked here (unlike start.html's own passwordless
+  // arm, which has to ask fresh) — this wizard already collected a real,
+  // deliverability-checked address back at Contact capture (Step 7), so
+  // it stays prefilled and disabled, exactly as the old wall already did.
+  // Tapping Continue submits THAT email directly via
+  // DreamStore.signupPasswordless — see start.html's own header comment on
+  // renderScreen13Passwordless for the full "why" behind the passwordless
+  // design (founder-decided hybrid, tracker item
+  // for-product-build-passwordless-signup-fo-at2fko) and its SECURITY FIX
+  // (an already-registered email is never silently logged in — it's
+  // resolved via a mailed code instead, see renderCodeStep below).
+  //
+  // signup_method analytics (tracker item for-product-signup-method-
+  // analytics-foun-y1oqt4): now reports the REAL method used --
+  // 'passwordless_code' (a genuinely new account) or 'facebook' (see
+  // boot()'s own Facebook-return-leg completion below) — replacing the
+  // hardcoded 'email' this file used to send unconditionally back when it
+  // only ever offered the plain wall. A resolved (already-registered)
+  // login via code never fires CompleteRegistration at all, same rule
+  // every other login path in this codebase follows.
   // ===================================================================
-  // Per-attempt token — same unscoped-async-callback pattern as
-  // pendingGenerationToken above, and start.html's own signupAttemptToken
-  // (see that file's doc comment). attemptSignup() is a real
-  // register-account.js network round trip (see js/store.js's
-  // DreamStore.signup); its callback used to unconditionally act on
-  // whatever it found once it settled -- write state AND navigate to
-  // processing.html -- with no check that this was still the current
-  // attempt. Repro (tracker item
-  // wizard-html-start-html-signup-step-force-8wtk8h): click Signup
-  // Continue (fires the real signup call), immediately click Back before
-  // it resolves, edit Contact, resubmit, reach a SECOND, fresh Signup
-  // screen -- the first, abandoned call's callback, once it finally
-  // settles, would force-navigate the user away from wherever they
-  // actually are and could adopt/claim the wrong pending job (reading
-  // live pendingId/pendingOperationName/contactEmail/assembled at
-  // settlement time instead of a fire-time snapshot).
-  //
-  // Unlike pendingGenerationToken (which only guards the WRITE, since
-  // Contact-step navigation was restructured to never wait on that
-  // fetch at all), this token gates the ENTIRE callback body -- both the
-  // writes AND the navigation, INCLUDING the nested
-  // pendingGenerationPromise.then(...) continuation below (which has its
-  // own re-check, right at its top, since it settles asynchronously
-  // AFTER this outer check already ran and could go stale in that gap).
-  // Signup has no "safe to advance without waiting" skip case the way a
-  // reused/already-succeeded Contact submission does: there is no real
-  // account, and nothing safe to hand off to home.html, until
-  // DreamStore.signup itself actually resolves ok -- so navigation can
-  // never be decoupled from this particular settlement the way
-  // Contact's was.
-  //
-  // Bumped on TWO separate triggers, not just one: (1) every Signup
-  // Continue click (below), so a genuinely new, competing attempt always
-  // supersedes an older one still in flight; AND (2) every Back click
-  // (see the navigation engine's backBtn listener, further down this
-  // file), so simply navigating away from Signup -- without necessarily
-  // starting a new attempt at all -- also invalidates whatever's still
-  // in flight. Both triggers are required: an early version of this fix
-  // only bumped on (1) and a regression test caught the gap -- sit on a
-  // second, fresh Signup screen without resubmitting, and an abandoned
-  // first attempt's late settlement would still force-navigate, because
-  // nothing had bumped the token since attempt #1 fired it. Also paired
-  // with disabling both continueBtn AND backBtn (defense-in-depth -- see
-  // the click handler below) for the duration of the call, so in normal
-  // (non-test) usage there is no UI path to trigger either case while an
-  // attempt is still in flight in the first place.
+
+  // signup-attempt-token/supersession-guard machinery -- UNCHANGED in
+  // spirit from the old wall's own signupAttemptToken (this var's identity
+  // and every caller's discipline around it is preserved verbatim; only
+  // WHAT gets submitted through it changed, from attemptSignup's
+  // username/password round trip to DreamStore.signupPasswordless /
+  // DreamStore.loginWithEmailCode below). Bumped on every Signup Continue
+  // click AND every Back click (see the navigation engine's backBtn
+  // listener, further down this file) -- see the ORIGINAL wall's own long
+  // comment here (git history) for the full repro this guards against
+  // (tracker item wizard-html-start-html-signup-step-force-8wtk8h): an
+  // abandoned attempt's late settlement must never force-navigate the
+  // visitor or adopt/claim the wrong pending job.
   var signupAttemptToken = 0;
-  // Left untouched, byte-for-byte-logic-identical to before (and to
-  // start.html's/lib/derive-username.js's own copies) -- test/account-
-  // store-facebook.test.js regex-extracts this exact function body out of
-  // the page source and evals it standalone to cross-check the three
-  // copies agree, so it can't be refactored to call a sibling helper.
-  function deriveUsernameBase(email){
-    var local = (email.split('@')[0] || '').toLowerCase();
-    var sanitized = local.replace(/[^a-z0-9]/g, '');
-    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
-    return sanitized.slice(0, 20) || 'dreamer';
-  }
-  // The #fn-username field the user actually typed (tracker iy3w6t -- it
-  // used to be validated then silently discarded, with the real account
-  // name always derived from email instead) goes through this same
-  // sanitization, kept as its own function (not reused by
-  // deriveUsernameBase above -- see that function's own comment) so a
-  // typed "John Doe!" lands on the same kind of lowercase-alphanumeric
-  // username the rest of the account system (account-store.js's
-  // normalizeUsername, login) expects.
-  function sanitizeUsername(raw){
-    var lower = (raw || '').toLowerCase();
-    var sanitized = lower.replace(/[^a-z0-9]/g, '');
-    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
-    return sanitized.slice(0, 20) || 'dreamer';
-  }
-  function attemptSignup(email, password, username, cb){
-    var base = username ? sanitizeUsername(username) : deriveUsernameBase(email);
-    var attempts = 0;
-    var MAX_ATTEMPTS = 8;
-    function tryUsername(username){
-      DreamStore.signup(username, password, email).then(function(result){
-        if(result.ok){
-          // Fired here, not in the caller's (possibly-later-stale)
-          // signupAttemptToken-gated callback -- a real account genuinely
-          // was created the moment result.ok is true, regardless of
-          // whether THIS particular UI attempt later becomes superseded
-          // by a Back+resubmit. Matches start.html's own tryUsername,
-          // which fires its equivalent call at this same point for the
-          // same reason (review round-2 non-blocking finding).
-          // signup_method: 'email' -- wizard.html's own renderSignup only
-          // ever offers a plain username/password wall, no Facebook/
-          // passwordless option (tracker item for-product-signup-method-
-          // analytics-foun-y1oqt4, founder ask 2026-08-03).
-          fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'email' } });
-          cb(true, null, false); return;
-        }
-        if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
-          attempts++;
-          tryUsername(base + Math.floor(1000 + Math.random() * 9000));
-          return;
-        }
-        // result.superseded (js/store.js's own call-sequence guard --
-        // see signupCallSeq's doc comment there) means THIS call was
-        // never even the most-recently-STARTED signup() call by the time
-        // its response landed, so js/store.js itself already declined to
-        // touch state.user/state.accounts for it. Passed through to cb
-        // as defense-in-depth alongside mySignupToken below -- in normal
-        // (non-bypassed) usage this UI-level token already catches every
-        // case the store-level guard would, but the store-level guard is
-        // now the one actually protecting state.user regardless of
-        // caller, per tracker item dreamstore-signup-commits-state-user-
-        // unc-vv6rio.
-        cb(false, result.error, !!result.superseded);
-      });
+
+  /**
+   * Shared completion tail — flush staged characters, wait for the
+   * (already in-flight, possibly already-settled) pre-signup generation
+   * call, claim + adopt it, then hand off to home.html. This is the OLD
+   * wall's own inline continuation (git history), factored out unchanged
+   * in substance so it now has THREE callers instead of one: a fresh
+   * passwordless signup, a resolved (already-registered) code login (both
+   * in renderSignup below), and the Facebook return leg (boot(), further
+   * down this file) — all three need the identical "a real account/
+   * session now exists, finish the funnel" tail. `myToken` is the
+   * caller's own signupAttemptToken snapshot at the moment its own network
+   * call fired; re-checked here, INSIDE the pendingGenerationPromise
+   * continuation, for the exact same reason the original inline version
+   * re-checked it here rather than trusting an earlier check alone (see
+   * that version's own long comment, preserved in git history, on why
+   * this specific window can still go stale between the outer check
+   * passing and this promise settling).
+   */
+  function completeWizardSignupAndAdvance(myToken){
+    var signupIdMap = flushStagedCharactersToStore();
+    // Update the draft's characterIds to the now-real (flushed) id(s), in
+    // case the earlier pre-signup generation call already baked one or
+    // more "local..." staged ids into what it sent server-side -- see
+    // resolveCharactersForGeneration's own comment on why this must
+    // handle more than one id.
+    if(assembled && assembled.characterIdsForGeneration.length){
+      DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return signupIdMap[id] || id; }) });
     }
-    tryUsername(base);
+    return pendingGenerationPromise.then(function(){
+      if(myToken !== signupAttemptToken) return; // stale -- see this function's own doc comment
+      if(pendingId && !pendingStartFailed){
+        // email is required now (see claim-pending-generation.js's
+        // ownership check, review finding) -- contactEmail is the exact
+        // same email start-pending-generation.js created this pending
+        // record under, so this always matches.
+        fetch('/.netlify/functions/claim-pending-generation', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
+        }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
+      }
+      if(pendingOperationName && !pendingStartFailed){
+        // storyText (tracker item for-product-split-prompttext-storytext-
+        // f-yt5kc7) -- mediaType omitted (undefined), unchanged from
+        // before this feature: wizard.html always adopts a video, see
+        // adoptPendingGeneration's own doc comment.
+        DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
+      }
+      track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
+      // Lands directly on home.html now (tracker item for-product-funnel-
+      // ending-v2-founder-ins-tfuu0q) -- `?generate=1` is the same
+      // "submit fresh from the draft if there's no pendingJob to resume"
+      // signal style.html's in-app Generate button uses.
+      location.href = 'home.html?generate=1';
+    });
+  }
+
+  // ===================================================================
+  // Facebook Login — button markup + the redirect round trip (tracker
+  // item for-product-wizard-signup-wall-is-the-ol-lt1l9j). Reuses
+  // js/facebook-config.js verbatim (the same shared file start.html's own
+  // screen 13 loads) for the OAuth mechanics/button markup/feature-flag
+  // gate — only the DOM-wiring wrapper functions below are wizard-local,
+  // duplicated from (not imported from) start.html's own copies, per this
+  // codebase's page-local-script convention (no bundler/ES modules, see
+  // CLAUDE.md; matches checkEmailAvailable's own existing duplication
+  // between these two files).
+  // ===================================================================
+
+  /** Markup for the additive Facebook button, or '' while the feature flag is still a placeholder -- mirrors start.html's own facebookSignupButtonHtml exactly. */
+  function facebookSignupButtonHtml(){
+    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
+    return facebookButtonHtml('fn-fb-continue');
+  }
+
+  /** The "or" divider between the Facebook button and the email field -- shares facebookSignupButtonHtml's exact flag guard so the two always appear/disappear together (mirrors start.html's own facebookOrDividerHtml). */
+  function facebookOrDividerHtml(){
+    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
+    return '<div class="fn-or-divider" id="fn-fb-or-divider">or</div>';
+  }
+
+  /**
+   * Wraps a Signup render's content into the .fn-signup-stage layout so
+   * the Facebook button/divider/email-field/CTA beats are evenly spaced
+   * top-to-bottom, with any empty group (e.g. the Facebook beat while the
+   * flag is off) dropped entirely rather than leaving an orphan spacer --
+   * exact port of start.html's own fnStageHtml (see that file's
+   * .fn-signup-stage CSS doc comment for the full root-cause reasoning).
+   */
+  function fnStageHtml(groups){
+    var real = groups.filter(function(g){ return !!g; });
+    var out = '<div class="fn-signup-stage">';
+    for(var i = 0; i < real.length; i++){
+      out += '<div class="fn-stage-group">' + real[i] + '</div>';
+      if(i < real.length - 1) out += '<div class="fn-stage-spacer"></div>';
+    }
+    return out + '</div>';
+  }
+
+  // ===== Facebook redirect state persistence (tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
+  // A full-page navigation to facebook.com and back destroys every
+  // in-memory JS variable this wizard's whole funnel lives in --
+  // `assembled`/`staged`/chosenStyle/contactEmail/currentStoryText/the
+  // pending-generation head start -- none of which start.html has to
+  // worry about (its own equivalent quiz answers travel via URL params,
+  // reconstructed fresh from `state` on return; this wizard's answers
+  // only ever live in this page's own closures). Persisted under one
+  // scoped localStorage key just before leaving for facebook.com, restored
+  // and CLEARED immediately on return -- same "one scoped key, savedAt
+  // age-bounded, restore-then-clear" shape as start.html's own
+  // persistStagedForFacebookRedirect/restoreStagedFromFacebookRedirect,
+  // just covering the larger surface this file's state actually needs.
+  var WIZARD_FB_STATE_KEY = 'dreamtube_wizard_fb_state';
+  var WIZARD_FB_STATE_MAX_AGE_MS = 30 * 60 * 1000; // a visitor who bails at Facebook's dialog and wanders back an hour later on a different dream must not have the old one silently reappear
+
+  function clearPersistedWizardFbState(){
+    try{ localStorage.removeItem(WIZARD_FB_STATE_KEY); }catch(e){ /* private mode / quota -- nothing to clean up */ }
+  }
+
+  /** Writes every piece of funnel state the Signup step needs to survive the round trip. Returns false if it couldn't (most realistically a QuotaExceededError from a large staged photo) -- the caller proceeds to Facebook regardless, same "losing state is a smaller failure than blocking signup outright" tradeoff start.html's own version documents. */
+  function persistWizardStateForFacebookRedirect(){
+    try{
+      localStorage.setItem(WIZARD_FB_STATE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        contactEmail: contactEmail,
+        chosenStyle: chosenStyle,
+        currentStoryText: currentStoryText,
+        assembled: assembled,
+        staged: staged,
+        pendingId: pendingId,
+        pendingOperationName: pendingOperationName,
+        pendingStartedAt: pendingStartedAt,
+        pendingStartFailed: pendingStartFailed
+      }));
+      return true;
+    }catch(e){
+      clearPersistedWizardFbState();
+      track('signup_facebook_staged_persist_failed', { characters: staged.characters.length });
+      return false;
+    }
+  }
+
+  /**
+   * Restores everything the snapshot above wrote, then clears the key
+   * immediately (win or lose) so a stale snapshot can never be picked up
+   * by a later, unrelated run. Mutates `staged` in place (its own object
+   * identity is captured by other closures already, same reasoning as
+   * start.html's own restore function) rather than reassigning it;
+   * every other var here is a plain reassignment since nothing else holds
+   * an earlier reference to them. pendingGenerationPromise is deliberately
+   * reset to an already-resolved Promise rather than persisted itself (a
+   * Promise can't survive JSON) -- the pendingId/pendingOperationName
+   * snapshot already captures whatever had resolved by the moment the
+   * visitor actually tapped the Facebook button, which is the same
+   * "resilient, not a hang" tradeoff completeWizardSignupAndAdvance
+   * already makes for a same-page failed pre-signup generation.
+   */
+  function restoreWizardStateFromFacebookRedirect(){
+    var raw = null;
+    try{ raw = localStorage.getItem(WIZARD_FB_STATE_KEY); }catch(e){ raw = null; }
+    clearPersistedWizardFbState();
+    if(!raw) return false;
+    try{
+      var parsed = JSON.parse(raw);
+      if(!parsed || !parsed.savedAt || (Date.now() - parsed.savedAt) > WIZARD_FB_STATE_MAX_AGE_MS) return false;
+      contactEmail = parsed.contactEmail || '';
+      if(parsed.chosenStyle) chosenStyle = parsed.chosenStyle;
+      currentStoryText = parsed.currentStoryText || '';
+      assembled = parsed.assembled || null;
+      if(parsed.staged){
+        staged.characters = Array.isArray(parsed.staged.characters) ? parsed.staged.characters : [];
+        staged.subjectCharacterIds = Array.isArray(parsed.staged.subjectCharacterIds) ? parsed.staged.subjectCharacterIds : [];
+      }
+      pendingId = parsed.pendingId || null;
+      pendingOperationName = parsed.pendingOperationName || null;
+      pendingStartedAt = parsed.pendingStartedAt || null;
+      pendingStartFailed = !!parsed.pendingStartFailed;
+      pendingGenerationPromise = Promise.resolve();
+      return !!(contactEmail && assembled);
+    }catch(e){
+      return false;
+    }
+  }
+
+  /**
+   * Leaves for Facebook's OAuth dialog as a FULL-PAGE navigation -- same
+   * mechanics as start.html's own startFacebookLogin (see that function's
+   * doc comment for the full "why a redirect, never a popup" reasoning),
+   * duplicated here rather than shared per this codebase's page-local-
+   * script convention. The one real difference: `p:'wizard'` in the
+   * built state tells facebook-oauth-callback.js's redirect() to 302 back
+   * to THIS page instead of its own long-standing default (start.html) --
+   * see js/facebook-config.js's buildFacebookState and that server
+   * function's own doc comment on the `page`/`p` field.
+   */
+  function startWizardFacebookLogin(btn){
+    signupAttemptToken++;
+    DreamStore.invalidatePendingSignup();
+    backBtn.disabled = false;
+    track('signup_facebook_started', {});
+    // signup_facebook_click (tracker item for-product-signup-method-
+    // analytics-foun-y1oqt4) -- same purpose-built "chosen Facebook" event
+    // start.html's own equivalent click handler fires, at the exact same
+    // moment (before the full-page navigation), so a visitor who taps
+    // this and never returns is visible in the funnel here too.
+    track('signup_facebook_click', { signup_method: 'facebook' });
+    // Must happen BEFORE navigating -- see persistWizardStateForFacebookRedirect's own doc comment.
+    persistWizardStateForFacebookRedirect();
+    var nonce = facebookRandomNonce();
+    setFacebookStateCookie(nonce);
+    var state = buildFacebookState(nonce, '', 'wizard');
+    if(btn){ btn.disabled = true; }
+    location.href = buildFacebookOAuthUrl(state);
+  }
+
+  // Rendered into #fn-signup-error the next time Signup draws, then
+  // cleared -- so a failed Facebook round trip surfaces exactly once,
+  // inline, with the passwordless path beside it fully usable as the
+  // fallback. Mirrors start.html's own pendingFacebookErrorSlug.
+  var pendingFacebookErrorSlug = facebookErrorSlug;
+
+  function facebookErrorMessage(slug){
+    if(slug === 'denied') return 'Facebook sign-in was cancelled — you can continue with email below.';
+    if(slug === 'rate_limited') return 'Too many sign-in attempts from your network today — please continue with email below.';
+    if(slug === 'account_conflict') return "We couldn't match that Facebook account to an account here — please continue with email below.";
+    return 'Something went wrong signing in with Facebook — try again, or continue with email below.';
+  }
+
+  /** Paints (once) whatever Facebook error this load arrived with into the just-rendered Signup screen's error slot. */
+  function applyPendingFacebookError(){
+    if(!pendingFacebookErrorSlug) return;
+    var errEl = document.getElementById('fn-signup-error');
+    if(!errEl) return;
+    errEl.textContent = facebookErrorMessage(pendingFacebookErrorSlug);
+    track('signup_facebook_error_shown', { reason: pendingFacebookErrorSlug });
+    pendingFacebookErrorSlug = null;
   }
 
   function renderSignup(el){
-    el.innerHTML =
-      '<div class="fn-headline">Create your account</div>' +
-      // 320 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
-      // 2026-07-24, later raised 2026-07-26 morning, then retuned again
-      // 2026-07-26 night to 220 initial — "Token Economy C", founder-
-      // approved — unchanged by the 2026-07-28 daily-claim switch, which
-      // only replaced the separate +20/day mechanism, see that file's own
-      // doc block — then raised again 2026-08-01 to 320, founder-directed,
-      // tracker xostu6). Hardcoded, not fetched live: this screen
-      // renders before a real account exists, so there's no logged-in
-      // DreamStore.getTokenStatus() call to make here (that method needs
-      // state.user to be set at all — see js/store.js), and INITIAL_GRANT
-      // itself is a private constant in entitlements.js, never exposed via
-      // get-token-status.js's response shape ({balance, claimable,
-      // nextClaimAt, dailyClaimAmount, streak} only, no separate "signup
-      // grant" field). If this constant changes again, this line must be
-      // updated by hand, same as before this comment existed.
-      '<div class="fn-body-copy">Free to start — 320 tokens on signup, no card needed.</div>' +
-      '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
-      '<input class="fn-field" id="fn-username" placeholder="Choose a username" autocomplete="username" dir="auto">' +
-      '<div class="fn-field-pw-wrap">' +
-        '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
-        '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
-      '</div>' +
-      '<div class="fn-err-text" id="fn-signup-error"></div>' +
-      '<button class="fn-btn-primary" id="fn-signup-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
-      // Signup small-print (tracker.html's
-      // for-product-create-a-real-privacy-policy-o3g56s item) — this is
-      // the real account-creation step of the pre-signup wizard funnel,
-      // so it gets the same terms/privacy small print as start.html's
-      // screen 13 and login.html's signup mode.
-      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
-      '<div class="fn-spacer"></div>';
+    /**
+     * The passwordless email step -- the wall's default state. Email is
+     * NEVER typed here (see this section's own header comment on why
+     * wizard.html can skip start.html's fresh email-entry step); tapping
+     * Continue submits contactEmail directly through
+     * DreamStore.signupPasswordless.
+     */
+    function renderEmailStep(){
+      el.innerHTML = fnStageHtml([
+        '<div class="fn-headline">Create your account</div>',
+        // 320 mirrors lib/entitlements.js's real INITIAL_GRANT -- see the
+        // ORIGINAL wall's own long comment here (git history) for the
+        // full retuning history. Hardcoded, not fetched live, for the
+        // same reason that comment gives: this screen renders before a
+        // real account exists.
+        '<div class="fn-body-copy" style="margin-bottom:0;">Free to start — 320 tokens on signup, no card needed.</div>',
+        facebookSignupButtonHtml(),
+        facebookOrDividerHtml(),
+        '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
+          '<div class="fn-err-text" id="fn-signup-error"></div>',
+        '<button class="fn-btn-primary" id="fn-signup-continue" type="button">Send me my dream</button>' +
+          // Signup small-print (tracker.html's for-product-create-a-real-
+          // privacy-policy-o3g56s item) -- unchanged from the old wall.
+          '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin:10px 0 0;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>'
+      ]);
 
-    var pwToggle = document.getElementById('fn-pw-toggle');
-    var pwInput = document.getElementById('fn-password');
-    pwToggle.innerHTML = Icons.eye;
-    pwToggle.addEventListener('click', function(){
-      var showing = pwInput.type === 'text';
-      pwInput.type = showing ? 'password' : 'text';
-      pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
-    });
+      var fbBtn = document.getElementById('fn-fb-continue');
+      if(fbBtn) fbBtn.addEventListener('click', function(){ startWizardFacebookLogin(fbBtn); });
 
-    var continueBtn = document.getElementById('fn-signup-continue');
-    var errEl = document.getElementById('fn-signup-error');
-    continueBtn.addEventListener('click', function(){
-      var username = document.getElementById('fn-username').value.trim();
-      var password = pwInput.value;
-      errEl.textContent = '';
-      if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
-      // missing_password trap fix (tracker item
-      // for-product-urgent-forensic-find-the-pro-fzgghg, item 2) -- same
-      // fix, same reasoning, as start.html's own wireScreen13Fields
-      // (see that function's doc comment for the full root-cause writeup:
-      // a real user hit this exact error 17 times in a row without ever
-      // getting past it). This click IS a fresh, real user gesture --
-      // refocusing pwInput synchronously, right here, is the one thing
-      // virtually guaranteed to reliably raise the on-screen keyboard
-      // across platforms if it failed to appear after this screen's own
-      // async reveal.
-      if(!password){ errEl.textContent = 'Enter a password.'; track('signup_error_shown', { reason: 'missing_password' }); pwInput.focus(); return; }
+      var continueBtn = document.getElementById('fn-signup-continue');
+      var errEl = document.getElementById('fn-signup-error');
 
-      // Marks this click as the new current attempt -- see
-      // signupAttemptToken's own comment above. Captured now, before the
-      // real network call fires, so the callback below can tell whether
-      // it's still the current attempt once it finally settles.
-      signupAttemptToken++;
-      var mySignupToken = signupAttemptToken;
+      function trySubmit(){
+        errEl.textContent = '';
+        // Marks this click as the new current attempt -- see
+        // signupAttemptToken's own comment above.
+        signupAttemptToken++;
+        var mySignupToken = signupAttemptToken;
 
-      continueBtn.disabled = true;
-      continueBtn.textContent = 'Creating your account…';
-      // Defense-in-depth alongside the token check below: with Back
-      // blocked for the duration of this call, there is no UI path to
-      // reach a second, fresh Signup attempt while this one is still in
-      // flight in the first place. See signupAttemptToken's own comment
-      // for why the token check still matters even so.
-      backBtn.disabled = true;
-      setTimeout(function(){
-        attemptSignup(contactEmail, password, username, function(ok, err, superseded){
-          // Stale -- a newer Signup attempt has since started (or this
-          // one was superseded some other way). Discard everything,
-          // including navigation: touching continueBtn/errEl here would
-          // reach into a detached, already-replaced screen, and
-          // pendingId/pendingOperationName/contactEmail/assembled may
-          // since belong to a completely different attempt. `superseded`
-          // is js/store.js's OWN call-sequence guard saying it already
-          // declined to commit this result -- checked here too (not just
-          // mySignupToken) so this callback stays correct even if this
-          // token's own bookkeeping were ever wrong; see attemptSignup's
-          // comment on result.superseded above.
-          if(mySignupToken !== signupAttemptToken || superseded) return;
-          if(!ok){
+        continueBtn.disabled = true;
+        continueBtn.textContent = 'Sending…';
+        backBtn.disabled = true;
+
+        DreamStore.signupPasswordless(contactEmail).then(function(result){
+          if(mySignupToken !== signupAttemptToken) return; // stale -- see signupAttemptToken's own comment
+          if(!result.ok){
             continueBtn.disabled = false;
-            continueBtn.textContent = 'Continue';
+            continueBtn.textContent = 'Send me my dream';
             backBtn.disabled = false;
-            errEl.textContent = err;
+            errEl.textContent = result.error || "Couldn't sign you in — try again.";
+            track('signup_error_shown', { reason: 'signup_failed' });
             return;
           }
-          var signupIdMap = flushStagedCharactersToStore();
-          // Update the draft's characterIds to the now-real (flushed)
-          // id(s), in case the earlier pre-signup generation call already
-          // baked one or more "local..." staged ids into what it sent
-          // server-side -- the server call itself only ever sent resolved
-          // character fields (name/description/photo), never the id, so
-          // this is purely for any LOCAL dream metadata display AND for
-          // home.html's own fallback fresh-generation path (used when
-          // there's no pendingJob to resume, e.g. pendingStartFailed) --
-          // that path DOES read draft.characterIds directly, so this must
-          // stay a real, resolvable id, not a correctness no-op. Now maps
-          // every id (previously assumed at most one -- see
-          // resolveCharactersForGeneration's own comment on that).
-          if(assembled && assembled.characterIdsForGeneration.length){
-            DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return signupIdMap[id] || id; }) });
+          if(result.pendingVerification){
+            // SECURITY FIX branch (see this section's own header comment)
+            // -- an already-registered email. No session was established;
+            // swap to the code-entry step instead of advancing anywhere.
+            track('signup_error_shown', { reason: 'already_registered_needs_code' });
+            renderCodeStep();
+            return;
           }
-          // Waits for the (already in-flight, possibly already settled)
-          // pending-generation call to settle before reading pendingId/
-          // pendingOperationName -- same shape as start.html's own
-          // screen 13 (~start.html:1159, `pendingPromise.then(...)`).
-          // Contact-capture's Continue handler no longer waits on this
-          // fetch before advancing here (see pendingGenerationPromise's
-          // own comment on why), so without this wait a fast typer could
-          // reach Signup and submit it before the contact-step's POST
-          // had settled, reading pendingId/pendingOperationName while
-          // they were still both null. Always resolves (win or lose),
-          // so this can never hang the funnel.
-          // pendingGenerationPromise itself is a live-read shared module
-          // var (unlike start.html's local `pendingPromise`, captured
-          // once per attempt) -- in the exact devtools-bypass race this
-          // token guard targets, an abandoned attempt's .then() below
-          // could technically end up chained off whichever promise this
-          // variable holds AT THAT MOMENT, not necessarily the one that
-          // was current when this attempt started. That's fine, not a
-          // correctness gap: the re-check inside the callback discards
-          // the result regardless of which promise it's attached to --
-          // just don't mistake this line for a per-attempt snapshot if
-          // this code is ever refactored to remove that re-check.
-          pendingGenerationPromise.then(function(){
-            // Re-check -- this attempt can still go stale WHILE this
-            // inner promise is unsettled, even though the outer check
-            // (above) already passed. In normal (non-bypassed) usage
-            // continueBtn/backBtn stay disabled through this whole span
-            // in both files, so nothing can bump signupAttemptToken
-            // during this specific window today -- but that's an
-            // incidental property of the current UI, not something this
-            // guard should rely on. Without this re-check, a future
-            // change that re-enables either button slightly earlier
-            // would silently reopen exactly the same hazard the outer
-            // check exists to close, and nothing here would catch it.
-            if(mySignupToken !== signupAttemptToken) return;
-            if(pendingId && !pendingStartFailed){
-              // email is required now (see claim-pending-generation.js's
-              // ownership check, review finding) -- contactEmail is the
-              // exact same email start-pending-generation.js created this
-              // pending record under, so this always matches.
-              fetch('/.netlify/functions/claim-pending-generation', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
-              }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
-            }
-            if(pendingOperationName && !pendingStartFailed){
-              // storyText (tracker item for-product-split-prompttext-
-              // storytext-f-yt5kc7) -- mediaType omitted (undefined),
-              // unchanged from before this feature: wizard.html always
-              // adopts a video, see adoptPendingGeneration's own doc
-              // comment.
-              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
-            }
-            track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
-            // Lands directly on home.html now (tracker item for-product-
-            // funnel-ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31
-            // evening) — processing.html's dedicated wait screen is gone.
-            // `?generate=1` is the same explicit "submit fresh from the
-            // draft if there's no pendingJob to resume" signal style.html's
-            // in-app Generate button uses (see home.html's own "Fresh
-            // in-app generation submission" script block) — needed here too
-            // for the case the pre-signup generation call failed
-            // (pendingOperationName never adopted, pendingStartFailed
-            // true): home.html finds no pendingJob and falls back to
-            // submitting the intact draft (assembled.caption/chosenStyle,
-            // set earlier in this same flow) fresh. When adoption DID
-            // succeed, home.html's own pendingJob-first check resumes that
-            // job instead and ignores this param entirely.
-            location.href = 'home.html?generate=1';
-          });
+          if(result.created){
+            // signup_method: 'passwordless_code' -- the real method used,
+            // replacing the hardcoded 'email' this file used to send
+            // unconditionally (see this section's own header comment).
+            fireMetaConversion('CompleteRegistration', { email: contactEmail, custom_data: { signup_method: 'passwordless_code' } });
+          }
+          completeWizardSignupAndAdvance(mySignupToken);
         });
-      }, 0);
-    });
+      }
+
+      continueBtn.addEventListener('click', trySubmit);
+      applyPendingFacebookError();
+    }
+
+    /**
+     * The SECURITY FIX's code-entry step (see this section's own header
+     * comment) -- reached only when signupPasswordless resolved into an
+     * ALREADY-REGISTERED email with no session granted yet. Mirrors
+     * start.html's own renderCodeStep exactly.
+     */
+    function renderCodeStep(){
+      backBtn.disabled = false;
+      el.innerHTML = fnStageHtml([
+        '<div class="fn-headline">Check your email</div>' +
+          '<div class="fn-body-copy" style="margin:-6px 0 0;">We found an account for <b>' + esc(contactEmail) + '</b> — enter the code we just sent, or tap the link in that email.</div>',
+        '<input class="fn-field" id="fn-login-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" style="text-align:center; letter-spacing:6px; font-size:20px;">' +
+          '<div class="fn-err-text" id="fn-signup-error"></div>',
+        '<button class="fn-btn-primary" id="fn-signup-continue" type="button">Continue</button>' +
+          '<button type="button" class="fn-small-link" id="fn-code-resend" style="margin:10px 0 0;">Resend code</button>' +
+          '<button type="button" class="fn-small-link" id="fn-code-change-email" style="margin:0;">Use a different email</button>'
+      ]);
+
+      var codeInput = document.getElementById('fn-login-code');
+      var errEl = document.getElementById('fn-signup-error');
+      var continueBtn = document.getElementById('fn-signup-continue');
+      var resendLink = document.getElementById('fn-code-resend');
+
+      // "Use a different email" -- unlike start.html (whose email field is
+      // still live/editable right up until the password step), wizard.html
+      // locked the email in back at Contact capture, so the equivalent
+      // escape hatch here is a real navigation back to that step, where
+      // it's editable. Bumps the same invalidation pair the topbar Back
+      // handler does, for the same reason (an abandoned in-flight code
+      // check must not silently commit a session for a screen the visitor
+      // already left).
+      document.getElementById('fn-code-change-email').addEventListener('click', function(){
+        signupAttemptToken++;
+        DreamStore.invalidatePendingSignup();
+        goToStep(SCREEN_RENDERERS.indexOf(renderContact));
+      });
+
+      resendLink.addEventListener('click', function(){
+        resendLink.disabled = true;
+        var originalLabel = resendLink.textContent;
+        resendLink.textContent = 'Sending…';
+        // Re-submitting to signupPasswordless is the resend mechanism --
+        // register-account-passwordless.js's resolve branch always mails a
+        // FRESH code on every call. Deliberately ignores this call's own
+        // token -- a resend is harmless to let land late, unlike an
+        // actual login attempt.
+        DreamStore.signupPasswordless(contactEmail).then(function(){
+          resendLink.disabled = false;
+          resendLink.textContent = 'Sent — check your email';
+          setTimeout(function(){ resendLink.textContent = originalLabel; }, 4000);
+        });
+      });
+
+      function trySubmitCode(){
+        var code = codeInput.value.trim();
+        errEl.textContent = '';
+        if(!/^[0-9]{6}$/.test(code)){ errEl.textContent = 'Enter the 6-digit code from your email.'; return; }
+
+        continueBtn.disabled = true;
+        backBtn.disabled = true;
+        continueBtn.textContent = 'Checking…';
+        signupAttemptToken++;
+        var myToken = signupAttemptToken;
+
+        DreamStore.loginWithEmailCode(contactEmail, code).then(function(result){
+          if(myToken !== signupAttemptToken) return; // stale -- see signupAttemptToken's own comment
+          if(!result.ok){
+            continueBtn.disabled = false;
+            backBtn.disabled = false;
+            continueBtn.textContent = 'Continue';
+            errEl.textContent = result.error || "Couldn't sign you in — try again.";
+            track('signup_error_shown', { reason: 'login_code_failed' });
+            return;
+          }
+          // CompleteRegistration is deliberately NOT fired here -- this is
+          // a LOGIN to an existing account, not a new signup, same rule
+          // every other login path in this codebase follows.
+          track('returning_user_login_succeeded', { method: 'email_code' });
+          completeWizardSignupAndAdvance(myToken);
+        });
+      }
+      continueBtn.addEventListener('click', trySubmitCode);
+      codeInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmitCode(); } });
+      codeInput.focus();
+    }
+
+    renderEmailStep();
   }
 
   // ===================================================================
   // Navigation engine — same shape as start.html's own goToStep/next/prev.
   // ===================================================================
   var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderContact, renderSignup];
+  // Index of the Signup step -- the Facebook return-leg boot() below
+  // always lands here directly, same as start.html's own SIGNUP_STEP
+  // constant serves its equivalent screen-13 return leg.
+  var SIGNUP_STEP = SCREEN_RENDERERS.indexOf(renderSignup);
   var cur = 0;
   var screenEl = document.getElementById('fnScreen');
   var progressEl = document.getElementById('fnProgress');
@@ -1983,7 +2191,152 @@
     location.href = 'index.html';
   });
 
-  render();
+  // ===================================================================
+  // Boot — normal arrival, or the Facebook Login return leg (tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j). Mirrors start.html's
+  // own boot() shape (see that file's doc comment for the "why defer the
+  // synchronous XHR by one tick" reasoning, which applies verbatim here —
+  // DreamStore.consumeSessionTransferTokenFromUrlSync is a blocking
+  // XMLHttpRequest by design).
+  // ===================================================================
+  function boot(){
+    if(!resumedFromFacebookWizard){
+      // Hygiene: a snapshot left behind by an abandoned Facebook round
+      // trip must never survive into an unrelated later run of this
+      // wizard.
+      clearPersistedWizardFbState();
+      render();
+      return;
+    }
+
+    // Restore whatever this browser's own pre-redirect click persisted --
+    // every marker below (bt / fb_error / fb_needs_email) needs the SAME
+    // restored contactEmail/assembled/staged/pending* to render a coherent
+    // Signup screen. A snapshot that didn't restore (expired past
+    // WIZARD_FB_STATE_MAX_AGE_MS, a quota/private-mode persist failure, or
+    // simply absent — e.g. this URL was shared/bookmarked rather than
+    // reached via a real redirect) leaves nothing coherent to land back
+    // on — restart cleanly at the real entry point rather than render a
+    // broken Signup screen (blank email, null assembled caption). Any
+    // account Facebook's own server-side identity resolution already
+    // created or matched is untouched either way; the visitor can sign in
+    // again from scratch.
+    var restoredOk = restoreWizardStateFromFacebookRedirect();
+    if(!restoredOk){
+      location.href = 'index.html';
+      return;
+    }
+
+    if(facebookNeedsEmailToken){
+      // Facebook confirmed identity but returned no email (declined the
+      // `email` permission, or has none on file) — spec §2.4/§3 step 3.
+      // start.html has to render a whole extra ask-for-email screen for
+      // this; this wizard already collected a real, deliverability-
+      // checked email back at Contact capture, so it submits that email
+      // straight to facebook-complete-signup.js with zero extra visitor
+      // interaction, then re-enters through the normal ?bt= path below
+      // (same completion mechanism, one implementation).
+      cur = SIGNUP_STEP;
+      renderProgress();
+      screenEl.innerHTML =
+        '<div class="fn-spacer"></div>' +
+        '<div class="fn-spin"></div>' +
+        '<div class="fn-body-copy" style="text-align:center;">Signing you in…</div>' +
+        '<div class="fn-spacer"></div>';
+      fetch('/.netlify/functions/facebook-complete-signup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: facebookNeedsEmailToken, email: contactEmail })
+      }).then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+      }).then(function(result){
+        var data = result.data || {};
+        if(data.ok && data.transferToken){
+          // Re-enter through the normal Facebook-return path -- there is
+          // no second sign-in/resume implementation anywhere.
+          location.href = 'wizard.html?bt=' + encodeURIComponent(data.transferToken) + '&fb=signup';
+          return;
+        }
+        pendingFacebookErrorSlug = 'fb_complete_failed';
+        cur = SIGNUP_STEP;
+        render();
+      }).catch(function(){
+        pendingFacebookErrorSlug = 'fb_complete_failed';
+        cur = SIGNUP_STEP;
+        render();
+      });
+      return;
+    }
+
+    if(!fbTransferPresent){
+      // A failed round trip (?fb_error=). No token to consume, so nothing
+      // to wait on -- land straight back on Signup with the restored
+      // state, where the inline error renders alongside the still-usable
+      // passwordless path.
+      cur = SIGNUP_STEP;
+      render();
+      return;
+    }
+
+    cur = SIGNUP_STEP;
+    renderProgress();
+    screenEl.innerHTML =
+      '<div class="fn-spacer"></div>' +
+      '<div class="fn-spin"></div>' +
+      '<div class="fn-body-copy" style="text-align:center;">Signing you in…</div>' +
+      '<div class="fn-spacer"></div>';
+
+    setTimeout(function(){
+      // New call site for an existing, page-agnostic function (also used
+      // by home.html/result.html/create.html) -- silent no-op on a
+      // missing/expired/already-consumed token, which simply falls
+      // through to the signed-out path below.
+      try{ DreamStore.consumeSessionTransferTokenFromUrlSync(); }catch(e){ /* see that function's own silent-no-op contract */ }
+
+      var user = DreamStore.getCurrentUser();
+      if(!user){
+        // The token didn't resolve (expired, already consumed, a second
+        // tab racing the same URL, a network failure). Fail closed to the
+        // ordinary Signup screen with an inline explanation -- the
+        // passwordless path is completely unaffected and remains the
+        // fallback.
+        pendingFacebookErrorSlug = pendingFacebookErrorSlug || 'signin_failed';
+        cur = SIGNUP_STEP;
+        render();
+        return;
+      }
+
+      // getAccountEmail() reads the email commitTransferredSession just
+      // wrote from the server-verified token, never anything
+      // client-supplied -- preferred over the restored contactEmail for
+      // the same "trust the server, not the client" reason start.html's
+      // own equivalent boot() uses it.
+      var email = DreamStore.getAccountEmail() || contactEmail || '';
+      var fbOutcome = getParam('fb');
+      track('signup_facebook_completed', { outcome: fbOutcome || null });
+      // signup_method (tracker item for-product-signup-method-analytics-
+      // foun-y1oqt4): 'facebook', gated on fb=signup specifically --
+      // facebook-oauth-callback.js sets fb:'login' for an existing-email
+      // match (spec's "counted as a login for funnel-conversion
+      // measurement, not a new signup"), and firing this unconditionally
+      // would double-count every returning Facebook user as a fresh
+      // signup conversion. Also fires the client-side PostHog 'signed_up'
+      // capture here, same as start.html's own equivalent call site --
+      // commitTransferredSession (shared by every session-transfer use in
+      // this app, not just Facebook signup) deliberately never fires it
+      // itself, to avoid double-firing on an unrelated resume.
+      if(fbOutcome === 'signup'){
+        fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'facebook' } });
+        track('signed_up', { signup_method: 'facebook' });
+      }
+      // signupAttemptToken is a fresh page load's initial value here (no
+      // competing attempt could have bumped it yet on this load) -- passed
+      // through all the same for completeWizardSignupAndAdvance's own
+      // re-check to stay meaningful if that ever changes.
+      completeWizardSignupAndAdvance(signupAttemptToken);
+    }, 0);
+  }
+
+  boot();
 })();
 </script>
 </body>

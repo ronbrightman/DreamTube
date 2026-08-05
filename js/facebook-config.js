@@ -169,13 +169,27 @@ function trimResumeParams(search) {
 
 /**
  * Builds the opaque `state` value: base64url(JSON{ n: nonce, r: resume
- * params }). `n` is what the server checks against the first-party cookie
- * (CSRF); `r` is what the server uses to reconstruct the return URL back
- * into this funnel, so a visitor lands back on exactly the dream they were
- * building rather than a bare start.html.
+ * params, p: origin page }). `n` is what the server checks against the
+ * first-party cookie (CSRF); `r` is what the server uses to reconstruct
+ * the return URL back into the funnel, so a visitor lands back on exactly
+ * the dream they were building rather than a bare start.html.
+ *
+ * `page` (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j,
+ * wizard.html signup-wall parity build): which page this click originated
+ * from, so facebook-oauth-callback.js's redirect() knows which page to
+ * 302 back to. Optional and OMITTED from the payload (not written as
+ * `p:undefined`, which would serialize to a literal string) when absent —
+ * this keeps start.html's own existing calls (which never pass a third
+ * argument) byte-for-byte unchanged, and the server's own parseState
+ * treats a missing `p` as 'start' (its long-standing sole destination).
+ * Only 'wizard' is a real value today; any other page that wants this
+ * button in the future just needs a call here with its own name and a
+ * matching branch in the server's redirect().
  */
-function buildFacebookState(nonce, search) {
-  return facebookBase64UrlEncode(JSON.stringify({ n: nonce, r: trimResumeParams(search) }));
+function buildFacebookState(nonce, search, page) {
+  var payload = { n: nonce, r: trimResumeParams(search) };
+  if (page) payload.p = page;
+  return facebookBase64UrlEncode(JSON.stringify(payload));
 }
 
 /** Writes the short-lived first-party CSRF cookie. Same attribute shape as start.html's own setFirstPartyCookie for the Meta attribution cookies, just with a much shorter Max-Age. */

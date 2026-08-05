@@ -378,17 +378,18 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
 
     // The pending-generation call must have fired the MOMENT contact
     // capture completed -- i.e. BEFORE signup exists at all.
-    await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await page.waitForFunction(function () { return document.getElementById('fn-signup-email') !== null; }, null, { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'start-pending-generation must be called exactly once, from contact capture');
     assert.equal(startPendingCalls[0].email, 'wizard-test@example.com');
     assert.equal(claimCalls.length, 0, 'claim must not fire until signup actually succeeds');
 
-    // Now finish signup -- this is the "in parallel with signup" seam:
-    // by the time this happens, generation (per the mocked route) is
-    // already resolvable.
-    await page.fill('#fn-username', 'wizardtester');
-    await page.fill('#fn-password', 'longenoughpassword1');
+    // Now finish signup -- the new passwordless-first wall submits the
+    // ALREADY-captured contact email directly (no separate username/
+    // password fields anymore, see tracker item
+    // for-product-wizard-signup-wall-is-the-ol-lt1l9j) -- this is still
+    // the "in parallel with signup" seam: by the time this happens,
+    // generation (per the mocked route) is already resolvable.
     await page.click('#fn-signup-continue');
 
     // Should land directly on home.html (tracker item for-product-funnel-
@@ -410,55 +411,18 @@ test('wizard.html: generate-during-signup — contact capture starts a pending g
   }
 });
 
-// Tracker item wizard-html-signup-typed-fn-username-is--iy3w6t: the typed
-// #fn-username value used to be validated (min 3 chars) then silently
-// discarded, with the real account name always derived from the email
-// instead -- confusing, since username is a real identity field (shown
-// back on profile.html's account-username field, used for login). Fixed
-// to honor what the user actually typed (sanitized the same way the
-// email-derived fallback always was: lowercased, non-alphanumeric
-// stripped -- see wizard.html's sanitizeUsername).
-test('wizard.html: signup honors the typed #fn-username value as the real account username, not a silently-discarded decoy', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('[data-subj-other="none"]');
-    await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]');
-    await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
-    await page.click('#fn-style-skip');
-    await page.click('#fn-freetext-skip');
-
-    await page.waitForSelector('#contact-email');
-    await page.fill('#contact-email', 'typed-username-test@example.com');
-    await page.click('#fn-contact-continue');
-
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    // Deliberately typed with characters sanitizeUsername strips (spaces,
-    // punctuation, mixed case) to prove the SAME typed value drives the
-    // real account name, not a coincidental match.
-    await page.fill('#fn-username', 'Dream Walker!');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-signup-continue');
-
-    // Signup lands directly on home.html (funnel-ending-v2) -- wait for
-    // that navigation before reading window.DreamStore, or the read races
-    // the navigation and hits a destroyed execution context.
-    await page.waitForURL(/home\.html/, { timeout: 15000 });
-    await page.waitForFunction(function () {
-      var u = window.DreamStore && window.DreamStore.getCurrentUser();
-      return !!(u && u.username);
-    }, null, { timeout: 10000 });
-    var username = await page.evaluate(function () { return window.DreamStore.getCurrentUser().username; });
-    assert.equal(username, 'dreamwalker', 'the real account username must be the sanitized form of what the user actually typed, not derived from their email');
-  } finally {
-    await page.close();
-  }
-});
+// REMOVED (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j):
+// the test that used to live here (git history: "signup honors the typed
+// #fn-username value...", tracker wizard-html-signup-typed-fn-username-
+// is--iy3w6t) proved a #fn-username field's typed value drove the real
+// account username. That field no longer exists at all -- the Signup wall
+// was replaced with start.html's passwordless-first + Facebook + divider
+// wall (renderSignup below), which never asks for or shows a username;
+// the real account username is now always server-derived from the email
+// (see register-account-passwordless.js's own derivation, mirrored by
+// DreamStore.signupPasswordless's local-fallback branch). Not a gap this
+// build introduced -- it's a real, intentional surface removal, recorded
+// in docs/TEST_REGISTRY.md.
 
 // WhatsApp toggle/field PARKED (founder decision 2026-07-28, tracker item
 // for-product-hide-the-whatsapp-field-in-w-clu9ju) -- mirrors
@@ -494,7 +458,7 @@ test('wizard.html: the Contact step never renders the parked WhatsApp toggle/fie
     await page.fill('#contact-email', 'no-whatsapp-test@example.com');
     await page.click('#fn-contact-continue');
 
-    await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    await page.waitForFunction(function () { return document.getElementById('fn-signup-email') !== null; }, null, { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].email, 'no-whatsapp-test@example.com');
@@ -567,7 +531,7 @@ test('wizard.html: Contact-capture with an email that already has an account nev
     assert.equal(checkEmailCalls.length, 1, 'check-email must have been called exactly once');
     assert.equal(checkEmailCalls[0].email, 'already-taken@example.com');
     assert.equal(startPendingCalls.length, 0, 'a blocked (already-taken) email must never trigger a real, billed start-pending-generation call BEFORE login succeeds');
-    assert.equal(await page.locator('#fn-username').count(), 0, 'must never have advanced to the CREATE-a-new-account Signup step for a blocked email');
+    assert.equal(await page.locator('#fn-signup-email').count(), 0, 'must never have advanced to the CREATE-a-new-account Signup step for a blocked email');
 
     // A genuine escape hatch to the full login.html flow must still exist.
     assert.equal(await page.locator('a[href="login.html"]').count(), 1, 'a real escape hatch to login.html must still be present');
@@ -664,47 +628,18 @@ test('wizard.html: the in-place login prompt: a wrong password shows an inline e
   }
 });
 
-// Regression test for the forensic 17x-rageclick missing_password trap
-// (tracker item for-product-urgent-forensic-find-the-pro-fzgghg, item 2) --
-// same fix, same reasoning, as start.html's own coverage. Applies to BOTH
-// of wizard.html's password prompts: the CREATE-a-new-account Signup step
-// and the new in-place login prompt above.
-test('wizard.html Signup step: the password field is synchronously refocused after the "Enter a password" error, every time, so the missing_password loop cannot persist', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await page.route('**/.netlify/functions/check-email', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
-    });
-    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-w-rageclick-1', operationName: 'fal:fake-model:req-w-rageclick-1' }) });
-    });
-
-    await reachContactStep(page);
-    await page.fill('#contact-email', 'w-rageclick-repro@example.com');
-    await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'rageclickuser');
-
-    await page.locator('#fn-password').blur();
-    for (var i = 0; i < 5; i++) {
-      await page.click('#fn-signup-continue');
-      // eslint-disable-next-line no-await-in-loop
-      await page.waitForFunction(function () {
-        var errEl = document.getElementById('fn-signup-error');
-        return errEl && errEl.textContent.indexOf('Enter a password') !== -1;
-      }, null, { timeout: 5000 });
-      // eslint-disable-next-line no-await-in-loop
-      var activeIsPassword = await page.evaluate(function () {
-        return document.activeElement && document.activeElement.id === 'fn-password';
-      });
-      assert.equal(activeIsPassword, true, 'the password field must be refocused after every single missing_password error, attempt #' + (i + 1));
-    }
-  } finally {
-    await page.close();
-  }
-});
+// REMOVED (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j):
+// the SIGNUP-STEP half of the forensic 17x-rageclick missing_password
+// refocus regression test (tracker item for-product-urgent-forensic-find-
+// the-pro-fzgghg, item 2) used to live here. The Signup step's password
+// field is gone entirely -- the passwordless-first wall never shows one,
+// see renderSignup below -- so there is nothing left for this half to
+// regress. The OTHER half this test's own comment referenced ("the new
+// in-place login prompt") is untouched by this build and keeps its own,
+// separate coverage: see 'wizard.html: the in-place login prompt: a wrong
+// password shows an inline error...' above, which still exercises
+// #fn-login-password on Contact capture's own already-registered-email
+// login prompt -- that field never changed.
 
 test('wizard.html: check-email.js failing outright (network error / 5xx / rate-limited) fails OPEN -- a legitimate new-email visitor still proceeds through Contact capture and start-pending-generation still fires', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
@@ -737,7 +672,7 @@ test('wizard.html: check-email.js failing outright (network error / 5xx / rate-l
     await page.click('#fn-contact-continue');
 
     // Must still reach Signup despite check-email itself failing.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
     assert.equal(startPendingCalls[0].email, 'legit-new-user@example.com');
@@ -786,7 +721,7 @@ test('wizard.html: Contact-capture with an email whose domain has no MX/A/AAAA r
     }, null, { timeout: 5000 });
 
     assert.equal(startPendingCalls.length, 0, 'an undeliverable email must never trigger a real, billed start-pending-generation call');
-    assert.equal(await page.locator('#fn-username').count(), 0, 'must never have advanced to the Signup step for an undeliverable email');
+    assert.equal(await page.locator('#fn-signup-email').count(), 0, 'must never have advanced to the Signup step for an undeliverable email');
     assert.equal(await page.locator('#fn-contact-continue').isDisabled(), false, 'Continue must be re-enabled after the undeliverable-email response');
   } finally {
     await page.close();
@@ -821,7 +756,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
     await page.click('#fn-contact-continue');
 
     // Reached signup -- exactly one pending-generation call so far.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'first Continue from contact capture must start exactly one pending generation');
 
@@ -837,7 +772,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
     // Should proceed straight back to the signup step without a network
     // round-trip -- give it a moment either way, then assert on the
     // call count, not just the navigation.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'Back + Continue with unchanged inputs must not re-POST start-pending-generation -- would double-charge fal.ai and double-spend tokens against the same email');
 
@@ -848,7 +783,7 @@ test('wizard.html: Back from Signup to contact-capture then Continue again does 
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'dup-submit-test-changed@example.com');
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuinely changed email must still be allowed to start a new pending generation');
     assert.equal(startPendingCalls[1].email, 'dup-submit-test-changed@example.com');
@@ -895,7 +830,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', ORIGINAL_EMAIL);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'first submission (content A) must fire');
     assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
@@ -909,7 +844,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', CHANGED_EMAIL);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuine content change must resubmit even though it will fail');
     assert.equal(startPendingCalls[1].email, CHANGED_EMAIL);
@@ -922,7 +857,7 @@ test('wizard.html: reverting to a previously-successful submission after an unre
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', ORIGINAL_EMAIL);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'reverting to a previously-succeeded submission must NOT re-POST, even after an unrelated failed resubmission in between -- exactly 2 real calls total across all 3 attempts');
   } finally {
@@ -957,7 +892,7 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'Casing-Test@Example.com');
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
 
@@ -968,7 +903,7 @@ test('wizard.html: retyping the same email with different casing on a Back + Con
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'casing-test@example.com');
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'retyping the same email with different casing must not be treated as a changed submission');
   } finally {
@@ -1018,7 +953,7 @@ test('wizard.html: Contact-capture Continue advances to Signup as soon as check-
     // next() fired on check-email (fast) rather than on the real
     // generation call (slow). The timeout is generous on purpose: what
     // proves the point is the gate still being shut, not the clock.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     assert.equal(slowStart.released, false, 'sanity: start-pending-generation must still be in flight at the moment Signup showed');
     slowStart.open();
   } finally {
@@ -1063,7 +998,7 @@ test('wizard.html: clicking Continue then immediately clicking Back before check
     async function currentScreen() {
       if (await page.locator('#contact-email').count() > 0) return 'contact';
       if (await page.locator('#fn-freetext-skip').count() > 0) return 'freetext';
-      if (await page.locator('#fn-username').count() > 0) return 'signup';
+      if (await page.locator('#fn-signup-email').count() > 0) return 'signup';
       return 'unknown';
     }
 
@@ -1156,7 +1091,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     var responseA = page.waitForResponse(function (res) { return res.url().indexOf('start-pending-generation') !== -1; });
     await page.click('#fn-contact-continue');
     await responseA;
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].email, ORIGINAL_EMAIL);
@@ -1169,7 +1104,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', SLOW_EMAIL);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2);
     assert.equal(startPendingCalls[1].email, SLOW_EMAIL);
@@ -1184,7 +1119,7 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     // Guard matches A's earlier successful submission -- skips
     // re-POSTing and advances to Signup immediately, WITHOUT waiting for
     // the still-in-flight slow (B) request.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'reverting to A must not fire a third real POST');
 
@@ -1203,8 +1138,6 @@ test('wizard.html: an abandoned edit\'s stale settlement must not clobber pendin
     await page.waitForTimeout(300);
 
     // Finish signup now -- pendingId must still be A's at this point.
-    await page.fill('#fn-username', 'racetester');
-    await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
     // Lands directly on home.html (tracker item for-product-funnel-ending-
@@ -1260,9 +1193,7 @@ test('wizard.html: if the pre-signup generation call fails, signup still complet
     await page.click('#fn-contact-continue');
 
     // Must still reach the signup step despite the pre-signup call failing.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'fallbacktester');
-    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await page.click('#fn-signup-continue');
 
     // No pendingJob was ever adopted -- confirm the draft still has a
@@ -1355,13 +1286,11 @@ test('wizard.html: the topbar Back button is disabled for the duration of an in-
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'signup-backdisable-test@example.com');
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
 
     var backDisabledBefore = await page.evaluate(function () { return document.getElementById('fnBack').disabled; });
     assert.equal(backDisabledBefore, false, 'Back should not start out disabled on a fresh Signup screen');
 
-    await page.fill('#fn-username', 'backdisabletest');
-    await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
     // Mid-flight -- Back must now be disabled. The signup response is
@@ -1438,9 +1367,7 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', EMAIL_A);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'signupracea');
-    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await page.click('#fn-signup-continue');
 
     // Confirm we're genuinely mid-flight (Back disabled) before forcing
@@ -1461,10 +1388,10 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     // back in flight.
     await page.fill('#contact-email', EMAIL_B);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
 
     var screenBefore = await page.evaluate(function () {
-      return document.getElementById('fn-username') ? 'signup' : 'other';
+      return document.getElementById('fn-signup-email') ? 'signup' : 'other';
     });
     assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale response lands');
 
@@ -1477,7 +1404,7 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
     await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
-      if (document.getElementById('fn-username')) return 'signup';
+      if (document.getElementById('fn-signup-email')) return 'signup';
       if (window.location.pathname.indexOf('home.html') !== -1) return 'home';
       return 'other';
     });
@@ -1486,8 +1413,6 @@ test('wizard.html: Signup Continue -> immediate Back before attemptSignup resolv
 
     // Finish signup for real with B's own content -- must still work
     // normally and claim B's job, never A's.
-    await page.fill('#fn-username', 'signupraceb');
-    await page.fill('#fn-password', 'longenoughpassword1');
     await page.click('#fn-signup-continue');
 
     // Lands on home.html now, not processing.html (tracker item
@@ -1561,9 +1486,7 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', EMAIL_A);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'signupinnera');
-    await page.fill('#fn-password', 'longenoughpassword1');
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
     await page.click('#fn-signup-continue');
 
     // Confirm we're mid-flight (Back disabled) -- this fires while
@@ -1589,10 +1512,10 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     // own full flow (the outer-check test above already covers that).
     await page.fill('#contact-email', EMAIL_B);
     await page.click('#fn-contact-continue');
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
+    await page.waitForSelector('#fn-signup-email', { timeout: 5000 });
 
     var screenBefore = await page.evaluate(function () {
-      return document.getElementById('fn-username') ? 'signup' : 'other';
+      return document.getElementById('fn-signup-email') ? 'signup' : 'other';
     });
     assert.equal(screenBefore, 'signup', 'must be sitting on the second, fresh Signup screen before A\'s stale inner settlement lands');
 
@@ -1606,7 +1529,7 @@ test('wizard.html: the token guard also protects the NESTED pendingGenerationPro
     await page.waitForTimeout(400);
 
     var screenAfter = await page.evaluate(function () {
-      if (document.getElementById('fn-username')) return 'signup';
+      if (document.getElementById('fn-signup-email')) return 'signup';
       if (window.location.pathname.indexOf('home.html') !== -1) return 'home';
       return 'other';
     });

@@ -1,19 +1,26 @@
 // netlify/functions/facebook-oauth-callback.js
 //
-// GET ?code=...&state=...  ->  302 back into start.html, signed in.
+// GET ?code=...&state=...  ->  302 back into start.html OR wizard.html
+// (whichever page's button sent the visitor to Facebook), signed in.
 //
 // The server half of Facebook Login (docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md,
 // tracker items for-product-priority-founder-2026-07-30--ruzc5u and
 // for-product-signup-screen-the-single-big-bkwhbe). The client half is
-// js/facebook-config.js + start.html's screen 13.
+// js/facebook-config.js + start.html's screen 13 + (as of tracker item
+// for-product-wizard-signup-wall-is-the-ol-lt1l9j) wizard.html's own
+// Signup step, which reuses this exact endpoint rather than a second copy.
 //
 // This is a BROWSER REDIRECT TARGET, not an API endpoint: Facebook sends
 // the user's browser here as a top-level navigation, so every outcome —
-// success and every failure alike — is a 302 back to start.html, never a
-// JSON error body a human would ever see. Failures carry `?fb_error=<slug>`,
-// which start.html renders as an inline message on screen 13 with the
-// ordinary email/password fields left fully usable as a fallback (spec
-// §2.4).
+// success and every failure alike — is a 302 back to whichever page sent
+// the visitor here, never a JSON error body a human would ever see.
+// WHICH page is decided by the `p` field inside `state` (see parseState's
+// own doc comment) — 'wizard' sends the visitor back to wizard.html,
+// anything else (including no `p` at all, every pre-existing call)
+// defaults to start.html, this function's original and, until now, only
+// destination. Failures carry `?fb_error=<slug>`, which the destination
+// page renders as an inline message with the ordinary passwordless/email
+// fallback left fully usable (spec §2.4).
 //
 // WHY THE MANUAL/SERVER-SIDE FLOW AND NOT THE FACEBOOK JS SDK: the entire
 // reason Facebook Login is the provider being built first is that
@@ -126,17 +133,28 @@ function base64UrlDecode(value) {
 }
 
 /**
- * Decodes the `state` param into { nonce, resume }. Returns null for
+ * Decodes the `state` param into { nonce, resume, page }. Returns null for
  * anything that isn't a well-formed, non-empty payload — the caller treats
  * that exactly like a nonce mismatch (fail closed, E6), since a state we
  * can't read is a state we can't verify.
+ *
+ * `page` (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j):
+ * mirrors js/facebook-config.js's buildFacebookState's own optional third
+ * argument — 'wizard' when the click originated on wizard.html's signup
+ * wall, absent (normalized to 'start' here) for start.html's own
+ * long-standing calls, which never send this field at all. redirect()
+ * below is the only reader.
  */
 function parseState(state) {
   if (!state) return null;
   try {
     var parsed = JSON.parse(base64UrlDecode(state));
     if (!parsed || typeof parsed.n !== 'string' || !parsed.n) return null;
-    return { nonce: parsed.n, resume: typeof parsed.r === 'string' ? parsed.r : '' };
+    return {
+      nonce: parsed.n,
+      resume: typeof parsed.r === 'string' ? parsed.r : '',
+      page: parsed.p === 'wizard' ? 'wizard' : 'start'
+    };
   } catch (e) {
     return null;
   }
@@ -171,13 +189,25 @@ function safeEqual(a, b) {
  * start.html's own entry guard bounces any visit without it straight back
  * to the marketing funnel — a failure redirect that lost that param would
  * silently eject the user from the funnel entirely instead of showing
- * them an inline error.
+ * them an inline error. wizard.html has no such guard (its own entry
+ * guards are exempted for exactly this return leg — see that file's own
+ * comment on its resumedFromFacebookWizard flag), so resume=1 is simply
+ * inert there — harmless to keep setting it unconditionally rather than
+ * branching this function on `page` for no real benefit.
+ *
+ * `page` (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j)
+ * — 'wizard' or 'start' (parseState above already normalizes anything
+ * else to 'start') — selects which page gets the 302, mirroring
+ * js/facebook-config.js's buildFacebookState's own optional third
+ * argument. Every existing call site that predates this feature passes
+ * nothing, which resolves to 'start' via the `|| 'start'` default below —
+ * byte-for-byte the same Location this function has always built.
  *
  * ALWAYS clears the CSRF cookie, on every outcome: it is single-use by
  * design, and leaving a live nonce sitting in the browser after the round
  * trip it was minted for is exactly the kind of thing a replay would want.
  */
-function redirect(event, resume, extraParams) {
+function redirect(event, resume, extraParams, page) {
   var params = new URLSearchParams(resume || '');
   params.set('resume', '1');
   params.delete('bt');
@@ -186,10 +216,11 @@ function redirect(event, resume, extraParams) {
   Object.keys(extraParams || {}).forEach(function (key) {
     if (extraParams[key] !== null && extraParams[key] !== undefined) params.set(key, extraParams[key]);
   });
+  var targetPage = (page === 'wizard') ? 'wizard.html' : 'start.html';
   return {
     statusCode: 302,
     headers: {
-      Location: selfOrigin(event) + '/start.html?' + params.toString(),
+      Location: selfOrigin(event) + '/' + targetPage + '?' + params.toString(),
       'Cache-Control': 'no-store',
       'Set-Cookie': STATE_COOKIE + '=; path=/; max-age=0; SameSite=Lax; Secure'
     },
@@ -197,8 +228,8 @@ function redirect(event, resume, extraParams) {
   };
 }
 
-function fail(event, resume, slug) {
-  return redirect(event, resume, { fb_error: slug });
+function fail(event, resume, slug, page) {
+  return redirect(event, resume, { fb_error: slug }, page);
 }
 
 /**
@@ -337,11 +368,16 @@ exports.handler = async function (event) {
   // failure path can put the user back on their own dream rather than a
   // bare funnel entry.
   var resume = parsedState ? parsedState.resume : 'resume=1';
+  // Same best-effort, read-before-CSRF-check posture as `resume` above —
+  // an unparseable/missing state must still send the visitor back
+  // SOMEWHERE sane, and 'start' (parseState's own default) is exactly
+  // this function's original, sole behavior before this field existed.
+  var page = parsedState ? parsedState.page : 'start';
 
   var appId = process.env.FACEBOOK_APP_ID;
   var appSecret = process.env.FACEBOOK_APP_SECRET;
   if (!appId || !appSecret) {
-    return fail(event, resume, 'not_configured');
+    return fail(event, resume, 'not_configured', page);
   }
 
   // Cheap shape checks first, THEN the rate limit, then the real work —
@@ -354,10 +390,10 @@ exports.handler = async function (event) {
   // error worth alarming language over — start.html shows the same
   // "continue with email below" fallback either way.
   if (query.error) {
-    return fail(event, resume, 'denied');
+    return fail(event, resume, 'denied', page);
   }
   if (!query.code) {
-    return fail(event, resume, 'missing_code');
+    return fail(event, resume, 'missing_code', page);
   }
 
   var maxPerDay = parseInt(process.env.MAX_FACEBOOK_CALLBACKS_PER_IP_PER_DAY, 10);
@@ -365,7 +401,7 @@ exports.handler = async function (event) {
   var ip = rateLimit.clientIp(event);
   var ipLimit = await rateLimit.checkAndIncrement(event, 'facebook-callback-ip', ip, maxPerDay);
   if (!ipLimit.allowed) {
-    return fail(event, resume, 'rate_limited');
+    return fail(event, resume, 'rate_limited', page);
   }
 
   // CSRF: the nonce echoed back inside `state` must match the one this
@@ -373,36 +409,36 @@ exports.handler = async function (event) {
   // facebook.com. A missing/unparseable state is treated identically to a
   // mismatch — fail closed, always.
   if (!parsedState || !safeEqual(parsedState.nonce, readCookie(event, STATE_COOKIE))) {
-    return fail(event, resume, 'csrf');
+    return fail(event, resume, 'csrf', page);
   }
 
   try {
     var accessToken = await exchangeCodeForToken(event, query.code, appId, appSecret);
-    if (!accessToken) return fail(event, resume, 'exchange_failed');
+    if (!accessToken) return fail(event, resume, 'exchange_failed', page);
 
     var profile = await fetchFacebookProfile(accessToken);
-    if (!profile) return fail(event, resume, 'profile_failed');
+    if (!profile) return fail(event, resume, 'profile_failed', page);
 
     var resolved = await resolveIdentity(event, profile);
 
     if (resolved.outcome === 'needs_email') {
       var marker = await facebookIdentityToken.createToken(event, resolved.fbUserId, resolved.name);
-      return redirect(event, resume, { fb_needs_email: marker });
+      return redirect(event, resume, { fb_needs_email: marker }, page);
     }
     if (resolved.outcome === 'error') {
       // 'facebook_id_taken' / 'account_already_linked' are real but
       // contradictory states (see lib/account-store.js's
       // linkFacebookUserId) — never guess which account to sign in as.
       var conflict = resolved.error === 'facebook_id_taken' || resolved.error === 'account_already_linked';
-      return fail(event, resume, conflict ? 'account_conflict' : 'server_error');
+      return fail(event, resume, conflict ? 'account_conflict' : 'server_error', page);
     }
 
     // Reused verbatim from create-session-transfer.js: mint for the
     // RESOLVED record's own username/email, never anything client-supplied.
     var transfer = await sessionTransferToken.createToken(event, resolved.record.username, resolved.record.email || null);
-    return redirect(event, resume, { bt: transfer, fb: resolved.created ? 'signup' : 'login' });
+    return redirect(event, resume, { bt: transfer, fb: resolved.created ? 'signup' : 'login' }, page);
   } catch (e) {
-    return fail(event, resume, 'server_error');
+    return fail(event, resume, 'server_error', page);
   }
 };
 
