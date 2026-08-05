@@ -81,9 +81,16 @@
   // Speaking Sage — Option D (docs/SPEAKING_SAGE_SPEC.md, tracker item
   // for-product-build-speaking-sage-wave-fou-8uobuh, founder GO on "Option
   // D" 2026-08-02/08-03). One-time lip-synced intro per persona, then a
-  // per-reading Kokoro voice track (am_onyx, speed 0.8) played over the
-  // user's OWN dream video (bounce-looped) with timed captions overlaid —
-  // no per-reading lip-sync (explicitly ruled out as too expensive).
+  // per-reading voice track played over the user's OWN dream video
+  // (bounce-looped) with timed captions overlaid — no per-reading lip-sync
+  // (explicitly ruled out as too expensive). Voice vendor (2026-08-04,
+  // tracker for-product-founder-decision-08-04-switc-cqveik): ElevenLabs
+  // Turbo v2.5 (voice `Brian`) primary, with the original Kokoro voice
+  // (`am_onyx`, speed 0.9) as a same-behavior fallback tier — see
+  // generate-interp-audio.js's header comment for the full chain. This
+  // client-side file is unaffected by WHICH vendor produced the audio; it
+  // only ever gates on `persona.voiceId` being truthy and consumes the
+  // same `{ audioUrl, captions, captionsLevel }` contract either way.
   //
   // ── Speaking Sage is LIVE for everyone (founder "go wide", 2026-08-04) ──
   // The ?sagevoice=1 founder-preview gate that shipped with the feature is

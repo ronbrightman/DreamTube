@@ -36,15 +36,20 @@
 // documented accent-gradient + initial treatment (see that file's
 // renderPortrait helper) — never assume the file is there.
 //
-// ── Speaking Sage / voice fields (`voiceId`, `introClipUrl`,
-//    `introVoiceUrl`) — additive, tracker item
+// ── Speaking Sage / voice fields (`voiceId`, `kokoroVoiceId`,
+//    `introClipUrl`, `introVoiceUrl`) — additive, tracker item
 //    for-product-build-speaking-sage-wave-fou-8uobuh, founder GO on
-//    "Option D" 2026-08-02/08-03 ──
-// `voiceId` is a fal-ai/kokoro/american-english voice id (confirmed against
-// fal's own current model docs at build time, not memory — 2026-08:
-// `am_onyx` is a real, valid enum value on that endpoint) used by
-// netlify/functions/generate-interp-audio.js for this persona's per-reading
-// TTS.
+//    "Option D" 2026-08-02/08-03; voice vendor switched 2026-08-04
+//    (tracker for-product-founder-decision-08-04-switc-cqveik) ──
+// `voiceId` is an ElevenLabs Turbo v2.5 voice NAME (confirmed against fal's
+// own live OpenAPI schema at build time, not memory — 2026-08: 'Brian' is a
+// real, valid enum value on that endpoint) used by
+// netlify/functions/generate-interp-audio.js's PRIMARY reading-TTS tier.
+// `kokoroVoiceId` is the ORIGINAL fal-ai/kokoro/american-english voice id
+// ('am_onyx') — kept as the FALLBACK tier's own voice, used only when the
+// ElevenLabs call fails (see that file's fallback-chain comment). Two
+// separate fields, deliberately, rather than overloading one field with
+// two different vendors' voice-naming schemes.
 //
 // `introClipUrl`/`introVoiceUrl` are the ONE-TIME, shared, pre-rendered
 // intro greeting (played once per persona-selection commit,
@@ -221,14 +226,31 @@
       method: 'Your interpretive method draws on the Talmudic principle of hatavat chalom — that a dream follows the mouth of its interpretation, so how a dream is read shapes what it becomes. Given the dreamer\'s life context, read the dream in the most hopeful, constructive light that honestly fits its content, and close by turning it toward the good.',
       questionFocus: 'Ask about the dreamer\'s life context right now — what season of life they\'re in, or what they\'re hoping for — so the reading can genuinely turn toward the good for THEM, not a generic blessing.',
       maxQuestions: 2,
-      // Founder-confirmed Option D casting (2026-08-02): am_onyx, Kokoro's
-      // fal-ai/kokoro/american-english voice catalog, played at speed 0.8
-      // (see generate-interp-audio.js). Sage is the only persona shipping
-      // voice this wave (scope item 4 — "sage persona first").
-      voiceId: 'am_onyx',
-      // Real, founder-approved Option D handoff (main commit c0b9202) —
-      // see this file's header note above for the full "two separate
-      // files, video-only + a separate voice track" story.
+      // Founder decision 2026-08-04 (tracker item
+      // for-product-founder-decision-08-04-switc-cqveik, "much better" —
+      // listened to real samples of both): PRIMARY reading voice switched
+      // from Kokoro to ElevenLabs Turbo v2.5, reached through the SAME
+      // fal.ai infrastructure (`fal.run/fal-ai/elevenlabs/tts/turbo-v2.5`,
+      // same FAL_KEY, no new vendor account — a model swap, not a new
+      // integration). `voiceId` now means an ELEVENLABS voice NAME (see
+      // that endpoint's own catalog — 'Brian' confirmed valid via fal's
+      // live OpenAPI schema, fetched at build time 2026-08-04), used by
+      // generate-interp-audio.js's PRIMARY tier.
+      voiceId: 'Brian',
+      // `kokoroVoiceId` is the ORIGINAL Option D casting (2026-08-02:
+      // am_onyx, fal-ai/kokoro/american-english's voice catalog) — kept,
+      // unchanged in value, but now scoped to the FALLBACK tier only
+      // (generate-interp-audio.js: ElevenLabs sync fails -> kokoro sync ->
+      // kokoro queue, all three still keyed on THIS field, not `voiceId`).
+      // Deliberately a separate field rather than overloading `voiceId`
+      // with two different vendors' voice-naming schemes at once.
+      kokoroVoiceId: 'am_onyx',
+      // Real, founder-approved intro handoff — re-recorded in Brian's
+      // ElevenLabs voice and relipsynced to match the new reading voice
+      // (Manager, main commit 46b6a65, "Ship founder-approved ElevenLabs
+      // 'come closer' intro"); see this file's header note above for the
+      // full "two separate files, video-only + a separate voice track"
+      // story, unchanged by the reading-voice switch.
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     }
