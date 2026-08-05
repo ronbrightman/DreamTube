@@ -75,20 +75,17 @@ drift for the PRE-signup steps, not a bug.
 | 4 | Mood | `wizard.html` — `renderMood` | "What's the mood?" |
 | 5 | Style | `wizard.html` — `renderStyleStep` | Reuses style.html's style cards. |
 | 6 | Free text | `wizard.html` — `renderFreeText` | Optional escape hatch. |
-| 7 | Contact capture | `wizard.html` — `renderContact` | Email verified (format + `check-email.js`'s availability + deliverability check) and the real, billed pending-generation call captured here, BEFORE Signup — same "verify → capture → reveal" ordering as journey 1's step 1, just on its own dedicated screen instead of a DOM swap within one screen. |
-| 8 | Signup (username + password) | `wizard.html` — `renderSignup` | Adopts the already-running generation job on success. |
-| 9 | Home (background generation) | `home.html` | **Lands directly on Home — no dedicated wait screen** (tracker item `for-product-funnel-ending-v2-founder-ins-tfuu0q`, removed `processing.html`/the old step-10 redirect to `result.html`). Resumes the adopted job in the background — same Home-lands-with-a-generating-tile experience as journey 1's step 3. |
+| 7 | Signup wall (hybrid, screen-13 parity) | `wizard.html` — `renderSignupWall` | ONE merged screen replacing the former Contact-capture + username/password Signup pair (founder order, tracker item `for-product-wizard-signup-wall-is-the-ol-lt1l9j`): the forming-veil "your dream is forming" indicator, the (flag-gated) Facebook Login button + "or" divider, and a single passwordless email field — the same hybrid wall `start.html`'s live screen 13 uses. Email deliverability-checked (`check-email.js`), then the real, billed pending-generation call fires in parallel with `DreamStore.signupPasswordless` — BEFORE any account exists; an already-registered email resolves via the same enter-the-code step as screen 13. Success claims + adopts the running job. |
+| 8 | Home (background generation) | `home.html` | **Lands directly on Home — no dedicated wait screen** (tracker item `for-product-funnel-ending-v2-founder-ins-tfuu0q`, removed `processing.html`/the old redirect to `result.html`). Resumes the adopted job in the background — same Home-lands-with-a-generating-tile experience as journey 1's step 3. |
 
-**Extracted/asserted array:** `wizard.html`'s `SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderContact, renderSignup]`.
+**Extracted/asserted array:** `wizard.html`'s `SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderSignupWall]`.
 
 ## Known, flagged difference between the two journeys (not silently decided)
 
 Journey 1 (ad funnel) shows a dedicated **token intro + confirmation**
 screen (`renderScreen14`) between Signup and landing on Home. Journey 2
-(organic) has no equivalent dedicated screen — `wizard.html`'s own Signup
-screen (`renderSignup`) folds the same core fact ("320 tokens on signup,
-no card needed") into one line of that screen's own copy, then redirects
-straight to `home.html`.
+(organic) has no equivalent dedicated screen — `wizard.html`'s signup
+wall (`renderSignupWall`) redirects straight to `home.html` on success.
 
 This is a **real, felt difference** ("I hit different pages") the founder
 noticed directly, not a stale-screen bug — `wizard.html` never had

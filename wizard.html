@@ -69,17 +69,25 @@
     3 Mood      ("What's the mood?")          — NEW
     4 Style     ("Pick a look")               — reuses style.html's cards
     5 Free text (optional escape hatch)       — the demoted old textarea
-    6 Contact capture (email only — the WhatsApp toggle is PARKED as of
-      2026-07-28, see renderContact's own comment; no code path can
-      deliver to it today) — the retention pivot: "we'll email you your
-      dream the moment it's ready," fired BEFORE the full signup gate.
-      Kicks off generation in parallel
-      (start-pending-generation.js) the instant this step completes.
-    7 Signup    (username + password; email locked to what was captured)
-      -> on success, adopts the already-running generation job
+    6 Signup wall (renderSignupWall) — ONE hybrid screen, at parity with
+      start.html's screen 13 (founder order, tracker item
+      for-product-wizard-signup-wall-is-the-ol-lt1l9j): the forming-veil
+      "your dream is already forming" indicator on top, the (flag-gated)
+      Facebook Login button + "or" divider, then a single EMAIL field —
+      passwordless-first, exactly the live screen-13 wall, NOT the old
+      username+password form. Submitting fires start-pending-generation.js
+      (the real, billed generation — BEFORE any account exists) in
+      parallel with DreamStore.signupPasswordless(email); a brand-new
+      email is signed straight in, an already-registered one swaps to the
+      same enter-the-code step screen 13 uses. Success claims the pending
+      job (claim-pending-generation.js), adopts it
       (DreamStore.adoptPendingGeneration) and hands off straight to
       home.html, which resumes polling it with ZERO changes needed
       there (it already checks DreamStore.getPendingJob() on load).
+      This wall REPLACED the former two-step tail (renderContact's
+      email-only capture + renderSignup's username+password form) — see
+      git history for those; the founder's explicit intent was that the
+      organic path ends the same way the paid funnel does.
 
   Camera chips are deliberately NOT a step here (see WIZARD_SPEC.md:
   "demoted to inferred-not-asked") — js/wizard-chips.js infers camera +
@@ -248,10 +256,109 @@
   .fn-spin{ width:44px; height:44px; border-radius:50%; border:3px solid var(--fn-line); border-top-color:var(--fn-accent-solid); margin:0 auto 20px; animation:fnspin 1s linear infinite;}
   @keyframes fnspin{ to{ transform:rotate(360deg);} }
   @media (prefers-reduced-motion: reduce){ .fn-spin{ animation:none;} }
+  .fn-loading-line{ font-size:13px; color:var(--fn-ink-soft); text-align:center; margin-bottom:6px;}
+
+  /* ===== Signup wall (screen-13 parity — tracker item
+     for-product-wizard-signup-wall-is-the-ol-lt1l9j). Every rule below is
+     ported from start.html's own proven screen-13 implementation (see that
+     file's <style> block for each rule's original doc comment and the
+     tracker items behind it), swapped onto this shell's fixed --fn-*
+     tokens instead of start.html's per-phase --phase-* variables (this
+     file has exactly one theme, see the head-of-style comment above). =====
+
+     Vertical-distribution layer (start.html's .fn-signup-stage, tracker
+     item for-product-signup-screen-layout-fixes-f-3hclmj — founder:
+     "SPREAD IT OUT"): leftover vertical space is distributed as real
+     breathing room between every beat via flex:1 spacers, instead of
+     pooling below the CTA. See fnStageHtml() in the script below. */
+  .fn-signup-stage{ display:flex; flex-direction:column; min-height:100%;}
+  .fn-stage-spacer{ flex:1; min-height:14px;}
+
+  /* The standard "or" social-login separator between the Facebook button
+     and the email field — rendered ONLY when the Facebook button itself is
+     (see facebookOrDividerHtml's shared isFacebookLoginConfigured() guard
+     in the script below). */
+  .fn-or-divider{ display:flex; align-items:center; gap:12px; margin:0; color:var(--fn-ink-faint); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;}
+  .fn-or-divider::before, .fn-or-divider::after{ content:''; flex:1; height:1px; background:var(--fn-line);}
+
+  /* The "your dream is forming" veil — shimmer-sweep + spinning-arc +
+     caption over a live nebula/aurora drift layer, the same convention
+     home.html's day0card and start.html's screen 13 already use (tracker
+     items for-product-build-now-email-wall-fix-1-n-6qvebd and
+     for-product-forming-veil-replace-the-fla-nwbe60 — see start.html for
+     the full original reasoning on each piece; values copied verbatim,
+     these are self-contained colors with no theme tokens involved). */
+  .fn-forming-frame{
+    position:relative; height:118px; border-radius:16px; overflow:hidden; margin-bottom:16px;
+    background:#171034; /* plain fallback fill, painted under .fn-form-nebula */
+  }
+  .fn-forming-frame.fnstyle-default{
+    --fn-neb-1:rgba(163,90,255,.55); --fn-neb-2:rgba(83,140,255,.5); --fn-neb-3:rgba(255,255,255,.10);
+    --fn-neb-base1:#241348; --fn-neb-base2:#2c1a5e; --fn-neb-base3:#141040;
+  }
+  .fn-forming-frame.fnstyle-cartoon{
+    --fn-neb-1:rgba(255,158,84,.55); --fn-neb-2:rgba(255,92,163,.5); --fn-neb-3:rgba(255,224,140,.16);
+    --fn-neb-base1:#4a2038; --fn-neb-base2:#5c2b1c; --fn-neb-base3:#2a1024;
+  }
+  .fn-forming-frame.fnstyle-cinematic{
+    --fn-neb-1:rgba(88,132,255,.5); --fn-neb-2:rgba(64,52,150,.55); --fn-neb-3:rgba(190,205,255,.10);
+    --fn-neb-base1:#101530; --fn-neb-base2:#182450; --fn-neb-base3:#080a1c;
+  }
+  .fn-forming-frame.fnstyle-anime{
+    --fn-neb-1:rgba(255,86,201,.55); --fn-neb-2:rgba(84,222,255,.5); --fn-neb-3:rgba(255,255,255,.14);
+    --fn-neb-base1:#3a1250; --fn-neb-base2:#173b5e; --fn-neb-base3:#170e3a;
+  }
+  .fn-forming-frame.fnstyle-realistic{
+    --fn-neb-1:rgba(126,204,150,.5); --fn-neb-2:rgba(232,190,108,.45); --fn-neb-3:rgba(200,230,210,.10);
+    --fn-neb-base1:#132a20; --fn-neb-base2:#2c3a1e; --fn-neb-base3:#0f150e;
+  }
+  .fn-forming-frame .fn-form-nebula{
+    position:absolute; inset:-35%;
+    background:
+      radial-gradient(42% 42% at 28% 32%, var(--fn-neb-1), transparent 70%),
+      radial-gradient(48% 48% at 76% 72%, var(--fn-neb-2), transparent 68%),
+      radial-gradient(60% 60% at 50% 50%, var(--fn-neb-3), transparent 75%),
+      linear-gradient(155deg, var(--fn-neb-base1), var(--fn-neb-base2) 55%, var(--fn-neb-base3));
+    animation: fnNebulaDrift 13s ease-in-out infinite alternate, fnNebulaHue 17s ease-in-out infinite alternate;
+  }
+  /* Populated only on the rare chance a preview happens to already be
+     available (see tryShowFormingPreview's own doc comment below) — hidden
+     by default; heavily blurred + scaled so it reads as an early glimpse,
+     never a finished reveal. */
+  .fn-forming-still{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:blur(20px) saturate(1.15) brightness(.82); transform:scale(1.15); }
+  .fn-forming-frame .fn-form-sweep{
+    position:absolute; inset:-10%;
+    background:linear-gradient(115deg, transparent 34%, rgba(255,255,255,.09) 46%, rgba(207,200,255,.16) 50%, rgba(255,255,255,.09) 54%, transparent 66%);
+    animation:fnFormSweep 2.6s ease-in-out infinite alternate;
+  }
+  .fn-forming-frame .fn-form-arc{
+    position:absolute; left:50%; top:36%; width:30px; height:30px; margin:-15px 0 0 -15px;
+    animation:fnArcSpin 1.6s linear infinite;
+  }
+  .fn-forming-frame .fn-form-arc circle{ fill:none; stroke:rgba(255,255,255,.9); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:46 28;}
+  .fn-forming-frame .fn-form-caption{
+    position:absolute; left:0; right:0; bottom:11px; text-align:center;
+    font-size:12.5px; font-weight:700; letter-spacing:.01em; color:#e7e2fb;
+    text-shadow:0 1px 6px rgba(12,10,26,.8);
+  }
+  @keyframes fnFormSweep{ 0%{ transform:translateX(-70%) skewX(-12deg);} 100%{ transform:translateX(70%) skewX(-12deg);} }
+  @keyframes fnArcSpin{ to{ transform:rotate(360deg);} }
+  @keyframes fnNebulaDrift{
+    0%{ transform:translate(-3%,-2%) rotate(-3deg) scale(1.02); }
+    50%{ transform:translate(3%,2.5%) rotate(3deg) scale(1.08); }
+    100%{ transform:translate(-2%,3%) rotate(-2deg) scale(1.04); }
+  }
+  @keyframes fnNebulaHue{
+    0%{ filter:hue-rotate(0deg) saturate(1.05); }
+    50%{ filter:hue-rotate(16deg) saturate(1.25); }
+    100%{ filter:hue-rotate(-12deg) saturate(1.1); }
+  }
+  @media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc, .fn-forming-frame .fn-form-nebula{ animation:none !important;} }
 </style>
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/facebook-config.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
@@ -265,11 +372,36 @@
     }
   }
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
+
+  // ===== Facebook Login — return-leg markers (screen-13 parity, tracker
+  // item for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
+  // facebook-oauth-callback.js 302s back to THIS page (via the strictly
+  // allowlisted `rp=wizard` resume param the signup wall packs into the
+  // OAuth `state` — see that function's redirect() and startFacebookLogin
+  // below), carrying exactly one of the same three markers start.html's
+  // own return leg documents:
+  //   ?bt=<session-transfer token>  — signed in; consume it and complete
+  //                                    the wall (boot() below)
+  //   ?fb_error=<slug>              — failed closed; inline error on the
+  //                                    wall, email path fully usable
+  //   ?fb_needs_email=<marker>      — Facebook confirmed who they are but
+  //                                    returned no email; ask for one field
+  // Read BEFORE anything else touches the URL — DreamStore's own
+  // consumeSessionTransferTokenFromUrlSync strips `bt` the moment it runs.
+  var fbTransferPresent = !!getParam('bt');
+  var facebookErrorSlug = getParam('fb_error');
+  var facebookNeedsEmailToken = getParam('fb_needs_email');
+  var resumedFromFacebook = !!(fbTransferPresent || facebookErrorSlug || facebookNeedsEmailToken);
 
   // Already-signed-in visitors have no business in a PRE-signup wizard —
   // send them to the normal logged-in "New Dream" flow instead (create.html's
   // own chip wizard retrofit covers the same chip-first experience there).
-  if(DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
+  // Gated on !resumedFromFacebook, same as start.html's own equivalent
+  // guard: the Facebook return leg is an active identity exchange in
+  // progress that must be allowed to finish here, even if this browser
+  // also happens to hold an unrelated older session.
+  if(!resumedFromFacebook && DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
 
   // Returning-but-currently-logged-out entry guard (tracker item
   // for-product-life-origin-generate-handoff-founder-repro-8yc4wm, founder
@@ -313,8 +445,12 @@
   // explicit click-through from index.html always proceeds. A genuinely
   // first-time visitor (hasLocalAccountHistory() false) is unaffected
   // either way, exactly as docs/JOURNEY_MANIFEST.md documents.
+  // (Also gated on !resumedFromFacebook, same reasoning as the signed-in
+  // guard above — a Facebook round trip legitimately re-lands here without
+  // the ?entry=index marker, and may itself have just created the local
+  // account history this guard reads.)
   var cameFromIndexGetStarted = new URLSearchParams(location.search).get('entry') === 'index';
-  if(!cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  if(!resumedFromFacebook && !cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
   if(cameFromIndexGetStarted){
     var __cleanParams = new URLSearchParams(location.search);
     __cleanParams.delete('entry');
@@ -416,15 +552,15 @@
   }
 
   /**
-   * Called once, right after real signup (or an in-place login for an
-   * already-registered email, see renderInPlaceLogin below) succeeds —
-   * turns staged local characters into real DreamStore characters and
-   * remaps every id in staged.subjectCharacterIds (now potentially more
-   * than one) onto its real id. Returns the id map itself so callers can
-   * also remap any OTHER already-computed local id they're separately
-   * holding (see both call sites' own comment on why that's needed --
-   * assembled.characterIdsForGeneration was computed before this flush and
-   * still holds local ids until each caller re-maps it with this).
+   * Called once, right after a real signup or login succeeds (from
+   * completeSignupAndAdvance, the wall's one shared continuation — see
+   * that function below) — turns staged local characters into real
+   * DreamStore characters and remaps every id in
+   * staged.subjectCharacterIds (potentially more than one) onto its real
+   * id. Returns the id map itself so the caller can also remap the
+   * already-computed local ids it separately holds
+   * (assembled.characterIdsForGeneration was computed before this flush
+   * and still holds local ids until re-mapped with this).
    */
   function flushStagedCharactersToStore(){
     var idMap = {};
@@ -1048,7 +1184,7 @@
   // exact same treatment as create.html's "Build it" (see that file's own
   // header comment): assembled.caption above is promptText (generation-
   // only, camera-direction/style-modifier language), never shown to the
-  // user again. currentStoryText is what Step 7 (Contact)'s recap card
+  // user again. currentStoryText is what the signup wall's recap card
   // actually shows, and what the real submission payload/draftPatch below
   // carry — always whatever's CURRENTLY displayed, never a stale snapshot,
   // same discipline as style.html's own version of this. See
@@ -1061,10 +1197,10 @@
 
   /**
    * Recomputes currentStoryText for whatever's currently staged, fires the
-   * opportunistic LLM rewrite if needed, and re-renders Contact's recap
-   * card (only relevant while Contact is the visible screen — renderStoryRecap
-   * itself no-ops harmlessly if its elements aren't in the DOM, e.g. the
-   * user has since moved on to Signup).
+   * opportunistic LLM rewrite if needed, and re-renders the wall's recap
+   * card (only relevant while the wall is the visible screen — renderStoryRecap
+   * itself no-ops harmlessly if its elements aren't in the DOM, e.g. an
+   * earlier step is showing).
    */
   function computeStoryText(){
     var myToken = ++storyRewriteToken;
@@ -1089,22 +1225,25 @@
   function renderStoryRecap(){
     var card = document.getElementById('fn-story-recap-card');
     var textEl = document.getElementById('fn-story-recap-text');
-    if(!card || !textEl) return; // Contact isn't the current screen -- see computeStoryText's own comment
+    if(!card || !textEl) return; // the wall isn't the current screen -- see computeStoryText's own comment
     textEl.textContent = currentStoryText;
     card.style.display = currentStoryText ? 'block' : 'none';
   }
 
   // ===================================================================
-  // Step 7 — Contact capture (the retention pivot). Email is required
-  // (it's also the token-economy identity generate-video.js's E112 gate
-  // keys on — see start-pending-generation.js). WhatsApp is PARKED (see
-  // renderContact's own comment below) — no code path can deliver to it
-  // today, so contactWhatsapp always stays ''. Kicks off generation the
-  // moment this completes ("generate during signup" — see
-  // start-pending-generation.js/dream-webhook.js).
+  // Pre-account generation state (the "generate during signup" seam —
+  // see start-pending-generation.js/dream-webhook.js). Email is required
+  // by that endpoint (its E4 gate — email is the token-economy identity
+  // generate-video.js's E112 gate keys on too), so the real, billed
+  // generation fires the moment the signup wall's email submit passes
+  // the deliverability check — BEFORE any account exists — exactly the
+  // ordering start.html's screen 13 uses. WhatsApp stays PARKED (founder
+  // decision 2026-07-28, tracker item
+  // for-product-hide-the-whatsapp-field-in-w-clu9ju — no code path can
+  // deliver to it today), so the payload always sends whatsapp: null;
+  // re-enable is tracked by for-ron-reminder-complete-the-whatsapp-c-9mz857.
   // ===================================================================
   var contactEmail = '';
-  var contactWhatsapp = '';
   var pendingId = null;
   var pendingOperationName = null;
   var pendingStartedAt = null;
@@ -1114,57 +1253,37 @@
   // with nothing changed can skip re-POSTing instead of creating a
   // second real fal.ai charge + token spend and orphaning the first
   // pending record. Only ever written alongside pendingId on success —
-  // see the Continue handler below for why that invariant is what makes
-  // comparing against it (alone, without pendingStartFailed) safe.
+  // see getOrStartPendingGeneration below for why that invariant is what
+  // makes comparing against it (alone, without pendingStartFailed) safe.
   // See tracker item wizard-html-no-guard-against-resubmittin-n5b5k2.
   var lastPendingSubmissionKey = null;
   // Per-attempt token — same "an async callback's side effects aren't
   // scoped to the attempt that started them" pattern as start.html's own
-  // pendingGenerationToken (see that file's doc comment, ~start.html:954).
-  // Bumped on EVERY Continue click here, not just when a fresh POST
-  // fires (unlike start.html's version): reverting to already-succeeded
-  // content takes the synchronous skip path below with no new POST at
-  // all, but it's still a newer attempt that must invalidate whatever's
-  // still in flight from an abandoned edit in between. Guards
+  // pendingGenerationToken (see that file's doc comment). Guards
   // startPendingGeneration()'s WRITE to the pending* vars below — never
-  // gates navigation (see pendingGenerationPromise's own comment for why
-  // navigation is handled entirely separately now).
+  // navigation (settlement never navigates in this file, only
+  // completeSignupAndAdvance does, and that is signupAttemptToken-gated).
+  // Bumped only when a genuinely NEW call fires
+  // (getOrStartPendingGeneration's fresh branch) and on Back navigation
+  // (the topbar handler below) — never on a reused in-flight call, which
+  // must still be able to write once it eventually settles, exactly
+  // start.html's own bump discipline.
   var pendingGenerationToken = 0;
-  // Review round 4: the topbar Back button (backBtn, ~line 1150) is
-  // never disabled, including mid-fetch. The previous structure called
-  // next() from INSIDE the fetch's .then()/.catch() -- so a user could
-  // click Continue (fires the POST), then immediately click Back before
-  // it landed, all without ever re-clicking Continue on Contact (no
-  // token bump, since the token only bumps on a Continue click). The
-  // settling response's next() = goToStep(cur + 1) then read `cur` LIVE
-  // at settlement time, not the value from when the request fired --
-  // silently force-navigating the user forward again from wherever
-  // they'd since moved to, and DreamStore.setDraft(...) writing
-  // whatever assembled.caption/chosenStyle happened to be NOW, which
-  // might not even match what was actually POSTed. Same underlying
-  // failure mode as the round 2/3 races (a stale async callback acting
-  // on live shared state), reached via a path neither prior fix's token
-  // check touched, because neither guarded navigation itself.
-  //
-  // Structural fix (matches start.html's own startPendingGeneration/
-  // getOrStartPendingGeneration precedent, ~start.html:944-1026) rather
-  // than another patch: startPendingGeneration()'s settlement below
-  // ONLY ever writes pendingId/pendingOperationName/pendingStartedAt/
-  // pendingStartFailed/lastPendingSubmissionKey (still token-guarded,
-  // unchanged) -- it NEVER calls next() or DreamStore.setDraft(). The
-  // Continue handler calls both of those ITSELF, synchronously, right
-  // after firing the request (or right after the skip-guard's
-  // synchronous branch) -- never waiting on the fetch. This removes the
-  // whole "settlement drives navigation off live shared state" hazard
-  // by construction: there is no longer any window where an in-flight
-  // request's eventual settlement can navigate anyone anywhere, because
-  // settlement never navigates, period. pendingGenerationPromise tracks
-  // the latest fire so the Signup step (the only other place that reads
-  // pendingId/pendingOperationName) can wait for it to settle before
-  // reading them, exactly mirroring how start.html's own Signup screen
-  // (screen 13, ~start.html:1159) awaits pendingPromise before its own
-  // claim/adopt/next() -- see renderSignup below.
+  // The latest fired (or reused) start-pending-generation promise — what
+  // the wall's post-signup continuation (completeSignupAndAdvance) awaits
+  // before reading pendingId/pendingOperationName, mirroring start.html's
+  // own pendingPromise handling on screen 13. Always resolves (win or
+  // lose), so it can never hang the wall.
   var pendingGenerationPromise = Promise.resolve();
+  // Reuse bookkeeping for getOrStartPendingGeneration below — the
+  // comparison key of the CURRENT (in-flight or settled) call, plus
+  // whether it has settled yet. Same shape as start.html's own
+  // pendingGenerationEmail/pendingGenerationSettled pair, except keyed on
+  // the wizard's full content-comparison key (this page's dream content
+  // can change between attempts via Back-editing; start.html's is fixed
+  // from URL params, so an email key alone is enough there).
+  var pendingGenerationComparisonKey = null;
+  var pendingGenerationSettled = false;
 
   /**
    * Resolves EVERY id in assembled.characterIdsForGeneration (now
@@ -1194,10 +1313,11 @@
    * since become current, so this stale response is discarded rather
    * than clobbering it. Always resolves (never rejects) -- a failure
    * just leaves pendingStartFailed true. Deliberately does NOT navigate
-   * or touch the draft -- see the Continue handler below, which
-   * advances synchronously right after calling this, without waiting
-   * for it to settle. Same shape as start.html's own
-   * startPendingGeneration (~start.html:968).
+   * or touch the draft -- navigation belongs to completeSignupAndAdvance
+   * alone (which awaits this promise before reading the pending* vars).
+   * Not called directly by the wall -- see getOrStartPendingGeneration
+   * below, which adds the reuse/resubmission guards and the token. Same
+   * shape as start.html's own startPendingGeneration.
    */
   function startPendingGeneration(submissionKey, comparisonKey, token){
     var startedAt = Date.now();
@@ -1229,14 +1349,60 @@
   }
 
   /**
+   * Retry-safe wrapper around startPendingGeneration() — what the signup
+   * wall actually calls (same role as start.html's own
+   * getOrStartPendingGeneration, see that function's doc comment). Three
+   * tiers, cheapest first:
+   *   1. This exact content already SUCCEEDED (pendingId is set and
+   *      comparisonKey matches lastPendingSubmissionKey, which is only
+   *      ever written together with pendingId on success) — nothing to
+   *      do or wait for at all. This is the old Contact-step resubmission
+   *      guard (tracker item wizard-html-no-guard-against-resubmittin-
+   *      n5b5k2), preserved: re-POSTing would create a second real
+   *      fal.ai charge + token spend and orphan the first pending record.
+   *      Deliberately NOT gated on pendingStartFailed — that flag only
+   *      reflects the MOST RECENT attempt, not whether THIS content's
+   *      call succeeded (an unrelated failed attempt in between must not
+   *      force a needless re-POST of already-bought content).
+   *   2. The SAME content's call is still in flight (or settled ok) —
+   *      reuse its promise rather than racing a duplicate request in
+   *      (reachable via the code step's "Use a different email" →
+   *      resubmit round trip, where the first submit's slow fal call can
+   *      easily still be outstanding).
+   *   3. Genuinely new/changed content, or a prior definitive failure
+   *      for it — fire fresh (nothing was spent on a failed attempt, see
+   *      start-pending-generation.js: tokens are only spent after a
+   *      successful fal submission, so retrying a failure is correct,
+   *      not a double-spend risk).
+   */
+  function getOrStartPendingGeneration(submissionKey, comparisonKey){
+    if(pendingId && comparisonKey === lastPendingSubmissionKey) return Promise.resolve();
+    var reusable = pendingGenerationComparisonKey === comparisonKey && pendingGenerationPromise &&
+      (!pendingGenerationSettled || !pendingStartFailed);
+    if(reusable) return pendingGenerationPromise;
+    pendingGenerationComparisonKey = comparisonKey;
+    pendingGenerationSettled = false;
+    pendingGenerationToken++;
+    var myToken = pendingGenerationToken;
+    pendingGenerationPromise = startPendingGeneration(submissionKey, comparisonKey, myToken).then(function(){
+      // Same staleness guard as startPendingGeneration's own writes — an
+      // abandoned call's belated settlement must not flip this flag for
+      // whatever the CURRENT attempt is.
+      if(myToken === pendingGenerationToken) pendingGenerationSettled = true;
+    });
+    return pendingGenerationPromise;
+  }
+
+  /**
    * check-email.js availability + deliverability check (tracker items
    * for-product-money-leak-blocked-signups-e-v2g1vi and
    * for-product-signup-email-micro-step-foun-ns8uve) — fired BEFORE
-   * startPendingGeneration, so a signup that's guaranteed to be rejected
-   * (register-account.js's own E8 email_taken) never gets a real, billed
-   * fal.ai generation started for it in the first place, and an obviously
-   * mistyped domain is caught inline before this Contact step ever
-   * advances to the separate Signup screen. Resolves to
+   * startPendingGeneration, so an obviously mistyped domain is caught
+   * inline before an account gets created around it or the real, billed
+   * generation fires. Under the passwordless wall only `deliverable`
+   * gates anything — `available` no longer stops the flow (an
+   * already-registered email resolves via the code step, matching
+   * screen 13's live wall; see renderWallEmailStep). Resolves to
    * { available, deliverable }, never rejects. Resilient fallback on any
    * failure of THIS check — fail OPEN to the existing behavior (both
    * true) rather than newly blocking a real user's funnel over an
@@ -1267,651 +1433,677 @@
     });
   }
 
-  function renderContact(el){
+  // ===================================================================
+  // Step 7 — the signup wall (renderSignupWall): ONE hybrid screen at
+  // parity with start.html's live screen 13 (founder order, tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j — "bring the wizard
+  // wall to parity with screen 13, passwordless-first + Facebook +
+  // divider, same analytics, reusing the funnel implementation").
+  //
+  // Beats, top to bottom (fnStageHtml groups, same vertical-distribution
+  // treatment as screen 13):
+  //   1. headline + the forming-veil "your dream is forming" frame
+  //   2. the story recap card — the founder-required pre-generation
+  //      preview (tracker item for-product-split-prompttext-storytext-
+  //      f-yt5kc7): this wall is the one screen right before Continue
+  //      fires the real generation request, so it keeps the recap the
+  //      former Contact step carried (screen 13 has no equivalent only
+  //      because the ad funnel shows its recap funnel-side, pre-handoff)
+  //   3. reassurance line (screen 13 passwordless's own copy, verbatim)
+  //   4. (flag-gated) Facebook button, then the "or" divider
+  //   5. email field + inline error
+  //   6. the "Send me my dream" CTA (never "Sign up" — screen 13's rule)
+  //
+  // Submit mirrors renderScreen13Passwordless's trySubmit exactly:
+  // deliverability check first (checkEmailAvailable — only `deliverable`
+  // gates; an already-registered email is no longer a stop, it resolves
+  // via the code step below), then start-pending-generation (the real,
+  // billed pre-account generation — this file's own content-keyed
+  // getOrStartPendingGeneration wrapper) in PARALLEL with
+  // DreamStore.signupPasswordless(email). Deliberately fired regardless
+  // of which branch signupPasswordless ends up taking — it's keyed on
+  // the email, not on who ends up owning the resulting session, and
+  // starting it early is a pure head start either way; an abandoned
+  // code step still gets the dream via dream-webhook.js's re-engagement
+  // email + claim-dream.html, the same accepted tradeoff screen 13's
+  // live wall already made.
+  //
+  // The wizard deliberately does NOT fire the ad funnel's own
+  // funnel_step_viewed / ReachedEmailEntry / signup_email_entered
+  // events — those feed funnel-specific optimization metrics (Meta's
+  // REE target, the wall-variant A/Bs) and must not be polluted by
+  // organic traffic. This page's own wizard_step_viewed /
+  // wizard_contact_captured / wizard_completed events are unchanged;
+  // signup_method values match screen 13's exactly ('passwordless_code'
+  // for the email path, 'facebook' for Facebook — tracker item
+  // for-product-signup-method-analytics-foun-y1oqt4).
+  // ===================================================================
+  // Per-attempt token — same unscoped-async-callback pattern as
+  // pendingGenerationToken above and start.html's own signupAttemptToken
+  // (see that file's long doc comment for the original repro). Gates
+  // every submit continuation on this wall (email submit, code submit,
+  // and completeSignupAndAdvance's nested pendingPromise continuation —
+  // each checks it again right where it resumes, since any of them can
+  // go stale mid-flight). Bumped on every submit click, on every Back
+  // click (the navigation engine's backBtn listener below), and on the
+  // code step's "Use a different email" — the same three trigger classes
+  // start.html enumerates.
+  var signupAttemptToken = 0;
+
+  // Rendered into #contact-error the next time the wall draws, then
+  // cleared — so a failed Facebook round trip surfaces exactly once,
+  // inline, with the email path beside it fully usable as the fallback
+  // (same shape as start.html's pendingFacebookErrorSlug).
+  var pendingFacebookErrorSlug = facebookErrorSlug;
+
+  function facebookErrorMessage(slug){
+    if(slug === 'denied') return 'Facebook sign-in was cancelled — you can continue with email below.';
+    if(slug === 'rate_limited') return 'Too many sign-in attempts from your network today — please continue with email below.';
+    if(slug === 'account_conflict') return "We couldn't match that Facebook account to an account here — please continue with email below.";
+    return 'Something went wrong signing in with Facebook — try again, or continue with email below.';
+  }
+
+  /** Paints (once) whatever Facebook error this load arrived with into the just-rendered wall's error slot. Called at the end of renderWallEmailStep. */
+  function applyPendingFacebookError(){
+    if(!pendingFacebookErrorSlug) return;
+    var errEl = document.getElementById('contact-error');
+    if(!errEl) return;
+    errEl.textContent = facebookErrorMessage(pendingFacebookErrorSlug);
+    track('signup_facebook_error_shown', { reason: pendingFacebookErrorSlug, variant: 'wizard' });
+    pendingFacebookErrorSlug = null;
+  }
+
+  /**
+   * Markup for the additive Facebook button (js/facebook-config.js's
+   * Meta-brand-compliant facebookButtonHtml), or '' while the feature
+   * flag is a placeholder — in which case NOTHING is written into the
+   * DOM, same contract as start.html's copy of this function.
+   */
+  function facebookSignupButtonHtml(){
+    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
+    return facebookButtonHtml('fn-fb-continue');
+  }
+
+  /** The "or" separator below the Facebook button — shares its exact feature-flag guard so the two always appear or disappear together (a divider with no button above it would be a visible orphan). Same as start.html's copy. */
+  function facebookOrDividerHtml(){
+    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
+    return '<div class="fn-or-divider" id="fn-fb-or-divider">or</div>';
+  }
+
+  /** Wires the button rendered by facebookSignupButtonHtml, if it's there. Safe no-op when the flag is off (no such element exists). */
+  function wireFacebookSignupButton(){
+    var btn = document.getElementById('fn-fb-continue');
+    if(!btn) return;
+    btn.addEventListener('click', function(){ startFacebookLogin(btn); });
+  }
+
+  // ===================================================================
+  // Facebook Login — surviving the redirect. A full-page navigation to
+  // facebook.com and back destroys all in-memory JS state, and unlike
+  // start.html (whose dream content rides the URL's own resume params),
+  // this wizard's entire built dream lives in in-memory chip state — so
+  // the WHOLE of it is snapshotted to localStorage before leaving and
+  // restored on the return leg. Same one-scoped-key + savedAt-age-bound
+  // + restore-then-clear-immediately discipline as start.html's
+  // FB_STAGED_KEY machinery (see that file's §2.5 comment), just with a
+  // wider payload since there are no URL params to lean on here.
+  // ===================================================================
+  var WIZARD_FB_KEY = 'dreamtube_wizard_fb_state';
+  var WIZARD_FB_MAX_AGE_MS = 30 * 60 * 1000;
+
+  function clearPersistedWizardState(){
+    try{ localStorage.removeItem(WIZARD_FB_KEY); }catch(e){ /* private mode / quota — nothing to clean up */ }
+  }
+
+  /** Writes the full wizard state to localStorage just before leaving for facebook.com. Returns false if it couldn't (most realistically a QuotaExceededError from a large staged photo) — the caller proceeds to Facebook regardless, same tradeoff as start.html's persistStagedForFacebookRedirect: losing the built dream is a far smaller failure than blocking signup outright, and the loss is tracked. */
+  function persistWizardForFacebookRedirect(){
+    try{
+      localStorage.setItem(WIZARD_FB_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        staged: staged,
+        subjectOtherKind: subjectOtherKind, subjectOtherText: subjectOtherText,
+        settingPlaceKey: settingPlaceKey, settingOtherText: settingOtherText,
+        sceneryTime: DreamStore.getDraft().sceneryTime,
+        actionKey: actionKey, actionOtherText: actionOtherText, povOn: povOn,
+        moodKey: moodKey, moodOtherText: moodOtherText,
+        chosenStyle: chosenStyle, freeText: freeText,
+        storyText: currentStoryText
+      }));
+      return true;
+    }catch(e){
+      clearPersistedWizardState();
+      track('signup_facebook_staged_persist_failed', { characters: staged.characters.length });
+      return false;
+    }
+  }
+
+  /**
+   * Restores the snapshot on the return leg, then clears the key
+   * immediately (win or lose) so a stale snapshot can never be picked up
+   * by a later, unrelated run. Restores the RAW chip state (not a baked
+   * caption) and re-runs assembleFromState(), so the rebuilt `assembled`
+   * caption is bit-identical to what the pre-redirect wall computed
+   * (assembleCaption is deterministic) and a re-rendered wall (the
+   * fb_error leg) stays fully editable/back-navigable. Returns true only
+   * if a usable, fresh-enough snapshot was applied.
+   */
+  function restoreWizardFromFacebookRedirect(){
+    var raw = null;
+    try{ raw = localStorage.getItem(WIZARD_FB_KEY); }catch(e){ raw = null; }
+    clearPersistedWizardState();
+    if(!raw) return false;
+    try{
+      var parsed = JSON.parse(raw);
+      if(!parsed || !parsed.savedAt || (Date.now() - parsed.savedAt) > WIZARD_FB_MAX_AGE_MS) return false;
+      if(parsed.staged){
+        staged.characters = Array.isArray(parsed.staged.characters) ? parsed.staged.characters : [];
+        staged.subjectCharacterIds = Array.isArray(parsed.staged.subjectCharacterIds) ? parsed.staged.subjectCharacterIds : [];
+      }
+      subjectOtherKind = parsed.subjectOtherKind || null;
+      subjectOtherText = parsed.subjectOtherText || '';
+      settingPlaceKey = parsed.settingPlaceKey || null;
+      settingOtherText = parsed.settingOtherText || '';
+      DreamStore.setDraft({ sceneryTime: parsed.sceneryTime || null });
+      actionKey = parsed.actionKey || WizardChips.DEFAULT_ACTION;
+      actionOtherText = parsed.actionOtherText || '';
+      povOn = !!parsed.povOn;
+      moodKey = parsed.moodKey || WizardChips.DEFAULT_MOOD;
+      moodOtherText = parsed.moodOtherText || '';
+      chosenStyle = parsed.chosenStyle || WizardChips.DEFAULT_STYLE;
+      freeText = parsed.freeText || '';
+      currentStoryText = parsed.storyText || '';
+      assembleFromState();
+      return true;
+    }catch(e){
+      return false;
+    }
+  }
+
+  /**
+   * Leaves for Facebook's OAuth dialog as a FULL-PAGE navigation (never a
+   * popup — unreliable/blocked in the FB/IG in-app webview this feature
+   * exists for; see docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §1). Same
+   * invalidation pair as start.html's copy: the token bump stops this
+   * page's callbacks, invalidatePendingSignup stops js/store.js's own
+   * background commit (see that function's doc comment). The one wizard
+   * difference: the `state` param's resume string is a synthetic
+   * 'rp=wizard' (plus the resume=1 trimResumeParams always forces) —
+   * facebook-oauth-callback.js's redirect() allowlists that exact value
+   * to send the return leg back HERE instead of start.html.
+   */
+  function startFacebookLogin(btn){
+    signupAttemptToken++;
+    DreamStore.invalidatePendingSignup();
+    backBtn.disabled = false;
+    track('signup_facebook_started', { variant: 'wizard' });
+    // Same dedicated "chose Facebook" event screen 13 fires (tracker item
+    // for-product-signup-method-analytics-foun-y1oqt4) — variant 'wizard'
+    // keeps organic clicks distinguishable from the ad funnel's arms.
+    track('signup_facebook_click', { variant: 'wizard', signup_method: 'facebook' });
+
+    // Must happen BEFORE navigating — a failure here is logged, never fatal.
+    persistWizardForFacebookRedirect();
+
+    var nonce = facebookRandomNonce();
+    setFacebookStateCookie(nonce);
+    var state = buildFacebookState(nonce, 'rp=wizard');
+    if(btn){ btn.disabled = true; }
+    location.href = buildFacebookOAuthUrl(state);
+  }
+
+  /**
+   * Wraps the wall's content into the .fn-signup-stage layout — see that
+   * class's own CSS comment above. `groups` is an ordered array of HTML
+   * strings, one per visual beat; a falsy/empty entry (e.g. the Facebook
+   * group when the flag is off) is dropped entirely, so no orphan spacer
+   * ever appears around a group that rendered nothing. Same as
+   * start.html's fnStageHtml.
+   */
+  function fnStageHtml(groups){
+    var real = groups.filter(function(g){ return !!g; });
+    var out = '<div class="fn-signup-stage">';
+    for(var i = 0; i < real.length; i++){
+      out += '<div class="fn-stage-group">' + real[i] + '</div>';
+      if(i < real.length - 1) out += '<div class="fn-stage-spacer"></div>';
+    }
+    return out + '</div>';
+  }
+
+  /**
+   * formingTintClass / formingFrameHtml / tryShowFormingPreview — the
+   * forming-veil trio, ported from start.html (see each one's original
+   * doc comment there for the full reasoning; behavior identical).
+   * formingTintClass uses the same lowercase/fail-closed contract as
+   * MusicBed.urlForStyle, so an unrecognized or not-yet-chosen style
+   * always resolves to the default palette.
+   */
+  var FORMING_TINT_STYLES = { cartoon: 1, cinematic: 1, anime: 1, realistic: 1 };
+  function formingTintClass(style){
+    var key = typeof style === 'string' ? style.toLowerCase() : '';
+    return 'fnstyle-' + (FORMING_TINT_STYLES[key] ? key : 'default');
+  }
+
+  function formingFrameHtml(caption, style){
+    return '<div class="fn-forming-frame ' + formingTintClass(style) + '" id="fn-forming-frame" role="img" aria-label="' + esc(caption) + '">' +
+      '<div class="fn-form-nebula" aria-hidden="true"></div>' +
+      '<video class="fn-forming-still" id="fn-forming-still" muted loop playsinline style="display:none;"></video>' +
+      '<div class="fn-form-sweep"></div>' +
+      '<svg class="fn-form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>' +
+      '<div class="fn-form-caption">' + esc(caption) + '</div>' +
+    '</div>';
+  }
+
+  /**
+   * Best-effort, ONE-SHOT opportunistic check — never a poll loop, never
+   * awaited by anything the visitor is blocked on. In practice this finds
+   * nothing for the overwhelming majority of visitors (a real Veo
+   * generation takes minutes; this wall is passed in seconds) and the
+   * anticipation-only veil is what they see — see start.html's original
+   * doc comment for the full "why one-shot" reasoning.
+   */
+  function tryShowFormingPreview(){
+    if(!pendingOperationName) return;
+    if(!document.getElementById('fn-forming-still')) return;
+    var controller = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function(){ controller.abort(); }, 3000) : null;
+    fetch('/.netlify/functions/video-status?name=' + encodeURIComponent(pendingOperationName), controller ? { signal: controller.signal } : {})
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(timeoutId) clearTimeout(timeoutId);
+        if(!data || !data.done || !data.videoUrl) return;
+        var videoEl = document.getElementById('fn-forming-still'); // re-read -- the screen may have re-rendered since the fetch started
+        if(!videoEl) return;
+        videoEl.src = data.videoUrl;
+        videoEl.style.display = 'block';
+        videoEl.play().catch(function(){ /* autoplay can be blocked -- the blurred poster frame alone still reads fine */ });
+      })
+      .catch(function(){ if(timeoutId) clearTimeout(timeoutId); /* best-effort only -- see this function's own doc comment */ });
+  }
+
+  /**
+   * The ONE post-signup continuation, shared by the email/code path and
+   * the Facebook return leg (start.html's completeSignupAndAdvance,
+   * adapted): flush staged characters into the now-real account, re-point
+   * draft.characterIds at the flushed real ids (draftPatch was computed
+   * BEFORE the flush, so it still holds "local..." staged ids — and
+   * home.html's fallback fresh-generation path reads draft.characterIds
+   * directly, so this is not a display-only fixup), then wait for the
+   * pending-generation call to settle, claim + adopt it, and land on
+   * home.html. `?generate=1` covers the pendingStartFailed case: home.html
+   * finds no pendingJob and falls back to submitting the intact draft
+   * fresh (see that file's "Fresh in-app generation submission" block);
+   * when adoption succeeded, its pendingJob-first check resumes the
+   * adopted job and ignores the param entirely.
+   */
+  function completeSignupAndAdvance(email, opts){
+    opts = opts || {};
+    var idMap = flushStagedCharactersToStore();
+    if(assembled && assembled.characterIdsForGeneration.length){
+      DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return idMap[id] || id; }) });
+    }
+    var pendingPromise = opts.pendingPromise || Promise.resolve();
+    return pendingPromise.then(function(){
+      // Re-check — this attempt can go stale WHILE the pending promise is
+      // unsettled, even though the caller's own check already passed.
+      if(typeof opts.isStale === 'function' && opts.isStale()) return;
+      if(pendingId && !pendingStartFailed){
+        // email is required by claim-pending-generation.js's ownership
+        // check — this is the exact email start-pending-generation.js
+        // created the pending record under, so it always matches.
+        fetch('/.netlify/functions/claim-pending-generation', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pendingId: pendingId, email: email })
+        }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
+      }
+      if(pendingOperationName && !pendingStartFailed){
+        // mediaType omitted (undefined) — this wall always adopts a
+        // video, see adoptPendingGeneration's own doc comment.
+        DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
+      }
+      track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
+      location.href = 'home.html?generate=1';
+    });
+  }
+
+  function renderSignupWall(el){
+    // Facebook confirmed who this visitor is but gave us no email — ask
+    // for exactly one field instead of the normal wall (same half-step as
+    // start.html's renderScreen13FacebookEmail).
+    if(facebookNeedsEmailToken){
+      renderFacebookEmailStep(el);
+      return;
+    }
+    renderWallEmailStep(el);
+  }
+
+  function renderWallEmailStep(el){
     assembleFromState();
-    el.innerHTML =
-      '<div class="fn-headline">Where should we send your dream?</div>' +
-      '<div class="fn-microcopy">We’ll email you your dream the moment it’s ready — even if you don’t finish signing up.</div>' +
-      // Story recap card -- founder-required pre-generation preview
-      // (tracker item for-product-split-prompttext-storytext-f-yt5kc7,
-      // point 4): this Contact step is the one right before Continue
-      // fires the real generation request, so it's this flow's own
-      // "preview" moment (create.html's equivalent chip flow uses
-      // style.html for the same role). See computeStoryText below for how
-      // #fn-story-recap-text gets populated.
+    el.innerHTML = fnStageHtml([
+      '<div class="fn-headline">Where should we send your first dream?</div>' +
+        formingFrameHtml('Your dream is forming…', chosenStyle),
+      // Story recap card — the founder-required pre-generation preview
+      // (see this section's own header comment, beat 2). Same ids the
+      // former Contact step used, so computeStoryText/renderStoryRecap
+      // work here unchanged.
       '<div class="story-recap-card" id="fn-story-recap-card" style="display:none;">' +
         '<div class="story-recap-label">Your dream</div>' +
         '<div class="story-recap-text" id="fn-story-recap-text" dir="auto"></div>' +
-      '</div>' +
+      '</div>',
+      // Screen 13 passwordless's own reassurance copy, verbatim.
+      '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>',
+      facebookSignupButtonHtml(),
+      facebookOrDividerHtml(),
       '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
-      // PARKED (founder decision 2026-07-28, tracker item
-      // for-product-hide-the-whatsapp-field-in-w-clu9ju): the WhatsApp
-      // toggle+field are hidden -- no code path can deliver to WhatsApp
-      // today (stub client, no creds, no approved Meta template -- see
-      // for-product-bug-founder-affects-all-funn-0efe7t). Kept commented,
-      // not deleted, per this codebase's parking convention (see
-      // start.html's PARKED camera/scenery screens) -- the channel is
-      // planned, re-enable tracked by
-      // for-ron-reminder-complete-the-whatsapp-c-9mz857.
-      // '<span class="fn-small-link" id="contact-whatsapp-toggle" style="cursor:pointer; text-align:left; padding:0 0 10px;">+ Also send on WhatsApp</span>' +
-      // '<div id="contact-whatsapp-reveal" style="display:none;">' +
-      //   '<input class="fn-field" id="contact-whatsapp" type="tel" placeholder="WhatsApp number (with country code)" autocomplete="tel" dir="auto">' +
-      // '</div>' +
-      '<div class="fn-err-text" id="contact-error"></div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Continue</button>';
+      '<div class="fn-err-text" id="contact-error"></div>',
+      '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Send me my dream</button>' +
+      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin:8px 0 0;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>'
+    ]);
 
-    // Fires the deterministic-then-opportunistically-LLM-upgraded
-    // storyText computation now that #fn-story-recap-card actually exists
-    // in the DOM (see computeStoryText's own doc comment) -- called every
-    // time this screen renders (including a Back-then-forward revisit), so
-    // an edited chip selection or free-text always recomputes fresh.
+    // Recompute + paint the recap now that its elements exist (see
+    // computeStoryText's own doc comment) — re-fires on every render of
+    // this screen, so a Back-edited dream always recomputes fresh.
     computeStoryText();
+    tryShowFormingPreview();
 
-    document.getElementById('contact-email').value = contactEmail;
-    // PARKED alongside the WhatsApp toggle/field above -- see comment there.
-    // document.getElementById('contact-whatsapp').value = contactWhatsapp;
-    // document.getElementById('contact-whatsapp-toggle').addEventListener('click', function(){
-    //   var reveal = document.getElementById('contact-whatsapp-reveal');
-    //   reveal.style.display = reveal.style.display === 'none' ? 'block' : 'none';
-    //   if(reveal.style.display === 'block') document.getElementById('contact-whatsapp').focus();
-    // });
-
-    var continueBtn = document.getElementById('fn-contact-continue');
+    var emailInput = document.getElementById('contact-email');
     var errEl = document.getElementById('contact-error');
-    continueBtn.addEventListener('click', function(){
-      contactEmail = document.getElementById('contact-email').value.trim();
-      // contactWhatsapp = document.getElementById('contact-whatsapp').value.trim(); -- PARKED, see comment above; contactWhatsapp stays '' so payload.whatsapp below is always null
+    var continueBtn = document.getElementById('fn-contact-continue');
+    emailInput.value = contactEmail;
+
+    function trySubmit(){
+      contactEmail = emailInput.value.trim();
       errEl.textContent = '';
-      if(!contactEmail || contactEmail.indexOf('@') === -1){ errEl.textContent = 'Enter a valid email address.'; return; }
+      if(!contactEmail || contactEmail.indexOf('@') === -1){
+        errEl.textContent = 'Enter a valid email address.';
+        track('signup_error_shown', { reason: 'invalid_email' });
+        return;
+      }
+
+      // Same event the former Contact step fired at this exact moment —
+      // kept for dashboard continuity. WhatsApp stays parked, so the
+      // property is now always false.
+      track('wizard_contact_captured', { has_whatsapp: false });
 
       var characters = resolveCharactersForGeneration();
       var payload = {
-        email: contactEmail, whatsapp: contactWhatsapp || null,
+        email: contactEmail, whatsapp: null,
         caption: assembled.caption, style: chosenStyle,
         characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
         sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey,
-        // storyText (tracker item for-product-split-prompttext-storytext-
-        // f-yt5kc7) — whatever the recap card is showing RIGHT NOW.
-        // Deliberately excluded from comparisonKey below (see that key's
-        // own comment): this can legitimately differ across two attempts
-        // for otherwise-identical chip content (a non-deterministic LLM
-        // rewrite, or one attempt catching the deterministic template
-        // before the rewrite resolved and a later one catching the
-        // upgrade) — it must never, by itself, make an unchanged
-        // submission look "changed" and trigger a real duplicate fal.ai
-        // charge.
+        // storyText — whatever the recap card is showing RIGHT NOW.
+        // Deliberately excluded from comparisonKey below: it can
+        // legitimately differ across two attempts for otherwise-identical
+        // chip content (a non-deterministic LLM rewrite landing between
+        // them) and must never, by itself, make an unchanged submission
+        // look "changed" and trigger a real duplicate fal.ai charge.
         storyText: currentStoryText
       };
       var submissionKey = JSON.stringify(payload);
       // Comparison-only key: normalizes email casing (mirrors the
-      // server's entitlements.normalizeEmail) so retyping the same
-      // address with different case isn't treated as a changed
-      // submission and forced through an unnecessary resubmit, AND strips
-      // storyText (see payload's own comment above) — everything else
-      // (the fields that actually determine the real, billed generation)
-      // stays exactly as before. The actual POST body above keeps
-      // storyText and the as-typed email casing.
+      // server's entitlements.normalizeEmail) and strips storyText — see
+      // payload's own comment above. The actual POST body keeps both.
       var comparisonPayload = Object.assign({}, payload, { email: contactEmail.toLowerCase() });
       delete comparisonPayload.storyText;
       var comparisonKey = JSON.stringify(comparisonPayload);
 
       var draftPatch = { caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey };
 
-      // Marks this click as the new current attempt -- see
-      // pendingGenerationToken's own comment above for why this is
-      // bumped here, before either path below, rather than only when a
-      // fresh POST actually fires.
-      pendingGenerationToken++;
-      var myToken = pendingGenerationToken;
-
-      // Already have a successful in-flight generation for these exact
-      // inputs — e.g. the user went forward to Signup and back to this
-      // step, then hit Continue again without changing anything. Don't
-      // re-POST: that would create a second real fal.ai charge + token
-      // spend against the same email and orphan the first pending
-      // record. Only resubmit if something the payload depends on
-      // (email/whatsapp/dream details) actually changed.
-      //
-      // Deliberately NOT gated on pendingStartFailed: that flag only
-      // reflects the outcome of the MOST RECENT POST, not whether THIS
-      // content's submission succeeded. Example: content A succeeds
-      // (pendingId=X, lastPendingSubmissionKey=A) -> user edits to B,
-      // which fails transiently (pendingStartFailed=true, pendingId/
-      // lastPendingSubmissionKey untouched, still X/A) -> user reverts
-      // to A. comparisonKey now matches lastPendingSubmissionKey again
-      // and pendingId (X) is still a valid, unclaimed job for it --
-      // gating on the stale pendingStartFailed would force a needless
-      // real re-POST/charge here. lastPendingSubmissionKey is ONLY ever
-      // written alongside pendingId on a successful POST (see below), so
-      // the equality check alone already proves pendingId is valid for
-      // this exact content.
-      if(pendingId && comparisonKey === lastPendingSubmissionKey){
-        // Nothing new to wait for -- pendingId is already correct and
-        // settled from an earlier completed attempt. This content was
-        // already check-email-validated the first time it succeeded
-        // (below), so there's no need to re-check it again here.
-        pendingGenerationPromise = Promise.resolve();
-        DreamStore.setDraft(draftPatch);
-        next();
-        return;
-      }
-
       continueBtn.disabled = true;
-      continueBtn.textContent = 'Starting your dream…';
-      track('wizard_contact_captured', { has_whatsapp: !!contactWhatsapp });
+      backBtn.disabled = true;
+      continueBtn.textContent = 'Checking…';
+      signupAttemptToken++;
+      var myToken = signupAttemptToken;
 
-      // check-email.js FIRST (tracker item
-      // for-product-money-leak-blocked-signups-e-v2g1vi) -- gates BOTH
-      // the real, billed startPendingGeneration call below AND advancing
-      // to Signup on its result, so an email that's guaranteed to be
-      // rejected at Signup never gets a real generation started for it.
-      // This is a deliberate, necessary change from the previous
-      // structure (review round 4's "next() fires synchronously, never
-      // waiting on any fetch") -- there is no way to honor "don't
-      // advance if this email is already taken" without waiting for
-      // SOMETHING to answer that question first. check-email.js is
-      // cheap/fast by design (a single Blobs read, not a fal.ai
-      // submission) specifically so this added wait stays small; the
-      // slow, real fal.ai call (startPendingGeneration) still never
-      // gates navigation once we get here -- it fires in parallel with
-      // next(), exactly as before.
-      //
-      // Token-guarded like every other async write/navigation in this
-      // step (see pendingGenerationToken's own comment) -- backBtn now
-      // also bumps this token (see the topbar Back handler below) since
-      // Continue no longer advances synchronously, so there's now a real
-      // window where Back can be clicked before this resolves.
-      pendingGenerationPromise = checkEmailAvailable(contactEmail).then(function(checkResult){
-        if(myToken !== pendingGenerationToken) return; // stale -- a newer attempt (or a Back navigation) has since superseded this
-        // deliverable (tracker item for-product-signup-email-micro-step-
-        // foun-ns8uve) -- checked before available, matching start.html's
-        // own screen-13 email step: an obviously mistyped domain is worth
-        // surfacing on its own terms, not lumped in with "someone else's
-        // account already uses this."
+      checkEmailAvailable(contactEmail).then(function(checkResult){
+        if(myToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
+        // Only `deliverable` gates here (an obviously mistyped domain is
+        // still caught before an account is created around it, and
+        // before the real, billed generation fires) — `available` no
+        // longer stops anything, matching screen 13's live passwordless
+        // wall: an already-registered email resolves through the code
+        // step below instead of dead-ending.
         if(!checkResult.deliverable){
           continueBtn.disabled = false;
-          continueBtn.textContent = 'Continue';
-          errEl.textContent = 'That email address doesn’t look right — check for a typo.';
-          return;
-        }
-        if(!checkResult.available){
-          // Seamless already-registered handoff (tracker item
-          // for-product-urgent-forensic-find-the-pro-fzgghg, item 1) --
-          // same reasoning and same continuation shape as start.html's own
-          // renderInPlaceLoginStep, see that function's doc comment for the
-          // full forensic writeup. This USED to leave the visitor stuck
-          // right here with only a "sign in instead" link to a whole
-          // separate page as their way out; both real returning users this
-          // product has ever had hit exactly this dead end.
-          track('signup_error_shown', { reason: 'already_registered' });
-          renderInPlaceLogin();
-          return;
-        }
-        DreamStore.setDraft(draftPatch);
-        next();
-        return startPendingGeneration(submissionKey, comparisonKey, myToken);
-      });
-
-      /**
-       * Swaps THIS Contact screen, in place, into a lightweight login
-       * prompt for an email check-email.js just reported as already
-       * registered -- see the already_registered branch above. On success,
-       * runs the exact same claim-pending-generation / adoptPendingGeneration
-       * / home.html handoff renderSignup's own successful-signup path uses
-       * (see that function below), reusing THIS click's already-computed
-       * submissionKey/comparisonKey/draftPatch -- so logging in here lands
-       * exactly where a fresh Contact+Signup completion would have, minus
-       * the redundant "create a new account" step this visitor doesn't need.
-       * Nested here (not a shared top-level function, unlike start.html's
-       * two call sites) because it needs direct closure access to this
-       * click's own submissionKey/comparisonKey/draftPatch/myToken --
-       * wizard.html's Signup step never re-runs check-email.js at all, so
-       * there is no second call site that would need this factored out.
-       */
-      function renderInPlaceLogin(){
-        backBtn.disabled = false;
-        track('returning_user_login_shown', {});
-
-        el.innerHTML =
-          '<div class="fn-headline">Welcome back</div>' +
-          '<div class="fn-microcopy">Looks like you already have a DreamTube account with this email — log in to keep going.</div>' +
-          '<input class="fn-field" id="contact-email" type="email" value="' + esc(contactEmail) + '" readonly style="opacity:.7;">' +
-          '<button type="button" class="fn-small-link" id="fn-login-change-email" style="margin:-6px 0 12px;">Not you? Change email</button>' +
-          '<div class="fn-field-pw-wrap">' +
-            '<input class="fn-field" id="fn-login-password" type="password" placeholder="Your password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">' +
-            '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
-          '</div>' +
-          '<div class="fn-err-text" id="contact-error"></div>' +
-          '<div class="fn-spacer"></div>' +
-          '<button class="fn-btn-primary" id="fn-login-continue" type="button">Log in</button>' +
-          // Escape hatch -- a wrong-password/forgotten-password visitor
-          // must never be trapped here either.
-          '<div class="fn-microcopy" style="text-align:center;"><a href="login.html" style="color:inherit;">Forgot your password, or need help signing in?</a></div>';
-
-        var loginPwToggle = document.getElementById('fn-pw-toggle');
-        var loginPwInput = document.getElementById('fn-login-password');
-        var loginContinueBtn = document.getElementById('fn-login-continue');
-        var loginErrEl = document.getElementById('contact-error');
-        loginPwToggle.innerHTML = Icons.eye;
-        loginPwToggle.addEventListener('click', function(){
-          var showing = loginPwInput.type === 'text';
-          loginPwInput.type = showing ? 'password' : 'text';
-          loginPwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
-        });
-
-        document.getElementById('fn-login-change-email').addEventListener('click', function(){
-          // Same invalidation discipline as the topbar Back handler below
-          // -- an in-flight DreamStore.login() call must never silently
-          // establish a session for a screen the visitor already navigated
-          // away from.
-          signupAttemptToken++;
-          pendingGenerationToken++;
-          DreamStore.invalidatePendingSignup();
           backBtn.disabled = false;
-          renderContact(el);
-        });
+          continueBtn.textContent = 'Send me my dream';
+          errEl.textContent = 'That email address doesn’t look right — check for a typo.';
+          track('signup_error_shown', { reason: 'email_undeliverable' });
+          return;
+        }
 
-        loginPwInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); loginContinueBtn.click(); } });
-        loginContinueBtn.addEventListener('click', function(){
-          var password = loginPwInput.value;
-          loginErrEl.textContent = '';
-          if(!password){
-            loginErrEl.textContent = 'Enter your password.';
-            track('returning_user_login_failed', { reason: 'missing_password' });
-            // Same mobile-webview keyboard-focus fix as renderSignup's own
-            // missing_password branch below -- refocus SYNCHRONOUSLY,
-            // inside this real click's own user gesture. See that
-            // function's doc comment for the full root-cause writeup
-            // (tracker item for-product-urgent-forensic-find-the-pro-fzgghg,
-            // item 2).
-            loginPwInput.focus();
+        // The draft must be intact BEFORE anything can navigate away —
+        // home.html's fallback fresh-generation path reads it directly.
+        DreamStore.setDraft(draftPatch);
+        var pendingPromise = getOrStartPendingGeneration(submissionKey, comparisonKey);
+        continueBtn.textContent = 'Sending…';
+
+        DreamStore.signupPasswordless(contactEmail).then(function(result){
+          if(myToken !== signupAttemptToken) return; // stale -- see above
+          if(!result.ok){
+            continueBtn.disabled = false;
+            backBtn.disabled = false;
+            continueBtn.textContent = 'Send me my dream';
+            errEl.textContent = result.error || "Couldn’t sign you in — try again.";
+            track('signup_error_shown', { reason: 'signup_failed' });
             return;
           }
-
-          signupAttemptToken++;
-          var myLoginToken = signupAttemptToken;
-          loginContinueBtn.disabled = true;
-          loginContinueBtn.textContent = 'Logging in…';
-          backBtn.disabled = true;
-
-          DreamStore.login(contactEmail, password).then(function(result){
-            if(myLoginToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
-            if(!result.ok){
-              loginContinueBtn.disabled = false;
-              loginContinueBtn.textContent = 'Log in';
-              backBtn.disabled = false;
-              loginErrEl.textContent = result.error || 'Couldn’t log you in — try again.';
-              track('returning_user_login_failed', { reason: 'server_rejected' });
-              loginPwInput.focus();
-              return;
-            }
-            track('returning_user_login_succeeded', {});
-            var loginIdMap = flushStagedCharactersToStore();
-            DreamStore.setDraft(draftPatch);
-            // Re-point draft.characterIds at the now-real (flushed) id(s) --
-            // draftPatch above still carries whatever
-            // assembled.characterIdsForGeneration held when it was built,
-            // BEFORE this flush (one or more "local..." staged ids). Must
-            // run AFTER the setDraft(draftPatch) call directly above, not
-            // before it (review finding on this exact block: it used to run
-            // BEFORE, so this fixup got immediately clobbered right back to
-            // the stale local id(s) by draftPatch's own characterIds field
-            // the very next line) -- matches renderSignup's own equivalent
-            // fixup further below, which has always run with nothing after
-            // it to re-clobber it. See resolveCharactersForGeneration's own
-            // comment for why this is no longer safe to assume is at most
-            // one id.
-            if(assembled && assembled.characterIdsForGeneration.length){
-              DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return loginIdMap[id] || id; }) });
-            }
-            // Nothing was safe to bill before we knew this was really
-            // their account -- the already_registered branch above never
-            // called startPendingGeneration for this content. Now that a
-            // real password check just confirmed it, start it for real,
-            // reusing this click's own submissionKey/comparisonKey/myToken.
-            startPendingGeneration(submissionKey, comparisonKey, myToken).then(function(){
-              if(myLoginToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
-              if(pendingId && !pendingStartFailed){
-                fetch('/.netlify/functions/claim-pending-generation', {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
-                }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
-              }
-              if(pendingOperationName && !pendingStartFailed){
-                DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
-              }
-              track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
-              // Same funnel-ending-v2 destination a fresh signup reaches
-              // (renderSignup below) -- a returning visitor logging in here
-              // lands exactly where a fresh signup would have.
-              location.href = 'home.html?generate=1';
-            });
+          if(result.pendingVerification){
+            // An already-registered email — no session was established
+            // (see signupPasswordless's SECURITY FIX doc comment); swap
+            // to the code-entry step instead of advancing anywhere.
+            track('signup_error_shown', { reason: 'already_registered_needs_code' });
+            renderCodeStep(el, contactEmail, pendingPromise);
+            return;
+          }
+          if(result.created){
+            // signup_method: 'passwordless_code' — same value screen 13's
+            // live passwordless wall reports (see attemptSignup's
+            // original comment in start.html for the custom_data/CAPI
+            // pass-through convention).
+            fireMetaConversion('CompleteRegistration', { email: contactEmail, custom_data: { signup_method: 'passwordless_code' } });
+          }
+          // Suppress the deferred email-verify sheet on the first landing
+          // — same first-session-reveal protection as screen 13 (see
+          // js/email-verify-sheet.js's own header comment).
+          try { sessionStorage.setItem('dreamtube_email_verify_sheet_shown', '1'); } catch(e) { /* private mode etc — worst case the sheet offers on this landing too, a minor UX rough edge */ }
+          completeSignupAndAdvance(contactEmail, {
+            pendingPromise: pendingPromise,
+            isStale: function(){ return myToken !== signupAttemptToken; }
           });
         });
-
-        loginPwInput.focus();
-      }
-    });
-  }
-
-  // ===================================================================
-  // Step 8 — Signup (username + password; email locked to Step 7's
-  // capture). On success: flush staged characters, adopt the in-flight
-  // generation job (if the pre-signup start succeeded), best-effort mark
-  // it claimed server-side, then hand off straight to home.html (tracker
-  // item for-product-funnel-ending-v2-founder-ins-tfuu0q — processing.html
-  // removed, generation now runs in the background there instead).
-  // ===================================================================
-  // Per-attempt token — same unscoped-async-callback pattern as
-  // pendingGenerationToken above, and start.html's own signupAttemptToken
-  // (see that file's doc comment). attemptSignup() is a real
-  // register-account.js network round trip (see js/store.js's
-  // DreamStore.signup); its callback used to unconditionally act on
-  // whatever it found once it settled -- write state AND navigate to
-  // processing.html -- with no check that this was still the current
-  // attempt. Repro (tracker item
-  // wizard-html-start-html-signup-step-force-8wtk8h): click Signup
-  // Continue (fires the real signup call), immediately click Back before
-  // it resolves, edit Contact, resubmit, reach a SECOND, fresh Signup
-  // screen -- the first, abandoned call's callback, once it finally
-  // settles, would force-navigate the user away from wherever they
-  // actually are and could adopt/claim the wrong pending job (reading
-  // live pendingId/pendingOperationName/contactEmail/assembled at
-  // settlement time instead of a fire-time snapshot).
-  //
-  // Unlike pendingGenerationToken (which only guards the WRITE, since
-  // Contact-step navigation was restructured to never wait on that
-  // fetch at all), this token gates the ENTIRE callback body -- both the
-  // writes AND the navigation, INCLUDING the nested
-  // pendingGenerationPromise.then(...) continuation below (which has its
-  // own re-check, right at its top, since it settles asynchronously
-  // AFTER this outer check already ran and could go stale in that gap).
-  // Signup has no "safe to advance without waiting" skip case the way a
-  // reused/already-succeeded Contact submission does: there is no real
-  // account, and nothing safe to hand off to home.html, until
-  // DreamStore.signup itself actually resolves ok -- so navigation can
-  // never be decoupled from this particular settlement the way
-  // Contact's was.
-  //
-  // Bumped on TWO separate triggers, not just one: (1) every Signup
-  // Continue click (below), so a genuinely new, competing attempt always
-  // supersedes an older one still in flight; AND (2) every Back click
-  // (see the navigation engine's backBtn listener, further down this
-  // file), so simply navigating away from Signup -- without necessarily
-  // starting a new attempt at all -- also invalidates whatever's still
-  // in flight. Both triggers are required: an early version of this fix
-  // only bumped on (1) and a regression test caught the gap -- sit on a
-  // second, fresh Signup screen without resubmitting, and an abandoned
-  // first attempt's late settlement would still force-navigate, because
-  // nothing had bumped the token since attempt #1 fired it. Also paired
-  // with disabling both continueBtn AND backBtn (defense-in-depth -- see
-  // the click handler below) for the duration of the call, so in normal
-  // (non-test) usage there is no UI path to trigger either case while an
-  // attempt is still in flight in the first place.
-  var signupAttemptToken = 0;
-  // Left untouched, byte-for-byte-logic-identical to before (and to
-  // start.html's/lib/derive-username.js's own copies) -- test/account-
-  // store-facebook.test.js regex-extracts this exact function body out of
-  // the page source and evals it standalone to cross-check the three
-  // copies agree, so it can't be refactored to call a sibling helper.
-  function deriveUsernameBase(email){
-    var local = (email.split('@')[0] || '').toLowerCase();
-    var sanitized = local.replace(/[^a-z0-9]/g, '');
-    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
-    return sanitized.slice(0, 20) || 'dreamer';
-  }
-  // The #fn-username field the user actually typed (tracker iy3w6t -- it
-  // used to be validated then silently discarded, with the real account
-  // name always derived from email instead) goes through this same
-  // sanitization, kept as its own function (not reused by
-  // deriveUsernameBase above -- see that function's own comment) so a
-  // typed "John Doe!" lands on the same kind of lowercase-alphanumeric
-  // username the rest of the account system (account-store.js's
-  // normalizeUsername, login) expects.
-  function sanitizeUsername(raw){
-    var lower = (raw || '').toLowerCase();
-    var sanitized = lower.replace(/[^a-z0-9]/g, '');
-    if(sanitized.length < 3) sanitized = (sanitized + 'dreamer').slice(0, Math.max(3, sanitized.length + 4));
-    return sanitized.slice(0, 20) || 'dreamer';
-  }
-  function attemptSignup(email, password, username, cb){
-    var base = username ? sanitizeUsername(username) : deriveUsernameBase(email);
-    var attempts = 0;
-    var MAX_ATTEMPTS = 8;
-    function tryUsername(username){
-      DreamStore.signup(username, password, email).then(function(result){
-        if(result.ok){
-          // Fired here, not in the caller's (possibly-later-stale)
-          // signupAttemptToken-gated callback -- a real account genuinely
-          // was created the moment result.ok is true, regardless of
-          // whether THIS particular UI attempt later becomes superseded
-          // by a Back+resubmit. Matches start.html's own tryUsername,
-          // which fires its equivalent call at this same point for the
-          // same reason (review round-2 non-blocking finding).
-          // signup_method: 'email' -- wizard.html's own renderSignup only
-          // ever offers a plain username/password wall, no Facebook/
-          // passwordless option (tracker item for-product-signup-method-
-          // analytics-foun-y1oqt4, founder ask 2026-08-03).
-          fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'email' } });
-          cb(true, null, false); return;
-        }
-        if(result.error === 'That username is already taken.' && attempts < MAX_ATTEMPTS){
-          attempts++;
-          tryUsername(base + Math.floor(1000 + Math.random() * 9000));
-          return;
-        }
-        // result.superseded (js/store.js's own call-sequence guard --
-        // see signupCallSeq's doc comment there) means THIS call was
-        // never even the most-recently-STARTED signup() call by the time
-        // its response landed, so js/store.js itself already declined to
-        // touch state.user/state.accounts for it. Passed through to cb
-        // as defense-in-depth alongside mySignupToken below -- in normal
-        // (non-bypassed) usage this UI-level token already catches every
-        // case the store-level guard would, but the store-level guard is
-        // now the one actually protecting state.user regardless of
-        // caller, per tracker item dreamstore-signup-commits-state-user-
-        // unc-vv6rio.
-        cb(false, result.error, !!result.superseded);
       });
     }
-    tryUsername(base);
+
+    continueBtn.addEventListener('click', trySubmit);
+    emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmit(); } });
+    wireFacebookSignupButton();
+    applyPendingFacebookError();
+    emailInput.focus();
   }
 
-  function renderSignup(el){
-    el.innerHTML =
-      '<div class="fn-headline">Create your account</div>' +
-      // 320 mirrors lib/entitlements.js's real INITIAL_GRANT (retuned
-      // 2026-07-24, later raised 2026-07-26 morning, then retuned again
-      // 2026-07-26 night to 220 initial — "Token Economy C", founder-
-      // approved — unchanged by the 2026-07-28 daily-claim switch, which
-      // only replaced the separate +20/day mechanism, see that file's own
-      // doc block — then raised again 2026-08-01 to 320, founder-directed,
-      // tracker xostu6). Hardcoded, not fetched live: this screen
-      // renders before a real account exists, so there's no logged-in
-      // DreamStore.getTokenStatus() call to make here (that method needs
-      // state.user to be set at all — see js/store.js), and INITIAL_GRANT
-      // itself is a private constant in entitlements.js, never exposed via
-      // get-token-status.js's response shape ({balance, claimable,
-      // nextClaimAt, dailyClaimAmount, streak} only, no separate "signup
-      // grant" field). If this constant changes again, this line must be
-      // updated by hand, same as before this comment existed.
-      '<div class="fn-body-copy">Free to start — 320 tokens on signup, no card needed.</div>' +
-      '<input class="fn-field" id="fn-signup-email" type="email" value="' + esc(contactEmail) + '" disabled style="opacity:.7;">' +
-      '<input class="fn-field" id="fn-username" placeholder="Choose a username" autocomplete="username" dir="auto">' +
-      '<div class="fn-field-pw-wrap">' +
-        '<input class="fn-field" id="fn-password" type="password" placeholder="Create a password" autocomplete="new-password">' +
-        '<button type="button" class="fn-field-pw-toggle" id="fn-pw-toggle" tabindex="-1" aria-label="Show password"></button>' +
-      '</div>' +
-      '<div class="fn-err-text" id="fn-signup-error"></div>' +
-      '<button class="fn-btn-primary" id="fn-signup-continue" type="button" style="margin-bottom:12px;">Continue</button>' +
-      // Signup small-print (tracker.html's
-      // for-product-create-a-real-privacy-policy-o3g56s item) — this is
-      // the real account-creation step of the pre-signup wizard funnel,
-      // so it gets the same terms/privacy small print as start.html's
-      // screen 13 and login.html's signup mode.
-      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin-top:-4px;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>' +
-      '<div class="fn-spacer"></div>';
+  /**
+   * The code-entry step for an already-registered email (ported from
+   * renderScreen13Passwordless's renderCodeStep — see that function's
+   * doc comment in start.html). `outerPendingPromise` is the SAME
+   * getOrStartPendingGeneration promise already kicked off by the email
+   * submit (keyed on this same email + content, so it's still valid to
+   * hand to completeSignupAndAdvance once login succeeds here).
+   */
+  function renderCodeStep(el, email, outerPendingPromise){
+    backBtn.disabled = false;
+    el.innerHTML = fnStageHtml([
+      '<div class="fn-headline">Check your email</div>' +
+      '<div class="fn-microcopy" style="margin:6px 0 0;">We found an account for <b>' + esc(email) + '</b> — enter the code we just sent, or tap the link in that email.</div>',
+      '<input class="fn-field" id="fn-login-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" style="text-align:center; letter-spacing:6px; font-size:20px;">' +
+      '<div class="fn-err-text" id="contact-error"></div>',
+      '<button class="fn-btn-primary" id="fn-code-continue" type="button">Continue</button>' +
+      '<button type="button" class="fn-small-link" id="fn-resend-code" style="margin:10px 0 0;">Resend code</button>' +
+      '<button type="button" class="fn-small-link" id="fn-change-email" style="margin:0;">Use a different email</button>'
+    ]);
 
-    var pwToggle = document.getElementById('fn-pw-toggle');
-    var pwInput = document.getElementById('fn-password');
-    pwToggle.innerHTML = Icons.eye;
-    pwToggle.addEventListener('click', function(){
-      var showing = pwInput.type === 'text';
-      pwInput.type = showing ? 'password' : 'text';
-      pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
+    var codeInput = document.getElementById('fn-login-code');
+    var errEl = document.getElementById('contact-error');
+    var continueBtn = document.getElementById('fn-code-continue');
+    var resendLink = document.getElementById('fn-resend-code');
+
+    document.getElementById('fn-change-email').addEventListener('click', function(){
+      // Same invalidation discipline as every other Change-email handler
+      // in this codebase — an in-flight call must never act on a screen
+      // the visitor already navigated away from.
+      signupAttemptToken++;
+      DreamStore.invalidatePendingSignup();
+      backBtn.disabled = false;
+      renderWallEmailStep(el);
     });
 
-    var continueBtn = document.getElementById('fn-signup-continue');
-    var errEl = document.getElementById('fn-signup-error');
-    continueBtn.addEventListener('click', function(){
-      var username = document.getElementById('fn-username').value.trim();
-      var password = pwInput.value;
-      errEl.textContent = '';
-      if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
-      // missing_password trap fix (tracker item
-      // for-product-urgent-forensic-find-the-pro-fzgghg, item 2) -- same
-      // fix, same reasoning, as start.html's own wireScreen13Fields
-      // (see that function's doc comment for the full root-cause writeup:
-      // a real user hit this exact error 17 times in a row without ever
-      // getting past it). This click IS a fresh, real user gesture --
-      // refocusing pwInput synchronously, right here, is the one thing
-      // virtually guaranteed to reliably raise the on-screen keyboard
-      // across platforms if it failed to appear after this screen's own
-      // async reveal.
-      if(!password){ errEl.textContent = 'Enter a password.'; track('signup_error_shown', { reason: 'missing_password' }); pwInput.focus(); return; }
+    resendLink.addEventListener('click', function(){
+      resendLink.disabled = true;
+      var originalLabel = resendLink.textContent;
+      resendLink.textContent = 'Sending…';
+      // Re-submitting to signupPasswordless is the resend mechanism —
+      // register-account-passwordless.js's resolve branch always mails a
+      // FRESH code on every call. Harmless to let land late (worst case a
+      // second real code is also valid), unlike an actual login attempt.
+      DreamStore.signupPasswordless(email).then(function(){
+        resendLink.disabled = false;
+        resendLink.textContent = 'Sent — check your email';
+        setTimeout(function(){ resendLink.textContent = originalLabel; }, 4000);
+      });
+    });
 
-      // Marks this click as the new current attempt -- see
-      // signupAttemptToken's own comment above. Captured now, before the
-      // real network call fires, so the callback below can tell whether
-      // it's still the current attempt once it finally settles.
-      signupAttemptToken++;
-      var mySignupToken = signupAttemptToken;
+    function trySubmitCode(){
+      var code = codeInput.value.trim();
+      errEl.textContent = '';
+      if(!/^[0-9]{6}$/.test(code)){ errEl.textContent = 'Enter the 6-digit code from your email.'; return; }
 
       continueBtn.disabled = true;
-      continueBtn.textContent = 'Creating your account…';
-      // Defense-in-depth alongside the token check below: with Back
-      // blocked for the duration of this call, there is no UI path to
-      // reach a second, fresh Signup attempt while this one is still in
-      // flight in the first place. See signupAttemptToken's own comment
-      // for why the token check still matters even so.
       backBtn.disabled = true;
-      setTimeout(function(){
-        attemptSignup(contactEmail, password, username, function(ok, err, superseded){
-          // Stale -- a newer Signup attempt has since started (or this
-          // one was superseded some other way). Discard everything,
-          // including navigation: touching continueBtn/errEl here would
-          // reach into a detached, already-replaced screen, and
-          // pendingId/pendingOperationName/contactEmail/assembled may
-          // since belong to a completely different attempt. `superseded`
-          // is js/store.js's OWN call-sequence guard saying it already
-          // declined to commit this result -- checked here too (not just
-          // mySignupToken) so this callback stays correct even if this
-          // token's own bookkeeping were ever wrong; see attemptSignup's
-          // comment on result.superseded above.
-          if(mySignupToken !== signupAttemptToken || superseded) return;
-          if(!ok){
-            continueBtn.disabled = false;
-            continueBtn.textContent = 'Continue';
-            backBtn.disabled = false;
-            errEl.textContent = err;
-            return;
-          }
-          var signupIdMap = flushStagedCharactersToStore();
-          // Update the draft's characterIds to the now-real (flushed)
-          // id(s), in case the earlier pre-signup generation call already
-          // baked one or more "local..." staged ids into what it sent
-          // server-side -- the server call itself only ever sent resolved
-          // character fields (name/description/photo), never the id, so
-          // this is purely for any LOCAL dream metadata display AND for
-          // home.html's own fallback fresh-generation path (used when
-          // there's no pendingJob to resume, e.g. pendingStartFailed) --
-          // that path DOES read draft.characterIds directly, so this must
-          // stay a real, resolvable id, not a correctness no-op. Now maps
-          // every id (previously assumed at most one -- see
-          // resolveCharactersForGeneration's own comment on that).
-          if(assembled && assembled.characterIdsForGeneration.length){
-            DreamStore.setDraft({ characterIds: assembled.characterIdsForGeneration.map(function(id){ return signupIdMap[id] || id; }) });
-          }
-          // Waits for the (already in-flight, possibly already settled)
-          // pending-generation call to settle before reading pendingId/
-          // pendingOperationName -- same shape as start.html's own
-          // screen 13 (~start.html:1159, `pendingPromise.then(...)`).
-          // Contact-capture's Continue handler no longer waits on this
-          // fetch before advancing here (see pendingGenerationPromise's
-          // own comment on why), so without this wait a fast typer could
-          // reach Signup and submit it before the contact-step's POST
-          // had settled, reading pendingId/pendingOperationName while
-          // they were still both null. Always resolves (win or lose),
-          // so this can never hang the funnel.
-          // pendingGenerationPromise itself is a live-read shared module
-          // var (unlike start.html's local `pendingPromise`, captured
-          // once per attempt) -- in the exact devtools-bypass race this
-          // token guard targets, an abandoned attempt's .then() below
-          // could technically end up chained off whichever promise this
-          // variable holds AT THAT MOMENT, not necessarily the one that
-          // was current when this attempt started. That's fine, not a
-          // correctness gap: the re-check inside the callback discards
-          // the result regardless of which promise it's attached to --
-          // just don't mistake this line for a per-attempt snapshot if
-          // this code is ever refactored to remove that re-check.
-          pendingGenerationPromise.then(function(){
-            // Re-check -- this attempt can still go stale WHILE this
-            // inner promise is unsettled, even though the outer check
-            // (above) already passed. In normal (non-bypassed) usage
-            // continueBtn/backBtn stay disabled through this whole span
-            // in both files, so nothing can bump signupAttemptToken
-            // during this specific window today -- but that's an
-            // incidental property of the current UI, not something this
-            // guard should rely on. Without this re-check, a future
-            // change that re-enables either button slightly earlier
-            // would silently reopen exactly the same hazard the outer
-            // check exists to close, and nothing here would catch it.
-            if(mySignupToken !== signupAttemptToken) return;
-            if(pendingId && !pendingStartFailed){
-              // email is required now (see claim-pending-generation.js's
-              // ownership check, review finding) -- contactEmail is the
-              // exact same email start-pending-generation.js created this
-              // pending record under, so this always matches.
-              fetch('/.netlify/functions/claim-pending-generation', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pendingId: pendingId, email: contactEmail })
-              }).catch(function(){ /* best-effort -- see claim-pending-generation.js's own doc comment */ });
-            }
-            if(pendingOperationName && !pendingStartFailed){
-              // storyText (tracker item for-product-split-prompttext-
-              // storytext-f-yt5kc7) -- mediaType omitted (undefined),
-              // unchanged from before this feature: wizard.html always
-              // adopts a video, see adoptPendingGeneration's own doc
-              // comment.
-              DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
-            }
-            track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
-            // Lands directly on home.html now (tracker item for-product-
-            // funnel-ending-v2-founder-ins-tfuu0q, founder GO 2026-07-31
-            // evening) — processing.html's dedicated wait screen is gone.
-            // `?generate=1` is the same explicit "submit fresh from the
-            // draft if there's no pendingJob to resume" signal style.html's
-            // in-app Generate button uses (see home.html's own "Fresh
-            // in-app generation submission" script block) — needed here too
-            // for the case the pre-signup generation call failed
-            // (pendingOperationName never adopted, pendingStartFailed
-            // true): home.html finds no pendingJob and falls back to
-            // submitting the intact draft (assembled.caption/chosenStyle,
-            // set earlier in this same flow) fresh. When adoption DID
-            // succeed, home.html's own pendingJob-first check resumes that
-            // job instead and ignores this param entirely.
-            location.href = 'home.html?generate=1';
-          });
+      continueBtn.textContent = 'Checking…';
+      signupAttemptToken++;
+      var myToken = signupAttemptToken;
+
+      DreamStore.loginWithEmailCode(email, code).then(function(result){
+        if(myToken !== signupAttemptToken) return; // stale -- navigated away while this was in flight
+        if(!result.ok){
+          continueBtn.disabled = false;
+          backBtn.disabled = false;
+          continueBtn.textContent = 'Continue';
+          errEl.textContent = result.error || "Couldn’t sign you in — try again.";
+          track('signup_error_shown', { reason: 'login_code_failed' });
+          return;
+        }
+        // CompleteRegistration is deliberately NOT fired here — this is a
+        // LOGIN to an existing account, not a new signup (same rule every
+        // other login branch in this codebase follows).
+        track('returning_user_login_succeeded', { method: 'email_code' });
+        completeSignupAndAdvance(email, {
+          pendingPromise: outerPendingPromise || undefined,
+          isStale: function(){ return myToken !== signupAttemptToken; }
         });
-      }, 0);
+      });
+    }
+    continueBtn.addEventListener('click', trySubmitCode);
+    codeInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmitCode(); } });
+    codeInput.focus();
+  }
+
+  /**
+   * The Facebook "needs email" half-step (ported from start.html's
+   * renderScreen13FacebookEmail — see that function's header comment for
+   * the full why, incl. why an already-registered email is refused
+   * server-side). Submitting posts the marker + email to
+   * facebook-complete-signup.js and re-enters THIS page via ?bt= — the
+   * wizard snapshot is re-persisted first, since this page load's own
+   * restore already consumed it and the ?bt= re-entry is a fresh load
+   * that must find it again.
+   */
+  function renderFacebookEmailStep(el){
+    el.innerHTML = fnStageHtml([
+      '<div class="fn-headline">One last thing — where should we send it?</div>' +
+      '<div class="fn-microcopy" style="margin:6px 0 0;">Facebook didn’t share an email address with us, and that’s the only way we can send you your dream.</div>',
+      '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
+      '<div class="fn-err-text" id="contact-error"></div>',
+      '<button class="fn-btn-primary" id="fn-fb-email-continue" type="button">Continue</button>' +
+      '<button type="button" class="fn-small-link" id="fn-fb-email-fallback" style="margin:8px 0 0;">Sign up with email instead</button>' +
+      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin:8px 0 0;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>'
+    ]);
+
+    var emailInput = document.getElementById('contact-email');
+    var errEl = document.getElementById('contact-error');
+    var continueBtn = document.getElementById('fn-fb-email-continue');
+
+    document.getElementById('fn-fb-email-fallback').addEventListener('click', function(){
+      // Drop the marker and fall back to the ordinary wall. The marker is
+      // simply abandoned (it expires on its own, ~15 minutes).
+      facebookNeedsEmailToken = null;
+      track('signup_facebook_needs_email_abandoned', { variant: 'wizard' });
+      renderSignupWall(el);
     });
+
+    function submit(){
+      var email = emailInput.value.trim();
+      errEl.textContent = '';
+      if(!email || email.indexOf('@') === -1){
+        errEl.textContent = 'Enter a valid email address.';
+        track('signup_error_shown', { reason: 'invalid_email' });
+        return;
+      }
+      continueBtn.disabled = true;
+      continueBtn.textContent = 'Creating your account…';
+      backBtn.disabled = true;
+      fetch('/.netlify/functions/facebook-complete-signup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: facebookNeedsEmailToken, email: email })
+      }).then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+      }).then(function(result){
+        var data = result.data || {};
+        if(data.ok && data.transferToken){
+          // Re-enter through the normal ?bt= return path below. Re-persist
+          // the restored wizard state first — see this function's own doc
+          // comment.
+          persistWizardForFacebookRedirect();
+          location.href = 'wizard.html?bt=' + encodeURIComponent(data.transferToken);
+          return;
+        }
+        continueBtn.disabled = false;
+        continueBtn.textContent = 'Continue';
+        backBtn.disabled = false;
+        var err = String(data.error || '');
+        if(err.indexOf('email_taken') !== -1){
+          errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
+          track('signup_error_shown', { reason: 'already_registered' });
+          return;
+        }
+        if(err.indexOf('invalid_or_expired') !== -1){
+          errEl.textContent = 'That Facebook sign-in expired — please sign up with email instead.';
+          track('signup_error_shown', { reason: 'fb_marker_expired' });
+          return;
+        }
+        errEl.textContent = 'Something went wrong creating your account — please try again, or sign up with email instead.';
+        track('signup_error_shown', { reason: 'fb_complete_failed' });
+      }).catch(function(){
+        continueBtn.disabled = false;
+        continueBtn.textContent = 'Continue';
+        backBtn.disabled = false;
+        errEl.textContent = 'Something went wrong creating your account — please try again, or sign up with email instead.';
+        track('signup_error_shown', { reason: 'fb_complete_failed' });
+      });
+    }
+
+    continueBtn.addEventListener('click', submit);
+    emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } });
+    emailInput.focus();
   }
 
   // ===================================================================
   // Navigation engine — same shape as start.html's own goToStep/next/prev.
   // ===================================================================
-  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderContact, renderSignup];
+  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderSignupWall];
+  // Same dynamic-lookup reasoning as start.html's SIGNUP_STEP — the
+  // wall's index could shift if a screen is ever added in front of it, so
+  // the Facebook-return boot() below never hardcodes it.
+  var WALL_STEP = SCREEN_RENDERERS.indexOf(renderSignupWall);
   var cur = 0;
   var screenEl = document.getElementById('fnScreen');
   var progressEl = document.getElementById('fnProgress');
@@ -1920,9 +2112,9 @@
 
   function renderProgress(){
     // Progress dots only cover the 5 core + optional steps (0-5) — the
-    // contact-capture/signup steps are their own distinct phase, same as
-    // start.html not counting its own signup/pricing/confirm screens
-    // against the earlier Advanced dots.
+    // signup wall is its own distinct phase, same as start.html not
+    // counting its own signup/pricing/confirm screens against the
+    // earlier Advanced dots.
     var coreCount = 6;
     var dots = '';
     for(var i = 0; i < coreCount; i++){
@@ -1944,46 +2136,151 @@
   }
   function next(){ goToStep(cur + 1); }
   backBtn.addEventListener('click', function(){
-    // Invalidates any in-flight (or not-yet-acted-on) Signup attempt the
+    // Invalidates any in-flight (or not-yet-acted-on) wall attempt the
     // moment the user navigates away via Back -- see signupAttemptToken's
-    // own comment above. Bumping only on Signup's own Continue click
-    // would miss this: a visitor can navigate away from Signup and just
+    // own comment above. Bumping only on the wall's own submit click
+    // would miss this: a visitor can navigate away from the wall and just
     // sit somewhere else without ever starting a competing second
     // attempt, and the abandoned first attempt's callback must still be
-    // discarded once it settles late, per that var's own doc comment
-    // ("a newer Signup attempt has since started OR the user has
-    // navigated away from Signup"). Harmless to bump unconditionally on
-    // every Back click, including ones that have nothing to do with
-    // Signup -- there's simply nothing in flight for it to invalidate.
+    // discarded once it settles late. Harmless to bump unconditionally on
+    // every Back click, including ones that have nothing to do with the
+    // wall -- there's simply nothing in flight for it to invalidate.
     signupAttemptToken++;
-    // Also invalidates any in-flight DreamStore.signup() call at the
-    // STORE layer, not just this file's own UI-level token above --
-    // signupAttemptToken alone only stops THIS page's callback from
-    // reacting to a stale response (force-navigating, updating the
-    // screen); it can't stop js/store.js's commitLocalSignupIfCurrent
-    // from silently writing state.user/state.accounts in the background,
-    // since that write happens INSIDE signup(), before this callback (or
-    // its token check) ever runs. See DreamStore.invalidatePendingSignup's
-    // own doc comment (js/store.js) and tracker item
-    // js-store-js-signupcallseq-only-invalidat-ijwpht. Harmless to call
-    // unconditionally on every Back click, same as the bump above.
+    // Also invalidates any in-flight DreamStore.signupPasswordless()/
+    // login call at the STORE layer, not just this file's own UI-level
+    // token above -- the UI token alone only stops THIS page's callback
+    // from reacting to a stale response; it can't stop js/store.js's own
+    // commit helpers from silently writing state.user/state.accounts in
+    // the background, since that write happens INSIDE the store call,
+    // before this callback (or its token check) ever runs. See
+    // DreamStore.invalidatePendingSignup's own doc comment (js/store.js)
+    // and tracker item js-store-js-signupcallseq-only-invalidat-ijwpht.
     DreamStore.invalidatePendingSignup();
-    // Same reasoning, for Contact's own pendingGenerationToken (tracker
-    // item for-product-money-leak-blocked-signups-e-v2g1vi): Continue no
-    // longer calls next() synchronously -- it now waits on
-    // checkEmailAvailable() first (see renderContact's Continue handler)
-    // -- so there is a real window between a Continue click and its
-    // eventual next()/generation-fire where Back can be clicked before
-    // that resolves. Without this bump, a since-abandoned Continue
-    // click's belated check-email response could still fire
-    // startPendingGeneration and force-navigate to Signup well after the
-    // user has already navigated elsewhere via this very click.
+    // Same reasoning for the pre-account generation call (tracker item
+    // for-product-money-leak-blocked-signups-e-v2g1vi): a since-abandoned
+    // submit's belated settlement must not write pending state for an
+    // attempt the user already walked away from. The comparison-key reset
+    // goes with it — the abandoned promise's write was just invalidated,
+    // so it must not be reusable as if it were still going to produce a
+    // pendingId (a later identical resubmit fires fresh instead, exactly
+    // the pre-wall behavior).
     pendingGenerationToken++;
+    pendingGenerationComparisonKey = null;
     if(cur > 0){ goToStep(cur - 1); return; }
     location.href = 'index.html';
   });
 
-  render();
+  // ===================================================================
+  // Boot — normal arrival, or the Facebook Login return leg (same
+  // structure as start.html's own boot(); see that function's doc
+  // comment for why the ?bt= branch paints a loading state first and
+  // defers the synchronous-XHR consume call by one tick).
+  // ===================================================================
+  function boot(){
+    if(!resumedFromFacebook){
+      // Hygiene: a snapshot left behind by an abandoned Facebook round
+      // trip must never survive into an unrelated later run of this
+      // wizard (restoreWizardFromFacebookRedirect also has its own
+      // savedAt age check — this is the cheaper, more direct half of the
+      // same guarantee).
+      clearPersistedWizardState();
+      render();
+      return;
+    }
+
+    // Every Facebook leg restores (and thereby consumes) the snapshot:
+    // the fb_error leg needs the built dream back to re-render an
+    // editable wall around the inline error, and the ?bt= leg needs it to
+    // actually submit the dream. The fb_needs_email leg's own success
+    // path re-persists before its ?bt= re-entry (see
+    // renderFacebookEmailStep).
+    var restored = restoreWizardFromFacebookRedirect();
+
+    if(!fbTransferPresent){
+      // A failed round trip (?fb_error=) or the needs-email half-step
+      // (?fb_needs_email=). No token to consume — land straight on the
+      // wall, where the visitor actually was when they left.
+      cur = WALL_STEP;
+      render();
+      return;
+    }
+
+    cur = WALL_STEP;
+    renderProgress();
+    screenEl.innerHTML =
+      '<div class="fn-spacer"></div>' +
+      '<div class="fn-spin"></div>' +
+      '<div class="fn-loading-line">Signing you in…</div>' +
+      '<div class="fn-spacer"></div>';
+
+    setTimeout(function(){
+      try{ DreamStore.consumeSessionTransferTokenFromUrlSync(); }catch(e){ /* silent no-op contract -- see that function's own doc comment */ }
+
+      var user = DreamStore.getCurrentUser();
+      if(!user){
+        // The token didn't resolve (expired, already consumed, a network
+        // failure). Fail closed to the ordinary wall with an inline
+        // explanation — the email path is unaffected and remains the
+        // fallback.
+        pendingFacebookErrorSlug = pendingFacebookErrorSlug || 'signin_failed';
+        render();
+        return;
+      }
+
+      // getAccountEmail() reads the email commitTransferredSession just
+      // wrote from the server-verified token, never anything
+      // client-supplied.
+      var email = DreamStore.getAccountEmail() || '';
+      var fbOutcome = getParam('fb');
+      track('signup_facebook_completed', { variant: 'wizard', outcome: fbOutcome || null });
+      // Gated on fb=signup — the callback sets fb:'login' for an
+      // existing-email match, which is a login, not a new signup (same
+      // no-double-count rule as start.html's boot; see that copy's long
+      // comment on both the pixel fire and the PostHog 'signed_up' gap).
+      if(email && fbOutcome === 'signup'){
+        fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'facebook' } });
+        track('signed_up', { signup_method: 'facebook' });
+      }
+
+      if(!restored || !assembled || !assembled.caption){
+        // The snapshot didn't survive the round trip (most realistically
+        // the FB/IG in-app webview wiping localStorage between the two
+        // page loads). The visitor IS signed in — that half succeeded and
+        // must not be thrown away — there's just no built dream left to
+        // submit for them, so land on home.html without ?generate=1
+        // (nothing in the draft to submit) and let them build from there.
+        // Tracked so it's visible if this turns out to be common.
+        track('wizard_facebook_return_snapshot_missing', {});
+        location.href = 'home.html';
+        return;
+      }
+
+      // The dream survived — fire the real generation for the confirmed
+      // account email now (it could never start pre-redirect: the email
+      // wasn't known until Facebook vouched for it, the same accepted
+      // tradeoff start.html's Facebook path documents), then run the one
+      // shared continuation.
+      contactEmail = email;
+      var characters = resolveCharactersForGeneration();
+      var payload = {
+        email: email, whatsapp: null,
+        caption: assembled.caption, style: chosenStyle,
+        characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
+        sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey,
+        storyText: currentStoryText
+      };
+      var submissionKey = JSON.stringify(payload);
+      var comparisonPayload = Object.assign({}, payload, { email: email.toLowerCase() });
+      delete comparisonPayload.storyText;
+      var comparisonKey = JSON.stringify(comparisonPayload);
+      DreamStore.setDraft({ caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
+      completeSignupAndAdvance(email, {
+        pendingPromise: getOrStartPendingGeneration(submissionKey, comparisonKey)
+      });
+    }, 0);
+  }
+
+  boot();
 })();
 </script>
 </body>

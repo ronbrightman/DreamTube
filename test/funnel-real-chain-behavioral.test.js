@@ -151,12 +151,12 @@ async function wireRealGetHandler(page, urlGlob, handler, transformBody) {
   });
 }
 
-test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture -> signup -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
+test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged signup wall -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account-passwordless -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   mockBlobs.reset();
   process.env.GENERATION_MOCK_MODE = 'true';
   process.env.RESEND_API_KEY = 'test-resend-key';
-  ['start-pending-generation', 'register-account', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
+  ['start-pending-generation', 'register-account-passwordless', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
     'check-email', 'lib/job-owners', 'lib/pending-dreams', 'lib/account-store', 'lib/first-dream-email-store',
     'lib/first-dream-email-sender', 'lib/generation-completion-store', 'lib/rate-limit', 'lib/email-domain-check'
   ].forEach(function (mod) {
@@ -165,7 +165,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
   });
 
   var startHandler = require('../netlify/functions/start-pending-generation').handler;
-  var registerHandler = require('../netlify/functions/register-account').handler;
+  var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
   var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
   var videoStatusHandler = require('../netlify/functions/video-status').handler;
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
@@ -214,7 +214,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await wireRealPostHandler(page, '**/.netlify/functions/start-pending-generation', startHandler, {
       wrap: function (handler, event) { return withPastClock(60000, function () { return handler(event); }); }
     });
-    await wireRealPostHandler(page, '**/.netlify/functions/register-account', registerHandler);
+    await wireRealPostHandler(page, '**/.netlify/functions/register-account-passwordless', registerHandler);
     await wireRealPostHandler(page, '**/.netlify/functions/claim-pending-generation', claimHandler, {
       wrap: function (handler, event) {
         claimCalls.push(JSON.parse(event.body));
@@ -256,19 +256,16 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
-    // Contact capture -- this is the exact moment start-pending-
-    // generation.js fires for real, pre-signup.
+    // The merged signup wall (tracker item for-product-wizard-signup-
+    // wall-is-the-ol-lt1l9j) -- this one submit is the exact moment
+    // start-pending-generation.js fires for real (pre-account) AND the
+    // real register-account-passwordless.js signup runs in parallel;
+    // adoptPendingGeneration + claim-pending-generation.js fire the
+    // instant both settle, exactly as wizard.html's real
+    // renderSignupWall/completeSignupAndAdvance do.
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', FUNNEL_EMAIL);
     await page.click('#fn-contact-continue');
-
-    // Signup -- adoptPendingGeneration + claim-pending-generation.js fire
-    // the instant this succeeds, exactly as wizard.html's real renderSignup
-    // does.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'realchaintester');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-signup-continue');
 
     // home.html's own real resume/poll/completion sequence takes it from
     // here (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q --
@@ -345,15 +342,23 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     mockBlobs.seed(pendingStore.STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
       triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
     }));
+    // register-account-passwordless.js's new-account branch fires its own
+    // fire-and-forget VERIFICATION email through the same Resend spy (see
+    // that file's FIRE-AND-FORGET note) -- count only what the retention
+    // scan itself adds, so this assertion stays about the retention email
+    // and can't be satisfied (or double-counted) by the signup path's own
+    // unrelated send.
+    var resendCountBeforeScan = resendCalls.length;
     await sendPending.scanAndSend(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }));
 
     // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the automatic retention email
     // must have genuinely been attempted, through the real job-owners
     // lookup, the real account-store lookup, and the real
     // first-dream-email-sender send -- not a mocked stand-in.
-    await settle(function () { return resendCalls.length >= 1; });
-    assert.equal(resendCalls.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend send attempt for the funnel user');
-    assert.deepEqual(resendCalls[0].body.to, [FUNNEL_EMAIL], 'the email must go to the funnel user\'s own real email');
+    await settle(function () { return resendCalls.length >= resendCountBeforeScan + 1; });
+    var retentionSends = resendCalls.slice(resendCountBeforeScan);
+    assert.equal(retentionSends.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend retention-send attempt for the funnel user');
+    assert.deepEqual(retentionSends[0].body.to, [FUNNEL_EMAIL], 'the email must go to the funnel user\'s own real email');
   } finally {
     global.fetch = realFetch;
     await page.close();

@@ -595,9 +595,9 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
-    // Contact step is wizard.html's own preview moment -- recap must show
-    // a real human sentence immediately (deterministic template), then
-    // upgrade once the mocked LLM rewrite resolves.
+    // The signup wall is wizard.html's own preview moment -- recap must
+    // show a real human sentence immediately (deterministic template),
+    // then upgrade once the mocked LLM rewrite resolves.
     await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
     var recapBeforeRewrite = await page.textContent('#fn-story-recap-text');
     assert.ok(recapBeforeRewrite.length > 0, 'recap must never be blank');
@@ -615,15 +615,15 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
 
     // start-pending-generation.js's own payload must carry BOTH: the full
     // engineered prompt as `caption`, and the human story as `storyText`.
-    await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
+    // (The merged signup wall — tracker item for-product-wizard-signup-
+    // wall-is-the-ol-lt1l9j — completes the passwordless signup from this
+    // same submit: the unmocked register-account-passwordless POST 404s
+    // against the static server and js/store.js degrades it to a
+    // local-only signup, so the page proceeds straight to home.html.)
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.match(startPendingCalls[0].caption, /of a stranger,/, 'the wire caption sent to start-pending-generation must still be the engineered promptText');
     assert.equal(startPendingCalls[0].storyText, MOCK_LLM_STORY);
-
-    await page.fill('#fn-username', 'wizardstorytext');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-signup-continue');
 
     await waitForHomeGenerationThenOpenResult(page);
     var dream = await page.evaluate(function () {
@@ -674,11 +674,6 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
 
     await page.fill('#contact-email', 'wizard-freetext@example.com');
     await page.click('#fn-contact-continue');
-    // start-pending-generation.js doesn't render anything client-observable
-    // until the Signup screen appears -- wait for that instead of polling
-    // the Node-side array from inside the page (waitForFunction's
-    // predicate runs IN the browser, which can't see startPendingCalls).
-    await page.waitForFunction(function () { return document.getElementById('fn-username') !== null; }, null, { timeout: 5000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
     assert.equal(startPendingCalls[0].storyText, FREE_TEXT);

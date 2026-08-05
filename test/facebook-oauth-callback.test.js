@@ -393,6 +393,43 @@ test('even a failure redirect carries resume=1, so a failed sign-in never ejects
   assert.equal(url.searchParams.get('fb_error'), 'csrf');
 });
 
+// ===================================================================
+// Return-page selector (rp) — the wizard signup wall's own return leg
+// (tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j).
+// Strictly allowlisted: exactly 'wizard' → /wizard.html; anything else
+// → /start.html. Both fixed, same-origin paths — never interpolated.
+// ===================================================================
+
+test('rp=wizard in the state\'s resume params returns the visitor to /wizard.html — success leg', async function () {
+  installGraphStub({ profile: { id: '5550021', name: null, email: 'rp-wizard@example.com' } });
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ resume: 'resume=1&rp=wizard' }));
+  var url = locationOf(res);
+  assert.equal(url.pathname, '/wizard.html');
+  assert.ok(url.searchParams.get('bt'), 'the session-transfer token must still ride the wizard-bound redirect');
+});
+
+test('rp=wizard also governs the FAILURE legs — a failed wizard-origin sign-in lands back on wizard.html with its inline error, never on the ad funnel', async function () {
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var res = await handler(callbackEvent({ cookieNonce: 'ffffffffffffffffffffffffffffffff', resume: 'resume=1&rp=wizard' }));
+  var url = locationOf(res);
+  assert.equal(url.pathname, '/wizard.html');
+  assert.equal(url.searchParams.get('fb_error'), 'csrf');
+});
+
+test('rp is a strict allowlist — any value other than the exact string "wizard" falls through to /start.html (no open-redirect surface)', async function () {
+  var handler = require('../netlify/functions/facebook-oauth-callback').handler;
+  var evil = ['evil.example.com', '//evil.example.com', 'wizard.html', 'WIZARD', 'wizard%2F..%2Fadmin', 'start'];
+  for (var i = 0; i < evil.length; i++) {
+    installGraphStub({ profile: { id: '55500' + (30 + i), name: null, email: 'rp-evil-' + i + '@example.com' } });
+    // eslint-disable-next-line no-await-in-loop
+    var res = await handler(callbackEvent({ resume: 'resume=1&rp=' + encodeURIComponent(evil[i]) }));
+    var url = locationOf(res);
+    assert.equal(url.pathname, '/start.html', 'rp=' + evil[i] + ' must fall through to start.html');
+    assert.equal(url.origin, 'https://dreamtube1.netlify.app', 'the redirect must always stay on this app\'s own origin');
+  }
+});
+
 test('a stale bt/fb_error already sitting in the resume params is stripped, never echoed forward', async function () {
   installGraphStub({ profile: { id: '5550012', name: null, email: 'stale@example.com' } });
   var handler = require('../netlify/functions/facebook-oauth-callback').handler;
