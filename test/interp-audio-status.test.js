@@ -8,9 +8,19 @@
 // same "stub fetch, assert on the function's own logic" approach every
 // other fal-backed function's tests in this suite already use. No real
 // network call, no real FAL_KEY needed for any of these.
+//
+// WHISPER IDEMPOTENCY (tracker.html's
+// for-product-whisper-runaway-5-000-whispe-szk33s item): this file also
+// requires lib/whisper-alignment-store.js (a `blobs10`-backed CAS claim —
+// see that file's own header comment), so these tests install mock-blobs.js
+// the same way every other Blobs-backed store's test file in this suite
+// does.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
+
+var mockBlobs = require('./helpers/mock-blobs');
+mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var interpAudioStatus = require('../netlify/functions/interp-audio-status');
@@ -21,6 +31,7 @@ var realFetch = global.fetch;
 test.beforeEach(function () {
   global.fetch = realFetch;
   process.env.FAL_KEY = 'test-fal-key';
+  mockBlobs.reset();
 });
 
 test.after(function () { global.fetch = realFetch; });
@@ -88,6 +99,137 @@ test('stage 1 -> stage 2 handoff: once Kokoro COMPLETES, this submits the Whispe
   var data = JSON.parse(res.body);
   assert.equal(data.status, 'processing');
   assert.equal(data.operationName, 'falw:' + encodeURIComponent('https://cdn.fal.ai/sample-reading.mp3') + ':whisper-req-1');
+});
+
+// ===== WHISPER SUBMISSION IDEMPOTENCY (tracker.html's
+//       for-product-whisper-runaway-5-000-whispe-szk33s item) =====
+//
+// Real regression coverage for the actual production cost leak: Stage 1
+// used to submit a BRAND NEW fal-ai/whisper job on EVERY poll that found
+// the TTS job COMPLETED (checkFalStatus reports COMPLETED forever once
+// true, so this wasn't a one-time race). These tests drive multiple
+// Stage-1-completed polls for the SAME ttsRequestId and assert the whisper
+// submit endpoint is hit exactly once total, no matter how many times
+// Stage 1 is re-polled after completion — the exact shape of a client
+// that hasn't yet swapped to the new "falw:" operationName, an overlapping
+// poll, or a retry.
+
+test('multiple Stage-1-completed polls for the SAME TTS request only ever submit ONE whisper job, and all still return a usable falw: operationName', async function () {
+  var whisperSubmitCalls = 0;
+  global.fetch = async function (url, opts) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    if (/\/requests\/req1$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/sample-reading.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url) && opts && opts.method === 'POST') {
+      whisperSubmitCalls += 1;
+      return { ok: true, status: 200, json: async function () { return { request_id: 'whisper-req-1' }; } };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  var name = 'fal:fal-ai/kokoro/american-english:req1';
+  var expectedOperationName = 'falw:' + encodeURIComponent('https://cdn.fal.ai/sample-reading.mp3') + ':whisper-req-1';
+
+  // Simulate 3 sequential stale/overlapping polls against Stage 1 AFTER
+  // the TTS job is already COMPLETED -- exactly what a client that hasn't
+  // yet swapped operationName, or a retry, or a second tab, would produce.
+  for (var i = 0; i < 3; i++) {
+    var res = await handler(getEvent(name));
+    assert.equal(res.statusCode, 200);
+    var data = JSON.parse(res.body);
+    assert.equal(data.status, 'processing');
+    assert.equal(data.operationName, expectedOperationName, 'poll #' + (i + 1) + ' must hand back the SAME already-submitted falw: operationName, not a fresh one');
+  }
+
+  assert.equal(whisperSubmitCalls, 1, 'exactly one fal-ai/whisper submission across 3 stale Stage-1-completed polls');
+});
+
+test('two genuinely CONCURRENT Stage-1-completed polls for the SAME TTS request (Promise.all race) still only submit ONE whisper job', async function () {
+  var whisperSubmitCalls = 0;
+  global.fetch = async function (url, opts) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    if (/\/requests\/req-concurrent$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/concurrent.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url) && opts && opts.method === 'POST') {
+      whisperSubmitCalls += 1;
+      return { ok: true, status: 200, json: async function () { return { request_id: 'whisper-req-concurrent' }; } };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  var name = 'fal:fal-ai/kokoro/american-english:req-concurrent';
+  var results = await Promise.all([handler(getEvent(name)), handler(getEvent(name))]);
+  results.forEach(function (res) { assert.equal(res.statusCode, 200); });
+
+  assert.equal(whisperSubmitCalls, 1, 'exactly one fal-ai/whisper submission across 2 genuinely concurrent polls');
+});
+
+test('a DIFFERENT TTS request still gets its own independent whisper submission -- no cross-request bleed', async function () {
+  var whisperSubmitCalls = {};
+  global.fetch = async function (url, opts) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    var reqMatch = url.match(/\/requests\/(req-a|req-b)$/);
+    if (reqMatch) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/' + reqMatch[1] + '.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url) && opts && opts.method === 'POST') {
+      var body = JSON.parse(opts.body);
+      var reqId = body.audio_url.indexOf('req-a') !== -1 ? 'req-a' : 'req-b';
+      whisperSubmitCalls[reqId] = (whisperSubmitCalls[reqId] || 0) + 1;
+      return { ok: true, status: 200, json: async function () { return { request_id: 'whisper-' + reqId }; } };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  var resA = await handler(getEvent('fal:fal-ai/kokoro/american-english:req-a'));
+  var resB = await handler(getEvent('fal:fal-ai/kokoro/american-english:req-b'));
+  var dataA = JSON.parse(resA.body);
+  var dataB = JSON.parse(resB.body);
+
+  assert.equal(dataA.operationName, 'falw:' + encodeURIComponent('https://cdn.fal.ai/req-a.mp3') + ':whisper-req-a');
+  assert.equal(dataB.operationName, 'falw:' + encodeURIComponent('https://cdn.fal.ai/req-b.mp3') + ':whisper-req-b');
+  assert.equal(whisperSubmitCalls['req-a'], 1);
+  assert.equal(whisperSubmitCalls['req-b'], 1);
+});
+
+test('a poll landing while a claim is mid-submission (claimed, no whisperRequestId yet) does NOT submit and just re-polls the OLD operationName', async function () {
+  var mockBlobs2 = require('./helpers/mock-blobs');
+  var whisperStore = require('../netlify/functions/lib/whisper-alignment-store');
+  var name = 'fal:fal-ai/kokoro/american-english:req-midflight';
+
+  // Seed a claim that exists but hasn't recorded a whisperRequestId yet --
+  // exactly the state a genuinely concurrent winner leaves while its own
+  // fal.ai POST is still in flight.
+  await whisperStore.claim(fakeEvent({}), 'fal-ai/kokoro/american-english', 'req-midflight', 'https://cdn.fal.ai/midflight.mp3');
+
+  var whisperSubmitCalls = 0;
+  global.fetch = async function (url, opts) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    if (/\/requests\/req-midflight$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/midflight.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url) && opts && opts.method === 'POST') { whisperSubmitCalls += 1; return { ok: true, status: 200, json: async function () { return { request_id: 'should-never-happen' }; } }; }
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  var res = await handler(getEvent(name));
+  var data = JSON.parse(res.body);
+  assert.equal(data.status, 'processing');
+  assert.equal(data.operationName, name, 'must re-poll the OLD fal: operationName, not submit or invent a falw: one');
+  assert.equal(whisperSubmitCalls, 0);
+});
+
+test('if the CLAIMED submission itself fails, the claim is released so a later genuinely fresh attempt is not permanently blocked', async function () {
+  var whisperStore = require('../netlify/functions/lib/whisper-alignment-store');
+  var name = 'fal:fal-ai/kokoro/american-english:req-failsubmit';
+  global.fetch = async function (url) {
+    if (/\/status$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ status: 'COMPLETED' }); } };
+    if (/\/requests\/req-failsubmit$/.test(url)) return { ok: true, status: 200, text: async function () { return JSON.stringify({ audio: { url: 'https://cdn.fal.ai/failsubmit.mp3' } }); } };
+    if (/fal-ai\/whisper$/.test(url)) return { ok: false, status: 500, json: async function () { return { error: 'nope' }; } };
+    throw new Error('unexpected fetch: ' + url);
+  };
+
+  var res = await handler(getEvent(name));
+  var data = JSON.parse(res.body);
+  assert.equal(data.status, 'done');
+  assert.equal(data.captionsLevel, 'sentence');
+
+  var record = await whisperStore.get(fakeEvent({}), 'fal-ai/kokoro/american-english', 'req-failsubmit');
+  assert.equal(record, null, 'the claim must be released on submission failure, not left dangling');
 });
 
 test('if Kokoro itself fails (non-COMPLETED terminal status), reports status:"failed"', async function () {
