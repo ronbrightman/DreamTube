@@ -198,15 +198,15 @@ test('register-account.js is completely unaffected by the new field — a normal
 
 // ===== lib/derive-username.js =====
 
-test('derive-username: deriveUsernameBase matches start.html/wizard.html rules exactly', async function () {
+test('derive-username: deriveUsernameBase matches start.html rules exactly', async function () {
   var derive = require('../netlify/functions/lib/derive-username');
   assert.equal(derive.deriveUsernameBase('Nova.Dreamer@example.com'), 'novadreamer');
   assert.equal(derive.deriveUsernameBase('a@example.com'), 'adrea');
   assert.equal(derive.deriveUsernameBase('!!@example.com'), 'drea');
   assert.equal(derive.deriveUsernameBase('a-very-long-local-part-indeed@example.com'), 'averylonglocalpartin');
   // An empty/absent local part pads to 'drea' — NOT 'dreamer'. This is
-  // the existing pages' actual behavior (the `|| 'dreamer'` tail in all
-  // three copies is unreachable, since the pad-to-3 step above it always
+  // the existing pages' actual behavior (the `|| 'dreamer'` tail in both
+  // copies is unreachable, since the pad-to-3 step above it always
   // produces a non-empty string); asserted here so the server copy stays
   // bug-for-bug identical rather than "fixed" into divergence.
   assert.equal(derive.deriveUsernameBase(''), 'drea');
@@ -223,18 +223,23 @@ test('derive-username: deriveUsernameBase never exceeds 20 characters and never 
   });
 });
 
-test('derive-username: the server-side helper produces IDENTICAL output to start.html\'s and wizard.html\'s own in-page copies, for every input', async function () {
-  // The one real risk of having a third copy of this logic is silent
+test('derive-username: the server-side helper produces IDENTICAL output to start.html\'s own in-page copy, for every input', async function () {
+  // The one real risk of having another copy of this logic is silent
   // drift — an account created by Facebook Login getting a
   // differently-shaped handle than the same email would get through
   // manual signup. Rather than trusting a comment that says "identical",
-  // this pulls both page-local implementations straight out of the HTML
-  // and runs all three against the same inputs.
+  // this pulls the page-local implementation straight out of the HTML
+  // and runs both against the same inputs. (wizard.html used to carry a
+  // third copy and was cross-checked here too — its signup wall went
+  // passwordless (tracker item for-product-wizard-signup-wall-is-the-ol-
+  // lt1l9j), so usernames on that path are now derived server-side by
+  // register-account-passwordless.js / locally by js/store.js's own
+  // fallback, and the page copy is gone.)
   var fs = require('node:fs');
   var derive = require('../netlify/functions/lib/derive-username');
   var RE = /function deriveUsernameBase\(email\)\{[\s\S]*?\n {2}\}/;
 
-  ['start.html', 'wizard.html'].forEach(function (page) {
+  ['start.html'].forEach(function (page) {
     var source = fs.readFileSync(require('node:path').join(__dirname, '..', page), 'utf8');
     var match = source.match(RE);
     assert.ok(match, 'deriveUsernameBase must still be findable in ' + page);
