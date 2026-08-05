@@ -202,7 +202,15 @@ test('home.html day-0 card: forming state shows the shimmer/arc/caption veil, th
     assert.match(quote, /flying over a golden city/i, 'the dream\'s own quote must render while forming, not a placeholder');
 
     assert.match(await page.locator('#d0-quiet').getAttribute('class'), /\bwaiting\b/);
-    assert.equal((await page.locator('#d0-caption').textContent()).trim(), 'Ready when your dream is');
+    // The old "Ready when your dream is" line is deliberately GONE as of
+    // the founder's 2026-08-04 ask (tracker item for-product-founder-ask-
+    // 08-04-offer-the--rlcai3: "replace (or drop) the bottom 'ready when
+    // you are' line so the Sage/interpretation entry comes into view") --
+    // that slot now carries the during-generation interpretation offer
+    // (#d0-sage), with this caption demoted to its supporting line. The
+    // offer itself is covered in test/sage-during-generation-behavioral.
+    // test.js; this assertion just keeps the forming caption honest.
+    assert.equal((await page.locator('#d0-caption').textContent()).trim(), 'No need to wait for the video');
 
     var quietButtons = await page.locator('#d0-quiet .quietlink').all();
     assert.equal(quietButtons.length, 4, 'Publish / Make another / Edit / Delete -- same set as result.html\'s own quiet row');

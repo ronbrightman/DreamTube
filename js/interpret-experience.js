@@ -11,10 +11,13 @@
 //
 // Plain script (no ES modules — matches every other file in this
 // codebase, see CLAUDE.md), attaches ONE global, `window.InterpretExperience`,
-// with exactly the two calls the spec's §8 self-contained-mounting section
-// specifies: `InterpretExperience.open(dreamId)` / `.close()`. Matches
-// js/purchase-sheet.js's own established precedent for a complex shared
-// sheet/overlay component — same singleton-DOM-mounted-once,
+// with the two calls the spec's §8 self-contained-mounting section
+// specifies: `InterpretExperience.open(dreamId)` / `.close()` — plus one
+// added later, `.notifyDreamResolved(pendingDreamId, realDreamId)` (see its
+// own section below), the host page's way of telling an OPEN session that
+// the still-generating dream it was opened for has finished rendering.
+// Matches js/purchase-sheet.js's own established precedent for a complex
+// shared sheet/overlay component — same singleton-DOM-mounted-once,
 // `currentGen`-style async-staleness-guard, `trackLocal` posthog-direct
 // analytics pattern (see that file's own header comment for the full
 // reasoning on each).
@@ -76,6 +79,32 @@
   // must never mutate a session it no longer belongs to.
   var session = null;
   var gen = 0;
+
+  /**
+   * True when `capturedDreamId` (grabbed by an async call before its own
+   * await/then) still names the dream the CURRENT session is about.
+   *
+   * Exists because of the one legitimate way a live session's `dreamId`
+   * can change without the session itself being replaced: a reading opened
+   * against a still-generating dream's synthetic `pending:<operationName>`
+   * id (js/store.js's findPendingDream) whose video then finishes
+   * rendering mid-session — notifyDreamResolved below re-points the
+   * session at the real dream id and records the old one as
+   * `session.resolvedFrom`. Without this tolerance, the very responses
+   * that make the founder's "start the reading while the video renders"
+   * flow work (the in-flight TTS request, most of all) would be discarded
+   * as stale exactly when the video lands, silently killing the voice.
+   *
+   * Everything this DOESN'T tolerate is unchanged: a different session
+   * (`gen`), a torn-down/replaced voice state (`voiceState !== vs`), a
+   * genuinely different dream (switchDream re-runs open(), which builds a
+   * brand-new session with no resolvedFrom), or a closed overlay.
+   */
+  function stillTargetsDream(capturedDreamId) {
+    if (!session) return false;
+    if (session.dreamId === capturedDreamId) return true;
+    return !!session.resolvedFrom && session.resolvedFrom === capturedDreamId;
+  }
 
   // ==========================================================================
   // Speaking Sage — Option D (docs/SPEAKING_SAGE_SPEC.md, tracker item
@@ -395,7 +424,7 @@
   function requestVoiceAudio(vs, persona) {
     var myGen = gen, myDreamId = vs.dreamId, myPersonaKey = vs.personaKey;
     window.DreamStore.generateInterpAudio(vs.dreamId, vs.personaKey, vs.readingText).then(function (result) {
-      if (myGen !== gen || voiceState !== vs || session.dreamId !== myDreamId || session.personaKey !== myPersonaKey) return; // stale
+      if (myGen !== gen || voiceState !== vs || !stillTargetsDream(myDreamId) || session.personaKey !== myPersonaKey) return; // stale
       vs.audioUrl = result.audioUrl;
       vs.audioDurationMs = result.audioDurationMs;
       vs.captions = result.captions || [];
@@ -404,7 +433,7 @@
       if (vs.captionsLevel === 'sentence') trackLocal('interp_voice_caption_fallback', { persona: persona.key });
       if (vs.phase === 'loading') beginAudioPlayback(vs, persona);
     }).catch(function (err) {
-      if (myGen !== gen || voiceState !== vs || session.dreamId !== myDreamId || session.personaKey !== myPersonaKey) return; // stale
+      if (myGen !== gen || voiceState !== vs || !stillTargetsDream(myDreamId) || session.personaKey !== myPersonaKey) return; // stale
       trackLocal('interp_voice_tts_failed', { persona: persona.key, error_code: (err && err.message) || 'unknown' });
       vs.audioFailed = true;
       if (vs.phase === 'loading') teardownVoiceStageOnFailure(vs);
@@ -861,7 +890,14 @@
     var hasSelected = dreams.some(function (d) { return d.id === selectedId; });
     if (!hasSelected) {
       var selectedDream = window.DreamStore.getDream(selectedId);
-      if (selectedDream) dreams = [selectedDream].concat(dreams);
+      // Match on the RESOLVED dream's own id, not on `selectedId`: a
+      // `pending:<operationName>` id whose generation has already finished
+      // now resolves through to the real dream it produced (js/store.js's
+      // findPendingDream fall-through), which getMyDreams above is already
+      // listing under its real id — prepending on the id alone would show
+      // that one dream twice.
+      var alreadyListed = selectedDream && dreams.some(function (d) { return d.id === selectedDream.id; });
+      if (selectedDream && !alreadyListed) dreams = [selectedDream].concat(dreams);
     }
     if (!dreams.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
     strip.style.display = 'flex';
@@ -1076,7 +1112,7 @@
     var myGen = gen;
     var myDreamId = session.dreamId;
     window.DreamStore.requestInterpretationQuestions(session.dreamId, session.personaKey).then(function (data) {
-      if (myGen !== gen || !session || session.dreamId !== myDreamId) return; // stale — a different session is open now
+      if (myGen !== gen || !stillTargetsDream(myDreamId)) return; // stale — a different session is open now
       var questions = data && Array.isArray(data.questions) ? data.questions : [];
       if (!questions.length) {
         // Treated the same as any other q_loading failure — never a gate
@@ -1092,7 +1128,7 @@
       session.phase = 'questions';
       render();
     }).catch(function (err) {
-      if (myGen !== gen || !session || session.dreamId !== myDreamId) return;
+      if (myGen !== gen || !stillTargetsDream(myDreamId)) return;
       var isRateLimited = !!(err && /E406/.test(err.message || ''));
       if (isRateLimited) {
         showErrorState({ rateLimited: true });
@@ -1233,10 +1269,10 @@
     var personaKey = session.personaKey;
     var qa = session.qa || [];
     window.DreamStore.generateInterpretationReading(session.dreamId, personaKey, qa).then(function (data) {
-      if (myGen !== gen || !session || session.dreamId !== myDreamId) return;
+      if (myGen !== gen || !stillTargetsDream(myDreamId)) return;
       goToReading(data.text, data.at, session.regenerated);
     }).catch(function (err) {
-      if (myGen !== gen || !session || session.dreamId !== myDreamId) return;
+      if (myGen !== gen || !stillTargetsDream(myDreamId)) return;
       var isRateLimited = !!(err && /E406/.test(err.message || ''));
       trackLocal('interp_reading_failed', { persona: personaKey, rate_limited: isRateLimited });
       showErrorState({ rateLimited: isRateLimited, retry: !isRateLimited ? function () { goToReadingLoading(opts); } : null });
@@ -1409,6 +1445,94 @@
   }
 
   // ==========================================================================
+  // Pending dream -> real dream, mid-session (founder ask 2026-08-04,
+  // tracker item for-product-founder-ask-08-04-offer-the--rlcai3: "the
+  // reading can begin while the video is still rendering... swap the real
+  // video in when it lands").
+  //
+  // A reading opened from home.html's forming card targets the synthetic
+  // `pending:<operationName>` id (js/store.js's findPendingDream) — a real,
+  // fully-functional interpretation target (it carries the dream's TEXT,
+  // which is all the reading and its voice ever need) that simply has no
+  // media yet, so the voice stage mounts on its already-existing no-video
+  // path: `#itp-voice-dream-video` renders with no `src`, and
+  // startDreamVideoBounceLoop no-ops on it rather than blocking anything.
+  //
+  // When that generation finishes, home.html's onGenerationSettled calls
+  // notifyDreamResolved with the id the dream USED to be addressed by and
+  // the real one it now has. Deliberately a push from the host page rather
+  // than a poll from in here: the host already owns the completion promise
+  // and knows the exact moment, and this file has no business running a
+  // timer of its own for something another module already observes
+  // precisely.
+  // ==========================================================================
+
+  /** Fills in the reading stage's dream video the moment the real media exists, and starts the bounce loop that was skipped when there was nothing to loop. No-op if the stage already has media, the dream still has none, or the intro is still playing (enterReadingPhase starts the loop itself when the intro ends). */
+  function swapInResolvedDreamMedia(vs) {
+    var el = vs.dreamEl;
+    if (!el || el.getAttribute('src')) return;
+    var dream = window.DreamStore.getDream(vs.dreamId);
+    // Same `videoUrl || imageUrl` media priority renderReading itself
+    // computes for the initial mount — one definition of "this dream's
+    // media", not a second one that could drift from it.
+    var url = dream && (dream.videoUrl || dream.imageUrl);
+    if (!url) return;
+    el.setAttribute('src', url);
+    trackLocal('interp_pending_video_swapped_in', { persona: vs.personaKey });
+    if (vs.phase !== 'intro' && !vs.rafId) startDreamVideoBounceLoop(vs);
+  }
+
+  /**
+   * Re-points an OPEN session from a still-generating dream's synthetic
+   * `pending:<operationName>` id at the real dream id that generation just
+   * produced, and swaps the finished video into the voice stage in place.
+   *
+   * Everything that survives the swap does so because it never depended on
+   * the media in the first place: the reading text is already rendered, and
+   * the voice `<audio>` element is a separate element with its own url — so
+   * Regenerate / Another take / a later revisit all resolve correctly
+   * against the new id immediately.
+   *
+   * Persistence, precisely (this used to overstate the guarantee): whatever
+   * had ALREADY been written under the pending id by the time this fires is
+   * carried over by js/store.js — finalizeDream migrates
+   * state.pendingInterpretations onto the real dream in the very same call
+   * that triggers this. But a reading or TTS request still IN FLIGHT at this
+   * moment has written nothing yet, and will come back to a pending id whose
+   * pendingJob is already gone. That case is handled on the store side, not
+   * here: findPendingDream falls through to the real dream via its
+   * `sourceOperationName` once the job has finished, so a late response
+   * persists onto the real dream instead of being silently dropped. This
+   * function's own job is the OPEN SESSION only — re-pointing
+   * `session.dreamId` and letting `stillTargetsDream` keep those in-flight
+   * responses from being discarded as stale. Neither half is sufficient
+   * alone: with only this half, a late reading renders here and then vanishes
+   * on the next visit.
+   *
+   * Safe to call unconditionally: a closed overlay, or one showing a
+   * DIFFERENT dream than the one that just resolved (the user switched via
+   * the dream strip while the video rendered), is left completely alone.
+   */
+  function notifyDreamResolved(pendingDreamId, realDreamId) {
+    if (!session || !pendingDreamId || !realDreamId) return;
+    if (session.dreamId !== pendingDreamId) return;
+    session.dreamId = realDreamId;
+    // Read by stillTargetsDream (see its own doc comment) so requests
+    // already in flight against the pending id — above all the TTS call
+    // this whole feature depends on — are NOT thrown away as stale.
+    session.resolvedFrom = pendingDreamId;
+    trackLocal('interp_pending_dream_resolved', { phase: session.phase });
+    if (voiceState && voiceState.dreamId === pendingDreamId) {
+      voiceState.dreamId = realDreamId;
+      swapInResolvedDreamMedia(voiceState);
+    }
+    // The strip was showing this dream as the synthetic, media-less tile
+    // findDream stitched to the front (see renderDreamStrip's own edge-case
+    // comment); it's a real, thumbnailed dream in getMyDreams() now.
+    renderDreamStrip();
+  }
+
+  // ==========================================================================
   // Public API
   // ==========================================================================
 
@@ -1452,6 +1576,10 @@
       qa: hasExisting ? (existing[existingKeys[0]].qa || []) : [],
       readingText: hasExisting ? existing[existingKeys[0]].text : null,
       readingAt: hasExisting ? existing[existingKeys[0]].at : null,
+      // Set only by notifyDreamResolved (see its own doc comment) — always
+      // null on a fresh open, including the re-open switchDream performs,
+      // so an id alias can never leak from one session into the next.
+      resolvedFrom: null,
       openedAt: Date.now()
     };
 
@@ -1496,7 +1624,7 @@
     gen += 1;
   }
 
-  var InterpretExperience = { open: open, close: close };
+  var InterpretExperience = { open: open, close: close, notifyDreamResolved: notifyDreamResolved };
 
   // Speaking Sage Option D's pure (no-DOM) logic, exported purely for
   // test/interp-voice-captions.test.js's direct require()'d unit coverage —

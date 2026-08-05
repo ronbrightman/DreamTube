@@ -112,6 +112,8 @@
 //       for-product-funnel-ending-v2-founder-ins-tfuu0q — see that field's own doc comment)
 //   getPendingDreamId()         -> local read, the synthetic `pending:<operationName>` id the
 //       Chamber opens for a still-generating dream — see findPendingDream's own doc comment
+//   pendingDreamIdFor(opName)   -> pure helper, the same synthetic id for an operationName whose
+//       pendingJob has ALREADY been cleared (a just-settled generation) — see its own doc comment
 //   logNoRecallToday()          -> local write, records a content-less "no recall" dream-log
 //       check-in for today (idempotent per day, grants nothing) — see getDreamLogStatus above
 //   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
@@ -720,13 +722,58 @@
   // above (seed()) for the full mechanism this id plugs into.
   var PENDING_DREAM_ID_PREFIX = 'pending:';
 
+  /** The synthetic pending-dream id for an operationName. Sole place the prefix is ever concatenated — see the exported pendingDreamIdFor's own doc comment for why callers need this for an ALREADY-settled job too. */
+  function pendingDreamIdFor(operationName) {
+    return operationName ? PENDING_DREAM_ID_PREFIX + operationName : null;
+  }
+
+  /**
+   * The CURRENT account's real, already-finalized dream that a given
+   * operationName produced, or null. `sourceOperationName` is stamped by
+   * finalizeDream at the moment any job lands on a dream, and is already
+   * this file's established way to answer "which dream did this job
+   * become?" after pendingJob itself is gone — see isPendingJobStillCurrent,
+   * which disambiguates exactly the same cleared-pendingJob ambiguity from
+   * exactly the same field. Ownership-scoped the same way scopedPendingJob/
+   * getMyDreams are: another account's dream is never a match, and neither
+   * is anything at all while logged out.
+   */
+  function findResolvedDreamForOperation(operationName) {
+    var myHandle = state.user ? state.user.handle : null;
+    if (!operationName || !myHandle) return null;
+    for (var i = 0; i < state.dreams.length; i++) {
+      var d = state.dreams[i];
+      if (d && d.sourceOperationName === operationName && d.ownerHandle === myHandle) return d;
+    }
+    return null;
+  }
+
   /**
    * Resolves a `PENDING_DREAM_ID_PREFIX`-id to a lightweight, in-memory
    * dream-shaped object built straight off the CURRENT account's own
-   * pendingJob — or null if there's no matching in-flight job (already
-   * completed/failed, or belongs to a different account than the one
-   * currently signed in — scopedPendingJob() already enforces that same
-   * ownership check every other pendingJob read in this file gets).
+   * pendingJob — or, once that job has finished, to the REAL dream it
+   * produced (see the fall-through below). Null only when neither exists:
+   * no such in-flight job AND no finalized dream from it (a failed
+   * generation, or a job belonging to a different account than the one
+   * currently signed in — scopedPendingJob()/findResolvedDreamForOperation
+   * both enforce that same ownership check every other pendingJob read in
+   * this file gets).
+   *
+   * **The post-completion fall-through is load-bearing, not defensive.**
+   * The whole point of the pending id (tracker item for-product-founder-
+   * ask-08-04-offer-the--rlcai3) is that a reading can START while the video
+   * is still generating — which means a reading/TTS request can still be IN
+   * FLIGHT at the moment the video lands, and finalizeDream clears
+   * pendingJob in the very same tick it creates the real dream. Without this
+   * fall-through, such a response comes back to a pending id that no longer
+   * resolves to anything, and generateInterpretationReading/
+   * generateInterpAudio's `if (dream)` write guards skip the persist
+   * SILENTLY: the reading renders in the live session (js/interpret-
+   * experience.js's notifyDreamResolved/stillTargetsDream deliberately
+   * tolerate the swap) but is gone on the next visit, and any real TTS spend
+   * behind it is wasted. Resolving through to the real dream here fixes
+   * every findDream() caller at once rather than bolting an id-repair step
+   * onto each write path separately.
    *
    * `interpretations` is NOT a copy — it's the live
    * `state.pendingInterpretations[operationName]` object itself (created
@@ -735,20 +782,29 @@
    * persist();` path (findDream -> this function -> mutate the returned
    * object) durably persists here with ZERO special-case code in that
    * function — it already treats whatever findDream() gives it as the real
-   * record to mutate.
+   * record to mutate. Post-completion the same is true for free: the object
+   * handed back IS the real dream, and finalizeDream has already carried
+   * `state.pendingInterpretations[operationName]` over onto its
+   * `interpretations` map, so a late write lands on the same map any earlier
+   * pre-completion write did.
    *
    * Every other field is read-only scaffolding (storyText/caption/style/
    * mediaType) — good enough for the interpretation flow (which only ever
-   * reads `d.storyText || d.caption`), but this is deliberately NOT a real
-   * dream: it's never added to state.dreams, so getMyDreams/getDreamMilestone/
-   * the shared feed/profile grids never see it — only findDream() (and
-   * therefore getDream/getInterpretations/requestInterpretationQuestions/
-   * generateInterpretationReading, every one of which routes through
-   * findDream) ever resolves one.
+   * reads `d.storyText || d.caption`), but the PRE-completion object is
+   * deliberately NOT a real dream: it's never added to state.dreams, so
+   * getMyDreams/getDreamMilestone/the shared feed/profile grids never see
+   * it — only findDream() (and therefore getDream/getInterpretations/
+   * requestInterpretationQuestions/generateInterpretationReading/
+   * generateInterpAudio, every one of which routes through findDream) ever
+   * resolves one.
    */
   function findPendingDream(operationName) {
     var job = scopedPendingJob();
-    if (!job || job.operationName !== operationName) return null;
+    if (!job || job.operationName !== operationName) {
+      // No live job under this name — but it may simply have finished
+      // while a caller was mid-flight against its pending id. See above.
+      return findResolvedDreamForOperation(operationName);
+    }
     if (!state.pendingInterpretations[operationName]) state.pendingInterpretations[operationName] = {};
     return {
       id: PENDING_DREAM_ID_PREFIX + operationName,
@@ -4495,7 +4551,26 @@
      */
     getPendingDreamId: function () {
       var job = scopedPendingJob();
-      return job ? PENDING_DREAM_ID_PREFIX + job.operationName : null;
+      return job ? pendingDreamIdFor(job.operationName) : null;
+    },
+
+    /**
+     * The synthetic `pending:<operationName>` id for an arbitrary
+     * operationName — the same string getPendingDreamId above returns, but
+     * computable AFTER that job has already settled (finalizeDream clears
+     * state.pendingJob before the completion promise resolves, so
+     * getPendingDreamId() is already null by the time a caller learns the
+     * generation finished). home.html's onGenerationSettled needs exactly
+     * that: "which synthetic id did the dream that just landed used to be
+     * addressed by," so an interpretation opened against the still-
+     * generating dream can be re-pointed at the real one
+     * (InterpretExperience.notifyDreamResolved). Pure string math, no
+     * state read and no ownership guard of its own — it names an id, it
+     * doesn't grant access to anything (findPendingDream/findDream still
+     * apply every existing ownership check when that id is actually used).
+     */
+    pendingDreamIdFor: function (operationName) {
+      return pendingDreamIdFor(operationName);
     },
 
     /**
