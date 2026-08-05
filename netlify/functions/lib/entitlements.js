@@ -563,7 +563,90 @@ async function syncTokens(event, email, opts) {
     // the founder's own explicit confirmation.
     var fresh = { balance: INITIAL_GRANT };
     await rateLimit.writeMarker(event, initMarkerKey, { balance: fresh.balance, at: Date.now() });
-    await setEntitlement(event, key, { tokens: fresh });
+
+    // GUARDED INIT WRITE (2026-08-05, round 2 of the same tracker item —
+    // for-product-p1-urgent-fresh-signup-can-d-qhrrqy). This used to be a
+    // single PLAIN `setEntitlement` call — a full-object REPLACE of
+    // `tokens`, with no fresh recheck at all — the one remaining
+    // completely unguarded writer in this branch even after the replay
+    // guard above closed the IP-slot-burn/permanent-0 holes. Two requests
+    // for a genuinely brand-new email can still reach this exact branch
+    // within the SAME propagation window (home.html's auto-open-claim-
+    // sheet firing alongside its own token-status read, both racing this
+    // branch before either one's marker/entitlement write is visible to
+    // the other yet) — the "stale marker read lets one extra init
+    // through" case the comment above already flags as bounded and
+    // value-identical. What that reasoning missed: if a CLAIM's own write
+    // (claimDailyTokens' guarded retryingWrite loop, see that function)
+    // won the race and landed FIRST, this call's later PLAIN write still
+    // blew it away — `tokens: fresh` fully replaces the sub-object,
+    // silently erasing the claim's balance AND lastClaimAt/
+    // lastClaimAttemptId, not just re-writing an "identical" 320. Probed
+    // in production: a claim reported E5 (write-failed), balance stayed
+    // at 320 instead of 420, and only "healed" minutes later once
+    // propagation settled and the claim's own write finally won the
+    // eventually-consistent race — the exact "claim seconds after signup
+    // gets ERASED by the seed's delayed write landing after it" failure
+    // mode this tracker item's round-2 comment calls out.
+    //
+    // Fixed the same way every other guarded writer in this file already
+    // is: blobs-retry's own read -> mutate -> write -> verify loop, with
+    // `mutate` SKIPping outright the instant a fresh read shows `tokens`
+    // already populated by ANYONE — another init replay (harmless, same
+    // value) or, critically, a genuine claim/spend/credit that raced
+    // ahead of us — instead of blindly overwriting it. `fresh` is a fixed
+    // constant here, never per-attempt, so `verify` only needs to confirm
+    // the written balance is visible — no attemptId needed the way
+    // claimDailyTokens' own loop requires one (two concurrent CLAIMS can
+    // collide on an identical `now`; two concurrent INITS can never
+    // disagree on the value they're trying to write in the first place).
+    var initWrite = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+      maxAttempts: MAX_CREDIT_ATTEMPTS,
+      read: function (evt) {
+        connectLambda(evt);
+        return store().get(key, { type: 'json' });
+      },
+      mutate: function (existing) {
+        if (existing && existing.tokens) return blobsRetry.SKIP;
+        var rec = existing || { email: key };
+        return Object.assign({}, rec, { email: key, tokens: fresh, updatedAt: Date.now() });
+      },
+      verify: function (verifyRead) {
+        return !!(verifyRead && verifyRead.tokens && verifyRead.tokens.balance === fresh.balance);
+      }
+    });
+
+    if (initWrite.skipped) {
+      // Someone else's write is already the record's real, current state —
+      // trust IT rather than fabricating INITIAL_GRANT on top of state we
+      // no longer own (this is exactly the clobber this guard exists to
+      // prevent). Falls back to `fresh` only if the winning read somehow
+      // shows no tokens at all yet (should not happen given SKIP's own
+      // condition — defensive only, mirrors this file's existing
+      // `rec.someField || fallback` discipline elsewhere).
+      var wonTokens = (initWrite.current && initWrite.current.tokens) || fresh;
+      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    }
+
+    if (!initWrite.ok) {
+      // Exhausted attempts without the verify-read ever confirming our
+      // write landed — deliberately NOT thrown (unlike claimDailyTokens'
+      // own exhaustion path): syncTokens is called from every balance
+      // read in the app (get-token-status.js, generate-video.js's gate,
+      // every other credit/spend path), not just this narrow signup-race
+      // branch, so turning a rare, already-degraded-mode propagation lag
+      // into a hard exception here would newly 500 unrelated hot paths
+      // for a condition those callers have never had to handle. One more
+      // plain, unhurried read first (same "our write may have landed,
+      // only the verify lagged" rescue every other exhaustion path in
+      // this file takes) — falls back to returning `fresh` on faith only
+      // if even that shows nothing, same best-effort posture this branch
+      // always had before this fix.
+      var finalInitRead = await getEntitlement(event, key);
+      var finalTokens = (finalInitRead && finalInitRead.tokens) || fresh;
+      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    }
+
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
   }
 
@@ -635,6 +718,36 @@ async function syncTokens(event, email, opts) {
  */
 function hasCompletedAnyClaim(firstClaimAt, lastClaimAt) {
   return !!(firstClaimAt || lastClaimAt);
+}
+
+/**
+ * True when `record` (a raw getEntitlement() result, or null/undefined for
+ * an email with no entitlement record at all) represents an account that
+ * has NEVER completed a daily claim — i.e. a claim attempted against it
+ * right now would be that account's genuine first-ever claim. Exact same
+ * "no firstClaimAt AND no tokens.lastClaimAt" check hasCompletedAnyClaim
+ * above already applies (getTokenStatus's dailyClaimAmount projection,
+ * claimDailyTokens' own isFirstEverClaim decision), just exposed here as
+ * its own named predicate, callable from OUTSIDE this file, off a raw
+ * record rather than a live syncTokens() call.
+ *
+ * Exported for claim-daily-tokens.js's OWN "claim-ip"/"claim-email"
+ * rate-limit-bucket exemption (2026-08-05, round 2 of tracker item
+ * for-product-p1-urgent-fresh-signup-can-d-qhrrqy) — see that file's own
+ * doc comment for the abuse-surface reasoning on why exempting ONLY this
+ * narrow case (and giving it a separate, still-bounded bucket rather than
+ * unlimited exemption) is safe. This is a PRE-CHECK only, used purely to
+ * pick which rate-limit bucket a request is weighed against — the ACTUAL
+ * claim amount (100 vs 20) is always decided fresh, server-side, inside
+ * claimDailyTokens' own retryingWrite attempt, off that attempt's own
+ * freshest read, never off this pre-check's possibly-stale one. A stale
+ * read here (this account actually already claimed, but propagation
+ * hasn't caught up to THIS read yet) can at worst misroute one request to
+ * the more generous bucket — self-correcting, and inert either way since
+ * the real grant amount this could feed into is decided independently.
+ */
+function isFirstEverClaimEligible(record) {
+  return !hasCompletedAnyClaim(record && record.firstClaimAt, record && record.tokens && record.tokens.lastClaimAt);
 }
 
 async function getTokenStatus(event, email, opts) {
@@ -2445,6 +2558,7 @@ module.exports = {
   isEntitled,
   setEntitlement,
   getTokenStatus,
+  isFirstEverClaimEligible,
   claimDailyTokens,
   spendTokens,
   addTokens,

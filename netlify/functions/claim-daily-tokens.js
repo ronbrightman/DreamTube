@@ -63,10 +63,55 @@
 // plus a small number of "not yet claimable" checks, so the default limit
 // (20/day) sits comfortably above any real usage while still bounding a
 // scripted attacker.
+//
+// FIRST-EVER-CLAIM EXEMPTION (2026-08-05, round 2 of tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy — founder-hit fresh-
+// signup dead-end). Round 1 closed the permanent-0 hole in syncTokens'
+// init branch (see entitlements.js), on the documented assumption that a
+// capped-at-signup account's relief valve is "it can still claim its
+// first +100 immediately". That relief valve turned out to be blockable
+// by THIS SAME "claim-ip" bucket above — shared across every claim ANY
+// account makes from an IP, whether a genuine daily repeat or a
+// never-before-claimed brand-new account. A founder (or any user behind a
+// shared/CGNAT/mobile-carrier IP — our paid traffic is mobile webview)
+// doing several same-day test signups can burn through this bucket on
+// OTHER accounts' activity alone, then hit 429 on the ONE claim that was
+// actually supposed to rescue a capped signup.
+//
+// Fix: a request whose email has NEVER completed ANY daily claim before
+// (entitlements.isFirstEverClaimEligible — see that function's own doc
+// comment) is checked against SEPARATE, more generous buckets
+// ("claim-ip-first"/"claim-email-first") instead of the general
+// "claim-ip"/"claim-email" ones. Deliberately NOT an unconditional
+// exemption (unlimited first claims per IP would reopen exactly the kind
+// of per-IP farming surface MAX_TOKEN_GRANTS_PER_IP_PER_DAY exists to
+// close) — still bounded, just by a higher, purpose-fit ceiling. Why this
+// is safe to size more generously than the general bucket:
+//   1. This exemption only ever applies to an account's OWN literal
+//      first-ever claim — the moment it lands, `firstClaimAt`/
+//      `tokens.lastClaimAt` are stamped (see claimDailyTokens), and every
+//      later attempt for that SAME email is a real repeat, correctly
+//      routed to the tighter general buckets. There's no way to reuse
+//      this bucket twice for one account.
+//   2. Farming still requires farming brand-new EMAILS in the first
+//      place — client-side signup is free (js/store.js), but each new
+//      email's tokens still funnel through syncTokens' own init branch,
+//      and a farmed account only ever gets FIRST_CLAIM_BONUS_AMOUNT (100
+//      tokens) via this path, never the 320-token signup grant (which
+//      stays gated by MAX_TOKEN_GRANTS_PER_IP_PER_DAY, default 5,
+//      untouched by this change) — meaningfully lower stakes than the
+//      init cap this bucket sits downstream of, matching this file's own
+//      FIRST_CLAIM_BONUS_AMOUNT doc comment's existing reasoning for why
+//      the bonus itself was never bound BY the general claim-ip bucket in
+//      the first place.
+//   3. The per-EMAIL twin ("claim-email-first") still bounds retry-
+//      hammering any ONE email's first-claim race, same shape as the
+//      general claim-email bucket already does for repeats.
 var entitlements = require('./lib/entitlements');
 var rateLimit = require('./lib/rate-limit');
 
 var MAX_CLAIMS_PER_IP_PER_DAY_DEFAULT = 20;
+var MAX_FIRST_CLAIMS_PER_IP_PER_DAY_DEFAULT = 50;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -88,12 +133,26 @@ exports.handler = async function (event) {
   var maxPerDay = parseInt(process.env.MAX_CLAIMS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = MAX_CLAIMS_PER_IP_PER_DAY_DEFAULT;
 
+  var maxFirstClaimsPerDay = parseInt(process.env.MAX_FIRST_CLAIMS_PER_IP_PER_DAY, 10);
+  if (!maxFirstClaimsPerDay || maxFirstClaimsPerDay <= 0) maxFirstClaimsPerDay = MAX_FIRST_CLAIMS_PER_IP_PER_DAY_DEFAULT;
+
+  // See this file's header comment ("FIRST-EVER-CLAIM EXEMPTION") for the
+  // full reasoning. A stale read here (this record's real claim history
+  // hasn't propagated to THIS read yet) can only ever misroute a request
+  // to the wrong bucket, never change what claimDailyTokens itself
+  // actually grants — that decision is remade fresh, off its own read,
+  // independently of this.
+  var isFirstEverClaim = entitlements.isFirstEverClaimEligible(await entitlements.getEntitlement(event, email));
+  var ipScope = isFirstEverClaim ? 'claim-ip-first' : 'claim-ip';
+  var emailScope = isFirstEverClaim ? 'claim-email-first' : 'claim-email';
+  var scopedLimit = isFirstEverClaim ? maxFirstClaimsPerDay : maxPerDay;
+
   var ip = rateLimit.clientIp(event);
-  var ipLimit = await rateLimit.checkAndIncrement(event, 'claim-ip', ip, maxPerDay);
+  var ipLimit = await rateLimit.checkAndIncrement(event, ipScope, ip, scopedLimit);
   if (!ipLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E4: rate_limited: too many claim attempts from this network today, try again tomorrow' }) };
   }
-  var emailLimit = await rateLimit.checkAndIncrement(event, 'claim-email', email, maxPerDay);
+  var emailLimit = await rateLimit.checkAndIncrement(event, emailScope, email, scopedLimit);
   if (!emailLimit.allowed) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E4: rate_limited: too many claim attempts on this account today, try again tomorrow' }) };
   }
