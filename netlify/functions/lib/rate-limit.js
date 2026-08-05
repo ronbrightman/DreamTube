@@ -67,4 +67,26 @@ async function checkAndIncrement(event, scope, identifier, limit) {
   return { allowed: true, count: count + 1, limit: limit };
 }
 
-module.exports = { clientIp, checkAndIncrement };
+/**
+ * Reads a raw JSON marker from this lib's Blobs store (no date component,
+ * no counting — the caller owns the key's full shape and lifetime). Added
+ * for entitlements.js's once-ever token-init grant marker (2026-08-05
+ * signup-dead-end fix, tracker item for-product-p1-urgent-fresh-signup-
+ * can-d-qhrrqy); kept here so every cross-request coordination key this
+ * codebase uses lives in the same "dreamtube-rate-limits" store rather
+ * than a new one per feature.
+ */
+async function readMarker(event, key) {
+  connectLambda(event);
+  var store = getStore({ name: STORE_NAME });
+  return (await store.get(key, { type: 'json' })) || null;
+}
+
+/** Writes a raw JSON marker — see readMarker above. */
+async function writeMarker(event, key, value) {
+  connectLambda(event);
+  var store = getStore({ name: STORE_NAME });
+  await store.setJSON(key, value);
+}
+
+module.exports = { clientIp, checkAndIncrement, readMarker, writeMarker };

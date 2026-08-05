@@ -508,6 +508,38 @@ async function syncTokens(event, email, opts) {
   if (!record || !record.tokens) {
     // First-ever token read for this email — see the per-IP cap doc block
     // above for why this specific branch is where that limit is enforced.
+    //
+    // REPLAY GUARD (2026-08-05, founder-hit signup dead-end, tracker item
+    // for-product-p1-urgent-fresh-signup-can-d-qhrrqy). The old "ACCEPTED
+    // LAZY-SEED RACE" comment here reasoned that a duplicate init is
+    // value-idempotent — which held only while duplicates were rare and
+    // the cap stayed distant. Production proved otherwise: a single
+    // signup's first minute fires MANY token reads (home header, claim
+    // sheet, generation gate), and with Blobs' lack of read-your-write,
+    // each one can see "no record yet" and re-run this branch. Each
+    // replay burned one MAX_TOKEN_GRANTS_PER_IP_PER_DAY slot, and once
+    // the cap tripped mid-burst, a capped {balance:0} write CLOBBERED the
+    // already-granted 320 (and could clobber a landed daily claim too) —
+    // one signup, zero tokens, dead end. Two changes close both holes:
+    //   1. A once-ever per-email grant marker (in the rate-limits store):
+    //      written only when a grant is actually made; any later read
+    //      that finds the marker while the entitlement write is still
+    //      invisible ECHOES the granted value and writes NOTHING — no
+    //      extra IP-slot burn, no rewrite.
+    //   2. The capped branch no longer persists {balance:0} at all — the
+    //      doc block above always promised "not a permanent block", and
+    //      persisting made it both permanent and clobber-capable. A
+    //      capped email simply retries init on a later read and gets its
+    //      grant once the cap clears (tomorrow, or a different IP).
+    // A stale read of the MARKER itself can still let one extra init
+    // through (bounded, value-identical, one extra slot) — but since the
+    // capped branch writes nothing, a 0 can never overwrite a grant.
+    var initMarkerKey = 'token-init-grant:' + key;
+    var initMarker = await rateLimit.readMarker(event, initMarkerKey);
+    if (initMarker && typeof initMarker.balance === 'number') {
+      return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    }
+
     var maxInitPerIp = parseInt(process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY, 10);
     if (!maxInitPerIp || maxInitPerIp <= 0) maxInitPerIp = MAX_TOKEN_GRANTS_PER_IP_PER_DAY_DEFAULT;
     var ip = rateLimit.clientIp(event);
@@ -516,6 +548,12 @@ async function syncTokens(event, email, opts) {
       ? { allowed: true }
       : await rateLimit.checkAndIncrement(event, 'token-init', ip, maxInitPerIp);
 
+    if (!ipCheck.allowed) {
+      // Capped for today: NO write of any kind (see REPLAY GUARD above) —
+      // return a throwaway zero and let a later read retry the init.
+      return Object.assign({ balance: 0 }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: false });
+    }
+
     // No lastClaimAt stamped here — a brand-new record deliberately has
     // none, which is exactly the "claimable immediately" state (see
     // claimDailyTokens/getTokenStatus, both of which treat a missing
@@ -523,25 +561,8 @@ async function syncTokens(event, email, opts) {
     // that predates this feature and never got a tokens.lastClaimAt at
     // all — same fresh-read path, same immediately-claimable outcome, per
     // the founder's own explicit confirmation.
-    var fresh = ipCheck.allowed
-      ? { balance: INITIAL_GRANT }
-      : { balance: 0 }; // capped for today — see doc block above, not a permanent block
-
-    // ACCEPTED LAZY-SEED RACE (tracker item decide-blobs-lazy-seed-race):
-    // this write is plain/unguarded, and the installed @netlify/blobs SDK
-    // has no atomic/conditional-write primitive to make "materialize a
-    // default on first read" race-proof. Two genuinely concurrent
-    // first-ever reads for the SAME email (two tabs, a signup racing an
-    // immediate generation) could each see `!record.tokens`, each compute
-    // an IDENTICAL `fresh` value, and each write — a redundant write, not
-    // a corrupting one, since both writes agree on the value. The one real
-    // side effect is `checkAndIncrement('token-init', ...)` above
-    // potentially being counted twice for what's effectively one grant.
-    // Same class of one-time, low-frequency bootstrap race as
-    // tracker-store.js's own getItems() seed branch — documented rather
-    // than fixed with a separate "seeded" marker key, per that tracker
-    // item's own cheaper option, given the low real-world likelihood
-    // (single email, narrow window) and non-corrupting outcome here.
+    var fresh = { balance: INITIAL_GRANT };
+    await rateLimit.writeMarker(event, initMarkerKey, { balance: fresh.balance, at: Date.now() });
     await setEntitlement(event, key, { tokens: fresh });
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
   }
