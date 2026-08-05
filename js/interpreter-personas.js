@@ -76,11 +76,13 @@
 //   pointed at different content. See that file's `startIntroPhase`/
 //   `beginAudioPlayback` for the shared implementation.
 //
-// All three are `null` for every persona except `talmudic` (The Sage) on
-// this branch — scope item 4 of the build task is "sage persona first,"
-// and the real per-persona greeting/casting work for the other four is
-// real, separate creative effort (voice casting is a founder-ears
-// decision, spec §12 item 2) that hasn't happened yet.
+// INTERIM (founder call 2026-08-04, Dream Meaning makeover): ALL five
+// personas currently carry The Sage's `voiceId`/`introClipUrl`/
+// `introVoiceUrl` so the full speaking experience works everywhere today.
+// The real per-persona greeting/casting work for the other four is real,
+// separate creative effort (voice casting is a founder-ears decision,
+// spec §12 item 2) that hasn't happened yet — each persona's three fields
+// get replaced with its own assets as castings are approved.
 // `js/interpret-experience.js` gates BOTH the intro playback and the
 // reading's TTS/captions on `voiceId` (and, for the intro specifically,
 // `introClipUrl`+`introVoiceUrl` together) being set for the active
@@ -123,9 +125,13 @@
       method: 'Your interpretive method reads the dream as a message from the dreamer\'s deeper self, often compensating for something one-sided or unacknowledged in their conscious, waking attitude. Look for archetypal figures, symbols, and the emotional charge of the dream, and connect them to what might be seeking balance or integration in the dreamer\'s life right now.',
       questionFocus: 'Ask about the dreamer\'s current life situation and what feels unbalanced or out of alignment for them right now — the compensation your method looks for. Questions should invite a short, honest answer about waking life, not more dream detail.',
       maxQuestions: 3,
-      voiceId: null,
-      introClipUrl: null,
-      introVoiceUrl: null
+      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
+      // persona borrows The Sage's voice + intro until its own casting is
+      // approved (voice casting stays a founder-ears decision, spec §12
+      // item 2). Replace all three with this persona's own assets then.
+      voiceId: 'am_onyx',
+      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
+      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
     {
       key: 'freud',
@@ -141,9 +147,13 @@
       method: 'Your interpretive method treats the dream as a disguised wish or unresolved tension finding expression through free association. Focus on what the dream\'s images might be standing in for, and what desire, fear, or unfinished business they could be pointing to — always offered as a possibility to sit with, never a verdict.',
       questionFocus: 'Ask for the dreamer\'s first, unfiltered association to one or two of the dream\'s key elements — "what\'s the very first thing that comes to mind when you think of [element]?" — the free-association move your method is built on. Never ask about the dream\'s meaning directly; ask what it brings to mind.',
       maxQuestions: 2,
-      voiceId: null,
-      introClipUrl: null,
-      introVoiceUrl: null
+      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
+      // persona borrows The Sage's voice + intro until its own casting is
+      // approved (voice casting stays a founder-ears decision, spec §12
+      // item 2). Replace all three with this persona's own assets then.
+      voiceId: 'am_onyx',
+      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
+      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
     {
       key: 'gestalt',
@@ -167,9 +177,13 @@
       method: 'Your interpretive method treats every person, object, and place in the dream as a disowned or unacknowledged part of the dreamer themselves. Rather than explaining symbols, you invite the dreamer to inhabit one element of their own dream and speak as it, then reflect what that voice reveals about a part of them that wants attention.',
       questionFocus: 'Ask the dreamer to pick one element of the dream — a person, object, or place — and briefly speak AS it, in first person ("I am the ___, and I..."). This is the core Gestalt move your method uses; keep the invitation short and concrete.',
       maxQuestions: 2,
-      voiceId: null,
-      introClipUrl: null,
-      introVoiceUrl: null
+      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
+      // persona borrows The Sage's voice + intro until its own casting is
+      // approved (voice casting stays a founder-ears decision, spec §12
+      // item 2). Replace all three with this persona's own assets then.
+      voiceId: 'am_onyx',
+      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
+      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
     {
       key: 'scientist',
@@ -185,9 +199,13 @@
       method: 'Your interpretive method draws on the continuity hypothesis (dreams often echo waking-life concerns, emotions, and unresolved problems the mind is processing) and related ideas like threat simulation and emotional memory consolidation. Connect the dream\'s content to plausible waking-life stress or preoccupation, framed as "some research suggests" or "one idea is," never as settled fact. Cite general ideas by name, never a fabricated study, journal, or statistic.',
       questionFocus: 'Ask about the dreamer\'s current waking concerns or stressors — what has been on their mind, or what they\'ve been dealing with lately — the continuity-hypothesis link your method looks for.',
       maxQuestions: 3,
-      voiceId: null,
-      introClipUrl: null,
-      introVoiceUrl: null
+      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
+      // persona borrows The Sage's voice + intro until its own casting is
+      // approved (voice casting stays a founder-ears decision, spec §12
+      // item 2). Replace all three with this persona's own assets then.
+      voiceId: 'am_onyx',
+      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
+      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
     {
       key: 'talmudic',

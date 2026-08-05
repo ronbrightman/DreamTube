@@ -17,6 +17,7 @@ mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
 var generateInterpAudio = require('../netlify/functions/generate-interp-audio');
+var InterpreterPersonas = require('../js/interpreter-personas');
 var handler = generateInterpAudio.handler;
 
 var realFetch = global.fetch;
@@ -86,12 +87,23 @@ test('rejects an unknown personaKey with E505', async function () {
   assert.match(JSON.parse(res.body).error, /^E505:/);
 });
 
-test('rejects a persona with no voiceId configured yet with E505 (same "tolerate a missing asset" gate as portraits)', async function () {
-  // jung has no voiceId on this branch (only talmudic/The Sage ships voice
-  // this wave — scope item 4, "sage persona first").
-  var res = await handler(genEvent({ body: { personaKey: 'jung' } }));
-  assert.equal(res.statusCode, 400);
-  assert.match(JSON.parse(res.body).error, /^E505:/);
+test('rejects a persona with no voiceId configured with E505 (same "tolerate a missing asset" gate as portraits)', async function () {
+  // Every real persona currently carries the Sage's interim voice (founder
+  // call 2026-08-04, Dream Meaning makeover), so exercise the no-voiceId
+  // branch by stubbing the persona lookup — the gate itself must survive
+  // for the day a voiceless persona ships again.
+  var realGet = InterpreterPersonas.get;
+  InterpreterPersonas.get = function (key) {
+    if (key === 'voiceless-test-persona') return { key: key, voiceId: null };
+    return realGet(key);
+  };
+  try {
+    var res = await handler(genEvent({ body: { personaKey: 'voiceless-test-persona' } }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E505:/);
+  } finally {
+    InterpreterPersonas.get = realGet;
+  }
 });
 
 test('sync-first: a real one-round-trip kokoro+whisper success returns done:true with word-level captions, hitting fal.run not the queue', async function () {
@@ -215,7 +227,7 @@ test('mock mode still runs the rate-limit guardrail (never a way to bypass it)',
 
 test('mock mode still runs persona/voiceId validation (never a way to bypass it)', async function () {
   process.env.GENERATION_MOCK_MODE = 'true';
-  var res = await handler(genEvent({ body: { personaKey: 'jung' } }));
+  var res = await handler(genEvent({ body: { personaKey: 'not-a-real-persona' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E505:/);
 });
