@@ -103,6 +103,23 @@
 // lift off a real "this account was actually emailed" signal, not a mere
 // "eligibility was checked" one. distinct_id is the account's raw
 // username, matching posthog-capture.js's own documented discipline.
+//
+// PROVIDER-SIDE IDEMPOTENCY (added 2026-08-05, tracker item
+// for-product-triple-first-dream-email-fou-2pyopo, ask #1): the founder's
+// own fresh signup got THREE of this exact email ~2 minutes apart (a
+// second account got 2) despite firstDreamEmailStore.markSentOnce's CAS
+// guard already being the strongest dedup primitive this codebase has —
+// diagnosed as the CAS decision itself being made against a stale Blobs
+// replica during a real consistency-degradation event. The actual Resend
+// fetch() call below now also carries a stable, deterministic
+// `Idempotency-Key` header (Resend's own dedup primitive, enforced
+// provider-side, independent of anything our own storage layer believes)
+// — see that call site's own comment for the exact key derivation and its
+// justification. This is belt-and-suspenders ON TOP of markSentOnce, not a
+// replacement for it — the CAS guard is still what stops the overwhelming
+// majority of duplicate attempts (and the ONLY thing that saves the Resend
+// API request itself), the Idempotency-Key is what survives the guard
+// lying.
 
 var firstDreamEmailStore = require('./first-dream-email-store');
 var posthogCapture = require('./posthog-capture');
@@ -347,10 +364,75 @@ async function sendIfEligible(event, opts) {
     unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, email)
   });
 
+  // PROVIDER-SIDE IDEMPOTENCY (tracker item
+  // for-product-triple-first-dream-email-fou-2pyopo, ask #1 only -- see
+  // that item's own comments for the other 3 asks, deliberately not
+  // touched here): on 2026-08-05 the founder's own signup got THREE of
+  // this exact email ~2 minutes apart, and a second account got 2 --
+  // despite firstDreamEmailStore.markSentOnce's CAS guard above already
+  // being the strongest dedup primitive this codebase has (a real
+  // conditional write, no read/verify race window). The tracker item's
+  // own diagnosis: the CAS decision itself was made against a stale
+  // Blobs replica during a real consistency-degradation event, so a
+  // storage-side dedup marker alone is not sufficient during degradation
+  // -- this send needs a dedup mechanism the PROVIDER enforces
+  // independently of our own storage layer, as belt-and-suspenders.
+  //
+  // Resend's API supports a request-level `Idempotency-Key` header on
+  // POST /emails (confirmed 2026-08-05 against Resend's own current docs
+  // -- resend.com/docs/api-reference/emails/send-email and
+  // resend.com/docs/dashboard/emails/idempotency-keys -- via this
+  // sandbox's live web access; NOT verified against a real Resend
+  // account/dashboard, since there is no real RESEND_API_KEY here. Per
+  // those docs: keys are honored for 24h, up to 256 chars, and a key
+  // reused with a DIFFERENT request payload gets rejected with 409
+  // invalid_idempotent_request rather than sent -- which the `!res.ok`
+  // branch below already treats as a safe non-send failure and releases
+  // our own guard for a legitimate retry, so that edge case degrades
+  // safely rather than double-sending.
+  //
+  // SECOND UNVERIFIED EDGE CASE (review round 1): since the key is a
+  // stable function of username alone, a genuine Resend-side failure (a
+  // real 5xx FROM Resend, not just a network error that never reaches
+  // them) recomputes the IDENTICAL key on any later legitimate retry
+  // after releaseFailedSend runs. Resend's own docs don't explicitly
+  // state whether a failed/errored request's key gets cached against
+  // future retries -- the phrasing suggests only successful sends do,
+  // which would mean this is a non-issue in practice, but that's an
+  // inference, not a documented guarantee. Worst case if it DOES cache
+  // failures too: a legitimate retry gets blocked/delayed, never a
+  // duplicate send -- consistent with this feature's fail-toward-
+  // no-double-send priority. A future engineer with real Resend access
+  // should spot-check both this and the 409-different-payload case above
+  // once real traffic exercises either.)
+  //
+  // KEY DERIVATION: firstDreamEmailStore's own normalizeUsername(username)
+  // -- the EXACT SAME key markSentOnce's CAS write above already claims
+  // against, not a new identity concept. This codebase already treats
+  // normalized username as the canonical identity of "this account's
+  // one-time-ever first-dream email" (see first-dream-email-store.js's
+  // own header comment: the flag is per-ACCOUNT, not per-dream, so a
+  // second call for a different dreamId is still logically the same
+  // send). Reusing it here means both dedup layers agree on what "the
+  // same send" means by construction. Deliberately NOT guard.claimId --
+  // markSentOnce mints that fresh via crypto.randomUUID() on every call,
+  // so it's the opposite of stable and would defeat the entire point (two
+  // duplicate attempts for the same event must compute the SAME key so
+  // Resend itself collapses them). Namespaced with a 'first-dream-email:'
+  // prefix per Resend's own documented convention (event-type + entity-id,
+  // e.g. their own 'order-sent-12345678' example) since Idempotency-Key is
+  // a flat namespace across this whole Resend account, not scoped to one
+  // template.
+  var idempotencyKey = 'first-dream-email:' + firstDreamEmailStore.normalizeUsername(username);
+
   try {
     var res = await fetch(RESEND_API_BASE, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resendKey },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + resendKey,
+        'Idempotency-Key': idempotencyKey
+      },
       body: JSON.stringify({
         from: FROM_ADDRESS,
         to: [email],
