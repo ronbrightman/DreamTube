@@ -389,9 +389,22 @@ async function sendIfEligible(event, opts) {
   // invalid_idempotent_request rather than sent -- which the `!res.ok`
   // branch below already treats as a safe non-send failure and releases
   // our own guard for a legitimate retry, so that edge case degrades
-  // safely rather than double-sending. A future engineer with real
-  // Resend access should spot-check this against Resend's dashboard once
-  // real traffic exercises it.)
+  // safely rather than double-sending.
+  //
+  // SECOND UNVERIFIED EDGE CASE (review round 1): since the key is a
+  // stable function of username alone, a genuine Resend-side failure (a
+  // real 5xx FROM Resend, not just a network error that never reaches
+  // them) recomputes the IDENTICAL key on any later legitimate retry
+  // after releaseFailedSend runs. Resend's own docs don't explicitly
+  // state whether a failed/errored request's key gets cached against
+  // future retries -- the phrasing suggests only successful sends do,
+  // which would mean this is a non-issue in practice, but that's an
+  // inference, not a documented guarantee. Worst case if it DOES cache
+  // failures too: a legitimate retry gets blocked/delayed, never a
+  // duplicate send -- consistent with this feature's fail-toward-
+  // no-double-send priority. A future engineer with real Resend access
+  // should spot-check both this and the 409-different-payload case above
+  // once real traffic exercises either.)
   //
   // KEY DERIVATION: firstDreamEmailStore's own normalizeUsername(username)
   // -- the EXACT SAME key markSentOnce's CAS write above already claims
