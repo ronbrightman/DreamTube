@@ -21,7 +21,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 11:49 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 12:05 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
@@ -56,6 +56,10 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 <h2 class="prod">🟡 In flight — PRODUCT</h2>
+
+<details class="p0"><summary>Fresh signup dead-ends at 0 tokens — root-caused <span class="tag p0">your repro 11:55</span></summary><div class="body">Your incognito account hit the anti-abuse cap: after 5 new accounts in a day from one IP, the 6th gets seeded a <b>permanent 0 balance</b> — and the claim that should rescue it failed too (its own rate bucket + a storage-verification bug that reports errors on claims that actually landed). Real users on fresh IPs are fine (verified with production probes: new accounts get 320 and can claim) — but shared mobile IPs make this a real pre-scale risk, and the dead-end UX is unacceptable. Routed to Product urgent with a 5-part fix list; closes when your fresh-incognito repro reaches a playable first video.</div></details>
+
+<details><summary>Model cost per video: real number is ~$0.40-0.52 — tile inflated by a whisper leak <span class="tag today">your catch 12:05</span></summary><div class="body">Actual video generation (veo lite) is within your half-dollar target. The >$1 tile lumps in a <b>whisper runaway</b> (~5,000 alignment units/day for ~a dozen readings — looks like the caption-alignment job resubmits on every status poll; ~$4/day leak, routed to Product) plus voice-engine dev testing from the debugging days. The ElevenLabs switch in flight eliminates whisper entirely.</div></details>
 
 <details class="p0"><summary>Likes vanish from videos — confirmed, root-caused <span class="tag today">your catch 11:40</span></summary><div class="body">You were right. Three documented cases (including your like this morning): when two likes land seconds apart, the second one's save overwrites the first because the like counter rewrites the whole shared feed from a possibly-stale read. Routed to Product with the full diagnosis + fix direction; closes when the fix merges AND the 3 lost likes are restored.</div></details>
 
