@@ -21,7 +21,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 12:27 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 13:00 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
@@ -58,6 +58,8 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 <h2 class="prod">🟡 In flight — PRODUCT</h2>
 
 <details class="p0"><summary>Fresh signup dead-ends at 0 tokens — CORE FIX LIVE (Manager took it over) <span class="tag p0">your repro 11:55 · fixed 12:45</span></summary><div class="body">You were right — it wasn't 5 signups. ONE signup burned all 5 anti-abuse slots by itself: the first minute fires many token reads, stale storage reads made each re-run the grant step, and once the cap tripped, a 0-balance write erased the 320 already granted. 5-6 <b>real users</b> since Aug 1 hit the same wall. <b>Fixed and deployed</b> (verified with production probes): replays can't burn slots or overwrite grants anymore, and a capped account is no longer permanently zeroed. Still with Product: an intermittent claim-erasure cousin of the same storage race (retry works; the systemic conditional-write migration is now justified), honest error copy, and topping up the affected users + your test account (send me the email you used for <b>rrrrrr</b> and I'll restore it).</div></details>
+
+<details class="p0"><summary>Triple first-dream email — dedup defeated by the same storage degradation <span class="tag p0">your report 14:05</span></summary><div class="body">Your 3 emails (plus one other account's 2) both happened today only, in short self-sealing windows — even the atomic dedup write was decided against stale storage. This makes <b>five</b> storage-consistency incidents in 24h, treated as one event. Routed to Product: provider-side idempotency on email sends (dedupe at Resend, immune to our storage), a check of the failure-release path, and a staleness canary so we detect degradation before you do. Your test account's eaten 320 tokens are <b>restored</b> (balance 320).</div></details>
 
 <details><summary>Wizard signup wall missing Facebook login — parity gap, not a regression <span class="tag today">your catch 13:30</span></summary><div class="body">Facebook login + passwordless shipped only on the <b>ad-funnel</b> signup screen; the app's own wizard (the path your fresh signup took today) still serves the old username+password wall. Routed to Product: bring the wizard wall to parity (passwordless-first + Facebook + divider, same analytics), reusing the funnel implementation.</div></details>
 
