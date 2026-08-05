@@ -214,15 +214,62 @@ test('MAX_FIRST_CLAIMS_PER_IP_PER_DAY env override is honored and still caps fir
   assert.match(JSON.parse(res3.body).error, /^E4:/);
 });
 
-test('unset/invalid MAX_FIRST_CLAIMS_PER_IP_PER_DAY falls back to a sane (higher, but still finite) default', async function () {
+test('unset/invalid MAX_FIRST_CLAIMS_PER_IP_PER_DAY falls back to a sane, finite default', async function () {
   delete process.env.MAX_FIRST_CLAIMS_PER_IP_PER_DAY;
   var ip = nextIp();
   var results = [];
-  for (var i = 0; i < 55; i++) {
+  for (var i = 0; i < 25; i++) {
     var res = await claimHandler(fakeEvent({ method: 'POST', ip: ip, body: { email: 'firstdefaultburst' + i + '@example.com' } }));
     results.push(res.statusCode);
   }
-  assert.ok(results.indexOf(429) !== -1, 'the default first-claim cap must eventually kick in within 55 rapid brand-new-email attempts from one IP -- it is generous, not unlimited');
+  assert.ok(results.indexOf(429) !== -1, 'the default first-claim cap must eventually kick in within 25 rapid brand-new-email attempts from one IP -- it is isolated from repeat-claim traffic, not unlimited');
+});
+
+// ----- CEILING REGRESSION (2026-08-05, round 3 -- review finding on round
+// 2). Round 2 originally shipped the dedicated first-claim bucket's default
+// ABOVE the general claim-ip bucket's default (50 vs 20), reasoning it was
+// "already bounded by the init cap" -- shown by review to be false (see
+// claim-daily-tokens.js's own header comment and entitlements.js's
+// FIRST_CLAIM_BONUS_AMOUNT doc comment for the corrected reasoning). The
+// fix keeps the isolation (a first-claim burst no longer shares a bucket
+// with repeat-claim traffic) while guaranteeing the dedicated bucket's
+// ceiling never exceeds the general one -- i.e. this branch's net effect on
+// the worst-case exploitable tokens/IP/day through this endpoint is <= 0,
+// never a real increase.
+
+test('the default first-claim bucket ceiling is never higher than the default general claim-ip bucket ceiling (isolation, not a raised ceiling)', async function () {
+  // Empirically probes each bucket's real effective ceiling by exhausting
+  // it through the actual handler, rather than hardcoding two literals
+  // here that could silently drift out of sync with the real source
+  // defaults in claim-daily-tokens.js.
+  delete process.env.MAX_CLAIMS_PER_IP_PER_DAY;
+  delete process.env.MAX_FIRST_CLAIMS_PER_IP_PER_DAY;
+
+  var ip = nextIp();
+  // Exhaust the GENERAL bucket first, via genuine repeats (never touches
+  // the first-claim bucket -- see seedAlreadyClaimedOnce's own doc
+  // comment), to find its real effective ceiling empirically.
+  var generalCap = 0;
+  for (var i = 0; i < 200; i++) {
+    var email = 'generalcap-probe@example.com';
+    if (i === 0) await seedAlreadyClaimedOnce(ip, email);
+    var res = await claimHandler(fakeEvent({ method: 'POST', ip: ip, body: { email: email } }));
+    if (res.statusCode === 429) { generalCap = i; break; }
+  }
+  assert.ok(generalCap > 0, 'sanity: the general bucket must have a real, finite default ceiling');
+
+  // Now do the same for the FIRST-claim bucket on a fresh IP, via genuine
+  // first-ever claims (a fresh email every time, so every attempt is
+  // routed to claim-ip-first, never claim-ip).
+  var ip2 = nextIp();
+  var firstCap = 0;
+  for (var j = 0; j < 200; j++) {
+    var res2 = await claimHandler(fakeEvent({ method: 'POST', ip: ip2, body: { email: 'firstcap-probe-' + j + '@example.com' } }));
+    if (res2.statusCode === 429) { firstCap = j; break; }
+  }
+  assert.ok(firstCap > 0, 'sanity: the first-claim bucket must have a real, finite default ceiling');
+
+  assert.ok(firstCap <= generalCap, 'the dedicated first-claim bucket\'s default ceiling (' + firstCap + ') must never exceed the general claim-ip bucket\'s default ceiling (' + generalCap + ') -- isolating first-claim traffic must not raise the worst-case exploitable ceiling on this endpoint');
 });
 
 test('a SECOND claim attempt for the same email is never treated as first-ever again, even moments after landing (exempts exactly one claim per account, not the account forever)', async function () {

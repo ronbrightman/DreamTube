@@ -361,22 +361,36 @@ var DAILY_CLAIM_AMOUNT = 20;
 // class documented in tracker item
 // recurring-bug-class-hardcoded-daily-gran-h6swgy).
 //
-// Abuse exposure: the one-time +80 delta (100 vs the usual 20) is bounded
-// by the SAME per-IP daily cap that already guards the 320-token signup
-// grant (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" rate-limit
-// bucket, see below) — a genuinely first-ever claim can only ever happen
-// for an email whose tokens were never initialized before (no
-// `tokens.lastClaimAt` AND no `firstClaimAt`, see the `isFirstEverClaim`
-// check in claimDailyTokens), and claimDailyTokens always calls syncTokens
-// first (see its own doc comment), which is exactly the choke point that
-// cap already enforces on brand-new emails. So farming the bonus requires
-// farming brand-new accounts in the first place — already capped at
-// MAX_TOKEN_GRANTS_PER_IP_PER_DAY (default 5) per IP per day, same as
-// today's INITIAL_GRANT exposure — not a new, wider abuse surface.
-// claim-daily-tokens.js's OWN "claim-ip"/"claim-email" rate-limit bucket
-// (20/day default) is a separate, looser guard against retry-hammering a
-// single already-known email; it is not what bounds this specific
-// exposure, the token-init cap is.
+// Abuse exposure (CORRECTED 2026-08-05, round 3 of tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy — a prior version of
+// this comment claimed the one-time +80 delta was bounded by the SAME
+// per-IP cap that guards the 320-token signup grant
+// (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" bucket below). A
+// round-2 review caught that this does NOT hold against the actual code:
+// syncTokens' capped-init branch returns a THROWAWAY `{balance:0}` (no
+// throw, no block, see that branch below) once the per-IP init cap trips
+// for a brand-new email — the account is still created normally, and
+// claimDailyTokens never checks whether ITS OWN init grant actually
+// succeeded before crediting FIRST_CLAIM_BONUS_AMOUNT. So a brand-new
+// email whose IP already exceeded MAX_TOKEN_GRANTS_PER_IP_PER_DAY today
+// still gets exactly 100 tokens from a direct claim-daily-tokens.js call,
+// entirely independent of whether the 320-token init grant landed. The
+// token-init cap does NOT bound this vector.
+//
+// What actually bounds it today: ONLY claim-daily-tokens.js's own per-IP/
+// per-email rate limit (its "claim-ip-first"/"claim-email-first" buckets
+// for a first-ever claim specifically, since 2026-08-05 round 2 — see
+// that file's own header comment for the full reasoning and why that
+// bucket's ceiling was deliberately kept AT, not above, the general
+// bucket's default when this was caught). Farming this path requires
+// nothing more than disposable emails; each one is worth
+// FIRST_CLAIM_BONUS_AMOUNT (100 tokens, not the full 320-token
+// INITIAL_GRANT) times whatever claim-daily-tokens.js's own per-IP bucket
+// allows through in a day. Closing this at the source (gating the bonus
+// credit on the init grant having actually succeeded, rather than merely
+// capping the rate-limit ceiling downstream) is a real, still-open
+// follow-up, not something this comment or the round-3 ceiling fix
+// claims to have done.
 var FIRST_CLAIM_BONUS_AMOUNT = 100;
 
 // Per-IP daily cap on brand-new-email token initializations — see
@@ -537,6 +551,39 @@ async function syncTokens(event, email, opts) {
     var initMarkerKey = 'token-init-grant:' + key;
     var initMarker = await rateLimit.readMarker(event, initMarkerKey);
     if (initMarker && typeof initMarker.balance === 'number') {
+      // MARKER-ECHO STALENESS NARROWING (2026-08-05, round 3 — review
+      // finding on round 2's REPLAY GUARD above). Reaching this branch means
+      // the marker read (a separate store) sees a grant already happened,
+      // but the entitlement read at the TOP of this call (`record`, above)
+      // still didn't show `tokens` -- exactly the shape a straggling
+      // concurrent reader gets while propagation is still catching up.
+      // Blindly echoing the marker's frozen balance (always INITIAL_GRANT,
+      // written once at grant time, never updated afterward) is wrong in
+      // exactly the race this file's own claim-vs-init guard targets: if a
+      // CLAIM's separate credit step (claimDailyTokens' own guarded write)
+      // landed on top of that init in the meantime, the real balance is now
+      // higher than the marker remembers, and a straggler would hand back a
+      // stale, understated number -- read-only, so it self-corrects on the
+      // caller's next read, but still wrong for that one response.
+      //
+      // Re-reading the entitlement record here -- a beat of real wall-clock
+      // time later, after the round-trip to the marker store -- gives
+      // Blobs' eventual consistency another chance to have caught up. If it
+      // has, trust the live record (real balance, whatever landed since)
+      // over the frozen marker. This NARROWS the window (an already-rare
+      // race made rarer) but does not fully close it: a still-lagging
+      // second read here falls through to the marker's frozen value exactly
+      // as before, which can still be stale in a tight enough race. Not
+      // worth eliminating outright here -- doing so would mean blocking on
+      // a live value with no bound on how long that could take, which is a
+      // worse tradeoff than a rare, self-correcting, read-only stale
+      // response for a narrow race window. Same "bounded, not eliminated"
+      // posture as this function's own "a stale MARKER read lets one extra
+      // init through" note a few lines below.
+      var freshRead = await getEntitlement(event, key);
+      if (freshRead && freshRead.tokens) {
+        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt, justSeeded: false });
+      }
       return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
     }
 
