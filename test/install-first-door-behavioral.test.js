@@ -386,7 +386,23 @@ test('create.html Step 2, iPhone on Chrome (non-Safari): pointed at Safari inste
 
     // Always-available fallback -- never a single unverifiable button and
     // nothing else.
+    //
+    // The confirmation is written inside wireIOSOpenInSafari's
+    // `navigator.clipboard.writeText(...).then(...)` callback, and that
+    // promise is NOT resolved by the time page.click() returns -- Chromium
+    // settles a clipboard write over a browser-process round trip
+    // (measured at ~16ms here), while page.click() resolves as soon as the
+    // event is dispatched. Reading the note straight after the click
+    // therefore raced the update and read back the pre-click instructional
+    // copy instead. Wait on the condition, matching the same
+    // click-then-waitForSelector shape test/postpack-page.test.js's own
+    // "copy button shows a Copied! confirmation" test already uses for the
+    // identical async-clipboard pattern.
     await page.click('#install-nudge-copy-for-safari');
+    await page.waitForFunction(function () {
+      var note = document.getElementById('install-nudge-safari-fallback');
+      return !!note && /Copied/i.test(note.textContent);
+    }, null, { timeout: 5000 });
     var noteText = await page.textContent('#install-nudge-safari-fallback');
     assert.match(noteText, /Copied/i);
     var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
