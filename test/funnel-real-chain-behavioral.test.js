@@ -281,6 +281,15 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must have fired exactly once, for the real funnel pendingId');
     assert.equal(claimCalls[0].email, FUNNEL_EMAIL);
+    // Same DOM-gate-vs-node-side-observation race this file's own markCompletions
+    // fix below addresses (review finding on this same branch, tracker item
+    // test-funnel-real-chain-behavioral-test-j-nmhqx0): the #d0-video.ready gate
+    // above settles off onGenerationSettled's synchronous refreshHomeState() call,
+    // several statements before DreamStore.markGenerationJustCompleted() actually
+    // fires the mark-generation-completed.js request markCalls observes. Settle on
+    // markCalls itself rather than relying on the unrelated claimCalls settle above
+    // (already satisfied minutes earlier in test-time) to happen to cover it too.
+    await settle(function () { return markCalls.length >= 1; });
     assert.ok(markCalls.length >= 1, 'home.html must have called the REAL mark-generation-completed.js at least once');
     assert.equal(markCalls[0].operationName.indexOf('mock:'), 0, 'the operationName reaching mark-generation-completed must be the SAME funnel operationName minted by start-pending-generation.js');
 
