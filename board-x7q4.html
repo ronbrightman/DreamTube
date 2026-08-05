@@ -21,7 +21,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 13:00 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-05 13:27 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
@@ -61,7 +61,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <details class="p0"><summary>Triple first-dream email — dedup defeated by the same storage degradation <span class="tag p0">your report 14:05</span></summary><div class="body">Your 3 emails (plus one other account's 2) both happened today only, in short self-sealing windows — even the atomic dedup write was decided against stale storage. This makes <b>five</b> storage-consistency incidents in 24h, treated as one event. Routed to Product: provider-side idempotency on email sends (dedupe at Resend, immune to our storage), a check of the failure-release path, and a staleness canary so we detect degradation before you do. Your test account's eaten 320 tokens are <b>restored</b> (balance 320).</div></details>
 
-<details><summary>Wizard signup wall missing Facebook login — parity gap, not a regression <span class="tag today">your catch 13:30</span></summary><div class="body">Facebook login + passwordless shipped only on the <b>ad-funnel</b> signup screen; the app's own wizard (the path your fresh signup took today) still serves the old username+password wall. Routed to Product: bring the wizard wall to parity (passwordless-first + Facebook + divider, same analytics), reusing the funnel implementation.</div></details>
+<details><summary>Homepage funnel unification — LIVE, ready for your walk <span class="tag new">your #1 ask · shipped 15:0x</span></summary><div class="body">Done and deployed (Manager built it): finishing your dream from the homepage now starts the video generating immediately, then shows the funnel-style wall — <b>"Your dream is forming…"</b> on top, your dream recap, then <b>Continue with Facebook</b>, the or-divider, and the <b>email entry below the forming indicator</b> (passwordless — no password ever). After the email, the account is created and the already-running generation is claimed. Walked end-to-end against real services on a phone viewport (real account, real generation, landed on home with the dream forming). Note: an already-registered email gets a 6-digit code step first — correct behavior, not a bug. The Facebook round trip needs your real-phone walk to fully confirm (Meta app + real domain).</div></details>
 
 <details><summary>Model cost per video: real number is ~$0.40-0.52 — tile inflated by a whisper leak <span class="tag today">your catch 12:05</span></summary><div class="body">Actual video generation (veo lite) is within your half-dollar target. The >$1 tile lumps in a <b>whisper runaway</b> (~5,000 alignment units/day for ~a dozen readings — looks like the caption-alignment job resubmits on every status poll; ~$4/day leak, routed to Product) plus voice-engine dev testing from the debugging days. The ElevenLabs switch in flight eliminates whisper entirely.</div></details>
 
