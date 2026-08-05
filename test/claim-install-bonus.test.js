@@ -120,6 +120,13 @@ test('the per-email rate-limit bucket also applies -- repeated attempts on the S
 
 test('this bucket is scoped separately from claim-daily-tokens.js -- hitting THAT limit does not affect this endpoint from the same IP', async function () {
   process.env.MAX_CLAIMS_PER_IP_PER_DAY = '1';
+  // Both probe emails below are genuinely first-ever claims, so they land
+  // in claim-daily-tokens.js's own separate "claim-ip-first" bucket (see
+  // that file's FIRST-EVER-CLAIM EXEMPTION header comment) rather than the
+  // general "claim-ip" bucket MAX_CLAIMS_PER_IP_PER_DAY above scopes --
+  // cap that one too so this sanity check still genuinely exhausts
+  // whichever bucket a first-ever claim actually uses.
+  process.env.MAX_FIRST_CLAIMS_PER_IP_PER_DAY = '1';
   var ip = nextIp();
   var claimDailyHandler = require('../netlify/functions/claim-daily-tokens').handler;
   await claimDailyHandler(fakeEvent({ method: 'POST', ip: ip, body: { email: 'installseparatebucket-daily@example.com' } }));

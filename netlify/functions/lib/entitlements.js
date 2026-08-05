@@ -361,22 +361,36 @@ var DAILY_CLAIM_AMOUNT = 20;
 // class documented in tracker item
 // recurring-bug-class-hardcoded-daily-gran-h6swgy).
 //
-// Abuse exposure: the one-time +80 delta (100 vs the usual 20) is bounded
-// by the SAME per-IP daily cap that already guards the 320-token signup
-// grant (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" rate-limit
-// bucket, see below) — a genuinely first-ever claim can only ever happen
-// for an email whose tokens were never initialized before (no
-// `tokens.lastClaimAt` AND no `firstClaimAt`, see the `isFirstEverClaim`
-// check in claimDailyTokens), and claimDailyTokens always calls syncTokens
-// first (see its own doc comment), which is exactly the choke point that
-// cap already enforces on brand-new emails. So farming the bonus requires
-// farming brand-new accounts in the first place — already capped at
-// MAX_TOKEN_GRANTS_PER_IP_PER_DAY (default 5) per IP per day, same as
-// today's INITIAL_GRANT exposure — not a new, wider abuse surface.
-// claim-daily-tokens.js's OWN "claim-ip"/"claim-email" rate-limit bucket
-// (20/day default) is a separate, looser guard against retry-hammering a
-// single already-known email; it is not what bounds this specific
-// exposure, the token-init cap is.
+// Abuse exposure (CORRECTED 2026-08-05, round 3 of tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy — a prior version of
+// this comment claimed the one-time +80 delta was bounded by the SAME
+// per-IP cap that guards the 320-token signup grant
+// (MAX_TOKEN_GRANTS_PER_IP_PER_DAY / the "token-init" bucket below). A
+// round-2 review caught that this does NOT hold against the actual code:
+// syncTokens' capped-init branch returns a THROWAWAY `{balance:0}` (no
+// throw, no block, see that branch below) once the per-IP init cap trips
+// for a brand-new email — the account is still created normally, and
+// claimDailyTokens never checks whether ITS OWN init grant actually
+// succeeded before crediting FIRST_CLAIM_BONUS_AMOUNT. So a brand-new
+// email whose IP already exceeded MAX_TOKEN_GRANTS_PER_IP_PER_DAY today
+// still gets exactly 100 tokens from a direct claim-daily-tokens.js call,
+// entirely independent of whether the 320-token init grant landed. The
+// token-init cap does NOT bound this vector.
+//
+// What actually bounds it today: ONLY claim-daily-tokens.js's own per-IP/
+// per-email rate limit (its "claim-ip-first"/"claim-email-first" buckets
+// for a first-ever claim specifically, since 2026-08-05 round 2 — see
+// that file's own header comment for the full reasoning and why that
+// bucket's ceiling was deliberately kept AT, not above, the general
+// bucket's default when this was caught). Farming this path requires
+// nothing more than disposable emails; each one is worth
+// FIRST_CLAIM_BONUS_AMOUNT (100 tokens, not the full 320-token
+// INITIAL_GRANT) times whatever claim-daily-tokens.js's own per-IP bucket
+// allows through in a day. Closing this at the source (gating the bonus
+// credit on the init grant having actually succeeded, rather than merely
+// capping the rate-limit ceiling downstream) is a real, still-open
+// follow-up, not something this comment or the round-3 ceiling fix
+// claims to have done.
 var FIRST_CLAIM_BONUS_AMOUNT = 100;
 
 // Per-IP daily cap on brand-new-email token initializations — see
@@ -537,6 +551,39 @@ async function syncTokens(event, email, opts) {
     var initMarkerKey = 'token-init-grant:' + key;
     var initMarker = await rateLimit.readMarker(event, initMarkerKey);
     if (initMarker && typeof initMarker.balance === 'number') {
+      // MARKER-ECHO STALENESS NARROWING (2026-08-05, round 3 — review
+      // finding on round 2's REPLAY GUARD above). Reaching this branch means
+      // the marker read (a separate store) sees a grant already happened,
+      // but the entitlement read at the TOP of this call (`record`, above)
+      // still didn't show `tokens` -- exactly the shape a straggling
+      // concurrent reader gets while propagation is still catching up.
+      // Blindly echoing the marker's frozen balance (always INITIAL_GRANT,
+      // written once at grant time, never updated afterward) is wrong in
+      // exactly the race this file's own claim-vs-init guard targets: if a
+      // CLAIM's separate credit step (claimDailyTokens' own guarded write)
+      // landed on top of that init in the meantime, the real balance is now
+      // higher than the marker remembers, and a straggler would hand back a
+      // stale, understated number -- read-only, so it self-corrects on the
+      // caller's next read, but still wrong for that one response.
+      //
+      // Re-reading the entitlement record here -- a beat of real wall-clock
+      // time later, after the round-trip to the marker store -- gives
+      // Blobs' eventual consistency another chance to have caught up. If it
+      // has, trust the live record (real balance, whatever landed since)
+      // over the frozen marker. This NARROWS the window (an already-rare
+      // race made rarer) but does not fully close it: a still-lagging
+      // second read here falls through to the marker's frozen value exactly
+      // as before, which can still be stale in a tight enough race. Not
+      // worth eliminating outright here -- doing so would mean blocking on
+      // a live value with no bound on how long that could take, which is a
+      // worse tradeoff than a rare, self-correcting, read-only stale
+      // response for a narrow race window. Same "bounded, not eliminated"
+      // posture as this function's own "a stale MARKER read lets one extra
+      // init through" note a few lines below.
+      var freshRead = await getEntitlement(event, key);
+      if (freshRead && freshRead.tokens) {
+        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt, justSeeded: false });
+      }
       return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
     }
 
@@ -563,7 +610,90 @@ async function syncTokens(event, email, opts) {
     // the founder's own explicit confirmation.
     var fresh = { balance: INITIAL_GRANT };
     await rateLimit.writeMarker(event, initMarkerKey, { balance: fresh.balance, at: Date.now() });
-    await setEntitlement(event, key, { tokens: fresh });
+
+    // GUARDED INIT WRITE (2026-08-05, round 2 of the same tracker item —
+    // for-product-p1-urgent-fresh-signup-can-d-qhrrqy). This used to be a
+    // single PLAIN `setEntitlement` call — a full-object REPLACE of
+    // `tokens`, with no fresh recheck at all — the one remaining
+    // completely unguarded writer in this branch even after the replay
+    // guard above closed the IP-slot-burn/permanent-0 holes. Two requests
+    // for a genuinely brand-new email can still reach this exact branch
+    // within the SAME propagation window (home.html's auto-open-claim-
+    // sheet firing alongside its own token-status read, both racing this
+    // branch before either one's marker/entitlement write is visible to
+    // the other yet) — the "stale marker read lets one extra init
+    // through" case the comment above already flags as bounded and
+    // value-identical. What that reasoning missed: if a CLAIM's own write
+    // (claimDailyTokens' guarded retryingWrite loop, see that function)
+    // won the race and landed FIRST, this call's later PLAIN write still
+    // blew it away — `tokens: fresh` fully replaces the sub-object,
+    // silently erasing the claim's balance AND lastClaimAt/
+    // lastClaimAttemptId, not just re-writing an "identical" 320. Probed
+    // in production: a claim reported E5 (write-failed), balance stayed
+    // at 320 instead of 420, and only "healed" minutes later once
+    // propagation settled and the claim's own write finally won the
+    // eventually-consistent race — the exact "claim seconds after signup
+    // gets ERASED by the seed's delayed write landing after it" failure
+    // mode this tracker item's round-2 comment calls out.
+    //
+    // Fixed the same way every other guarded writer in this file already
+    // is: blobs-retry's own read -> mutate -> write -> verify loop, with
+    // `mutate` SKIPping outright the instant a fresh read shows `tokens`
+    // already populated by ANYONE — another init replay (harmless, same
+    // value) or, critically, a genuine claim/spend/credit that raced
+    // ahead of us — instead of blindly overwriting it. `fresh` is a fixed
+    // constant here, never per-attempt, so `verify` only needs to confirm
+    // the written balance is visible — no attemptId needed the way
+    // claimDailyTokens' own loop requires one (two concurrent CLAIMS can
+    // collide on an identical `now`; two concurrent INITS can never
+    // disagree on the value they're trying to write in the first place).
+    var initWrite = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+      maxAttempts: MAX_CREDIT_ATTEMPTS,
+      read: function (evt) {
+        connectLambda(evt);
+        return store().get(key, { type: 'json' });
+      },
+      mutate: function (existing) {
+        if (existing && existing.tokens) return blobsRetry.SKIP;
+        var rec = existing || { email: key };
+        return Object.assign({}, rec, { email: key, tokens: fresh, updatedAt: Date.now() });
+      },
+      verify: function (verifyRead) {
+        return !!(verifyRead && verifyRead.tokens && verifyRead.tokens.balance === fresh.balance);
+      }
+    });
+
+    if (initWrite.skipped) {
+      // Someone else's write is already the record's real, current state —
+      // trust IT rather than fabricating INITIAL_GRANT on top of state we
+      // no longer own (this is exactly the clobber this guard exists to
+      // prevent). Falls back to `fresh` only if the winning read somehow
+      // shows no tokens at all yet (should not happen given SKIP's own
+      // condition — defensive only, mirrors this file's existing
+      // `rec.someField || fallback` discipline elsewhere).
+      var wonTokens = (initWrite.current && initWrite.current.tokens) || fresh;
+      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    }
+
+    if (!initWrite.ok) {
+      // Exhausted attempts without the verify-read ever confirming our
+      // write landed — deliberately NOT thrown (unlike claimDailyTokens'
+      // own exhaustion path): syncTokens is called from every balance
+      // read in the app (get-token-status.js, generate-video.js's gate,
+      // every other credit/spend path), not just this narrow signup-race
+      // branch, so turning a rare, already-degraded-mode propagation lag
+      // into a hard exception here would newly 500 unrelated hot paths
+      // for a condition those callers have never had to handle. One more
+      // plain, unhurried read first (same "our write may have landed,
+      // only the verify lagged" rescue every other exhaustion path in
+      // this file takes) — falls back to returning `fresh` on faith only
+      // if even that shows nothing, same best-effort posture this branch
+      // always had before this fix.
+      var finalInitRead = await getEntitlement(event, key);
+      var finalTokens = (finalInitRead && finalInitRead.tokens) || fresh;
+      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    }
+
     return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
   }
 
@@ -635,6 +765,36 @@ async function syncTokens(event, email, opts) {
  */
 function hasCompletedAnyClaim(firstClaimAt, lastClaimAt) {
   return !!(firstClaimAt || lastClaimAt);
+}
+
+/**
+ * True when `record` (a raw getEntitlement() result, or null/undefined for
+ * an email with no entitlement record at all) represents an account that
+ * has NEVER completed a daily claim — i.e. a claim attempted against it
+ * right now would be that account's genuine first-ever claim. Exact same
+ * "no firstClaimAt AND no tokens.lastClaimAt" check hasCompletedAnyClaim
+ * above already applies (getTokenStatus's dailyClaimAmount projection,
+ * claimDailyTokens' own isFirstEverClaim decision), just exposed here as
+ * its own named predicate, callable from OUTSIDE this file, off a raw
+ * record rather than a live syncTokens() call.
+ *
+ * Exported for claim-daily-tokens.js's OWN "claim-ip"/"claim-email"
+ * rate-limit-bucket exemption (2026-08-05, round 2 of tracker item
+ * for-product-p1-urgent-fresh-signup-can-d-qhrrqy) — see that file's own
+ * doc comment for the abuse-surface reasoning on why exempting ONLY this
+ * narrow case (and giving it a separate, still-bounded bucket rather than
+ * unlimited exemption) is safe. This is a PRE-CHECK only, used purely to
+ * pick which rate-limit bucket a request is weighed against — the ACTUAL
+ * claim amount (100 vs 20) is always decided fresh, server-side, inside
+ * claimDailyTokens' own retryingWrite attempt, off that attempt's own
+ * freshest read, never off this pre-check's possibly-stale one. A stale
+ * read here (this account actually already claimed, but propagation
+ * hasn't caught up to THIS read yet) can at worst misroute one request to
+ * the more generous bucket — self-correcting, and inert either way since
+ * the real grant amount this could feed into is decided independently.
+ */
+function isFirstEverClaimEligible(record) {
+  return !hasCompletedAnyClaim(record && record.firstClaimAt, record && record.tokens && record.tokens.lastClaimAt);
 }
 
 async function getTokenStatus(event, email, opts) {
@@ -2445,6 +2605,7 @@ module.exports = {
   isEntitled,
   setEntitlement,
   getTokenStatus,
+  isFirstEverClaimEligible,
   claimDailyTokens,
   spendTokens,
   addTokens,
