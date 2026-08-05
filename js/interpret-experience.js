@@ -970,19 +970,48 @@
   }
 
   // ==========================================================================
-  // Picker phase (spec §3.1) — swipeable persona carousel, single tap
-  // advances (an already-read persona jumps straight to its saved reading,
-  // no network; a fresh persona starts the questions flow).
-  // ==========================================================================
+  // Picker phase (spec §3.1) — ALL-VISIBLE TILE GRID (tracker item
+  // for-product-founder-spec-08-04-chamber-m-zf5ufo, part 2, replacing the
+  // original horizontal swipeable carousel). Founder's own ask: every
+  // persona visible at once, no swipe/scroll needed to discover the rest
+  // of the roster — styled like this app's own existing video-style
+  // picker (style.html's `#style-grid`/`.style-card`: a 2-column CSS
+  // grid of portrait-filled cards with a bottom-gradient name label, see
+  // css/styles.css's `.itp-persona-grid`/`.itp-persona-card` for the full
+  // "why these exact rules" reasoning). A single tap still advances
+  // immediately — an already-read persona jumps straight to its saved
+  // reading, no network; a fresh persona starts the questions flow — same
+  // behavior as the old carousel, only the container/layout changed.
+  //
+  // Reuses the EXACT SAME `.itp-persona-card` element/content structure
+  // (name/inspiredBy/tagline, the accent-gradient fallback, the
+  // "already read" checkmark badge) the carousel used — every existing
+  // test targeting `.itp-persona-card[data-key="..."]` keeps working
+  // unchanged; only the outer container class and the now-removed
+  // carousel-dots tracker are new/gone. The one deliberate content trim:
+  // the old carousel's second "Asks about: ..." line (rendered from each
+  // persona's `asksAbout` field) is dropped from the tile — the smaller
+  // grid tile has room for tagline OR asksAbout, not both, and tagline is
+  // the stronger single line for a quick-glance grid (asksAbout still
+  // exists as real, tested data on every persona — js/interpreter-
+  // personas.js, spec §5 — just not rendered in this tighter layout).
   function renderPicker() {
     var body = document.getElementById('itp-body');
     var existing = window.DreamStore.getInterpretations(session.dreamId) || {};
     var personas = window.InterpreterPersonas.ALL;
 
-    var cardsHtml = personas.map(function (p) {
+    var cardsHtml = personas.map(function (p, i) {
       var isRead = !!(existing[p.key] && existing[p.key].text);
       var initial = (p.key || '?').charAt(0).toUpperCase();
-      return '<div class="itp-persona-card' + (isRead ? ' read' : '') + '" data-key="' + esc(p.key) + '" style="background:linear-gradient(155deg,' + esc(p.accent) + ',rgba(10,10,10,.9));">' +
+      // An ODD persona count (5 today) leaves one tile alone on the last
+      // row of a 2-column grid — span it across both columns rather than
+      // leaving it stranded off-center. Generic on `personas.length`, not
+      // hardcoded to 5, so adding/removing a persona (this file's header
+      // comment's own "persona-agnostic architecture" promise) never
+      // needs a matching CSS/layout fix here.
+      var isLastOdd = (personas.length % 2 === 1) && (i === personas.length - 1);
+      var tileClass = 'itp-persona-card' + (isRead ? ' read' : '') + (isLastOdd ? ' itp-persona-card--wide' : '');
+      return '<div class="' + tileClass + '" data-key="' + esc(p.key) + '" style="background:linear-gradient(155deg,' + esc(p.accent) + ',rgba(10,10,10,.9));">' +
         '<div class="itp-persona-card-badge"><span class="icon">' + Icons.check + '</span></div>' +
         '<div class="itp-persona-card-fallback">' + esc(initial) + '</div>' +
         '<div class="itp-persona-card-bg" style="background-image:url(\'' + esc(p.portrait) + '\');"></div>' +
@@ -990,42 +1019,23 @@
         '<div class="itp-persona-card-content">' +
         '<div class="itp-persona-card-name">' + esc(p.name) + '</div>' +
         '<div class="itp-persona-card-inspired">' + esc(p.inspiredBy) + '</div>' +
-        '<div class="itp-persona-card-tagline">' + esc(p.tagline) + '<br>Asks about: ' + esc(p.asksAbout) + '</div>' +
+        '<div class="itp-persona-card-tagline">' + esc(p.tagline) + '</div>' +
         '</div></div>';
-    }).join('');
-
-    var dotsHtml = personas.map(function (p, i) {
-      return '<div class="itp-carousel-dot' + (i === 0 ? ' active' : '') + '" data-index="' + i + '"></div>';
     }).join('');
 
     body.innerHTML =
       '<div class="itp-picker-title">Who should read this dream?</div>' +
       '<div class="itp-picker-sub">Pick a method — you can always come back for another take.</div>' +
-      '<div class="itp-carousel" id="itp-carousel">' + cardsHtml + '</div>' +
-      '<div class="itp-carousel-dots">' + dotsHtml + '</div>' +
+      '<div class="itp-persona-grid" id="itp-persona-grid">' + cardsHtml + '</div>' +
       '<div class="itp-picker-footer">AI characters inspired by real methods — for reflection, not advice.</div>';
 
-    var carousel = document.getElementById('itp-carousel');
-    var cards = carousel.querySelectorAll('.itp-persona-card');
+    var grid = document.getElementById('itp-persona-grid');
+    var cards = grid.querySelectorAll('.itp-persona-card');
     cards.forEach(function (card) {
       card.addEventListener('click', function () {
         var key = card.getAttribute('data-key');
         onPersonaPicked(key, existing);
       });
-    });
-
-    // Lightweight "which card is centered" tracker for the dot row —
-    // presentation only, never gates the tap-to-select behavior above.
-    var dots = carousel.parentNode.querySelectorAll('.itp-carousel-dot');
-    carousel.addEventListener('scroll', function () {
-      var center = carousel.scrollLeft + carousel.clientWidth / 2;
-      var closestIdx = 0, closestDist = Infinity;
-      cards.forEach(function (card, i) {
-        var mid = card.offsetLeft + card.offsetWidth / 2;
-        var dist = Math.abs(mid - center);
-        if (dist < closestDist) { closestDist = dist; closestIdx = i; }
-      });
-      dots.forEach(function (dot, i) { dot.classList.toggle('active', i === closestIdx); });
     });
   }
 

@@ -32,6 +32,21 @@ clip mechanics, mobile-webview fallback, safety) are all still accurate to
 what shipped. §12 items 1/3/4 (voice casting beyond the Sage, exact voice
 catalog, hint copy) are still open for the other four personas.
 
+**FURTHER SUPERSEDED IN PART (2026-08-04) — the Chamber makeover's INTERIM
+VOICES.** Tracker item `for-product-founder-spec-08-04-chamber-m-zf5ufo`
+(founder's own verbatim spec, part 3): until real per-persona voice
+casting for jung/freud/gestalt/scientist happens (§12 item 2 above,
+tracked separately as `for-product-go-wide-follow-up-voice-the--bvqxvv`),
+those four personas TEMPORARILY borrow The Sage's own `voiceId`/
+`introClipUrl`/`introVoiceUrl` verbatim — an explicit, founder-directed
+stopgap so the full Speaking-Sage experience works for every persona
+today, not a real casting decision. See `js/interpreter-personas.js`'s own
+header note for the mechanism and `docs/TEST_REGISTRY.md`'s "Chamber
+makeover" row for the test coverage. Also as of the same date, the
+`?sagevoice=1` founder-preview gate this spec's §6/§12 assumed is REMOVED
+entirely (`main` commit `50cf2a3`, "go wide") — voice is live for every
+visitor unconditionally, not gated by a query param.
+
 **Codebase-freshness note for whoever builds this:** this spec was
 written against the REAL, current `main` (fetched directly from GitHub —
 `js/interpret-experience.js`, `js/interpreter-personas.js`,

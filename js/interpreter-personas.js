@@ -28,13 +28,24 @@
 // ── Portrait assets (spec §12, item 1 — explicitly deferred by the
 //    founder, tracker item for-product-build-interpretation-wave-1--xuftyn) ──
 // `portrait` below points at a real path under assets/interpreters/ that
-// does NOT exist yet on this branch — generating the actual stylized
+// does NOT exist yet — VERIFIED directly against this branch's own
+// `assets/interpreters/` directory during the Chamber-makeover build
+// (tracker for-product-founder-spec-08-04-chamber-m-zf5ufo, 2026-08-04):
+// it contains only `intro/` (the Sage's intro video+voice, see below), no
+// `.webp` files at all. So this is true for ALL FIVE personas equally,
+// `talmudic`/The Sage included — there is no persona today with a real
+// static portrait to copy from for the others; every one of the five
+// currently renders the documented accent-gradient + initial fallback
+// only (js/interpret-experience.js's `.itp-persona-card-fallback`).
+// Generating the actual stylized
 // illustrations is a separate, founder-eyeball-reviewed step (real
-// fal.ai/flux spend, held back deliberately, see that tracker item's
-// detail). Every portrait render in this feature (js/interpret-experience.js)
-// MUST tolerate a 404/broken image on this path and fall back to the
+// fal.ai/flux spend, pre-approved as a one-time/negligible-cost asset
+// generation per that tracker item, but not executable from this build
+// pass — no `FAL_KEY` in this sandbox, confirmed via `env`). Every
+// portrait render in this feature (js/interpret-experience.js) MUST
+// tolerate a 404/broken image on this path and fall back to the
 // documented accent-gradient + initial treatment (see that file's
-// renderPortrait helper) — never assume the file is there.
+// renderPortrait/renderPicker helpers) — never assume the file is there.
 //
 // ── Speaking Sage / voice fields (`voiceId`, `kokoroVoiceId`,
 //    `introClipUrl`, `introVoiceUrl`) — additive, tracker item
@@ -49,7 +60,8 @@
 // ('am_onyx') — kept as the FALLBACK tier's own voice, used only when the
 // ElevenLabs call fails (see that file's fallback-chain comment). Two
 // separate fields, deliberately, rather than overloading one field with
-// two different vendors' voice-naming schemes.
+// two different vendors' voice-naming schemes. Both fields carry the SAME
+// values for all five personas under the interim-voices measure below.
 //
 // `introClipUrl`/`introVoiceUrl` are the ONE-TIME, shared, pre-rendered
 // intro greeting (played once per persona-selection commit,
@@ -81,20 +93,29 @@
 //   pointed at different content. See that file's `startIntroPhase`/
 //   `beginAudioPlayback` for the shared implementation.
 //
-// INTERIM (founder call 2026-08-04, Dream Meaning makeover): ALL five
-// personas currently carry The Sage's `voiceId`/`introClipUrl`/
-// `introVoiceUrl` so the full speaking experience works everywhere today.
-// The real per-persona greeting/casting work for the other four is real,
-// separate creative effort (voice casting is a founder-ears decision,
-// spec §12 item 2) that hasn't happened yet — each persona's three fields
-// get replaced with its own assets as castings are approved.
+// ── UPDATE 2026-08-04 (tracker for-product-founder-spec-08-04-chamber-m-
+//    zf5ufo, founder's own instruction, part 3 — "INTERIM VOICES") ──
+// All three fields now carry THE SAME VALUES for every persona, not just
+// `talmudic`. This is a deliberate, temporary measure: real per-persona
+// voice casting + a real per-persona lip-synced intro clip is separate,
+// later, founder-approved-per-persona creative effort (tracker item
+// for-product-go-wide-follow-up-voice-the--bvqxvv, explicitly NOT done
+// here) — until that lands, every persona borrows THE SAGE'S OWN asset
+// URLs and voice id verbatim, so the full Speaking-Sage experience
+// (intro -> reading with voice + captions) works for every persona today
+// instead of only `talmudic`. This means a non-Sage persona's intro will
+// visually/aurally show the Sage's own greeting for now (the founder's
+// own explicit, accepted tradeoff, not an oversight) — the four personas
+// below each carry their own short comment marking this as interim.
 // `js/interpret-experience.js` gates BOTH the intro playback and the
 // reading's TTS/captions on `voiceId` (and, for the intro specifically,
 // `introClipUrl`+`introVoiceUrl` together) being set for the active
-// persona — a persona with none of these set behaves EXACTLY like Wave 1
-// today (silent, text-only reading), the same "tolerate a missing asset,
-// never block" convention this file's header already established for
-// `portrait` above, extended to these three new fields.
+// persona — a persona with none of these set (no such persona remains
+// after this update, but the mechanism itself is unchanged and still
+// applies to any FUTURE persona added with no casting yet) behaves
+// EXACTLY like Wave 1 (silent, text-only reading), the same "tolerate a
+// missing asset, never block" convention this file's header already
+// established for `portrait` above, extended to these three fields.
 //
 // ── Safety / crisis framing lives OUTSIDE this file ──
 // The crisis-language instruction, the universal bans (no clinical/
@@ -130,11 +151,13 @@
       method: 'Your interpretive method reads the dream as a message from the dreamer\'s deeper self, often compensating for something one-sided or unacknowledged in their conscious, waking attitude. Look for archetypal figures, symbols, and the emotional charge of the dream, and connect them to what might be seeking balance or integration in the dreamer\'s life right now.',
       questionFocus: 'Ask about the dreamer\'s current life situation and what feels unbalanced or out of alignment for them right now — the compensation your method looks for. Questions should invite a short, honest answer about waking life, not more dream detail.',
       maxQuestions: 3,
-      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
-      // persona borrows The Sage's voice + intro until its own casting is
-      // approved (voice casting stays a founder-ears decision, spec §12
-      // item 2). Replace all three with this persona's own assets then.
-      voiceId: 'am_onyx',
+      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
+      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
+      // assets verbatim until this persona gets its own real casting
+      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
+      // file's header note for the full reasoning.
+      voiceId: 'Brian',
+      kokoroVoiceId: 'am_onyx',
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
@@ -152,11 +175,13 @@
       method: 'Your interpretive method treats the dream as a disguised wish or unresolved tension finding expression through free association. Focus on what the dream\'s images might be standing in for, and what desire, fear, or unfinished business they could be pointing to — always offered as a possibility to sit with, never a verdict.',
       questionFocus: 'Ask for the dreamer\'s first, unfiltered association to one or two of the dream\'s key elements — "what\'s the very first thing that comes to mind when you think of [element]?" — the free-association move your method is built on. Never ask about the dream\'s meaning directly; ask what it brings to mind.',
       maxQuestions: 2,
-      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
-      // persona borrows The Sage's voice + intro until its own casting is
-      // approved (voice casting stays a founder-ears decision, spec §12
-      // item 2). Replace all three with this persona's own assets then.
-      voiceId: 'am_onyx',
+      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
+      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
+      // assets verbatim until this persona gets its own real casting
+      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
+      // file's header note for the full reasoning.
+      voiceId: 'Brian',
+      kokoroVoiceId: 'am_onyx',
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
@@ -182,11 +207,13 @@
       method: 'Your interpretive method treats every person, object, and place in the dream as a disowned or unacknowledged part of the dreamer themselves. Rather than explaining symbols, you invite the dreamer to inhabit one element of their own dream and speak as it, then reflect what that voice reveals about a part of them that wants attention.',
       questionFocus: 'Ask the dreamer to pick one element of the dream — a person, object, or place — and briefly speak AS it, in first person ("I am the ___, and I..."). This is the core Gestalt move your method uses; keep the invitation short and concrete.',
       maxQuestions: 2,
-      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
-      // persona borrows The Sage's voice + intro until its own casting is
-      // approved (voice casting stays a founder-ears decision, spec §12
-      // item 2). Replace all three with this persona's own assets then.
-      voiceId: 'am_onyx',
+      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
+      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
+      // assets verbatim until this persona gets its own real casting
+      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
+      // file's header note for the full reasoning.
+      voiceId: 'Brian',
+      kokoroVoiceId: 'am_onyx',
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
@@ -204,11 +231,13 @@
       method: 'Your interpretive method draws on the continuity hypothesis (dreams often echo waking-life concerns, emotions, and unresolved problems the mind is processing) and related ideas like threat simulation and emotional memory consolidation. Connect the dream\'s content to plausible waking-life stress or preoccupation, framed as "some research suggests" or "one idea is," never as settled fact. Cite general ideas by name, never a fabricated study, journal, or statistic.',
       questionFocus: 'Ask about the dreamer\'s current waking concerns or stressors — what has been on their mind, or what they\'ve been dealing with lately — the continuity-hypothesis link your method looks for.',
       maxQuestions: 3,
-      // INTERIM (founder call, 2026-08-04, Dream Meaning makeover): every
-      // persona borrows The Sage's voice + intro until its own casting is
-      // approved (voice casting stays a founder-ears decision, spec §12
-      // item 2). Replace all three with this persona's own assets then.
-      voiceId: 'am_onyx',
+      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
+      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
+      // assets verbatim until this persona gets its own real casting
+      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
+      // file's header note for the full reasoning.
+      voiceId: 'Brian',
+      kokoroVoiceId: 'am_onyx',
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     },
@@ -226,31 +255,18 @@
       method: 'Your interpretive method draws on the Talmudic principle of hatavat chalom — that a dream follows the mouth of its interpretation, so how a dream is read shapes what it becomes. Given the dreamer\'s life context, read the dream in the most hopeful, constructive light that honestly fits its content, and close by turning it toward the good.',
       questionFocus: 'Ask about the dreamer\'s life context right now — what season of life they\'re in, or what they\'re hoping for — so the reading can genuinely turn toward the good for THEM, not a generic blessing.',
       maxQuestions: 2,
-      // Founder decision 2026-08-04 (tracker item
-      // for-product-founder-decision-08-04-switc-cqveik, "much better" —
-      // listened to real samples of both): PRIMARY reading voice switched
-      // from Kokoro to ElevenLabs Turbo v2.5, reached through the SAME
-      // fal.ai infrastructure (`fal.run/fal-ai/elevenlabs/tts/turbo-v2.5`,
-      // same FAL_KEY, no new vendor account — a model swap, not a new
-      // integration). `voiceId` now means an ELEVENLABS voice NAME (see
-      // that endpoint's own catalog — 'Brian' confirmed valid via fal's
-      // live OpenAPI schema, fetched at build time 2026-08-04), used by
-      // generate-interp-audio.js's PRIMARY tier.
+      // Founder-confirmed Option D casting (2026-08-02): am_onyx, Kokoro's
+      // fal-ai/kokoro/american-english voice catalog, played at speed 0.8
+      // (see generate-interp-audio.js). The Sage is the ORIGINAL owner of
+      // this casting (scope item 4 of the Speaking Sage build — "sage
+      // persona first") and, as of 2026-08-04, the SOURCE the other four
+      // personas above now temporarily borrow from verbatim — see this
+      // file's header note ("UPDATE 2026-08-04") for the full reasoning.
       voiceId: 'Brian',
-      // `kokoroVoiceId` is the ORIGINAL Option D casting (2026-08-02:
-      // am_onyx, fal-ai/kokoro/american-english's voice catalog) — kept,
-      // unchanged in value, but now scoped to the FALLBACK tier only
-      // (generate-interp-audio.js: ElevenLabs sync fails -> kokoro sync ->
-      // kokoro queue, all three still keyed on THIS field, not `voiceId`).
-      // Deliberately a separate field rather than overloading `voiceId`
-      // with two different vendors' voice-naming schemes at once.
       kokoroVoiceId: 'am_onyx',
-      // Real, founder-approved intro handoff — re-recorded in Brian's
-      // ElevenLabs voice and relipsynced to match the new reading voice
-      // (Manager, main commit 46b6a65, "Ship founder-approved ElevenLabs
-      // 'come closer' intro"); see this file's header note above for the
-      // full "two separate files, video-only + a separate voice track"
-      // story, unchanged by the reading-voice switch.
+      // Real, founder-approved Option D handoff (main commit c0b9202) —
+      // see this file's header note above for the full "two separate
+      // files, video-only + a separate voice track" story.
       introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
       introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
     }

@@ -75,12 +75,19 @@
 // (~$0.08/reading ElevenLabs vs $0.016 kokoro) by choosing this vendor,
 // not a gate this file re-litigates.
 //
-// Only the persona actually carrying a `voiceId` (currently: `talmudic`/
-// The Sage — scope item 4, "sage persona first") can reach this function
-// at all; every other persona is rejected with E505 (unknown_persona),
+// Only a persona actually carrying a `voiceId` can reach this function at
+// all; every other personaKey is rejected with E505 (unknown_persona),
 // same as if the persona didn't exist — js/interpret-experience.js never
 // calls this for a persona with no voiceId, so this is defense-in-depth,
-// not the only guard.
+// not the only guard. Originally this meant ONLY `talmudic`/The Sage
+// (scope item 4 of the original build, "sage persona first"); as of
+// 2026-08-04 (tracker for-product-founder-spec-08-04-chamber-m-zf5ufo,
+// part 3 — INTERIM VOICES) ALL FIVE personas carry a `voiceId` (the other
+// four temporarily borrowing the Sage's own `am_onyx` casting verbatim —
+// see js/interpreter-personas.js's own header note), so in practice every
+// real persona reaches this function today; the E505 branch remains live
+// defense-in-depth for any future persona added before it has real voice
+// casting, not dead code.
 //
 // Rate-limited under its OWN scope ("interp-audio-ip"), separate from
 // interpret-ip (interpret-dream.js's text-generation bucket) — spec §7:
