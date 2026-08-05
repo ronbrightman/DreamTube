@@ -199,6 +199,45 @@ function parseElevenLabsCaptions(rawTimestamps) {
     return null;
   }
 
+  // REAL SHAPE, verified against a live call (Manager, 2026-08-05, real
+  // FAL_KEY — closing this file's own "FLAGGED for a human with real
+  // FAL_KEY access" item): fal's ElevenLabs turbo-v2.5 `timestamps` is an
+  // array of CHARACTER-level segments, each
+  //   { characters: [" ", "C", "o", ...],
+  //     character_start_times_seconds: [...], character_end_times_seconds: [...] }
+  // — not word items at all, which is exactly why the defensive word-shape
+  // guesses below produced E508 sentence-degrades on the deploy preview.
+  // Reconstruct words: accumulate non-space characters, word start = its
+  // first char's start, word end = its last char's end. The word-shape loop
+  // below stays as a fallback in case fal ever changes to word items.
+  var charCaptions = [];
+  var sawCharShape = false;
+  for (var s = 0; s < rawTimestamps.length; s++) {
+    var seg = rawTimestamps[s];
+    if (!seg || !Array.isArray(seg.characters) ||
+        !Array.isArray(seg.character_start_times_seconds) ||
+        !Array.isArray(seg.character_end_times_seconds) ||
+        seg.characters.length !== seg.character_start_times_seconds.length ||
+        seg.characters.length !== seg.character_end_times_seconds.length) continue;
+    sawCharShape = true;
+    var buf = '', bufStart = null, bufEnd = null;
+    for (var c = 0; c <= seg.characters.length; c++) {
+      var ch = c < seg.characters.length ? seg.characters[c] : ' ';
+      var isBreak = /\s/.test(ch);
+      if (!isBreak) {
+        if (buf === '') bufStart = seg.character_start_times_seconds[c];
+        buf += ch;
+        bufEnd = seg.character_end_times_seconds[c];
+      } else if (buf !== '') {
+        if (typeof bufStart === 'number' && typeof bufEnd === 'number' && bufEnd >= bufStart) {
+          charCaptions.push({ word: buf, startMs: Math.round(bufStart * 1000), endMs: Math.round(bufEnd * 1000) });
+        }
+        buf = ''; bufStart = null; bufEnd = null;
+      }
+    }
+  }
+  if (sawCharShape) return charCaptions.length ? charCaptions : null;
+
   var captions = [];
   var attempted = 0;
   for (var i = 0; i < rawTimestamps.length; i++) {
