@@ -1838,6 +1838,37 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       openFullscreenVideo();
     });
     watchPill.addEventListener('click', openFullscreenVideo);
+
+    // ===== &play=1: arrived via an explicit play tap on home's Day-0
+    // card (founder fix, 2026-08-06: tapping Play there landed here and
+    // "the video does not start playing so it requires the user again to
+    // tap"). The tap's gesture does NOT survive the page navigation, so
+    // the native-fullscreen tiers of openFullscreenVideo (which need a
+    // live user gesture) are deliberately skipped — the in-app overlay
+    // needs no gesture and the video itself autoplays there (it carries
+    // no audio track, so its play() isn't gesture-gated even unmuted;
+    // WebKit's own stated autoplay policy). The music bed CAN still be
+    // gesture-blocked on iOS — the one-time first-touch kick below starts
+    // it on the user's first interaction of any kind, so sound recovers
+    // without a dedicated play tap. Param is stripped immediately so
+    // refresh/back doesn't re-open the player uninvited.
+    if(new URLSearchParams(location.search).get('play') === '1'){
+      if(history.replaceState){
+        var cleaned = new URL(location.href);
+        cleaned.searchParams.delete('play');
+        history.replaceState(null, '', cleaned.pathname + cleaned.search + cleaned.hash);
+      }
+      if(dream && dream.videoUrl){
+        openOverlayPlayer();
+        var kickBedOnce = function(){
+          document.removeEventListener('touchstart', kickBedOnce, true);
+          document.removeEventListener('click', kickBedOnce, true);
+          if(musicBed.getAttribute('src') && musicBed.paused && !video.paused) musicBed.play().catch(function(){});
+        };
+        document.addEventListener('touchstart', kickBedOnce, true);
+        document.addEventListener('click', kickBedOnce, true);
+      }
+    }
   })();
 
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }

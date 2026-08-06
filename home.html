@@ -1639,7 +1639,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   document.getElementById('d0-video').addEventListener('click', function(){
     track('home_day0_card_tapped', { ready: !!d0DreamId });
     if(d0DreamId){
-      location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+      // &play=1: an explicit play tap — result.html opens its player
+      // immediately instead of waiting for a second tap (founder fix,
+      // 2026-08-06: "requires the user again to tap ... instead of
+      // automatically playing").
+      location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&play=1';
     } else {
       showToast('Still forming — the Chamber is ready now, though.');
     }
@@ -1647,7 +1651,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   document.getElementById('d0-watch').addEventListener('click', function(e){
     e.stopPropagation();
     if(!d0DreamId) return;
-    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+    // Same &play=1 intent as the card tap above.
+    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&play=1';
   });
   // The quiet row's four actions (Publish/Make another/Edit/Delete) all
   // already have full, tested implementations on result.html itself
