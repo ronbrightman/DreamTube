@@ -263,36 +263,38 @@
   //     with the source <video>'s own captureStream() audio track. This
   //     takes roughly the video's own playback length to run (fine for
   //     this app's Veo-generated dream lengths, well under a minute).
-  //   - The blocking problem is OUTPUT FORMAT, not runtime: MediaRecorder
-  //     in Chrome has, as of this writing, only reliable support for
-  //     WEBM output (vp8/vp9 + opus) — Chrome does have an active
-  //     "MP4 container support for MediaRecorder" intent-to-ship
-  //     (H264+AAC), but its rollout/default-on status in a normal Chrome
-  //     install could not be confirmed as stable at build time. Instagram
-  //     feed posts require MP4 or MOV — WEBM is not directly postable
-  //     there (confirmed via a live source check, not memory) — so a
-  //     video watermark button that silently hands back a .webm file
-  //     would produce something the founder often can't actually use for
-  //     the one thing this page exists for.
+  //   - CORRECTION (found in review): an earlier version of this comment
+  //     claimed Chrome's MP4-container MediaRecorder output was still an
+  //     unconfirmed intent-to-ship. That was stale — Chrome has shipped
+  //     MP4/H.264+AAC MediaRecorder output since Chrome 114, confirmable
+  //     via `MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,
+  //     mp4a.40.2')` (Chrome requires an explicit codec string; a bare
+  //     "video/mp4" is NOT accepted). So the real blocker below is NOT
+  //     output-format availability — it's that this sandbox has no way to
+  //     verify the actual encode against this app's real media, per the
+  //     next point.
   //   - This sandbox's own Playwright/Chromium build has ZERO H.264
   //     decode support at all (confirmed directly: canPlayType on an
   //     avc1 mp4 returns "", and this repo's real dream-style mp4 test
   //     fixture fails to load into a <video> element with
-  //     DEMUXER_ERROR_NO_SUPPORTED_STREAMS) — so even setting format
-  //     concerns aside, a real end-to-end video watermark verification
-  //     against this app's actual H.264 output was NOT possible in this
-  //     environment, only against a synthetic VP8 source (which proved
+  //     DEMUXER_ERROR_NO_SUPPORTED_STREAMS) — so a real end-to-end video
+  //     watermark verification against this app's actual H.264 output was
+  //     NOT possible in this environment, only against a synthetic VP8
+  //     source (which proved
   //     the capture/overlay/record mechanics work, not the H.264 path).
   //   - No ffmpeg/wasm transcoder exists in this repo today, and adding
   //     one (client-side ffmpeg.wasm, ~25-30MB, worker-based, or a
   //     server-side ffmpeg dependency in a Netlify Function) is a real
   //     new-dependency/infra decision this task's own scope explicitly
   //     didn't call for.
-  //   Recommended follow-up, whenever this gets picked back up: re-check
-  //   Chrome's native MP4-MediaRecorder rollout status first (if it's
-  //   stable/default-on by then, the exact technique above just works,
-  //   no new dependency needed) — only reach for ffmpeg.wasm or a
-  //   server-side encode if that's still not reliably available.
+  //   Recommended follow-up, whenever this gets picked back up: Chrome's
+  //   MP4-MediaRecorder output is already stable (see the correction
+  //   above), so the real next step is just verifying the exact technique
+  //   above against this app's real H.264 dream output on a real device/
+  //   non-sandboxed browser (this sandbox can't do that check itself) —
+  //   only reach for ffmpeg.wasm or a server-side encode if that real
+  //   verification turns up a genuine reliability problem the sandbox
+  //   couldn't have caught.
 
   var LOGO_URL = 'assets/logo-v4-512.png';
   var WATERMARK_LOGO_SIZE_RATIO = 0.09; // ~9% of the shorter image dimension
