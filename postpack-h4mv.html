@@ -305,7 +305,14 @@
       logoImagePromise = new Promise(function (resolve, reject) {
         var img = new Image();
         img.onload = function () { resolve(img); };
-        img.onerror = function () { reject(new Error('logo_load_failed')); };
+        img.onerror = function () {
+          // Don't cache a failed load forever -- a transient hiccup on
+          // this one request shouldn't permanently break the watermark
+          // button for the rest of the page session. Reset so the next
+          // click gets a fresh attempt.
+          logoImagePromise = null;
+          reject(new Error('logo_load_failed'));
+        };
         img.src = LOGO_URL;
       });
     }
